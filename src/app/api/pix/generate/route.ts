@@ -49,6 +49,20 @@ export async function POST(request: Request) {
     }
   }
 
+  const { data: recipientStatus } = await supabase
+    .from("bill_participants")
+    .select("status")
+    .eq("bill_id", billId)
+    .eq("user_id", recipientUserId)
+    .single();
+
+  if (recipientStatus?.status && recipientStatus.status !== "accepted") {
+    return NextResponse.json(
+      { error: "Participante ainda nao aceitou o convite" },
+      { status: 403 },
+    );
+  }
+
   const admin = createAdminClient();
   const { data: recipient } = await admin
     .from("users")

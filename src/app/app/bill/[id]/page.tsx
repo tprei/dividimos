@@ -74,24 +74,37 @@ export default function BillDetailPage({
   useEffect(() => {
     if (bill?.id === id || id === "demo") return;
     setLoadingFromDb(true);
-    loadBillFromSupabase(id).then((data) => {
-      if (data) {
-        store.setCurrentUser(data.participants[0] ?? null as unknown as import("@/types").User);
-        if (data.bill) {
-          const s = useBillStore.getState();
-          useBillStore.setState({
-            bill: data.bill,
-            participants: data.participants,
-            items: data.items,
-            splits: data.splits,
-            billSplits: data.billSplits,
-            ledger: data.ledger,
-          });
+
+    const supabaseCheck = createClient();
+    (async () => {
+      if (currentUser) {
+        const { data: myStatus } = await supabaseCheck
+          .from("bill_participants")
+          .select("status")
+          .eq("bill_id", id)
+          .eq("user_id", currentUser.id)
+          .single();
+
+        if (myStatus?.status === "invited") {
+          router.push(`/app/bill/${id}/invite`);
+          return;
         }
       }
+
+      const data = await loadBillFromSupabase(id);
+      if (data) {
+        useBillStore.setState({
+          bill: data.bill,
+          participants: data.participants,
+          items: data.items,
+          splits: data.splits,
+          billSplits: data.billSplits,
+          ledger: data.ledger,
+        });
+      }
       setLoadingFromDb(false);
-    });
-  }, [id]);
+    })();
+  }, [id, currentUser?.id]);
 
   useEffect(() => {
     if (!bill) return;

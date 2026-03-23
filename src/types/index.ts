@@ -10,6 +10,8 @@ export type BillType = "single_amount" | "itemized";
 
 export type GroupMemberStatus = "invited" | "accepted";
 
+export type BillParticipantStatus = "invited" | "accepted" | "declined";
+
 export interface User {
   id: string;
   email: string;
@@ -82,6 +84,9 @@ export interface Bill {
 export interface BillParticipant {
   billId: string;
   userId: string;
+  status: BillParticipantStatus;
+  invitedBy?: string;
+  respondedAt?: string;
   user?: User;
   joinedAt: string;
 }

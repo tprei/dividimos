@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
 import { BillSummary } from "@/components/bill/bill-summary";
@@ -30,10 +30,12 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { saveDraftToSupabase } from "@/lib/supabase/save-draft";
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
+import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import type { BillType, User, UserProfile } from "@/types";
+import type { BillParticipantStatus, BillType, User, UserProfile } from "@/types";
 
 type Step = "type" | "info" | "participants" | "items" | "split" | "amount-split" | "payer" | "summary";
 
@@ -98,12 +100,66 @@ export default function NewBillPage() {
   }, [store, title, billType, merchantName, serviceFee, fixedFees, authUser]);
 
   const [syncing, setSyncing] = useState(false);
+  const [remoteBillId, setRemoteBillId] = useState<string | null>(null);
+  const [participantStatuses, setParticipantStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
+
+  const refreshParticipantStatuses = async () => {
+    if (!remoteBillId) return;
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("bill_participants")
+      .select("user_id, status")
+      .eq("bill_id", remoteBillId);
+    if (data) {
+      const map = new Map<string, BillParticipantStatus>();
+      for (const row of data) {
+        map.set(row.user_id, row.status as BillParticipantStatus);
+      }
+      setParticipantStatuses(map);
+    }
+  };
+
+  useEffect(() => {
+    if (!remoteBillId) return;
+    refreshParticipantStatuses();
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`bill-participants:${remoteBillId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "bill_participants", filter: `bill_id=eq.${remoteBillId}` },
+        () => { refreshParticipantStatuses(); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [remoteBillId]);
+
+  const allAccepted = store.participants
+    .filter((p) => p.id !== authUser?.id)
+    .every((p) => participantStatuses.get(p.id) === "accepted");
 
   const goNext = async () => {
     if (step === "info") {
       initBill();
     }
+    if (step === "participants" && authUser) {
+      const state = useBillStore.getState();
+      if (state.bill && state.participants.length >= 2) {
+        const result = await saveDraftToSupabase({
+          bill: state.bill,
+          participants: state.participants,
+          creatorId: authUser.id,
+          existingBillId: remoteBillId ?? undefined,
+        });
+        if ("billId" in result) {
+          setRemoteBillId(result.billId);
+        }
+      }
+    }
     if (step === "summary") {
+      if (!allAccepted && store.participants.length > 1) {
+        return;
+      }
       store.computeLedger();
       setSyncing(true);
       const state = useBillStore.getState();
@@ -115,6 +171,7 @@ export default function NewBillPage() {
           splits: state.splits,
           billSplits: state.billSplits,
           ledger: state.ledger,
+          existingBillId: remoteBillId ?? undefined,
         });
         if ("billId" in result) {
           router.push(`/app/bill/${result.billId}`);
@@ -122,7 +179,7 @@ export default function NewBillPage() {
         }
         console.error("Sync failed:", result.error);
       }
-      router.push(`/app/bill/${state.bill?.id || "new"}`);
+      router.push(`/app/bill/${remoteBillId || state.bill?.id || "new"}`);
       return;
     }
     const next = steps[stepIndex + 1];
@@ -551,6 +608,37 @@ export default function NewBillPage() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
+              {remoteBillId && store.participants.length > 1 && (
+                <div className="rounded-2xl border bg-card p-4">
+                  <h3 className="text-sm font-semibold mb-3">Participantes</h3>
+                  <div className="space-y-2">
+                    {store.participants.map((p) => {
+                      const isCreator = p.id === authUser?.id;
+                      const status = isCreator ? "accepted" : (participantStatuses.get(p.id) ?? "invited");
+                      return (
+                        <div key={p.id} className="flex items-center gap-3">
+                          <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
+                          <span className="flex-1 text-sm font-medium">{p.name}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            status === "accepted"
+                              ? "bg-success/15 text-success"
+                              : status === "declined"
+                                ? "bg-destructive/15 text-destructive"
+                                : "bg-warning/15 text-warning-foreground"
+                          }`}>
+                            {status === "accepted" ? "Aceito" : status === "declined" ? "Recusou" : "Aguardando"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!allAccepted && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      Aguardando todos os participantes aceitarem o convite para finalizar.
+                    </p>
+                  )}
+                </div>
+              )}
               {store.bill && (
                 <>
                   <BillSummary
@@ -596,13 +684,18 @@ export default function NewBillPage() {
                 const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
                 return gt <= 0 || Math.abs(gt - paid) > 1;
               }
+              if (step === "summary") {
+                return !allAccepted && store.participants.length > 1;
+              }
               return false;
             })()}
           >
             {step === "summary" ? (
               <>
                 <QrCode className="h-4 w-4" />
-                Gerar cobrancas Pix
+                {!allAccepted && store.participants.length > 1
+                  ? "Aguardando participantes..."
+                  : "Gerar cobrancas Pix"}
               </>
             ) : (
               <>

@@ -8,6 +8,7 @@ interface BillData {
   splits: ItemSplit[];
   billSplits: BillSplit[];
   ledger: LedgerEntry[];
+  existingBillId?: string;
 }
 
 export async function syncBillToSupabase(data: BillData): Promise<{ billId: string } | { error: string }> {
@@ -18,36 +19,69 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
   } = await supabase.auth.getUser();
   if (!user) return { error: "Nao autenticado" };
 
-  const { data: inserted, error: billError } = await supabase
-    .from("bills")
-    .insert({
-      creator_id: user.id,
-      title: data.bill.title,
-      merchant_name: data.bill.merchantName || null,
-      status: data.bill.status,
-      service_fee_percent: data.bill.serviceFeePercent,
-      fixed_fees: data.bill.fixedFees,
-      total_amount: data.bill.totalAmount,
-      bill_type: data.bill.billType,
-      total_amount_input: data.bill.totalAmountInput,
-    })
-    .select("id")
-    .single();
+  let billId: string;
 
-  if (billError || !inserted) {
-    console.error("Failed to insert bill:", billError);
-    return { error: billError?.message ?? "Erro ao salvar conta" };
-  }
+  if (data.existingBillId) {
+    billId = data.existingBillId;
 
-  const billId = inserted.id;
+    const { data: pending } = await supabase
+      .from("bill_participants")
+      .select("user_id, status")
+      .eq("bill_id", billId)
+      .neq("user_id", user.id)
+      .neq("status", "accepted");
 
-  const participantRows = data.participants.map((p) => ({
-    bill_id: billId,
-    user_id: p.id,
-  }));
-  if (participantRows.length > 0) {
-    const { error } = await supabase.from("bill_participants").insert(participantRows);
-    if (error) console.error("Failed to insert participants:", error);
+    if (pending && pending.length > 0) {
+      return { error: "Nem todos os participantes aceitaram o convite" };
+    }
+
+    const { error: updateError } = await supabase
+      .from("bills")
+      .update({
+        status: data.bill.status === "settled" ? "settled" : "active",
+        total_amount: data.bill.totalAmount,
+        total_amount_input: data.bill.totalAmountInput,
+        service_fee_percent: data.bill.serviceFeePercent,
+        fixed_fees: data.bill.fixedFees,
+      })
+      .eq("id", billId);
+
+    if (updateError) {
+      console.error("Failed to update bill:", updateError);
+      return { error: updateError.message };
+    }
+  } else {
+    const { data: inserted, error: billError } = await supabase
+      .from("bills")
+      .insert({
+        creator_id: user.id,
+        title: data.bill.title,
+        merchant_name: data.bill.merchantName || null,
+        status: data.bill.status === "settled" ? "settled" : "active",
+        service_fee_percent: data.bill.serviceFeePercent,
+        fixed_fees: data.bill.fixedFees,
+        total_amount: data.bill.totalAmount,
+        bill_type: data.bill.billType,
+        total_amount_input: data.bill.totalAmountInput,
+      })
+      .select("id")
+      .single();
+
+    if (billError || !inserted) {
+      console.error("Failed to insert bill:", billError);
+      return { error: billError?.message ?? "Erro ao salvar conta" };
+    }
+    billId = inserted.id;
+
+    const participantRows = data.participants.map((p) => ({
+      bill_id: billId,
+      user_id: p.id,
+      status: "accepted" as const,
+    }));
+    if (participantRows.length > 0) {
+      const { error } = await supabase.from("bill_participants").insert(participantRows);
+      if (error) console.error("Failed to insert participants:", error);
+    }
   }
 
   if (data.bill.billType === "itemized" && data.items.length > 0) {
