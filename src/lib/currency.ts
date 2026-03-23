@@ -22,3 +22,7 @@ export function parseBRLInput(input: string): number {
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : decimalToCents(parsed);
 }
+
+export function sanitizeDecimalInput(value: string): string {
+  return value.replace(/[^\d,]/g, "");
+}

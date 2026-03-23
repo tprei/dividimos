@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
+import { AddGroupParticipants } from "@/components/bill/add-group-participants";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { BillTypeSelector } from "@/components/bill/bill-type-selector";
@@ -74,6 +75,7 @@ export default function NewBillPage() {
   const [fixedFees, setFixedFees] = useState("");
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
+  const [showAddGroup, setShowAddGroup] = useState(false);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -452,11 +454,43 @@ export default function NewBillPage() {
                   />
                 )}
               </AnimatePresence>
-              {!showAddParticipant && (
-                <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
-                  <UserPlus className="h-4 w-4" />
-                  Adicionar por @handle
-                </Button>
+              <AnimatePresence>
+                {showAddGroup && (
+                  <AddGroupParticipants
+                    onAddMembers={(profiles) => {
+                      for (const profile of profiles) {
+                        const newUser: User = {
+                          id: profile.id,
+                          email: "",
+                          handle: profile.handle,
+                          name: profile.name,
+                          pixKeyType: "email",
+                          pixKeyHint: "",
+                          avatarUrl: profile.avatarUrl,
+                          onboarded: true,
+                          createdAt: new Date().toISOString(),
+                        };
+                        store.addParticipant(newUser);
+                      }
+                      setShowAddGroup(false);
+                    }}
+                    onCancel={() => setShowAddGroup(false)}
+                    excludeIds={store.participants.map((p) => p.id)}
+                    currentUserId={authUser?.id ?? ""}
+                  />
+                )}
+              </AnimatePresence>
+              {!showAddParticipant && !showAddGroup && (
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddParticipant(true)}>
+                    <UserPlus className="h-4 w-4" />
+                    Por @handle
+                  </Button>
+                  <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddGroup(true)}>
+                    <Users className="h-4 w-4" />
+                    De um grupo
+                  </Button>
+                </div>
               )}
             </motion.div>
           )}

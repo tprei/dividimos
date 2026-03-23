@@ -5,7 +5,7 @@ import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { decimalToCents } from "@/lib/currency";
+import { decimalToCents, sanitizeDecimalInput } from "@/lib/currency";
 
 interface AddItemFormProps {
   onAdd: (item: {
@@ -27,7 +27,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
     if (!description.trim() || !price) return;
 
     const qty = parseInt(quantity) || 1;
-    const unitPriceCents = decimalToCents(parseFloat(price.replace(",", ".")));
+    const unitPriceCents = decimalToCents(parseFloat(price.replace(",", ".")) || 0);
     const totalPriceCents = unitPriceCents * qty;
 
     onAdd({
@@ -91,7 +91,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
               inputMode="decimal"
               placeholder="0,00"
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              onChange={(e) => setPrice(sanitizeDecimalInput(e.target.value))}
             />
           </div>
         </div>

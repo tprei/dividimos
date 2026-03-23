@@ -5,7 +5,7 @@ import { Equal, Hash, Percent, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatBRL } from "@/lib/currency";
+import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
 import type { SplitType, User } from "@/types";
 
 interface SingleAmountStepProps {
@@ -39,7 +39,7 @@ export function SingleAmountStep({
   const [fixedAmounts, setFixedAmounts] = useState<Map<string, string>>(new Map());
 
   const totalCents = Math.round(
-    parseFloat(totalInput.replace(",", ".") || "0") * 100,
+    (parseFloat(totalInput.replace(",", ".")) || 0) * 100,
   );
 
   useEffect(() => {
@@ -110,7 +110,7 @@ export function SingleAmountStep({
           inputMode="decimal"
           placeholder="0,00"
           value={totalInput}
-          onChange={(e) => setTotalInput(e.target.value)}
+          onChange={(e) => setTotalInput(sanitizeDecimalInput(e.target.value))}
           className="text-2xl font-bold h-14 text-center"
           autoFocus
         />

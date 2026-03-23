@@ -833,7 +833,11 @@ export default function BillDetailPage({
         amountCents={pixModal.amount}
         mode={pixModal.mode}
         onMarkPaid={() => {
-          handleMarkPaid(pixModal.entryId);
+          if (pixModal.mode === "collect") {
+            handleConfirmPayment(pixModal.entryId);
+          } else {
+            handleMarkPaid(pixModal.entryId);
+          }
           setPixModal({ ...pixModal, open: false });
         }}
       />

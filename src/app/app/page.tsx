@@ -74,7 +74,7 @@ function getGreeting(): string {
 
 export default function AppHome() {
   const { user, loading: authLoading } = useAuth();
-  const { invites: billInvites } = useBillInvites();
+  const { invites: billInvites, loading: invitesLoading } = useBillInvites();
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [bills, setBills] = useState<RecentBill[]>([]);
   const [netBalance, setNetBalance] = useState(0);
@@ -286,7 +286,7 @@ export default function AppHome() {
         <QuickAction icon={Users} label="Grupos" href="/app/groups" />
       </motion.div>
 
-      {billInvites.length > 0 && (
+      {!invitesLoading && billInvites.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

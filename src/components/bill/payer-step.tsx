@@ -1,11 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Split, Users } from "lucide-react";
+import { Check, Hash, Percent, Split, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatBRL } from "@/lib/currency";
+import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
 import type { User } from "@/types";
 
 interface PayerStepProps {
@@ -28,7 +28,9 @@ export function PayerStep({
   onRemovePayerEntry,
 }: PayerStepProps) {
   const [multiMode, setMultiMode] = useState(payers.length > 1);
+  const [paymentInputMode, setPaymentInputMode] = useState<"fixed" | "percentage">("fixed");
   const [localAmounts, setLocalAmounts] = useState<Map<string, string>>(new Map());
+  const [localPercentages, setLocalPercentages] = useState<Map<string, string>>(new Map());
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -166,7 +168,68 @@ export function PayerStep({
             </Button>
           </div>
 
-          {participants.map((user) => {
+          <div className="flex rounded-xl bg-muted/50 p-1">
+            {([
+              { key: "fixed" as const, icon: Hash, label: "Valor fixo" },
+              { key: "percentage" as const, icon: Percent, label: "Porcentagem" },
+            ]).map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setPaymentInputMode(m.key)}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all ${
+                  paymentInputMode === m.key
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <m.icon className="h-3.5 w-3.5" />
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {paymentInputMode === "percentage" && participants.map((user) => {
+            const pct = parseFloat(localPercentages.get(user.id)?.replace(",", ".") || "0") || 0;
+            const amountForUser = Math.round((grandTotal * pct) / 100);
+            return (
+              <div
+                key={user.id}
+                className={`rounded-xl border p-3 transition-all ${
+                  pct > 0 ? "border-primary/30 bg-primary/5" : "bg-card"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      {user.name.charAt(0)}
+                    </span>
+                    <span className="text-sm font-medium">{user.name.split(" ")[0]}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold tabular-nums text-primary">{pct.toFixed(0)}%</span>
+                    <span className="ml-2 text-xs text-muted-foreground tabular-nums">{formatBRL(amountForUser)}</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={pct}
+                  onChange={(e) => {
+                    const next = new Map(localPercentages);
+                    next.set(user.id, e.target.value);
+                    setLocalPercentages(next);
+                    const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
+                    onSetPayerAmount(user.id, cents);
+                  }}
+                  className="mt-2 w-full"
+                />
+              </div>
+            );
+          })}
+
+          {paymentInputMode === "fixed" && participants.map((user) => {
             const localVal = localAmounts.get(user.id) || "";
             const storeAmount = payerMap.get(user.id) || 0;
             const hasValue = localVal !== "" || storeAmount > 0;
@@ -209,7 +272,7 @@ export function PayerStep({
                         placeholder="0,00"
                         className="h-8 w-24 text-right text-sm"
                         value={localVal}
-                        onChange={(e) => handleLocalChange(user.id, e.target.value)}
+                        onChange={(e) => handleLocalChange(user.id, sanitizeDecimalInput(e.target.value))}
                         onBlur={() => handleBlur(user.id)}
                       />
                     </div>
