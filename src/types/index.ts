@@ -6,6 +6,8 @@ export type BillStatus = "draft" | "active" | "partially_settled" | "settled";
 
 export type DebtStatus = "pending" | "paid_unconfirmed" | "settled";
 
+export type BillType = "single_amount" | "itemized";
+
 export interface User {
   id: string;
   phone: string;
@@ -16,15 +18,30 @@ export interface User {
   createdAt: string;
 }
 
+export interface BillPayer {
+  userId: string;
+  amountCents: number;
+}
+
+export interface BillSplit {
+  userId: string;
+  splitType: SplitType;
+  value: number;
+  computedAmountCents: number;
+}
+
 export interface Bill {
   id: string;
   creatorId: string;
+  billType: BillType;
   title: string;
   merchantName?: string;
   status: BillStatus;
   serviceFeePercent: number;
   fixedFees: number;
   totalAmount: number;
+  totalAmountInput: number;
+  payers: BillPayer[];
   createdAt: string;
   updatedAt: string;
 }
@@ -88,4 +105,5 @@ export interface BillWithDetails extends Bill {
   participants: (BillParticipant & { user: User })[];
   items: (BillItem & { splits: (ItemSplit & { user: User })[] })[];
   ledger: LedgerEntry[];
+  billSplits: BillSplit[];
 }

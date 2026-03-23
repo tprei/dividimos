@@ -4,7 +4,10 @@ import { create } from "zustand";
 import type {
   Bill,
   BillItem,
+  BillPayer,
+  BillSplit,
   BillStatus,
+  BillType,
   DebtStatus,
   ItemSplit,
   LedgerEntry,
@@ -18,12 +21,14 @@ interface BillState {
   participants: User[];
   items: BillItem[];
   splits: ItemSplit[];
+  billSplits: BillSplit[];
   ledger: LedgerEntry[];
 
   setCurrentUser: (user: User) => void;
 
-  createBill: (title: string, merchantName?: string) => void;
+  createBill: (title: string, billType: BillType, merchantName?: string) => void;
   updateBill: (updates: Partial<Bill>) => void;
+  setBillType: (billType: BillType) => void;
 
   addParticipant: (user: User) => void;
   removeParticipant: (userId: string) => void;
@@ -32,15 +37,20 @@ interface BillState {
   updateItem: (itemId: string, updates: Partial<BillItem>) => void;
   removeItem: (itemId: string) => void;
 
-  assignItem: (
-    itemId: string,
-    userId: string,
-    splitType: SplitType,
-    value: number,
-  ) => void;
+  assignItem: (itemId: string, userId: string, splitType: SplitType, value: number) => void;
   unassignItem: (itemId: string, userId: string) => void;
   splitItemEqually: (itemId: string, userIds: string[]) => void;
 
+  setPayerFull: (userId: string) => void;
+  splitPaymentEqually: (userIds: string[]) => void;
+  setPayerAmount: (userId: string, amountCents: number) => void;
+  removePayerEntry: (userId: string) => void;
+
+  splitBillEqually: (userIds: string[]) => void;
+  splitBillByPercentage: (assignments: { userId: string; percentage: number }[]) => void;
+  splitBillByFixed: (assignments: { userId: string; amountCents: number }[]) => void;
+
+  getGrandTotal: () => number;
   computeLedger: () => void;
   markPaid: (entryId: string) => void;
   confirmPayment: (entryId: string) => void;
@@ -60,20 +70,24 @@ export const useBillStore = create<BillState>((set, get) => ({
   participants: [],
   items: [],
   splits: [],
+  billSplits: [],
   ledger: [],
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
-  createBill: (title, merchantName) => {
+  createBill: (title, billType, merchantName) => {
     const bill: Bill = {
       id: generateId(),
       creatorId: get().currentUser?.id || "",
+      billType,
       title,
       merchantName,
       status: "draft",
-      serviceFeePercent: 10,
+      serviceFeePercent: billType === "itemized" ? 10 : 0,
       fixedFees: 0,
       totalAmount: 0,
+      totalAmountInput: 0,
+      payers: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -83,6 +97,7 @@ export const useBillStore = create<BillState>((set, get) => ({
       participants: currentUser ? [currentUser] : [],
       items: [],
       splits: [],
+      billSplits: [],
       ledger: [],
     });
   },
@@ -91,6 +106,23 @@ export const useBillStore = create<BillState>((set, get) => ({
     const bill = get().bill;
     if (!bill) return;
     set({ bill: { ...bill, ...updates, updatedAt: new Date().toISOString() } });
+  },
+
+  setBillType: (billType) => {
+    const bill = get().bill;
+    if (!bill) return;
+    if (billType === "single_amount") {
+      set({
+        bill: { ...bill, billType, serviceFeePercent: 0, fixedFees: 0, updatedAt: new Date().toISOString() },
+        items: [],
+        splits: [],
+      });
+    } else {
+      set({
+        bill: { ...bill, billType, serviceFeePercent: 10, totalAmountInput: 0, updatedAt: new Date().toISOString() },
+        billSplits: [],
+      });
+    }
   },
 
   addParticipant: (user) => {
@@ -103,6 +135,7 @@ export const useBillStore = create<BillState>((set, get) => ({
     set({
       participants: get().participants.filter((p) => p.id !== userId),
       splits: get().splits.filter((s) => s.userId !== userId),
+      billSplits: get().billSplits.filter((s) => s.userId !== userId),
     });
   },
 
@@ -195,55 +228,201 @@ export const useBillStore = create<BillState>((set, get) => ({
     set({ splits: [...existingOther, ...newSplits] });
   },
 
+  setPayerFull: (userId) => {
+    const grandTotal = get().getGrandTotal();
+    const bill = get().bill;
+    if (!bill) return;
+    set({
+      bill: {
+        ...bill,
+        payers: [{ userId, amountCents: grandTotal }],
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
+  splitPaymentEqually: (userIds) => {
+    const grandTotal = get().getGrandTotal();
+    const bill = get().bill;
+    if (!bill || userIds.length === 0) return;
+    const perPerson = Math.floor(grandTotal / userIds.length);
+    const remainder = grandTotal - perPerson * userIds.length;
+    const payers: BillPayer[] = userIds.map((userId, idx) => ({
+      userId,
+      amountCents: perPerson + (idx < remainder ? 1 : 0),
+    }));
+    set({
+      bill: { ...bill, payers, updatedAt: new Date().toISOString() },
+    });
+  },
+
+  setPayerAmount: (userId, amountCents) => {
+    const bill = get().bill;
+    if (!bill) return;
+    const existing = bill.payers.find((p) => p.userId === userId);
+    let payers: BillPayer[];
+    if (existing) {
+      payers = bill.payers.map((p) =>
+        p.userId === userId ? { ...p, amountCents } : p,
+      );
+    } else {
+      payers = [...bill.payers, { userId, amountCents }];
+    }
+    set({ bill: { ...bill, payers, updatedAt: new Date().toISOString() } });
+  },
+
+  removePayerEntry: (userId) => {
+    const bill = get().bill;
+    if (!bill) return;
+    set({
+      bill: {
+        ...bill,
+        payers: bill.payers.filter((p) => p.userId !== userId),
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  },
+
+  splitBillEqually: (userIds) => {
+    const bill = get().bill;
+    if (!bill || userIds.length === 0) return;
+    const total = bill.totalAmountInput;
+    const perPerson = Math.floor(total / userIds.length);
+    const remainder = total - perPerson * userIds.length;
+    const billSplits: BillSplit[] = userIds.map((userId, idx) => ({
+      userId,
+      splitType: "equal" as SplitType,
+      value: 100 / userIds.length,
+      computedAmountCents: perPerson + (idx < remainder ? 1 : 0),
+    }));
+    set({ billSplits });
+  },
+
+  splitBillByPercentage: (assignments) => {
+    const bill = get().bill;
+    if (!bill) return;
+    const total = bill.totalAmountInput;
+    const billSplits: BillSplit[] = assignments.map((a) => ({
+      userId: a.userId,
+      splitType: "percentage" as SplitType,
+      value: a.percentage,
+      computedAmountCents: Math.round((total * a.percentage) / 100),
+    }));
+    set({ billSplits });
+  },
+
+  splitBillByFixed: (assignments) => {
+    const billSplits: BillSplit[] = assignments.map((a) => ({
+      userId: a.userId,
+      splitType: "fixed" as SplitType,
+      value: a.amountCents,
+      computedAmountCents: a.amountCents,
+    }));
+    set({ billSplits });
+  },
+
+  getGrandTotal: () => {
+    const { bill, items } = get();
+    if (!bill) return 0;
+    if (bill.billType === "single_amount") {
+      return bill.totalAmountInput;
+    }
+    const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+    return (
+      itemsTotal +
+      Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
+      bill.fixedFees
+    );
+  },
+
   computeLedger: () => {
-    const { bill, participants, items, splits } = get();
+    const { bill, participants, items, splits, billSplits } = get();
     if (!bill || participants.length === 0) return;
 
-    const creatorId = bill.creatorId;
-    const participantTotals = new Map<string, number>();
+    const consumption = new Map<string, number>();
+    const payment = new Map<string, number>();
 
     for (const p of participants) {
-      participantTotals.set(p.id, 0);
+      consumption.set(p.id, 0);
+      payment.set(p.id, 0);
     }
 
-    for (const split of splits) {
-      const current = participantTotals.get(split.userId) || 0;
-      participantTotals.set(split.userId, current + split.computedAmountCents);
+    if (bill.billType === "single_amount") {
+      for (const bs of billSplits) {
+        consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
+      }
+    } else {
+      const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+      for (const split of splits) {
+        consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
+      }
+      if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
+        const totalServiceFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
+        for (const [userId, itemTotal] of consumption) {
+          const fee = Math.round((itemTotal / itemsTotal) * totalServiceFee);
+          consumption.set(userId, (consumption.get(userId) || 0) + fee);
+        }
+      }
+      if (bill.fixedFees > 0) {
+        const perPerson = Math.round(bill.fixedFees / participants.length);
+        for (const p of participants) {
+          consumption.set(p.id, (consumption.get(p.id) || 0) + perPerson);
+        }
+      }
     }
 
-    const itemsGrandTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+    const payers = bill.payers.length > 0
+      ? bill.payers
+      : [{ userId: bill.creatorId, amountCents: get().getGrandTotal() }];
+
+    for (const payer of payers) {
+      payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
+    }
+
+    const netBalance = new Map<string, number>();
+    for (const p of participants) {
+      const paid = payment.get(p.id) || 0;
+      const consumed = consumption.get(p.id) || 0;
+      netBalance.set(p.id, paid - consumed);
+    }
+
+    const debtors: { id: string; amount: number }[] = [];
+    const creditors: { id: string; amount: number }[] = [];
+
+    for (const [id, balance] of netBalance) {
+      if (balance < -1) debtors.push({ id, amount: Math.abs(balance) });
+      if (balance > 1) creditors.push({ id, amount: balance });
+    }
+
+    debtors.sort((a, b) => b.amount - a.amount);
+    creditors.sort((a, b) => b.amount - a.amount);
 
     const entries: LedgerEntry[] = [];
-    for (const [userId, itemTotal] of participantTotals) {
-      if (userId === creatorId) continue;
+    let di = 0;
+    let ci = 0;
 
-      let serviceFee = 0;
-      if (bill.serviceFeePercent > 0 && itemsGrandTotal > 0) {
-        serviceFee = Math.round(
-          (itemTotal / itemsGrandTotal) * (itemsGrandTotal * bill.serviceFeePercent) / 100,
-        );
-      }
-
-      const fixedFeeShare = Math.round(
-        bill.fixedFees / participants.length,
-      );
-
-      const totalOwed = itemTotal + serviceFee + fixedFeeShare;
-      if (totalOwed <= 0) continue;
+    while (di < debtors.length && ci < creditors.length) {
+      const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
+      if (transfer <= 0) break;
 
       entries.push({
         id: generateId(),
         billId: bill.id,
-        fromUserId: userId,
-        toUserId: creatorId,
-        amountCents: totalOwed,
+        fromUserId: debtors[di].id,
+        toUserId: creditors[ci].id,
+        amountCents: transfer,
         status: "pending",
         createdAt: new Date().toISOString(),
       });
+
+      debtors[di].amount -= transfer;
+      creditors[ci].amount -= transfer;
+
+      if (debtors[di].amount <= 1) di++;
+      if (creditors[ci].amount <= 1) ci++;
     }
 
-    const newStatus: BillStatus =
-      entries.length === 0 ? "settled" : "active";
+    const newStatus: BillStatus = entries.length === 0 ? "settled" : "active";
 
     set({
       ledger: entries,
@@ -273,8 +452,13 @@ export const useBillStore = create<BillState>((set, get) => ({
   },
 
   getParticipantTotal: (userId) => {
-    const { bill, items, splits, participants } = get();
+    const { bill, items, splits, billSplits, participants } = get();
     if (!bill) return 0;
+
+    if (bill.billType === "single_amount") {
+      const bs = billSplits.find((s) => s.userId === userId);
+      return bs?.computedAmountCents || 0;
+    }
 
     const itemTotal = splits
       .filter((s) => s.userId === userId)
@@ -303,6 +487,7 @@ export const useBillStore = create<BillState>((set, get) => ({
       participants: [],
       items: [],
       splits: [],
+      billSplits: [],
       ledger: [],
     }),
 }));
@@ -312,7 +497,7 @@ function recalcTotal(
   set: (state: Partial<BillState>) => void,
 ) {
   const { bill, items } = get();
-  if (!bill) return;
+  if (!bill || bill.billType === "single_amount") return;
   const totalAmount = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
   set({ bill: { ...bill, totalAmount, updatedAt: new Date().toISOString() } });
 }

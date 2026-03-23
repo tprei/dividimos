@@ -16,12 +16,17 @@ import Link from "next/link";
 import { use, useState } from "react";
 import type { ReactNode } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
+import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PulsingDot } from "@/components/shared/pulsing-dot";
 import { PixQrModal } from "@/components/settlement/pix-qr-modal";
+import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
+import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
+import { simplifyDebts } from "@/lib/simplify";
 import { useBillStore } from "@/stores/bill-store";
 import type { BillStatus, DebtStatus } from "@/types";
 
@@ -40,6 +45,8 @@ export default function BillDetailPage({
   const { id } = use(params);
   const store = useBillStore();
   const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
+  const [simplifyEnabled, setSimplifyEnabled] = useState(false);
+  const [showSimplifySteps, setShowSimplifySteps] = useState(false);
   const [pixModal, setPixModal] = useState<{
     open: boolean;
     entryId: string;
@@ -85,9 +92,18 @@ export default function BillDetailPage({
 
   const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
   const grandTotal =
-    itemsTotal +
-    Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
-    bill.fixedFees;
+    bill.billType === "single_amount"
+      ? bill.totalAmountInput
+      : itemsTotal +
+        Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
+        bill.fixedFees;
+
+  const simplificationResult = ledger.length > 1
+    ? simplifyDebts(
+        ledger.map((e) => ({ fromUserId: e.fromUserId, toUserId: e.toUserId, amountCents: e.amountCents })),
+        participants,
+      )
+    : null;
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -242,8 +258,26 @@ export default function BillDetailPage({
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
-          className="mt-6"
+          className="mt-5"
         >
+          {simplificationResult && simplificationResult.originalCount > simplificationResult.simplifiedCount && (
+            <div className="mb-4">
+              <SimplificationToggle
+                originalCount={simplificationResult.originalCount}
+                simplifiedCount={simplificationResult.simplifiedCount}
+                enabled={simplifyEnabled}
+                onToggle={setSimplifyEnabled}
+                onViewSteps={() => setShowSimplifySteps(true)}
+              />
+            </div>
+          )}
+
+          {bill.payers.length > 0 && (
+            <div className="mb-4">
+              <PayerSummaryCard payers={bill.payers} participants={participants} />
+            </div>
+          )}
+
           <h2 className="mb-3 text-sm font-semibold">Cobrancas</h2>
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
@@ -421,6 +455,22 @@ export default function BillDetailPage({
           setPixModal({ ...pixModal, open: false });
         }}
       />
+
+      {simplificationResult && (
+        <Sheet open={showSimplifySteps} onOpenChange={setShowSimplifySteps}>
+          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-3xl">
+            <SheetHeader>
+              <SheetTitle>Simplificacao passo a passo</SheetTitle>
+            </SheetHeader>
+            <div className="mt-4 pb-8">
+              <SimplificationViewer
+                result={simplificationResult}
+                participants={participants}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
     </div>
   );
 }

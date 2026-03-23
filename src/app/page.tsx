@@ -48,7 +48,7 @@ export default function LandingPage() {
   const loadDemo = () => {
     const s = useBillStore.getState();
     s.setCurrentUser(DEMO_USERS[0]);
-    s.createBill("Churrascaria Fogo de Chao", "Fogo de Chao - Jardins");
+    s.createBill("Churrascaria Fogo de Chao", "itemized", "Fogo de Chao - Jardins");
     s.updateBill({ serviceFeePercent: 10, fixedFees: 0 });
 
     for (const user of DEMO_USERS.slice(1)) {
