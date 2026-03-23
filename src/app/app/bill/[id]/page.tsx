@@ -64,6 +64,13 @@ export default function BillDetailPage({
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
 
+  const simplificationResult = useMemo(() => {
+    if (!bill || participants.length < 3) return null;
+    const rawEdges = computeRawEdges(bill, participants, splits, billSplits, items);
+    if (rawEdges.length < 2) return null;
+    return simplifyDebts(rawEdges, participants);
+  }, [bill, participants, splits, billSplits, items]);
+
   if (!bill) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6">
@@ -98,13 +105,6 @@ export default function BillDetailPage({
       : itemsTotal +
         Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
         bill.fixedFees;
-
-  const simplificationResult = useMemo(() => {
-    if (!bill || participants.length < 3) return null;
-    const rawEdges = computeRawEdges(bill, participants, splits, billSplits, items);
-    if (rawEdges.length < 2) return null;
-    return simplifyDebts(rawEdges, participants);
-  }, [bill, participants, splits, billSplits, items]);
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
