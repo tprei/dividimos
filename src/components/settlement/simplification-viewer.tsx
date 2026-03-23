@@ -169,28 +169,37 @@ export function SimplificationViewer({
                     </div>
                   </div>
 
-                  {step.addedEdge && (
-                    <div className="flex flex-col items-center gap-2">
-                      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                        Depois
-                      </p>
-                      <span className="inline-flex items-center gap-2 rounded-full bg-success/10 px-4 py-2 text-sm">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/20 text-[10px] font-bold text-success">
-                          {getUserName(step.addedEdge.fromUserId, participants).charAt(0)}
+                  {step.addedEdge && (() => {
+                    const consolidated = step.edges.find(
+                      (e) =>
+                        e.fromUserId === step.addedEdge!.fromUserId &&
+                        e.toUserId === step.addedEdge!.toUserId,
+                    );
+                    const displayAmount = consolidated?.amountCents ?? step.addedEdge.amountCents;
+
+                    return (
+                      <div className="flex flex-col items-center gap-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Depois
+                        </p>
+                        <span className="inline-flex items-center gap-2 rounded-full bg-success/10 px-4 py-2 text-sm">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/20 text-[10px] font-bold text-success">
+                            {getUserName(step.addedEdge.fromUserId, participants).charAt(0)}
+                          </span>
+                          <span className="font-semibold text-success">
+                            {getUserName(step.addedEdge.fromUserId, participants)}
+                          </span>
+                          <span className="text-success/60">→</span>
+                          <span className="font-semibold text-success">
+                            {getUserName(step.addedEdge.toUserId, participants)}
+                          </span>
+                          <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-bold text-success tabular-nums">
+                            {formatBRL(displayAmount)}
+                          </span>
                         </span>
-                        <span className="font-semibold text-success">
-                          {getUserName(step.addedEdge.fromUserId, participants)}
-                        </span>
-                        <span className="text-success/60">→</span>
-                        <span className="font-semibold text-success">
-                          {getUserName(step.addedEdge.toUserId, participants)}
-                        </span>
-                        <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-bold text-success tabular-nums">
-                          {formatBRL(step.addedEdge.amountCents)}
-                        </span>
-                      </span>
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
 
                   {!step.addedEdge && (
                     <div className="flex flex-col items-center gap-2">
