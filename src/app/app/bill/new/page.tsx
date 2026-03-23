@@ -160,9 +160,54 @@ function NewBillPageContent() {
   useEffect(() => {
     const groupIdParam = searchParams.get("groupId");
     if (!groupIdParam || selectedGroupId || step !== "participants" || !authUser) return;
-    // Pre-populate selectedGroupId/Name when redirected from group page
-    setSelectedGroupId(groupIdParam);
-  }, [step, searchParams, selectedGroupId, authUser]);
+
+    (async () => {
+      const supabase = createClient();
+      const { data: group } = await supabase
+        .from("groups")
+        .select("name, creator_id")
+        .eq("id", groupIdParam)
+        .single();
+      if (!group) return;
+
+      const { data: acceptedMembers } = await supabase
+        .from("group_members")
+        .select("user_id")
+        .eq("group_id", groupIdParam)
+        .eq("status", "accepted");
+
+      const allMemberIds = [...new Set([
+        ...(acceptedMembers ?? []).map((m) => m.user_id),
+        group.creator_id,
+      ])];
+      const otherIds = allMemberIds.filter((id) => id !== authUser.id);
+
+      const { data: profiles } = await supabase
+        .from("user_profiles")
+        .select("id, handle, name, avatar_url")
+        .in("id", otherIds);
+
+      setSelectedGroupId(groupIdParam);
+      setSelectedGroupName(group.name);
+
+      for (const p of [...store.participants]) {
+        if (p.id !== authUser.id) store.removeParticipant(p.id);
+      }
+      for (const profile of profiles ?? []) {
+        store.addParticipant({
+          id: profile.id,
+          email: "",
+          handle: profile.handle ?? "",
+          name: profile.name,
+          pixKeyType: "email",
+          pixKeyHint: "",
+          avatarUrl: profile.avatar_url ?? undefined,
+          onboarded: true,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    })();
+  }, [step, searchParams, selectedGroupId, authUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goNext = async () => {
     if (step === "info") {
