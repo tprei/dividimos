@@ -203,7 +203,7 @@ export function SingleAmountStep({
                         }));
                         onSplitByPercentage(assignments);
                       }}
-                      className="mt-2 w-full h-2 rounded-full appearance-none bg-muted cursor-pointer accent-primary [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-md"
+                      className="mt-2 w-full"
                     />
                     {showFillRemaining && (
                       <button

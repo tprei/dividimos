@@ -1,11 +1,12 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, useState } from "react";
 import { DebtGraph } from "./debt-graph";
 import { Button } from "@/components/ui/button";
 import { springs } from "@/lib/animations";
+import { formatBRL } from "@/lib/currency";
 import type { SimplificationResult } from "@/lib/simplify";
 import type { User } from "@/types";
 
@@ -15,6 +16,10 @@ interface SimplificationViewerProps {
 }
 
 const SWIPE_THRESHOLD = 50;
+
+function getUserName(userId: string, participants: User[]): string {
+  return participants.find((p) => p.id === userId)?.name.split(" ")[0] || "?";
+}
 
 export function SimplificationViewer({
   result,
@@ -27,6 +32,7 @@ export function SimplificationViewer({
   const totalSteps = result.steps.length;
   const step = result.steps[currentStep];
   const isFinal = currentStep === totalSteps - 1;
+  const isFirst = currentStep === 0;
 
   function goTo(index: number) {
     if (index < 0 || index >= totalSteps) return;
@@ -52,6 +58,15 @@ export function SimplificationViewer({
     center: { opacity: 1, x: 0 },
     exit: (dir: number) => ({ opacity: 0, x: dir * -40 }),
   };
+
+  const fadingEdges = step.removedEdges?.map((e) => ({
+    from: e.fromUserId,
+    to: e.toUserId,
+  })) || [];
+
+  const highlightEdge = step.addedEdge
+    ? { from: step.addedEdge.fromUserId, to: step.addedEdge.toUserId }
+    : undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -103,40 +118,52 @@ export function SimplificationViewer({
             <DebtGraph
               participants={participants}
               edges={step.edges}
-              highlightEdge={
-                currentStep > 0
-                  ? {
-                      from: result.steps[currentStep].edges.at(-1)?.fromUserId ?? "",
-                      to: result.steps[currentStep].edges.at(-1)?.toUserId ?? "",
-                    }
-                  : undefined
-              }
-              fadingEdges={[]}
+              highlightEdge={highlightEdge}
+              fadingEdges={fadingEdges}
             />
 
-            <p className="text-center text-sm font-medium text-foreground px-4">
-              {step.description}
-            </p>
+            <div className="w-full rounded-xl bg-muted/50 p-3">
+              <p className="text-center text-sm font-medium">
+                {step.description}
+              </p>
+              {!isFirst && !isFinal && step.removedEdges && step.removedEdges.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  {step.removedEdges.map((e, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-destructive line-through">
+                      {getUserName(e.fromUserId, participants)} → {getUserName(e.toUserId, participants)}
+                    </span>
+                  ))}
+                  {step.addedEdge && (
+                    <>
+                      <ArrowRight className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-success font-medium">
+                        {getUserName(step.addedEdge.fromUserId, participants)} → {getUserName(step.addedEdge.toUserId, participants)} ({formatBRL(step.addedEdge.amountCents)})
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
 
             {isFinal && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={springs.soft}
-                className="w-full rounded-2xl border bg-card px-4 py-3 flex items-center justify-between"
+                className="w-full rounded-2xl border-2 border-dashed border-success/30 bg-success/5 px-4 py-4 text-center"
               >
-                <span className="text-sm text-muted-foreground">
-                  Transacoes originais
-                </span>
-                <div className="flex items-center gap-2 text-sm font-semibold">
+                <p className="text-sm font-semibold">Resultado</p>
+                <div className="mt-1 flex items-center justify-center gap-2 text-lg font-bold">
                   <span className="tabular-nums text-muted-foreground line-through">
                     {result.originalCount}
                   </span>
-                  <span className="text-muted-foreground">→</span>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
                   <span className="tabular-nums text-success">
                     {result.simplifiedCount}
                   </span>
-                  <span className="text-muted-foreground">transacoes</span>
+                  <span className="text-sm font-normal text-muted-foreground">
+                    transacoes
+                  </span>
                 </div>
               </motion.div>
             )}

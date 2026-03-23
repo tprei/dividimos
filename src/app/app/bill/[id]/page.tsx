@@ -280,10 +280,28 @@ export default function BillDetailPage({
             </div>
           )}
 
-          <h2 className="mb-3 text-sm font-semibold">Cobrancas</h2>
+          <h2 className="mb-3 text-sm font-semibold">
+            Cobrancas
+            {simplifyEnabled && simplificationResult && (
+              <span className="ml-2 text-xs font-normal text-primary">(simplificado)</span>
+            )}
+          </h2>
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {ledger.map((entry, idx) => {
+              {(simplifyEnabled && simplificationResult
+                ? simplificationResult.simplifiedEdges.map((edge, idx) => ({
+                    id: `simplified_${idx}`,
+                    billId: bill.id,
+                    fromUserId: edge.fromUserId,
+                    toUserId: edge.toUserId,
+                    amountCents: edge.amountCents,
+                    status: "pending" as DebtStatus,
+                    paidAt: undefined,
+                    confirmedAt: undefined,
+                    createdAt: new Date().toISOString(),
+                  }))
+                : ledger
+              ).map((entry, idx) => {
                 const payer = participants.find((p) => p.id === entry.fromUserId);
                 const receiver = participants.find(
                   (p) => p.id === entry.toUserId,
