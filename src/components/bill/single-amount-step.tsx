@@ -46,7 +46,8 @@ export function SingleAmountStep({
     if (totalCents !== totalAmountInput && totalCents > 0) {
       onSetTotal(totalCents);
     }
-  }, [totalCents, totalAmountInput, onSetTotal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalCents]);
 
   useEffect(() => {
     if (totalCents <= 0 || participants.length === 0) return;
@@ -54,7 +55,8 @@ export function SingleAmountStep({
     if (method === "equal") {
       onSplitEqually(participants.map((p) => p.id));
     }
-  }, [method, totalCents, participants, onSplitEqually]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [method, totalCents, participants.length]);
 
   const perPerson = participants.length > 0 ? totalCents / participants.length : 0;
 

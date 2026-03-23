@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
@@ -27,7 +27,9 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
+import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
 import { useBillStore } from "@/stores/bill-store";
+import { useAuth } from "@/hooks/use-auth";
 import type { BillStatus, DebtStatus } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
@@ -45,6 +47,7 @@ export default function BillDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const store = useBillStore();
+  const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
   const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [showSimplifySteps, setShowSimplifySteps] = useState(false);
@@ -63,6 +66,29 @@ export default function BillDetailPage({
   });
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
+  const [loadingFromDb, setLoadingFromDb] = useState(false);
+
+  useEffect(() => {
+    if (bill?.id === id || id === "demo") return;
+    setLoadingFromDb(true);
+    loadBillFromSupabase(id).then((data) => {
+      if (data) {
+        store.setCurrentUser(data.participants[0] ?? null as unknown as import("@/types").User);
+        if (data.bill) {
+          const s = useBillStore.getState();
+          useBillStore.setState({
+            bill: data.bill,
+            participants: data.participants,
+            items: data.items,
+            splits: data.splits,
+            billSplits: data.billSplits,
+            ledger: data.ledger,
+          });
+        }
+      }
+      setLoadingFromDb(false);
+    });
+  }, [id]);
 
   const simplificationResult = useMemo(() => {
     if (!bill || participants.length < 3) return null;
@@ -382,10 +408,16 @@ export default function BillDetailPage({
                   }))
                 : ledger
               ).map((entry, idx) => {
-                const payer = participants.find((p) => p.id === entry.fromUserId);
-                const receiver = participants.find(
-                  (p) => p.id === entry.toUserId,
-                );
+                const debtor = participants.find((p) => p.id === entry.fromUserId);
+                const creditor = participants.find((p) => p.id === entry.toUserId);
+                const isDebtor = currentUser?.id === entry.fromUserId;
+                const isCreditor = currentUser?.id === entry.toUserId;
+
+                const entryLabel = isDebtor
+                  ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
+                  : isCreditor
+                    ? `${debtor?.name.split(" ")[0] || "?"} te deve`
+                    : `${debtor?.name.split(" ")[0] || "?"} → ${creditor?.name.split(" ")[0] || "?"}`;
 
                 return (
                   <motion.div
@@ -400,13 +432,11 @@ export default function BillDetailPage({
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
-                            {payer?.name.charAt(0) || "?"}
+                            {isDebtor ? (creditor?.name.charAt(0) || "?") : (debtor?.name.charAt(0) || "?")}
                           </div>
                           <div>
                             <p className="text-sm font-medium">
-                              {payer?.name.split(" ")[0] || "?"}{" "}
-                              <span className="text-muted-foreground">→</span>{" "}
-                              {receiver?.name.split(" ")[0] || "?"}
+                              {entryLabel}
                             </p>
                             <motion.span
                               key={entry.status}
@@ -457,9 +487,37 @@ export default function BillDetailPage({
                       </div>
 
                       <AnimatePresence mode="wait">
-                        {entry.status === "pending" && (
+                        {entry.status === "pending" && isDebtor && (
                           <motion.div
-                            key="pending-actions"
+                            key="debtor-actions"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="mt-3"
+                          >
+                            <Button
+                              size="sm"
+                              className="w-full gap-1.5 bg-success text-success-foreground hover:bg-success/90"
+                              onClick={() =>
+                                setPixModal({
+                                  open: true,
+                                  entryId: entry.id,
+                                  recipientUserId: creditor?.id || "",
+                                  name: creditor?.name || "",
+                                  amount: entry.amountCents,
+                                })
+                              }
+                            >
+                              <QrCode className="h-4 w-4" />
+                              Pagar {formatBRL(entry.amountCents)} para {creditor?.name.split(" ")[0]}
+                            </Button>
+                          </motion.div>
+                        )}
+
+                        {entry.status === "pending" && isCreditor && (
+                          <motion.div
+                            key="creditor-actions"
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: "auto" }}
                             exit={{ opacity: 0, height: 0 }}
@@ -468,19 +526,20 @@ export default function BillDetailPage({
                           >
                             <Button
                               size="sm"
-                              className="flex-1 gap-1.5 bg-success text-success-foreground hover:bg-success/90"
+                              variant="outline"
+                              className="flex-1 gap-1.5"
                               onClick={() =>
                                 setPixModal({
                                   open: true,
                                   entryId: entry.id,
-                                  recipientUserId: receiver?.id || "",
-                                  name: receiver?.name || "",
+                                  recipientUserId: currentUser?.id || "",
+                                  name: currentUser?.name || "",
                                   amount: entry.amountCents,
                                 })
                               }
                             >
                               <QrCode className="h-4 w-4" />
-                              Pagar via Pix
+                              Gerar cobranca
                             </Button>
                             <Button
                               size="sm"
@@ -493,7 +552,7 @@ export default function BillDetailPage({
                           </motion.div>
                         )}
 
-                        {entry.status === "paid_unconfirmed" && (
+                        {entry.status === "paid_unconfirmed" && isCreditor && (
                           <motion.div
                             key="confirm-actions"
                             initial={{ opacity: 0, scale: 0.98 }}
@@ -509,8 +568,22 @@ export default function BillDetailPage({
                               onClick={() => store.confirmPayment(entry.id)}
                             >
                               <Check className="h-4 w-4" />
-                              Confirmar recebimento
+                              Confirmar recebimento de {formatBRL(entry.amountCents)}
                             </Button>
+                          </motion.div>
+                        )}
+
+                        {entry.status === "paid_unconfirmed" && isDebtor && (
+                          <motion.div
+                            key="waiting-info"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="mt-3 flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2"
+                          >
+                            <PulsingDot className="bg-primary" />
+                            <span className="text-xs text-primary">
+                              Aguardando {creditor?.name.split(" ")[0]} confirmar
+                            </span>
                           </motion.div>
                         )}
 

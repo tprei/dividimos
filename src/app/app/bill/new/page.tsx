@@ -30,6 +30,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import type { BillType, User, UserProfile } from "@/types";
@@ -96,13 +97,32 @@ export default function NewBillPage() {
     }
   }, [store, title, billType, merchantName, serviceFee, fixedFees, authUser]);
 
-  const goNext = () => {
+  const [syncing, setSyncing] = useState(false);
+
+  const goNext = async () => {
     if (step === "info") {
       initBill();
     }
     if (step === "summary") {
       store.computeLedger();
-      router.push(`/app/bill/${store.bill?.id || "demo"}`);
+      setSyncing(true);
+      const state = useBillStore.getState();
+      if (state.bill) {
+        const result = await syncBillToSupabase({
+          bill: state.bill,
+          participants: state.participants,
+          items: state.items,
+          splits: state.splits,
+          billSplits: state.billSplits,
+          ledger: state.ledger,
+        });
+        if ("billId" in result) {
+          router.push(`/app/bill/${result.billId}`);
+          return;
+        }
+        console.error("Sync failed:", result.error);
+      }
+      router.push(`/app/bill/${state.bill?.id || "new"}`);
       return;
     }
     const next = steps[stepIndex + 1];

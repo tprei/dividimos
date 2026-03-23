@@ -2,12 +2,15 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { cookies } from "next/headers";
 
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.startsWith("55") && digits.length >= 12) return `+${digits}`;
   return `+55${digits}`;
+}
+
+function phoneToTestEmail(phone: string): string {
+  return `${phone.replace("+", "")}@phone.pixwise.local`;
 }
 
 export async function sendTestOtp(phone: string) {
@@ -40,89 +43,51 @@ export async function verifyPhoneOtp(phone: string, code: string) {
     }
 
     const admin = createAdminClient();
+    const supabase = await createClient();
+    const testEmail = phoneToTestEmail(normalized);
 
-    const { data: existingUsers } = await admin.auth.admin.listUsers();
-    const existingUser = existingUsers?.users.find((u) => u.phone === normalized);
+    const { data: existing } = await admin.auth.admin.listUsers();
+    const existingUser = existing?.users.find(
+      (u) => u.phone === normalized || u.email === testEmail,
+    );
+
+    let userId: string;
 
     if (existingUser) {
-      const supabase = await createClient();
-      const fakeEmail = `${normalized.replace("+", "")}@phone.pixwise.local`;
-
-      const { error: signInError } = await admin.auth.admin.updateUserById(
-        existingUser.id,
-        { email: fakeEmail, email_confirm: true },
-      );
-
-      if (signInError) {
-        return { error: "Erro ao autenticar" };
-      }
-
-      const { data: linkData, error: linkError } =
-        await admin.auth.admin.generateLink({
-          type: "magiclink",
-          email: fakeEmail,
+      userId = existingUser.id;
+    } else {
+      const { data: created, error: createError } =
+        await admin.auth.admin.createUser({
+          phone: normalized,
+          phone_confirm: true,
+          email: testEmail,
+          email_confirm: true,
+          user_metadata: { full_name: "", phone: normalized },
         });
 
-      if (linkError || !linkData) {
-        return { error: "Erro ao gerar sessao" };
+      if (createError || !created.user) {
+        console.error("createUser failed:", createError);
+        return { error: `Erro ao criar conta: ${createError?.message}` };
       }
-
-      const url = new URL(linkData.properties.action_link);
-      const tokenHash = url.searchParams.get("token_hash");
-      if (!tokenHash) {
-        return { error: "Erro ao gerar sessao" };
-      }
-
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        token_hash: tokenHash,
-        type: "magiclink",
-      });
-
-      if (verifyError) {
-        return { error: "Erro ao verificar sessao" };
-      }
-
-      const { data: profile } = await supabase
-        .from("users")
-        .select("onboarded")
-        .eq("id", existingUser.id)
-        .single();
-
-      return {
-        success: true,
-        redirect: profile?.onboarded ? "/app" : "/auth/onboard",
-      };
+      userId = created.user.id;
     }
 
-    const fakeEmail = `${normalized.replace("+", "")}@phone.pixwise.local`;
-    const { data: newUser, error: createError } =
-      await admin.auth.admin.createUser({
-        phone: normalized,
-        phone_confirm: true,
-        email: fakeEmail,
-        email_confirm: true,
-        user_metadata: { full_name: "", phone: normalized },
-      });
-
-    if (createError) {
-      return { error: "Erro ao criar conta" };
-    }
-
-    const supabase = await createClient();
     const { data: linkData, error: linkError } =
       await admin.auth.admin.generateLink({
         type: "magiclink",
-        email: fakeEmail,
+        email: testEmail,
       });
 
     if (linkError || !linkData) {
-      return { error: "Erro ao gerar sessao" };
+      console.error("generateLink failed:", linkError);
+      return { error: `Erro ao gerar sessao: ${linkError?.message}` };
     }
 
-    const url = new URL(linkData.properties.action_link);
-    const tokenHash = url.searchParams.get("token_hash");
+    const linkUrl = new URL(linkData.properties.action_link);
+    const tokenHash = linkUrl.searchParams.get("token_hash")
+      ?? linkUrl.searchParams.get("token");
     if (!tokenHash) {
-      return { error: "Erro ao gerar sessao" };
+      return { error: "Erro ao gerar sessao: token ausente" };
     }
 
     const { error: verifyError } = await supabase.auth.verifyOtp({
@@ -131,10 +96,20 @@ export async function verifyPhoneOtp(phone: string, code: string) {
     });
 
     if (verifyError) {
-      return { error: "Erro ao verificar sessao" };
+      console.error("verifyOtp failed:", verifyError);
+      return { error: `Erro ao verificar sessao: ${verifyError.message}` };
     }
 
-    return { success: true, redirect: "/auth/onboard" };
+    const { data: profile } = await supabase
+      .from("users")
+      .select("onboarded")
+      .eq("id", userId)
+      .single();
+
+    return {
+      success: true,
+      redirect: profile?.onboarded ? "/app" : "/auth/onboard",
+    };
   }
 
   const supabase = await createClient();

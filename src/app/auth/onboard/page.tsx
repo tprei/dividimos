@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
 import { completeOnboarding } from "./actions";
 
-type OnboardStep = "handle" | "pix";
+type OnboardStep = "profile" | "pix";
 
 const HANDLE_REGEX = /^[a-z0-9]([a-z0-9._]{0,18}[a-z0-9])?$/;
 
@@ -20,7 +20,19 @@ function isValidHandle(value: string): boolean {
   return HANDLE_REGEX.test(value);
 }
 
-function formatPhone(digits: string): string {
+function nameToHandle(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, ".")
+    .replace(/[^a-z0-9._]/g, "")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^[._]+|[._]+$/g, "")
+    .slice(0, 20);
+}
+
+function formatPhoneInput(digits: string): string {
   if (digits.length <= 2) return digits;
   if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
@@ -54,26 +66,56 @@ const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
 
 export default function OnboardPage() {
   const supabase = useMemo(() => createClient(), []);
-  const [step, setStep] = useState<OnboardStep>("handle");
+  const [step, setStep] = useState<OnboardStep>("profile");
+  const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
+  const [handleTouched, setHandleTouched] = useState(false);
   const [handleError, setHandleError] = useState("");
+  const [authMethod, setAuthMethod] = useState<"google" | "phone">("google");
   const [userEmail, setUserEmail] = useState("");
+  const [userPhone, setUserPhone] = useState("");
   const [pixKeyType, setPixKeyType] = useState<PixKeyType>("email");
   const [customPixInput, setCustomPixInput] = useState("");
   const [pixError, setPixError] = useState("");
   const [isPending, startTransition] = useTransition();
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
+
       const email = user.email ?? "";
-      setUserEmail(email);
+      const phone = user.phone ?? "";
+      const fullName = user.user_metadata?.full_name ?? "";
+      const isPhoneAuth = email.endsWith("@phone.pixwise.local") || (!email && phone);
+
+      setAuthMethod(isPhoneAuth ? "phone" : "google");
+
+      if (isPhoneAuth) {
+        setUserPhone(phone);
+        setPixKeyType("phone");
+        if (phone) {
+          const digits = phone.replace(/\D/g, "").replace(/^55/, "");
+          setCustomPixInput(formatPhoneInput(digits));
+        }
+      } else {
+        setUserEmail(email);
+        setPixKeyType("email");
+      }
+
+      if (fullName) {
+        setName(fullName);
+        setHandle(nameToHandle(fullName));
+      }
 
       supabase
         .from("users")
-        .select("handle")
+        .select("handle, name")
         .eq("id", user.id)
         .single()
         .then(({ data }) => {
+          if (data?.name && !fullName) {
+            setName(data.name);
+          }
           if (data?.handle) {
             setHandle(data.handle);
           }
@@ -81,9 +123,17 @@ export default function OnboardPage() {
     });
   }, [supabase]);
 
+  const handleNameChange = (value: string) => {
+    setName(value);
+    if (!handleTouched) {
+      setHandle(nameToHandle(value));
+    }
+  };
+
   const handleHandleChange = (value: string) => {
     const cleaned = value.toLowerCase().replace(/[^a-z0-9._]/g, "");
     setHandle(cleaned);
+    setHandleTouched(true);
     setHandleError("");
   };
 
@@ -91,15 +141,22 @@ export default function OnboardPage() {
     setPixKeyType(type);
     setCustomPixInput("");
     setPixError("");
+
+    if (type === "email" && userEmail) {
+      setCustomPixInput("");
+    }
+    if (type === "phone" && userPhone) {
+      const digits = userPhone.replace(/\D/g, "").replace(/^55/, "");
+      setCustomPixInput(formatPhoneInput(digits));
+    }
   };
 
-  const pixKeyDisplay = pixKeyType === "email" && !customPixInput
-    ? userEmail
-    : customPixInput;
+  const pixKeyDisplay =
+    pixKeyType === "email" && !customPixInput ? userEmail : customPixInput;
 
-  const handlePhoneInput = (value: string) => {
+  const handlePhonePixInput = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 11);
-    setCustomPixInput(formatPhone(digits));
+    setCustomPixInput(formatPhoneInput(digits));
     setPixError("");
   };
 
@@ -110,10 +167,7 @@ export default function OnboardPage() {
   };
 
   const handleRandomInput = (value: string) => {
-    const cleaned = value
-      .replace(/[^0-9a-fA-F-]/g, "")
-      .slice(0, 36)
-      .toLowerCase();
+    const cleaned = value.replace(/[^0-9a-fA-F-]/g, "").slice(0, 36).toLowerCase();
     setCustomPixInput(cleaned);
     setPixError("");
   };
@@ -125,39 +179,27 @@ export default function OnboardPage() {
 
   const getInputHandler = () => {
     switch (pixKeyType) {
-      case "phone":
-        return handlePhoneInput;
-      case "cpf":
-        return handleCPFInput;
-      case "random":
-        return handleRandomInput;
-      default:
-        return handleEmailInput;
+      case "phone": return handlePhonePixInput;
+      case "cpf": return handleCPFInput;
+      case "random": return handleRandomInput;
+      default: return handleEmailInput;
     }
   };
 
   const getInputPlaceholder = () => {
     switch (pixKeyType) {
-      case "phone":
-        return "(11) 99999-9999";
-      case "cpf":
-        return "000.000.000-00";
-      case "random":
-        return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-      default:
-        return "seu@email.com";
+      case "phone": return "(11) 99999-9999";
+      case "cpf": return "000.000.000-00";
+      case "random": return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+      default: return "seu@email.com";
     }
   };
 
-  const getInputType = () => {
-    if (pixKeyType === "email") return "email";
-    return "text";
-  };
-
   const handleContinue = () => {
+    if (!name.trim()) return;
     if (!isValidHandle(handle)) {
       setHandleError(
-        "Handle deve ter entre 3 e 20 caracteres, comecar e terminar com letra ou numero."
+        "Handle deve ter entre 3 e 20 caracteres, comecar e terminar com letra ou numero.",
       );
       return;
     }
@@ -175,12 +217,13 @@ export default function OnboardPage() {
     formData.set("handle", handle);
     formData.set("pixKey", pixKeyValue);
     formData.set("pixKeyType", pixKeyType);
+    formData.set("name", name.trim());
 
     startTransition(async () => {
       const result = await completeOnboarding(formData);
       if (result?.error) {
         if (result.error.includes("Handle")) {
-          setStep("handle");
+          setStep("profile");
           setHandleError(result.error);
         } else {
           setPixError(result.error);
@@ -189,7 +232,19 @@ export default function OnboardPage() {
     });
   };
 
-  const steps: OnboardStep[] = ["handle", "pix"];
+  const inferredKeyLabel =
+    authMethod === "google" && userEmail
+      ? "Detectamos seu e-mail como chave Pix"
+      : authMethod === "phone" && userPhone
+        ? "Detectamos seu telefone como chave Pix"
+        : null;
+
+  const showInferredBanner =
+    inferredKeyLabel &&
+    ((pixKeyType === "email" && authMethod === "google") ||
+      (pixKeyType === "phone" && authMethod === "phone"));
+
+  const steps: OnboardStep[] = ["profile", "pix"];
   const currentIndex = steps.indexOf(step);
 
   return (
@@ -206,9 +261,9 @@ export default function OnboardPage() {
 
         <div className="mt-12 flex-1">
           <AnimatePresence mode="wait">
-            {step === "handle" && (
+            {step === "profile" && (
               <motion.div
-                key="handle"
+                key="profile"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -216,54 +271,68 @@ export default function OnboardPage() {
               >
                 <h1 className="text-2xl font-bold">Seu perfil</h1>
                 <p className="mt-2 text-muted-foreground">
-                  Escolha um handle unico para sua conta.
+                  Como seus amigos vao te encontrar.
                 </p>
 
-                <div className="mt-8">
-                  <label className="mb-2 block text-sm font-medium">
-                    Handle
-                  </label>
-                  <div className="flex items-center">
-                    <div className="flex h-8 items-center rounded-l-lg border border-r-0 border-input bg-muted px-3 text-sm text-muted-foreground">
-                      @
-                    </div>
+                <div className="mt-8 space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">
+                      Nome
+                    </label>
                     <Input
-                      className="rounded-l-none"
-                      placeholder="seu.handle"
-                      value={handle}
-                      onChange={(e) => handleHandleChange(e.target.value)}
+                      placeholder="Seu nome completo"
+                      value={name}
+                      onChange={(e) => handleNameChange(e.target.value)}
                       autoFocus
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
                       onKeyDown={(e) => e.key === "Enter" && handleContinue()}
                     />
                   </div>
-                  {handleError && (
-                    <p className="mt-2 text-xs text-destructive">
-                      {handleError}
-                    </p>
-                  )}
-                  {handle && !handleError && (
-                    <p
-                      className={`mt-2 text-xs ${
-                        isValidHandle(handle)
-                          ? "text-success"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {isValidHandle(handle)
-                        ? "Handle disponivel"
-                        : "3-20 caracteres, letras minusculas, numeros, pontos e sublinhados"}
-                    </p>
-                  )}
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium">
+                      Handle
+                    </label>
+                    <div className="flex items-center">
+                      <div className="flex h-8 items-center rounded-l-lg border border-r-0 border-input bg-muted px-3 text-sm text-muted-foreground">
+                        @
+                      </div>
+                      <Input
+                        className="rounded-l-none"
+                        placeholder="seu.handle"
+                        value={handle}
+                        onChange={(e) => handleHandleChange(e.target.value)}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        onKeyDown={(e) => e.key === "Enter" && handleContinue()}
+                      />
+                    </div>
+                    {handleError && (
+                      <p className="mt-2 text-xs text-destructive">
+                        {handleError}
+                      </p>
+                    )}
+                    {handle && !handleError && (
+                      <p
+                        className={`mt-2 text-xs ${
+                          isValidHandle(handle)
+                            ? "text-success"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {isValidHandle(handle)
+                          ? `Seus amigos vao te adicionar como @${handle}`
+                          : "3-20 caracteres, letras minusculas, numeros, pontos e sublinhados"}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <Button
                   className="mt-6 w-full gap-2"
                   size="lg"
                   onClick={handleContinue}
-                  disabled={!handle}
+                  disabled={!name.trim() || !handle}
                 >
                   Continuar
                   <ArrowRight className="h-4 w-4" />
@@ -284,13 +353,13 @@ export default function OnboardPage() {
                   Informe sua chave Pix para receber pagamentos dos amigos.
                 </p>
 
-                {pixKeyType === "email" && userEmail && (
+                {showInferredBanner && (
                   <motion.div
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="mt-4 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary"
                   >
-                    Detectamos seu e-mail como chave Pix
+                    {inferredKeyLabel}
                   </motion.div>
                 )}
 
@@ -313,7 +382,7 @@ export default function OnboardPage() {
                 <div className="mt-4">
                   <div className="flex gap-2">
                     <Input
-                      type={getInputType()}
+                      type={pixKeyType === "email" ? "email" : "text"}
                       placeholder={getInputPlaceholder()}
                       value={pixKeyDisplay}
                       onChange={(e) => getInputHandler()(e.target.value)}
@@ -359,7 +428,7 @@ export default function OnboardPage() {
                   <Button
                     variant="outline"
                     size="lg"
-                    onClick={() => setStep("handle")}
+                    onClick={() => setStep("profile")}
                     className="flex-1"
                   >
                     Voltar
