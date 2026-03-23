@@ -193,7 +193,7 @@ export function PayerStep({
               (s, v) => s + (parseFloat(v.replace(",", ".")) || 0), 0,
             );
             return (
-              <>
+              <div className="space-y-3">
                 {participants.map((user) => {
                   const pct = parseFloat(localPercentages.get(user.id)?.replace(",", ".") || "0") || 0;
                   const amountForUser = Math.round((grandTotal * pct) / 100);
@@ -270,11 +270,11 @@ export function PayerStep({
                     Total: {totalPct.toFixed(0)}% — faltam {(100 - totalPct).toFixed(0)}% para completar 100%
                   </div>
                 )}
-              </>
+              </div>
             );
           })()}
 
-          {paymentInputMode === "fixed" && participants.map((user) => {
+          {paymentInputMode === "fixed" && <div className="space-y-3">{participants.map((user) => {
             const localVal = localAmounts.get(user.id) || "";
             const storeAmount = payerMap.get(user.id) || 0;
             const hasValue = localVal !== "" || storeAmount > 0;
@@ -341,7 +341,7 @@ export function PayerStep({
                 )}
               </div>
             );
-          })}
+          })}</div>}
 
           <Button
             variant="outline"

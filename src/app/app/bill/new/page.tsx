@@ -420,7 +420,7 @@ export default function NewBillPage() {
               </p>
               <div className="space-y-2">
                 {store.participants.map((p) => (
-                  <motion.div key={p.id} layout className="flex items-center gap-3 rounded-xl border bg-card p-3">
+                  <div key={p.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
                     <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
                     <div className="flex-1">
                       <p className="text-sm font-medium">{p.name}</p>
@@ -433,7 +433,7 @@ export default function NewBillPage() {
                         <X className="h-4 w-4" />
                       </button>
                     )}
-                  </motion.div>
+                  </div>
                 ))}
               </div>
               <AnimatePresence>
@@ -563,7 +563,7 @@ export default function NewBillPage() {
               </p>
               <AnimatePresence>
                 {store.items.map((item) => (
-                  <motion.div key={item.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -100 }} className="flex items-center justify-between rounded-xl border bg-card p-3">
+                  <motion.div key={item.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -100 }} className="flex items-center justify-between rounded-xl border bg-card p-3">
                     <div>
                       <p className="text-sm font-medium">{item.description}</p>
                       <p className="text-xs text-muted-foreground">{item.quantity}x {formatBRL(item.unitPriceCents)}</p>
