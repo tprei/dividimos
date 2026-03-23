@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pixwise
 
-## Getting Started
+Bill-splitting app for the Brazilian market. Scan a receipt or enter a total, assign items to people, and settle via Pix QR codes.
 
-First, run the development server:
+## What it does
+
+- **Two bill types**: itemized (restaurants, bars) or single amount (Airbnb, Uber, flights)
+- **Item assignment**: tap participant chips to assign who consumed what, with "Todos" and "Dividir restantes" shortcuts
+- **Split methods**: equal, percentage (sliders), or fixed amounts
+- **Who paid**: single payer ("Pagou tudo") or multi-payer with amount inputs
+- **Pix settlement**: generates EMV BR Code QR codes and Copia e Cola strings client-side
+- **Debt simplification**: greedy min-transactions algorithm with step-by-step graph visualization showing edge merges
+- **Real-time ledger**: Supabase Realtime subscriptions for instant settlement updates across participants
+
+## Stack
+
+- Next.js 16 (App Router) + TypeScript
+- Tailwind CSS v4 + shadcn/ui
+- Framer Motion for animations
+- Zustand for local-first state management
+- Supabase (PostgreSQL + Auth + Realtime)
+- QRCode library for Pix QR rendering
+
+## Setup
 
 ```bash
+npm install
+cp .env.local.example .env.local
+# Fill in your Supabase URL and anon key
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Supabase
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Create a project at supabase.com (Sao Paulo region recommended)
+2. Run `supabase db push --linked` to apply the migration
+3. Enable phone auth under Authentication > Providers > Phone
+4. Copy your project URL and anon key to `.env.local`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Deploy
 
-## Learn More
+Push to GitHub, import in Vercel. Set the two env vars. Done.
 
-To learn more about Next.js, take a look at the following resources:
+## Routes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Path | Description |
+|------|-------------|
+| `/` | Landing page with demo button |
+| `/auth` | Phone OTP login + Pix key setup |
+| `/app` | Dashboard with balance, quick actions, recent bills |
+| `/app/bills` | Searchable bill list with filters |
+| `/app/bill/new` | Bill creation wizard (type → info → people → items/amount → split → payer → summary) |
+| `/app/bill/[id]` | Bill detail with tabs (Itens, Divisao, Pagamento) and simplification toggle |
+| `/app/profile` | User profile, Pix key, preferences |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Dev tools
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+In development mode, a red bug icon appears in the bottom-right corner. It provides quick-fill buttons to populate test data (participants, items, splits, multi-payer scenarios) without manual entry.
