@@ -76,3 +76,21 @@ export function validatePixKey(key: string): boolean {
     randomRegex.test(key)
   );
 }
+
+export function maskPixKey(key: string): string {
+  if (/^\+?\d{11,13}$/.test(key.replace(/\D/g, ""))) {
+    const digits = key.replace(/\D/g, "");
+    return `(**) *****-${digits.slice(-4)}`;
+  }
+  if (/^\d{11}$/.test(key)) {
+    return `***.***.*${key.slice(7, 9)}*-${key.slice(9)}`;
+  }
+  if (key.includes("@")) {
+    const [local, domain] = key.split("@");
+    return `${local.charAt(0)}${"*".repeat(Math.max(1, local.length - 2))}${local.charAt(local.length - 1)}@${domain}`;
+  }
+  if (key.includes("-") && key.length > 20) {
+    return `${key.slice(0, 8)}...${key.slice(-4)}`;
+  }
+  return key;
+}

@@ -439,6 +439,29 @@ export default function NewBillPage() {
                 })}
               </AnimatePresence>
 
+              {store.items.length > 0 && (() => {
+                const unassignedItems = store.items.filter((item) => {
+                  const itemSplits = store.splits.filter((s) => s.itemId === item.id);
+                  return itemSplits.length === 0;
+                });
+                if (unassignedItems.length === 0) return null;
+                return (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 border-dashed border-primary/40 text-primary"
+                    onClick={() => {
+                      const allUserIds = store.participants.map((p) => p.id);
+                      for (const item of unassignedItems) {
+                        store.splitItemEqually(item.id, allUserIds);
+                      }
+                    }}
+                  >
+                    <Users className="h-4 w-4" />
+                    Dividir {unassignedItems.length} restante{unassignedItems.length > 1 ? "s" : ""} igualmente
+                  </Button>
+                );
+              })()}
+
               {store.items.length === 0 && (
                 <div className="py-12 text-center text-muted-foreground">
                   <Receipt className="mx-auto h-8 w-8 opacity-50" />

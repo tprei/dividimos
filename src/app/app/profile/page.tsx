@@ -57,7 +57,7 @@ export default function ProfilePage() {
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium">Telefone</p>
-              <p className="text-xs text-muted-foreground">+55 11 98765-4321</p>
+              <p className="text-xs text-muted-foreground font-mono">(**) *****-4321</p>
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </div>

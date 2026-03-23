@@ -255,7 +255,7 @@ export default function BillDetailPage({
                           >
                             <Button
                               size="sm"
-                              className="flex-1 gap-1.5"
+                              className="flex-1 gap-1.5 bg-success text-success-foreground hover:bg-success/90"
                               onClick={() =>
                                 setPixModal({
                                   open: true,
