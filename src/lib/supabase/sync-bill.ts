@@ -39,16 +39,18 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       }
     }
 
+    const syncUpdatePayload: Record<string, unknown> = {
+      status: data.bill.status === "settled" ? "settled" : "active",
+      total_amount: data.bill.totalAmount,
+      total_amount_input: data.bill.totalAmountInput,
+      service_fee_percent: data.bill.serviceFeePercent,
+      fixed_fees: data.bill.fixedFees,
+    };
+    if (data.groupId) syncUpdatePayload.group_id = data.groupId;
+
     const { error: updateError } = await supabase
       .from("bills")
-      .update({
-        status: data.bill.status === "settled" ? "settled" : "active",
-        total_amount: data.bill.totalAmount,
-        total_amount_input: data.bill.totalAmountInput,
-        service_fee_percent: data.bill.serviceFeePercent,
-        fixed_fees: data.bill.fixedFees,
-        group_id: data.groupId ?? undefined,
-      } as any)
+      .update(syncUpdatePayload as any)
       .eq("id", billId);
 
     if (updateError) {
