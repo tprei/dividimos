@@ -322,18 +322,38 @@ export default function BillDetailPage({
                         {edges.map((edge, i) => {
                           const from = participants.find((p) => p.id === edge.fromUserId);
                           return (
-                            <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                              <div className="flex items-center gap-2">
-                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
-                                  {from?.name.charAt(0) || "?"}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  {from?.name.split(" ")[0] || "?"}
+                            <div key={i} className="px-4 py-2.5">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                                    {from?.name.charAt(0) || "?"}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {from?.name.split(" ")[0] || "?"}
+                                  </span>
+                                </div>
+                                <span className="text-sm font-medium tabular-nums">
+                                  {formatBRL(edge.amountCents)}
                                 </span>
                               </div>
-                              <span className="text-sm font-medium tabular-nums">
-                                {formatBRL(edge.amountCents)}
-                              </span>
+                              <div className="mt-2 flex gap-2">
+                                <Button
+                                  size="sm"
+                                  className="flex-1 gap-1.5 bg-success text-success-foreground hover:bg-success/90 h-8 text-xs"
+                                  onClick={() =>
+                                    setPixModal({
+                                      open: true,
+                                      entryId: `raw_${i}_${edge.fromUserId}`,
+                                      pixKey: receiver?.pixKey || "",
+                                      name: receiver?.name || "",
+                                      amount: edge.amountCents,
+                                    })
+                                  }
+                                >
+                                  <QrCode className="h-3.5 w-3.5" />
+                                  Pagar via Pix
+                                </Button>
+                              </div>
                             </div>
                           );
                         })}
