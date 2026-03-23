@@ -46,29 +46,30 @@ export default function LandingPage() {
   const store = useBillStore();
 
   const loadDemo = () => {
-    store.setCurrentUser(DEMO_USERS[0]);
-    store.createBill("Churrascaria Fogo de Chao", "Fogo de Chao - Jardins");
-    store.updateBill({ serviceFeePercent: 10, fixedFees: 0 });
+    const s = useBillStore.getState();
+    s.setCurrentUser(DEMO_USERS[0]);
+    s.createBill("Churrascaria Fogo de Chao", "Fogo de Chao - Jardins");
+    s.updateBill({ serviceFeePercent: 10, fixedFees: 0 });
 
     for (const user of DEMO_USERS.slice(1)) {
-      store.addParticipant(user);
+      s.addParticipant(user);
     }
 
     for (const item of DEMO_ITEMS) {
-      store.addItem(item);
+      s.addItem(item);
     }
 
-    const items = store.items;
-    store.splitItemEqually(items[0].id, ["user_self", "user_ana"]);
-    store.splitItemEqually(items[1].id, ["user_marcos", "user_julia"]);
-    store.splitItemEqually(items[2].id, ["user_self"]);
-    store.splitItemEqually(items[3].id, ["user_ana", "user_marcos", "user_julia"]);
-    store.splitItemEqually(items[4].id, ["user_self", "user_ana", "user_marcos", "user_julia"]);
-    store.splitItemEqually(items[5].id, ["user_self", "user_marcos"]);
-    store.splitItemEqually(items[6].id, ["user_self", "user_ana", "user_marcos", "user_julia"]);
-    store.splitItemEqually(items[7].id, ["user_julia"]);
+    const items = useBillStore.getState().items;
+    s.splitItemEqually(items[0].id, ["user_self", "user_ana"]);
+    s.splitItemEqually(items[1].id, ["user_marcos", "user_julia"]);
+    s.splitItemEqually(items[2].id, ["user_self"]);
+    s.splitItemEqually(items[3].id, ["user_ana", "user_marcos", "user_julia"]);
+    s.splitItemEqually(items[4].id, ["user_self", "user_ana", "user_marcos", "user_julia"]);
+    s.splitItemEqually(items[5].id, ["user_self", "user_marcos"]);
+    s.splitItemEqually(items[6].id, ["user_self", "user_ana", "user_marcos", "user_julia"]);
+    s.splitItemEqually(items[7].id, ["user_julia"]);
 
-    store.computeLedger();
+    s.computeLedger();
     router.push("/app/bill/demo");
   };
 
