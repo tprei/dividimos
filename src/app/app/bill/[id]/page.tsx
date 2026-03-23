@@ -23,7 +23,11 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
 import { PulsingDot } from "@/components/shared/pulsing-dot";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { PixQrModal } from "@/components/settlement/pix-qr-modal";
+import dynamic from "next/dynamic";
+const PixQrModal = dynamic(
+  () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
+  { ssr: false },
+);
 import { ChargeExplanation } from "@/components/settlement/charge-explanation";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";

@@ -70,56 +70,51 @@ export default function GroupDetailPage({
   const [lookupError, setLookupError] = useState("");
   const [searching, setSearching] = useState(false);
 
-  const supabase = createClient();
-
   async function fetchGroup() {
-    const { data: group } = await supabase
-      .from("groups")
-      .select("name, creator_id")
-      .eq("id", id)
-      .single();
+    const supabase = createClient();
+
+    const [{ data: group }, { data: groupMembers }] = await Promise.all([
+      supabase.from("groups").select("name, creator_id").eq("id", id).single(),
+      supabase.from("group_members").select("user_id, status, invited_by").eq("group_id", id),
+    ]);
 
     if (!group) return;
 
     setGroupName(group.name);
     setCreatorId(group.creator_id);
 
-    const { data: groupMembers } = await supabase
-      .from("group_members")
-      .select("user_id, status, invited_by")
-      .eq("group_id", id);
+    const memberRows = groupMembers ?? [];
+    const allUserIds = [
+      ...new Set([group.creator_id, ...memberRows.map((m) => m.user_id)]),
+    ];
+
+    const { data: profiles } = await supabase
+      .from("user_profiles")
+      .select("id, handle, name, avatar_url")
+      .in("id", allUserIds);
+
+    const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
 
     const entries: MemberEntry[] = [];
 
-    const creatorProfile = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("id", group.creator_id)
-      .single();
-
-    if (creatorProfile.data) {
+    const creatorProfile = profileMap.get(group.creator_id);
+    if (creatorProfile) {
       entries.push({
         userId: group.creator_id,
         status: "accepted",
         profile: {
-          id: creatorProfile.data.id,
-          handle: creatorProfile.data.handle,
-          name: creatorProfile.data.name,
-          avatarUrl: creatorProfile.data.avatar_url ?? undefined,
+          id: creatorProfile.id,
+          handle: creatorProfile.handle,
+          name: creatorProfile.name,
+          avatarUrl: creatorProfile.avatar_url ?? undefined,
         },
         invitedBy: group.creator_id,
       });
     }
 
-    for (const m of groupMembers ?? []) {
+    for (const m of memberRows) {
       if (m.user_id === group.creator_id) continue;
-
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", m.user_id)
-        .single();
-
+      const profile = profileMap.get(m.user_id);
       if (profile) {
         entries.push({
           userId: m.user_id,
@@ -175,7 +170,7 @@ export default function GroupDetailPage({
     setLookupResult(null);
     setLookupError("");
 
-    const { data: profile } = await supabase
+    const { data: profile } = await createClient()
       .from("user_profiles")
       .select("*")
       .eq("handle", handle)
@@ -199,7 +194,7 @@ export default function GroupDetailPage({
   const handleInvite = async () => {
     if (!lookupResult || !user) return;
 
-    const { error } = await supabase.from("group_members").insert({
+    const { error } = await createClient().from("group_members").insert({
       group_id: id,
       user_id: lookupResult.id,
       invited_by: user.id,
@@ -219,7 +214,7 @@ export default function GroupDetailPage({
   };
 
   const handleRemoveMember = async (userId: string) => {
-    await supabase
+    await createClient()
       .from("group_members")
       .delete()
       .eq("group_id", id)

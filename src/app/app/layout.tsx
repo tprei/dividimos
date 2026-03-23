@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/shared/logo";
+import { AuthProvider } from "@/contexts/auth-context";
 
 const navItems = [
   { href: "/app", icon: Home, label: "Inicio" },
@@ -24,6 +25,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
+    <AuthProvider>
     <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 glass border-b border-border/50">
         <div className="flex h-14 items-center justify-between px-4">
@@ -81,5 +83,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
     </div>
+    </AuthProvider>
   );
 }

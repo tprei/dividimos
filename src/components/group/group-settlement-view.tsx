@@ -6,7 +6,11 @@ import { Check, CheckCheck, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
-import { PixQrModal } from "@/components/settlement/pix-qr-modal";
+import dynamic from "next/dynamic";
+const PixQrModal = dynamic(
+  () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
+  { ssr: false },
+);
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";

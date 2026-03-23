@@ -41,16 +41,17 @@ export function GroupSelector({
       setLoading(true);
       const supabase = createClient();
 
-      const { data: memberRows } = await supabase
-        .from("group_members")
-        .select("group_id")
-        .eq("user_id", currentUserId)
-        .eq("status", "accepted");
-
-      const { data: createdGroups } = await supabase
-        .from("groups")
-        .select("id, name")
-        .eq("creator_id", currentUserId);
+      const [{ data: memberRows }, { data: createdGroups }] = await Promise.all([
+        supabase
+          .from("group_members")
+          .select("group_id")
+          .eq("user_id", currentUserId)
+          .eq("status", "accepted"),
+        supabase
+          .from("groups")
+          .select("id, name, creator_id")
+          .eq("creator_id", currentUserId),
+      ]);
 
       const memberGroupIds = (memberRows ?? []).map((r) => r.group_id);
       const createdGroupIds = (createdGroups ?? []).map((g) => g.id);
@@ -62,56 +63,63 @@ export function GroupSelector({
         return;
       }
 
-      const { data: allGroups } = await supabase
-        .from("groups")
-        .select("id, name")
-        .in("id", allGroupIds);
+      const [{ data: allGroupData }, { data: allGroupMembers }] = await Promise.all([
+        supabase.from("groups").select("id, name, creator_id").in("id", allGroupIds),
+        supabase.from("group_members").select("group_id, user_id, status").in("group_id", allGroupIds),
+      ]);
 
-      const entries: GroupEntry[] = [];
+      const membersByGroup = new Map<string, { user_id: string; status: string }[]>();
+      for (const m of allGroupMembers ?? []) {
+        const list = membersByGroup.get(m.group_id) ?? [];
+        list.push(m);
+        membersByGroup.set(m.group_id, list);
+      }
 
-      for (const group of allGroups ?? []) {
-        const { data: allMembers } = await supabase
-          .from("group_members")
-          .select("user_id, status")
-          .eq("group_id", group.id);
+      const allAddableIds = new Set<string>();
+      const groupMeta = new Map<
+        string,
+        { addableMemberIds: string[]; hasPendingInvites: boolean }
+      >();
 
-        const acceptedIds = (allMembers ?? []).filter((m) => m.status === "accepted").map((m) => m.user_id);
-        const hasPendingInvites = (allMembers ?? []).some((m) => m.status === "invited");
+      for (const group of allGroupData ?? []) {
+        const members = membersByGroup.get(group.id) ?? [];
+        const acceptedIds = members.filter((m) => m.status === "accepted").map((m) => m.user_id);
+        const hasPendingInvites = members.some((m) => m.status === "invited");
+        const allMemberIds = [...new Set([...acceptedIds, group.creator_id])];
+        const addableMemberIds = allMemberIds.filter(
+          (id) => id !== currentUserId && !excludeIds.includes(id),
+        );
+        groupMeta.set(group.id, { addableMemberIds, hasPendingInvites });
+        for (const id of addableMemberIds) allAddableIds.add(id);
+      }
 
-        const { data: creatorRow } = await supabase
-          .from("groups")
-          .select("creator_id")
-          .eq("id", group.id)
-          .single();
-
-        const allMemberIds = [...new Set([...acceptedIds, creatorRow?.creator_id].filter(Boolean))] as string[];
-        const addableMemberIds = allMemberIds.filter((id) => id !== currentUserId && !excludeIds.includes(id));
-
-        if (addableMemberIds.length === 0 && !hasPendingInvites) {
-          continue;
-        }
-
-        let memberProfiles: UserProfile[] = [];
-        if (addableMemberIds.length > 0) {
-          const { data: profiles } = await supabase
+      const { data: profiles } = allAddableIds.size > 0
+        ? await supabase
             .from("user_profiles")
             .select("id, handle, name, avatar_url")
-            .in("id", addableMemberIds);
+            .in("id", [...allAddableIds])
+        : { data: [] };
 
-          memberProfiles = (profiles ?? []).map((p) => ({
-            id: p.id,
-            handle: p.handle ?? "",
-            name: p.name,
-            avatarUrl: p.avatar_url ?? undefined,
-          }));
-        }
+      const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+      const entries: GroupEntry[] = [];
+      for (const group of allGroupData ?? []) {
+        const meta = groupMeta.get(group.id)!;
+        if (meta.addableMemberIds.length === 0 && !meta.hasPendingInvites) continue;
+
+        const memberProfiles: UserProfile[] = meta.addableMemberIds.flatMap((id) => {
+          const p = profileMap.get(id);
+          return p
+            ? [{ id: p.id, handle: p.handle ?? "", name: p.name, avatarUrl: p.avatar_url ?? undefined }]
+            : [];
+        });
 
         entries.push({
           id: group.id,
           name: group.name,
           members: memberProfiles,
-          addableCount: addableMemberIds.length,
-          hasPendingInvites,
+          addableCount: meta.addableMemberIds.length,
+          hasPendingInvites: meta.hasPendingInvites,
         });
       }
 

@@ -21,41 +21,26 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
 
   if (!billRow) return null;
 
-  const { data: participantRows } = await supabase
-    .from("bill_participants")
-    .select("user_id")
-    .eq("bill_id", billId);
+  const billType =
+    (billRow as Record<string, unknown>).bill_type as string === "single_amount"
+      ? "single_amount"
+      : "itemized";
 
-  const userIds = (participantRows ?? []).map((p) => p.user_id);
+  const [participantResult, payerResult, ledgerResult, itemOrSplitResult] = await Promise.all([
+    supabase.from("bill_participants").select("user_id").eq("bill_id", billId),
+    supabase.from("bill_payers").select("*").eq("bill_id", billId),
+    supabase.from("ledger").select("*").eq("bill_id", billId),
+    billType === "itemized"
+      ? supabase.from("bill_items").select("*").eq("bill_id", billId)
+      : supabase.from("bill_splits").select("*").eq("bill_id", billId),
+  ]);
+
+  const userIds = (participantResult.data ?? []).map((p) => p.user_id);
   if (!userIds.includes(billRow.creator_id)) {
     userIds.push(billRow.creator_id);
   }
-  let participants: User[] = [];
-  if (userIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .in("id", userIds);
 
-    participants = (profiles ?? []).map((p) => ({
-      id: p.id,
-      email: "",
-      handle: p.handle ?? "",
-      name: p.name,
-      pixKeyType: "email" as const,
-      pixKeyHint: "",
-      avatarUrl: p.avatar_url ?? undefined,
-      onboarded: true,
-      createdAt: "",
-    }));
-  }
-
-  const { data: payerRows } = await supabase
-    .from("bill_payers")
-    .select("*")
-    .eq("bill_id", billId);
-
-  const payers: BillPayer[] = (payerRows ?? []).map((p) => ({
+  const payers: BillPayer[] = (payerResult.data ?? []).map((p) => ({
     userId: p.user_id,
     amountCents: p.amount_cents,
   }));
@@ -63,7 +48,7 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
   const bill: Bill = {
     id: billRow.id,
     creatorId: billRow.creator_id,
-    billType: (billRow as Record<string, unknown>).bill_type as string === "single_amount" ? "single_amount" : "itemized",
+    billType,
     title: billRow.title,
     merchantName: billRow.merchant_name ?? undefined,
     status: billRow.status,
@@ -79,62 +64,59 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
 
   let items: BillItem[] = [];
   let splits: ItemSplit[] = [];
-
-  if (bill.billType === "itemized") {
-    const { data: itemRows } = await supabase
-      .from("bill_items")
-      .select("*")
-      .eq("bill_id", billId);
-
-    items = (itemRows ?? []).map((i) => ({
-      id: i.id,
-      billId: i.bill_id,
-      description: i.description,
-      quantity: i.quantity,
-      unitPriceCents: i.unit_price_cents,
-      totalPriceCents: i.total_price_cents,
-      createdAt: i.created_at,
-    }));
-
-    if (items.length > 0) {
-      const itemIds = items.map((i) => i.id);
-      const { data: splitRows } = await supabase
-        .from("item_splits")
-        .select("*")
-        .in("item_id", itemIds);
-
-      splits = (splitRows ?? []).map((s) => ({
-        id: s.id,
-        itemId: s.item_id,
-        userId: s.user_id,
-        splitType: s.split_type,
-        value: Number(s.value),
-        computedAmountCents: s.computed_amount_cents,
-      }));
-    }
-  }
-
   let billSplits: BillSplit[] = [];
-  if (bill.billType === "single_amount") {
-    const { data: splitRows } = await supabase
-      .from("bill_splits")
-      .select("*")
-      .eq("bill_id", billId);
 
-    billSplits = (splitRows ?? []).map((s) => ({
-      userId: s.user_id,
+  if (billType === "itemized") {
+    items = (itemOrSplitResult.data ?? []).map((i: Record<string, unknown>) => ({
+      id: i.id as string,
+      billId: i.bill_id as string,
+      description: i.description as string,
+      quantity: i.quantity as number,
+      unitPriceCents: i.unit_price_cents as number,
+      totalPriceCents: i.total_price_cents as number,
+      createdAt: i.created_at as string,
+    }));
+  } else {
+    billSplits = (itemOrSplitResult.data ?? []).map((s: Record<string, unknown>) => ({
+      userId: s.user_id as string,
       splitType: s.split_type as "equal" | "percentage" | "fixed",
       value: Number(s.value),
-      computedAmountCents: s.computed_amount_cents,
+      computedAmountCents: s.computed_amount_cents as number,
     }));
   }
 
-  const { data: ledgerRows } = await supabase
-    .from("ledger")
-    .select("*")
-    .eq("bill_id", billId);
+  const itemIds = items.map((i) => i.id);
+  const [profileResult, splitResult] = await Promise.all([
+    userIds.length > 0
+      ? supabase.from("user_profiles").select("*").in("id", userIds)
+      : Promise.resolve({ data: [] }),
+    billType === "itemized" && itemIds.length > 0
+      ? supabase.from("item_splits").select("*").in("item_id", itemIds)
+      : Promise.resolve({ data: [] }),
+  ]);
 
-  const ledger: LedgerEntry[] = (ledgerRows ?? []).map((e) => ({
+  splits = (splitResult.data ?? []).map((s: Record<string, unknown>) => ({
+    id: s.id as string,
+    itemId: s.item_id as string,
+    userId: s.user_id as string,
+    splitType: s.split_type as "equal" | "percentage" | "fixed",
+    value: Number(s.value),
+    computedAmountCents: s.computed_amount_cents as number,
+  }));
+
+  const participants: User[] = (profileResult.data ?? []).map((p: Record<string, unknown>) => ({
+    id: p.id as string,
+    email: "",
+    handle: (p.handle as string) ?? "",
+    name: p.name as string,
+    pixKeyType: "email" as const,
+    pixKeyHint: "",
+    avatarUrl: (p.avatar_url as string) ?? undefined,
+    onboarded: true,
+    createdAt: "",
+  }));
+
+  const ledger: LedgerEntry[] = (ledgerResult.data ?? []).map((e) => ({
     id: e.id,
     billId: e.bill_id,
     fromUserId: e.from_user_id,
