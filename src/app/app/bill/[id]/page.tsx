@@ -686,7 +686,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && ledger.length > 0 && !allSettled && (
+      {activeTab === "payment" && ledger.length > 0 && !allSettled && !isGroupBill && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -813,20 +813,7 @@ export default function BillDetailPage({
           {(simplifyEnabled || !simplificationResult) && (
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {(simplifyEnabled && simplificationResult
-                ? simplificationResult.simplifiedEdges.map((edge, idx) => ({
-                    id: `edge_${idx}`,
-                    billId: bill.id,
-                    fromUserId: edge.fromUserId,
-                    toUserId: edge.toUserId,
-                    amountCents: edge.amountCents,
-                    status: "pending" as DebtStatus,
-                    paidAt: undefined,
-                    confirmedAt: undefined,
-                    createdAt: new Date().toISOString(),
-                  }))
-                : ledger
-              ).map((entry, idx) => {
+              {ledger.map((entry, idx) => {
                 const debtor = participants.find((p) => p.id === entry.fromUserId);
                 const creditor = participants.find((p) => p.id === entry.toUserId);
                 const isDebtor = currentUser?.id === entry.fromUserId;
