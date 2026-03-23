@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/shared/skeleton";
 import { PulsingDot } from "@/components/shared/pulsing-dot";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { PixQrModal } from "@/components/settlement/pix-qr-modal";
+import { ChargeExplanation } from "@/components/settlement/charge-explanation";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import { Button } from "@/components/ui/button";
@@ -477,6 +478,19 @@ export default function BillDetailPage({
           transition={{ delay: 0.2, duration: 0.4 }}
           className="mt-5"
         >
+          <div className="mb-4">
+            <ChargeExplanation
+              bill={bill}
+              participants={participants}
+              items={items}
+              splits={splits}
+              billSplits={billSplits}
+              ledger={ledger}
+              simplificationResult={simplificationResult}
+              currentUserId={currentUser?.id}
+            />
+          </div>
+
           {simplificationResult && (
             <div className="mb-4">
               <SimplificationToggle
