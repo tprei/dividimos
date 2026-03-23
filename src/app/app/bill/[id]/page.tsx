@@ -19,6 +19,7 @@ import { BillSummary } from "@/components/bill/bill-summary";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Skeleton } from "@/components/shared/skeleton";
 import { PulsingDot } from "@/components/shared/pulsing-dot";
 import { PixQrModal } from "@/components/settlement/pix-qr-modal";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
@@ -96,6 +97,18 @@ export default function BillDetailPage({
     if (rawEdges.length < 2) return null;
     return simplifyDebts(rawEdges, participants);
   }, [bill, participants, splits, billSplits, items]);
+
+  if (loadingFromDb) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6 space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-10 w-full rounded-xl" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+      </div>
+    );
+  }
 
   if (!bill) {
     return (

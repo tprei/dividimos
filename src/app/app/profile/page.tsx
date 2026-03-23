@@ -1,25 +1,33 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
+  AtSign,
+  Check,
   ChevronRight,
+  Clipboard,
   CreditCard,
   LogOut,
   Moon,
+  Pencil,
   Shield,
   Smartphone,
-  AtSign,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { updatePixKey } from "./actions";
+import toast from "react-hot-toast";
+import type { PixKeyType } from "@/types";
 
 const pixKeyTypeLabels: Record<string, string> = {
   phone: "Telefone",
@@ -28,10 +36,42 @@ const pixKeyTypeLabels: Record<string, string> = {
   random: "Chave aleatoria",
 };
 
+const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
+  { type: "email", label: "E-mail" },
+  { type: "phone", label: "Telefone" },
+  { type: "cpf", label: "CPF" },
+  { type: "random", label: "Chave aleatoria" },
+];
+
+function formatPhoneInput(digits: string): string {
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function formatCPF(digits: string): string {
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9)
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function toPixKeyValue(type: PixKeyType, display: string): string {
+  if (type === "phone") return `+55${display.replace(/\D/g, "")}`;
+  if (type === "cpf") return display.replace(/\D/g, "");
+  return display;
+}
+
 export default function ProfilePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [darkMode, setDarkMode] = useState(false);
+  const [editingPix, setEditingPix] = useState(false);
+  const [pixType, setPixType] = useState<PixKeyType>("email");
+  const [pixInput, setPixInput] = useState("");
+  const [pixError, setPixError] = useState("");
+  const [isPending, startTransition] = useTransition();
 
   const toggleDark = () => {
     setDarkMode(!darkMode);
@@ -42,6 +82,58 @@ export default function ProfilePage() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/auth");
+  };
+
+  const startEditPix = () => {
+    setPixType(user?.pixKeyType ?? "email");
+    setPixInput("");
+    setPixError("");
+    setEditingPix(true);
+  };
+
+  const handlePixInput = (value: string) => {
+    if (pixType === "phone") {
+      setPixInput(formatPhoneInput(value.replace(/\D/g, "").slice(0, 11)));
+    } else if (pixType === "cpf") {
+      setPixInput(formatCPF(value.replace(/\D/g, "").slice(0, 11)));
+    } else if (pixType === "random") {
+      setPixInput(value.replace(/[^0-9a-fA-F-]/g, "").slice(0, 36).toLowerCase());
+    } else {
+      setPixInput(value);
+    }
+    setPixError("");
+  };
+
+  const handlePaste = async () => {
+    const text = await navigator.clipboard.readText();
+    handlePixInput(text.trim());
+  };
+
+  const handleSavePix = () => {
+    const realValue = toPixKeyValue(pixType, pixInput);
+    const formData = new FormData();
+    formData.set("pixKey", realValue);
+    formData.set("pixKeyType", pixType);
+
+    startTransition(async () => {
+      const result = await updatePixKey(formData);
+      if (result.error) {
+        setPixError(result.error);
+        return;
+      }
+      toast.success("Chave Pix atualizada");
+      setEditingPix(false);
+      window.location.reload();
+    });
+  };
+
+  const getPlaceholder = () => {
+    switch (pixType) {
+      case "phone": return "(11) 99999-9999";
+      case "cpf": return "000.000.000-00";
+      case "random": return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+      default: return "seu@email.com";
+    }
   };
 
   if (loading) {
@@ -91,7 +183,10 @@ export default function ProfilePage() {
           Chave Pix
         </h2>
         <div className="rounded-2xl border bg-card p-4">
-          <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-3 cursor-pointer"
+            onClick={!editingPix ? startEditPix : undefined}
+          >
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <CreditCard className="h-5 w-5" />
             </div>
@@ -103,13 +198,98 @@ export default function ProfilePage() {
                 {user?.pixKeyHint || "Nao configurada"}
               </p>
             </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            {!editingPix && (
+              <Pencil className="h-4 w-4 text-muted-foreground" />
+            )}
           </div>
-          <Separator className="my-3" />
-          <p className="text-xs text-muted-foreground">
-            Usamos sua chave Pix apenas para gerar QR codes de cobranca.
-            Seus dados sao armazenados com criptografia AES-256.
-          </p>
+
+          <AnimatePresence>
+            {editingPix && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-4 overflow-hidden"
+              >
+                <Separator className="mb-4" />
+
+                <div className="flex flex-wrap gap-2">
+                  {PIX_KEY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.type}
+                      onClick={() => { setPixType(opt.type); setPixInput(""); setPixError(""); }}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                        pixType === opt.type
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <Input
+                    type={pixType === "email" ? "email" : "text"}
+                    placeholder={getPlaceholder()}
+                    value={pixInput}
+                    onChange={(e) => handlePixInput(e.target.value)}
+                    inputMode={pixType === "phone" || pixType === "cpf" ? "numeric" : "text"}
+                    autoFocus
+                  />
+                  <Button
+                    variant="outline"
+                    size="default"
+                    onClick={handlePaste}
+                    className="shrink-0 gap-1 text-xs"
+                  >
+                    <Clipboard className="h-3.5 w-3.5" />
+                    Colar
+                  </Button>
+                </div>
+
+                {pixError && (
+                  <p className="mt-2 text-xs text-destructive">{pixError}</p>
+                )}
+
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingPix(false)}
+                    className="gap-1"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSavePix}
+                    disabled={!pixInput || isPending}
+                    className="gap-1"
+                  >
+                    {isPending ? "Salvando..." : (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        Salvar
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {!editingPix && (
+            <>
+              <Separator className="my-3" />
+              <p className="text-xs text-muted-foreground">
+                Usamos sua chave Pix apenas para gerar QR codes de cobranca.
+                Seus dados sao protegidos com criptografia de alto nivel.
+              </p>
+            </>
+          )}
         </div>
       </motion.div>
 

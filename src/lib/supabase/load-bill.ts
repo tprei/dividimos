@@ -27,24 +27,26 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
     .eq("bill_id", billId);
 
   const userIds = (participantRows ?? []).map((p) => p.user_id);
+  if (!userIds.includes(billRow.creator_id)) {
+    userIds.push(billRow.creator_id);
+  }
   let participants: User[] = [];
   if (userIds.length > 0) {
-    const { data: users } = await supabase
-      .from("users")
+    const { data: profiles } = await supabase
+      .from("user_profiles")
       .select("*")
       .in("id", userIds);
 
-    participants = (users ?? []).map((u) => ({
-      id: u.id,
-      email: u.email ?? "",
-      handle: u.handle ?? "",
-      name: u.name,
-      phone: u.phone ?? undefined,
-      pixKeyType: u.pix_key_type,
-      pixKeyHint: u.pix_key_hint,
-      avatarUrl: u.avatar_url ?? undefined,
-      onboarded: u.onboarded,
-      createdAt: u.created_at,
+    participants = (profiles ?? []).map((p) => ({
+      id: p.id,
+      email: "",
+      handle: p.handle ?? "",
+      name: p.name,
+      pixKeyType: "email" as const,
+      pixKeyHint: "",
+      avatarUrl: p.avatar_url ?? undefined,
+      onboarded: true,
+      createdAt: "",
     }));
   }
 
