@@ -18,6 +18,7 @@ interface PixQrModalProps {
   pixKey?: string;
   recipientUserId?: string;
   billId?: string;
+  mode?: "pay" | "collect";
 }
 
 export function PixQrModal({
@@ -29,6 +30,7 @@ export function PixQrModal({
   pixKey,
   recipientUserId,
   billId,
+  mode = "pay",
 }: PixQrModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copiaECola, setCopiaECola] = useState("");
@@ -127,9 +129,12 @@ export function PixQrModal({
             >
               <QrCode className="h-7 w-7" />
             </motion.div>
-            <h2 className="mt-4 text-lg font-bold">Pagar via Pix</h2>
+            <h2 className="mt-4 text-lg font-bold">
+              {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              para <span className="font-medium text-foreground">{recipientName}</span>
+              {mode === "collect" ? "de" : "para"}{" "}
+              <span className="font-medium text-foreground">{recipientName}</span>
             </p>
             <motion.p
               initial={{ scale: 0.9, opacity: 0 }}
@@ -184,7 +189,7 @@ export function PixQrModal({
             </Button>
             <Button onClick={onMarkPaid} className="w-full gap-2" size="lg">
               <Check className="h-4 w-4" />
-              Ja paguei
+              {mode === "collect" ? "Ja recebi" : "Ja paguei"}
             </Button>
           </div>
 

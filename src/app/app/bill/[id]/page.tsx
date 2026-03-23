@@ -60,12 +60,14 @@ export default function BillDetailPage({
     recipientUserId: string;
     name: string;
     amount: number;
+    mode: "pay" | "collect";
   }>({
     open: false,
     entryId: "",
     recipientUserId: "",
     name: "",
     amount: 0,
+    mode: "pay",
   });
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
@@ -435,6 +437,7 @@ export default function BillDetailPage({
                                       recipientUserId: receiver?.id || "",
                                       name: receiver?.name || "",
                                       amount: edge.amountCents,
+                                      mode: "pay",
                                     })
                                   }
                                 >
@@ -568,6 +571,7 @@ export default function BillDetailPage({
                                   recipientUserId: creditor?.id || "",
                                   name: creditor?.name || "",
                                   amount: entry.amountCents,
+                                  mode: "pay",
                                 })
                               }
                             >
@@ -595,8 +599,9 @@ export default function BillDetailPage({
                                   open: true,
                                   entryId: entry.id,
                                   recipientUserId: currentUser?.id || "",
-                                  name: currentUser?.name || "",
+                                  name: debtor?.name || "",
                                   amount: entry.amountCents,
+                                  mode: "collect",
                                 })
                               }
                             >
@@ -687,6 +692,7 @@ export default function BillDetailPage({
         billId={bill.id}
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
+        mode={pixModal.mode}
         onMarkPaid={() => {
           handleMarkPaid(pixModal.entryId);
           setPixModal({ ...pixModal, open: false });

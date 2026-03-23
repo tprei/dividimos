@@ -156,6 +156,17 @@ export default function NewBillPage() {
         }
       }
     }
+    if ((step === "items" || step === "split" || step === "amount-split" || step === "payer") && remoteBillId && authUser) {
+      const draftState = useBillStore.getState();
+      if (draftState.bill) {
+        await saveDraftToSupabase({
+          bill: draftState.bill,
+          participants: draftState.participants,
+          creatorId: authUser.id,
+          existingBillId: remoteBillId,
+        });
+      }
+    }
     if (step === "summary") {
       if (!allAccepted && store.participants.length > 1) {
         return;
