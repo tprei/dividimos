@@ -8,6 +8,7 @@ import {
   User,
 } from "lucide-react";
 import Link from "next/link";
+import { DevTestButtons } from "@/components/shared/dev-test-buttons";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/shared/logo";
 
@@ -30,6 +31,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="flex-1 pb-20">{children}</main>
+      <DevTestButtons />
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border/50">
         <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2">

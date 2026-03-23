@@ -555,7 +555,22 @@ export default function NewBillPage() {
           <Button
             onClick={goNext}
             className="flex-1 gap-2"
-            disabled={step === "info" && !title.trim()}
+            disabled={(() => {
+              if (step === "info") return !title.trim();
+              if (step === "participants") return store.participants.length < 2;
+              if (step === "amount-split") {
+                const total = store.bill?.totalAmountInput || 0;
+                if (total <= 0) return true;
+                const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
+                return Math.abs(total - assigned) > 1;
+              }
+              if (step === "payer") {
+                const gt = store.getGrandTotal();
+                const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
+                return gt <= 0 || Math.abs(gt - paid) > 1;
+              }
+              return false;
+            })()}
           >
             {step === "summary" ? (
               <>

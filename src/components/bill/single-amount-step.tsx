@@ -170,6 +170,9 @@ export function SingleAmountStep({
               {participants.map((user) => {
                 const pct = parseFloat(percentages.get(user.id)?.replace(",", ".") || "0");
                 const amountForUser = Math.round((totalCents * pct) / 100);
+                const remainingPct = 100 - percentTotal;
+                const showFillRemaining = pct === 0 && remainingPct > 0 && percentTotal > 0;
+
                 return (
                   <div key={user.id} className="rounded-xl border bg-card p-3">
                     <div className="flex items-center justify-between">
@@ -202,6 +205,24 @@ export function SingleAmountStep({
                       }}
                       className="mt-2 w-full h-2 rounded-full appearance-none bg-muted cursor-pointer accent-primary [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-md"
                     />
+                    {showFillRemaining && (
+                      <button
+                        onClick={() => {
+                          const val = remainingPct.toFixed(1);
+                          handlePercentageChange(user.id, val);
+                          const assignments = participants.map((p) => ({
+                            userId: p.id,
+                            percentage: p.id === user.id
+                              ? remainingPct
+                              : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
+                          }));
+                          onSplitByPercentage(assignments);
+                        }}
+                        className="mt-1.5 text-xs font-medium text-primary"
+                      >
+                        Preencher restante ({remainingPct.toFixed(0)}%)
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -226,9 +247,9 @@ export function SingleAmountStep({
                 Dividir igualmente
               </Button>
               {Math.abs(percentTotal - 100) > 0.1 && percentTotal > 0 && (
-                <p className="text-xs text-warning-foreground">
-                  Total: {percentTotal.toFixed(0)}% (deve ser 100%)
-                </p>
+                <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+                  Total: {percentTotal.toFixed(0)}% — faltam {(100 - percentTotal).toFixed(0)}% para completar 100%
+                </div>
               )}
             </div>
           )}

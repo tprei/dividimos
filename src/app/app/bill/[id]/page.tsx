@@ -99,12 +99,13 @@ export default function BillDetailPage({
         Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
         bill.fixedFees;
 
-  const simplificationResult = ledger.length > 1
-    ? simplifyDebts(
-        ledger.map((e) => ({ fromUserId: e.fromUserId, toUserId: e.toUserId, amountCents: e.amountCents })),
-        participants,
-      )
-    : null;
+  const simplificationResult = useMemo(() => {
+    if (ledger.length < 2) return null;
+    return simplifyDebts(
+      ledger.map((e) => ({ fromUserId: e.fromUserId, toUserId: e.toUserId, amountCents: e.amountCents })),
+      participants,
+    );
+  }, [ledger, participants]);
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -262,7 +263,7 @@ export default function BillDetailPage({
           transition={{ delay: 0.2, duration: 0.4 }}
           className="mt-5"
         >
-          {simplificationResult && simplificationResult.originalCount > simplificationResult.simplifiedCount && (
+          {simplificationResult && (
             <div className="mb-4">
               <SimplificationToggle
                 originalCount={simplificationResult.originalCount}

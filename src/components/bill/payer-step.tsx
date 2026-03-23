@@ -175,40 +175,61 @@ export function PayerStep({
             );
             const showFillRemaining = !hasValue && othersFilled && remaining > 0;
 
+            const sliderValue = storeAmount || 0;
+
             return (
               <div
                 key={user.id}
-                className={`flex items-center gap-3 rounded-xl border p-3 transition-all ${
+                className={`rounded-xl border p-3 transition-all ${
                   hasValue ? "border-primary/30 bg-primary/5" : "bg-card"
                 }`}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                  {user.name.charAt(0)}
-                </span>
-                <span className="flex-1 text-sm font-medium">
-                  {user.name.split(" ")[0]}
-                </span>
-                {showFillRemaining ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 text-xs gap-1 text-primary border-primary/30"
-                    onClick={() => handleFillRemaining(user.id)}
-                  >
-                    Restante ({formatBRL(remaining)})
-                  </Button>
-                ) : (
-                  <div className="w-28">
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0,00"
-                      className="h-8 text-right text-sm"
-                      value={localVal}
-                      onChange={(e) => handleLocalChange(user.id, e.target.value)}
-                      onBlur={() => handleBlur(user.id)}
-                    />
-                  </div>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                    {user.name.charAt(0)}
+                  </span>
+                  <span className="flex-1 text-sm font-medium">
+                    {user.name.split(" ")[0]}
+                  </span>
+                  {showFillRemaining ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs gap-1 text-primary border-primary/30"
+                      onClick={() => handleFillRemaining(user.id)}
+                    >
+                      Restante ({formatBRL(remaining)})
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground">R$</span>
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0,00"
+                        className="h-8 w-24 text-right text-sm"
+                        value={localVal}
+                        onChange={(e) => handleLocalChange(user.id, e.target.value)}
+                        onBlur={() => handleBlur(user.id)}
+                      />
+                    </div>
+                  )}
+                </div>
+                {!showFillRemaining && (
+                  <input
+                    type="range"
+                    min="0"
+                    max={grandTotal}
+                    step={100}
+                    value={sliderValue}
+                    onChange={(e) => {
+                      const cents = parseInt(e.target.value);
+                      const formatted = (cents / 100).toFixed(2).replace(".", ",");
+                      handleLocalChange(user.id, formatted);
+                      onSetPayerAmount(user.id, cents);
+                    }}
+                    className="mt-2 w-full h-2 rounded-full appearance-none bg-muted cursor-pointer accent-primary [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-md"
+                  />
                 )}
               </div>
             );
