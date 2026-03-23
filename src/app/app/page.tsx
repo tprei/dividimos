@@ -8,11 +8,12 @@ import {
   EyeOff,
   Plus,
   Receipt,
+  RefreshCw,
   ScanLine,
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { staggerContainer, staggerItem } from "@/lib/animations";
@@ -78,62 +79,89 @@ export default function AppHome() {
   const [bills, setBills] = useState<RecentBill[]>([]);
   const [netBalance, setNetBalance] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const touchStartY = useRef(0);
 
-  useEffect(() => {
+  async function fetchDashboard() {
     if (!user) return;
     const supabase = createClient();
 
-    async function fetchDashboard() {
-      const { data: myBills } = await supabase
-        .from("bills")
-        .select("id, title, status, total_amount, created_at")
-        .order("created_at", { ascending: false })
-        .limit(5);
+    const { data: myBills } = await supabase
+      .from("bills")
+      .select("id, title, status, total_amount, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5);
 
-      if (myBills) {
-        const recent: RecentBill[] = [];
-        for (const bill of myBills) {
-          const { count } = await supabase
-            .from("bill_participants")
-            .select("*", { count: "exact", head: true })
-            .eq("bill_id", bill.id);
+    if (myBills) {
+      const recent: RecentBill[] = [];
+      for (const bill of myBills) {
+        const { count } = await supabase
+          .from("bill_participants")
+          .select("*", { count: "exact", head: true })
+          .eq("bill_id", bill.id);
 
-          recent.push({
-            id: bill.id,
-            title: bill.title,
-            date: new Date(bill.created_at).toLocaleDateString("pt-BR", {
-              day: "2-digit",
-              month: "short",
-            }),
-            total: bill.total_amount,
-            participants: count ?? 0,
-            status: bill.status,
-            myBalance: 0,
-          });
-        }
-        setBills(recent);
+        recent.push({
+          id: bill.id,
+          title: bill.title,
+          date: new Date(bill.created_at).toLocaleDateString("pt-BR", {
+            day: "2-digit",
+            month: "short",
+          }),
+          total: bill.total_amount,
+          participants: count ?? 0,
+          status: bill.status,
+          myBalance: 0,
+        });
       }
-
-      const { data: debtsOwed } = await supabase
-        .from("ledger")
-        .select("amount_cents")
-        .eq("from_user_id", user!.id)
-        .neq("status", "settled");
-
-      const { data: debtsOwedToMe } = await supabase
-        .from("ledger")
-        .select("amount_cents")
-        .eq("to_user_id", user!.id)
-        .neq("status", "settled");
-
-      const iOwe = (debtsOwed ?? []).reduce((s, d) => s + d.amount_cents, 0);
-      const theyOweMe = (debtsOwedToMe ?? []).reduce((s, d) => s + d.amount_cents, 0);
-      setNetBalance(theyOweMe - iOwe);
-
-      setLoading(false);
+      setBills(recent);
     }
 
-    fetchDashboard();
+    const { data: debtsOwed } = await supabase
+      .from("ledger")
+      .select("amount_cents")
+      .eq("from_user_id", user.id)
+      .neq("status", "settled");
+
+    const { data: debtsOwedToMe } = await supabase
+      .from("ledger")
+      .select("amount_cents")
+      .eq("to_user_id", user.id)
+      .neq("status", "settled");
+
+    const iOwe = (debtsOwed ?? []).reduce((s, d) => s + d.amount_cents, 0);
+    const theyOweMe = (debtsOwedToMe ?? []).reduce((s, d) => s + d.amount_cents, 0);
+    setNetBalance(theyOweMe - iOwe);
+
+    setLoading(false);
+  }
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (window.scrollY === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartY.current > 0) {
+      const distance = Math.max(0, e.touches[0].clientY - touchStartY.current);
+      setPullDistance(Math.min(distance, 100));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (pullDistance > 60) {
+      setRefreshing(true);
+      fetchDashboard().finally(() => setRefreshing(false));
+    }
+    setPullDistance(0);
+    touchStartY.current = 0;
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    (async () => { await fetchDashboard(); })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   if (authLoading || loading) {
@@ -154,7 +182,20 @@ export default function AppHome() {
   const firstName = user?.name.split(" ")[0] ?? "";
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div
+      className="mx-auto max-w-lg px-4 py-6"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {pullDistance > 0 && (
+        <div className="flex justify-center" style={{ height: pullDistance * 0.5 }}>
+          <RefreshCw
+            className={`h-5 w-5 text-muted-foreground ${pullDistance > 60 ? "text-primary" : ""}`}
+            style={{ transform: `rotate(${pullDistance * 3}deg)` }}
+          />
+        </div>
+      )}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -165,13 +206,21 @@ export default function AppHome() {
             <p className="text-sm text-muted-foreground">{getGreeting()}</p>
             <h1 className="text-2xl font-bold">{firstName}</h1>
           </div>
-          <Link href="/app/profile">
-            <UserAvatar
-              name={user?.name ?? ""}
-              avatarUrl={user?.avatarUrl}
-              size="md"
-            />
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setRefreshing(true); fetchDashboard().finally(() => setRefreshing(false)); }}
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+            >
+              <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
+            </button>
+            <Link href="/app/profile">
+              <UserAvatar
+                name={user?.name ?? ""}
+                avatarUrl={user?.avatarUrl}
+                size="md"
+              />
+            </Link>
+          </div>
         </div>
       </motion.div>
 

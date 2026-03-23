@@ -21,6 +21,7 @@ import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
 import { PulsingDot } from "@/components/shared/pulsing-dot";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { PixQrModal } from "@/components/settlement/pix-qr-modal";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
@@ -132,6 +133,33 @@ export default function BillDetailPage({
     return () => { supabase.removeChannel(channel); };
   }, [bill?.id]);
 
+  useEffect(() => {
+    if (!bill) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`bill:${bill.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "bills", filter: `id=eq.${bill.id}` },
+        () => {
+          loadBillFromSupabase(bill.id).then((data) => {
+            if (data) {
+              useBillStore.setState({
+                bill: data.bill,
+                participants: data.participants,
+                items: data.items,
+                splits: data.splits,
+                billSplits: data.billSplits,
+                ledger: data.ledger,
+              });
+            }
+          });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [bill?.id]);
+
   const handleMarkPaid = async (entryId: string) => {
     store.markPaid(entryId);
     await markPaidInSupabase(entryId);
@@ -180,6 +208,103 @@ export default function BillDetailPage({
           actionLabel="Nova conta"
           onAction={() => router.push("/app/bill/new")}
         />
+      </div>
+    );
+  }
+
+  if (bill.status === "draft" && currentUser?.id !== bill.creatorId) {
+    const creator = participants.find((p) => p.id === bill.creatorId);
+    const creatorFirstName = creator?.name.split(" ")[0] ?? "criador";
+
+    const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
+    const grandTotal =
+      bill.billType === "single_amount"
+        ? bill.totalAmountInput
+        : itemsTotal +
+          Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
+          bill.fixedFees;
+
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/app"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <div className="flex-1">
+            <h1 className="font-semibold">{bill.title}</h1>
+            {bill.merchantName && (
+              <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+            )}
+          </div>
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatusConfig.draft.color}`}>
+            {billStatusConfig.draft.label}
+          </span>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.4 }}
+          className="mt-6"
+        >
+          <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
+            <p className="text-sm text-white/70">Total da conta</p>
+            <p className="mt-1 text-3xl font-bold tabular-nums">
+              {formatBRL(grandTotal)}
+            </p>
+            <div className="mt-2 flex gap-4 text-sm text-white/70">
+              <span className="flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" />
+                {participants.length} pessoas
+              </span>
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+          className="mt-5 flex flex-col items-center rounded-2xl border border-dashed border-border bg-muted/30 px-6 py-8"
+        >
+          <PulsingDot className="bg-primary h-3 w-3" />
+          <p className="mt-4 text-sm font-medium text-foreground">
+            Aguardando {creatorFirstName} finalizar a conta
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground text-center">
+            Voce sera notificado assim que a conta estiver pronta para divisao.
+          </p>
+        </motion.div>
+
+        {participants.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.4 }}
+            className="mt-5"
+          >
+            <h2 className="mb-3 text-sm font-semibold">Participantes</h2>
+            <div className="space-y-2">
+              {participants.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
+                >
+                  <UserAvatar name={p.name} size="sm" />
+                  <span className="text-sm font-medium">{p.name}</span>
+                  {p.id === bill.creatorId && (
+                    <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      criador
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </div>
     );
   }
