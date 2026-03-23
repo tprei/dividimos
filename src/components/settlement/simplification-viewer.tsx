@@ -170,12 +170,16 @@ export function SimplificationViewer({
                   </div>
 
                   {step.addedEdge && (() => {
+                    const ae = step.addedEdge!;
+                    const fromName = getUserName(ae.fromUserId, participants);
+                    const toName = getUserName(ae.toUserId, participants);
                     const consolidated = step.edges.find(
-                      (e) =>
-                        e.fromUserId === step.addedEdge!.fromUserId &&
-                        e.toUserId === step.addedEdge!.toUserId,
+                      (e) => e.fromUserId === ae.fromUserId && e.toUserId === ae.toUserId,
                     );
-                    const displayAmount = consolidated?.amountCents ?? step.addedEdge.amountCents;
+                    const totalAmount = consolidated?.amountCents ?? ae.amountCents;
+                    const mergedAmount = ae.amountCents;
+                    const preExisting = totalAmount - mergedAmount;
+                    const hasPreExisting = preExisting > 1;
 
                     return (
                       <div className="flex flex-col items-center gap-2">
@@ -184,19 +188,24 @@ export function SimplificationViewer({
                         </p>
                         <span className="inline-flex items-center gap-2 rounded-full bg-success/10 px-4 py-2 text-sm">
                           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/20 text-[10px] font-bold text-success">
-                            {getUserName(step.addedEdge.fromUserId, participants).charAt(0)}
+                            {fromName.charAt(0)}
                           </span>
                           <span className="font-semibold text-success">
-                            {getUserName(step.addedEdge.fromUserId, participants)}
+                            {fromName}
                           </span>
                           <span className="text-success/60">→</span>
                           <span className="font-semibold text-success">
-                            {getUserName(step.addedEdge.toUserId, participants)}
+                            {toName}
                           </span>
                           <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-bold text-success tabular-nums">
-                            {formatBRL(displayAmount)}
+                            {formatBRL(totalAmount)}
                           </span>
                         </span>
+                        {hasPreExisting && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {fromName} ja devia {formatBRL(preExisting)} para {toName} + {formatBRL(mergedAmount)} desta simplificacao
+                          </p>
+                        )}
                       </div>
                     );
                   })()}
