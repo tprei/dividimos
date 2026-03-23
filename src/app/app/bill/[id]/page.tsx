@@ -282,15 +282,22 @@ export default function BillDetailPage({
 
           <h2 className="mb-3 text-sm font-semibold">
             Cobrancas
-            {simplifyEnabled && simplificationResult && (
-              <span className="ml-2 text-xs font-normal text-primary">(simplificado)</span>
+            {simplificationResult && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {simplifyEnabled
+                  ? `(${simplificationResult.simplifiedCount} simplificadas)`
+                  : `(${simplificationResult.originalCount} detalhadas)`}
+              </span>
             )}
           </h2>
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {(simplifyEnabled && simplificationResult
-                ? simplificationResult.simplifiedEdges.map((edge, idx) => ({
-                    id: `simplified_${idx}`,
+              {(simplificationResult
+                ? (simplifyEnabled
+                    ? simplificationResult.simplifiedEdges
+                    : simplificationResult.originalEdges
+                  ).map((edge, idx) => ({
+                    id: `edge_${idx}`,
                     billId: bill.id,
                     fromUserId: edge.fromUserId,
                     toUserId: edge.toUserId,
