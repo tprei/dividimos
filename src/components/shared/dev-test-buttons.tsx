@@ -80,17 +80,18 @@ export function DevTestButtons() {
     for (const item of RESTAURANT_ITEMS) store.addItem(item);
 
     const s = useBillStore.getState();
-    const items = s.items;
+    const storeItems = s.items;
     const pIds = s.participants.map((p) => p.id);
-    store.splitItemEqually(items[0].id, [pIds[0], pIds[1]]);
-    store.splitItemEqually(items[1].id, [pIds[2], pIds[3]]);
-    store.splitItemEqually(items[2].id, pIds);
-    store.splitItemEqually(items[3].id, [pIds[0]]);
-    store.splitItemEqually(items[4].id, pIds);
+
+    store.splitItemEqually(storeItems[0].id, [pIds[0], pIds[1]]);
+    store.splitItemEqually(storeItems[1].id, [pIds[2], pIds[3], pIds[4]]);
+    store.splitItemEqually(storeItems[2].id, pIds);
+    store.splitItemEqually(storeItems[3].id, [pIds[0], pIds[3]]);
+    store.splitItemEqually(storeItems[4].id, [pIds[1], pIds[2], pIds[4]]);
 
     const gt = useBillStore.getState().getGrandTotal();
-    store.setPayerAmount(pIds[0], Math.floor(gt * 0.6));
-    store.setPayerAmount(pIds[2], gt - Math.floor(gt * 0.6));
+    store.setPayerAmount(pIds[1], Math.floor(gt * 0.45));
+    store.setPayerAmount(pIds[3], gt - Math.floor(gt * 0.45));
 
     store.computeLedger();
   };

@@ -26,7 +26,7 @@ import { SimplificationViewer } from "@/components/settlement/simplification-vie
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
-import { simplifyDebts } from "@/lib/simplify";
+import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { useBillStore } from "@/stores/bill-store";
 import type { BillStatus, DebtStatus } from "@/types";
 
@@ -100,12 +100,11 @@ export default function BillDetailPage({
         bill.fixedFees;
 
   const simplificationResult = useMemo(() => {
-    if (ledger.length < 2) return null;
-    return simplifyDebts(
-      ledger.map((e) => ({ fromUserId: e.fromUserId, toUserId: e.toUserId, amountCents: e.amountCents })),
-      participants,
-    );
-  }, [ledger, participants]);
+    if (!bill || participants.length < 3) return null;
+    const rawEdges = computeRawEdges(bill, participants, splits, billSplits, items);
+    if (rawEdges.length < 2) return null;
+    return simplifyDebts(rawEdges, participants);
+  }, [bill, participants, splits, billSplits, items]);
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">

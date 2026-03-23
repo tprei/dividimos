@@ -1,5 +1,5 @@
 import { formatBRL } from "./currency";
-import type { User } from "@/types";
+import type { Bill, BillSplit, ItemSplit, User } from "@/types";
 
 export interface DebtEdge {
   fromUserId: string;
@@ -28,6 +28,72 @@ function cloneBalances(m: Map<string, number>): Map<string, number> {
 function getUserName(userId: string, participants: User[]): string {
   const user = participants.find((p) => p.id === userId);
   return user?.name.split(" ")[0] || "?";
+}
+
+export function computeRawEdges(
+  bill: Bill,
+  participants: User[],
+  itemSplits: ItemSplit[],
+  billSplits: BillSplit[],
+  items: { totalPriceCents: number }[],
+): DebtEdge[] {
+  const consumption = new Map<string, number>();
+  for (const p of participants) {
+    consumption.set(p.id, 0);
+  }
+
+  if (bill.billType === "single_amount") {
+    for (const bs of billSplits) {
+      consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
+    }
+  } else {
+    const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+    for (const split of itemSplits) {
+      consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
+    }
+    if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
+      const totalFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
+      const snapshot = new Map(consumption);
+      for (const [userId, itemTotal] of snapshot) {
+        const fee = Math.round((itemTotal / itemsTotal) * totalFee);
+        consumption.set(userId, (consumption.get(userId) || 0) + fee);
+      }
+    }
+    if (bill.fixedFees > 0) {
+      const perPerson = Math.round(bill.fixedFees / participants.length);
+      for (const p of participants) {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + perPerson);
+      }
+    }
+  }
+
+  const payers = bill.payers.length > 0
+    ? bill.payers
+    : [{ userId: bill.creatorId, amountCents: participants.reduce((s, p) => s + (consumption.get(p.id) || 0), 0) }];
+
+  const totalPaid = payers.reduce((s, p) => s + p.amountCents, 0);
+  if (totalPaid <= 0) return [];
+
+  const edges: DebtEdge[] = [];
+  for (const p of participants) {
+    const consumed = consumption.get(p.id) || 0;
+    if (consumed <= 0) continue;
+
+    for (const payer of payers) {
+      if (payer.userId === p.id) continue;
+      const payerShare = payer.amountCents / totalPaid;
+      const owedToPayer = Math.round(consumed * payerShare);
+      if (owedToPayer <= 0) continue;
+
+      edges.push({
+        fromUserId: p.id,
+        toUserId: payer.userId,
+        amountCents: owedToPayer,
+      });
+    }
+  }
+
+  return edges;
 }
 
 export function simplifyDebts(
