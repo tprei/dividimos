@@ -166,29 +166,45 @@ export function SingleAmountStep({
           )}
 
           {method === "percentage" && (
-            <div className="space-y-3">
-              {participants.map((user) => (
-                <div key={user.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                    {user.name.charAt(0)}
-                  </span>
-                  <span className="flex-1 text-sm font-medium">
-                    {user.name.split(" ")[0]}
-                  </span>
-                  <div className="flex items-center gap-1 w-24">
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      className="h-8 text-right text-sm"
-                      value={percentages.get(user.id) || ""}
-                      onChange={(e) => handlePercentageChange(user.id, e.target.value)}
-                      onBlur={applyPercentages}
+            <div className="space-y-4">
+              {participants.map((user) => {
+                const pct = parseFloat(percentages.get(user.id)?.replace(",", ".") || "0");
+                const amountForUser = Math.round((totalCents * pct) / 100);
+                return (
+                  <div key={user.id} className="rounded-xl border bg-card p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                          {user.name.charAt(0)}
+                        </span>
+                        <span className="text-sm font-medium">{user.name.split(" ")[0]}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold tabular-nums text-primary">{pct.toFixed(0)}%</span>
+                        <span className="ml-2 text-xs text-muted-foreground tabular-nums">{formatBRL(amountForUser)}</span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={pct}
+                      onChange={(e) => {
+                        handlePercentageChange(user.id, e.target.value);
+                        const assignments = participants.map((p) => ({
+                          userId: p.id,
+                          percentage: p.id === user.id
+                            ? parseFloat(e.target.value)
+                            : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
+                        }));
+                        onSplitByPercentage(assignments);
+                      }}
+                      className="mt-2 w-full h-2 rounded-full appearance-none bg-muted cursor-pointer accent-primary [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-md"
                     />
-                    <span className="text-sm text-muted-foreground">%</span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <Button
                 variant="outline"
                 size="sm"
@@ -209,9 +225,9 @@ export function SingleAmountStep({
                 <Users className="h-4 w-4" />
                 Dividir igualmente
               </Button>
-              {Math.abs(percentTotal - 100) > 0.1 && (
+              {Math.abs(percentTotal - 100) > 0.1 && percentTotal > 0 && (
                 <p className="text-xs text-warning-foreground">
-                  Total: {percentTotal.toFixed(1)}% (deve ser 100%)
+                  Total: {percentTotal.toFixed(0)}% (deve ser 100%)
                 </p>
               )}
             </div>
@@ -219,28 +235,53 @@ export function SingleAmountStep({
 
           {method === "fixed" && (
             <div className="space-y-3">
-              {participants.map((user) => (
-                <div key={user.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                    {user.name.charAt(0)}
-                  </span>
-                  <span className="flex-1 text-sm font-medium">
-                    {user.name.split(" ")[0]}
-                  </span>
-                  <div className="flex items-center gap-1 w-28">
-                    <span className="text-sm text-muted-foreground">R$</span>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0,00"
-                      className="h-8 text-right text-sm"
-                      value={fixedAmounts.get(user.id) || ""}
-                      onChange={(e) => handleFixedChange(user.id, e.target.value)}
-                      onBlur={applyFixed}
-                    />
+              {participants.map((user) => {
+                const userVal = fixedAmounts.get(user.id) || "";
+                const userCents = Math.round(parseFloat(userVal.replace(",", ".") || "0") * 100);
+                const othersTotal = Array.from(fixedAmounts.entries())
+                  .filter(([id]) => id !== user.id)
+                  .reduce((s, [, v]) => s + Math.round(parseFloat(v.replace(",", ".") || "0") * 100), 0);
+                const userRemaining = totalCents - othersTotal;
+                const showFillRemaining = !userVal && othersTotal > 0 && userRemaining > 0;
+
+                return (
+                  <div key={user.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      {user.name.charAt(0)}
+                    </span>
+                    <span className="flex-1 text-sm font-medium">
+                      {user.name.split(" ")[0]}
+                    </span>
+                    {showFillRemaining ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs gap-1 text-primary border-primary/30"
+                        onClick={() => {
+                          const formatted = (userRemaining / 100).toFixed(2).replace(".", ",");
+                          handleFixedChange(user.id, formatted);
+                          setTimeout(applyFixed, 0);
+                        }}
+                      >
+                        Restante ({formatBRL(userRemaining)})
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-1 w-28">
+                        <span className="text-sm text-muted-foreground">R$</span>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0,00"
+                          className="h-8 text-right text-sm"
+                          value={userVal}
+                          onChange={(e) => handleFixedChange(user.id, e.target.value)}
+                          onBlur={applyFixed}
+                        />
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <Button
                 variant="outline"
                 size="sm"

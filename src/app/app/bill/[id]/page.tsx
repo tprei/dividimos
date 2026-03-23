@@ -13,8 +13,8 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { use, useState } from "react";
-import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { use, useMemo, useState } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
@@ -43,6 +43,7 @@ export default function BillDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const store = useBillStore();
   const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
   const [simplifyEnabled, setSimplifyEnabled] = useState(false);
@@ -61,7 +62,7 @@ export default function BillDetailPage({
     amount: 0,
   });
 
-  const { bill, participants, items, splits, ledger } = store;
+  const { bill, participants, items, splits, billSplits, ledger } = store;
 
   if (!bill) {
     return (
@@ -78,9 +79,9 @@ export default function BillDetailPage({
         <EmptyState
           icon={Receipt}
           title="Nenhuma conta ativa"
-          description="Crie uma nova conta para dividir com amigos."
+          description="Crie uma nova conta para dividir com amigos, ou use o botao 'Experimentar demo' na pagina inicial."
           actionLabel="Nova conta"
-          onAction={() => {}}
+          onAction={() => router.push("/app/bill/new")}
         />
       </div>
     );
@@ -233,6 +234,7 @@ export default function BillDetailPage({
             bill={bill}
             items={items}
             splits={splits}
+            billSplits={billSplits}
             participants={participants}
           />
         </motion.div>

@@ -410,6 +410,28 @@ export default function NewBillPage() {
                   Adicionar item
                 </Button>
               )}
+              {store.items.length > 0 && store.bill && store.bill.serviceFeePercent > 0 && (
+                <div className="rounded-xl bg-muted/50 p-3 text-sm space-y-1">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums">{formatBRL(store.bill.totalAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Servico ({store.bill.serviceFeePercent}%)</span>
+                    <span className="tabular-nums">{formatBRL(Math.round(store.bill.totalAmount * store.bill.serviceFeePercent / 100))}</span>
+                  </div>
+                  {store.bill.fixedFees > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Couvert</span>
+                      <span className="tabular-nums">{formatBRL(store.bill.fixedFees)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold border-t border-border pt-1">
+                    <span>Total com servico</span>
+                    <span className="tabular-nums text-primary">{formatBRL(store.getGrandTotal())}</span>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -508,6 +530,7 @@ export default function NewBillPage() {
                     bill={store.bill}
                     items={store.items}
                     splits={store.splits}
+                    billSplits={store.billSplits}
                     participants={store.participants}
                   />
                   {store.bill.payers.length > 0 && (
