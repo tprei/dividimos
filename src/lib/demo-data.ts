@@ -3,37 +3,60 @@ import type { User, BillItem } from "@/types";
 export const DEMO_USERS: User[] = [
   {
     id: "user_self",
+    email: "pedro.reis@gmail.com",
+    handle: "pedro.reis",
     name: "Pedro Reis",
     phone: "+5511987654321",
-    pixKey: "+5511987654321",
     pixKeyType: "phone",
+    pixKeyHint: "(**) *****-4321",
+    avatarUrl: undefined,
+    onboarded: true,
     createdAt: new Date().toISOString(),
   },
   {
     id: "user_ana",
+    email: "ana.silva@gmail.com",
+    handle: "ana.silva",
     name: "Ana Silva",
     phone: "+5511999887766",
-    pixKey: "+5511999887766",
     pixKeyType: "phone",
+    pixKeyHint: "(**) *****-7766",
+    avatarUrl: undefined,
+    onboarded: true,
     createdAt: new Date().toISOString(),
   },
   {
     id: "user_marcos",
+    email: "marcos.oliveira@gmail.com",
+    handle: "marcos.oliveira",
     name: "Marcos Oliveira",
     phone: "+5511988776655",
-    pixKey: "+5511988776655",
     pixKeyType: "phone",
+    pixKeyHint: "(**) *****-6655",
+    avatarUrl: undefined,
+    onboarded: true,
     createdAt: new Date().toISOString(),
   },
   {
     id: "user_julia",
+    email: "julia.santos@email.com",
+    handle: "julia.santos",
     name: "Julia Santos",
     phone: "+5511977665544",
-    pixKey: "julia.santos@email.com",
     pixKeyType: "email",
+    pixKeyHint: "j****s@email.com",
+    avatarUrl: undefined,
+    onboarded: true,
     createdAt: new Date().toISOString(),
   },
 ];
+
+export const DEMO_PIX_KEYS: Record<string, string> = {
+  user_self: "+5511987654321",
+  user_ana: "+5511999887766",
+  user_marcos: "+5511988776655",
+  user_julia: "julia.santos@email.com",
+};
 
 export const DEMO_ITEMS: Omit<BillItem, "id" | "billId" | "createdAt">[] = [
   {

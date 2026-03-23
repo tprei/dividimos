@@ -51,13 +51,13 @@ export default function BillDetailPage({
   const [pixModal, setPixModal] = useState<{
     open: boolean;
     entryId: string;
-    pixKey: string;
+    recipientUserId: string;
     name: string;
     amount: number;
   }>({
     open: false,
     entryId: "",
-    pixKey: "",
+    recipientUserId: "",
     name: "",
     amount: 0,
   });
@@ -344,7 +344,7 @@ export default function BillDetailPage({
                                     setPixModal({
                                       open: true,
                                       entryId: `raw_${i}_${edge.fromUserId}`,
-                                      pixKey: receiver?.pixKey || "",
+                                      recipientUserId: receiver?.id || "",
                                       name: receiver?.name || "",
                                       amount: edge.amountCents,
                                     })
@@ -473,7 +473,7 @@ export default function BillDetailPage({
                                 setPixModal({
                                   open: true,
                                   entryId: entry.id,
-                                  pixKey: receiver?.pixKey || "",
+                                  recipientUserId: receiver?.id || "",
                                   name: receiver?.name || "",
                                   amount: entry.amountCents,
                                 })
@@ -548,7 +548,8 @@ export default function BillDetailPage({
       <PixQrModal
         open={pixModal.open}
         onClose={() => setPixModal({ ...pixModal, open: false })}
-        pixKey={pixModal.pixKey}
+        recipientUserId={pixModal.recipientUserId}
+        billId={bill.id}
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
         onMarkPaid={() => {

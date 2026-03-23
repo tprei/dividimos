@@ -12,44 +12,25 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { Skeleton } from "@/components/shared/skeleton";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import type { BillStatus } from "@/types";
 
-const recentBills = [
-  {
-    id: "1",
-    title: "Churrascaria Fogo de Chao",
-    date: "Hoje, 21:30",
-    total: 34500,
-    participants: 4,
-    status: "active" as BillStatus,
-    settledCount: 1,
-    totalDebts: 3,
-  },
-  {
-    id: "2",
-    title: "Bar do Zeca",
-    date: "Ontem, 23:15",
-    total: 18700,
-    participants: 3,
-    status: "settled" as BillStatus,
-    settledCount: 2,
-    totalDebts: 2,
-  },
-  {
-    id: "3",
-    title: "Padaria Brasileira",
-    date: "20 Mar, 08:45",
-    total: 6400,
-    participants: 2,
-    status: "partially_settled" as BillStatus,
-    settledCount: 0,
-    totalDebts: 1,
-  },
-];
+interface RecentBill {
+  id: string;
+  title: string;
+  date: string;
+  total: number;
+  participants: number;
+  status: BillStatus;
+  myBalance: number;
+}
 
 const statusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -57,54 +38,6 @@ const statusConfig: Record<BillStatus, { label: string; color: string }> = {
   partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
-
-function SettlementRing({
-  settled,
-  total,
-  size = 40,
-}: {
-  settled: number;
-  total: number;
-  size?: number;
-}) {
-  const r = (size - 6) / 2;
-  const circumference = 2 * Math.PI * r;
-  const progress = total > 0 ? settled / total : 0;
-  const offset = circumference * (1 - progress);
-
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          className="text-muted"
-        />
-        <motion.circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeLinecap="round"
-          className={progress === 1 ? "text-success" : "text-primary"}
-          strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: offset }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <Receipt className="h-4 w-4 text-muted-foreground" />
-      </div>
-    </div>
-  );
-}
 
 function QuickAction({
   icon: Icon,
@@ -138,9 +71,85 @@ function getGreeting(): string {
 }
 
 export default function AppHome() {
+  const { user, loading: authLoading } = useAuth();
   const [balanceVisible, setBalanceVisible] = useState(true);
-  const netBalance = -34500;
+  const [bills, setBills] = useState<RecentBill[]>([]);
+  const [netBalance, setNetBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    const supabase = createClient();
+
+    async function fetchDashboard() {
+      const { data: myBills } = await supabase
+        .from("bills")
+        .select("id, title, status, total_amount, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (myBills) {
+        const recent: RecentBill[] = [];
+        for (const bill of myBills) {
+          const { count } = await supabase
+            .from("bill_participants")
+            .select("*", { count: "exact", head: true })
+            .eq("bill_id", bill.id);
+
+          recent.push({
+            id: bill.id,
+            title: bill.title,
+            date: new Date(bill.created_at).toLocaleDateString("pt-BR", {
+              day: "2-digit",
+              month: "short",
+            }),
+            total: bill.total_amount,
+            participants: count ?? 0,
+            status: bill.status,
+            myBalance: 0,
+          });
+        }
+        setBills(recent);
+      }
+
+      const { data: debtsOwed } = await supabase
+        .from("ledger")
+        .select("amount_cents")
+        .eq("from_user_id", user!.id)
+        .neq("status", "settled");
+
+      const { data: debtsOwedToMe } = await supabase
+        .from("ledger")
+        .select("amount_cents")
+        .eq("to_user_id", user!.id)
+        .neq("status", "settled");
+
+      const iOwe = (debtsOwed ?? []).reduce((s, d) => s + d.amount_cents, 0);
+      const theyOweMe = (debtsOwedToMe ?? []).reduce((s, d) => s + d.amount_cents, 0);
+      setNetBalance(theyOweMe - iOwe);
+
+      setLoading(false);
+    }
+
+    fetchDashboard();
+  }, [user]);
+
+  if (authLoading || loading) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6 space-y-4">
+        <Skeleton className="h-12 w-48" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <div className="grid grid-cols-3 gap-3">
+          <Skeleton className="h-20 rounded-2xl" />
+          <Skeleton className="h-20 rounded-2xl" />
+          <Skeleton className="h-20 rounded-2xl" />
+        </div>
+      </div>
+    );
+  }
+
   const isPositive = netBalance >= 0;
+  const firstName = user?.name.split(" ")[0] ?? "";
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -152,11 +161,15 @@ export default function AppHome() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">{getGreeting()}</p>
-            <h1 className="text-2xl font-bold">Pedro</h1>
+            <h1 className="text-2xl font-bold">{firstName}</h1>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-            PR
-          </div>
+          <Link href="/app/profile">
+            <UserAvatar
+              name={user?.name ?? ""}
+              avatarUrl={user?.avatarUrl}
+              size="md"
+            />
+          </Link>
         </div>
       </motion.div>
 
@@ -204,7 +217,9 @@ export default function AppHome() {
             {balanceVisible ? formatBRL(Math.abs(netBalance)) : "R$ ••••••"}
           </motion.p>
           <p className="mt-1 text-sm text-white/60">
-            1 conta pendente · 3 contas este mes
+            {bills.filter((b) => b.status === "active").length} conta
+            {bills.filter((b) => b.status === "active").length !== 1 ? "s" : ""}{" "}
+            pendente{bills.filter((b) => b.status === "active").length !== 1 ? "s" : ""}
           </p>
         </div>
       </motion.div>
@@ -217,7 +232,7 @@ export default function AppHome() {
       >
         <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
         <QuickAction icon={ScanLine} label="Escanear" href="/app/bill/new" />
-        <QuickAction icon={Users} label="Amigos" href="/app/bills" />
+        <QuickAction icon={Users} label="Grupos" href="/app/groups" />
       </motion.div>
 
       <motion.div
@@ -233,9 +248,22 @@ export default function AppHome() {
             className="flex items-center gap-1 text-sm font-medium text-primary"
           >
             Ver todas
-            <ArrowUpRight className="h-3.5 w-3.5" />
           </Link>
         </div>
+
+        {bills.length === 0 && !loading && (
+          <div className="mt-6 rounded-2xl border border-dashed p-8 text-center">
+            <Receipt className="mx-auto h-8 w-8 text-muted-foreground/50" />
+            <p className="mt-2 text-sm text-muted-foreground">
+              Nenhuma conta ainda
+            </p>
+            <Link href="/app/bill/new">
+              <Button size="sm" className="mt-3">
+                Criar primeira conta
+              </Button>
+            </Link>
+          </div>
+        )}
 
         <motion.div
           variants={staggerContainer}
@@ -243,16 +271,15 @@ export default function AppHome() {
           animate="visible"
           className="mt-4 space-y-3"
         >
-          {recentBills.map((bill) => {
+          {bills.map((bill) => {
             const status = statusConfig[bill.status];
             return (
               <motion.div key={bill.id} variants={staggerItem}>
                 <Link href={`/app/bill/${bill.id}`}>
                   <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                    <SettlementRing
-                      settled={bill.settledCount}
-                      total={bill.totalDebts}
-                    />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+                      <Receipt className="h-5 w-5 text-muted-foreground" />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{bill.title}</p>
                       <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">

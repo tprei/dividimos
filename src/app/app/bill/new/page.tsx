@@ -19,18 +19,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
-import { AddParticipantForm } from "@/components/bill/add-participant-form";
+import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { ItemCard } from "@/components/bill/item-card";
 import { PayerStep } from "@/components/bill/payer-step";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { SingleAmountStep } from "@/components/bill/single-amount-step";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import { useBillStore } from "@/stores/bill-store";
-import type { BillType, User } from "@/types";
+import { useAuth } from "@/hooks/use-auth";
+import type { BillType, User, UserProfile } from "@/types";
 
 type Step = "type" | "info" | "participants" | "items" | "split" | "amount-split" | "payer" | "summary";
 
@@ -56,18 +58,10 @@ const SINGLE_STEPS: StepDef[] = [
   { key: "summary", label: "Resumo" },
 ];
 
-const DEMO_USER: User = {
-  id: "user_self",
-  name: "Pedro Reis",
-  phone: "+5511987654321",
-  pixKey: "+5511987654321",
-  pixKeyType: "phone",
-  createdAt: new Date().toISOString(),
-};
-
 export default function NewBillPage() {
   const router = useRouter();
   const store = useBillStore();
+  const { user: authUser } = useAuth();
 
   const [billType, setBillType] = useState<BillType | null>(null);
   const [step, setStep] = useState<Step>("type");
@@ -91,8 +85,8 @@ export default function NewBillPage() {
   };
 
   const initBill = useCallback(() => {
-    if (!billType) return;
-    store.setCurrentUser(DEMO_USER);
+    if (!billType || !authUser) return;
+    store.setCurrentUser(authUser);
     store.createBill(title || "Nova conta", billType, merchantName || undefined);
     if (billType === "itemized") {
       store.updateBill({
@@ -100,7 +94,7 @@ export default function NewBillPage() {
         fixedFees: Math.round((parseFloat(fixedFees.replace(",", ".")) || 0) * 100),
       });
     }
-  }, [store, title, billType, merchantName, serviceFee, fixedFees]);
+  }, [store, title, billType, merchantName, serviceFee, fixedFees, authUser]);
 
   const goNext = () => {
     if (step === "info") {
@@ -327,22 +321,20 @@ export default function NewBillPage() {
               className="space-y-4"
             >
               <p className="text-sm text-muted-foreground">
-                Adicione quem participou. Voce ja esta incluido.
+                Adicione participantes pelo @handle. Voce ja esta incluido.
               </p>
               <div className="space-y-2">
-                {store.participants.map((user) => (
-                  <motion.div key={user.id} layout className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
-                      {user.name.charAt(0)}
-                    </span>
+                {store.participants.map((p) => (
+                  <motion.div key={p.id} layout className="flex items-center gap-3 rounded-xl border bg-card p-3">
+                    <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
                     <div className="flex-1">
-                      <p className="text-sm font-medium">{user.name}</p>
-                      {user.phone && <p className="text-xs text-muted-foreground">{user.phone}</p>}
+                      <p className="text-sm font-medium">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">@{p.handle}</p>
                     </div>
-                    {user.id === DEMO_USER.id ? (
+                    {p.id === authUser?.id ? (
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Voce</span>
                     ) : (
-                      <button onClick={() => store.removeParticipant(user.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
+                      <button onClick={() => store.removeParticipant(p.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                         <X className="h-4 w-4" />
                       </button>
                     )}
@@ -351,16 +343,31 @@ export default function NewBillPage() {
               </div>
               <AnimatePresence>
                 {showAddParticipant && (
-                  <AddParticipantForm
-                    onAdd={(user) => { store.addParticipant(user); setShowAddParticipant(false); }}
+                  <AddParticipantByHandle
+                    onAdd={(profile: UserProfile) => {
+                      const newUser: User = {
+                        id: profile.id,
+                        email: "",
+                        handle: profile.handle,
+                        name: profile.name,
+                        pixKeyType: "email",
+                        pixKeyHint: "",
+                        avatarUrl: profile.avatarUrl,
+                        onboarded: true,
+                        createdAt: new Date().toISOString(),
+                      };
+                      store.addParticipant(newUser);
+                      setShowAddParticipant(false);
+                    }}
                     onCancel={() => setShowAddParticipant(false)}
+                    excludeIds={store.participants.map((p) => p.id)}
                   />
                 )}
               </AnimatePresence>
               {!showAddParticipant && (
                 <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
                   <UserPlus className="h-4 w-4" />
-                  Adicionar pessoa
+                  Adicionar por @handle
                 </Button>
               )}
             </motion.div>

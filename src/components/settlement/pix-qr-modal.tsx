@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, QrCode, Shield } from "lucide-react";
+import { Check, Copy, Loader2, QrCode, Shield } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
@@ -12,46 +12,75 @@ import { generatePixCopiaECola } from "@/lib/pix";
 interface PixQrModalProps {
   open: boolean;
   onClose: () => void;
-  pixKey: string;
   recipientName: string;
   amountCents: number;
   onMarkPaid: () => void;
+  pixKey?: string;
+  recipientUserId?: string;
+  billId?: string;
 }
 
 export function PixQrModal({
   open,
   onClose,
-  pixKey,
   recipientName,
   amountCents,
   onMarkPaid,
+  pixKey,
+  recipientUserId,
+  billId,
 }: PixQrModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copiaECola, setCopiaECola] = useState("");
   const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!open || !pixKey || amountCents <= 0) return;
+    if (!open || amountCents <= 0) return;
 
-    const payload = generatePixCopiaECola({
-      pixKey,
-      merchantName: recipientName,
-      merchantCity: "SAO PAULO",
-      amountCents,
-    });
-    setCopiaECola(payload);
+    setCopiaECola("");
+    setLoading(true);
 
-    if (canvasRef.current) {
-      QRCode.toCanvas(canvasRef.current, payload, {
-        width: 240,
-        margin: 2,
-        color: {
-          dark: "#1a1d2e",
-          light: "#ffffff",
-        },
+    if (pixKey) {
+      const payload = generatePixCopiaECola({
+        pixKey,
+        merchantName: recipientName,
+        merchantCity: "SAO PAULO",
+        amountCents,
       });
+      setCopiaECola(payload);
+      setLoading(false);
+      return;
     }
-  }, [open, pixKey, recipientName, amountCents]);
+
+    if (recipientUserId) {
+      fetch("/api/pix/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientUserId, amountCents, billId }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.copiaECola) {
+            setCopiaECola(data.copiaECola);
+          } else {
+            toast.error(data.error || "Erro ao gerar Pix");
+          }
+        })
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+  }, [open, pixKey, recipientUserId, recipientName, amountCents, billId]);
+
+  useEffect(() => {
+    if (!copiaECola || !canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, copiaECola, {
+      width: 240,
+      margin: 2,
+      color: { dark: "#1a1d2e", light: "#ffffff" },
+    });
+  }, [copiaECola]);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(copiaECola);
@@ -118,7 +147,13 @@ export function PixQrModal({
             transition={{ delay: 0.15 }}
             className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
           >
-            <canvas ref={canvasRef} />
+            {loading ? (
+              <div className="flex h-[240px] w-[240px] items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <canvas ref={canvasRef} />
+            )}
           </motion.div>
 
           <div className="mt-5 space-y-2.5">
@@ -127,6 +162,7 @@ export function PixQrModal({
               variant="outline"
               className="w-full gap-2"
               size="lg"
+              disabled={!copiaECola}
             >
               {copied ? (
                 <>

@@ -8,14 +8,47 @@ export type DebtStatus = "pending" | "paid_unconfirmed" | "settled";
 
 export type BillType = "single_amount" | "itemized";
 
+export type GroupMemberStatus = "invited" | "accepted";
+
 export interface User {
   id: string;
-  phone: string;
+  email: string;
+  handle: string;
   name: string;
-  pixKey: string;
+  phone?: string;
   pixKeyType: PixKeyType;
+  pixKeyHint: string;
   avatarUrl?: string;
+  onboarded: boolean;
   createdAt: string;
+}
+
+export interface UserProfile {
+  id: string;
+  handle: string;
+  name: string;
+  avatarUrl?: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  creatorId: string;
+  createdAt: string;
+}
+
+export interface GroupMember {
+  groupId: string;
+  userId: string;
+  status: GroupMemberStatus;
+  invitedBy: string;
+  createdAt: string;
+  acceptedAt?: string;
+  user?: UserProfile;
+}
+
+export interface GroupWithMembers extends Group {
+  members: (GroupMember & { user: UserProfile })[];
 }
 
 export interface BillPayer {

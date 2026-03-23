@@ -12,29 +12,41 @@ export interface Database {
       users: {
         Row: {
           id: string;
-          phone: string;
+          email: string | null;
+          handle: string | null;
+          phone: string | null;
           name: string;
-          pix_key: string;
+          pix_key_encrypted: string;
           pix_key_type: "phone" | "cpf" | "email" | "random";
+          pix_key_hint: string;
           avatar_url: string | null;
+          onboarded: boolean;
           created_at: string;
         };
         Insert: {
           id?: string;
-          phone: string;
+          email?: string | null;
+          handle?: string | null;
+          phone?: string | null;
           name: string;
-          pix_key: string;
+          pix_key_encrypted: string;
           pix_key_type?: "phone" | "cpf" | "email" | "random";
+          pix_key_hint?: string;
           avatar_url?: string | null;
+          onboarded?: boolean;
           created_at?: string;
         };
         Update: {
           id?: string;
-          phone?: string;
+          email?: string | null;
+          handle?: string | null;
+          phone?: string | null;
           name?: string;
-          pix_key?: string;
+          pix_key_encrypted?: string;
           pix_key_type?: "phone" | "cpf" | "email" | "random";
+          pix_key_hint?: string;
           avatar_url?: string | null;
+          onboarded?: boolean;
           created_at?: string;
         };
       };
@@ -183,12 +195,69 @@ export interface Database {
           created_at?: string;
         };
       };
+      groups: {
+        Row: {
+          id: string;
+          name: string;
+          creator_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          creator_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          creator_id?: string;
+          created_at?: string;
+        };
+      };
+      group_members: {
+        Row: {
+          group_id: string;
+          user_id: string;
+          status: "invited" | "accepted";
+          invited_by: string;
+          created_at: string;
+          accepted_at: string | null;
+        };
+        Insert: {
+          group_id: string;
+          user_id: string;
+          status?: "invited" | "accepted";
+          invited_by: string;
+          created_at?: string;
+          accepted_at?: string | null;
+        };
+        Update: {
+          group_id?: string;
+          user_id?: string;
+          status?: "invited" | "accepted";
+          invited_by?: string;
+          created_at?: string;
+          accepted_at?: string | null;
+        };
+      };
+    };
+    Views: {
+      user_profiles: {
+        Row: {
+          id: string;
+          handle: string;
+          name: string;
+          avatar_url: string | null;
+        };
+      };
     };
     Enums: {
       pix_key_type: "phone" | "cpf" | "email" | "random";
       bill_status: "draft" | "active" | "partially_settled" | "settled";
       split_type: "equal" | "percentage" | "fixed";
       debt_status: "pending" | "paid_unconfirmed" | "settled";
+      group_member_status: "invited" | "accepted";
     };
   };
 }
