@@ -137,9 +137,13 @@ export default function AuthPage() {
                   <ArrowRight className="h-4 w-4" />
                 </Button>
 
-                <p className="mt-4 text-center text-xs text-muted-foreground">
-                  Enviaremos um codigo de 6 digitos via WhatsApp.
-                </p>
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-[#25D366]">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                    <path d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.832-1.438A9.955 9.955 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18c-1.66 0-3.203-.51-4.484-1.375l-.32-.195-2.871.852.852-2.871-.195-.32A7.963 7.963 0 014 12c0-4.411 3.589-8 8-8s8 3.589 8 8-3.589 8-8 8z" />
+                  </svg>
+                  <span>Enviaremos um codigo de 6 digitos via WhatsApp.</span>
+                </div>
               </motion.div>
             )}
 
@@ -327,12 +331,18 @@ export default function AuthPage() {
                   </AnimatePresence>
                 </motion.div>
 
-                <div className="mt-4 flex items-start gap-2 rounded-xl bg-muted/50 p-3">
-                  <Shield className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <p className="text-xs text-muted-foreground">
-                    Sua chave Pix e usada exclusivamente para gerar QR codes de
-                    cobranca. Seus dados sao criptografados e nunca compartilhados
-                    com terceiros.
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-start gap-2 rounded-xl bg-muted/50 p-3">
+                    <Shield className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <p className="text-xs text-muted-foreground">
+                      Sua chave Pix e usada exclusivamente para gerar QR codes de
+                      cobranca. Seus dados sao criptografados e nunca compartilhados
+                      com terceiros.
+                    </p>
+                  </div>
+                  <p className="text-center text-[10px] text-muted-foreground">
+                    Em conformidade com a LGPD (Lei 13.709/2018).
+                    Voce pode excluir seus dados a qualquer momento.
                   </p>
                 </div>
 
@@ -349,13 +359,19 @@ export default function AuthPage() {
           </AnimatePresence>
         </div>
 
-        <div className="mt-8 flex justify-center gap-1.5">
+        <div className="mt-8 flex justify-center gap-2">
           {(["phone", "otp", "name", "pix"] as AuthStep[]).map((s) => (
-            <div
+            <motion.div
               key={s}
-              className={`h-1.5 rounded-full transition-all ${
-                s === step ? "w-6 bg-primary" : "w-1.5 bg-muted"
-              }`}
+              animate={{
+                width: s === step ? 24 : 8,
+                backgroundColor:
+                  s === step
+                    ? "oklch(0.55 0.15 175)"
+                    : "oklch(0.91 0.005 260)",
+              }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="h-2 rounded-full"
             />
           ))}
         </div>

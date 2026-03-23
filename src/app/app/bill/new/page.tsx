@@ -106,6 +106,21 @@ export default function NewBillPage() {
     }
   };
 
+  const handleAssignAll = (itemId: string) => {
+    const currentSplits = store.splits.filter((s) => s.itemId === itemId);
+    const allAssigned = currentSplits.length === store.participants.length;
+    if (allAssigned) {
+      for (const p of store.participants) {
+        store.unassignItem(itemId, p.id);
+      }
+    } else {
+      store.splitItemEqually(
+        itemId,
+        store.participants.map((p) => p.id),
+      );
+    }
+  };
+
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
@@ -132,15 +147,32 @@ export default function NewBillPage() {
         </div>
       </div>
 
-      <div className="mt-4 flex gap-1">
-        {steps.map((s, idx) => (
-          <div
-            key={s.key}
-            className={`h-1 flex-1 rounded-full transition-colors ${
-              idx <= stepIndex ? "bg-primary" : "bg-muted"
-            }`}
-          />
-        ))}
+      <div className="mt-4">
+        <div className="flex gap-1">
+          {steps.map((s, idx) => (
+            <div key={s.key} className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+              <motion.div
+                className="h-full rounded-full bg-primary"
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: idx <= stepIndex ? 1 : 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                style={{ transformOrigin: "left" }}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 hidden sm:flex">
+          {steps.map((s, idx) => (
+            <span
+              key={s.key}
+              className={`flex-1 text-center text-[10px] font-medium transition-colors ${
+                idx <= stepIndex ? "text-primary" : "text-muted-foreground"
+              }`}
+            >
+              {s.label}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="mt-6 min-h-[400px]">
@@ -400,6 +432,7 @@ export default function NewBillPage() {
                       participants={store.participants}
                       onAssign={handleAssign}
                       onUnassign={handleUnassign}
+                      onAssignAll={handleAssignAll}
                       onRemove={(id) => store.removeItem(id)}
                     />
                   );

@@ -2,15 +2,18 @@
 
 import { motion } from "framer-motion";
 import {
+  ArrowDownLeft,
   ArrowUpRight,
-  Clock,
   Plus,
   Receipt,
-  TrendingUp,
+  ScanLine,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
+import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
+import type { BillStatus } from "@/types";
 
 const recentBills = [
   {
@@ -19,8 +22,9 @@ const recentBills = [
     date: "Hoje, 21:30",
     total: 34500,
     participants: 4,
-    status: "active" as const,
-    settled: 2,
+    status: "active" as BillStatus,
+    settledCount: 1,
+    totalDebts: 3,
   },
   {
     id: "2",
@@ -28,8 +32,9 @@ const recentBills = [
     date: "Ontem, 23:15",
     total: 18700,
     participants: 3,
-    status: "settled" as const,
-    settled: 3,
+    status: "settled" as BillStatus,
+    settledCount: 2,
+    totalDebts: 2,
   },
   {
     id: "3",
@@ -37,19 +42,102 @@ const recentBills = [
     date: "20 Mar, 08:45",
     total: 6400,
     participants: 2,
-    status: "partially_settled" as const,
-    settled: 1,
+    status: "partially_settled" as BillStatus,
+    settledCount: 0,
+    totalDebts: 1,
   },
 ];
 
-const statusConfig = {
+const statusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
   partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
 
+function SettlementRing({
+  settled,
+  total,
+  size = 40,
+}: {
+  settled: number;
+  total: number;
+  size?: number;
+}) {
+  const r = (size - 6) / 2;
+  const circumference = 2 * Math.PI * r;
+  const progress = total > 0 ? settled / total : 0;
+  const offset = circumference * (1 - progress);
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          className="text-muted"
+        />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          className={progress === 1 ? "text-success" : "text-primary"}
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Receipt className="h-4 w-4 text-muted-foreground" />
+      </div>
+    </div>
+  );
+}
+
+function QuickAction({
+  icon: Icon,
+  label,
+  href,
+}: {
+  icon: React.ElementType;
+  label: string;
+  href: string;
+}) {
+  return (
+    <Link href={href} className="flex-1">
+      <motion.div
+        whileTap={{ scale: 0.95 }}
+        className="flex flex-col items-center gap-1.5 rounded-2xl border bg-card p-3 transition-colors hover:border-primary/30"
+      >
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className="text-xs font-medium">{label}</span>
+      </motion.div>
+    </Link>
+  );
+}
+
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Bom dia";
+  if (hour < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
 export default function AppHome() {
+  const netBalance = -34500;
+  const isPositive = netBalance >= 0;
+
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <motion.div
@@ -59,7 +147,7 @@ export default function AppHome() {
       >
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-muted-foreground">Boa noite</p>
+            <p className="text-sm text-muted-foreground">{getGreeting()}</p>
             <h1 className="text-2xl font-bold">Pedro</h1>
           </div>
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
@@ -71,43 +159,49 @@ export default function AppHome() {
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.4 }}
-        className="mt-6 grid grid-cols-2 gap-3"
+        transition={{ delay: 0.08, duration: 0.4 }}
+        className="mt-5"
       >
-        <div className="rounded-2xl border bg-card p-4">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Clock className="h-4 w-4" />
-            <span className="text-xs font-medium">Pendente</span>
+        <div
+          className={`rounded-2xl p-5 text-white shadow-lg ${
+            isPositive
+              ? "gradient-income shadow-income/20"
+              : "gradient-primary shadow-primary/20"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {isPositive ? (
+              <ArrowDownLeft className="h-4 w-4 text-white/70" />
+            ) : (
+              <ArrowUpRight className="h-4 w-4 text-white/70" />
+            )}
+            <p className="text-sm text-white/70">
+              {isPositive ? "A receber" : "A pagar"}
+            </p>
           </div>
-          <p className="mt-2 text-xl font-bold tabular-nums">
-            {formatBRL(34500)}
+          <motion.p
+            key={netBalance}
+            initial={{ y: 8, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="mt-1 text-3xl font-bold tabular-nums"
+          >
+            {formatBRL(Math.abs(netBalance))}
+          </motion.p>
+          <p className="mt-1 text-sm text-white/60">
+            1 conta pendente · 3 contas este mes
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">1 conta aberta</p>
-        </div>
-        <div className="rounded-2xl border bg-card p-4">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <TrendingUp className="h-4 w-4" />
-            <span className="text-xs font-medium">Este mes</span>
-          </div>
-          <p className="mt-2 text-xl font-bold tabular-nums">
-            {formatBRL(59600)}
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">3 contas</p>
         </div>
       </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15, duration: 0.4 }}
-        className="mt-6"
+        transition={{ delay: 0.14, duration: 0.4 }}
+        className="mt-4 grid grid-cols-3 gap-3"
       >
-        <Link href="/app/bill/new">
-          <Button className="w-full gap-2 text-base" size="lg">
-            <Plus className="h-5 w-5" />
-            Nova conta
-          </Button>
-        </Link>
+        <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
+        <QuickAction icon={ScanLine} label="Escanear" href="/app/bill/new" />
+        <QuickAction icon={Users} label="Amigos" href="/app/bills" />
       </motion.div>
 
       <motion.div
@@ -127,21 +221,22 @@ export default function AppHome() {
           </Link>
         </div>
 
-        <div className="mt-4 space-y-3">
-          {recentBills.map((bill, idx) => {
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="visible"
+          className="mt-4 space-y-3"
+        >
+          {recentBills.map((bill) => {
             const status = statusConfig[bill.status];
             return (
-              <motion.div
-                key={bill.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 + idx * 0.08, duration: 0.4 }}
-              >
+              <motion.div key={bill.id} variants={staggerItem}>
                 <Link href={`/app/bill/${bill.id}`}>
                   <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <Receipt className="h-5 w-5" />
-                    </div>
+                    <SettlementRing
+                      settled={bill.settledCount}
+                      total={bill.totalDebts}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{bill.title}</p>
                       <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
@@ -165,7 +260,7 @@ export default function AppHome() {
               </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       </motion.div>
     </div>
   );

@@ -1,22 +1,37 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Filter, Receipt, Search } from "lucide-react";
+import { Receipt, Search } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { EmptyState } from "@/components/shared/empty-state";
+import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import type { BillStatus } from "@/types";
 
-const allBills = [
+interface BillEntry {
+  id: string;
+  title: string;
+  date: string;
+  total: number;
+  participants: number;
+  status: BillStatus;
+  settledCount: number;
+  totalDebts: number;
+}
+
+const allBills: BillEntry[] = [
   {
     id: "1",
     title: "Churrascaria Fogo de Chao",
     date: "23 Mar 2026",
     total: 34500,
     participants: 4,
-    status: "active" as BillStatus,
+    status: "active",
+    settledCount: 1,
+    totalDebts: 3,
   },
   {
     id: "2",
@@ -24,7 +39,9 @@ const allBills = [
     date: "22 Mar 2026",
     total: 18700,
     participants: 3,
-    status: "settled" as BillStatus,
+    status: "settled",
+    settledCount: 2,
+    totalDebts: 2,
   },
   {
     id: "3",
@@ -32,7 +49,9 @@ const allBills = [
     date: "20 Mar 2026",
     total: 6400,
     participants: 2,
-    status: "partially_settled" as BillStatus,
+    status: "partially_settled",
+    settledCount: 0,
+    totalDebts: 1,
   },
   {
     id: "4",
@@ -40,7 +59,9 @@ const allBills = [
     date: "15 Mar 2026",
     total: 42300,
     participants: 5,
-    status: "settled" as BillStatus,
+    status: "settled",
+    settledCount: 4,
+    totalDebts: 4,
   },
   {
     id: "5",
@@ -48,7 +69,9 @@ const allBills = [
     date: "12 Mar 2026",
     total: 11200,
     participants: 2,
-    status: "settled" as BillStatus,
+    status: "settled",
+    settledCount: 1,
+    totalDebts: 1,
   },
 ];
 
@@ -58,6 +81,54 @@ const statusConfig: Record<BillStatus, { label: string; color: string }> = {
   partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
+
+function SettlementRing({
+  settled,
+  total,
+  size = 42,
+}: {
+  settled: number;
+  total: number;
+  size?: number;
+}) {
+  const r = (size - 6) / 2;
+  const circumference = 2 * Math.PI * r;
+  const progress = total > 0 ? settled / total : 0;
+  const offset = circumference * (1 - progress);
+
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          className="text-muted"
+        />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          className={progress === 1 ? "text-success" : "text-primary"}
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Receipt className="h-4 w-4 text-muted-foreground" />
+      </div>
+    </div>
+  );
+}
 
 type FilterType = "all" | BillStatus;
 
@@ -114,7 +185,7 @@ export default function BillsPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1, duration: 0.4 }}
-        className="mt-3 flex gap-2 overflow-x-auto"
+        className="mt-3 flex gap-2 overflow-x-auto pb-1"
       >
         {filters.map((f) => (
           <Button
@@ -129,21 +200,22 @@ export default function BillsPage() {
         ))}
       </motion.div>
 
-      <div className="mt-6 space-y-3">
-        {filtered.map((bill, idx) => {
+      <motion.div
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        className="mt-6 space-y-3"
+      >
+        {filtered.map((bill) => {
           const status = statusConfig[bill.status];
           return (
-            <motion.div
-              key={bill.id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 + idx * 0.06, duration: 0.4 }}
-            >
+            <motion.div key={bill.id} variants={staggerItem}>
               <Link href={`/app/bill/${bill.id}`}>
                 <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Receipt className="h-5 w-5" />
-                  </div>
+                  <SettlementRing
+                    settled={bill.settledCount}
+                    total={bill.totalDebts}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{bill.title}</p>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
@@ -169,14 +241,19 @@ export default function BillsPage() {
         })}
 
         {filtered.length === 0 && (
-          <div className="py-12 text-center">
-            <Filter className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-3 text-sm text-muted-foreground">
-              Nenhuma conta encontrada
-            </p>
-          </div>
+          <EmptyState
+            icon={Receipt}
+            title="Nenhuma conta encontrada"
+            description={
+              search
+                ? `Sem resultados para "${search}".`
+                : "Crie sua primeira conta para dividir com amigos."
+            }
+            actionLabel={!search ? "Nova conta" : undefined}
+            onAction={!search ? () => {} : undefined}
+          />
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

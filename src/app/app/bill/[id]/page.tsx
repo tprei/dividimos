@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  PartyPopper,
   QrCode,
   Receipt,
   Users,
@@ -14,24 +15,14 @@ import {
 import Link from "next/link";
 import { use, useState } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
+import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
+import { EmptyState } from "@/components/shared/empty-state";
+import { PulsingDot } from "@/components/shared/pulsing-dot";
 import { PixQrModal } from "@/components/settlement/pix-qr-modal";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { useBillStore } from "@/stores/bill-store";
 import type { BillStatus, DebtStatus } from "@/types";
-
-const debtStatusConfig: Record<
-  DebtStatus,
-  { label: string; icon: React.ElementType; color: string }
-> = {
-  pending: { label: "Pendente", icon: Clock, color: "text-warning-foreground bg-warning/15" },
-  paid_unconfirmed: {
-    label: "Pago (aguardando)",
-    icon: Bell,
-    color: "text-primary bg-primary/15",
-  },
-  settled: { label: "Liquidado", icon: CheckCheck, color: "text-success bg-success/15" },
-};
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -75,25 +66,26 @@ export default function BillDetailPage({
           </Link>
           <h1 className="font-semibold">Conta</h1>
         </div>
-
-        <div className="mt-20 text-center">
-          <Receipt className="mx-auto h-12 w-12 text-muted-foreground/40" />
-          <h2 className="mt-4 text-lg font-semibold">Nenhuma conta ativa</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Crie uma nova conta para comecar.
-          </p>
-          <Link href="/app/bill/new">
-            <Button className="mt-6 gap-2">
-              <Receipt className="h-4 w-4" />
-              Nova conta
-            </Button>
-          </Link>
-        </div>
+        <EmptyState
+          icon={Receipt}
+          title="Nenhuma conta ativa"
+          description="Crie uma nova conta para dividir com amigos."
+          actionLabel="Nova conta"
+          onAction={() => {}}
+        />
       </div>
     );
   }
 
   const billStatus = billStatusConfig[bill.status];
+  const allSettled = ledger.length > 0 && ledger.every((e) => e.status === "settled");
+  const settledCount = ledger.filter((e) => e.status === "settled").length;
+
+  const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
+  const grandTotal =
+    itemsTotal +
+    Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
+    bill.fixedFees;
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -110,11 +102,15 @@ export default function BillDetailPage({
             <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
           )}
         </div>
-        <span
+        <motion.span
+          key={bill.status}
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 400, damping: 20 }}
           className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatus.color}`}
         >
           {billStatus.label}
-        </span>
+        </motion.span>
       </div>
 
       <motion.div
@@ -126,15 +122,7 @@ export default function BillDetailPage({
         <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
           <p className="text-sm text-white/70">Total da conta</p>
           <p className="mt-1 text-3xl font-bold tabular-nums">
-            {formatBRL(
-              items.reduce((s, i) => s + i.totalPriceCents, 0) +
-                Math.round(
-                  (items.reduce((s, i) => s + i.totalPriceCents, 0) *
-                    bill.serviceFeePercent) /
-                    100,
-                ) +
-                bill.fixedFees,
-            )}
+            {formatBRL(grandTotal)}
           </p>
           <div className="mt-2 flex gap-4 text-sm text-white/70">
             <span className="flex items-center gap-1">
@@ -145,103 +133,200 @@ export default function BillDetailPage({
               <Users className="h-3.5 w-3.5" />
               {participants.length} pessoas
             </span>
+            {ledger.length > 0 && (
+              <span className="flex items-center gap-1">
+                <Check className="h-3.5 w-3.5" />
+                {settledCount}/{ledger.length}
+              </span>
+            )}
           </div>
         </div>
       </motion.div>
 
-      {ledger.length > 0 && (
+      {allSettled && ledger.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className="mt-6 flex flex-col items-center rounded-2xl border-2 border-dashed border-success/30 bg-success/5 p-8"
+        >
+          <AnimatedCheckmark size={64} />
+          <h3 className="mt-4 text-lg font-bold">Tudo liquidado!</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Todos os pagamentos foram confirmados.
+          </p>
+        </motion.div>
+      )}
+
+      {ledger.length > 0 && !allSettled && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
           className="mt-6"
         >
-          <h2 className="mb-3 text-sm font-semibold">Cobranças</h2>
+          <h2 className="mb-3 text-sm font-semibold">Cobrancas</h2>
           <div className="space-y-3">
-            {ledger.map((entry, idx) => {
-              const payer = participants.find((p) => p.id === entry.fromUserId);
-              const receiver = participants.find((p) => p.id === entry.toUserId);
-              const status = debtStatusConfig[entry.status];
-              const StatusIcon = status.icon;
+            <AnimatePresence mode="popLayout">
+              {ledger.map((entry, idx) => {
+                const payer = participants.find((p) => p.id === entry.fromUserId);
+                const receiver = participants.find(
+                  (p) => p.id === entry.toUserId,
+                );
 
-              return (
-                <motion.div
-                  key={entry.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.25 + idx * 0.06 }}
-                  className="rounded-2xl border bg-card p-4"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
-                        {payer?.name.charAt(0) || "?"}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">
-                          {payer?.name.split(" ")[0] || "?"}{" "}
-                          <span className="text-muted-foreground">→</span>{" "}
-                          {receiver?.name.split(" ")[0] || "?"}
-                        </p>
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
+                return (
+                  <motion.div
+                    key={entry.id}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.06 }}
+                    className="overflow-hidden rounded-2xl border bg-card"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+                            {payer?.name.charAt(0) || "?"}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">
+                              {payer?.name.split(" ")[0] || "?"}{" "}
+                              <span className="text-muted-foreground">→</span>{" "}
+                              {receiver?.name.split(" ")[0] || "?"}
+                            </p>
+                            <motion.span
+                              key={entry.status}
+                              initial={{ scale: 0.8, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              transition={{
+                                type: "spring",
+                                stiffness: 400,
+                                damping: 20,
+                              }}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                entry.status === "pending"
+                                  ? "bg-warning/15 text-warning-foreground"
+                                  : entry.status === "paid_unconfirmed"
+                                    ? "bg-primary/15 text-primary"
+                                    : "bg-success/15 text-success"
+                              }`}
+                            >
+                              {entry.status === "pending" && (
+                                <>
+                                  <Clock className="h-3 w-3" />
+                                  Pendente
+                                </>
+                              )}
+                              {entry.status === "paid_unconfirmed" && (
+                                <>
+                                  <PulsingDot className="bg-primary" />
+                                  Aguardando confirmacao
+                                </>
+                              )}
+                              {entry.status === "settled" && (
+                                <>
+                                  <CheckCheck className="h-3 w-3" />
+                                  Liquidado
+                                </>
+                              )}
+                            </motion.span>
+                          </div>
+                        </div>
+                        <motion.p
+                          key={entry.amountCents}
+                          initial={{ y: 6, opacity: 0 }}
+                          animate={{ y: 0, opacity: 1 }}
+                          className="text-lg font-bold tabular-nums"
                         >
-                          <StatusIcon className="h-3 w-3" />
-                          {status.label}
-                        </span>
+                          {formatBRL(entry.amountCents)}
+                        </motion.p>
                       </div>
-                    </div>
-                    <p className="text-lg font-bold tabular-nums">
-                      {formatBRL(entry.amountCents)}
-                    </p>
-                  </div>
 
-                  {entry.status === "pending" && (
-                    <div className="mt-3 flex gap-2">
-                      <Button
-                        size="sm"
-                        className="flex-1 gap-1.5"
-                        onClick={() =>
-                          setPixModal({
-                            open: true,
-                            entryId: entry.id,
-                            pixKey: receiver?.pixKey || "",
-                            name: receiver?.name || "",
-                            amount: entry.amountCents,
-                          })
-                        }
-                      >
-                        <QrCode className="h-4 w-4" />
-                        Pagar via Pix
-                      </Button>
-                    </div>
-                  )}
+                      <AnimatePresence mode="wait">
+                        {entry.status === "pending" && (
+                          <motion.div
+                            key="pending-actions"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="mt-3 flex gap-2"
+                          >
+                            <Button
+                              size="sm"
+                              className="flex-1 gap-1.5"
+                              onClick={() =>
+                                setPixModal({
+                                  open: true,
+                                  entryId: entry.id,
+                                  pixKey: receiver?.pixKey || "",
+                                  name: receiver?.name || "",
+                                  amount: entry.amountCents,
+                                })
+                              }
+                            >
+                              <QrCode className="h-4 w-4" />
+                              Pagar via Pix
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="gap-1 text-muted-foreground"
+                            >
+                              <Bell className="h-3.5 w-3.5" />
+                              Lembrar
+                            </Button>
+                          </motion.div>
+                        )}
 
-                  {entry.status === "paid_unconfirmed" && (
-                    <div className="mt-3">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full gap-1.5"
-                        onClick={() => store.confirmPayment(entry.id)}
-                      >
-                        <Check className="h-4 w-4" />
-                        Confirmar recebimento
-                      </Button>
-                    </div>
-                  )}
+                        {entry.status === "paid_unconfirmed" && (
+                          <motion.div
+                            key="confirm-actions"
+                            initial={{ opacity: 0, scale: 0.98 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.98 }}
+                            transition={{ duration: 0.2 }}
+                            className="mt-3"
+                          >
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full gap-1.5 border-success/30 text-success hover:bg-success/10"
+                              onClick={() => store.confirmPayment(entry.id)}
+                            >
+                              <Check className="h-4 w-4" />
+                              Confirmar recebimento
+                            </Button>
+                          </motion.div>
+                        )}
 
-                  {entry.status === "settled" && (
-                    <div className="mt-2 flex items-center gap-1.5 text-xs text-success">
-                      <CheckCheck className="h-3.5 w-3.5" />
-                      Liquidado{" "}
-                      {entry.confirmedAt &&
-                        `em ${new Date(entry.confirmedAt).toLocaleString("pt-BR")}`}
+                        {entry.status === "settled" && (
+                          <motion.div
+                            key="settled-info"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="mt-3 flex items-center gap-2 rounded-lg bg-success/5 px-3 py-2"
+                          >
+                            <CheckCheck className="h-4 w-4 shrink-0 text-success" />
+                            <span className="text-xs text-success">
+                              Liquidado
+                              {entry.confirmedAt &&
+                                ` em ${new Date(entry.confirmedAt).toLocaleString("pt-BR", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}`}
+                            </span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
-                  )}
-                </motion.div>
-              );
-            })}
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           </div>
         </motion.div>
       )}
