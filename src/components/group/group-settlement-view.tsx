@@ -43,11 +43,17 @@ export function GroupSettlementView({
   const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; mode: "pay" | "collect" } | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
 
-  async function reload() {
+  // Read-only refresh: just load current settlement state from DB
+  async function refreshSettlements() {
+    const loaded = await loadGroupSettlements(groupId);
+    setSettlements(loaded.filter((s) => s.status !== "settled"));
+  }
+
+  // Full compute + sync: runs once on mount and after user actions
+  async function initializeSettlements() {
     setLoading(true);
     const { ledger, participants: billParticipants } = await loadGroupBillsAndLedger(groupId);
 
-    // Use group participants (from props) merged with bill participants
     const allParticipantIds = new Set(participants.map((p) => p.id));
     const mergedParticipants = [...participants];
     for (const p of billParticipants) {
@@ -67,22 +73,21 @@ export function GroupSettlementView({
     }
 
     await upsertGroupSettlements(groupId, netEdges);
-    const loaded = await loadGroupSettlements(groupId);
-    setSettlements(loaded.filter((s) => s.status !== "settled"));
+    await refreshSettlements();
     setLoading(false);
   }
 
   useEffect(() => {
-    reload();
+    initializeSettlements();
 
-    // Realtime subscription for group_settlements
+    // Realtime: read-only refresh (no upsert) to avoid write → subscribe → write loop
     const supabase = createClient();
     const channel = supabase
       .channel(`group-settlements:${groupId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
-        () => reload(),
+        { event: "UPDATE", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
+        () => refreshSettlements(),
       )
       .subscribe();
 
@@ -104,21 +109,21 @@ export function GroupSettlementView({
     setSettling(settlementId);
     await markGroupSettlementPaid(settlementId);
     setPixModal(null);
-    await reload();
+    await refreshSettlements();
     setSettling(null);
   }
 
   async function handleConfirm(settlementId: string) {
     setSettling(settlementId);
     await confirmGroupSettlement(settlementId);
-    await reload();
+    await refreshSettlements();
     setSettling(null);
   }
 
   async function handleSettleAll() {
     setSettling("all");
     await Promise.all(myDebts.map((s) => markGroupSettlementPaid(s.id)));
-    await reload();
+    await refreshSettlements();
     setSettling(null);
   }
 
