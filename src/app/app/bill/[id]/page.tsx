@@ -46,7 +46,7 @@ export default function BillDetailPage({
   const router = useRouter();
   const store = useBillStore();
   const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
-  const [simplifyEnabled, setSimplifyEnabled] = useState(false);
+  const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [showSimplifySteps, setShowSimplifySteps] = useState(false);
   const [pixModal, setPixModal] = useState<{
     open: boolean;
@@ -290,13 +290,66 @@ export default function BillDetailPage({
               </span>
             )}
           </h2>
+          {!simplifyEnabled && simplificationResult && (() => {
+            const raw = simplificationResult.originalEdges;
+            const grouped = new Map<string, typeof raw>();
+            for (const edge of raw) {
+              const list = grouped.get(edge.toUserId) || [];
+              list.push(edge);
+              grouped.set(edge.toUserId, list);
+            }
+            return (
+              <div className="space-y-4">
+                {Array.from(grouped.entries()).map(([receiverId, edges]) => {
+                  const receiver = participants.find((p) => p.id === receiverId);
+                  const groupTotal = edges.reduce((s, e) => s + e.amountCents, 0);
+                  return (
+                    <div key={receiverId} className="rounded-2xl border bg-card overflow-hidden">
+                      <div className="flex items-center justify-between bg-muted/30 px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                            {receiver?.name.charAt(0) || "?"}
+                          </span>
+                          <span className="text-sm font-semibold">
+                            Para {receiver?.name.split(" ")[0] || "?"}
+                          </span>
+                        </div>
+                        <span className="text-sm font-bold tabular-nums text-primary">
+                          {formatBRL(groupTotal)}
+                        </span>
+                      </div>
+                      <div className="divide-y divide-border">
+                        {edges.map((edge, i) => {
+                          const from = participants.find((p) => p.id === edge.fromUserId);
+                          return (
+                            <div key={i} className="flex items-center justify-between px-4 py-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                                  {from?.name.charAt(0) || "?"}
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                  {from?.name.split(" ")[0] || "?"}
+                                </span>
+                              </div>
+                              <span className="text-sm font-medium tabular-nums">
+                                {formatBRL(edge.amountCents)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {(simplifyEnabled || !simplificationResult) && (
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {(simplificationResult
-                ? (simplifyEnabled
-                    ? simplificationResult.simplifiedEdges
-                    : simplificationResult.originalEdges
-                  ).map((edge, idx) => ({
+              {(simplifyEnabled && simplificationResult
+                ? simplificationResult.simplifiedEdges.map((edge, idx) => ({
                     id: `edge_${idx}`,
                     billId: bill.id,
                     fromUserId: edge.fromUserId,
@@ -468,6 +521,7 @@ export default function BillDetailPage({
               })}
             </AnimatePresence>
           </div>
+          )}
         </motion.div>
       )}
 
