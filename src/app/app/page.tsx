@@ -4,12 +4,15 @@ import { motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Eye,
+  EyeOff,
   Plus,
   Receipt,
   ScanLine,
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
@@ -135,6 +138,7 @@ function getGreeting(): string {
 }
 
 export default function AppHome() {
+  const [balanceVisible, setBalanceVisible] = useState(true);
   const netBalance = -34500;
   const isPositive = netBalance >= 0;
 
@@ -169,23 +173,35 @@ export default function AppHome() {
               : "gradient-primary shadow-primary/20"
           }`}
         >
-          <div className="flex items-center gap-2">
-            {isPositive ? (
-              <ArrowDownLeft className="h-4 w-4 text-white/70" />
-            ) : (
-              <ArrowUpRight className="h-4 w-4 text-white/70" />
-            )}
-            <p className="text-sm text-white/70">
-              {isPositive ? "A receber" : "A pagar"}
-            </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isPositive ? (
+                <ArrowDownLeft className="h-4 w-4 text-white/70" />
+              ) : (
+                <ArrowUpRight className="h-4 w-4 text-white/70" />
+              )}
+              <p className="text-sm text-white/70">
+                {isPositive ? "A receber" : "A pagar"}
+              </p>
+            </div>
+            <button
+              onClick={() => setBalanceVisible(!balanceVisible)}
+              className="rounded-lg p-1.5 text-white/60 transition-colors hover:text-white/90"
+            >
+              {balanceVisible ? (
+                <Eye className="h-5 w-5" />
+              ) : (
+                <EyeOff className="h-5 w-5" />
+              )}
+            </button>
           </div>
           <motion.p
-            key={netBalance}
+            key={`${netBalance}-${balanceVisible}`}
             initial={{ y: 8, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             className="mt-1 text-3xl font-bold tabular-nums"
           >
-            {formatBRL(Math.abs(netBalance))}
+            {balanceVisible ? formatBRL(Math.abs(netBalance)) : "R$ ••••••"}
           </motion.p>
           <p className="mt-1 text-sm text-white/60">
             1 conta pendente · 3 contas este mes

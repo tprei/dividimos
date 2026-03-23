@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { use, useState } from "react";
+import type { ReactNode } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -38,6 +39,7 @@ export default function BillDetailPage({
 }) {
   const { id } = use(params);
   const store = useBillStore();
+  const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
   const [pixModal, setPixModal] = useState<{
     open: boolean;
     entryId: string;
@@ -143,12 +145,89 @@ export default function BillDetailPage({
         </div>
       </motion.div>
 
-      {allSettled && ledger.length > 0 && (
+      <div className="mt-5 flex rounded-xl bg-muted/50 p-1">
+        {(
+          [
+            { key: "items", label: "Itens" },
+            { key: "split", label: "Divisao" },
+            { key: "payment", label: "Pagamento" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex-1 rounded-lg py-2 text-xs font-medium transition-all ${
+              activeTab === tab.key
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
+            {tab.key === "payment" && ledger.length > 0 && (
+              <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
+                {ledger.filter((e) => e.status !== "settled").length || "✓"}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "items" && (
+        <motion.div
+          key="items-tab"
+          initial={{ opacity: 0, x: -10 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.2 }}
+          className="mt-5 space-y-2"
+        >
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between rounded-xl border bg-card px-4 py-3"
+            >
+              <div>
+                <p className="text-sm font-medium">{item.description}</p>
+                <p className="text-xs text-muted-foreground">
+                  {item.quantity > 1 ? `${item.quantity}x ` : ""}
+                  {formatBRL(item.unitPriceCents)}/un
+                </p>
+              </div>
+              <span className="font-semibold tabular-nums text-sm">
+                {formatBRL(item.totalPriceCents)}
+              </span>
+            </div>
+          ))}
+          {items.length === 0 && (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Nenhum item nesta conta.
+            </p>
+          )}
+        </motion.div>
+      )}
+
+      {activeTab === "split" && (
+        <motion.div
+          key="split-tab"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          className="mt-5"
+        >
+          <BillSummary
+            bill={bill}
+            items={items}
+            splits={splits}
+            participants={participants}
+          />
+        </motion.div>
+      )}
+
+      {activeTab === "payment" && allSettled && ledger.length > 0 && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className="mt-6 flex flex-col items-center rounded-2xl border-2 border-dashed border-success/30 bg-success/5 p-8"
+          className="mt-5 flex flex-col items-center rounded-2xl border-2 border-dashed border-success/30 bg-success/5 p-8"
         >
           <AnimatedCheckmark size={64} />
           <h3 className="mt-4 text-lg font-bold">Tudo liquidado!</h3>
@@ -158,7 +237,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {ledger.length > 0 && !allSettled && (
+      {activeTab === "payment" && ledger.length > 0 && !allSettled && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -330,20 +409,6 @@ export default function BillDetailPage({
           </div>
         </motion.div>
       )}
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.35, duration: 0.4 }}
-        className="mt-6"
-      >
-        <BillSummary
-          bill={bill}
-          items={items}
-          splits={splits}
-          participants={participants}
-        />
-      </motion.div>
 
       <PixQrModal
         open={pixModal.open}
