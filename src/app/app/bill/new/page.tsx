@@ -6,9 +6,7 @@ import {
   ArrowRight,
   Camera,
   Clock,
-  CreditCard,
   Loader2,
-  Percent,
   Plus,
   QrCode,
   Receipt,
@@ -18,10 +16,10 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
-import { AddGroupParticipants } from "@/components/bill/add-group-participants";
+import { GroupSelector } from "@/components/bill/group-selector";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
 import { RecentContacts } from "@/components/bill/recent-contacts";
 import { BillSummary } from "@/components/bill/bill-summary";
@@ -66,7 +64,16 @@ const SINGLE_STEPS: StepDef[] = [
 ];
 
 export default function NewBillPage() {
+  return (
+    <Suspense>
+      <NewBillPageContent />
+    </Suspense>
+  );
+}
+
+function NewBillPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const store = useBillStore();
   const { user: authUser } = useAuth();
 
@@ -78,9 +85,10 @@ export default function NewBillPage() {
   const [fixedFees, setFixedFees] = useState("");
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
-  const [showAddGroup, setShowAddGroup] = useState(false);
   const [showRecentContacts, setShowRecentContacts] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -141,9 +149,20 @@ export default function NewBillPage() {
     return () => { supabase.removeChannel(channel); };
   }, [remoteBillId]);
 
-  const allAccepted = store.participants
-    .filter((p) => p.id !== authUser?.id)
-    .every((p) => participantStatuses.get(p.id) === "accepted");
+  // Group bills skip acceptance entirely — all participants are auto-accepted
+  const allAccepted = selectedGroupId
+    ? true
+    : store.participants
+        .filter((p) => p.id !== authUser?.id)
+        .every((p) => participantStatuses.get(p.id) === "accepted");
+
+  // Auto-select group from ?groupId URL param when entering participants step
+  useEffect(() => {
+    const groupIdParam = searchParams.get("groupId");
+    if (!groupIdParam || selectedGroupId || step !== "participants" || !authUser) return;
+    // Pre-populate selectedGroupId/Name when redirected from group page
+    setSelectedGroupId(groupIdParam);
+  }, [step, searchParams, selectedGroupId, authUser]);
 
   const goNext = async () => {
     if (step === "info") {
@@ -157,6 +176,7 @@ export default function NewBillPage() {
           participants: state.participants,
           creatorId: authUser.id,
           existingBillId: remoteBillId ?? undefined,
+          groupId: selectedGroupId ?? undefined,
         });
         if ("billId" in result) {
           setRemoteBillId(result.billId);
@@ -171,6 +191,7 @@ export default function NewBillPage() {
           participants: draftState.participants,
           creatorId: authUser.id,
           existingBillId: remoteBillId,
+          groupId: selectedGroupId ?? undefined,
         });
       }
     }
@@ -190,6 +211,7 @@ export default function NewBillPage() {
           billSplits: state.billSplits,
           ledger: state.ledger,
           existingBillId: remoteBillId ?? undefined,
+          groupId: selectedGroupId ?? undefined,
         });
         if ("billId" in result) {
           router.push(`/app/bill/${result.billId}`);
@@ -416,8 +438,49 @@ export default function NewBillPage() {
               className="space-y-4"
             >
               <p className="text-sm text-muted-foreground">
-                Adicione participantes pelo @handle. Voce ja esta incluido.
+                {selectedGroupId
+                  ? "Participantes do grupo selecionado."
+                  : "Adicione participantes pelo @handle ou selecione um grupo."}
               </p>
+
+              {/* Group selector — shown when no group is linked yet or one is linked */}
+              <GroupSelector
+                currentUserId={authUser?.id ?? ""}
+                excludeIds={[]}
+                selectedGroupId={selectedGroupId}
+                selectedGroupName={selectedGroupName}
+                onSelectGroup={(groupId, groupName, members) => {
+                  setSelectedGroupId(groupId);
+                  setSelectedGroupName(groupName);
+                  // Clear existing non-creator participants and add group members
+                  for (const p of [...store.participants]) {
+                    if (p.id !== authUser?.id) store.removeParticipant(p.id);
+                  }
+                  for (const profile of members) {
+                    if (profile.id === authUser?.id) continue;
+                    store.addParticipant({
+                      id: profile.id,
+                      email: "",
+                      handle: profile.handle,
+                      name: profile.name,
+                      pixKeyType: "email",
+                      pixKeyHint: "",
+                      avatarUrl: profile.avatarUrl,
+                      onboarded: true,
+                      createdAt: new Date().toISOString(),
+                    });
+                  }
+                }}
+                onDeselectGroup={() => {
+                  setSelectedGroupId(null);
+                  setSelectedGroupName(null);
+                  // Remove all group members, keep only creator
+                  for (const p of [...store.participants]) {
+                    if (p.id !== authUser?.id) store.removeParticipant(p.id);
+                  }
+                }}
+              />
+
               <div className="space-y-2">
                 {store.participants.map((p) => (
                   <div key={p.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
@@ -428,6 +491,8 @@ export default function NewBillPage() {
                     </div>
                     {p.id === authUser?.id ? (
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Voce</span>
+                    ) : selectedGroupId ? (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Grupo</span>
                     ) : (
                       <button onClick={() => store.removeParticipant(p.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                         <X className="h-4 w-4" />
@@ -436,110 +501,84 @@ export default function NewBillPage() {
                   </div>
                 ))}
               </div>
-              <AnimatePresence>
-                {showAddParticipant && (
-                  <AddParticipantByHandle
-                    onAdd={(profile: UserProfile) => {
-                      const newUser: User = {
-                        id: profile.id,
-                        email: "",
-                        handle: profile.handle,
-                        name: profile.name,
-                        pixKeyType: "email",
-                        pixKeyHint: "",
-                        avatarUrl: profile.avatarUrl,
-                        onboarded: true,
-                        createdAt: new Date().toISOString(),
-                      };
-                      store.addParticipant(newUser);
-                      setShowAddParticipant(false);
-                    }}
-                    onCancel={() => setShowAddParticipant(false)}
-                    excludeIds={store.participants.map((p) => p.id)}
-                  />
-                )}
-              </AnimatePresence>
-              <AnimatePresence>
-                {showAddGroup && (
-                  <AddGroupParticipants
-                    onAddMembers={(profiles) => {
-                      for (const profile of profiles) {
-                        const newUser: User = {
-                          id: profile.id,
-                          email: "",
-                          handle: profile.handle,
-                          name: profile.name,
-                          pixKeyType: "email",
-                          pixKeyHint: "",
-                          avatarUrl: profile.avatarUrl,
-                          onboarded: true,
-                          createdAt: new Date().toISOString(),
-                        };
-                        store.addParticipant(newUser);
-                      }
-                      setShowAddGroup(false);
-                    }}
-                    onCancel={() => setShowAddGroup(false)}
-                    excludeIds={store.participants.map((p) => p.id)}
-                    currentUserId={authUser?.id ?? ""}
-                  />
-                )}
-              </AnimatePresence>
-              <AnimatePresence>
-                {showRecentContacts && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden rounded-2xl border bg-card p-4"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-semibold">Contas anteriores</span>
-                      <button
-                        onClick={() => setShowRecentContacts(false)}
-                        className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+
+              {/* Individual add options — only when no group is selected */}
+              {!selectedGroupId && (
+                <>
+                  <AnimatePresence>
+                    {showAddParticipant && (
+                      <AddParticipantByHandle
+                        onAdd={(profile: UserProfile) => {
+                          const newUser: User = {
+                            id: profile.id,
+                            email: "",
+                            handle: profile.handle,
+                            name: profile.name,
+                            pixKeyType: "email",
+                            pixKeyHint: "",
+                            avatarUrl: profile.avatarUrl,
+                            onboarded: true,
+                            createdAt: new Date().toISOString(),
+                          };
+                          store.addParticipant(newUser);
+                          setShowAddParticipant(false);
+                        }}
+                        onCancel={() => setShowAddParticipant(false)}
+                        excludeIds={store.participants.map((p) => p.id)}
+                      />
+                    )}
+                  </AnimatePresence>
+                  <AnimatePresence>
+                    {showRecentContacts && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden rounded-2xl border bg-card p-4"
                       >
-                        <X className="h-4 w-4" />
-                      </button>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-semibold">Contas anteriores</span>
+                          <button
+                            onClick={() => setShowRecentContacts(false)}
+                            className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <RecentContacts
+                          onSelect={(profile) => {
+                            const newUser: User = {
+                              id: profile.id,
+                              email: "",
+                              handle: profile.handle,
+                              name: profile.name,
+                              pixKeyType: "email",
+                              pixKeyHint: "",
+                              avatarUrl: profile.avatarUrl,
+                              onboarded: true,
+                              createdAt: new Date().toISOString(),
+                            };
+                            store.addParticipant(newUser);
+                          }}
+                          excludeIds={store.participants.map((p) => p.id)}
+                          currentUserId={authUser?.id ?? ""}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  {!showAddParticipant && !showRecentContacts && (
+                    <div className="flex flex-col gap-2">
+                      <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
+                        <UserPlus className="h-4 w-4" />
+                        Por @handle
+                      </Button>
+                      <Button variant="outline" className="w-full gap-2" onClick={() => setShowRecentContacts(true)}>
+                        <Clock className="h-4 w-4" />
+                        De contas anteriores
+                      </Button>
                     </div>
-                    <RecentContacts
-                      onSelect={(profile) => {
-                        const newUser: User = {
-                          id: profile.id,
-                          email: "",
-                          handle: profile.handle,
-                          name: profile.name,
-                          pixKeyType: "email",
-                          pixKeyHint: "",
-                          avatarUrl: profile.avatarUrl,
-                          onboarded: true,
-                          createdAt: new Date().toISOString(),
-                        };
-                        store.addParticipant(newUser);
-                      }}
-                      excludeIds={store.participants.map((p) => p.id)}
-                      currentUserId={authUser?.id ?? ""}
-                    />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              {!showAddParticipant && !showAddGroup && !showRecentContacts && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddParticipant(true)}>
-                      <UserPlus className="h-4 w-4" />
-                      Por @handle
-                    </Button>
-                    <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddGroup(true)}>
-                      <Users className="h-4 w-4" />
-                      De um grupo
-                    </Button>
-                  </div>
-                  <Button variant="outline" className="w-full gap-2" onClick={() => setShowRecentContacts(true)}>
-                    <Clock className="h-4 w-4" />
-                    De contas anteriores
-                  </Button>
-                </div>
+                  )}
+                </>
               )}
             </motion.div>
           )}
@@ -702,7 +741,7 @@ export default function NewBillPage() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              {remoteBillId && store.participants.length > 1 && (
+              {remoteBillId && store.participants.length > 1 && !selectedGroupId && (
                 <div className="rounded-2xl border bg-card p-4">
                   <h3 className="text-sm font-semibold mb-3">Participantes</h3>
                   <div className="space-y-2">
@@ -807,7 +846,7 @@ export default function NewBillPage() {
                     return gt <= 0 || Math.abs(gt - paid) > 1;
                   }
                   if (step === "summary") {
-                    return !allAccepted && store.participants.length > 1;
+                    return !allAccepted && store.participants.length > 1 && !selectedGroupId;
                   }
                   return false;
                 })()}
@@ -817,7 +856,7 @@ export default function NewBillPage() {
                 ) : step === "summary" ? (
                   <>
                     <QrCode className="h-4 w-4" />
-                    {!allAccepted && store.participants.length > 1
+                    {!allAccepted && store.participants.length > 1 && !selectedGroupId
                       ? "Aguardando participantes..."
                       : "Gerar cobrancas Pix"}
                   </>

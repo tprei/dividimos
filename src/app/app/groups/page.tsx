@@ -26,6 +26,7 @@ interface GroupEntry {
   creatorId: string;
   memberCount: number;
   members: UserProfile[];
+  activeBillCount: number;
 }
 
 interface PendingInvite {
@@ -108,12 +109,19 @@ export default function GroupsPage() {
 
       const isPending = pendingGroupIds.includes(g.id);
       if (!isPending) {
+        const { count: activeBillCount } = await (supabase
+          .from("bills")
+          .select("id", { count: "exact", head: true }) as any)
+          .eq("group_id", g.id)
+          .neq("status", "settled");
+
         entries.push({
           id: g.id,
           name: g.name,
           creatorId: g.creator_id,
           memberCount: (members ?? []).length + 1,
           members: memberProfiles,
+          activeBillCount: activeBillCount ?? 0,
         });
       }
     }
@@ -327,6 +335,9 @@ export default function GroupsPage() {
                   <p className="truncate font-medium">{group.name}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {group.memberCount} membro{group.memberCount !== 1 ? "s" : ""}
+                    {group.activeBillCount > 0
+                      ? ` · ${group.activeBillCount} conta${group.activeBillCount !== 1 ? "s" : ""} ativa${group.activeBillCount !== 1 ? "s" : ""}`
+                      : " · Nenhuma conta"}
                   </p>
                 </div>
                 <div className="flex -space-x-2">

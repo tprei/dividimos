@@ -6,13 +6,14 @@ interface SaveDraftParams {
   participants: User[];
   creatorId: string;
   existingBillId?: string;
+  groupId?: string;
 }
 
 export async function saveDraftToSupabase(
   params: SaveDraftParams,
 ): Promise<{ billId: string } | { error: string }> {
   const supabase = createClient();
-  const { bill, participants, creatorId, existingBillId } = params;
+  const { bill, participants, creatorId, existingBillId, groupId } = params;
 
   let billId = existingBillId;
 
@@ -27,7 +28,8 @@ export async function saveDraftToSupabase(
         total_amount: bill.totalAmount,
         bill_type: bill.billType,
         total_amount_input: bill.totalAmountInput,
-      })
+        group_id: groupId ?? null,
+      } as any)
       .eq("id", billId);
 
     if (error) {
@@ -47,7 +49,8 @@ export async function saveDraftToSupabase(
         total_amount: bill.totalAmount,
         bill_type: bill.billType,
         total_amount_input: bill.totalAmountInput,
-      })
+        group_id: groupId ?? null,
+      } as any)
       .select("id")
       .single();
 
@@ -80,7 +83,8 @@ export async function saveDraftToSupabase(
     const rows = toAdd.map((p) => ({
       bill_id: billId!,
       user_id: p.id,
-      status: p.id === creatorId ? "accepted" : "invited",
+      // Group bills: all participants auto-accepted (no confirmation needed)
+      status: (groupId || p.id === creatorId) ? "accepted" : "invited",
       invited_by: p.id === creatorId ? null : creatorId,
     }));
     const { error } = await supabase.from("bill_participants").insert(rows as any);

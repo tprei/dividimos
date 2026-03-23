@@ -9,6 +9,7 @@ interface BillData {
   billSplits: BillSplit[];
   ledger: LedgerEntry[];
   existingBillId?: string;
+  groupId?: string;
 }
 
 export async function syncBillToSupabase(data: BillData): Promise<{ billId: string } | { error: string }> {
@@ -24,15 +25,18 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
   if (data.existingBillId) {
     billId = data.existingBillId;
 
-    const { data: pending } = await supabase
-      .from("bill_participants")
-      .select("user_id, status")
-      .eq("bill_id", billId)
-      .neq("user_id", user.id)
-      .neq("status", "accepted");
+    // Group bills skip acceptance check — all participants are auto-accepted
+    if (!data.groupId) {
+      const { data: pending } = await supabase
+        .from("bill_participants")
+        .select("user_id, status")
+        .eq("bill_id", billId)
+        .neq("user_id", user.id)
+        .neq("status", "accepted");
 
-    if (pending && pending.length > 0) {
-      return { error: "Nem todos os participantes aceitaram o convite" };
+      if (pending && pending.length > 0) {
+        return { error: "Nem todos os participantes aceitaram o convite" };
+      }
     }
 
     const { error: updateError } = await supabase
@@ -43,7 +47,8 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
         total_amount_input: data.bill.totalAmountInput,
         service_fee_percent: data.bill.serviceFeePercent,
         fixed_fees: data.bill.fixedFees,
-      })
+        group_id: data.groupId ?? undefined,
+      } as any)
       .eq("id", billId);
 
     if (updateError) {

@@ -72,6 +72,7 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
     totalAmount: billRow.total_amount,
     totalAmountInput: (billRow as Record<string, unknown>).total_amount_input as number ?? 0,
     payers,
+    groupId: (billRow as Record<string, unknown>).group_id as string | undefined ?? undefined,
     createdAt: billRow.created_at,
     updatedAt: billRow.updated_at,
   };

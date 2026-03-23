@@ -482,6 +482,10 @@ export default function BillDetailPage({
   const billStatus = billStatusConfig[bill.status];
   const allSettled = ledger.length > 0 && ledger.every((e) => e.status === "settled");
   const settledCount = ledger.filter((e) => e.status === "settled").length;
+  const isGroupBill = !!bill.groupId;
+  const hasGroupCascadeSettled = isGroupBill && ledger.some(
+    (e) => e.status === "settled" && !e.paidAt && e.confirmedAt,
+  );
 
   const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
   const grandTotal =
@@ -504,6 +508,15 @@ export default function BillDetailPage({
           <h1 className="font-semibold">{bill.title}</h1>
           {bill.merchantName && (
             <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+          )}
+          {isGroupBill && (
+            <Link
+              href={`/app/groups/${bill.groupId}`}
+              className="flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+            >
+              <Users className="h-3 w-3" />
+              Ver grupo
+            </Link>
           )}
         </div>
         <motion.span
@@ -635,8 +648,41 @@ export default function BillDetailPage({
           <AnimatedCheckmark size={64} />
           <h3 className="mt-4 text-lg font-bold">Tudo liquidado!</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Todos os pagamentos foram confirmados.
+            {hasGroupCascadeSettled
+              ? "Liquidado via acerto do grupo."
+              : "Todos os pagamentos foram confirmados."}
           </p>
+          {isGroupBill && (
+            <Link
+              href={`/app/groups/${bill.groupId}`}
+              className="mt-3 text-sm text-primary hover:underline"
+            >
+              Ver acerto do grupo
+            </Link>
+          )}
+        </motion.div>
+      )}
+
+      {activeTab === "payment" && isGroupBill && !allSettled && ledger.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-5"
+        >
+          <Link
+            href={`/app/groups/${bill.groupId}`}
+            className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 hover:bg-primary/10 transition-colors"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
+              <Users className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="font-medium text-sm">Ir para acerto do grupo</p>
+              <p className="text-xs text-muted-foreground">
+                Liquidar dividas consolidadas de todas as contas do grupo
+              </p>
+            </div>
+          </Link>
         </motion.div>
       )}
 
@@ -971,7 +1017,9 @@ export default function BillDetailPage({
                           >
                             <CheckCheck className="h-4 w-4 shrink-0 text-success" />
                             <span className="text-xs text-success">
-                              Liquidado
+                              {isGroupBill && !entry.paidAt && entry.confirmedAt
+                                ? "Liquidado via acerto do grupo"
+                                : "Liquidado"}
                               {entry.confirmedAt &&
                                 ` em ${new Date(entry.confirmedAt).toLocaleString("pt-BR", {
                                   day: "2-digit",
