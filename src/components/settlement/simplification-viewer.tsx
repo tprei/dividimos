@@ -117,9 +117,13 @@ export function SimplificationViewer({
           >
             <DebtGraph
               participants={participants}
-              edges={step.edges}
+              edges={[
+                ...step.edges,
+                ...(step.removedEdges || []),
+              ]}
               highlightEdge={highlightEdge}
               fadingEdges={fadingEdges}
+              dimOthers={!isFirst && !isFinal && (fadingEdges.length > 0 || !!highlightEdge)}
             />
 
             <div className="w-full rounded-xl bg-muted/50 p-4">

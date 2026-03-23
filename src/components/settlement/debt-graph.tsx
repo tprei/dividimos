@@ -10,6 +10,7 @@ interface DebtGraphProps {
   edges: DebtEdge[];
   highlightEdge?: { from: string; to: string };
   fadingEdges?: { from: string; to: string }[];
+  dimOthers?: boolean;
 }
 
 const VIEWBOX = 320;
@@ -100,6 +101,7 @@ export function DebtGraph({
   edges,
   highlightEdge,
   fadingEdges = [],
+  dimOthers = false,
 }: DebtGraphProps) {
   const positions = participants.map((_, i) =>
     getNodePosition(i, participants.length),
@@ -152,6 +154,16 @@ export function DebtGraph({
         >
           <path d="M 0 0 L 4 2 L 0 4 Z" className="fill-muted-foreground" />
         </marker>
+        <marker
+          id="arrow-destructive"
+          markerWidth="8"
+          markerHeight="8"
+          refX="4"
+          refY="2"
+          orient="auto"
+        >
+          <path d="M 0 0 L 4 2 L 0 4 Z" className="fill-destructive" />
+        </marker>
       </defs>
 
       <AnimatePresence>
@@ -162,6 +174,8 @@ export function DebtGraph({
 
           const highlighted = isHighlighted(edge.fromUserId, edge.toUserId);
           const fading = isFading(edge.fromUserId, edge.toUserId);
+          const isInvolved = highlighted || fading;
+          const dimmed = dimOthers && !isInvolved;
           const edgeKey = `${edge.fromUserId}-${edge.toUserId}`;
 
           const pathD = getCurvedPath(fromPos, toPos);
@@ -170,27 +184,34 @@ export function DebtGraph({
 
           const strokeColor = highlighted
             ? "var(--color-success)"
-            : "var(--color-primary)";
+            : fading
+              ? "var(--color-destructive)"
+              : "var(--color-primary)";
           const markerId = highlighted
             ? "arrow-success"
             : fading
-              ? "arrow-muted"
-              : "arrow-primary";
+              ? "arrow-destructive"
+              : dimmed
+                ? "arrow-muted"
+                : "arrow-primary";
+
+          const targetOpacity = fading ? 0.4 : dimmed ? 0.15 : 1;
 
           return (
             <motion.g
               key={edgeKey}
               initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: fading ? 0.3 : 1, scale: 1 }}
+              animate={{ opacity: targetOpacity, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
             >
               <motion.path
                 d={pathD}
                 fill="none"
-                stroke={fading ? "var(--color-muted-foreground)" : strokeColor}
-                strokeWidth={highlighted ? 2.5 : 1.75}
+                stroke={strokeColor}
+                strokeWidth={highlighted ? 2.5 : fading ? 2 : 1.75}
                 strokeLinecap="round"
+                strokeDasharray={fading ? "6 4" : undefined}
                 markerEnd={`url(#${markerId})`}
                 initial={{ pathLength: 0 }}
                 animate={{ pathLength: 1 }}
