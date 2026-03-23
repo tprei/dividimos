@@ -28,10 +28,12 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
+import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
+import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
-import type { BillStatus, DebtStatus } from "@/types";
+import type { BillStatus, DebtStatus, LedgerEntry } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -90,6 +92,40 @@ export default function BillDetailPage({
       setLoadingFromDb(false);
     });
   }, [id]);
+
+  useEffect(() => {
+    if (!bill) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`ledger:${bill.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "ledger", filter: `bill_id=eq.${bill.id}` },
+        (payload) => {
+          const updated = payload.new as { id: string; status: string; paid_at: string | null; confirmed_at: string | null };
+          useBillStore.setState((state) => ({
+            ledger: state.ledger.map((e) =>
+              e.id === updated.id
+                ? { ...e, status: updated.status as DebtStatus, paidAt: updated.paid_at ?? undefined, confirmedAt: updated.confirmed_at ?? undefined }
+                : e,
+            ),
+          }));
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [bill?.id]);
+
+  const handleMarkPaid = async (entryId: string) => {
+    store.markPaid(entryId);
+    await markPaidInSupabase(entryId);
+  };
+
+  const handleConfirmPayment = async (entryId: string) => {
+    store.confirmPayment(entryId);
+    await confirmPaymentInSupabase(entryId);
+  };
 
   const simplificationResult = useMemo(() => {
     if (!bill || participants.length < 3) return null;
@@ -578,7 +614,7 @@ export default function BillDetailPage({
                               size="sm"
                               variant="outline"
                               className="w-full gap-1.5 border-success/30 text-success hover:bg-success/10"
-                              onClick={() => store.confirmPayment(entry.id)}
+                              onClick={() => handleConfirmPayment(entry.id)}
                             >
                               <Check className="h-4 w-4" />
                               Confirmar recebimento de {formatBRL(entry.amountCents)}
@@ -639,7 +675,7 @@ export default function BillDetailPage({
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
         onMarkPaid={() => {
-          store.markPaid(pixModal.entryId);
+          handleMarkPaid(pixModal.entryId);
           setPixModal({ ...pixModal, open: false });
         }}
       />

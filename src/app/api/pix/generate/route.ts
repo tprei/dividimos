@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptPixKey } from "@/lib/crypto";
 import { generatePixCopiaECola } from "@/lib/pix";
 
@@ -20,35 +21,36 @@ export async function POST(request: Request) {
     billId: string;
   };
 
-  if (!recipientUserId || !amountCents || amountCents <= 0) {
+  if (!recipientUserId || !amountCents || amountCents <= 0 || !billId) {
     return NextResponse.json({ error: "Dados invalidos" }, { status: 400 });
   }
 
-  if (billId) {
-    const { data: participation } = await supabase
-      .from("bill_participants")
-      .select("user_id")
-      .eq("bill_id", billId)
-      .in("user_id", [user.id, recipientUserId]);
+  const { data: participation } = await supabase
+    .from("bill_participants")
+    .select("user_id")
+    .eq("bill_id", billId)
+    .in("user_id", [user.id, recipientUserId]);
 
-    if (!participation || participation.length < 2) {
-      const { data: bill } = await supabase
-        .from("bills")
-        .select("creator_id")
-        .eq("id", billId)
-        .single();
+  const callerIsParticipant = participation?.some((p) => p.user_id === user.id);
+  const recipientIsParticipant = participation?.some((p) => p.user_id === recipientUserId);
 
-      const isCreator = bill?.creator_id === user.id;
-      if (!isCreator) {
-        return NextResponse.json(
-          { error: "Acesso negado a esta conta" },
-          { status: 403 },
-        );
-      }
+  if (!callerIsParticipant || !recipientIsParticipant) {
+    const { data: bill } = await supabase
+      .from("bills")
+      .select("creator_id")
+      .eq("id", billId)
+      .single();
+
+    if (bill?.creator_id !== user.id) {
+      return NextResponse.json(
+        { error: "Acesso negado — voces nao participam da mesma conta" },
+        { status: 403 },
+      );
     }
   }
 
-  const { data: recipient } = await supabase
+  const admin = createAdminClient();
+  const { data: recipient } = await admin
     .from("users")
     .select("pix_key_encrypted, name")
     .eq("id", recipientUserId)
