@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Loader2,
   PartyPopper,
   QrCode,
   Receipt,
@@ -33,6 +34,7 @@ import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
 import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
+import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import type { BillParticipantStatus, BillStatus, DebtStatus, LedgerEntry, User } from "@/types";
@@ -54,10 +56,12 @@ function CreatorDraftParticipants({
   billId,
   participants,
   creatorId,
+  onAcceptanceChange,
 }: {
   billId: string;
   participants: User[];
   creatorId: string;
+  onAcceptanceChange?: (allAccepted: boolean) => void;
 }) {
   const [statuses, setStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
 
@@ -89,6 +93,14 @@ function CreatorDraftParticipants({
 
     return () => { supabase.removeChannel(channel); };
   }, [billId]);
+
+  useEffect(() => {
+    if (!onAcceptanceChange || statuses.size === 0) return;
+    const allAccepted = participants
+      .filter((p) => p.id !== creatorId)
+      .every((p) => statuses.get(p.id) === "accepted");
+    onAcceptanceChange(allAccepted);
+  }, [statuses, participants, creatorId, onAcceptanceChange]);
 
   return (
     <motion.div
@@ -124,6 +136,160 @@ function CreatorDraftParticipants({
         })}
       </div>
     </motion.div>
+  );
+}
+
+function CreatorDraftView({
+  bill,
+  participants,
+  items,
+  splits,
+  billSplits,
+  store,
+  router,
+}: {
+  bill: NonNullable<ReturnType<typeof useBillStore.getState>["bill"]>;
+  participants: User[];
+  items: ReturnType<typeof useBillStore.getState>["items"];
+  splits: ReturnType<typeof useBillStore.getState>["splits"];
+  billSplits: ReturnType<typeof useBillStore.getState>["billSplits"];
+  store: ReturnType<typeof useBillStore.getState>;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [draftAllAccepted, setDraftAllAccepted] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+
+  const isGroupBill = !!bill.groupId;
+  const canFinalize = isGroupBill || draftAllAccepted;
+  const hasContent = items.length > 0 || billSplits.length > 0;
+
+  const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
+  const grandTotal =
+    bill.billType === "single_amount"
+      ? bill.totalAmountInput
+      : itemsTotal +
+        Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
+        bill.fixedFees;
+
+  const handleFinalize = async () => {
+    setFinalizing(true);
+    store.computeLedger();
+    const state = useBillStore.getState();
+    if (state.bill) {
+      const result = await syncBillToSupabase({
+        bill: state.bill,
+        participants: state.participants,
+        items: state.items,
+        splits: state.splits,
+        billSplits: state.billSplits,
+        ledger: state.ledger,
+        existingBillId: bill.id,
+        groupId: bill.groupId,
+      });
+      if ("billId" in result) {
+        router.push(`/app/bill/${result.billId}`);
+        return;
+      }
+      console.error("Finalize failed:", result.error);
+    }
+    setFinalizing(false);
+  };
+
+  return (
+    <div className="mx-auto max-w-lg px-4 py-6">
+      <div className="flex items-center gap-3">
+        <Link
+          href="/app"
+          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
+        <div className="flex-1">
+          <h1 className="font-semibold">{bill.title}</h1>
+          {bill.merchantName && (
+            <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+          )}
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatusConfig.draft.color}`}>
+          {billStatusConfig.draft.label}
+        </span>
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, duration: 0.4 }}
+        className="mt-6"
+      >
+        <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
+          <p className="text-sm text-white/70">Total da conta</p>
+          <p className="mt-1 text-3xl font-bold tabular-nums">
+            {formatBRL(grandTotal)}
+          </p>
+          <div className="mt-2 flex gap-4 text-sm text-white/70">
+            <span className="flex items-center gap-1">
+              <Users className="h-3.5 w-3.5" />
+              {participants.length} pessoas
+            </span>
+          </div>
+        </div>
+      </motion.div>
+
+      {!isGroupBill && (
+        <CreatorDraftParticipants
+          billId={bill.id}
+          participants={participants}
+          creatorId={bill.creatorId}
+          onAcceptanceChange={setDraftAllAccepted}
+        />
+      )}
+
+      {hasContent && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.4 }}
+          className="mt-5"
+        >
+          <BillSummary
+            bill={bill}
+            items={items}
+            splits={splits}
+            billSplits={billSplits}
+            participants={participants}
+          />
+        </motion.div>
+      )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4, duration: 0.4 }}
+        className="mt-6 space-y-3"
+      >
+        {hasContent && (
+          <Button
+            onClick={handleFinalize}
+            disabled={!canFinalize || finalizing}
+            className="w-full gap-2"
+          >
+            {finalizing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <QrCode className="h-4 w-4" />
+            )}
+            {!canFinalize && !isGroupBill
+              ? "Aguardando participantes..."
+              : "Gerar cobrancas Pix"}
+          </Button>
+        )}
+        {!canFinalize && !isGroupBill && (
+          <p className="text-xs text-center text-muted-foreground">
+            Aguardando todos os participantes aceitarem o convite para finalizar.
+          </p>
+        )}
+      </motion.div>
+    </div>
   );
 }
 
@@ -394,88 +560,16 @@ export default function BillDetailPage({
   }
 
   if (bill.status === "draft" && currentUser?.id === bill.creatorId) {
-    const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
-    const grandTotal =
-      bill.billType === "single_amount"
-        ? bill.totalAmountInput
-        : itemsTotal +
-          Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
-          bill.fixedFees;
-
     return (
-      <div className="mx-auto max-w-lg px-4 py-6">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/app"
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <div className="flex-1">
-            <h1 className="font-semibold">{bill.title}</h1>
-            {bill.merchantName && (
-              <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
-            )}
-          </div>
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatusConfig.draft.color}`}>
-            {billStatusConfig.draft.label}
-          </span>
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.4 }}
-          className="mt-6"
-        >
-          <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
-            <p className="text-sm text-white/70">Total da conta</p>
-            <p className="mt-1 text-3xl font-bold tabular-nums">
-              {formatBRL(grandTotal)}
-            </p>
-            <div className="mt-2 flex gap-4 text-sm text-white/70">
-              <span className="flex items-center gap-1">
-                <Users className="h-3.5 w-3.5" />
-                {participants.length} pessoas
-              </span>
-            </div>
-          </div>
-        </motion.div>
-
-        <CreatorDraftParticipants billId={bill.id} participants={participants} creatorId={bill.creatorId} />
-
-        {(items.length > 0 || billSplits.length > 0) && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.4 }}
-            className="mt-5"
-          >
-            <BillSummary
-              bill={bill}
-              items={items}
-              splits={splits}
-              billSplits={billSplits}
-              participants={participants}
-            />
-          </motion.div>
-        )}
-
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.4 }}
-          className="mt-6"
-        >
-          <Link
-            href="/app/bill/new"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80"
-          >
-            <Receipt className="h-4 w-4" />
-            Continuar editando
-          </Link>
-        </motion.div>
-      </div>
+      <CreatorDraftView
+        bill={bill}
+        participants={participants}
+        items={items}
+        splits={splits}
+        billSplits={billSplits}
+        store={store}
+        router={router}
+      />
     );
   }
 
