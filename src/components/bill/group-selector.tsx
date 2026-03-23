@@ -12,6 +12,7 @@ interface GroupEntry {
   name: string;
   members: UserProfile[];
   addableCount: number;
+  hasPendingInvites: boolean;
 }
 
 interface GroupSelectorProps {
@@ -69,45 +70,48 @@ export function GroupSelector({
       const entries: GroupEntry[] = [];
 
       for (const group of allGroups ?? []) {
-        const { data: acceptedMembers } = await supabase
+        const { data: allMembers } = await supabase
           .from("group_members")
-          .select("user_id")
-          .eq("group_id", group.id)
-          .eq("status", "accepted");
+          .select("user_id, status")
+          .eq("group_id", group.id);
 
-        const memberIds = (acceptedMembers ?? []).map((m) => m.user_id);
-        // Include creator in member IDs
-        if (!memberIds.includes(group.id)) {
-          // fetch creator separately
-        }
+        const acceptedIds = (allMembers ?? []).filter((m) => m.status === "accepted").map((m) => m.user_id);
+        const hasPendingInvites = (allMembers ?? []).some((m) => m.status === "invited");
+
         const { data: creatorRow } = await supabase
           .from("groups")
           .select("creator_id")
           .eq("id", group.id)
           .single();
 
-        const allMemberIds = [...new Set([...memberIds, creatorRow?.creator_id].filter(Boolean))] as string[];
+        const allMemberIds = [...new Set([...acceptedIds, creatorRow?.creator_id].filter(Boolean))] as string[];
         const addableMemberIds = allMemberIds.filter((id) => id !== currentUserId && !excludeIds.includes(id));
 
-        if (addableMemberIds.length === 0) {
+        if (addableMemberIds.length === 0 && !hasPendingInvites) {
           continue;
         }
 
-        const { data: profiles } = await supabase
-          .from("user_profiles")
-          .select("id, handle, name, avatar_url")
-          .in("id", addableMemberIds);
+        let memberProfiles: UserProfile[] = [];
+        if (addableMemberIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("user_profiles")
+            .select("id, handle, name, avatar_url")
+            .in("id", addableMemberIds);
 
-        entries.push({
-          id: group.id,
-          name: group.name,
-          members: (profiles ?? []).map((p) => ({
+          memberProfiles = (profiles ?? []).map((p) => ({
             id: p.id,
             handle: p.handle ?? "",
             name: p.name,
             avatarUrl: p.avatar_url ?? undefined,
-          })),
+          }));
+        }
+
+        entries.push({
+          id: group.id,
+          name: group.name,
+          members: memberProfiles,
           addableCount: addableMemberIds.length,
+          hasPendingInvites,
         });
       }
 
@@ -165,31 +169,41 @@ export function GroupSelector({
             </p>
           ) : (
             <div className="divide-y">
-              {groups.map((group) => (
-                <button
-                  key={group.id}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/50 transition-colors"
-                  onClick={() => {
-                    onSelectGroup(group.id, group.name, group.members);
-                    setOpen(false);
-                  }}
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm">{group.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {group.addableCount} {group.addableCount === 1 ? "pessoa" : "pessoas"} para adicionar
-                    </p>
-                  </div>
-                  <div className="flex -space-x-1.5">
-                    {group.members.slice(0, 3).map((m) => (
-                      <UserAvatar key={m.id} name={m.name} avatarUrl={m.avatarUrl} size="xs" />
-                    ))}
-                  </div>
-                </button>
-              ))}
+              {groups.map((group) => {
+                const disabled = group.hasPendingInvites || group.addableCount === 0;
+                return (
+                  <button
+                    key={group.id}
+                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
+                      disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-muted/50"
+                    }`}
+                    disabled={disabled}
+                    onClick={() => {
+                      onSelectGroup(group.id, group.name, group.members);
+                      setOpen(false);
+                    }}
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm">{group.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {group.hasPendingInvites
+                          ? "Membros com convite pendente"
+                          : group.addableCount === 0
+                            ? "Todos ja adicionados"
+                            : `${group.addableCount} ${group.addableCount === 1 ? "pessoa" : "pessoas"} para adicionar`}
+                      </p>
+                    </div>
+                    <div className="flex -space-x-1.5">
+                      {group.members.slice(0, 3).map((m) => (
+                        <UserAvatar key={m.id} name={m.name} avatarUrl={m.avatarUrl} size="xs" />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
