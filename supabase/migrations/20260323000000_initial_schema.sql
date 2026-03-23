@@ -1,4 +1,4 @@
-create extension if not exists "uuid-ossp";
+-- gen_random_uuid() is built into Postgres 13+ and Supabase natively
 
 create type pix_key_type as enum ('phone', 'cpf', 'email', 'random');
 create type bill_status as enum ('draft', 'active', 'partially_settled', 'settled');
@@ -6,7 +6,7 @@ create type split_type as enum ('equal', 'percentage', 'fixed');
 create type debt_status as enum ('pending', 'paid_unconfirmed', 'settled');
 
 create table users (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   phone text unique not null,
   name text not null,
   pix_key text not null,
@@ -16,7 +16,7 @@ create table users (
 );
 
 create table bills (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   creator_id uuid not null references users(id) on delete cascade,
   title text not null,
   merchant_name text,
@@ -36,7 +36,7 @@ create table bill_participants (
 );
 
 create table bill_items (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   bill_id uuid not null references bills(id) on delete cascade,
   description text not null,
   quantity integer not null default 1,
@@ -46,7 +46,7 @@ create table bill_items (
 );
 
 create table item_splits (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   item_id uuid not null references bill_items(id) on delete cascade,
   user_id uuid not null references users(id) on delete cascade,
   split_type split_type not null default 'equal',
@@ -56,7 +56,7 @@ create table item_splits (
 );
 
 create table ledger (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   bill_id uuid not null references bills(id) on delete cascade,
   from_user_id uuid not null references users(id) on delete cascade,
   to_user_id uuid not null references users(id) on delete cascade,
