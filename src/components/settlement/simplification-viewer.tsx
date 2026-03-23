@@ -122,26 +122,89 @@ export function SimplificationViewer({
               fadingEdges={fadingEdges}
             />
 
-            <div className="w-full rounded-xl bg-muted/50 p-3">
-              <p className="text-center text-sm font-medium">
-                {step.description}
-              </p>
-              {!isFirst && !isFinal && step.removedEdges && step.removedEdges.length > 0 && (
-                <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 text-xs text-muted-foreground">
-                  {step.removedEdges.map((e, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-destructive line-through">
-                      {getUserName(e.fromUserId, participants)} → {getUserName(e.toUserId, participants)}
-                    </span>
-                  ))}
+            <div className="w-full rounded-xl bg-muted/50 p-4">
+              {isFirst && (
+                <p className="text-center text-sm font-medium">
+                  {step.description}
+                </p>
+              )}
+
+              {!isFirst && step.removedEdges && step.removedEdges.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                      Antes
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
+                      {step.removedEdges.map((e, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1.5 text-xs"
+                        >
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-destructive/20 text-[9px] font-bold text-destructive">
+                            {getUserName(e.fromUserId, participants).charAt(0)}
+                          </span>
+                          <span className="font-medium text-destructive line-through">
+                            {getUserName(e.fromUserId, participants)}
+                          </span>
+                          <span className="text-destructive/50">→</span>
+                          <span className="font-medium text-destructive line-through">
+                            {getUserName(e.toUserId, participants)}
+                          </span>
+                          <span className="text-[10px] text-destructive/70 tabular-nums">
+                            {formatBRL(e.amountCents)}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-center">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10">
+                      <ArrowRight className="h-3 w-3 text-primary rotate-90" />
+                    </div>
+                  </div>
+
                   {step.addedEdge && (
-                    <>
-                      <ArrowRight className="h-3 w-3" />
-                      <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-success font-medium">
-                        {getUserName(step.addedEdge.fromUserId, participants)} → {getUserName(step.addedEdge.toUserId, participants)} ({formatBRL(step.addedEdge.amountCents)})
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                        Depois
+                      </p>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-success/10 px-4 py-2 text-sm">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/20 text-[10px] font-bold text-success">
+                          {getUserName(step.addedEdge.fromUserId, participants).charAt(0)}
+                        </span>
+                        <span className="font-semibold text-success">
+                          {getUserName(step.addedEdge.fromUserId, participants)}
+                        </span>
+                        <span className="text-success/60">→</span>
+                        <span className="font-semibold text-success">
+                          {getUserName(step.addedEdge.toUserId, participants)}
+                        </span>
+                        <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-bold text-success tabular-nums">
+                          {formatBRL(step.addedEdge.amountCents)}
+                        </span>
                       </span>
-                    </>
+                    </div>
+                  )}
+
+                  {!step.addedEdge && (
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                        Resultado
+                      </p>
+                      <span className="text-xs font-medium text-success">
+                        Dividas se cancelam
+                      </span>
+                    </div>
                   )}
                 </div>
+              )}
+
+              {!isFirst && (!step.removedEdges || step.removedEdges.length === 0) && (
+                <p className="text-center text-sm font-medium">
+                  {step.description}
+                </p>
               )}
             </div>
 
