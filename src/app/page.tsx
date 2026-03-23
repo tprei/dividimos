@@ -13,10 +13,13 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Logo } from "@/components/shared/logo";
 import { PhoneMockup } from "@/components/shared/phone-mockup";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
+import { DEMO_ITEMS, DEMO_USERS } from "@/lib/demo-data";
+import { useBillStore } from "@/stores/bill-store";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -39,6 +42,36 @@ const mockItems = [
 ];
 
 export default function LandingPage() {
+  const router = useRouter();
+  const store = useBillStore();
+
+  const loadDemo = () => {
+    store.setCurrentUser(DEMO_USERS[0]);
+    store.createBill("Churrascaria Fogo de Chao", "Fogo de Chao - Jardins");
+    store.updateBill({ serviceFeePercent: 10, fixedFees: 0 });
+
+    for (const user of DEMO_USERS.slice(1)) {
+      store.addParticipant(user);
+    }
+
+    for (const item of DEMO_ITEMS) {
+      store.addItem(item);
+    }
+
+    const items = store.items;
+    store.splitItemEqually(items[0].id, ["user_self", "user_ana"]);
+    store.splitItemEqually(items[1].id, ["user_marcos", "user_julia"]);
+    store.splitItemEqually(items[2].id, ["user_self"]);
+    store.splitItemEqually(items[3].id, ["user_ana", "user_marcos", "user_julia"]);
+    store.splitItemEqually(items[4].id, ["user_self", "user_ana", "user_marcos", "user_julia"]);
+    store.splitItemEqually(items[5].id, ["user_self", "user_marcos"]);
+    store.splitItemEqually(items[6].id, ["user_self", "user_ana", "user_marcos", "user_julia"]);
+    store.splitItemEqually(items[7].id, ["user_julia"]);
+
+    store.computeLedger();
+    router.push("/app/bill/demo");
+  };
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 glass border-b border-border/50">
@@ -106,11 +139,14 @@ export default function LandingPage() {
                       Dividir uma conta
                     </Button>
                   </Link>
-                  <Link href="#como-funciona">
-                    <Button size="lg" variant="outline" className="text-base">
-                      Como funciona
-                    </Button>
-                  </Link>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="text-base"
+                    onClick={loadDemo}
+                  >
+                    Experimentar demo
+                  </Button>
                 </motion.div>
               </div>
 
