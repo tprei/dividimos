@@ -12,6 +12,7 @@ interface GroupOption {
   id: string;
   name: string;
   members: UserProfile[];
+  hasPendingInvites: boolean;
 }
 
 interface AddGroupParticipantsProps {
@@ -47,20 +48,23 @@ export function AddGroupParticipants({
       for (const group of myGroups) {
         const { data: members } = await supabase
           .from("group_members")
-          .select("user_id")
-          .eq("group_id", group.id)
-          .eq("status", "accepted");
+          .select("user_id, status")
+          .eq("group_id", group.id);
 
-        const memberIds = (members ?? [])
-          .map((m) => m.user_id)
-          .filter((id) => id !== currentUserId);
+        const acceptedIds = (members ?? [])
+          .filter((m) => m.status === "accepted" && m.user_id !== currentUserId)
+          .map((m) => m.user_id);
+        const pendingIds = (members ?? [])
+          .filter((m) => m.status === "invited" && m.user_id !== currentUserId)
+          .map((m) => m.user_id);
 
-        if (memberIds.length === 0) continue;
+        const allMemberIds = [...acceptedIds, ...pendingIds];
+        if (allMemberIds.length === 0) continue;
 
         const { data: profiles } = await supabase
           .from("user_profiles")
           .select("*")
-          .in("id", memberIds);
+          .in("id", acceptedIds.length > 0 ? acceptedIds : allMemberIds);
 
         options.push({
           id: group.id,
@@ -71,6 +75,7 @@ export function AddGroupParticipants({
             name: p.name,
             avatarUrl: p.avatar_url ?? undefined,
           })),
+          hasPendingInvites: pendingIds.length > 0,
         });
       }
       setGroups(options);
@@ -128,8 +133,8 @@ export function AddGroupParticipants({
               <button
                 key={group.id}
                 onClick={() => handleSelect(group)}
-                disabled={addableCount === 0}
-                className="flex w-full items-center gap-3 rounded-xl border bg-muted/30 p-3 text-left transition-colors hover:border-primary/30 disabled:opacity-50"
+                disabled={addableCount === 0 || group.hasPendingInvites}
+                className="flex w-full items-center gap-3 rounded-xl border bg-muted/30 p-3 text-left transition-colors hover:border-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Users className="h-4 w-4" />
@@ -137,9 +142,11 @@ export function AddGroupParticipants({
                 <div className="flex-1">
                   <p className="text-sm font-medium">{group.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {addableCount > 0
-                      ? `${addableCount} membro${addableCount > 1 ? "s" : ""} para adicionar`
-                      : "Todos ja adicionados"}
+                    {group.hasPendingInvites
+                      ? "Um ou mais membros ainda nao aceitaram o convite"
+                      : addableCount > 0
+                        ? `${addableCount} membro${addableCount > 1 ? "s" : ""} para adicionar`
+                        : "Todos ja adicionados"}
                   </p>
                 </div>
                 <div className="flex -space-x-1.5">

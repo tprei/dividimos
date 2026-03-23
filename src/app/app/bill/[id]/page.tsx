@@ -35,7 +35,7 @@ import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
 import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
-import type { BillStatus, DebtStatus, LedgerEntry } from "@/types";
+import type { BillParticipantStatus, BillStatus, DebtStatus, LedgerEntry, User } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -43,6 +43,89 @@ const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
+
+const statusBadge: Record<BillParticipantStatus, { label: string; color: string }> = {
+  accepted: { label: "Aceito", color: "bg-success/15 text-success" },
+  invited: { label: "Aguardando", color: "bg-warning/15 text-warning-foreground" },
+  declined: { label: "Recusou", color: "bg-destructive/15 text-destructive" },
+};
+
+function CreatorDraftParticipants({
+  billId,
+  participants,
+  creatorId,
+}: {
+  billId: string;
+  participants: User[];
+  creatorId: string;
+}) {
+  const [statuses, setStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
+
+  useEffect(() => {
+    const supabase = createClient();
+    (async () => {
+      const { data } = await supabase
+        .from("bill_participants")
+        .select("user_id, status")
+        .eq("bill_id", billId);
+      if (data) {
+        const map = new Map<string, BillParticipantStatus>();
+        for (const row of data) map.set(row.user_id, row.status as BillParticipantStatus);
+        setStatuses(map);
+      }
+    })();
+
+    const channel = supabase
+      .channel(`draft-participants:${billId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "bill_participants", filter: `bill_id=eq.${billId}` },
+        (payload) => {
+          const updated = payload.new as { user_id: string; status: string };
+          setStatuses((prev) => new Map(prev).set(updated.user_id, updated.status as BillParticipantStatus));
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [billId]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2, duration: 0.4 }}
+      className="mt-5"
+    >
+      <h2 className="mb-3 text-sm font-semibold">Participantes</h2>
+      <div className="space-y-2">
+        {participants.map((p) => {
+          const st = statuses.get(p.id) ?? "accepted";
+          const badge = statusBadge[st];
+          return (
+            <div
+              key={p.id}
+              className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
+            >
+              <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
+              <span className="flex-1 text-sm font-medium">{p.name}</span>
+              {p.id === creatorId ? (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  Voce
+                </span>
+              ) : (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.color}`}>
+                  {st === "invited" && <PulsingDot className="mr-1 inline-block h-1.5 w-1.5 bg-warning" />}
+                  {badge.label}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
 
 export default function BillDetailPage({
   params,
@@ -306,6 +389,92 @@ export default function BillDetailPage({
             </div>
           </motion.div>
         )}
+      </div>
+    );
+  }
+
+  if (bill.status === "draft" && currentUser?.id === bill.creatorId) {
+    const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
+    const grandTotal =
+      bill.billType === "single_amount"
+        ? bill.totalAmountInput
+        : itemsTotal +
+          Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
+          bill.fixedFees;
+
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/app"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <div className="flex-1">
+            <h1 className="font-semibold">{bill.title}</h1>
+            {bill.merchantName && (
+              <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+            )}
+          </div>
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatusConfig.draft.color}`}>
+            {billStatusConfig.draft.label}
+          </span>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.4 }}
+          className="mt-6"
+        >
+          <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
+            <p className="text-sm text-white/70">Total da conta</p>
+            <p className="mt-1 text-3xl font-bold tabular-nums">
+              {formatBRL(grandTotal)}
+            </p>
+            <div className="mt-2 flex gap-4 text-sm text-white/70">
+              <span className="flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" />
+                {participants.length} pessoas
+              </span>
+            </div>
+          </div>
+        </motion.div>
+
+        <CreatorDraftParticipants billId={bill.id} participants={participants} creatorId={bill.creatorId} />
+
+        {(items.length > 0 || billSplits.length > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.4 }}
+            className="mt-5"
+          >
+            <BillSummary
+              bill={bill}
+              items={items}
+              splits={splits}
+              billSplits={billSplits}
+              participants={participants}
+            />
+          </motion.div>
+        )}
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4, duration: 0.4 }}
+          className="mt-6"
+        >
+          <Link
+            href="/app/bill/new"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80"
+          >
+            <Receipt className="h-4 w-4" />
+            Continuar editando
+          </Link>
+        </motion.div>
       </div>
     );
   }

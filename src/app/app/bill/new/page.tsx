@@ -5,7 +5,9 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  Clock,
   CreditCard,
+  Loader2,
   Percent,
   Plus,
   QrCode,
@@ -21,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
 import { AddGroupParticipants } from "@/components/bill/add-group-participants";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
+import { RecentContacts } from "@/components/bill/recent-contacts";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { ItemCard } from "@/components/bill/item-card";
@@ -76,6 +79,8 @@ export default function NewBillPage() {
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [showAddGroup, setShowAddGroup] = useState(false);
+  const [showRecentContacts, setShowRecentContacts] = useState(false);
+  const [navigating, setNavigating] = useState(false);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -480,15 +485,59 @@ export default function NewBillPage() {
                   />
                 )}
               </AnimatePresence>
-              {!showAddParticipant && !showAddGroup && (
-                <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddParticipant(true)}>
-                    <UserPlus className="h-4 w-4" />
-                    Por @handle
-                  </Button>
-                  <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddGroup(true)}>
-                    <Users className="h-4 w-4" />
-                    De um grupo
+              <AnimatePresence>
+                {showRecentContacts && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden rounded-2xl border bg-card p-4"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold">Contas anteriores</span>
+                      <button
+                        onClick={() => setShowRecentContacts(false)}
+                        className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <RecentContacts
+                      onSelect={(profile) => {
+                        const newUser: User = {
+                          id: profile.id,
+                          email: "",
+                          handle: profile.handle,
+                          name: profile.name,
+                          pixKeyType: "email",
+                          pixKeyHint: "",
+                          avatarUrl: profile.avatarUrl,
+                          onboarded: true,
+                          createdAt: new Date().toISOString(),
+                        };
+                        store.addParticipant(newUser);
+                      }}
+                      excludeIds={store.participants.map((p) => p.id)}
+                      currentUserId={authUser?.id ?? ""}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {!showAddParticipant && !showAddGroup && !showRecentContacts && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddParticipant(true)}>
+                      <UserPlus className="h-4 w-4" />
+                      Por @handle
+                    </Button>
+                    <Button variant="outline" className="flex-1 gap-2" onClick={() => setShowAddGroup(true)}>
+                      <Users className="h-4 w-4" />
+                      De um grupo
+                    </Button>
+                  </div>
+                  <Button variant="outline" className="w-full gap-2" onClick={() => setShowRecentContacts(true)}>
+                    <Clock className="h-4 w-4" />
+                    De contas anteriores
                   </Button>
                 </div>
               )}
@@ -706,51 +755,83 @@ export default function NewBillPage() {
         </AnimatePresence>
       </div>
 
-      {!isTypeStep && (
-        <div className="mt-6 flex gap-3">
-          <Button variant="outline" onClick={goBack} className="gap-1">
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
-          </Button>
-          <Button
-            onClick={goNext}
-            className="flex-1 gap-2"
-            disabled={(() => {
-              if (step === "info") return !title.trim();
-              if (step === "participants") return store.participants.length < 2;
-              if (step === "amount-split") {
-                const total = store.bill?.totalAmountInput || 0;
-                if (total <= 0) return true;
-                const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
-                return Math.abs(total - assigned) > 1;
-              }
-              if (step === "payer") {
-                const gt = store.getGrandTotal();
-                const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
-                return gt <= 0 || Math.abs(gt - paid) > 1;
-              }
-              if (step === "summary") {
-                return !allAccepted && store.participants.length > 1;
-              }
-              return false;
-            })()}
-          >
-            {step === "summary" ? (
-              <>
-                <QrCode className="h-4 w-4" />
-                {!allAccepted && store.participants.length > 1
-                  ? "Aguardando participantes..."
-                  : "Gerar cobrancas Pix"}
-              </>
-            ) : (
-              <>
-                Proximo
-                <ArrowRight className="h-4 w-4" />
-              </>
+      {!isTypeStep && (() => {
+        let errorMsg: string | null = null;
+        if (step === "amount-split") {
+          const total = store.bill?.totalAmountInput || 0;
+          const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
+          if (total <= 0) {
+            errorMsg = "Informe o valor total da conta";
+          } else if (Math.abs(total - assigned) > 1) {
+            errorMsg = `A divisao (${formatBRL(assigned)}) nao corresponde ao total (${formatBRL(total)})`;
+          }
+        } else if (step === "payer") {
+          const gt = store.getGrandTotal();
+          const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
+          if (gt > 0 && Math.abs(gt - paid) > 1) {
+            errorMsg = `O pagamento (${formatBRL(paid)}) nao corresponde ao total (${formatBRL(gt)})`;
+          }
+        }
+        return (
+          <div className="mt-6">
+            {errorMsg && (
+              <p className="mb-2 text-center text-xs text-destructive">{errorMsg}</p>
             )}
-          </Button>
-        </div>
-      )}
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={goBack} className="gap-1" disabled={navigating}>
+                <ArrowLeft className="h-4 w-4" />
+                Voltar
+              </Button>
+              <Button
+                onClick={async () => {
+                  setNavigating(true);
+                  try {
+                    await goNext();
+                  } finally {
+                    setNavigating(false);
+                  }
+                }}
+                className="flex-1 gap-2"
+                disabled={navigating || (() => {
+                  if (step === "info") return !title.trim();
+                  if (step === "participants") return store.participants.length < 2;
+                  if (step === "amount-split") {
+                    const total = store.bill?.totalAmountInput || 0;
+                    if (total <= 0) return true;
+                    const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
+                    return Math.abs(total - assigned) > 1;
+                  }
+                  if (step === "payer") {
+                    const gt = store.getGrandTotal();
+                    const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
+                    return gt <= 0 || Math.abs(gt - paid) > 1;
+                  }
+                  if (step === "summary") {
+                    return !allAccepted && store.participants.length > 1;
+                  }
+                  return false;
+                })()}
+              >
+                {navigating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : step === "summary" ? (
+                  <>
+                    <QrCode className="h-4 w-4" />
+                    {!allAccepted && store.participants.length > 1
+                      ? "Aguardando participantes..."
+                      : "Gerar cobrancas Pix"}
+                  </>
+                ) : (
+                  <>
+                    Proximo
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

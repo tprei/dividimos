@@ -54,6 +54,10 @@ export function SingleAmountStep({
 
     if (method === "equal") {
       onSplitEqually(participants.map((p) => p.id));
+    } else if (method === "percentage") {
+      applyPercentages();
+    } else if (method === "fixed") {
+      applyFixed();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method, totalCents, participants.length]);
@@ -124,7 +128,11 @@ export function SingleAmountStep({
           {methods.map((m) => (
             <button
               key={m.key}
-              onClick={() => setMethod(m.key)}
+              onClick={() => {
+                setMethod(m.key);
+                if (m.key !== "percentage") setPercentages(new Map());
+                if (m.key !== "fixed") setFixedAmounts(new Map());
+              }}
               className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all ${
                 method === m.key
                   ? "bg-card text-foreground shadow-sm"
@@ -248,7 +256,7 @@ export function SingleAmountStep({
                 <Users className="h-4 w-4" />
                 Dividir igualmente
               </Button>
-              {Math.abs(percentTotal - 100) > 0.1 && percentTotal > 0 && (
+              {Math.abs(percentTotal - 100) > 0.1 && (
                 <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
                   Total: {percentTotal.toFixed(0)}% — faltam {(100 - percentTotal).toFixed(0)}% para completar 100%
                 </div>
@@ -325,7 +333,7 @@ export function SingleAmountStep({
                 <Users className="h-4 w-4" />
                 Dividir igualmente
               </Button>
-              {Math.abs(fixedTotal - totalCents) > 1 && fixedTotal > 0 && (
+              {Math.abs(fixedTotal - totalCents) > 1 && (
                 <p className="text-xs text-warning-foreground">
                   Total: {formatBRL(fixedTotal)} (deve ser {formatBRL(totalCents)})
                 </p>
