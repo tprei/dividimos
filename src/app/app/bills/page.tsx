@@ -43,7 +43,7 @@ export default function BillsPage() {
     if (!user) return;
     const supabase = createClient();
 
-    async function fetchBills() {
+    (async () => {
       const { data } = await supabase
         .from("bills")
         .select("id, title, status, total_amount, created_at")
@@ -77,9 +77,7 @@ export default function BillsPage() {
         );
       }
       setLoading(false);
-    }
-
-    fetchBills();
+    })();
   }, [user]);
 
   const filtered = bills.filter((bill) => {

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
@@ -338,6 +338,7 @@ export default function BillDetailPage({
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
   const [loadingFromDb, setLoadingFromDb] = useState(false);
+  const loadedBillIdRef = useRef<string | null>(null);
 
   const loadAndSetBill = useCallback(async (billId: string) => {
     const data = await loadBillFromSupabase(billId);
@@ -354,35 +355,44 @@ export default function BillDetailPage({
     return data;
   }, []);
 
+  // Redirect invited users to the invite page — runs independently of bill loading
+  // so the redirect fires even when bill data is already cached in the store.
+  useEffect(() => {
+    if (id === "demo" || !currentUser) return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      const { data: myStatus } = await supabase
+        .from("bill_participants")
+        .select("status")
+        .eq("bill_id", id)
+        .eq("user_id", currentUser.id)
+        .single();
+      if (!cancelled && myStatus?.status === "invited") {
+        router.push(`/app/bill/${id}/invite`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, currentUser, router]);
+
+  // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
     if (id === "demo") return;
-    // Skip load only if we already have complete data for this bill.
-    // A premature realtime reload may set bill.id but leave ledger/items empty.
-    // Draft bills are never skipped — they need a fresh DB load to detect status changes.
-    const hasCompleteData = bill?.id === id && bill?.status !== "draft" && (ledger.length > 0 || bill.status === "settled");
-    if (hasCompleteData) return;
-    setLoadingFromDb(true);
-
-    (async () => {
-      if (currentUser) {
-        const supabaseCheck = createClient();
-        const { data: myStatus } = await supabaseCheck
-          .from("bill_participants")
-          .select("status")
-          .eq("bill_id", id)
-          .eq("user_id", currentUser.id)
-          .single();
-
-        if (myStatus?.status === "invited") {
-          router.push(`/app/bill/${id}/invite`);
-          return;
-        }
-      }
-
-      await loadAndSetBill(id);
+    // Skip if we've already loaded this bill (data is in store)
+    if (loadedBillIdRef.current === id) {
       setLoadingFromDb(false);
+      return;
+    }
+
+    loadedBillIdRef.current = id;
+    let cancelled = false;
+    setLoadingFromDb(true);
+    (async () => {
+      await loadAndSetBill(id);
+      if (!cancelled) setLoadingFromDb(false);
     })();
-  }, [id, currentUser, bill, ledger, router, loadAndSetBill]);
+    return () => { cancelled = true; };
+  }, [id, loadAndSetBill]);
 
   const billId = bill?.id;
 

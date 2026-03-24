@@ -42,39 +42,42 @@ export function PixQrModal({
   useEffect(() => {
     if (!open || amountCents <= 0) return;
 
-    setCopiaECola("");
-    setLoading(true);
+    (async () => {
+      setCopiaECola("");
+      setLoading(true);
 
-    if (pixKey) {
-      const payload = generatePixCopiaECola({
-        pixKey,
-        merchantName: recipientName,
-        merchantCity: "SAO PAULO",
-        amountCents,
-      });
-      setCopiaECola(payload);
-      setLoading(false);
-      return;
-    }
+      if (pixKey) {
+        const payload = generatePixCopiaECola({
+          pixKey,
+          merchantName: recipientName,
+          merchantCity: "SAO PAULO",
+          amountCents,
+        });
+        setCopiaECola(payload);
+        setLoading(false);
+        return;
+      }
 
-    if (recipientUserId) {
-      fetch("/api/pix/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientUserId, amountCents, billId, groupId }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
+      if (recipientUserId) {
+        try {
+          const res = await fetch("/api/pix/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipientUserId, amountCents, billId, groupId }),
+          });
+          const data = await res.json();
           if (data.copiaECola) {
             setCopiaECola(data.copiaECola);
           } else {
             toast.error(data.error || "Erro ao gerar Pix");
           }
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false);
+      }
+    })();
   }, [open, pixKey, recipientUserId, recipientName, amountCents, billId, groupId]);
 
   useEffect(() => {

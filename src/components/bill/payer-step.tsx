@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -29,22 +29,19 @@ export function PayerStep({
 }: PayerStepProps) {
   const [multiMode, setMultiMode] = useState(payers.length > 1);
   const [paymentInputMode, setPaymentInputMode] = useState<"fixed" | "percentage">("fixed");
-  const [localAmounts, setLocalAmounts] = useState<Map<string, string>>(new Map());
-  const [localPercentages, setLocalPercentages] = useState<Map<string, string>>(new Map());
-  const initialized = useRef(false);
-
-  useEffect(() => {
-    if (payers.length > 1 && !initialized.current) {
+  const [localAmounts, setLocalAmounts] = useState<Map<string, string>>(() => {
+    if (payers.length > 1) {
       const m = new Map<string, string>();
       for (const p of payers) {
         if (p.amountCents > 0) {
           m.set(p.userId, (p.amountCents / 100).toFixed(2).replace(".", ","));
         }
       }
-      setLocalAmounts(m);
-      initialized.current = true;
+      return m;
     }
-  }, [payers]);
+    return new Map();
+  });
+  const [localPercentages, setLocalPercentages] = useState<Map<string, string>>(new Map());
 
   const payerMap = new Map(payers.map((p) => [p.userId, p.amountCents]));
   const totalPaid = payers.reduce((sum, p) => sum + p.amountCents, 0);

@@ -13,23 +13,25 @@ afterEach(() => {
 vi.mock("framer-motion", async () => {
   const actual = await vi.importActual<typeof import("framer-motion")>("framer-motion");
 
+  const motionPropNames = new Set([
+    "initial", "animate", "exit", "transition", "variants",
+    "whileTap", "whileHover", "whileFocus", "whileDrag", "whileInView",
+    "layout", "layoutId", "onAnimationStart", "onAnimationComplete",
+  ]);
+
   const motion = new Proxy(
     {},
     {
       get: (_target, prop: string) => {
-        const MotionComponent = React.forwardRef(function MotionComponent(props: Record<string, unknown>, ref) {
-          // Strip framer-motion-specific props before passing to DOM element
-          const motionProps = [
-            "initial", "animate", "exit", "transition", "variants",
-            "whileTap", "whileHover", "whileFocus", "whileDrag", "whileInView",
-            "layout", "layoutId", "onAnimationStart", "onAnimationComplete",
-          ];
-          const rest = Object.fromEntries(
-            Object.entries(props).filter(([key]) => !motionProps.includes(key)),
-          );
+        const MotionStub = React.forwardRef((props: Record<string, unknown>, ref) => {
+          const rest: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(props)) {
+            if (!motionPropNames.has(key)) rest[key] = value;
+          }
           return React.createElement(prop, { ...rest, ref });
         });
-        return MotionComponent;
+        MotionStub.displayName = `motion.${prop}`;
+        return MotionStub;
       },
     },
   );
