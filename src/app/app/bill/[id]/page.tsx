@@ -354,6 +354,27 @@ export default function BillDetailPage({
     return data;
   }, []);
 
+  // Redirect invited users to the invite page — runs independently of bill loading
+  // so the redirect fires even when bill data is already cached in the store.
+  useEffect(() => {
+    if (id === "demo" || !currentUser) return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      const { data: myStatus } = await supabase
+        .from("bill_participants")
+        .select("status")
+        .eq("bill_id", id)
+        .eq("user_id", currentUser.id)
+        .single();
+      if (!cancelled && myStatus?.status === "invited") {
+        router.push(`/app/bill/${id}/invite`);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, currentUser?.id, router]);
+
+  // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
     if (id === "demo") return;
     // Skip load only if we already have complete data for this bill.
@@ -361,28 +382,15 @@ export default function BillDetailPage({
     // Draft bills are never skipped — they need a fresh DB load to detect status changes.
     const hasCompleteData = bill?.id === id && bill?.status !== "draft" && (ledger.length > 0 || bill.status === "settled");
     if (hasCompleteData) return;
+
+    let cancelled = false;
     setLoadingFromDb(true);
-
     (async () => {
-      if (currentUser) {
-        const supabaseCheck = createClient();
-        const { data: myStatus } = await supabaseCheck
-          .from("bill_participants")
-          .select("status")
-          .eq("bill_id", id)
-          .eq("user_id", currentUser.id)
-          .single();
-
-        if (myStatus?.status === "invited") {
-          router.push(`/app/bill/${id}/invite`);
-          return;
-        }
-      }
-
       await loadAndSetBill(id);
-      setLoadingFromDb(false);
+      if (!cancelled) setLoadingFromDb(false);
     })();
-  }, [id, currentUser, bill, ledger, router, loadAndSetBill]);
+    return () => { cancelled = true; };
+  }, [id, currentUser?.id, bill, ledger, loadAndSetBill]);
 
   const billId = bill?.id;
 

@@ -67,5 +67,9 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Prevent CDN/edge caching of responses that may contain refreshed auth cookies.
+  // See: https://supabase.com/docs/guides/auth/server-side/advanced-guide
+  supabaseResponse.headers.set("Cache-Control", "private, no-store");
+
   return supabaseResponse;
 }
