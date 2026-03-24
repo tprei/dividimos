@@ -2,6 +2,7 @@ import { describe, expect, it, test } from "vitest";
 import {
   centsToDecimal,
   decimalToCents,
+  formatBillAmount,
   formatBRL,
   parseBRLInput,
   sanitizeDecimalInput,
@@ -108,6 +109,28 @@ describe("parseBRLInput", () => {
   // yielding "1.234.56" → parseFloat returns 1.234 → Math.round(1.234 * 100) = 123.
   test.fails("parses thousands-separated Brazilian format (known limitation)", () => {
     expect(parseBRLInput("1.234,56")).toBe(123456);
+  });
+});
+
+describe("formatBillAmount", () => {
+  it('shows "Em criação..." for draft bills', () => {
+    expect(formatBillAmount("draft", 0)).toBe("Em criação...");
+  });
+
+  it('shows "Em criação..." for draft bills even with a non-zero amount', () => {
+    expect(formatBillAmount("draft", 5000)).toBe("Em criação...");
+  });
+
+  it("shows formatted amount for active bills", () => {
+    expect(formatBillAmount("active", 5000)).toBe("R$\u00a050,00");
+  });
+
+  it("shows formatted amount for finalized bills", () => {
+    expect(formatBillAmount("finalized", 1050)).toBe("R$\u00a010,50");
+  });
+
+  it("shows R$ 0,00 for non-draft bills with zero amount", () => {
+    expect(formatBillAmount("active", 0)).toBe("R$\u00a00,00");
   });
 });
 

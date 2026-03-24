@@ -17,7 +17,7 @@ import { use, useEffect, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
-import { formatBRL } from "@/lib/currency";
+import { formatBillAmount } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
@@ -34,6 +34,7 @@ export default function BillInvitePage({
   const [loading, setLoading] = useState(true);
   const [billTitle, setBillTitle] = useState("");
   const [totalAmount, setTotalAmount] = useState(0);
+  const [billStatus, setBillStatus] = useState("");
   const [inviterName, setInviterName] = useState("");
   const [participantProfiles, setParticipantProfiles] = useState<UserProfile[]>([]);
   const [responding, setResponding] = useState(false);
@@ -46,7 +47,7 @@ export default function BillInvitePage({
     async function load() {
       const { data: bill } = await supabase
         .from("bills")
-        .select("title, total_amount, creator_id")
+        .select("title, total_amount, creator_id, status")
         .eq("id", billId)
         .single();
 
@@ -57,6 +58,7 @@ export default function BillInvitePage({
 
       setBillTitle(bill.title);
       setTotalAmount(bill.total_amount);
+      setBillStatus(bill.status);
 
       const { data: creatorProfile } = await supabase
         .from("user_profiles")
@@ -162,7 +164,7 @@ export default function BillInvitePage({
           <p className="text-sm text-white/70">Conta</p>
           <p className="mt-1 text-xl font-bold">{billTitle}</p>
           <p className="mt-2 text-3xl font-bold tabular-nums">
-            {formatBRL(totalAmount)}
+            {formatBillAmount(billStatus, totalAmount)}
           </p>
           <p className="mt-2 text-sm text-white/70">
             Convidado por {inviterName}
