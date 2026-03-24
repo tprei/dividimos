@@ -259,6 +259,8 @@ function NewBillPageContent() {
           groupId: selectedGroupId ?? undefined,
         });
         if ("billId" in result) {
+          // Clear store so BillDetailPage forces a fresh DB load (not stale draft data)
+          useBillStore.setState({ bill: null, items: [], splits: [], billSplits: [], ledger: [] });
           router.push(`/app/bill/${result.billId}`);
           return;
         }

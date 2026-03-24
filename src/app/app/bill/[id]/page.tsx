@@ -190,7 +190,21 @@ function CreatorDraftView({
         groupId: bill.groupId,
       });
       if ("billId" in result) {
-        router.push(`/app/bill/${result.billId}`);
+        // Reload from DB to get authoritative status + real ledger entry IDs
+        const fresh = await loadBillFromSupabase(result.billId);
+        if (fresh) {
+          useBillStore.setState({
+            bill: fresh.bill,
+            participants: fresh.participants,
+            items: fresh.items,
+            splits: fresh.splits,
+            billSplits: fresh.billSplits,
+            ledger: fresh.ledger,
+          });
+        }
+        // No router.push needed: store update causes React re-render;
+        // bill.status is now 'active' so the page transitions out of CreatorDraftView
+        setFinalizing(false);
         return;
       }
       console.error("Finalize failed:", result.error);
@@ -331,7 +345,8 @@ export default function BillDetailPage({
     if (id === "demo") return;
     // Skip load only if we already have complete data for this bill.
     // A premature realtime reload may set bill.id but leave ledger/items empty.
-    const hasCompleteData = bill?.id === id && (ledger.length > 0 || bill.status === "draft" || bill.status === "settled");
+    // Draft bills are never skipped — they need a fresh DB load to detect status changes.
+    const hasCompleteData = bill?.id === id && bill?.status !== "draft" && (ledger.length > 0 || bill.status === "settled");
     if (hasCompleteData) return;
     setLoadingFromDb(true);
 
