@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
@@ -338,6 +338,7 @@ export default function BillDetailPage({
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
   const [loadingFromDb, setLoadingFromDb] = useState(false);
+  const loadedBillIdRef = useRef<string | null>(null);
 
   const loadAndSetBill = useCallback(async (billId: string) => {
     const data = await loadBillFromSupabase(billId);
@@ -377,12 +378,10 @@ export default function BillDetailPage({
   // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
     if (id === "demo") return;
-    // Skip load only if we already have complete data for this bill.
-    // A premature realtime reload may set bill.id but leave ledger/items empty.
-    // Draft bills are never skipped — they need a fresh DB load to detect status changes.
-    const hasCompleteData = bill?.id === id && bill?.status !== "draft" && (ledger.length > 0 || bill.status === "settled");
-    if (hasCompleteData) return;
+    // Skip if we've already loaded this bill
+    if (loadedBillIdRef.current === id) return;
 
+    loadedBillIdRef.current = id;
     let cancelled = false;
     setLoadingFromDb(true);
     (async () => {
@@ -390,7 +389,7 @@ export default function BillDetailPage({
       if (!cancelled) setLoadingFromDb(false);
     })();
     return () => { cancelled = true; };
-  }, [id, currentUser?.id, bill, ledger, loadAndSetBill]);
+  }, [id, currentUser?.id, loadAndSetBill]);
 
   const billId = bill?.id;
 
