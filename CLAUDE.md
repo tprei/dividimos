@@ -37,6 +37,30 @@ npm run dev                  # start dev server
 
 **Without any env vars**: the middleware gracefully degrades — `/` and `/demo` render, protected pages redirect to `/`.
 
+### Minion environments (Fly.io)
+
+Minion machines don't have Docker, so they use the **remote Supabase** path. The required env vars are set as Fly secrets on the minion app:
+
+```
+SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+```
+
+When these secrets are present, `./scripts/dev-setup.sh` detects them automatically (no Docker needed) and writes `.env.local` with the correct values plus `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true`.
+
+**Full minion bootstrap:**
+
+```bash
+./scripts/dev-setup.sh       # reads Fly secrets → writes .env.local
+npm run dev &                # start dev server in background
+
+# Authenticate programmatically (no real phone/SMS needed):
+curl -X POST http://localhost:3000/api/dev/login \
+  -H 'Content-Type: application/json' \
+  -d '{"phone": "11999990001"}'
+```
+
+The dev Supabase project is shared across all minions. Phone test mode creates users on the fly — no seed data required for remote.
+
 ### Agent auth (programmatic login)
 
 When `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true`, agents can authenticate via:
