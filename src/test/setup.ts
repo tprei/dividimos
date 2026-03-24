@@ -18,23 +18,15 @@ vi.mock("framer-motion", async () => {
     {
       get: (_target, prop: string) => {
         const MotionComponent = React.forwardRef(function MotionComponent(props: Record<string, unknown>, ref) {
-          const {
-            initial,
-            animate,
-            exit,
-            transition,
-            variants,
-            whileTap,
-            whileHover,
-            whileFocus,
-            whileDrag,
-            whileInView,
-            layout,
-            layoutId,
-            onAnimationStart,
-            onAnimationComplete,
-            ...rest
-          } = props;
+          // Strip framer-motion-specific props before passing to DOM element
+          const motionProps = [
+            "initial", "animate", "exit", "transition", "variants",
+            "whileTap", "whileHover", "whileFocus", "whileDrag", "whileInView",
+            "layout", "layoutId", "onAnimationStart", "onAnimationComplete",
+          ];
+          const rest = Object.fromEntries(
+            Object.entries(props).filter(([key]) => !motionProps.includes(key)),
+          );
           return React.createElement(prop, { ...rest, ref });
         });
         return MotionComponent;

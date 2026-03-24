@@ -149,7 +149,6 @@ function CreatorDraftView({
   splits,
   billSplits,
   store,
-  router,
 }: {
   bill: NonNullable<ReturnType<typeof useBillStore.getState>["bill"]>;
   participants: User[];
@@ -157,7 +156,6 @@ function CreatorDraftView({
   splits: ReturnType<typeof useBillStore.getState>["splits"];
   billSplits: ReturnType<typeof useBillStore.getState>["billSplits"];
   store: ReturnType<typeof useBillStore.getState>;
-  router: ReturnType<typeof useRouter>;
 }) {
   const [draftAllAccepted, setDraftAllAccepted] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -380,7 +378,7 @@ export default function BillDetailPage({
       }
       setLoadingFromDb(false);
     })();
-  }, [id, currentUser?.id]);
+  }, [id, currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!bill) return;
@@ -420,7 +418,7 @@ export default function BillDetailPage({
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [bill?.id]);
+  }, [bill?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!bill) return;
@@ -447,7 +445,7 @@ export default function BillDetailPage({
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [bill?.id]);
+  }, [bill?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMarkPaid = async (entryId: string) => {
     store.markPaid(entryId);
@@ -607,7 +605,6 @@ export default function BillDetailPage({
         splits={splits}
         billSplits={billSplits}
         store={store}
-        router={router}
       />
     );
   }

@@ -147,7 +147,7 @@ function NewBillPageContent() {
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [remoteBillId]);
+  }, [remoteBillId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Group bills skip acceptance entirely — all participants are auto-accepted
   const allAccepted = selectedGroupId
@@ -209,7 +209,7 @@ function NewBillPageContent() {
     })();
   }, [step, searchParams, selectedGroupId, authUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const goNext = async () => {
+  const goNext = useCallback(async () => {
     if (step === "info") {
       initBill();
     }
@@ -271,7 +271,7 @@ function NewBillPageContent() {
     }
     const next = steps[stepIndex + 1];
     if (next) setStep(next.key);
-  };
+  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill]);
 
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
