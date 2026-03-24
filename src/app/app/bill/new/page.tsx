@@ -271,6 +271,41 @@ function NewBillPageContent() {
     if (next) setStep(next.key);
   };
 
+  const isNextDisabled = useCallback(() => {
+    if (navigating || isTypeStep) return true;
+    if (step === "info") return !title.trim();
+    if (step === "participants") return store.participants.length < 2;
+    if (step === "amount-split") {
+      const total = store.bill?.totalAmountInput || 0;
+      if (total <= 0) return true;
+      const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
+      return Math.abs(total - assigned) > 1;
+    }
+    if (step === "payer") {
+      const gt = store.getGrandTotal();
+      const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
+      return gt <= 0 || Math.abs(gt - paid) > 1;
+    }
+    if (step === "summary") {
+      return !allAccepted && store.participants.length > 1 && !selectedGroupId;
+    }
+    return false;
+  }, [navigating, isTypeStep, step, title, store, allAccepted, selectedGroupId]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON" || tag === "SELECT") return;
+      if (isNextDisabled()) return;
+      e.preventDefault();
+      setNavigating(true);
+      goNext().finally(() => setNavigating(false));
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [goNext, isNextDisabled]);
+
   const goBack = () => {
     if (stepIndex === 0) {
       setStep("type");
@@ -876,25 +911,7 @@ function NewBillPageContent() {
                   }
                 }}
                 className="flex-1 gap-2"
-                disabled={navigating || (() => {
-                  if (step === "info") return !title.trim();
-                  if (step === "participants") return store.participants.length < 2;
-                  if (step === "amount-split") {
-                    const total = store.bill?.totalAmountInput || 0;
-                    if (total <= 0) return true;
-                    const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
-                    return Math.abs(total - assigned) > 1;
-                  }
-                  if (step === "payer") {
-                    const gt = store.getGrandTotal();
-                    const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
-                    return gt <= 0 || Math.abs(gt - paid) > 1;
-                  }
-                  if (step === "summary") {
-                    return !allAccepted && store.participants.length > 1 && !selectedGroupId;
-                  }
-                  return false;
-                })()}
+                disabled={isNextDisabled()}
               >
                 {navigating ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
