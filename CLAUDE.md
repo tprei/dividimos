@@ -106,6 +106,7 @@ supabase db push --linked    # Apply migrations to remote
 
 - Portuguese (pt-BR) for all user-facing text
 - All hooks must run before any early returns (React rules of hooks)
+- **Never use `eslint-disable`, `eslint-disable-next-line`, or `eslint-disable-line` comments.** Fix the underlying code instead. For `exhaustive-deps`, use `useCallback`/`useRef` to stabilize references. For `no-explicit-any`, add proper types. If a lint rule is genuinely wrong for the project, change the ESLint config.
 - Range inputs use global CSS styling in `globals.css`, not inline classes
 - Dev-only code gated behind `process.env.NODE_ENV === "production"` checks
 - Supabase proxy in `src/proxy.ts` with `export async function proxy()`

@@ -9,13 +9,13 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
 }> {
   const supabase = createClient();
 
-  const { data: billRows } = await (supabase
+  const { data: billRows } = await supabase
     .from("bills")
-    .select("*") as any)
+    .select("*")
     .eq("group_id", groupId)
     .neq("status", "draft");
 
-  const bills: Bill[] = (billRows ?? []).map((b: any) => {
+  const bills: Bill[] = (billRows ?? []).map((b) => {
     const payers: BillPayer[] = [];
     return {
       id: b.id,
@@ -92,11 +92,11 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
 export async function loadGroupSettlements(groupId: string): Promise<GroupSettlement[]> {
   const supabase = createClient();
   const { data } = await supabase
-    .from("group_settlements" as any)
+    .from("group_settlements")
     .select("*")
     .eq("group_id", groupId);
 
-  return (data ?? []).map((s: any) => ({
+  return (data ?? []).map((s) => ({
     id: s.id,
     groupId: s.group_id,
     fromUserId: s.from_user_id,
@@ -167,13 +167,13 @@ export async function upsertGroupSettlements(
 
   if (toDelete.length > 0) {
     await supabase
-      .from("group_settlements" as any)
+      .from("group_settlements")
       .delete()
       .in("id", toDelete);
   }
   if (toInsert.length > 0) {
     await supabase
-      .from("group_settlements" as any)
+      .from("group_settlements")
       .insert(toInsert);
   }
 }
@@ -181,7 +181,7 @@ export async function upsertGroupSettlements(
 export async function markGroupSettlementPaid(settlementId: string): Promise<void> {
   const supabase = createClient();
   await supabase
-    .from("group_settlements" as any)
+    .from("group_settlements")
     .update({ status: "paid_unconfirmed", paid_at: new Date().toISOString() })
     .eq("id", settlementId);
 }
@@ -189,7 +189,7 @@ export async function markGroupSettlementPaid(settlementId: string): Promise<voi
 export async function confirmGroupSettlement(settlementId: string): Promise<void> {
   const supabase = createClient();
   await supabase
-    .from("group_settlements" as any)
+    .from("group_settlements")
     .update({ status: "settled", confirmed_at: new Date().toISOString() })
     .eq("id", settlementId);
 }

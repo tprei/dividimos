@@ -13,7 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { staggerContainer, staggerItem } from "@/lib/animations";
@@ -83,7 +83,7 @@ export default function AppHome() {
   const [pullDistance, setPullDistance] = useState(0);
   const touchStartY = useRef(0);
 
-  async function fetchDashboard() {
+  const fetchDashboard = useCallback(async () => {
     if (!user) return;
     const supabase = createClient();
 
@@ -140,7 +140,7 @@ export default function AppHome() {
     setNetBalance(theyOweMe - iOwe);
 
     setLoading(false);
-  }
+  }, [user]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (window.scrollY === 0) {
@@ -166,9 +166,8 @@ export default function AppHome() {
 
   useEffect(() => {
     if (!user) return;
-    (async () => { await fetchDashboard(); })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    fetchDashboard();
+  }, [user, fetchDashboard]);
 
   if (authLoading || loading) {
     return (

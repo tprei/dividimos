@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, CheckCheck, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
@@ -48,13 +48,13 @@ export function GroupSettlementView({
   const [settling, setSettling] = useState<string | null>(null);
 
   // Read-only refresh: just load current settlement state from DB
-  async function refreshSettlements() {
+  const refreshSettlements = useCallback(async () => {
     const loaded = await loadGroupSettlements(groupId);
     setSettlements(loaded.filter((s) => s.status !== "settled"));
-  }
+  }, [groupId]);
 
   // Full compute + sync: runs once on mount and after user actions
-  async function initializeSettlements() {
+  const initializeSettlements = useCallback(async () => {
     setLoading(true);
     const { ledger, participants: billParticipants } = await loadGroupBillsAndLedger(groupId);
 
@@ -79,11 +79,16 @@ export function GroupSettlementView({
     await upsertGroupSettlements(groupId, netEdges);
     await refreshSettlements();
     setLoading(false);
-  }
+  }, [groupId, participants, refreshSettlements]);
 
   useEffect(() => {
     initializeSettlements();
+  }, [initializeSettlements]);
 
+  const refreshSettlementsRef = useRef(refreshSettlements);
+  useEffect(() => { refreshSettlementsRef.current = refreshSettlements; });
+
+  useEffect(() => {
     // Realtime: read-only refresh (no upsert) to avoid write → subscribe → write loop
     const supabase = createClient();
     const channel = supabase
@@ -91,12 +96,12 @@ export function GroupSettlementView({
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
-        () => refreshSettlements(),
+        () => refreshSettlementsRef.current(),
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [groupId]);
 
   const displayEdges = simplifyEnabled && simplificationResult
     ? simplificationResult.simplifiedEdges
