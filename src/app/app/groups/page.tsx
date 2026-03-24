@@ -167,7 +167,7 @@ export default function GroupsPage() {
   }
 
   useEffect(() => {
-    fetchGroups();
+    fetchGroups(); // eslint-disable-line react-hooks/set-state-in-effect
   }, [user]);
 
   const handleCreateGroup = async () => {

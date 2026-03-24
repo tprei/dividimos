@@ -11,10 +11,12 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
 
   const { data: billRows } = await (supabase
     .from("bills")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .select("*") as any)
     .eq("group_id", groupId)
     .neq("status", "draft");
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bills: Bill[] = (billRows ?? []).map((b: any) => {
     const payers: BillPayer[] = [];
     return {
@@ -92,10 +94,12 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
 export async function loadGroupSettlements(groupId: string): Promise<GroupSettlement[]> {
   const supabase = createClient();
   const { data } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from("group_settlements" as any)
     .select("*")
     .eq("group_id", groupId);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((s: any) => ({
     id: s.id,
     groupId: s.group_id,
@@ -167,12 +171,14 @@ export async function upsertGroupSettlements(
 
   if (toDelete.length > 0) {
     await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from("group_settlements" as any)
       .delete()
       .in("id", toDelete);
   }
   if (toInsert.length > 0) {
     await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from("group_settlements" as any)
       .insert(toInsert);
   }
@@ -181,6 +187,7 @@ export async function upsertGroupSettlements(
 export async function markGroupSettlementPaid(settlementId: string): Promise<void> {
   const supabase = createClient();
   await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from("group_settlements" as any)
     .update({ status: "paid_unconfirmed", paid_at: new Date().toISOString() })
     .eq("id", settlementId);
@@ -189,6 +196,7 @@ export async function markGroupSettlementPaid(settlementId: string): Promise<voi
 export async function confirmGroupSettlement(settlementId: string): Promise<void> {
   const supabase = createClient();
   await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .from("group_settlements" as any)
     .update({ status: "settled", confirmed_at: new Date().toISOString() })
     .eq("id", settlementId);

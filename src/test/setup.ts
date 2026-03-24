@@ -17,7 +17,7 @@ vi.mock("framer-motion", async () => {
     {},
     {
       get: (_target, prop: string) => {
-        return React.forwardRef((props: Record<string, unknown>, ref) => {
+        const MotionComponent = React.forwardRef(function MotionComponent(props: Record<string, unknown>, ref) {
           const {
             initial,
             animate,
@@ -37,6 +37,7 @@ vi.mock("framer-motion", async () => {
           } = props;
           return React.createElement(prop, { ...rest, ref });
         });
+        return MotionComponent;
       },
     },
   );

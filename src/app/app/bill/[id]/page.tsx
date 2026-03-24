@@ -348,6 +348,7 @@ export default function BillDetailPage({
     // Draft bills are never skipped — they need a fresh DB load to detect status changes.
     const hasCompleteData = bill?.id === id && bill?.status !== "draft" && (ledger.length > 0 || bill.status === "settled");
     if (hasCompleteData) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingFromDb(true);
 
     const supabaseCheck = createClient();

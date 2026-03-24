@@ -109,7 +109,7 @@ describe("Itemized bill flows", () => {
     store.addItem({ description: "Item1", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
     store.addItem({ description: "Item2", quantity: 1, unitPriceCents: 3000, totalPriceCents: 3000 });
 
-    let items = useBillStore.getState().items;
+    const items = useBillStore.getState().items;
     store.splitItemEqually(items[0].id, ["user-alice", "user-bob"]);
     store.splitItemEqually(items[1].id, ["user-alice", "user-bob"]);
 

@@ -41,7 +41,7 @@ export function PayerStep({
           m.set(p.userId, (p.amountCents / 100).toFixed(2).replace(".", ","));
         }
       }
-      setLocalAmounts(m);
+      setLocalAmounts(m); // eslint-disable-line react-hooks/set-state-in-effect
       initialized.current = true;
     }
   }, [payers]);

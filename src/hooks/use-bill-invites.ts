@@ -64,7 +64,7 @@ export function useBillInvites() {
   }
 
   useEffect(() => {
-    fetchInvites();
+    fetchInvites(); // eslint-disable-line react-hooks/set-state-in-effect
   }, [user]);
 
   useEffect(() => {

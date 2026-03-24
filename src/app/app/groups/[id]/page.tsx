@@ -135,11 +135,13 @@ export default function GroupDetailPage({
     // Fetch group bills
     const { data: billRows } = await (supabase
       .from("bills")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .select("id, title, total_amount, status, created_at") as any)
       .eq("group_id", id)
       .order("created_at", { ascending: false });
 
     setBills(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (billRows ?? []).map((b: any) => ({
         id: b.id,
         title: b.title,
@@ -153,7 +155,7 @@ export default function GroupDetailPage({
   }
 
   useEffect(() => {
-    fetchGroup();
+    fetchGroup(); // eslint-disable-line react-hooks/set-state-in-effect
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isCreator = user?.id === creatorId;

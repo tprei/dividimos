@@ -196,7 +196,7 @@ describe("upsertGroupSettlements", () => {
     // Should insert a new pending row for 6000 - 2000 = 4000
     const inserts = mock.findCalls("group_settlements", "insert");
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].args[0][0].amount_cents).toBe(4000);
+    expect((inserts[0].args[0] as Record<string, unknown>[])[0].amount_cents).toBe(4000);
   });
 
   it("does not insert if remaining amount is <= 1 centavo", async () => {

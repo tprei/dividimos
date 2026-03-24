@@ -42,6 +42,7 @@ export function PixQrModal({
   useEffect(() => {
     if (!open || amountCents <= 0) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCopiaECola("");
     setLoading(true);
 

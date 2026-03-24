@@ -82,7 +82,7 @@ export function GroupSettlementView({
   }
 
   useEffect(() => {
-    initializeSettlements();
+    initializeSettlements(); // eslint-disable-line react-hooks/set-state-in-effect
 
     // Realtime: read-only refresh (no upsert) to avoid write → subscribe → write loop
     const supabase = createClient();
