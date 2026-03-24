@@ -24,13 +24,62 @@ Bill-splitting web app targeting the Brazilian market with Pix integration and G
 - `src/types/database.ts` — Supabase database types including `user_profiles` view
 - `supabase/migrations/` — PostgreSQL schema with RLS policies. Uses `gen_random_uuid()`, not `uuid_generate_v4()`
 
+## Local development setup
+
+```bash
+./scripts/dev-setup.sh       # auto-detects Docker → local Supabase, else remote
+npm run dev                  # start dev server
+```
+
+**With Docker** (full local Supabase): the script runs `supabase start`, writes `.env.local`, and seeds test users (alice/bob/carol@test.pixwise.local, password: password123).
+
+**Without Docker** (remote Supabase): set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` env vars before running the script, or it writes placeholder values (public pages only).
+
+**Without any env vars**: the middleware gracefully degrades — `/` and `/demo` render, protected pages redirect to `/`.
+
+### Remote Supabase (no Docker)
+
+When Docker is not available, use a remote Supabase project. Set the required env vars before running the setup script:
+
+```bash
+export SUPABASE_URL=https://<project-ref>.supabase.co
+export SUPABASE_ANON_KEY=<your-anon-key>
+export SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+
+./scripts/dev-setup.sh       # detects env vars, writes .env.local
+npm run dev
+```
+
+These can also be provided as Fly secrets if running on Fly.io — the script reads them automatically.
+
+Phone test mode is enabled by default in dev. It creates users on the fly — no seed data required for remote.
+
+### Programmatic login (dev only)
+
+When `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true`, you can authenticate via API:
+
+```bash
+# Phone-based (creates user on the fly):
+curl -X POST http://localhost:3000/api/dev/login \
+  -H 'Content-Type: application/json' \
+  -d '{"phone": "11999990001"}'
+
+# Email-based (for seed users with local Supabase):
+curl -X POST http://localhost:3000/api/dev/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "alice@test.pixwise.local"}'
+```
+
+The response sets session cookies. Or use the UI: navigate to `/auth` → "Entrar com celular" → any phone number → any 6-digit OTP.
+
 ## Commands
 
 ```bash
-npm run dev          # Start dev server
-npm run build        # Production build (verifies types)
-npm run lint         # ESLint
-supabase db push --linked   # Apply migrations to remote
+npm run dev                  # Start dev server
+npm run build                # Production build (verifies types)
+npm run lint                 # ESLint
+./scripts/dev-setup.sh       # One-command local setup
+supabase db push --linked    # Apply migrations to remote
 ```
 
 ## Key concepts
