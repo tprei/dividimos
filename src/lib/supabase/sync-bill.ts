@@ -108,6 +108,14 @@ async function insertChildData(
   billId: string,
   data: BillData,
 ) {
+  // Clean up any existing draft child data before inserting final data
+  await Promise.all([
+    supabase.from("bill_items").delete().eq("bill_id", billId),
+    supabase.from("bill_splits").delete().eq("bill_id", billId),
+    supabase.from("bill_payers").delete().eq("bill_id", billId),
+    supabase.from("ledger").delete().eq("bill_id", billId),
+  ]);
+
   if (data.bill.billType === "itemized" && data.items.length > 0) {
     for (const item of data.items) {
       const { data: insertedItem, error: itemError } = await supabase

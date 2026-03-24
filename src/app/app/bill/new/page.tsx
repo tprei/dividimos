@@ -240,6 +240,9 @@ function NewBillPageContent() {
           creatorId: authUser.id,
           existingBillId: remoteBillId,
           groupId: selectedGroupId ?? undefined,
+          items: draftState.items,
+          splits: draftState.splits,
+          billSplits: draftState.billSplits,
         });
       }
     }
