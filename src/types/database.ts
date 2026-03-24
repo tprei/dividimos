@@ -49,6 +49,7 @@ export interface Database {
           onboarded?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
       bills: {
         Row: {
@@ -96,6 +97,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       group_settlements: {
         Row: {
@@ -131,32 +133,79 @@ export interface Database {
           confirmed_at?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       bill_participants: {
         Row: {
           bill_id: string;
           user_id: string;
-          joined_at: string;
-          status: "accepted" | "invited" | "declined";
+          status: "invited" | "accepted" | "declined";
           invited_by: string | null;
+          joined_at: string;
           responded_at: string | null;
         };
         Insert: {
           bill_id: string;
           user_id: string;
-          joined_at?: string;
-          status?: "accepted" | "invited" | "declined";
+          status?: "invited" | "accepted" | "declined";
           invited_by?: string | null;
+          joined_at?: string;
           responded_at?: string | null;
         };
         Update: {
           bill_id?: string;
           user_id?: string;
-          joined_at?: string;
-          status?: "accepted" | "invited" | "declined";
+          status?: "invited" | "accepted" | "declined";
           invited_by?: string | null;
+          joined_at?: string;
           responded_at?: string | null;
         };
+        Relationships: [];
+      };
+      bill_payers: {
+        Row: {
+          bill_id: string;
+          user_id: string;
+          amount_cents: number;
+        };
+        Insert: {
+          bill_id: string;
+          user_id: string;
+          amount_cents: number;
+        };
+        Update: {
+          bill_id?: string;
+          user_id?: string;
+          amount_cents?: number;
+        };
+        Relationships: [];
+      };
+      bill_splits: {
+        Row: {
+          id: string;
+          bill_id: string;
+          user_id: string;
+          split_type: string;
+          value: number;
+          computed_amount_cents: number;
+        };
+        Insert: {
+          id?: string;
+          bill_id: string;
+          user_id: string;
+          split_type?: string;
+          value: number;
+          computed_amount_cents: number;
+        };
+        Update: {
+          id?: string;
+          bill_id?: string;
+          user_id?: string;
+          split_type?: string;
+          value?: number;
+          computed_amount_cents?: number;
+        };
+        Relationships: [];
       };
       bill_items: {
         Row: {
@@ -186,6 +235,7 @@ export interface Database {
           total_price_cents?: number;
           created_at?: string;
         };
+        Relationships: [];
       };
       item_splits: {
         Row: {
@@ -212,6 +262,7 @@ export interface Database {
           value?: number;
           computed_amount_cents?: number;
         };
+        Relationships: [];
       };
       ledger: {
         Row: {
@@ -247,6 +298,7 @@ export interface Database {
           confirmed_at?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       groups: {
         Row: {
@@ -267,6 +319,7 @@ export interface Database {
           creator_id?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       group_members: {
         Row: {
@@ -293,6 +346,7 @@ export interface Database {
           created_at?: string;
           accepted_at?: string | null;
         };
+        Relationships: [];
       };
     };
     Views: {
@@ -303,14 +357,18 @@ export interface Database {
           name: string;
           avatar_url: string | null;
         };
+        Relationships: [];
       };
     };
+    Functions: Record<string, never>;
     Enums: {
       pix_key_type: "phone" | "cpf" | "email" | "random";
       bill_status: "draft" | "active" | "partially_settled" | "settled";
+      bill_participant_status: "invited" | "accepted" | "declined";
       split_type: "equal" | "percentage" | "fixed";
       debt_status: "pending" | "paid_unconfirmed" | "settled";
       group_member_status: "invited" | "accepted";
     };
+    CompositeTypes: Record<string, never>;
   };
 }

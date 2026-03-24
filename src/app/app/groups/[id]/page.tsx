@@ -80,9 +80,6 @@ export default function GroupDetailPage({
 
     if (!group) return;
 
-    setGroupName(group.name);
-    setCreatorId(group.creator_id);
-
     const memberRows = groupMembers ?? [];
     const allUserIds = [
       ...new Set([group.creator_id, ...memberRows.map((m) => m.user_id)]),
@@ -132,10 +129,14 @@ export default function GroupDetailPage({
 
     setMembers(entries);
 
-    // Fetch group bills
-    const { data: billRows } = await supabase
+    // Fetch group bills — group_id column is not in generated types yet, cast query builder
+    type BillRow = { id: string; title: string; total_amount: number; status: string; created_at: string };
+    const billQuery = supabase
       .from("bills")
-      .select("id, title, total_amount, status, created_at")
+      .select("id, title, total_amount, status, created_at") as unknown as {
+        eq: (col: string, val: string) => { order: (col: string, opts: { ascending: boolean }) => Promise<{ data: BillRow[] | null }> };
+      };
+    const { data: billRows } = await billQuery
       .eq("group_id", id)
       .order("created_at", { ascending: false });
 
@@ -148,7 +149,6 @@ export default function GroupDetailPage({
         createdAt: b.created_at,
       }))
     );
-
     setLoading(false);
   }, [id]);
 

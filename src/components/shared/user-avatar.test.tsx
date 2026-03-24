@@ -4,10 +4,9 @@ import { render, screen } from "@testing-library/react";
 // Mock next/image before importing the component
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
-    const filtered = Object.fromEntries(
-      Object.entries(props).filter(([k]) => k !== "fill"),
-    );
-    return <span data-testid="next-image" role="img" {...filtered} />;
+    const { fill, ...rest } = props;
+    void fill;
+    return <img alt="" {...rest} />;
   },
 }));
 

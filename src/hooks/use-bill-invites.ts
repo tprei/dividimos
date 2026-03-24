@@ -12,6 +12,46 @@ export interface BillInvite {
   createdAt: string;
 }
 
+async function loadInvites(userId: string): Promise<BillInvite[]> {
+  const supabase = createClient();
+
+  const { data: pending } = await supabase
+    .from("bill_participants")
+    .select("bill_id, invited_by, joined_at")
+    .eq("user_id", userId)
+    .eq("status", "invited");
+
+  if (!pending || pending.length === 0) {
+    return [];
+  }
+
+  const billIds = pending.map((p) => p.bill_id);
+  const inviterIds = [...new Set(pending.map((p) => p.invited_by).filter(Boolean))];
+
+  const { data: bills } = await supabase
+    .from("bills")
+    .select("id, title, total_amount")
+    .in("id", billIds);
+
+  const { data: inviters } = inviterIds.length > 0
+    ? await supabase.from("user_profiles").select("id, name").in("id", inviterIds)
+    : { data: [] };
+
+  const billMap = new Map((bills ?? []).map((b) => [b.id, b]));
+  const inviterMap = new Map((inviters ?? []).map((i) => [i.id, i.name]));
+
+  return pending.map((p) => {
+    const bill = billMap.get(p.bill_id);
+    return {
+      billId: p.bill_id,
+      billTitle: bill?.title ?? "",
+      totalAmount: bill?.total_amount ?? 0,
+      invitedByName: inviterMap.get(p.invited_by) ?? "",
+      createdAt: p.joined_at,
+    };
+  });
+}
+
 export function useBillInvites() {
   const { user } = useAuth();
   const [invites, setInvites] = useState<BillInvite[]>([]);
@@ -19,46 +59,7 @@ export function useBillInvites() {
 
   const fetchInvites = useCallback(async () => {
     if (!user) return;
-    const supabase = createClient();
-
-    const { data: pending } = await supabase
-      .from("bill_participants")
-      .select("bill_id, invited_by, joined_at")
-      .eq("user_id", user.id)
-      .eq("status", "invited");
-
-    if (!pending || pending.length === 0) {
-      setInvites([]);
-      setLoading(false);
-      return;
-    }
-
-    const billIds = pending.map((p) => p.bill_id);
-    const inviterIds = [...new Set(pending.map((p) => p.invited_by).filter(Boolean))];
-
-    const { data: bills } = await supabase
-      .from("bills")
-      .select("id, title, total_amount")
-      .in("id", billIds);
-
-    const { data: inviters } = inviterIds.length > 0
-      ? await supabase.from("user_profiles").select("id, name").in("id", inviterIds)
-      : { data: [] };
-
-    const billMap = new Map((bills ?? []).map((b) => [b.id, b]));
-    const inviterMap = new Map((inviters ?? []).map((i) => [i.id, i.name]));
-
-    const result: BillInvite[] = pending.map((p) => {
-      const bill = billMap.get(p.bill_id);
-      return {
-        billId: p.bill_id,
-        billTitle: bill?.title ?? "",
-        totalAmount: bill?.total_amount ?? 0,
-        invitedByName: inviterMap.get(p.invited_by) ?? "",
-        createdAt: p.joined_at,
-      };
-    });
-
+    const result = await loadInvites(user.id);
     setInvites(result);
     setLoading(false);
   }, [user]);
@@ -85,7 +86,7 @@ export function useBillInvites() {
     return () => { supabase.removeChannel(channel); };
   }, [user]);
 
-  const accept = async (billId: string) => {
+  const accept = useCallback(async (billId: string) => {
     if (!user) return;
     await createClient()
       .from("bill_participants")
@@ -93,9 +94,9 @@ export function useBillInvites() {
       .eq("bill_id", billId)
       .eq("user_id", user.id);
     await fetchInvites();
-  };
+  }, [user, fetchInvites]);
 
-  const decline = async (billId: string) => {
+  const decline = useCallback(async (billId: string) => {
     if (!user) return;
     await createClient()
       .from("bill_participants")
@@ -103,7 +104,7 @@ export function useBillInvites() {
       .eq("bill_id", billId)
       .eq("user_id", user.id);
     await fetchInvites();
-  };
+  }, [user, fetchInvites]);
 
   return { invites, loading, accept, decline };
 }

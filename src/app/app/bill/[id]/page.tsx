@@ -372,7 +372,7 @@ export default function BillDetailPage({
       }
     })();
     return () => { cancelled = true; };
-  }, [id, currentUser?.id, router]);
+  }, [id, currentUser, router]);
 
   // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
