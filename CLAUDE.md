@@ -37,33 +37,26 @@ npm run dev                  # start dev server
 
 **Without any env vars**: the middleware gracefully degrades — `/` and `/demo` render, protected pages redirect to `/`.
 
-### Minion environments (Fly.io)
+### Remote Supabase (no Docker)
 
-Minion machines don't have Docker, so they use the **remote Supabase** path. The required env vars are set as Fly secrets on the minion app:
-
-```
-SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
-```
-
-When these secrets are present, `./scripts/dev-setup.sh` detects them automatically (no Docker needed) and writes `.env.local` with the correct values plus `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true`.
-
-**Full minion bootstrap:**
+When Docker is not available, use a remote Supabase project. Set the required env vars before running the setup script:
 
 ```bash
-./scripts/dev-setup.sh       # reads Fly secrets → writes .env.local
-npm run dev &                # start dev server in background
+export SUPABASE_URL=https://<project-ref>.supabase.co
+export SUPABASE_ANON_KEY=<your-anon-key>
+export SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
 
-# Authenticate programmatically (no real phone/SMS needed):
-curl -X POST http://localhost:3000/api/dev/login \
-  -H 'Content-Type: application/json' \
-  -d '{"phone": "11999990001"}'
+./scripts/dev-setup.sh       # detects env vars, writes .env.local
+npm run dev
 ```
 
-The dev Supabase project is shared across all minions. Phone test mode creates users on the fly — no seed data required for remote.
+These can also be provided as Fly secrets if running on Fly.io — the script reads them automatically.
 
-### Agent auth (programmatic login)
+Phone test mode is enabled by default in dev. It creates users on the fly — no seed data required for remote.
 
-When `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true`, agents can authenticate via:
+### Programmatic login (dev only)
+
+When `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true`, you can authenticate via API:
 
 ```bash
 # Phone-based (creates user on the fly):
@@ -71,13 +64,13 @@ curl -X POST http://localhost:3000/api/dev/login \
   -H 'Content-Type: application/json' \
   -d '{"phone": "11999990001"}'
 
-# Email-based (for seed users):
+# Email-based (for seed users with local Supabase):
 curl -X POST http://localhost:3000/api/dev/login \
   -H 'Content-Type: application/json' \
   -d '{"email": "alice@test.pixwise.local"}'
 ```
 
-The response includes session cookies. Or use the UI: navigate to `/auth` → "Entrar com celular" → any phone → any 6-digit OTP.
+The response sets session cookies. Or use the UI: navigate to `/auth` → "Entrar com celular" → any phone number → any 6-digit OTP.
 
 ## Commands
 
