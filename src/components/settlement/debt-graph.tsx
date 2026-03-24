@@ -70,32 +70,6 @@ function getLabelPosition(
   };
 }
 
-function getArrowTransform(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-): string {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  const nx = -dy / len;
-  const ny = dx / len;
-  const curvature = len * 0.25;
-  const cpx = (from.x + to.x) / 2 + nx * curvature;
-  const cpy = (from.y + to.y) / 2 + ny * curvature;
-
-  const endOffX = (dx / len) * NODE_RADIUS;
-  const endOffY = (dy / len) * NODE_RADIUS;
-  const ex = to.x - endOffX;
-  const ey = to.y - endOffY;
-
-  const tx = ex - cpx;
-  const ty = ey - cpy;
-  const tLen = Math.sqrt(tx * tx + ty * ty);
-  const angle = Math.atan2(ty / tLen, tx / tLen) * (180 / Math.PI);
-
-  return `translate(${ex}, ${ey}) rotate(${angle})`;
-}
-
 export function DebtGraph({
   participants,
   edges,
@@ -180,8 +154,6 @@ export function DebtGraph({
 
           const pathD = getCurvedPath(fromPos, toPos);
           const labelPos = getLabelPosition(fromPos, toPos);
-          const arrowTransform = getArrowTransform(fromPos, toPos);
-
           const strokeColor = highlighted
             ? "var(--color-success)"
             : fading

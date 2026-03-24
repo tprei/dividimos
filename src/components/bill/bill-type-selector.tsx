@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { CreditCard, Receipt, ScanLine } from "lucide-react";
+import { CreditCard, ScanLine } from "lucide-react";
 import type { BillType } from "@/types";
 
 interface BillTypeSelectorProps {

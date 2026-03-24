@@ -268,7 +268,6 @@ export function SingleAmountStep({
             <div className="space-y-3">
               {participants.map((user) => {
                 const userVal = fixedAmounts.get(user.id) || "";
-                const userCents = Math.round(parseFloat(userVal.replace(",", ".") || "0") * 100);
                 const othersTotal = Array.from(fixedAmounts.entries())
                   .filter(([id]) => id !== user.id)
                   .reduce((s, [, v]) => s + Math.round(parseFloat(v.replace(",", ".") || "0") * 100), 0);

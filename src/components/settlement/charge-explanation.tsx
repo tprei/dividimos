@@ -5,7 +5,7 @@ import { Calculator, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { DebtGraph } from "./debt-graph";
 import { formatBRL } from "@/lib/currency";
-import { computeRawEdges, type DebtEdge, type SimplificationResult } from "@/lib/simplify";
+import type { DebtEdge, SimplificationResult } from "@/lib/simplify";
 import type { Bill, BillItem, BillSplit, ItemSplit, User } from "@/types";
 
 interface ChargeExplanationProps {
@@ -30,8 +30,6 @@ export function ChargeExplanation({
   currentUserId,
 }: ChargeExplanationProps) {
   const [expanded, setExpanded] = useState(false);
-
-  const rawEdges = computeRawEdges(bill, participants, splits, billSplits, items);
 
   const isSingleAmount = bill.billType === "single_amount";
   const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
@@ -123,7 +121,6 @@ export function ChargeExplanation({
                   {participants.map((p) => {
                     const consumed = consumption.get(p.id) || 0;
                     const paid = payment.get(p.id) || 0;
-                    const net = paid - consumed;
                     const isMe = p.id === currentUserId;
                     return (
                       <div
