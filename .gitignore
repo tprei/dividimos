@@ -13,6 +13,12 @@
 # testing
 /coverage
 
+# e2e test artifacts
+/e2e/.auth/
+/playwright-report/
+/test-results/
+/blob-report/
+
 # next.js
 /.next/
 /out/
