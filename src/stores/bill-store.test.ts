@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { userAlice, userBob, userCarlos } from "@/test/fixtures";
+import { makeBillItem, userAlice, userBob, userCarlos } from "@/test/fixtures";
 import { useBillStore } from "./bill-store";
 
 function setup() {

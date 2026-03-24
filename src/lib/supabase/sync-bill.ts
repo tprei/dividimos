@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Bill, BillItem, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
+import type { Bill, BillItem, BillPayer, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
 
 interface BillData {
   bill: Bill;
@@ -55,7 +55,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
 
     const { error: updateError } = await supabase
       .from("bills")
-      .update(syncUpdatePayload as Record<string, unknown>)
+      .update(syncUpdatePayload as any)
       .eq("id", billId);
 
     if (updateError) {
