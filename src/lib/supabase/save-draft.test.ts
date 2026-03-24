@@ -45,11 +45,11 @@ describe("saveDraftToSupabase", () => {
     const participantInserts = mock.findCalls("bill_participants", "insert");
     expect(participantInserts).toHaveLength(1);
     const rows = participantInserts[0].args[0] as Record<string, unknown>[];
-    const aliceRow = rows.find((r) => r.user_id === "user-alice");
-    const bobRow = rows.find((r) => r.user_id === "user-bob");
-    expect(aliceRow!.status).toBe("accepted");
-    expect(bobRow!.status).toBe("invited");
-    expect(bobRow!.invited_by).toBe("user-alice");
+    const aliceRow = rows.find((r) => r.user_id === "user-alice")!;
+    const bobRow = rows.find((r) => r.user_id === "user-bob")!;
+    expect(aliceRow.status).toBe("accepted");
+    expect(bobRow.status).toBe("invited");
+    expect(bobRow.invited_by).toBe("user-alice");
   });
 
   it("updates an existing draft and reconciles participants", async () => {
@@ -84,8 +84,9 @@ describe("saveDraftToSupabase", () => {
     // Verify carlos was added
     const insertCalls = mock.findCalls("bill_participants", "insert");
     expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0].args[0]).toHaveLength(1);
-    expect((insertCalls[0].args[0] as Record<string, unknown>[])[0].user_id).toBe("user-carlos");
+    const insertedParticipants = insertCalls[0].args[0] as { user_id: string }[];
+    expect(insertedParticipants).toHaveLength(1);
+    expect(insertedParticipants[0].user_id).toBe("user-carlos");
   });
 
   it("auto-accepts all participants for group bills", async () => {
