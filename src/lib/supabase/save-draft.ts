@@ -91,7 +91,7 @@ export async function saveDraftToSupabase(
       status: (groupId || p.id === creatorId) ? "accepted" : "invited",
       invited_by: p.id === creatorId ? null : creatorId,
     }));
-    const { error } = await supabase.from("bill_participants").insert(rows as unknown as Record<string, unknown>);
+    const { error } = await supabase.from("bill_participants").insert(rows);
     if (error) console.error("Failed to insert participants:", error);
   }
 

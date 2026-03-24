@@ -1,6 +1,34 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Bill, BillPayer, GroupSettlement, LedgerEntry, User } from "@/types";
+import type { Bill, BillPayer, BillStatus, GroupSettlement, LedgerEntry, User } from "@/types";
 import type { DebtEdge } from "@/lib/simplify";
+
+interface BillRow {
+  id: string;
+  creator_id: string;
+  bill_type: string;
+  title: string;
+  merchant_name: string | null;
+  status: BillStatus;
+  service_fee_percent: number;
+  fixed_fees: number;
+  total_amount: number;
+  total_amount_input: number | null;
+  group_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface GroupSettlementRow {
+  id: string;
+  group_id: string;
+  from_user_id: string;
+  to_user_id: string;
+  amount_cents: number;
+  status: "pending" | "paid_unconfirmed" | "settled";
+  paid_at: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+}
 
 export async function loadGroupBillsAndLedger(groupId: string): Promise<{
   bills: Bill[];
@@ -15,7 +43,7 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     .eq("group_id", groupId)
     .neq("status", "draft");
 
-  const bills: Bill[] = (billRows ?? []).map((b) => {
+  const bills: Bill[] = (billRows ?? []).map((b: BillRow) => {
     const payers: BillPayer[] = [];
     return {
       id: b.id,
@@ -96,7 +124,7 @@ export async function loadGroupSettlements(groupId: string): Promise<GroupSettle
     .select("*")
     .eq("group_id", groupId);
 
-  return (data ?? []).map((s) => ({
+  return (data ?? []).map((s: GroupSettlementRow) => ({
     id: s.id,
     groupId: s.group_id,
     fromUserId: s.from_user_id,

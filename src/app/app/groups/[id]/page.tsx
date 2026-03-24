@@ -41,6 +41,14 @@ interface BillSummaryEntry {
   createdAt: string;
 }
 
+interface BillQueryRow {
+  id: string;
+  title: string;
+  total_amount: number;
+  status: BillStatus;
+  created_at: string;
+}
+
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
@@ -129,19 +137,15 @@ export default function GroupDetailPage({
 
     setMembers(entries);
 
-    // Fetch group bills — group_id column is not in generated types yet, cast query builder
-    type BillRow = { id: string; title: string; total_amount: number; status: string; created_at: string };
-    const billQuery = supabase
+    // Fetch group bills
+    const { data: billRows } = await supabase
       .from("bills")
-      .select("id, title, total_amount, status, created_at") as unknown as {
-        eq: (col: string, val: string) => { order: (col: string, opts: { ascending: boolean }) => Promise<{ data: BillRow[] | null }> };
-      };
-    const { data: billRows } = await billQuery
+      .select("id, title, total_amount, status, created_at")
       .eq("group_id", id)
       .order("created_at", { ascending: false });
 
     setBills(
-      (billRows ?? []).map((b) => ({
+      (billRows ?? []).map((b: BillQueryRow) => ({
         id: b.id,
         title: b.title,
         totalAmount: b.total_amount,
