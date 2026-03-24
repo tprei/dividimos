@@ -76,7 +76,11 @@ export default function BillDetailPage({
   const [loadingFromDb, setLoadingFromDb] = useState(false);
 
   useEffect(() => {
-    if (bill?.id === id || id === "demo") return;
+    if (id === "demo") return;
+    // Skip load only if we already have complete data for this bill.
+    // A premature realtime reload may set bill.id but leave ledger/items empty.
+    const hasCompleteData = bill?.id === id && (ledger.length > 0 || bill.status === "draft");
+    if (hasCompleteData) return;
     setLoadingFromDb(true);
 
     const supabaseCheck = createClient();
@@ -117,16 +121,32 @@ export default function BillDetailPage({
       .channel(`ledger:${bill.id}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "ledger", filter: `bill_id=eq.${bill.id}` },
+        { event: "*", schema: "public", table: "ledger", filter: `bill_id=eq.${bill.id}` },
         (payload) => {
-          const updated = payload.new as { id: string; status: string; paid_at: string | null; confirmed_at: string | null };
-          useBillStore.setState((state) => ({
-            ledger: state.ledger.map((e) =>
-              e.id === updated.id
-                ? { ...e, status: updated.status as DebtStatus, paidAt: updated.paid_at ?? undefined, confirmedAt: updated.confirmed_at ?? undefined }
-                : e,
-            ),
-          }));
+          if (payload.eventType === "INSERT") {
+            // New ledger entry — reload the full bill to get consistent data
+            loadBillFromSupabase(bill.id).then((data) => {
+              if (data) {
+                useBillStore.setState({
+                  bill: data.bill,
+                  participants: data.participants,
+                  items: data.items,
+                  splits: data.splits,
+                  billSplits: data.billSplits,
+                  ledger: data.ledger,
+                });
+              }
+            });
+          } else if (payload.eventType === "UPDATE") {
+            const updated = payload.new as { id: string; status: string; paid_at: string | null; confirmed_at: string | null };
+            useBillStore.setState((state) => ({
+              ledger: state.ledger.map((e) =>
+                e.id === updated.id
+                  ? { ...e, status: updated.status as DebtStatus, paidAt: updated.paid_at ?? undefined, confirmedAt: updated.confirmed_at ?? undefined }
+                  : e,
+              ),
+            }));
+          }
         },
       )
       .subscribe();

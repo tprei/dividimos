@@ -35,6 +35,11 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       return { error: "Nem todos os participantes aceitaram o convite" };
     }
 
+    // Insert all child data BEFORE updating bill status.
+    // The status update triggers a realtime event — if child rows
+    // aren't in place yet, the invitee's page reloads with empty data.
+    await insertChildData(supabase, billId, data);
+
     const { error: updateError } = await supabase
       .from("bills")
       .update({
@@ -50,6 +55,8 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       console.error("Failed to update bill:", updateError);
       return { error: updateError.message };
     }
+
+    return { billId };
   } else {
     const { data: inserted, error: billError } = await supabase
       .from("bills")
@@ -84,6 +91,16 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     }
   }
 
+  await insertChildData(supabase, billId, data);
+
+  return { billId };
+}
+
+async function insertChildData(
+  supabase: ReturnType<typeof createClient>,
+  billId: string,
+  data: BillData,
+) {
   if (data.bill.billType === "itemized" && data.items.length > 0) {
     for (const item of data.items) {
       const { data: insertedItem, error: itemError } = await supabase
@@ -153,6 +170,4 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     const { error } = await supabase.from("ledger").insert(ledgerRows);
     if (error) console.error("Failed to insert ledger:", error);
   }
-
-  return { billId };
 }
