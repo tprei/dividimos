@@ -378,8 +378,11 @@ export default function BillDetailPage({
   // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
     if (id === "demo") return;
-    // Skip if we've already loaded this bill
-    if (loadedBillIdRef.current === id) return;
+    // Skip if we've already loaded this bill (data is in store)
+    if (loadedBillIdRef.current === id) {
+      setLoadingFromDb(false);
+      return;
+    }
 
     loadedBillIdRef.current = id;
     let cancelled = false;
@@ -389,7 +392,7 @@ export default function BillDetailPage({
       if (!cancelled) setLoadingFromDb(false);
     })();
     return () => { cancelled = true; };
-  }, [id, currentUser?.id, loadAndSetBill]);
+  }, [id, loadAndSetBill]);
 
   const billId = bill?.id;
 
