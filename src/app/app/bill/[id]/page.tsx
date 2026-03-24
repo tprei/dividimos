@@ -79,7 +79,7 @@ export default function BillDetailPage({
     if (id === "demo") return;
     // Skip load only if we already have complete data for this bill.
     // A premature realtime reload may set bill.id but leave ledger/items empty.
-    const hasCompleteData = bill?.id === id && (ledger.length > 0 || bill.status === "draft");
+    const hasCompleteData = bill?.id === id && (ledger.length > 0 || bill.status === "draft" || bill.status === "settled");
     if (hasCompleteData) return;
     setLoadingFromDb(true);
 
