@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import type { Bill, User } from "@/types";
 
 interface SaveDraftParams {
@@ -35,7 +36,7 @@ export async function saveDraftToSupabase(
       .eq("id", billId);
 
     if (error) {
-      console.error("Failed to update draft:", error);
+      logger.error("Failed to update draft", { error: error.message, billId });
       return { error: error.message };
     }
   } else {
@@ -59,7 +60,7 @@ export async function saveDraftToSupabase(
       .single();
 
     if (error || !inserted) {
-      console.error("Failed to insert draft:", error);
+      logger.error("Failed to insert draft", { error: error?.message });
       return { error: error?.message ?? "Erro ao salvar rascunho" };
     }
     billId = inserted.id;
@@ -92,7 +93,7 @@ export async function saveDraftToSupabase(
       invited_by: p.id === creatorId ? null : creatorId,
     }));
     const { error } = await supabase.from("bill_participants").insert(rows as Record<string, unknown>);
-    if (error) console.error("Failed to insert participants:", error);
+    if (error) logger.error("Failed to insert participants", { error: error.message, billId });
   }
 
   return { billId: billId! };

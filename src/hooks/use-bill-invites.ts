@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "./use-auth";
 
@@ -17,7 +17,7 @@ export function useBillInvites() {
   const [invites, setInvites] = useState<BillInvite[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function fetchInvites() {
+  const fetchInvites = useCallback(async () => {
     if (!user) return;
     const supabase = createClient();
 
@@ -61,11 +61,11 @@ export function useBillInvites() {
 
     setInvites(result);
     setLoading(false);
-  }
+  }, [user]);
 
   useEffect(() => {
     fetchInvites();
-  }, [user]);
+  }, [fetchInvites]);
 
   useEffect(() => {
     if (!user) return;
@@ -80,7 +80,7 @@ export function useBillInvites() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, fetchInvites]);
 
   const accept = async (billId: string) => {
     if (!user) return;

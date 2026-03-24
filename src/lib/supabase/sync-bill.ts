@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import type { Bill, BillItem, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
 
 interface BillData {
@@ -59,7 +60,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       .eq("id", billId);
 
     if (updateError) {
-      console.error("Failed to update bill:", updateError);
+      logger.error("Failed to update bill", { error: updateError.message, billId });
       return { error: updateError.message };
     }
 
@@ -82,7 +83,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       .single();
 
     if (billError || !inserted) {
-      console.error("Failed to insert bill:", billError);
+      logger.error("Failed to insert bill", { error: billError?.message });
       return { error: billError?.message ?? "Erro ao salvar conta" };
     }
     billId = inserted.id;
@@ -94,7 +95,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     }));
     if (participantRows.length > 0) {
       const { error } = await supabase.from("bill_participants").insert(participantRows);
-      if (error) console.error("Failed to insert participants:", error);
+      if (error) logger.error("Failed to insert participants", { error: error.message, billId });
     }
   }
 
@@ -123,7 +124,7 @@ async function insertChildData(
         .single();
 
       if (itemError || !insertedItem) {
-        console.error("Failed to insert item:", itemError);
+        logger.error("Failed to insert item", { error: itemError?.message, itemId: item.id });
         continue;
       }
 
@@ -139,7 +140,7 @@ async function insertChildData(
 
       if (itemSplits.length > 0) {
         const { error } = await supabase.from("item_splits").insert(itemSplits);
-        if (error) console.error("Failed to insert item splits:", error);
+        if (error) logger.error("Failed to insert item splits", { error: error.message, itemId: insertedItem.id });
       }
     }
   }
@@ -153,7 +154,7 @@ async function insertChildData(
       computed_amount_cents: s.computedAmountCents,
     }));
     const { error } = await supabase.from("bill_splits").insert(splitRows);
-    if (error) console.error("Failed to insert bill splits:", error);
+    if (error) logger.error("Failed to insert bill splits", { error: error.message, billId });
   }
 
   if (data.bill.payers.length > 0) {
@@ -163,7 +164,7 @@ async function insertChildData(
       amount_cents: p.amountCents,
     }));
     const { error } = await supabase.from("bill_payers").insert(payerRows);
-    if (error) console.error("Failed to insert payers:", error);
+    if (error) logger.error("Failed to insert payers", { error: error.message, billId });
   }
 
   if (data.ledger.length > 0) {
@@ -175,6 +176,6 @@ async function insertChildData(
       status: e.status,
     }));
     const { error } = await supabase.from("ledger").insert(ledgerRows);
-    if (error) console.error("Failed to insert ledger:", error);
+    if (error) logger.error("Failed to insert ledger", { error: error.message, billId });
   }
 }

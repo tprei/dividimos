@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { DEFAULT_SERVICE_FEE_PERCENT, SETTLEMENT_THRESHOLD_CENTS } from "@/lib/constants/bill";
 import type {
   Bill,
   BillItem,
@@ -83,7 +84,7 @@ export const useBillStore = create<BillState>((set, get) => ({
       title,
       merchantName,
       status: "draft",
-      serviceFeePercent: billType === "itemized" ? 10 : 0,
+      serviceFeePercent: DEFAULT_SERVICE_FEE_PERCENT[billType],
       fixedFees: 0,
       totalAmount: 0,
       totalAmountInput: 0,
@@ -114,13 +115,13 @@ export const useBillStore = create<BillState>((set, get) => ({
     if (!bill) return;
     if (billType === "single_amount") {
       set({
-        bill: { ...bill, billType, serviceFeePercent: 0, fixedFees: 0, updatedAt: new Date().toISOString() },
+        bill: { ...bill, billType, serviceFeePercent: DEFAULT_SERVICE_FEE_PERCENT[billType], fixedFees: 0, updatedAt: new Date().toISOString() },
         items: [],
         splits: [],
       });
     } else {
       set({
-        bill: { ...bill, billType, serviceFeePercent: 10, totalAmountInput: 0, updatedAt: new Date().toISOString() },
+        bill: { ...bill, billType, serviceFeePercent: DEFAULT_SERVICE_FEE_PERCENT[billType], totalAmountInput: 0, updatedAt: new Date().toISOString() },
         billSplits: [],
       });
     }
