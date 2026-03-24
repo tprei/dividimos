@@ -9,6 +9,7 @@ interface BillData {
   billSplits: BillSplit[];
   ledger: LedgerEntry[];
   existingBillId?: string;
+  groupId?: string;
 }
 
 export async function syncBillToSupabase(data: BillData): Promise<{ billId: string } | { error: string }> {
@@ -24,15 +25,18 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
   if (data.existingBillId) {
     billId = data.existingBillId;
 
-    const { data: pending } = await supabase
-      .from("bill_participants")
-      .select("user_id, status")
-      .eq("bill_id", billId)
-      .neq("user_id", user.id)
-      .neq("status", "accepted");
+    // Group bills skip acceptance check — all participants are auto-accepted
+    if (!data.groupId) {
+      const { data: pending } = await supabase
+        .from("bill_participants")
+        .select("user_id, status")
+        .eq("bill_id", billId)
+        .neq("user_id", user.id)
+        .neq("status", "accepted");
 
-    if (pending && pending.length > 0) {
-      return { error: "Nem todos os participantes aceitaram o convite" };
+      if (pending && pending.length > 0) {
+        return { error: "Nem todos os participantes aceitaram o convite" };
+      }
     }
 
     // Insert all child data BEFORE updating bill status.
@@ -40,15 +44,18 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     // aren't in place yet, the invitee's page reloads with empty data.
     await insertChildData(supabase, billId, data);
 
+    const syncUpdatePayload: Record<string, unknown> = {
+      status: data.bill.status === "settled" ? "settled" : "active",
+      total_amount: data.bill.totalAmount,
+      total_amount_input: data.bill.totalAmountInput,
+      service_fee_percent: data.bill.serviceFeePercent,
+      fixed_fees: data.bill.fixedFees,
+    };
+    if (data.groupId) syncUpdatePayload.group_id = data.groupId;
+
     const { error: updateError } = await supabase
       .from("bills")
-      .update({
-        status: data.bill.status === "settled" ? "settled" : "active",
-        total_amount: data.bill.totalAmount,
-        total_amount_input: data.bill.totalAmountInput,
-        service_fee_percent: data.bill.serviceFeePercent,
-        fixed_fees: data.bill.fixedFees,
-      })
+      .update(syncUpdatePayload as any)
       .eq("id", billId);
 
     if (updateError) {

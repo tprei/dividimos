@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Loader2,
   PartyPopper,
   QrCode,
   Receipt,
@@ -22,7 +23,11 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
 import { PulsingDot } from "@/components/shared/pulsing-dot";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { PixQrModal } from "@/components/settlement/pix-qr-modal";
+import dynamic from "next/dynamic";
+const PixQrModal = dynamic(
+  () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
+  { ssr: false },
+);
 import { ChargeExplanation } from "@/components/settlement/charge-explanation";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
@@ -33,9 +38,10 @@ import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
 import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
+import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
-import type { BillStatus, DebtStatus, LedgerEntry } from "@/types";
+import type { BillParticipantStatus, BillStatus, DebtStatus, LedgerEntry, User } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -43,6 +49,253 @@ const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
+
+const statusBadge: Record<BillParticipantStatus, { label: string; color: string }> = {
+  accepted: { label: "Aceito", color: "bg-success/15 text-success" },
+  invited: { label: "Aguardando", color: "bg-warning/15 text-warning-foreground" },
+  declined: { label: "Recusou", color: "bg-destructive/15 text-destructive" },
+};
+
+function CreatorDraftParticipants({
+  billId,
+  participants,
+  creatorId,
+  onAcceptanceChange,
+}: {
+  billId: string;
+  participants: User[];
+  creatorId: string;
+  onAcceptanceChange?: (allAccepted: boolean) => void;
+}) {
+  const [statuses, setStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
+
+  useEffect(() => {
+    const supabase = createClient();
+    (async () => {
+      const { data } = await supabase
+        .from("bill_participants")
+        .select("user_id, status")
+        .eq("bill_id", billId);
+      if (data) {
+        const map = new Map<string, BillParticipantStatus>();
+        for (const row of data) map.set(row.user_id, row.status as BillParticipantStatus);
+        setStatuses(map);
+      }
+    })();
+
+    const channel = supabase
+      .channel(`draft-participants:${billId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "bill_participants", filter: `bill_id=eq.${billId}` },
+        (payload) => {
+          const updated = payload.new as { user_id: string; status: string };
+          setStatuses((prev) => new Map(prev).set(updated.user_id, updated.status as BillParticipantStatus));
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [billId]);
+
+  useEffect(() => {
+    if (!onAcceptanceChange || statuses.size === 0) return;
+    const allAccepted = participants
+      .filter((p) => p.id !== creatorId)
+      .every((p) => statuses.get(p.id) === "accepted");
+    onAcceptanceChange(allAccepted);
+  }, [statuses, participants, creatorId, onAcceptanceChange]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2, duration: 0.4 }}
+      className="mt-5"
+    >
+      <h2 className="mb-3 text-sm font-semibold">Participantes</h2>
+      <div className="space-y-2">
+        {participants.map((p) => {
+          const st = statuses.get(p.id) ?? "accepted";
+          const badge = statusBadge[st];
+          return (
+            <div
+              key={p.id}
+              className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
+            >
+              <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
+              <span className="flex-1 text-sm font-medium">{p.name}</span>
+              {p.id === creatorId ? (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  Voce
+                </span>
+              ) : (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.color}`}>
+                  {st === "invited" && <PulsingDot className="mr-1 inline-block h-1.5 w-1.5 bg-warning" />}
+                  {badge.label}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
+function CreatorDraftView({
+  bill,
+  participants,
+  items,
+  splits,
+  billSplits,
+  store,
+  router,
+}: {
+  bill: NonNullable<ReturnType<typeof useBillStore.getState>["bill"]>;
+  participants: User[];
+  items: ReturnType<typeof useBillStore.getState>["items"];
+  splits: ReturnType<typeof useBillStore.getState>["splits"];
+  billSplits: ReturnType<typeof useBillStore.getState>["billSplits"];
+  store: ReturnType<typeof useBillStore.getState>;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [draftAllAccepted, setDraftAllAccepted] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+
+  const isGroupBill = !!bill.groupId;
+  const canFinalize = isGroupBill || draftAllAccepted;
+  const hasContent = items.length > 0 || billSplits.length > 0;
+
+  const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
+  const grandTotal =
+    bill.billType === "single_amount"
+      ? bill.totalAmountInput
+      : itemsTotal +
+        Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
+        bill.fixedFees;
+
+  const handleFinalize = async () => {
+    setFinalizing(true);
+    store.computeLedger();
+    const state = useBillStore.getState();
+    if (state.bill) {
+      const result = await syncBillToSupabase({
+        bill: state.bill,
+        participants: state.participants,
+        items: state.items,
+        splits: state.splits,
+        billSplits: state.billSplits,
+        ledger: state.ledger,
+        existingBillId: bill.id,
+        groupId: bill.groupId,
+      });
+      if ("billId" in result) {
+        router.push(`/app/bill/${result.billId}`);
+        return;
+      }
+      console.error("Finalize failed:", result.error);
+    }
+    setFinalizing(false);
+  };
+
+  return (
+    <div className="mx-auto max-w-lg px-4 py-6">
+      <div className="flex items-center gap-3">
+        <Link
+          href="/app"
+          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
+        <div className="flex-1">
+          <h1 className="font-semibold">{bill.title}</h1>
+          {bill.merchantName && (
+            <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+          )}
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatusConfig.draft.color}`}>
+          {billStatusConfig.draft.label}
+        </span>
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, duration: 0.4 }}
+        className="mt-6"
+      >
+        <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
+          <p className="text-sm text-white/70">Total da conta</p>
+          <p className="mt-1 text-3xl font-bold tabular-nums">
+            {formatBRL(grandTotal)}
+          </p>
+          <div className="mt-2 flex gap-4 text-sm text-white/70">
+            <span className="flex items-center gap-1">
+              <Users className="h-3.5 w-3.5" />
+              {participants.length} pessoas
+            </span>
+          </div>
+        </div>
+      </motion.div>
+
+      {!isGroupBill && (
+        <CreatorDraftParticipants
+          billId={bill.id}
+          participants={participants}
+          creatorId={bill.creatorId}
+          onAcceptanceChange={setDraftAllAccepted}
+        />
+      )}
+
+      {hasContent && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.4 }}
+          className="mt-5"
+        >
+          <BillSummary
+            bill={bill}
+            items={items}
+            splits={splits}
+            billSplits={billSplits}
+            participants={participants}
+          />
+        </motion.div>
+      )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4, duration: 0.4 }}
+        className="mt-6 space-y-3"
+      >
+        {hasContent && (
+          <Button
+            onClick={handleFinalize}
+            disabled={!canFinalize || finalizing}
+            className="w-full gap-2"
+          >
+            {finalizing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <QrCode className="h-4 w-4" />
+            )}
+            {!canFinalize && !isGroupBill
+              ? "Aguardando participantes..."
+              : "Gerar cobrancas Pix"}
+          </Button>
+        )}
+        {!canFinalize && !isGroupBill && (
+          <p className="text-xs text-center text-muted-foreground">
+            Aguardando todos os participantes aceitarem o convite para finalizar.
+          </p>
+        )}
+      </motion.div>
+    </div>
+  );
+}
 
 export default function BillDetailPage({
   params,
@@ -330,9 +583,27 @@ export default function BillDetailPage({
     );
   }
 
+  if (bill.status === "draft" && currentUser?.id === bill.creatorId) {
+    return (
+      <CreatorDraftView
+        bill={bill}
+        participants={participants}
+        items={items}
+        splits={splits}
+        billSplits={billSplits}
+        store={store}
+        router={router}
+      />
+    );
+  }
+
   const billStatus = billStatusConfig[bill.status];
   const allSettled = ledger.length > 0 && ledger.every((e) => e.status === "settled");
   const settledCount = ledger.filter((e) => e.status === "settled").length;
+  const isGroupBill = !!bill.groupId;
+  const hasGroupCascadeSettled = isGroupBill && ledger.some(
+    (e) => e.status === "settled" && !e.paidAt && e.confirmedAt,
+  );
 
   const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
   const grandTotal =
@@ -355,6 +626,15 @@ export default function BillDetailPage({
           <h1 className="font-semibold">{bill.title}</h1>
           {bill.merchantName && (
             <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+          )}
+          {isGroupBill && (
+            <Link
+              href={`/app/groups/${bill.groupId}`}
+              className="flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+            >
+              <Users className="h-3 w-3" />
+              Ver grupo
+            </Link>
           )}
         </div>
         <motion.span
@@ -486,12 +766,45 @@ export default function BillDetailPage({
           <AnimatedCheckmark size={64} />
           <h3 className="mt-4 text-lg font-bold">Tudo liquidado!</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Todos os pagamentos foram confirmados.
+            {hasGroupCascadeSettled
+              ? "Liquidado via acerto do grupo."
+              : "Todos os pagamentos foram confirmados."}
           </p>
+          {isGroupBill && (
+            <Link
+              href={`/app/groups/${bill.groupId}`}
+              className="mt-3 text-sm text-primary hover:underline"
+            >
+              Ver acerto do grupo
+            </Link>
+          )}
         </motion.div>
       )}
 
-      {activeTab === "payment" && ledger.length > 0 && !allSettled && (
+      {activeTab === "payment" && isGroupBill && !allSettled && ledger.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-5"
+        >
+          <Link
+            href={`/app/groups/${bill.groupId}`}
+            className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 hover:bg-primary/10 transition-colors"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
+              <Users className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="font-medium text-sm">Ir para acerto do grupo</p>
+              <p className="text-xs text-muted-foreground">
+                Liquidar dividas consolidadas de todas as contas do grupo
+              </p>
+            </div>
+          </Link>
+        </motion.div>
+      )}
+
+      {activeTab === "payment" && ledger.length > 0 && !allSettled && !isGroupBill && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -618,20 +931,7 @@ export default function BillDetailPage({
           {(simplifyEnabled || !simplificationResult) && (
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {(simplifyEnabled && simplificationResult
-                ? simplificationResult.simplifiedEdges.map((edge, idx) => ({
-                    id: `edge_${idx}`,
-                    billId: bill.id,
-                    fromUserId: edge.fromUserId,
-                    toUserId: edge.toUserId,
-                    amountCents: edge.amountCents,
-                    status: "pending" as DebtStatus,
-                    paidAt: undefined,
-                    confirmedAt: undefined,
-                    createdAt: new Date().toISOString(),
-                  }))
-                : ledger
-              ).map((entry, idx) => {
+              {ledger.map((entry, idx) => {
                 const debtor = participants.find((p) => p.id === entry.fromUserId);
                 const creditor = participants.find((p) => p.id === entry.toUserId);
                 const isDebtor = currentUser?.id === entry.fromUserId;
@@ -822,7 +1122,9 @@ export default function BillDetailPage({
                           >
                             <CheckCheck className="h-4 w-4 shrink-0 text-success" />
                             <span className="text-xs text-success">
-                              Liquidado
+                              {isGroupBill && !entry.paidAt && entry.confirmedAt
+                                ? "Liquidado via acerto do grupo"
+                                : "Liquidado"}
                               {entry.confirmedAt &&
                                 ` em ${new Date(entry.confirmedAt).toLocaleString("pt-BR", {
                                   day: "2-digit",

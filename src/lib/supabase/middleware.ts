@@ -33,11 +33,15 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
+  const pathname = request.nextUrl.pathname;
+
+  if (isPublicPath(pathname) && pathname !== "/auth") {
+    return supabaseResponse;
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const pathname = request.nextUrl.pathname;
 
   if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone();

@@ -6,28 +6,32 @@ interface SaveDraftParams {
   participants: User[];
   creatorId: string;
   existingBillId?: string;
+  groupId?: string;
 }
 
 export async function saveDraftToSupabase(
   params: SaveDraftParams,
 ): Promise<{ billId: string } | { error: string }> {
   const supabase = createClient();
-  const { bill, participants, creatorId, existingBillId } = params;
+  const { bill, participants, creatorId, existingBillId, groupId } = params;
 
   let billId = existingBillId;
 
   if (billId) {
+    const updatePayload: Record<string, unknown> = {
+      title: bill.title,
+      merchant_name: bill.merchantName || null,
+      service_fee_percent: bill.serviceFeePercent,
+      fixed_fees: bill.fixedFees,
+      total_amount: bill.totalAmount,
+      bill_type: bill.billType,
+      total_amount_input: bill.totalAmountInput,
+    };
+    if (groupId) updatePayload.group_id = groupId;
+
     const { error } = await supabase
       .from("bills")
-      .update({
-        title: bill.title,
-        merchant_name: bill.merchantName || null,
-        service_fee_percent: bill.serviceFeePercent,
-        fixed_fees: bill.fixedFees,
-        total_amount: bill.totalAmount,
-        bill_type: bill.billType,
-        total_amount_input: bill.totalAmountInput,
-      })
+      .update(updatePayload as any)
       .eq("id", billId);
 
     if (error) {
@@ -35,19 +39,22 @@ export async function saveDraftToSupabase(
       return { error: error.message };
     }
   } else {
+    const insertPayload: Record<string, unknown> = {
+      creator_id: creatorId,
+      title: bill.title,
+      merchant_name: bill.merchantName || null,
+      status: "draft",
+      service_fee_percent: bill.serviceFeePercent,
+      fixed_fees: bill.fixedFees,
+      total_amount: bill.totalAmount,
+      bill_type: bill.billType,
+      total_amount_input: bill.totalAmountInput,
+    };
+    if (groupId) insertPayload.group_id = groupId;
+
     const { data: inserted, error } = await supabase
       .from("bills")
-      .insert({
-        creator_id: creatorId,
-        title: bill.title,
-        merchant_name: bill.merchantName || null,
-        status: "draft",
-        service_fee_percent: bill.serviceFeePercent,
-        fixed_fees: bill.fixedFees,
-        total_amount: bill.totalAmount,
-        bill_type: bill.billType,
-        total_amount_input: bill.totalAmountInput,
-      })
+      .insert(insertPayload as any)
       .select("id")
       .single();
 
@@ -80,7 +87,8 @@ export async function saveDraftToSupabase(
     const rows = toAdd.map((p) => ({
       bill_id: billId!,
       user_id: p.id,
-      status: p.id === creatorId ? "accepted" : "invited",
+      // Group bills: all participants auto-accepted (no confirmation needed)
+      status: (groupId || p.id === creatorId) ? "accepted" : "invited",
       invited_by: p.id === creatorId ? null : creatorId,
     }));
     const { error } = await supabase.from("bill_participants").insert(rows as any);

@@ -77,8 +77,21 @@ export interface Bill {
   totalAmount: number;
   totalAmountInput: number;
   payers: BillPayer[];
+  groupId?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GroupSettlement {
+  id: string;
+  groupId: string;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
+  status: DebtStatus;
+  paidAt?: string;
+  confirmedAt?: string;
+  createdAt: string;
 }
 
 export interface BillParticipant {

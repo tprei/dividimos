@@ -188,48 +188,93 @@ export function PayerStep({
             ))}
           </div>
 
-          {paymentInputMode === "percentage" && participants.map((user) => {
-            const pct = parseFloat(localPercentages.get(user.id)?.replace(",", ".") || "0") || 0;
-            const amountForUser = Math.round((grandTotal * pct) / 100);
+          {paymentInputMode === "percentage" && (() => {
+            const totalPct = Array.from(localPercentages.values()).reduce(
+              (s, v) => s + (parseFloat(v.replace(",", ".")) || 0), 0,
+            );
             return (
-              <div
-                key={user.id}
-                className={`rounded-xl border p-3 transition-all ${
-                  pct > 0 ? "border-primary/30 bg-primary/5" : "bg-card"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      {user.name.charAt(0)}
-                    </span>
-                    <span className="text-sm font-medium">{user.name.split(" ")[0]}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-bold tabular-nums text-primary">{pct.toFixed(0)}%</span>
-                    <span className="ml-2 text-xs text-muted-foreground tabular-nums">{formatBRL(amountForUser)}</span>
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value={pct}
-                  onChange={(e) => {
-                    const next = new Map(localPercentages);
-                    next.set(user.id, e.target.value);
+              <div className="space-y-3">
+                {participants.map((user) => {
+                  const pct = parseFloat(localPercentages.get(user.id)?.replace(",", ".") || "0") || 0;
+                  const amountForUser = Math.round((grandTotal * pct) / 100);
+                  const remainingPct = 100 - totalPct;
+                  const showFillRemaining = pct === 0 && remainingPct > 0 && totalPct > 0;
+                  return (
+                    <div
+                      key={user.id}
+                      className={`rounded-xl border p-3 transition-all ${
+                        pct > 0 ? "border-primary/30 bg-primary/5" : "bg-card"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                            {user.name.charAt(0)}
+                          </span>
+                          <span className="text-sm font-medium">{user.name.split(" ")[0]}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold tabular-nums text-primary">{pct.toFixed(0)}%</span>
+                          <span className="ml-2 text-xs text-muted-foreground tabular-nums">{formatBRL(amountForUser)}</span>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={pct}
+                        onChange={(e) => {
+                          const next = new Map(localPercentages);
+                          next.set(user.id, e.target.value);
+                          setLocalPercentages(next);
+                          const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
+                          onSetPayerAmount(user.id, cents);
+                        }}
+                        className="mt-2 w-full"
+                      />
+                      {showFillRemaining && (
+                        <button
+                          onClick={() => {
+                            const next = new Map(localPercentages);
+                            next.set(user.id, remainingPct.toFixed(1));
+                            setLocalPercentages(next);
+                            const cents = Math.round((grandTotal * remainingPct) / 100);
+                            onSetPayerAmount(user.id, cents);
+                          }}
+                          className="mt-1.5 text-xs font-medium text-primary"
+                        >
+                          Preencher restante ({remainingPct.toFixed(0)}%)
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => {
+                    const eq = (100 / participants.length).toFixed(1);
+                    const next = new Map<string, string>();
+                    participants.forEach((p) => next.set(p.id, eq));
                     setLocalPercentages(next);
-                    const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
-                    onSetPayerAmount(user.id, cents);
+                    onSplitPaymentEqually(participants.map((p) => p.id));
                   }}
-                  className="mt-2 w-full"
-                />
+                >
+                  <Users className="h-4 w-4" />
+                  Dividiu igualmente
+                </Button>
+                {Math.abs(totalPct - 100) > 0.1 && totalPct > 0 && (
+                  <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+                    Total: {totalPct.toFixed(0)}% — faltam {(100 - totalPct).toFixed(0)}% para completar 100%
+                  </div>
+                )}
               </div>
             );
-          })}
+          })()}
 
-          {paymentInputMode === "fixed" && participants.map((user) => {
+          {paymentInputMode === "fixed" && <div className="space-y-3">{participants.map((user) => {
             const localVal = localAmounts.get(user.id) || "";
             const storeAmount = payerMap.get(user.id) || 0;
             const hasValue = localVal !== "" || storeAmount > 0;
@@ -296,7 +341,7 @@ export function PayerStep({
                 )}
               </div>
             );
-          })}
+          })}</div>}
 
           <Button
             variant="outline"

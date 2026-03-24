@@ -49,15 +49,20 @@ export default function BillsPage() {
         .select("id, title, status, total_amount, created_at")
         .order("created_at", { ascending: false });
 
-      if (data) {
-        const entries: BillEntry[] = [];
-        for (const bill of data) {
-          const { count } = await supabase
-            .from("bill_participants")
-            .select("*", { count: "exact", head: true })
-            .eq("bill_id", bill.id);
+      if (data && data.length > 0) {
+        const billIds = data.map((b) => b.id);
+        const { data: participantRows } = await supabase
+          .from("bill_participants")
+          .select("bill_id")
+          .in("bill_id", billIds);
 
-          entries.push({
+        const countMap = new Map<string, number>();
+        for (const row of participantRows ?? []) {
+          countMap.set(row.bill_id, (countMap.get(row.bill_id) ?? 0) + 1);
+        }
+
+        setBills(
+          data.map((bill) => ({
             id: bill.id,
             title: bill.title,
             date: new Date(bill.created_at).toLocaleDateString("pt-BR", {
@@ -66,11 +71,10 @@ export default function BillsPage() {
               year: "numeric",
             }),
             total: bill.total_amount,
-            participants: count ?? 0,
+            participants: countMap.get(bill.id) ?? 0,
             status: bill.status,
-          });
-        }
-        setBills(entries);
+          })),
+        );
       }
       setLoading(false);
     }

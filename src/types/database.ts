@@ -60,6 +60,7 @@ export interface Database {
           service_fee_percent: number;
           fixed_fees: number;
           total_amount: number;
+          group_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -72,6 +73,7 @@ export interface Database {
           service_fee_percent?: number;
           fixed_fees?: number;
           total_amount?: number;
+          group_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -84,8 +86,44 @@ export interface Database {
           service_fee_percent?: number;
           fixed_fees?: number;
           total_amount?: number;
+          group_id?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      group_settlements: {
+        Row: {
+          id: string;
+          group_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount_cents: number;
+          status: "pending" | "paid_unconfirmed" | "settled";
+          paid_at: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount_cents: number;
+          status?: "pending" | "paid_unconfirmed" | "settled";
+          paid_at?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          group_id?: string;
+          from_user_id?: string;
+          to_user_id?: string;
+          amount_cents?: number;
+          status?: "pending" | "paid_unconfirmed" | "settled";
+          paid_at?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
         };
       };
       bill_participants: {
