@@ -26,3 +26,11 @@ export function parseBRLInput(input: string): number {
 export function sanitizeDecimalInput(value: string): string {
   return value.replace(/[^\d,]/g, "");
 }
+
+export function formatBillAmount(
+  status: string,
+  totalAmountCents: number,
+): string {
+  if (status === "draft") return "Em criação...";
+  return formatBRL(totalAmountCents);
+}
