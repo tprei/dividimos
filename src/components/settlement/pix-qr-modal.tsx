@@ -18,6 +18,7 @@ interface PixQrModalProps {
   pixKey?: string;
   recipientUserId?: string;
   billId?: string;
+  groupId?: string;
   mode?: "pay" | "collect";
 }
 
@@ -30,6 +31,7 @@ export function PixQrModal({
   pixKey,
   recipientUserId,
   billId,
+  groupId,
   mode = "pay",
 }: PixQrModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -59,7 +61,7 @@ export function PixQrModal({
       fetch("/api/pix/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientUserId, amountCents, billId }),
+        body: JSON.stringify({ recipientUserId, amountCents, billId, groupId }),
       })
         .then((res) => res.json())
         .then((data) => {
@@ -73,7 +75,7 @@ export function PixQrModal({
     } else {
       setLoading(false);
     }
-  }, [open, pixKey, recipientUserId, recipientName, amountCents, billId]);
+  }, [open, pixKey, recipientUserId, recipientName, amountCents, billId, groupId]);
 
   useEffect(() => {
     if (!copiaECola || !canvasRef.current) return;

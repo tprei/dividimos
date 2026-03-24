@@ -6,8 +6,6 @@ import { useBillStore } from "@/stores/bill-store";
 import type { DebtStatus } from "@/types";
 
 export function useRealtimeLedger(billId: string | undefined) {
-  const store = useBillStore();
-
   useEffect(() => {
     if (!billId || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
@@ -31,10 +29,11 @@ export function useRealtimeLedger(billId: string | undefined) {
             confirmed_at: string | null;
           };
 
+          const { markPaid, confirmPayment } = useBillStore.getState();
           if (updated.status === "paid_unconfirmed") {
-            store.markPaid(updated.id);
+            markPaid(updated.id);
           } else if (updated.status === "settled") {
-            store.confirmPayment(updated.id);
+            confirmPayment(updated.id);
           }
         },
       )
@@ -43,5 +42,5 @@ export function useRealtimeLedger(billId: string | undefined) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [billId, store]);
+  }, [billId]);
 }

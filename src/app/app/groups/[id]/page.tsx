@@ -5,21 +5,26 @@ import {
   ArrowLeft,
   Check,
   Clock,
+  Plus,
+  Receipt,
   Search,
   Trash2,
   UserPlus,
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
+import { GroupSettlementView } from "@/components/group/group-settlement-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { formatBRL } from "@/lib/currency";
 import toast from "react-hot-toast";
-import type { GroupMemberStatus, UserProfile } from "@/types";
+import type { BillStatus, GroupMemberStatus, User, UserProfile } from "@/types";
 
 interface MemberEntry {
   userId: string;
@@ -28,73 +33,88 @@ interface MemberEntry {
   invitedBy: string;
 }
 
+interface BillSummaryEntry {
+  id: string;
+  title: string;
+  totalAmount: number;
+  status: BillStatus;
+  createdAt: string;
+}
+
+const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
+  draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
+  active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
+  partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
+  settled: { label: "Liquidado", color: "bg-success/15 text-success" },
+};
+
+type Tab = "membros" | "contas" | "acerto";
+
 export default function GroupDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const { user } = useAuth();
   const [groupName, setGroupName] = useState("");
   const [creatorId, setCreatorId] = useState("");
   const [members, setMembers] = useState<MemberEntry[]>([]);
+  const [bills, setBills] = useState<BillSummaryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<Tab>("membros");
   const [showInvite, setShowInvite] = useState(false);
   const [handleInput, setHandleInput] = useState("");
   const [lookupResult, setLookupResult] = useState<UserProfile | null>(null);
   const [lookupError, setLookupError] = useState("");
   const [searching, setSearching] = useState(false);
 
-  const supabase = createClient();
-
   async function fetchGroup() {
-    const { data: group } = await supabase
-      .from("groups")
-      .select("name, creator_id")
-      .eq("id", id)
-      .single();
+    const supabase = createClient();
+
+    const [{ data: group }, { data: groupMembers }] = await Promise.all([
+      supabase.from("groups").select("name, creator_id").eq("id", id).single(),
+      supabase.from("group_members").select("user_id, status, invited_by").eq("group_id", id),
+    ]);
 
     if (!group) return;
 
     setGroupName(group.name);
     setCreatorId(group.creator_id);
 
-    const { data: groupMembers } = await supabase
-      .from("group_members")
-      .select("user_id, status, invited_by")
-      .eq("group_id", id);
+    const memberRows = groupMembers ?? [];
+    const allUserIds = [
+      ...new Set([group.creator_id, ...memberRows.map((m) => m.user_id)]),
+    ];
+
+    const { data: profiles } = await supabase
+      .from("user_profiles")
+      .select("id, handle, name, avatar_url")
+      .in("id", allUserIds);
+
+    const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
 
     const entries: MemberEntry[] = [];
 
-    const creatorProfile = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("id", group.creator_id)
-      .single();
-
-    if (creatorProfile.data) {
+    const creatorProfile = profileMap.get(group.creator_id);
+    if (creatorProfile) {
       entries.push({
         userId: group.creator_id,
         status: "accepted",
         profile: {
-          id: creatorProfile.data.id,
-          handle: creatorProfile.data.handle,
-          name: creatorProfile.data.name,
-          avatarUrl: creatorProfile.data.avatar_url ?? undefined,
+          id: creatorProfile.id,
+          handle: creatorProfile.handle,
+          name: creatorProfile.name,
+          avatarUrl: creatorProfile.avatar_url ?? undefined,
         },
         invitedBy: group.creator_id,
       });
     }
 
-    for (const m of groupMembers ?? []) {
+    for (const m of memberRows) {
       if (m.user_id === group.creator_id) continue;
-
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", m.user_id)
-        .single();
-
+      const profile = profileMap.get(m.user_id);
       if (profile) {
         entries.push({
           userId: m.user_id,
@@ -111,12 +131,30 @@ export default function GroupDetailPage({
     }
 
     setMembers(entries);
+
+    // Fetch group bills
+    const { data: billRows } = await (supabase
+      .from("bills")
+      .select("id, title, total_amount, status, created_at") as any)
+      .eq("group_id", id)
+      .order("created_at", { ascending: false });
+
+    setBills(
+      (billRows ?? []).map((b: any) => ({
+        id: b.id,
+        title: b.title,
+        totalAmount: b.total_amount,
+        status: b.status as BillStatus,
+        createdAt: b.created_at,
+      }))
+    );
+
     setLoading(false);
   }
 
   useEffect(() => {
     fetchGroup();
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isCreator = user?.id === creatorId;
   const isAcceptedMember = members.some(
@@ -132,7 +170,7 @@ export default function GroupDetailPage({
     setLookupResult(null);
     setLookupError("");
 
-    const { data: profile } = await supabase
+    const { data: profile } = await createClient()
       .from("user_profiles")
       .select("*")
       .eq("handle", handle)
@@ -156,7 +194,7 @@ export default function GroupDetailPage({
   const handleInvite = async () => {
     if (!lookupResult || !user) return;
 
-    const { error } = await supabase.from("group_members").insert({
+    const { error } = await createClient().from("group_members").insert({
       group_id: id,
       user_id: lookupResult.id,
       invited_by: user.id,
@@ -176,13 +214,28 @@ export default function GroupDetailPage({
   };
 
   const handleRemoveMember = async (userId: string) => {
-    await supabase
+    await createClient()
       .from("group_members")
       .delete()
       .eq("group_id", id)
       .eq("user_id", userId);
     await fetchGroup();
   };
+
+  // Convert MemberEntry[] to User[] for settlement view
+  const participantsAsUsers: User[] = members
+    .filter((m) => m.status === "accepted")
+    .map((m) => ({
+      id: m.userId,
+      email: "",
+      handle: m.profile.handle,
+      name: m.profile.name,
+      pixKeyType: "email" as const,
+      pixKeyHint: "",
+      avatarUrl: m.profile.avatarUrl,
+      onboarded: true,
+      createdAt: "",
+    }));
 
   if (loading) {
     return (
@@ -194,8 +247,12 @@ export default function GroupDetailPage({
     );
   }
 
+  const acceptedCount = members.filter((m) => m.status === "accepted").length;
+  const activeBillCount = bills.filter((b) => b.status !== "settled").length;
+
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
+      {/* Header */}
       <div className="flex items-center gap-3">
         <Link
           href="/app/groups"
@@ -206,7 +263,8 @@ export default function GroupDetailPage({
         <div className="flex-1">
           <h1 className="font-semibold">{groupName}</h1>
           <p className="text-xs text-muted-foreground">
-            {members.length} membro{members.length !== 1 ? "s" : ""}
+            {acceptedCount} membro{acceptedCount !== 1 ? "s" : ""}
+            {activeBillCount > 0 && ` · ${activeBillCount} conta${activeBillCount !== 1 ? "s" : ""} ativa${activeBillCount !== 1 ? "s" : ""}`}
           </p>
         </div>
         {canInvite && (
@@ -222,6 +280,7 @@ export default function GroupDetailPage({
         )}
       </div>
 
+      {/* Invite panel */}
       <AnimatePresence>
         {showInvite && (
           <motion.div
@@ -303,60 +362,144 @@ export default function GroupDetailPage({
         )}
       </AnimatePresence>
 
-      <div className="mt-6 space-y-2">
-        {members.map((member) => (
-          <motion.div
-            key={member.userId}
-            layout
-            className="flex items-center gap-3 rounded-xl border bg-card p-3"
+      {/* Tab bar */}
+      <div className="mt-5 flex gap-1 rounded-xl bg-muted p-1">
+        {(["membros", "contas", "acerto"] as Tab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`flex-1 rounded-lg py-1.5 text-xs font-medium capitalize transition-all ${
+              activeTab === tab
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
           >
-            <UserAvatar
-              name={member.profile.name}
-              avatarUrl={member.profile.avatarUrl}
-              size="sm"
-            />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium">{member.profile.name}</p>
-                {member.userId === creatorId && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                    Criador
-                  </span>
-                )}
-                {member.userId === user?.id && member.userId !== creatorId && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                    Voce
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs text-muted-foreground">
-                  @{member.profile.handle}
-                </p>
-                {member.status === "invited" && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-warning-foreground">
-                    <Clock className="h-3 w-3" />
-                    Pendente
-                  </span>
-                )}
-                {member.status === "accepted" && member.userId !== creatorId && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-success">
-                    <Check className="h-3 w-3" />
-                  </span>
-                )}
-              </div>
-            </div>
-            {isCreator && member.userId !== creatorId && (
-              <button
-                onClick={() => handleRemoveMember(member.userId)}
-                className="rounded-lg p-1 text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-          </motion.div>
+            {tab === "membros" ? "Membros" : tab === "contas" ? "Contas" : "Acerto"}
+          </button>
         ))}
       </div>
+
+      {/* Members tab */}
+      {activeTab === "membros" && (
+        <div className="mt-4 space-y-2">
+          {members.map((member) => (
+            <motion.div
+              key={member.userId}
+              layout
+              className="flex items-center gap-3 rounded-xl border bg-card p-3"
+            >
+              <UserAvatar
+                name={member.profile.name}
+                avatarUrl={member.profile.avatarUrl}
+                size="sm"
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium">{member.profile.name}</p>
+                  {member.userId === creatorId && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      Criador
+                    </span>
+                  )}
+                  {member.userId === user?.id && member.userId !== creatorId && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                      Voce
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs text-muted-foreground">
+                    @{member.profile.handle}
+                  </p>
+                  {member.status === "invited" && (
+                    <span className="flex items-center gap-0.5 text-[10px] text-warning-foreground">
+                      <Clock className="h-3 w-3" />
+                      Pendente
+                    </span>
+                  )}
+                  {member.status === "accepted" && member.userId !== creatorId && (
+                    <span className="flex items-center gap-0.5 text-[10px] text-success">
+                      <Check className="h-3 w-3" />
+                    </span>
+                  )}
+                </div>
+              </div>
+              {isCreator && member.userId !== creatorId && (
+                <button
+                  onClick={() => handleRemoveMember(member.userId)}
+                  className="rounded-lg p-1 text-muted-foreground hover:text-destructive"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Bills tab */}
+      {activeTab === "contas" && (
+        <div className="mt-4 space-y-3">
+          <Button
+            variant="outline"
+            className="w-full gap-2"
+            onClick={() => router.push(`/app/bill/new?groupId=${id}`)}
+          >
+            <Plus className="h-4 w-4" />
+            Nova conta do grupo
+          </Button>
+
+          {bills.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <Receipt className="mx-auto h-8 w-8 opacity-50" />
+              <p className="mt-2 text-sm">Nenhuma conta ainda</p>
+              <p className="text-xs">Crie uma conta para comecar</p>
+            </div>
+          ) : (
+            bills.map((bill) => {
+              const statusCfg = billStatusConfig[bill.status];
+              return (
+                <Link key={bill.id} href={`/app/bill/${bill.id}`}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 rounded-xl border bg-card p-4 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted">
+                      <Receipt className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{bill.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(bill.createdAt).toLocaleDateString("pt-BR")}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="font-semibold text-sm tabular-nums">
+                        {formatBRL(bill.totalAmount)}
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusCfg.color}`}>
+                        {statusCfg.label}
+                      </span>
+                    </div>
+                  </motion.div>
+                </Link>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Settlement tab */}
+      {activeTab === "acerto" && user && (
+        <div className="mt-4">
+          <GroupSettlementView
+            groupId={id}
+            participants={participantsAsUsers}
+            currentUserId={user.id}
+          />
+        </div>
+      )}
     </div>
   );
 }

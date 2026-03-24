@@ -26,7 +26,7 @@ interface BillState {
 
   setCurrentUser: (user: User) => void;
 
-  createBill: (title: string, billType: BillType, merchantName?: string) => void;
+  createBill: (title: string, billType: BillType, merchantName?: string, groupId?: string) => void;
   updateBill: (updates: Partial<Bill>) => void;
   setBillType: (billType: BillType) => void;
 
@@ -75,7 +75,7 @@ export const useBillStore = create<BillState>((set, get) => ({
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
-  createBill: (title, billType, merchantName) => {
+  createBill: (title, billType, merchantName, groupId) => {
     const bill: Bill = {
       id: generateId(),
       creatorId: get().currentUser?.id || "",
@@ -88,6 +88,7 @@ export const useBillStore = create<BillState>((set, get) => ({
       totalAmount: 0,
       totalAmountInput: 0,
       payers: [],
+      groupId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

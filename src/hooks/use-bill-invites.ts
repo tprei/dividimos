@@ -17,10 +17,9 @@ export function useBillInvites() {
   const [invites, setInvites] = useState<BillInvite[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const supabase = createClient();
-
   async function fetchInvites() {
     if (!user) return;
+    const supabase = createClient();
 
     const { data: pending } = await supabase
       .from("bill_participants")
@@ -70,6 +69,7 @@ export function useBillInvites() {
 
   useEffect(() => {
     if (!user) return;
+    const supabase = createClient();
     const channel = supabase
       .channel("bill-invites")
       .on(
@@ -80,11 +80,11 @@ export function useBillInvites() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id]);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const accept = async (billId: string) => {
     if (!user) return;
-    await supabase
+    await createClient()
       .from("bill_participants")
       .update({ status: "accepted", responded_at: new Date().toISOString() })
       .eq("bill_id", billId)
@@ -94,7 +94,7 @@ export function useBillInvites() {
 
   const decline = async (billId: string) => {
     if (!user) return;
-    await supabase
+    await createClient()
       .from("bill_participants")
       .update({ status: "declined", responded_at: new Date().toISOString() })
       .eq("bill_id", billId)

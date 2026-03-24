@@ -167,7 +167,7 @@ export function DebtGraph({
       </defs>
 
       <AnimatePresence>
-        {edges.map((edge) => {
+        {edges.map((edge, edgeIdx) => {
           const fromPos = positionMap.get(edge.fromUserId);
           const toPos = positionMap.get(edge.toUserId);
           if (!fromPos || !toPos) return null;
@@ -176,7 +176,7 @@ export function DebtGraph({
           const fading = isFading(edge.fromUserId, edge.toUserId);
           const isInvolved = highlighted || fading;
           const dimmed = dimOthers && !isInvolved;
-          const edgeKey = `${edge.fromUserId}-${edge.toUserId}`;
+          const edgeKey = `${edge.fromUserId}-${edge.toUserId}-${edgeIdx}`;
 
           const pathD = getCurvedPath(fromPos, toPos);
           const labelPos = getLabelPosition(fromPos, toPos);

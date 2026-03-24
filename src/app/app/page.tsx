@@ -87,21 +87,40 @@ export default function AppHome() {
     if (!user) return;
     const supabase = createClient();
 
-    const { data: myBills } = await supabase
-      .from("bills")
-      .select("id, title, status, total_amount, created_at")
-      .order("created_at", { ascending: false })
-      .limit(5);
+    const [billsResult, debtOwedResult, debtToMeResult] = await Promise.all([
+      supabase
+        .from("bills")
+        .select("id, title, status, total_amount, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase
+        .from("ledger")
+        .select("amount_cents")
+        .eq("from_user_id", user.id)
+        .neq("status", "settled"),
+      supabase
+        .from("ledger")
+        .select("amount_cents")
+        .eq("to_user_id", user.id)
+        .neq("status", "settled"),
+    ]);
 
-    if (myBills) {
-      const recent: RecentBill[] = [];
-      for (const bill of myBills) {
-        const { count } = await supabase
-          .from("bill_participants")
-          .select("*", { count: "exact", head: true })
-          .eq("bill_id", bill.id);
+    const myBills = billsResult.data ?? [];
 
-        recent.push({
+    if (myBills.length > 0) {
+      const billIds = myBills.map((b) => b.id);
+      const { data: participantRows } = await supabase
+        .from("bill_participants")
+        .select("bill_id")
+        .in("bill_id", billIds);
+
+      const countMap = new Map<string, number>();
+      for (const row of participantRows ?? []) {
+        countMap.set(row.bill_id, (countMap.get(row.bill_id) ?? 0) + 1);
+      }
+
+      setBills(
+        myBills.map((bill) => ({
           id: bill.id,
           title: bill.title,
           date: new Date(bill.created_at).toLocaleDateString("pt-BR", {
@@ -109,28 +128,15 @@ export default function AppHome() {
             month: "short",
           }),
           total: bill.total_amount,
-          participants: count ?? 0,
+          participants: countMap.get(bill.id) ?? 0,
           status: bill.status,
           myBalance: 0,
-        });
-      }
-      setBills(recent);
+        })),
+      );
     }
 
-    const { data: debtsOwed } = await supabase
-      .from("ledger")
-      .select("amount_cents")
-      .eq("from_user_id", user.id)
-      .neq("status", "settled");
-
-    const { data: debtsOwedToMe } = await supabase
-      .from("ledger")
-      .select("amount_cents")
-      .eq("to_user_id", user.id)
-      .neq("status", "settled");
-
-    const iOwe = (debtsOwed ?? []).reduce((s, d) => s + d.amount_cents, 0);
-    const theyOweMe = (debtsOwedToMe ?? []).reduce((s, d) => s + d.amount_cents, 0);
+    const iOwe = (debtOwedResult.data ?? []).reduce((s, d) => s + d.amount_cents, 0);
+    const theyOweMe = (debtToMeResult.data ?? []).reduce((s, d) => s + d.amount_cents, 0);
     setNetBalance(theyOweMe - iOwe);
 
     setLoading(false);
