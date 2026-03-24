@@ -41,3 +41,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .temp
+
+# home/cache/log files
+.home/
+*.log
+.cache/
+session-log.json
