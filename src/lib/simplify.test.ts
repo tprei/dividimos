@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeItemizedBill, makeSingleAmountBill, userAlice, userBob, userCarlos } from "@/test/fixtures";
-import type { BillSplit, DebtEdge, ItemSplit } from "@/types";
+import type { BillSplit, ItemSplit } from "@/types";
+import type { DebtEdge } from "./simplify";
 import { computeRawEdges, simplifyDebts } from "./simplify";
 
 const participants = [userAlice, userBob, userCarlos];

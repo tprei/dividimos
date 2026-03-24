@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Check,
   KeyRound,
-  Receipt,
   Shield,
   Users,
   X,
@@ -106,7 +105,7 @@ export default function BillInvitePage({
     }
 
     load();
-  }, [user, billId]);
+  }, [user, billId, router, supabase]);
 
   const handleAccept = async () => {
     if (!user) return;

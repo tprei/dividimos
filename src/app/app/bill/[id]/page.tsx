@@ -8,7 +8,6 @@ import {
   CheckCheck,
   Clock,
   Loader2,
-  PartyPopper,
   QrCode,
   Receipt,
   Users,
@@ -41,7 +40,7 @@ import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/led
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
-import type { BillParticipantStatus, BillStatus, DebtStatus, LedgerEntry, User } from "@/types";
+import type { BillParticipantStatus, BillStatus, DebtStatus, User } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },

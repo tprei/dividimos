@@ -93,7 +93,7 @@ export function ItemCard({
             <UsersRound className="h-3.5 w-3.5" />
             Todos
           </motion.button>
-          {participants.map((user, idx) => {
+          {participants.map((user) => {
             const isAssigned = assignedUserIds.has(user.id);
             return (
               <motion.button

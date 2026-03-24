@@ -114,7 +114,7 @@ function NewBillPageContent() {
     }
   }, [store, title, billType, merchantName, serviceFee, fixedFees, authUser]);
 
-  const [syncing, setSyncing] = useState(false);
+  const [, setSyncing] = useState(false);
   const [remoteBillId, setRemoteBillId] = useState<string | null>(null);
   const [participantStatuses, setParticipantStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
 
