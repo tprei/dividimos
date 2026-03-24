@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Equal, Hash, Percent, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -42,25 +42,42 @@ export function SingleAmountStep({
     (parseFloat(totalInput.replace(",", ".")) || 0) * 100,
   );
 
+  const onSetTotalRef = useRef(onSetTotal);
+  useEffect(() => { onSetTotalRef.current = onSetTotal; });
+  const onSplitEquallyRef = useRef(onSplitEqually);
+  useEffect(() => { onSplitEquallyRef.current = onSplitEqually; });
+  const onSplitByPercentageRef = useRef(onSplitByPercentage);
+  useEffect(() => { onSplitByPercentageRef.current = onSplitByPercentage; });
+  const onSplitByFixedRef = useRef(onSplitByFixed);
+  useEffect(() => { onSplitByFixedRef.current = onSplitByFixed; });
+
   useEffect(() => {
     if (totalCents !== totalAmountInput && totalCents > 0) {
-      onSetTotal(totalCents);
+      onSetTotalRef.current(totalCents);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [totalCents]);
+  }, [totalCents, totalAmountInput]);
 
   useEffect(() => {
     if (totalCents <= 0 || participants.length === 0) return;
 
     if (method === "equal") {
-      onSplitEqually(participants.map((p) => p.id));
+      onSplitEquallyRef.current(participants.map((p) => p.id));
     } else if (method === "percentage") {
-      applyPercentages();
+      const assignments = participants.map((p) => ({
+        userId: p.id,
+        percentage: parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
+      }));
+      onSplitByPercentageRef.current(assignments);
     } else if (method === "fixed") {
-      applyFixed();
+      const assignments = participants.map((p) => ({
+        userId: p.id,
+        amountCents: Math.round(
+          parseFloat(fixedAmounts.get(p.id)?.replace(",", ".") || "0") * 100,
+        ),
+      }));
+      onSplitByFixedRef.current(assignments);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [method, totalCents, participants.length]);
+  }, [method, totalCents, participants, percentages, fixedAmounts]);
 
   const perPerson = participants.length > 0 ? totalCents / participants.length : 0;
 
@@ -68,14 +85,6 @@ export function SingleAmountStep({
     const next = new Map(percentages);
     next.set(userId, val);
     setPercentages(next);
-  };
-
-  const applyPercentages = () => {
-    const assignments = participants.map((p) => ({
-      userId: p.id,
-      percentage: parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
-    }));
-    onSplitByPercentage(assignments);
   };
 
   const handleFixedChange = (userId: string, val: string) => {

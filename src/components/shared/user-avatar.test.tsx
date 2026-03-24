@@ -4,8 +4,10 @@ import { render, screen } from "@testing-library/react";
 // Mock next/image before importing the component
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
-    const { fill, ...rest } = props; // eslint-disable-line @typescript-eslint/no-unused-vars
-    return <img alt="" {...rest} />; // eslint-disable-line @next/next/no-img-element
+    const filtered = Object.fromEntries(
+      Object.entries(props).filter(([k]) => k !== "fill"),
+    );
+    return <span data-testid="next-image" role="img" {...filtered} />;
   },
 }));
 

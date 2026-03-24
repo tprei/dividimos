@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
@@ -339,6 +339,21 @@ export default function BillDetailPage({
   const { bill, participants, items, splits, billSplits, ledger } = store;
   const [loadingFromDb, setLoadingFromDb] = useState(false);
 
+  const loadAndSetBill = useCallback(async (billId: string) => {
+    const data = await loadBillFromSupabase(billId);
+    if (data) {
+      useBillStore.setState({
+        bill: data.bill,
+        participants: data.participants,
+        items: data.items,
+        splits: data.splits,
+        billSplits: data.billSplits,
+        ledger: data.ledger,
+      });
+    }
+    return data;
+  }, []);
+
   useEffect(() => {
     if (id === "demo") return;
     // Skip load only if we already have complete data for this bill.
@@ -346,12 +361,11 @@ export default function BillDetailPage({
     // Draft bills are never skipped — they need a fresh DB load to detect status changes.
     const hasCompleteData = bill?.id === id && bill?.status !== "draft" && (ledger.length > 0 || bill.status === "settled");
     if (hasCompleteData) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingFromDb(true);
 
-    const supabaseCheck = createClient();
     (async () => {
       if (currentUser) {
+        const supabaseCheck = createClient();
         const { data: myStatus } = await supabaseCheck
           .from("bill_participants")
           .select("status")
@@ -365,44 +379,25 @@ export default function BillDetailPage({
         }
       }
 
-      const data = await loadBillFromSupabase(id);
-      if (data) {
-        useBillStore.setState({
-          bill: data.bill,
-          participants: data.participants,
-          items: data.items,
-          splits: data.splits,
-          billSplits: data.billSplits,
-          ledger: data.ledger,
-        });
-      }
+      await loadAndSetBill(id);
       setLoadingFromDb(false);
     })();
-  }, [id, currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, currentUser, bill, ledger, router, loadAndSetBill]);
+
+  const billId = bill?.id;
 
   useEffect(() => {
-    if (!bill) return;
+    if (!billId) return;
     const supabase = createClient();
     const channel = supabase
-      .channel(`ledger:${bill.id}`)
+      .channel(`ledger:${billId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "ledger", filter: `bill_id=eq.${bill.id}` },
+        { event: "*", schema: "public", table: "ledger", filter: `bill_id=eq.${billId}` },
         (payload) => {
           if (payload.eventType === "INSERT") {
             // New ledger entry — reload the full bill to get consistent data
-            loadBillFromSupabase(bill.id).then((data) => {
-              if (data) {
-                useBillStore.setState({
-                  bill: data.bill,
-                  participants: data.participants,
-                  items: data.items,
-                  splits: data.splits,
-                  billSplits: data.billSplits,
-                  ledger: data.ledger,
-                });
-              }
-            });
+            loadAndSetBill(billId);
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as { id: string; status: string; paid_at: string | null; confirmed_at: string | null };
             useBillStore.setState((state) => ({
@@ -418,34 +413,21 @@ export default function BillDetailPage({
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [bill?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [billId, loadAndSetBill]);
 
   useEffect(() => {
-    if (!bill) return;
+    if (!billId) return;
     const supabase = createClient();
     const channel = supabase
-      .channel(`bill:${bill.id}`)
+      .channel(`bill:${billId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "bills", filter: `id=eq.${bill.id}` },
-        () => {
-          loadBillFromSupabase(bill.id).then((data) => {
-            if (data) {
-              useBillStore.setState({
-                bill: data.bill,
-                participants: data.participants,
-                items: data.items,
-                splits: data.splits,
-                billSplits: data.billSplits,
-                ledger: data.ledger,
-              });
-            }
-          });
-        },
+        { event: "UPDATE", schema: "public", table: "bills", filter: `id=eq.${billId}` },
+        () => { loadAndSetBill(billId); },
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [bill?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [billId, loadAndSetBill]);
 
   const handleMarkPaid = async (entryId: string) => {
     store.markPaid(entryId);

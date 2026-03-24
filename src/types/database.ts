@@ -56,10 +56,12 @@ export interface Database {
           creator_id: string;
           title: string;
           merchant_name: string | null;
+          bill_type: string;
           status: "draft" | "active" | "partially_settled" | "settled";
           service_fee_percent: number;
           fixed_fees: number;
           total_amount: number;
+          total_amount_input: number;
           group_id: string | null;
           created_at: string;
           updated_at: string;
@@ -69,10 +71,12 @@ export interface Database {
           creator_id: string;
           title: string;
           merchant_name?: string | null;
+          bill_type?: string;
           status?: "draft" | "active" | "partially_settled" | "settled";
           service_fee_percent?: number;
           fixed_fees?: number;
           total_amount?: number;
+          total_amount_input?: number;
           group_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -82,10 +86,12 @@ export interface Database {
           creator_id?: string;
           title?: string;
           merchant_name?: string | null;
+          bill_type?: string;
           status?: "draft" | "active" | "partially_settled" | "settled";
           service_fee_percent?: number;
           fixed_fees?: number;
           total_amount?: number;
+          total_amount_input?: number;
           group_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -131,16 +137,25 @@ export interface Database {
           bill_id: string;
           user_id: string;
           joined_at: string;
+          status: "accepted" | "invited" | "declined";
+          invited_by: string | null;
+          responded_at: string | null;
         };
         Insert: {
           bill_id: string;
           user_id: string;
           joined_at?: string;
+          status?: "accepted" | "invited" | "declined";
+          invited_by?: string | null;
+          responded_at?: string | null;
         };
         Update: {
           bill_id?: string;
           user_id?: string;
           joined_at?: string;
+          status?: "accepted" | "invited" | "declined";
+          invited_by?: string | null;
+          responded_at?: string | null;
         };
       };
       bill_items: {

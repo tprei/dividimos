@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -44,7 +44,7 @@ export default function GroupsPage() {
   const [newGroupName, setNewGroupName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  async function fetchGroups() {
+  const fetchGroups = useCallback(async () => {
     if (!user) return;
     const supabase = createClient();
 
@@ -164,11 +164,11 @@ export default function GroupsPage() {
     setGroups(entries);
     setInvites(pendingInvites);
     setLoading(false);
-  }
+  }, [user]);
 
   useEffect(() => {
-    fetchGroups(); // eslint-disable-line react-hooks/set-state-in-effect
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchGroups();
+  }, [fetchGroups]);
 
   const handleCreateGroup = async () => {
     if (!newGroupName.trim() || !user) return;

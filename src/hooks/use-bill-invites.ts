@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "./use-auth";
 
@@ -17,7 +17,7 @@ export function useBillInvites() {
   const [invites, setInvites] = useState<BillInvite[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function fetchInvites() {
+  const fetchInvites = useCallback(async () => {
     if (!user) return;
     const supabase = createClient();
 
@@ -61,11 +61,14 @@ export function useBillInvites() {
 
     setInvites(result);
     setLoading(false);
-  }
+  }, [user]);
 
   useEffect(() => {
-    fetchInvites(); // eslint-disable-line react-hooks/set-state-in-effect
-  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchInvites();
+  }, [fetchInvites]);
+
+  const fetchInvitesRef = useRef(fetchInvites);
+  useEffect(() => { fetchInvitesRef.current = fetchInvites; });
 
   useEffect(() => {
     if (!user) return;
@@ -75,12 +78,12 @@ export function useBillInvites() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bill_participants", filter: `user_id=eq.${user.id}` },
-        () => { fetchInvites(); },
+        () => { fetchInvitesRef.current(); },
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const accept = async (billId: string) => {
     if (!user) return;

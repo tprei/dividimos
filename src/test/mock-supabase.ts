@@ -13,6 +13,8 @@
  *   expect(mock.findCalls("bills", "insert")).toHaveLength(1);
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export interface MockResponse {
   data: unknown;
   error: unknown;
@@ -103,7 +105,7 @@ export function createMockSupabase() {
     auth: {
       getUser: async () => ({ data: { user: _user }, error: null }),
     },
-  };
+  } as unknown as SupabaseClient;
 
   return { client, onTable, findCalls, setUser, reset, calls: _calls };
 }

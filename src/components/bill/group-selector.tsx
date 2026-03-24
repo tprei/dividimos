@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Users, X, ChevronDown, ChevronUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ export function GroupSelector({
   const [groups, setGroups] = useState<GroupEntry[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const excludeKey = useMemo(() => excludeIds.join(","), [excludeIds]);
 
   useEffect(() => {
     async function fetchGroups() {
@@ -128,7 +129,7 @@ export function GroupSelector({
     }
 
     fetchGroups();
-  }, [currentUserId, excludeIds.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUserId, excludeIds, excludeKey]);
 
   if (selectedGroupId) {
     return (

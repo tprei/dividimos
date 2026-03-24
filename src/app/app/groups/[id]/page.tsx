@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
@@ -70,7 +70,7 @@ export default function GroupDetailPage({
   const [lookupError, setLookupError] = useState("");
   const [searching, setSearching] = useState(false);
 
-  async function fetchGroup() {
+  const fetchGroup = useCallback(async () => {
     const supabase = createClient();
 
     const [{ data: group }, { data: groupMembers }] = await Promise.all([
@@ -133,16 +133,14 @@ export default function GroupDetailPage({
     setMembers(entries);
 
     // Fetch group bills
-    const { data: billRows } = await (supabase
+    const { data: billRows } = await supabase
       .from("bills")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .select("id, title, total_amount, status, created_at") as any)
+      .select("id, title, total_amount, status, created_at")
       .eq("group_id", id)
       .order("created_at", { ascending: false });
 
     setBills(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (billRows ?? []).map((b: any) => ({
+      (billRows ?? []).map((b) => ({
         id: b.id,
         title: b.title,
         totalAmount: b.total_amount,
@@ -152,11 +150,11 @@ export default function GroupDetailPage({
     );
 
     setLoading(false);
-  }
+  }, [id]);
 
   useEffect(() => {
-    fetchGroup(); // eslint-disable-line react-hooks/set-state-in-effect
-  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchGroup();
+  }, [fetchGroup]);
 
   const isCreator = user?.id === creatorId;
   const isAcceptedMember = members.some(

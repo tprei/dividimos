@@ -12,8 +12,7 @@ let mock: MockSupabase;
 
 beforeEach(() => {
   mock = createMockSupabase();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.mocked(createClient).mockReturnValue(mock.client as any);
+  vi.mocked(createClient).mockReturnValue(mock.client);
 });
 
 describe("loadBillFromSupabase", () => {

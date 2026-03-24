@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
 import { GroupSelector } from "@/components/bill/group-selector";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
@@ -118,7 +118,7 @@ function NewBillPageContent() {
   const [remoteBillId, setRemoteBillId] = useState<string | null>(null);
   const [participantStatuses, setParticipantStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
 
-  const refreshParticipantStatuses = async () => {
+  const refreshParticipantStatuses = useCallback(async () => {
     if (!remoteBillId) return;
     const supabase = createClient();
     const { data } = await supabase
@@ -132,7 +132,10 @@ function NewBillPageContent() {
       }
       setParticipantStatuses(map);
     }
-  };
+  }, [remoteBillId]);
+
+  const refreshStatusesRef = useRef(refreshParticipantStatuses);
+  refreshStatusesRef.current = refreshParticipantStatuses;
 
   useEffect(() => {
     if (!remoteBillId) return;
@@ -143,11 +146,11 @@ function NewBillPageContent() {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "bill_participants", filter: `bill_id=eq.${remoteBillId}` },
-        () => { refreshParticipantStatuses(); },
+        () => { refreshStatusesRef.current(); },
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [remoteBillId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [remoteBillId, refreshParticipantStatuses]);
 
   // Group bills skip acceptance entirely — all participants are auto-accepted
   const allAccepted = selectedGroupId
@@ -207,7 +210,7 @@ function NewBillPageContent() {
         });
       }
     })();
-  }, [step, searchParams, selectedGroupId, authUser]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, searchParams, selectedGroupId, authUser, store]);
 
   const goNext = useCallback(async () => {
     if (step === "info") {
