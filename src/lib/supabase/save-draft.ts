@@ -31,7 +31,7 @@ export async function saveDraftToSupabase(
 
     const { error } = await supabase
       .from("bills")
-      .update(updatePayload as any)
+      .update(updatePayload as Record<string, unknown>)
       .eq("id", billId);
 
     if (error) {
@@ -54,7 +54,7 @@ export async function saveDraftToSupabase(
 
     const { data: inserted, error } = await supabase
       .from("bills")
-      .insert(insertPayload as any)
+      .insert(insertPayload as Record<string, unknown>)
       .select("id")
       .single();
 
@@ -91,7 +91,7 @@ export async function saveDraftToSupabase(
       status: (groupId || p.id === creatorId) ? "accepted" : "invited",
       invited_by: p.id === creatorId ? null : creatorId,
     }));
-    const { error } = await supabase.from("bill_participants").insert(rows as any);
+    const { error } = await supabase.from("bill_participants").insert(rows as Record<string, unknown>);
     if (error) console.error("Failed to insert participants:", error);
   }
 
