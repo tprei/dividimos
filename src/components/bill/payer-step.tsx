@@ -342,47 +342,48 @@ export function PayerStep({
                 )}
               </div>
             );
-          })}</div>}
+          })}
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full gap-2"
-            onClick={() => {
-              onSplitPaymentEqually(participants.map((p) => p.id));
-              const perPerson = grandTotal / participants.length;
-              const m = new Map<string, string>();
-              participants.forEach((p) =>
-                m.set(p.id, (perPerson / 100).toFixed(2).replace(".", ",")),
-              );
-              setLocalAmounts(m);
-            }}
-          >
-            <Users className="h-4 w-4" />
-            Dividiu igualmente
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2"
+              onClick={() => {
+                onSplitPaymentEqually(participants.map((p) => p.id));
+                const perPerson = grandTotal / participants.length;
+                const m = new Map<string, string>();
+                participants.forEach((p) =>
+                  m.set(p.id, (perPerson / 100).toFixed(2).replace(".", ",")),
+                );
+                setLocalAmounts(m);
+              }}
+            >
+              <Users className="h-4 w-4" />
+              Dividiu igualmente
+            </Button>
 
-          <AnimatePresence>
-            {Math.abs(remaining) > 1 && totalPaid > 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-                  remaining > 0
-                    ? "bg-warning/10 text-warning-foreground"
-                    : "bg-destructive/10 text-destructive"
-                }`}
-              >
-                <span>
-                  {remaining > 0 ? "Falta atribuir" : "Excedente"}
-                </span>
-                <span className="font-semibold tabular-nums">
-                  {formatBRL(Math.abs(remaining))}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            <AnimatePresence>
+              {Math.abs(remaining) > 1 && totalPaid > 0 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                    remaining > 0
+                      ? "bg-warning/10 text-warning-foreground"
+                      : "bg-destructive/10 text-destructive"
+                  }`}
+                >
+                  <span>
+                    {remaining > 0 ? "Falta atribuir" : "Excedente"}
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatBRL(Math.abs(remaining))}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>}
         </div>
       )}
     </div>
