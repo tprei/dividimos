@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
+import { coerceBillStatus } from "@/lib/type-guards";
 import toast from "react-hot-toast";
 import type { BillStatus, GroupMemberStatus, User, UserProfile } from "@/types";
 import type { Database } from "@/types/database";
@@ -155,7 +156,7 @@ export default function GroupDetailPage({
         id: b.id,
         title: b.title,
         totalAmount: b.total_amount,
-        status: b.status as BillStatus,
+        status: coerceBillStatus(b.status, "draft"),
         createdAt: b.created_at,
       }))
     );

@@ -11,6 +11,7 @@ import type {
   User,
 } from "@/types";
 import type { Database } from "@/types/database";
+import { coerceBillType, coerceSplitType } from "@/lib/type-guards";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
 type BillItemRow = Database["public"]["Tables"]["bill_items"]["Row"];
@@ -24,7 +25,7 @@ export function billRowToBill(row: BillRow): Bill {
   return {
     id: row.id,
     creatorId: row.creator_id,
-    billType: row.bill_type === "single_amount" ? "single_amount" : "itemized",
+    billType: coerceBillType(row.bill_type, "itemized"),
     title: row.title,
     merchantName: row.merchant_name ?? undefined,
     status: row.status,
@@ -61,7 +62,7 @@ export function billPayerRowToBillPayer(row: BillPayerRow): BillPayer {
 export function billSplitRowToBillSplit(row: BillSplitRow): BillSplit {
   return {
     userId: row.user_id,
-    splitType: row.split_type as "equal" | "percentage" | "fixed",
+    splitType: coerceSplitType(row.split_type, "equal"),
     value: row.value,
     computedAmountCents: row.computed_amount_cents,
   };

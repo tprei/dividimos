@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
+import { coerceDebtStatus } from "@/lib/type-guards";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
 import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
@@ -420,7 +421,7 @@ export default function BillDetailPage({
             useBillStore.setState((state) => ({
               ledger: state.ledger.map((e) =>
                 e.id === updated.id
-                  ? { ...e, status: updated.status as DebtStatus, paidAt: updated.paid_at ?? undefined, confirmedAt: updated.confirmed_at ?? undefined }
+                  ? { ...e, status: coerceDebtStatus(updated.status, "pending"), paidAt: updated.paid_at ?? undefined, confirmedAt: updated.confirmed_at ?? undefined }
                   : e,
               ),
             }));
