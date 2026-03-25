@@ -4,6 +4,8 @@ import type { Bill, BillItem, BillSplit, ItemSplit, LedgerEntry, User } from "@/
 
 type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
 
+type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
+
 interface BillData {
   bill: Bill;
   participants: User[];
