@@ -3,10 +3,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
+import type { Database } from "@/types/database";
+
+type PixKeyType = Database["public"]["Enums"]["pix_key_type"];
 
 export async function updatePixKey(formData: FormData) {
   const pixKey = formData.get("pixKey") as string;
-  const pixKeyType = formData.get("pixKeyType") as string;
+  const pixKeyType = formData.get("pixKeyType") as PixKeyType;
 
   if (!pixKey || !pixKeyType) {
     return { error: "Dados incompletos" };

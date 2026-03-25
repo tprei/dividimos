@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase/client";
+import type { Database } from "@/types/database";
 import type { Bill, BillItem, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
+
+type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
 
 interface BillData {
   bill: Bill;
@@ -44,18 +47,18 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     // aren't in place yet, the invitee's page reloads with empty data.
     await insertChildData(supabase, billId, data, { cleanExisting: true });
 
-    const syncUpdatePayload: Record<string, unknown> = {
+    const syncUpdatePayload: BillUpdate = {
       status: data.bill.status === "settled" ? "settled" : "active",
       total_amount: data.bill.totalAmount,
       total_amount_input: data.bill.totalAmountInput,
       service_fee_percent: data.bill.serviceFeePercent,
       fixed_fees: data.bill.fixedFees,
+      group_id: data.groupId,
     };
-    if (data.groupId) syncUpdatePayload.group_id = data.groupId;
 
     const { error: updateError } = await supabase
       .from("bills")
-      .update(syncUpdatePayload as Record<string, unknown>)
+      .update(syncUpdatePayload)
       .eq("id", billId);
 
     if (updateError) {

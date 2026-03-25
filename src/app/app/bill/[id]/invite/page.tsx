@@ -21,6 +21,9 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
 import type { UserProfile } from "@/types";
+import type { Database } from "@/types/database";
+
+type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 export default function BillInvitePage({
   params,
@@ -80,7 +83,7 @@ export default function BillInvitePage({
           .in("id", userIds);
 
         setParticipantProfiles(
-          (profiles ?? []).map((p) => ({
+          (profiles as UserProfileRow[] ?? []).map((p) => ({
             id: p.id,
             handle: p.handle,
             name: p.name,

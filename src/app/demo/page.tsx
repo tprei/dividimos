@@ -23,6 +23,7 @@ import { formatBRL } from "@/lib/currency";
 import { DEMO_ITEMS, DEMO_PIX_KEYS, DEMO_USERS } from "@/lib/demo-data";
 import { springs } from "@/lib/animations";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
+import { coerceDebtStatus } from "@/lib/type-guards";
 import type { Bill, BillItem, DebtStatus, ItemSplit, LedgerEntry } from "@/types";
 
 const BILL_ID = "demo_bill";
@@ -206,7 +207,7 @@ export default function DemoPage() {
         fromUserId: edge.fromUserId,
         toUserId: edge.toUserId,
         amountCents: edge.amountCents,
-        status: (debtStatuses.get(`edge_${idx}`) ?? "pending") as DebtStatus,
+        status: coerceDebtStatus(debtStatuses.get(`edge_${idx}`), "pending"),
         createdAt: new Date().toISOString(),
       }));
     }

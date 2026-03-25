@@ -3,6 +3,9 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@/types";
+import type { Database } from "@/types/database";
+
+type UserRow = Database["public"]["Tables"]["users"]["Row"];
 
 interface AuthContextValue {
   user: User | null;
@@ -36,17 +39,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (profile) {
+        const p = profile as UserRow;
         setUser({
-          id: profile.id,
-          email: profile.email ?? "",
-          handle: profile.handle ?? "",
-          name: profile.name,
-          phone: profile.phone ?? undefined,
-          pixKeyType: profile.pix_key_type,
-          pixKeyHint: profile.pix_key_hint,
-          avatarUrl: profile.avatar_url ?? undefined,
-          onboarded: profile.onboarded,
-          createdAt: profile.created_at,
+          id: p.id,
+          email: p.email ?? "",
+          handle: p.handle ?? "",
+          name: p.name,
+          phone: p.phone ?? undefined,
+          pixKeyType: p.pix_key_type,
+          pixKeyHint: p.pix_key_hint,
+          avatarUrl: p.avatar_url ?? undefined,
+          onboarded: p.onboarded,
+          createdAt: p.created_at,
         });
       }
 

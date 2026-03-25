@@ -23,8 +23,12 @@ import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
+import { coerceBillStatus } from "@/lib/type-guards";
 import toast from "react-hot-toast";
 import type { BillStatus, GroupMemberStatus, User, UserProfile } from "@/types";
+import type { Database } from "@/types/database";
+
+type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 interface MemberEntry {
   userId: string;
@@ -152,7 +156,7 @@ export default function GroupDetailPage({
         id: b.id,
         title: b.title,
         totalAmount: b.total_amount,
-        status: b.status as BillStatus,
+        status: coerceBillStatus(b.status, "draft"),
         createdAt: b.created_at,
       }))
     );
@@ -183,16 +187,18 @@ export default function GroupDetailPage({
       .eq("handle", handle)
       .single();
 
-    if (!profile) {
+    const typedProfile = profile as UserProfileRow | null;
+
+    if (!typedProfile) {
       setLookupError(`Nenhum usuario encontrado com @${handle}`);
-    } else if (members.some((m) => m.userId === profile.id)) {
+    } else if (members.some((m) => m.userId === typedProfile.id)) {
       setLookupError("Ja esta no grupo");
     } else {
       setLookupResult({
-        id: profile.id,
-        handle: profile.handle,
-        name: profile.name,
-        avatarUrl: profile.avatar_url ?? undefined,
+        id: typedProfile.id,
+        handle: typedProfile.handle,
+        name: typedProfile.name,
+        avatarUrl: typedProfile.avatar_url ?? undefined,
       });
     }
     setSearching(false);

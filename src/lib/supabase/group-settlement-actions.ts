@@ -1,34 +1,12 @@
 import { createClient } from "@/lib/supabase/client";
 import type { Bill, BillPayer, BillStatus, GroupSettlement, LedgerEntry, User } from "@/types";
 import type { DebtEdge } from "@/lib/simplify";
+import type { Database } from "@/types/database";
 
-interface BillRow {
-  id: string;
-  creator_id: string;
-  bill_type: string;
-  title: string;
-  merchant_name: string | null;
-  status: BillStatus;
-  service_fee_percent: number;
-  fixed_fees: number;
-  total_amount: number;
-  total_amount_input: number | null;
-  group_id: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface GroupSettlementRow {
-  id: string;
-  group_id: string;
-  from_user_id: string;
-  to_user_id: string;
-  amount_cents: number;
-  status: "pending" | "paid_unconfirmed" | "settled";
-  paid_at: string | null;
-  confirmed_at: string | null;
-  created_at: string;
-}
+type BillRow = Database["public"]["Tables"]["bills"]["Row"];
+type LedgerRow = Database["public"]["Tables"]["ledger"]["Row"];
+type GroupSettlementRow = Database["public"]["Tables"]["group_settlements"]["Row"];
+type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 export async function loadGroupBillsAndLedger(groupId: string): Promise<{
   bills: Bill[];
@@ -43,7 +21,7 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     .eq("group_id", groupId)
     .neq("status", "draft");
 
-  const bills: Bill[] = (billRows ?? []).map((b: BillRow) => {
+  const bills: Bill[] = (billRows as BillRow[] ?? []).map((b) => {
     const payers: BillPayer[] = [];
     return {
       id: b.id,
@@ -55,7 +33,7 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
       serviceFeePercent: b.service_fee_percent,
       fixedFees: b.fixed_fees,
       totalAmount: b.total_amount,
-      totalAmountInput: b.total_amount_input ?? 0,
+      totalAmountInput: b.total_amount_input,
       payers,
       groupId: b.group_id ?? undefined,
       createdAt: b.created_at,
@@ -74,7 +52,7 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     .select("*")
     .in("bill_id", billIds);
 
-  const ledger: LedgerEntry[] = (ledgerRows ?? []).map((e) => ({
+  const ledger: LedgerEntry[] = (ledgerRows as LedgerRow[] ?? []).map((e) => ({
     id: e.id,
     billId: e.bill_id,
     fromUserId: e.from_user_id,
@@ -101,10 +79,10 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
       .select("*")
       .in("id", participantIds);
 
-    participants = (profiles ?? []).map((p) => ({
+    participants = (profiles as UserProfileRow[] ?? []).map((p) => ({
       id: p.id,
       email: "",
-      handle: p.handle ?? "",
+      handle: p.handle,
       name: p.name,
       pixKeyType: "email" as const,
       pixKeyHint: "",
@@ -124,7 +102,7 @@ export async function loadGroupSettlements(groupId: string): Promise<GroupSettle
     .select("*")
     .eq("group_id", groupId);
 
-  return (data ?? []).map((s: GroupSettlementRow) => ({
+  return (data as GroupSettlementRow[] ?? []).map((s) => ({
     id: s.id,
     groupId: s.group_id,
     fromUserId: s.from_user_id,

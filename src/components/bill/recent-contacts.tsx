@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import type { UserProfile } from "@/types";
+import type { Database } from "@/types/database";
+
+type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 interface RecentContactsProps {
   onSelect: (profile: UserProfile) => void;
@@ -57,7 +60,7 @@ export function RecentContacts({
       if (!profiles) return;
 
       setContacts(
-        profiles.map((p) => ({
+        (profiles as UserProfileRow[]).map((p) => ({
           id: p.id,
           handle: p.handle,
           name: p.name,
