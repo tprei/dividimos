@@ -365,6 +365,14 @@ export default function AppHome() {
           </Link>
         </div>
 
+        {loading && (
+          <div className="mt-4 space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-20 w-full rounded-2xl" />
+            ))}
+          </div>
+        )}
+
         {bills.length === 0 && !loading && (
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center">
             <Receipt className="mx-auto h-8 w-8 text-muted-foreground/50" />
@@ -379,13 +387,14 @@ export default function AppHome() {
           </div>
         )}
 
-        <motion.div
-          variants={staggerContainer}
-          initial="hidden"
-          animate="visible"
-          className="mt-4 space-y-3"
-        >
-          {bills.map((bill) => {
+        {!loading && bills.length > 0 && (
+          <motion.div
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+            className="mt-4 space-y-3"
+          >
+            {bills.map((bill) => {
             const status = statusConfig[bill.status];
             const isDraft = bill.status === "draft" && bill.creatorId === user?.id;
             return (
@@ -410,7 +419,9 @@ export default function AppHome() {
                       </div>
                       <div className="text-right">
                         <p className="font-semibold tabular-nums">
-                          {formatBRL(bill.total)}
+                          {bill.status === "draft" && bill.total === 0
+                            ? "Em criação"
+                            : formatBRL(bill.total)}
                         </p>
                         <span
                           className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
@@ -424,7 +435,8 @@ export default function AppHome() {
               </motion.div>
             );
           })}
-        </motion.div>
+          </motion.div>
+        )}
       </motion.div>
 
       <Dialog

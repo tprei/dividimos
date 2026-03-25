@@ -225,7 +225,13 @@ export function PayerStep({
                           const next = new Map(localPercentages);
                           next.set(user.id, e.target.value);
                           setLocalPercentages(next);
-                          const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
+                        }}
+                        onMouseUp={(e) => {
+                          const cents = Math.round((grandTotal * parseFloat(e.currentTarget.value)) / 100);
+                          onSetPayerAmount(user.id, cents);
+                        }}
+                        onTouchEnd={(e) => {
+                          const cents = Math.round((grandTotal * parseFloat(e.currentTarget.value)) / 100);
                           onSetPayerAmount(user.id, cents);
                         }}
                         className="mt-2 w-full"
@@ -331,6 +337,13 @@ export function PayerStep({
                       const cents = parseInt(e.target.value);
                       const formatted = (cents / 100).toFixed(2).replace(".", ",");
                       handleLocalChange(user.id, formatted);
+                    }}
+                    onMouseUp={(e) => {
+                      const cents = parseInt(e.currentTarget.value);
+                      onSetPayerAmount(user.id, cents);
+                    }}
+                    onTouchEnd={(e) => {
+                      const cents = parseInt(e.currentTarget.value);
                       onSetPayerAmount(user.id, cents);
                     }}
                     className="mt-2 w-full"
@@ -340,23 +353,25 @@ export function PayerStep({
             );
           })}</div>}
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full gap-2"
-            onClick={() => {
-              onSplitPaymentEqually(participants.map((p) => p.id));
-              const perPerson = grandTotal / participants.length;
-              const m = new Map<string, string>();
-              participants.forEach((p) =>
-                m.set(p.id, (perPerson / 100).toFixed(2).replace(".", ",")),
-              );
-              setLocalAmounts(m);
-            }}
-          >
-            <Users className="h-4 w-4" />
-            Dividiu igualmente
-          </Button>
+          {paymentInputMode === "fixed" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2"
+              onClick={() => {
+                onSplitPaymentEqually(participants.map((p) => p.id));
+                const perPerson = grandTotal / participants.length;
+                const m = new Map<string, string>();
+                participants.forEach((p) =>
+                  m.set(p.id, (perPerson / 100).toFixed(2).replace(".", ",")),
+                );
+                setLocalAmounts(m);
+              }}
+            >
+              <Users className="h-4 w-4" />
+              Dividiu igualmente
+            </Button>
+          )}
 
           <AnimatePresence>
             {Math.abs(remaining) > 1 && totalPaid > 0 && (

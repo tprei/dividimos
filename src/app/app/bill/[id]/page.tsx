@@ -345,7 +345,7 @@ export default function BillDetailPage({
   });
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
-  const [loadingFromDb, setLoadingFromDb] = useState(false);
+  const [loadingFromDb, setLoadingFromDb] = useState(true);
   const loadedBillIdRef = useRef<string | null>(null);
 
   const loadAndSetBill = useCallback(async (billId: string) => {
@@ -476,7 +476,7 @@ export default function BillDetailPage({
     );
   }
 
-  if (!bill) {
+  if (!bill || bill.id !== id) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6">
         <div className="flex items-center gap-3">

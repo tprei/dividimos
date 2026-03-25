@@ -291,6 +291,17 @@ function NewBillPageContent() {
     })();
   }, [step, searchParams, selectedGroupId, authUser, store]);
 
+  // Reset payer amounts if they're stale (e.g., when total was edited after draft loading)
+  useEffect(() => {
+    if (step !== "payer" || !store.bill) return;
+    const gt = store.getGrandTotal();
+    const paid = (store.bill.payers || []).reduce((s, p) => s + p.amountCents, 0);
+    if (gt > 0 && paid > 0 && Math.abs(gt - paid) > 1) {
+      // Payer amounts don't match the new total — reset to equal split
+      store.splitPaymentEqually(store.participants.map((p) => p.id));
+    }
+  }, [step, store]);
+
   const goNext = useCallback(async () => {
     if (step === "info") {
       if (!isEditing) {
@@ -555,6 +566,20 @@ function NewBillPageContent() {
                   onChange={(e) => setTitle(e.target.value)}
                   autoFocus
                 />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(billType === "single_amount"
+                    ? ["Airbnb", "Uber", "Assinatura", "Passagem", "Presente"]
+                    : ["Restaurante", "Bar", "Mercado", "Delivery", "Festa"]
+                  ).map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      onClick={() => setTitle(suggestion)}
+                      className="rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover:border-primary/50"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {billType === "itemized" && (
@@ -996,7 +1021,7 @@ function NewBillPageContent() {
         } else if (step === "payer") {
           const gt = store.getGrandTotal();
           const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
-          if (gt > 0 && Math.abs(gt - paid) > 1) {
+          if (paid > 0 && Math.abs(gt - paid) > 1) {
             errorMsg = `O pagamento (${formatBRL(paid)}) nao corresponde ao total (${formatBRL(gt)})`;
           }
         }

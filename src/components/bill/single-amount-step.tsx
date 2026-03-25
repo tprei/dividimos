@@ -214,11 +214,18 @@ export function SingleAmountStep({
                       value={pct}
                       onChange={(e) => {
                         handlePercentageChange(user.id, e.target.value);
+                      }}
+                      onMouseUp={() => {
                         const assignments = participants.map((p) => ({
                           userId: p.id,
-                          percentage: p.id === user.id
-                            ? parseFloat(e.target.value)
-                            : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
+                          percentage: parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
+                        }));
+                        onSplitByPercentage(assignments);
+                      }}
+                      onTouchEnd={() => {
+                        const assignments = participants.map((p) => ({
+                          userId: p.id,
+                          percentage: parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
                         }));
                         onSplitByPercentage(assignments);
                       }}
