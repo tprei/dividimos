@@ -14,7 +14,7 @@ interface SaveDraftParams {
 
 export async function saveDraftToSupabase(
   params: SaveDraftParams,
-): Promise<{ billId: string } | { error: string }> {
+): Promise<{ billId: string; warnings?: string[] } | { error: string }> {
   const supabase = createClient();
   const { bill, participants, creatorId, existingBillId, groupId } = params;
 
@@ -99,17 +99,18 @@ export async function saveDraftToSupabase(
   }
 
   // Persist child data (items, splits, payers) so drafts are fully resumable
-  await saveDraftChildData(supabase, billId!, params);
+  const warnings = await saveDraftChildData(supabase, billId!, params);
 
-  return { billId: billId! };
+  return { billId: billId!, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 async function saveDraftChildData(
   supabase: ReturnType<typeof createClient>,
   billId: string,
   params: SaveDraftParams,
-) {
+): Promise<string[]> {
   const { bill, items, splits, billSplits } = params;
+  const errors: string[] = [];
 
   // Persist payers — delete-and-reinsert for simplicity
   if (bill.payers.length > 0) {
@@ -120,7 +121,10 @@ async function saveDraftChildData(
       amount_cents: p.amountCents,
     }));
     const { error } = await supabase.from("bill_payers").insert(payerRows);
-    if (error) console.error("Failed to insert draft payers:", error);
+    if (error) {
+      console.error("Failed to insert draft payers:", error);
+      errors.push(error.message);
+    }
   }
 
   // Persist itemized bill data
@@ -143,6 +147,7 @@ async function saveDraftChildData(
 
       if (itemError || !insertedItem) {
         console.error("Failed to insert draft item:", itemError);
+        errors.push(itemError?.message ?? "Erro ao salvar item");
         continue;
       }
 
@@ -158,7 +163,10 @@ async function saveDraftChildData(
 
       if (itemSplitRows.length > 0) {
         const { error } = await supabase.from("item_splits").insert(itemSplitRows);
-        if (error) console.error("Failed to insert draft item splits:", error);
+        if (error) {
+          console.error("Failed to insert draft item splits:", error);
+          errors.push(error.message);
+        }
       }
     }
   }
@@ -174,6 +182,11 @@ async function saveDraftChildData(
       computed_amount_cents: s.computedAmountCents,
     }));
     const { error } = await supabase.from("bill_splits").insert(splitRows);
-    if (error) console.error("Failed to insert draft bill splits:", error);
+    if (error) {
+      console.error("Failed to insert draft bill splits:", error);
+      errors.push(error.message);
+    }
   }
+
+  return errors;
 }

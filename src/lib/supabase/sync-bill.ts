@@ -111,12 +111,19 @@ async function insertChildData(
 ) {
   // Clean up any existing draft child data before inserting final data
   if (cleanExisting) {
-    await Promise.all([
+    const cleanupResults = await Promise.allSettled([
       supabase.from("bill_items").delete().eq("bill_id", billId),
       supabase.from("bill_splits").delete().eq("bill_id", billId),
       supabase.from("bill_payers").delete().eq("bill_id", billId),
       supabase.from("ledger").delete().eq("bill_id", billId),
     ]);
+    for (const result of cleanupResults) {
+      if (result.status === "rejected") {
+        console.error("Failed to clean up draft child data:", result.reason);
+      } else if (result.value.error) {
+        console.error("Failed to clean up draft child data:", result.value.error);
+      }
+    }
   }
 
   if (data.bill.billType === "itemized" && data.items.length > 0) {
