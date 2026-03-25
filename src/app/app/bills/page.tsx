@@ -1,9 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Loader2, Receipt, Search, Trash2 } from "lucide-react";
+import { Loader2, Receipt, Search } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { SwipeableBillCard } from "@/components/bill/swipeable-bill-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
 import { staggerContainer, staggerItem } from "@/lib/animations";
@@ -44,6 +46,7 @@ const statusConfig: Record<BillStatus, { label: string; color: string }> = {
 type FilterType = "all" | BillStatus;
 
 export default function BillsPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
@@ -188,46 +191,40 @@ export default function BillsPage() {
       >
         {filtered.map((bill) => {
           const status = statusConfig[bill.status];
+          const isDraft = bill.status === "draft" && bill.creatorId === user?.id;
           return (
-            <motion.div key={bill.id} variants={staggerItem} className="relative">
-              <Link href={`/app/bill/${bill.id}`}>
-                <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 pr-12 transition-colors hover:border-primary/30">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
-                    <Receipt className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{bill.title}</p>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{bill.date}</span>
-                      <span>·</span>
-                      <span>{bill.participants} pessoas</span>
+            <motion.div key={bill.id} variants={staggerItem}>
+              <SwipeableBillCard
+                enabled={isDraft}
+                onEdit={() => router.push(`/app/bill/new?draft=${bill.id}`)}
+                onDelete={() => setDeleteTarget(bill.id)}
+              >
+                <Link href={`/app/bill/${bill.id}`}>
+                  <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+                      <Receipt className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{bill.title}</p>
+                      <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{bill.date}</span>
+                        <span>·</span>
+                        <span>{bill.participants} pessoas</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold tabular-nums">
+                        {formatBRL(bill.total)}
+                      </p>
+                      <span
+                        className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
+                      >
+                        {status.label}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold tabular-nums">
-                      {formatBRL(bill.total)}
-                    </p>
-                    <span
-                      className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
-                    >
-                      {status.label}
-                    </span>
-                  </div>
-                </div>
-              </Link>
-              {bill.status === "draft" && bill.creatorId === user?.id && (
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDeleteTarget(bill.id);
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive transition-colors"
-                  aria-label="Excluir rascunho"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
+                </Link>
+              </SwipeableBillCard>
             </motion.div>
           );
         })}

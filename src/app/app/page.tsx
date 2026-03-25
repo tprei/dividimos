@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Eye,
   EyeOff,
+  Loader2,
   Plus,
   Receipt,
   RefreshCw,
@@ -14,13 +15,25 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
+import { SwipeableBillCard } from "@/components/bill/swipeable-bill-card";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
 import { useBillInvites } from "@/hooks/use-bill-invites";
 import { createClient } from "@/lib/supabase/client";
+import { deleteDraftFromSupabase } from "@/lib/supabase/delete-draft";
 import { useAuth } from "@/hooks/use-auth";
 import type { BillStatus } from "@/types";
 
@@ -32,6 +45,7 @@ interface RecentBill {
   participants: number;
   status: BillStatus;
   myBalance: number;
+  creatorId: string;
 }
 
 const statusConfig: Record<BillStatus, { label: string; color: string }> = {
@@ -73,6 +87,7 @@ function getGreeting(): string {
 }
 
 export default function AppHome() {
+  const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { invites: billInvites, loading: invitesLoading } = useBillInvites();
   const [balanceVisible, setBalanceVisible] = useState(true);
@@ -81,7 +96,20 @@ export default function AppHome() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const touchStartY = useRef(0);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const result = await deleteDraftFromSupabase(deleteTarget);
+    if (!result.error) {
+      setBills((prev) => prev.filter((b) => b.id !== deleteTarget));
+    }
+    setDeleting(false);
+    setDeleteTarget(null);
+  };
 
   const fetchDashboard = useCallback(async () => {
     if (!user) return;
@@ -90,7 +118,7 @@ export default function AppHome() {
     const [billsResult, debtOwedResult, debtToMeResult] = await Promise.all([
       supabase
         .from("bills")
-        .select("id, title, status, total_amount, created_at")
+        .select("id, title, status, total_amount, created_at, creator_id")
         .order("created_at", { ascending: false })
         .limit(5),
       supabase
@@ -131,6 +159,7 @@ export default function AppHome() {
           participants: countMap.get(bill.id) ?? 0,
           status: bill.status,
           myBalance: 0,
+          creatorId: bill.creator_id,
         })),
       );
     }
@@ -358,38 +387,80 @@ export default function AppHome() {
         >
           {bills.map((bill) => {
             const status = statusConfig[bill.status];
+            const isDraft = bill.status === "draft" && bill.creatorId === user?.id;
             return (
               <motion.div key={bill.id} variants={staggerItem}>
-                <Link href={`/app/bill/${bill.id}`}>
-                  <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
-                      <Receipt className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{bill.title}</p>
-                      <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{bill.date}</span>
-                        <span>·</span>
-                        <span>{bill.participants} pessoas</span>
+                <SwipeableBillCard
+                  enabled={isDraft}
+                  onEdit={() => router.push(`/app/bill/new?draft=${bill.id}`)}
+                  onDelete={() => setDeleteTarget(bill.id)}
+                >
+                  <Link href={`/app/bill/${bill.id}`}>
+                    <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+                        <Receipt className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium">{bill.title}</p>
+                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{bill.date}</span>
+                          <span>·</span>
+                          <span>{bill.participants} pessoas</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold tabular-nums">
+                          {formatBRL(bill.total)}
+                        </p>
+                        <span
+                          className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
+                        >
+                          {status.label}
+                        </span>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold tabular-nums">
-                        {formatBRL(bill.total)}
-                      </p>
-                      <span
-                        className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
-                      >
-                        {status.label}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
+                  </Link>
+                </SwipeableBillCard>
               </motion.div>
             );
           })}
         </motion.div>
       </motion.div>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Excluir rascunho?</DialogTitle>
+            <DialogDescription>
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose
+              render={<Button variant="outline" />}
+              disabled={deleting}
+            >
+              Cancelar
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Excluir"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
