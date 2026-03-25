@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -42,6 +42,14 @@ export function PayerStep({
     return new Map();
   });
   const [localPercentages, setLocalPercentages] = useState<Map<string, string>>(new Map());
+
+  const localAmountsRef = useRef(localAmounts);
+  localAmountsRef.current = localAmounts;
+  const localPercentagesRef = useRef(localPercentages);
+  localPercentagesRef.current = localPercentages;
+
+  const onSetPayerAmountRef = useRef(onSetPayerAmount);
+  onSetPayerAmountRef.current = onSetPayerAmount;
 
   const payerMap = new Map(payers.map((p) => [p.userId, p.amountCents]));
   const totalPaid = payers.reduce((sum, p) => sum + p.amountCents, 0);
@@ -225,10 +233,19 @@ export function PayerStep({
                           const next = new Map(localPercentages);
                           next.set(user.id, e.target.value);
                           setLocalPercentages(next);
-                          const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
-                          onSetPayerAmount(user.id, cents);
+                          localPercentagesRef.current = next;
                         }}
-                        className="mt-2 w-full"
+                        onPointerUp={(e) => {
+                          const val = parseFloat((e.target as HTMLInputElement).value);
+                          const cents = Math.round((grandTotal * val) / 100);
+                          onSetPayerAmountRef.current(user.id, cents);
+                        }}
+                        onTouchEnd={(e) => {
+                          const val = parseFloat((e.target as HTMLInputElement).value);
+                          const cents = Math.round((grandTotal * val) / 100);
+                          onSetPayerAmountRef.current(user.id, cents);
+                        }}
+                        className="mt-2 w-full touch-none"
                       />
                       {showFillRemaining && (
                         <button
@@ -280,7 +297,9 @@ export function PayerStep({
             );
             const showFillRemaining = !hasValue && othersFilled && remaining > 0;
 
-            const sliderValue = storeAmount || 0;
+            const sliderValue = localVal
+              ? Math.round(parseFloat(localVal.replace(",", ".") || "0") * 100)
+              : storeAmount || 0;
 
             return (
               <div
@@ -331,9 +350,16 @@ export function PayerStep({
                       const cents = parseInt(e.target.value);
                       const formatted = (cents / 100).toFixed(2).replace(".", ",");
                       handleLocalChange(user.id, formatted);
-                      onSetPayerAmount(user.id, cents);
                     }}
-                    className="mt-2 w-full"
+                    onPointerUp={(e) => {
+                      const cents = parseInt((e.target as HTMLInputElement).value);
+                      onSetPayerAmountRef.current(user.id, cents);
+                    }}
+                    onTouchEnd={(e) => {
+                      const cents = parseInt((e.target as HTMLInputElement).value);
+                      onSetPayerAmountRef.current(user.id, cents);
+                    }}
+                    className="mt-2 w-full touch-none"
                   />
                 )}
               </div>

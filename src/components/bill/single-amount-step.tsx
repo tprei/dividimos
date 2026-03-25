@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Equal, Hash, Percent, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -63,29 +63,46 @@ export function SingleAmountStep({
     if (method === "equal") {
       onSplitEquallyRef.current(participants.map((p) => p.id));
     } else if (method === "percentage") {
+      const current = percentagesRef.current;
       const assignments = participants.map((p) => ({
         userId: p.id,
-        percentage: parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
+        percentage: parseFloat(current.get(p.id)?.replace(",", ".") || "0"),
       }));
       onSplitByPercentageRef.current(assignments);
     } else if (method === "fixed") {
+      const current = fixedAmountsRef.current;
       const assignments = participants.map((p) => ({
         userId: p.id,
         amountCents: Math.round(
-          parseFloat(fixedAmounts.get(p.id)?.replace(",", ".") || "0") * 100,
+          parseFloat(current.get(p.id)?.replace(",", ".") || "0") * 100,
         ),
       }));
       onSplitByFixedRef.current(assignments);
     }
-  }, [method, totalCents, participants, percentages, fixedAmounts]);
+  }, [method, totalCents, participants]);
 
   const perPerson = participants.length > 0 ? totalCents / participants.length : 0;
+
+  const percentagesRef = useRef(percentages);
+  percentagesRef.current = percentages;
+  const fixedAmountsRef = useRef(fixedAmounts);
+  fixedAmountsRef.current = fixedAmounts;
 
   const handlePercentageChange = (userId: string, val: string) => {
     const next = new Map(percentages);
     next.set(userId, val);
     setPercentages(next);
+    percentagesRef.current = next;
   };
+
+  const commitPercentages = useCallback(() => {
+    const current = percentagesRef.current;
+    const assignments = participants.map((p) => ({
+      userId: p.id,
+      percentage: parseFloat(current.get(p.id)?.replace(",", ".") || "0"),
+    }));
+    onSplitByPercentageRef.current(assignments);
+  }, [participants]);
 
   const handleFixedChange = (userId: string, val: string) => {
     const next = new Map(fixedAmounts);
@@ -214,15 +231,10 @@ export function SingleAmountStep({
                       value={pct}
                       onChange={(e) => {
                         handlePercentageChange(user.id, e.target.value);
-                        const assignments = participants.map((p) => ({
-                          userId: p.id,
-                          percentage: p.id === user.id
-                            ? parseFloat(e.target.value)
-                            : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
-                        }));
-                        onSplitByPercentage(assignments);
                       }}
-                      className="mt-2 w-full"
+                      onPointerUp={commitPercentages}
+                      onTouchEnd={commitPercentages}
+                      className="mt-2 w-full touch-none"
                     />
                     {showFillRemaining && (
                       <button
