@@ -135,6 +135,7 @@ function buildDemoData() {
       fromUserId: debtors[di].id,
       toUserId: creditors[ci].id,
       amountCents: transfer,
+      paidAmountCents: 0,
       status: "pending",
       createdAt: now,
     });

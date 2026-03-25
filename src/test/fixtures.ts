@@ -89,6 +89,7 @@ export function makeLedgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEnt
     fromUserId: "user-bob",
     toUserId: "user-alice",
     amountCents: 5000,
+    paidAmountCents: 0,
     status: "pending",
     createdAt: "2024-01-01T00:00:00Z",
     ...overrides,
