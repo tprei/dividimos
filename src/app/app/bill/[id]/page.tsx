@@ -11,6 +11,7 @@ import {
   Pencil,
   QrCode,
   Receipt,
+  Trash2,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,6 +39,7 @@ import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
 import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
+import { deleteDraftFromSupabase } from "@/lib/supabase/delete-draft";
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
@@ -158,8 +160,11 @@ function CreatorDraftView({
   billSplits: ReturnType<typeof useBillStore.getState>["billSplits"];
   store: ReturnType<typeof useBillStore.getState>;
 }) {
+  const router = useRouter();
   const [draftAllAccepted, setDraftAllAccepted] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const isGroupBill = !!bill.groupId;
   const canFinalize = isGroupBill || draftAllAccepted;
@@ -209,6 +214,23 @@ function CreatorDraftView({
       console.error("Finalize failed:", result.error);
     }
     setFinalizing(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setDeleting(true);
+    const result = await deleteDraftFromSupabase(bill.id);
+    if (result.success) {
+      store.reset();
+      router.push("/app");
+    } else {
+      console.error("Delete failed:", result.error);
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   return (
@@ -310,6 +332,27 @@ function CreatorDraftView({
             Editar rascunho
           </Button>
         </Link>
+        <Button
+          variant="ghost"
+          className={`w-full gap-2 ${confirmDelete ? "text-destructive hover:text-destructive hover:bg-destructive/10" : "text-muted-foreground"}`}
+          onClick={handleDelete}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+          {confirmDelete ? "Confirmar exclusao" : "Excluir rascunho"}
+        </Button>
+        {confirmDelete && !deleting && (
+          <button
+            onClick={() => setConfirmDelete(false)}
+            className="text-xs text-center text-muted-foreground hover:underline w-full"
+          >
+            Cancelar
+          </button>
+        )}
       </motion.div>
     </div>
   );
