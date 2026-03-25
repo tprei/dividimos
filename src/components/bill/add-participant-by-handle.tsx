@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile } from "@/types";
+import type { Database } from "@/types/database";
+
+type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 interface AddParticipantByHandleProps {
   onAdd: (profile: UserProfile) => void;
@@ -39,16 +42,18 @@ export function AddParticipantByHandle({
 
     setLoading(false);
 
-    if (!data) {
+    const profile = data as UserProfileRow | null;
+
+    if (!profile) {
       setResult("not_found");
       return;
     }
 
     setResult({
-      id: data.id,
-      handle: data.handle,
-      name: data.name,
-      avatarUrl: data.avatar_url ?? undefined,
+      id: profile.id,
+      handle: profile.handle,
+      name: profile.name,
+      avatarUrl: profile.avatar_url ?? undefined,
     });
   }
 

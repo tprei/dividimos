@@ -1,5 +1,10 @@
 import { createClient } from "@/lib/supabase/client";
+import type { Database } from "@/types/database";
 import type { Bill, BillItem, BillSplit, ItemSplit, User } from "@/types";
+
+type BillInsert = Database["public"]["Tables"]["bills"]["Insert"];
+type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
+type BillParticipantInsert = Database["public"]["Tables"]["bill_participants"]["Insert"];
 
 interface SaveDraftParams {
   bill: Bill;
@@ -21,7 +26,7 @@ export async function saveDraftToSupabase(
   let billId = existingBillId;
 
   if (billId) {
-    const updatePayload: Record<string, unknown> = {
+    const updatePayload: BillUpdate = {
       title: bill.title,
       merchant_name: bill.merchantName || null,
       service_fee_percent: bill.serviceFeePercent,
@@ -29,12 +34,12 @@ export async function saveDraftToSupabase(
       total_amount: bill.totalAmount,
       bill_type: bill.billType,
       total_amount_input: bill.totalAmountInput,
+      group_id: groupId,
     };
-    if (groupId) updatePayload.group_id = groupId;
 
     const { error } = await supabase
       .from("bills")
-      .update(updatePayload as Record<string, unknown>)
+      .update(updatePayload)
       .eq("id", billId);
 
     if (error) {
@@ -42,7 +47,7 @@ export async function saveDraftToSupabase(
       return { error: error.message };
     }
   } else {
-    const insertPayload: Record<string, unknown> = {
+    const insertPayload: BillInsert = {
       creator_id: creatorId,
       title: bill.title,
       merchant_name: bill.merchantName || null,
@@ -52,12 +57,12 @@ export async function saveDraftToSupabase(
       total_amount: bill.totalAmount,
       bill_type: bill.billType,
       total_amount_input: bill.totalAmountInput,
+      group_id: groupId,
     };
-    if (groupId) insertPayload.group_id = groupId;
 
     const { data: inserted, error } = await supabase
       .from("bills")
-      .insert(insertPayload as Record<string, unknown>)
+      .insert(insertPayload)
       .select("id")
       .single();
 
@@ -87,11 +92,11 @@ export async function saveDraftToSupabase(
 
   const toAdd = participants.filter((p) => !existingIds.has(p.id));
   if (toAdd.length > 0) {
-    const rows = toAdd.map((p) => ({
+    const rows: BillParticipantInsert[] = toAdd.map((p) => ({
       bill_id: billId!,
       user_id: p.id,
       // Group bills: all participants auto-accepted (no confirmation needed)
-      status: (groupId || p.id === creatorId) ? "accepted" : "invited",
+      status: (groupId || p.id === creatorId) ? "accepted" as const : "invited" as const,
       invited_by: p.id === creatorId ? null : creatorId,
     }));
     const { error } = await supabase.from("bill_participants").insert(rows);

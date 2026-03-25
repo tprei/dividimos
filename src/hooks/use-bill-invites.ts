@@ -26,7 +26,7 @@ async function loadInvites(userId: string): Promise<BillInvite[]> {
   }
 
   const billIds = pending.map((p) => p.bill_id);
-  const inviterIds = [...new Set(pending.map((p) => p.invited_by).filter(Boolean))];
+  const inviterIds = [...new Set(pending.map((p) => p.invited_by).filter((id): id is string => Boolean(id)))];
 
   const { data: bills } = await supabase
     .from("bills")
@@ -38,7 +38,7 @@ async function loadInvites(userId: string): Promise<BillInvite[]> {
     : { data: [] };
 
   const billMap = new Map((bills ?? []).map((b) => [b.id, b]));
-  const inviterMap = new Map((inviters ?? []).map((i) => [i.id, i.name]));
+  const inviterMap = new Map((inviters ?? []).map((i) => [(i as { id: string; name: string }).id, (i as { id: string; name: string }).name]));
 
   return pending.map((p) => {
     const bill = billMap.get(p.bill_id);
@@ -46,7 +46,7 @@ async function loadInvites(userId: string): Promise<BillInvite[]> {
       billId: p.bill_id,
       billTitle: bill?.title ?? "",
       totalAmount: bill?.total_amount ?? 0,
-      invitedByName: inviterMap.get(p.invited_by) ?? "",
+      invitedByName: (p.invited_by ? inviterMap.get(p.invited_by) : undefined) ?? "",
       createdAt: p.joined_at,
     };
   });

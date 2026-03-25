@@ -179,6 +179,7 @@ export async function POST(request: Request) {
             id: userId,
             name: profileName || "",
             handle: profileHandle || userId.slice(0, 8),
+            pix_key_encrypted: "",
             onboarded: true,
           });
 
