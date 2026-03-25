@@ -94,6 +94,7 @@ export default function AppHome() {
   const [bills, setBills] = useState<RecentBill[]>([]);
   const [netBalance, setNetBalance] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [billsLoaded, setBillsLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -169,6 +170,7 @@ export default function AppHome() {
     setNetBalance(theyOweMe - iOwe);
 
     setLoading(false);
+    setBillsLoaded(true);
   }, [user]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -338,7 +340,7 @@ export default function AppHome() {
                   <div>
                     <p className="font-medium">{invite.billTitle}</p>
                     <p className="text-xs text-muted-foreground">
-                      Convidado por {invite.invitedByName} · {formatBRL(invite.totalAmount)}
+                      Convidado por {invite.invitedByName} · {invite.totalAmount > 0 ? formatBRL(invite.totalAmount) : "Em criação"}
                     </p>
                   </div>
                   <Button size="sm" className="shrink-0">Ver</Button>
@@ -365,7 +367,13 @@ export default function AppHome() {
           </Link>
         </div>
 
-        {bills.length === 0 && !loading && (
+        {!billsLoaded && (
+          <div className="mt-6 flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {billsLoaded && bills.length === 0 && (
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center">
             <Receipt className="mx-auto h-8 w-8 text-muted-foreground/50" />
             <p className="mt-2 text-sm text-muted-foreground">
@@ -410,7 +418,7 @@ export default function AppHome() {
                       </div>
                       <div className="text-right">
                         <p className="font-semibold tabular-nums">
-                          {formatBRL(bill.total)}
+                          {bill.total > 0 ? formatBRL(bill.total) : bill.status === "draft" ? "Em criação" : formatBRL(bill.total)}
                         </p>
                         <span
                           className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
