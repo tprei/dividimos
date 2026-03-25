@@ -44,8 +44,7 @@ test.describe("Settlement Flow", () => {
         // Toggle simplification
         await simplifyToggle.click();
 
-        // Verify simplified view shows fewer entries
-        await page.waitForTimeout(500);
+        await page.waitForLoadState("networkidle");
       }
     } else {
       // No bills exist yet - skip test gracefully
@@ -141,9 +140,6 @@ test.describe("Settlement - Multi-user acceptance", () => {
 
       if (await pendingInvite.isVisible()) {
         await pendingInvite.click();
-
-        // Verify acceptance was processed
-        await bobPage.waitForTimeout(500);
 
         // Status should change to "accepted"
         await expect(bobPage.getByText(/aceito|confirmado/i)).toBeVisible();

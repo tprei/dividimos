@@ -26,6 +26,8 @@ test.describe("Group Invite Flow", () => {
     const bobPage = await bobContext.newPage();
 
     try {
+      const testGroupName = `Jantar Mensal ${Date.now()}`;
+
       // === ALICE: Create group ===
       await alicePage.goto("/app/groups");
       await alicePage.waitForLoadState("networkidle");
@@ -34,7 +36,7 @@ test.describe("Group Invite Flow", () => {
       await alicePage.getByRole("button", { name: /novo grupo/i }).click();
 
       // Enter group name
-      await alicePage.getByLabel(/nome do grupo/i).fill("Jantar Mensal");
+      await alicePage.getByLabel(/nome do grupo/i).fill(testGroupName);
 
       // Create group
       await alicePage.getByRole("button", { name: /criar|salvar/i }).click();
@@ -59,7 +61,7 @@ test.describe("Group Invite Flow", () => {
       await bobPage.waitForLoadState("networkidle");
 
       // Bob should see the pending invite
-      const inviteCard = bobPage.getByText("Jantar Mensal");
+      const inviteCard = bobPage.getByText(testGroupName);
 
       // If invite is visible, accept it
       if (await inviteCard.isVisible()) {
@@ -68,8 +70,7 @@ test.describe("Group Invite Flow", () => {
         if (await acceptButton.isVisible()) {
           await acceptButton.click();
 
-          // Wait for acceptance
-          await bobPage.waitForTimeout(1000);
+          await expect(bobPage.getByRole("button", { name: /aceitar/i })).not.toBeVisible();
         }
       }
 
@@ -83,14 +84,14 @@ test.describe("Group Invite Flow", () => {
       await alicePage.goto("/app/groups");
 
       // Click on the group to see members
-      await alicePage.getByText("Jantar Mensal").click();
+      await alicePage.getByText(testGroupName).click();
 
       // Verify Bob is listed as member
       await expect(alicePage.getByText(/bob/i)).toBeVisible();
 
       // Bob should also see the group as accepted
       await bobPage.goto("/app/groups");
-      await expect(bobPage.getByText("Jantar Mensal")).toBeVisible();
+      await expect(bobPage.getByText(testGroupName)).toBeVisible();
     } finally {
       await aliceContext.close();
       await bobContext.close();
@@ -176,10 +177,12 @@ test.describe("Group Invite Flow", () => {
     const carolPage = await carolContext.newPage();
 
     try {
+      const testGroupName2 = `Grupo Teste ${Date.now()}`;
+
       // Alice creates a group
       await alicePage.goto("/app/groups");
       await alicePage.getByRole("button", { name: /novo grupo/i }).click();
-      await alicePage.getByLabel(/nome do grupo/i).fill("Grupo Teste");
+      await alicePage.getByLabel(/nome do grupo/i).fill(testGroupName2);
       await alicePage.getByRole("button", { name: /criar/i }).click();
 
       // Invite Carol
@@ -197,8 +200,7 @@ test.describe("Group Invite Flow", () => {
         await declineButton.click();
 
         // Verify invite is removed
-        await carolPage.waitForTimeout(500);
-        await expect(carolPage.getByText("Grupo Teste")).not.toBeVisible();
+        await expect(carolPage.getByText(testGroupName2)).not.toBeVisible();
       }
     } finally {
       await aliceContext.close();

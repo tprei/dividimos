@@ -25,6 +25,8 @@ test.describe("Bill Creation Flow", () => {
   });
 
   test("creates single-amount bill with two participants", async ({ page, browser }) => {
+    const billTitle = `Conta do almoco ${Date.now()}`;
+
     // Navigate to new bill
     await page.goto("/app/bill/new");
 
@@ -38,7 +40,7 @@ test.describe("Bill Creation Flow", () => {
     await expect(page.getByLabel(/nome da conta/i)).toBeVisible();
 
     // Enter bill title
-    await page.getByLabel(/nome da conta/i).fill("Conta do almoco");
+    await page.getByLabel(/nome da conta/i).fill(billTitle);
 
     // Continue to participants step
     await page.getByRole("button", { name: /proximo/i }).click();
@@ -82,7 +84,7 @@ test.describe("Bill Creation Flow", () => {
     await expect(page.getByText(/resumo/i)).toBeVisible();
 
     // Verify bill title is shown
-    await expect(page.getByText("Conta do almoco")).toBeVisible();
+    await expect(page.getByText(billTitle)).toBeVisible();
 
     // Note: Final "Gerar cobrancas Pix" button is disabled until Bob accepts
     // This is expected behavior for non-group bills
