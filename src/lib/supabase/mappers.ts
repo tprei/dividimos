@@ -11,7 +11,7 @@ import type {
   User,
 } from "@/types";
 import type { Database } from "@/types/database";
-import { coerceBillType, coerceSplitType } from "@/lib/type-guards";
+import { coerceBillType, coerceSplitType, coerceDebtStatus } from "@/lib/type-guards";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
 type BillItemRow = Database["public"]["Tables"]["bill_items"]["Row"];
@@ -86,7 +86,7 @@ export function ledgerRowToLedgerEntry(row: LedgerRow): LedgerEntry {
     fromUserId: row.from_user_id,
     toUserId: row.to_user_id,
     amountCents: row.amount_cents,
-    status: row.status,
+    status: coerceDebtStatus(row.status, "pending"),
     paidAt: row.paid_at ?? undefined,
     confirmedAt: row.confirmed_at ?? undefined,
     createdAt: row.created_at,
