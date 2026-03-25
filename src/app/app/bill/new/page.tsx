@@ -563,7 +563,7 @@ function NewBillPageContent() {
                     <button
                       key={suggestion}
                       type="button"
-                      className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-700"
+                      className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
                       onClick={() => setTitle(suggestion)}
                     >
                       {suggestion}
