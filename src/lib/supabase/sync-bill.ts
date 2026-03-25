@@ -21,7 +21,10 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { error: "Nao autenticado" };
+  if (!user) {
+    logError(logger, "User not authenticated", { operation: "syncBillToSupabase" });
+    return { error: "Nao autenticado" };
+  }
 
   let billId: string;
 
@@ -62,7 +65,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       .eq("id", billId);
 
     if (updateError) {
-      console.error("Failed to update bill:", updateError);
+      logError(logger, "Failed to update bill", { billId, error: updateError, operation: "updateBill" });
       return { error: updateError.message };
     }
 
@@ -85,7 +88,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       .single();
 
     if (billError || !inserted) {
-      console.error("Failed to insert bill:", billError);
+      logError(logger, "Failed to insert bill", { error: billError, operation: "insertBill" });
       return { error: billError?.message ?? "Erro ao salvar conta" };
     }
     billId = inserted.id;
@@ -97,7 +100,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     }));
     if (participantRows.length > 0) {
       const { error } = await supabase.from("bill_participants").insert(participantRows);
-      if (error) console.error("Failed to insert participants:", error);
+      if (error) logError(logger, "Failed to insert participants", { billId, error, operation: "insertParticipants" });
     }
   }
 
@@ -122,9 +125,17 @@ async function insertChildData(
     ]);
     for (const result of cleanupResults) {
       if (result.status === "rejected") {
-        console.error("Failed to clean up draft child data:", result.reason);
+        logError(logger, "Failed to clean up draft child data (rejected)", {
+          billId,
+          reason: result.reason,
+          operation: "cleanupChildData",
+        });
       } else if (result.value.error) {
-        console.error("Failed to clean up draft child data:", result.value.error);
+        logError(logger, "Failed to clean up draft child data", {
+          billId,
+          error: result.value.error,
+          operation: "cleanupChildData",
+        });
       }
     }
   }
@@ -144,7 +155,12 @@ async function insertChildData(
         .single();
 
       if (itemError || !insertedItem) {
-        console.error("Failed to insert item:", itemError);
+        logError(logger, "Failed to insert item", {
+          billId,
+          itemDescription: item.description,
+          error: itemError,
+          operation: "insertItem",
+        });
         continue;
       }
 
@@ -160,7 +176,7 @@ async function insertChildData(
 
       if (itemSplits.length > 0) {
         const { error } = await supabase.from("item_splits").insert(itemSplits);
-        if (error) console.error("Failed to insert item splits:", error);
+        if (error) logError(logger, "Failed to insert item splits", { billId, itemId: insertedItem.id, error, operation: "insertItemSplits" });
       }
     }
   }
@@ -174,7 +190,7 @@ async function insertChildData(
       computed_amount_cents: s.computedAmountCents,
     }));
     const { error } = await supabase.from("bill_splits").insert(splitRows);
-    if (error) console.error("Failed to insert bill splits:", error);
+    if (error) logError(logger, "Failed to insert bill splits", { billId, error, operation: "insertBillSplits" });
   }
 
   if (data.bill.payers.length > 0) {
@@ -184,7 +200,7 @@ async function insertChildData(
       amount_cents: p.amountCents,
     }));
     const { error } = await supabase.from("bill_payers").insert(payerRows);
-    if (error) console.error("Failed to insert payers:", error);
+    if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
   }
 
   if (data.ledger.length > 0) {
@@ -196,6 +212,6 @@ async function insertChildData(
       status: e.status,
     }));
     const { error } = await supabase.from("ledger").insert(ledgerRows);
-    if (error) console.error("Failed to insert ledger:", error);
+    if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
   }
 }
