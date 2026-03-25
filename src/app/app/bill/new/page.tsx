@@ -555,6 +555,21 @@ function NewBillPageContent() {
                   onChange={(e) => setTitle(e.target.value)}
                   autoFocus
                 />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(billType === "single_amount"
+                    ? ["Airbnb", "Uber", "Presente", "Mercado", "Aluguel"]
+                    : ["Bar", "Restaurante", "Churrasco", "Pizza", "Lanchonete"]
+                  ).map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      className="rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-700"
+                      onClick={() => setTitle(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {billType === "itemized" && (
