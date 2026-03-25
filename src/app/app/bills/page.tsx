@@ -1,16 +1,26 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Receipt, Search } from "lucide-react";
+import { Loader2, Receipt, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
+import { deleteDraftFromSupabase } from "@/lib/supabase/delete-draft";
 import { useAuth } from "@/hooks/use-auth";
 import type { BillStatus } from "@/types";
 
@@ -21,6 +31,7 @@ interface BillEntry {
   total: number;
   participants: number;
   status: BillStatus;
+  creatorId: string;
 }
 
 const statusConfig: Record<BillStatus, { label: string; color: string }> = {
@@ -38,6 +49,8 @@ export default function BillsPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [bills, setBills] = useState<BillEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -46,7 +59,7 @@ export default function BillsPage() {
     (async () => {
       const { data } = await supabase
         .from("bills")
-        .select("id, title, status, total_amount, created_at")
+        .select("id, title, status, total_amount, created_at, creator_id")
         .order("created_at", { ascending: false });
 
       if (data && data.length > 0) {
@@ -73,12 +86,24 @@ export default function BillsPage() {
             total: bill.total_amount,
             participants: countMap.get(bill.id) ?? 0,
             status: bill.status,
+            creatorId: bill.creator_id,
           })),
         );
       }
       setLoading(false);
     })();
   }, [user]);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const result = await deleteDraftFromSupabase(deleteTarget);
+    if (!result.error) {
+      setBills((prev) => prev.filter((b) => b.id !== deleteTarget));
+    }
+    setDeleting(false);
+    setDeleteTarget(null);
+  };
 
   const filtered = bills.filter((bill) => {
     const matchesSearch = bill.title
@@ -164,9 +189,9 @@ export default function BillsPage() {
         {filtered.map((bill) => {
           const status = statusConfig[bill.status];
           return (
-            <motion.div key={bill.id} variants={staggerItem}>
+            <motion.div key={bill.id} variants={staggerItem} className="relative">
               <Link href={`/app/bill/${bill.id}`}>
-                <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
+                <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 pr-12 transition-colors hover:border-primary/30">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
                     <Receipt className="h-5 w-5 text-muted-foreground" />
                   </div>
@@ -190,6 +215,19 @@ export default function BillsPage() {
                   </div>
                 </div>
               </Link>
+              {bill.status === "draft" && bill.creatorId === user?.id && (
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDeleteTarget(bill.id);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive transition-colors"
+                  aria-label="Excluir rascunho"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </motion.div>
           );
         })}
@@ -208,6 +246,41 @@ export default function BillsPage() {
           />
         )}
       </motion.div>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Excluir rascunho?</DialogTitle>
+            <DialogDescription>
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose
+              render={<Button variant="outline" />}
+              disabled={deleting}
+            >
+              Cancelar
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Excluir"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
