@@ -32,6 +32,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
 import { saveDraftToSupabase } from "@/lib/supabase/save-draft";
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
@@ -89,6 +90,9 @@ function NewBillPageContent() {
   const [navigating, setNavigating] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraftId, setEditDraftId] = useState<string | null>(null);
+  const editLoadedRef = useRef(false);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -101,6 +105,81 @@ function NewBillPageContent() {
     setBillType(type);
     setStep("info");
   };
+
+  // Load draft for editing when ?draft=<id> is present
+  useEffect(() => {
+    const draftId = searchParams.get("draft");
+    if (!draftId || !authUser || editLoadedRef.current) return;
+
+    // If store already has this draft loaded, just restore local state
+    const storeState = useBillStore.getState();
+    if (storeState.bill?.id === draftId) {
+      editLoadedRef.current = true;
+      setIsEditing(true);
+      setEditDraftId(draftId);
+      setBillType(storeState.bill.billType);
+      setTitle(storeState.bill.title);
+      setMerchantName(storeState.bill.merchantName ?? "");
+      setServiceFee(String(storeState.bill.serviceFeePercent || 10));
+      setFixedFees(storeState.bill.fixedFees ? String(storeState.bill.fixedFees / 100) : "");
+      setRemoteBillId(draftId);
+      setStep("participants");
+      return;
+    }
+
+    (async () => {
+      const loaded = await loadBillFromSupabase(draftId);
+      if (!loaded || editLoadedRef.current) return;
+      editLoadedRef.current = true;
+
+      const { bill, participants, items, splits, billSplits } = loaded;
+
+      // Restore store state
+      store.setCurrentUser(authUser);
+      useBillStore.setState({
+        bill,
+        participants,
+        items,
+        splits,
+        billSplits,
+        ledger: [],
+      });
+
+      // Restore local form state
+      setIsEditing(true);
+      setEditDraftId(draftId);
+      setBillType(bill.billType);
+      setTitle(bill.title);
+      setMerchantName(bill.merchantName ?? "");
+      setServiceFee(String(bill.serviceFeePercent || 10));
+      setFixedFees(bill.fixedFees ? String(bill.fixedFees / 100) : "");
+      setRemoteBillId(draftId);
+
+      if (bill.groupId) {
+        setSelectedGroupId(bill.groupId);
+        const supabase = createClient();
+        const { data: group } = await supabase
+          .from("groups")
+          .select("name")
+          .eq("id", bill.groupId)
+          .single();
+        if (group) setSelectedGroupName(group.name);
+      }
+
+      // Determine starting step based on what data exists
+      if (bill.payers.length > 0) {
+        setStep("payer");
+      } else if (bill.billType === "itemized" && splits.length > 0) {
+        setStep("split");
+      } else if (bill.billType === "itemized" && items.length > 0) {
+        setStep("items");
+      } else if (bill.billType === "single_amount" && billSplits.length > 0) {
+        setStep("amount-split");
+      } else {
+        setStep("participants");
+      }
+    })();
+  }, [searchParams, authUser, store]);
 
   const initBill = useCallback(() => {
     if (!billType || !authUser) return;
@@ -214,7 +293,18 @@ function NewBillPageContent() {
 
   const goNext = useCallback(async () => {
     if (step === "info") {
-      initBill();
+      if (!isEditing) {
+        initBill();
+      } else {
+        store.updateBill({
+          title: title || "Nova conta",
+          merchantName: merchantName || undefined,
+          serviceFeePercent: billType === "itemized" ? parseFloat(serviceFee) || 0 : 0,
+          fixedFees: billType === "itemized"
+            ? Math.round((parseFloat(fixedFees.replace(",", ".")) || 0) * 100)
+            : 0,
+        });
+      }
     }
     if (step === "participants" && authUser) {
       const state = useBillStore.getState();
@@ -277,7 +367,7 @@ function NewBillPageContent() {
     }
     const next = steps[stepIndex + 1];
     if (next) setStep(next.key);
-  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill]);
+  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees]);
 
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
@@ -316,6 +406,10 @@ function NewBillPageContent() {
 
   const goBack = () => {
     if (stepIndex === 0) {
+      if (isEditing && editDraftId) {
+        router.push(`/app/bill/${editDraftId}`);
+        return;
+      }
       setStep("type");
       setBillType(null);
       return;
@@ -364,7 +458,14 @@ function NewBillPageContent() {
           </button>
         ) : !isTypeStep ? (
           <button
-            onClick={() => { setStep("type"); setBillType(null); }}
+            onClick={() => {
+              if (isEditing && editDraftId) {
+                router.push(`/app/bill/${editDraftId}`);
+              } else {
+                setStep("type");
+                setBillType(null);
+              }
+            }}
             className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -378,7 +479,7 @@ function NewBillPageContent() {
           </Link>
         )}
         <div className="flex-1">
-          <h1 className="font-semibold">Nova conta</h1>
+          <h1 className="font-semibold">{isEditing ? "Editar rascunho" : "Nova conta"}</h1>
           {!isTypeStep && (
             <p className="text-xs text-muted-foreground">
               Passo {stepIndex + 1} de {steps.length}

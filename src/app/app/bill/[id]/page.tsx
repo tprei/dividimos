@@ -8,6 +8,7 @@ import {
   CheckCheck,
   Clock,
   Loader2,
+  Pencil,
   QrCode,
   Receipt,
   Users,
@@ -303,6 +304,12 @@ function CreatorDraftView({
             Aguardando todos os participantes aceitarem o convite para finalizar.
           </p>
         )}
+        <Link href={`/app/bill/new?draft=${bill.id}`}>
+          <Button variant="outline" className="w-full gap-2">
+            <Pencil className="h-4 w-4" />
+            Editar rascunho
+          </Button>
+        </Link>
       </motion.div>
     </div>
   );
