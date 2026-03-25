@@ -345,7 +345,7 @@ export default function BillDetailPage({
   });
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
-  const [loadingFromDb, setLoadingFromDb] = useState(false);
+  const [loadingFromDb, setLoadingFromDb] = useState(id !== "demo");
   const loadedBillIdRef = useRef<string | null>(null);
 
   const loadAndSetBill = useCallback(async (billId: string) => {
@@ -464,7 +464,7 @@ export default function BillDetailPage({
     return simplifyDebts(rawEdges, participants);
   }, [bill, participants, splits, billSplits, items]);
 
-  if (loadingFromDb) {
+  if (loadingFromDb || (bill && bill.id !== id && id !== "demo")) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6 space-y-4">
         <Skeleton className="h-8 w-48" />

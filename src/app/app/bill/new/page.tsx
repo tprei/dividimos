@@ -366,7 +366,18 @@ function NewBillPageContent() {
       return;
     }
     const next = steps[stepIndex + 1];
-    if (next) setStep(next.key);
+    if (next) {
+      // Reset stale payer amounts when entering the payer step if the total changed
+      if (next.key === "payer") {
+        const currentPayers = useBillStore.getState().bill?.payers || [];
+        const gt = store.getGrandTotal();
+        const totalPaid = currentPayers.reduce((s, p) => s + p.amountCents, 0);
+        if (currentPayers.length > 0 && gt > 0 && Math.abs(gt - totalPaid) > 1) {
+          store.splitPaymentEqually(store.participants.map((p) => p.id));
+        }
+      }
+      setStep(next.key);
+    }
   }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees]);
 
   const isNextDisabled = useCallback(() => {
@@ -996,7 +1007,7 @@ function NewBillPageContent() {
         } else if (step === "payer") {
           const gt = store.getGrandTotal();
           const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
-          if (gt > 0 && Math.abs(gt - paid) > 1) {
+          if (paid > 0 && gt > 0 && Math.abs(gt - paid) > 1) {
             errorMsg = `O pagamento (${formatBRL(paid)}) nao corresponde ao total (${formatBRL(gt)})`;
           }
         }

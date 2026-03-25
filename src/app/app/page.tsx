@@ -410,7 +410,9 @@ export default function AppHome() {
                       </div>
                       <div className="text-right">
                         <p className="font-semibold tabular-nums">
-                          {formatBRL(bill.total)}
+                          {bill.status === "draft" && bill.total === 0
+                            ? "Em criação"
+                            : formatBRL(bill.total)}
                         </p>
                         <span
                           className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
