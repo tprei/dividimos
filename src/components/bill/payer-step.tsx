@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
-import { useState } from "react";
+import { startTransition, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -226,7 +226,9 @@ export function PayerStep({
                           next.set(user.id, e.target.value);
                           setLocalPercentages(next);
                           const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
-                          onSetPayerAmount(user.id, cents);
+                          startTransition(() => {
+                            onSetPayerAmount(user.id, cents);
+                          });
                         }}
                         className="mt-2 w-full"
                       />
@@ -331,7 +333,9 @@ export function PayerStep({
                       const cents = parseInt(e.target.value);
                       const formatted = (cents / 100).toFixed(2).replace(".", ",");
                       handleLocalChange(user.id, formatted);
-                      onSetPayerAmount(user.id, cents);
+                      startTransition(() => {
+                        onSetPayerAmount(user.id, cents);
+                      });
                     }}
                     className="mt-2 w-full"
                   />
