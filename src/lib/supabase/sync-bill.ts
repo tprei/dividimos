@@ -1,8 +1,9 @@
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database";
 import type { Bill, BillItem, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
+import { createLogger, logError } from "@/lib/logger";
 
-type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
+const logger = createLogger("sync-bill");
 
 type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
 

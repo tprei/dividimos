@@ -1,4 +1,4 @@
-import type { Bill, BillItem, BillPayer, BillSplit, BillStatus, BillType, BillParticipantStatus, DebtStatus, GroupMemberStatus, ItemSplit, LedgerEntry, PixKeyType, SplitType, User } from "@/types";
+import type { Bill, BillItem, BillPayer, BillSplit, BillType, DebtStatus, ItemSplit, LedgerEntry, SplitType, User } from "@/types";
 import type { Database } from "@/types/database";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
