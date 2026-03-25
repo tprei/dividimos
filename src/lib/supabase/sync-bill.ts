@@ -42,7 +42,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     // Insert all child data BEFORE updating bill status.
     // The status update triggers a realtime event — if child rows
     // aren't in place yet, the invitee's page reloads with empty data.
-    await insertChildData(supabase, billId, data);
+    await insertChildData(supabase, billId, data, { cleanExisting: true });
 
     const syncUpdatePayload: Record<string, unknown> = {
       status: data.bill.status === "settled" ? "settled" : "active",
@@ -107,7 +107,25 @@ async function insertChildData(
   supabase: ReturnType<typeof createClient>,
   billId: string,
   data: BillData,
+  { cleanExisting = false }: { cleanExisting?: boolean } = {},
 ) {
+  // Clean up any existing draft child data before inserting final data
+  if (cleanExisting) {
+    const cleanupResults = await Promise.allSettled([
+      supabase.from("bill_items").delete().eq("bill_id", billId),
+      supabase.from("bill_splits").delete().eq("bill_id", billId),
+      supabase.from("bill_payers").delete().eq("bill_id", billId),
+      supabase.from("ledger").delete().eq("bill_id", billId),
+    ]);
+    for (const result of cleanupResults) {
+      if (result.status === "rejected") {
+        console.error("Failed to clean up draft child data:", result.reason);
+      } else if (result.value.error) {
+        console.error("Failed to clean up draft child data:", result.value.error);
+      }
+    }
+  }
+
   if (data.bill.billType === "itemized" && data.items.length > 0) {
     for (const item of data.items) {
       const { data: insertedItem, error: itemError } = await supabase

@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Bill, User } from "@/types";
+import type { Bill, BillItem, BillSplit, ItemSplit, User } from "@/types";
 
 interface SaveDraftParams {
   bill: Bill;
@@ -7,11 +7,14 @@ interface SaveDraftParams {
   creatorId: string;
   existingBillId?: string;
   groupId?: string;
+  items?: BillItem[];
+  splits?: ItemSplit[];
+  billSplits?: BillSplit[];
 }
 
 export async function saveDraftToSupabase(
   params: SaveDraftParams,
-): Promise<{ billId: string } | { error: string }> {
+): Promise<{ billId: string; warnings?: string[] } | { error: string }> {
   const supabase = createClient();
   const { bill, participants, creatorId, existingBillId, groupId } = params;
 
@@ -95,5 +98,95 @@ export async function saveDraftToSupabase(
     if (error) console.error("Failed to insert participants:", error);
   }
 
-  return { billId: billId! };
+  // Persist child data (items, splits, payers) so drafts are fully resumable
+  const warnings = await saveDraftChildData(supabase, billId!, params);
+
+  return { billId: billId!, ...(warnings.length > 0 ? { warnings } : {}) };
+}
+
+async function saveDraftChildData(
+  supabase: ReturnType<typeof createClient>,
+  billId: string,
+  params: SaveDraftParams,
+): Promise<string[]> {
+  const { bill, items, splits, billSplits } = params;
+  const errors: string[] = [];
+
+  // Persist payers — delete-and-reinsert for simplicity
+  if (bill.payers.length > 0) {
+    await supabase.from("bill_payers").delete().eq("bill_id", billId);
+    const payerRows = bill.payers.map((p) => ({
+      bill_id: billId,
+      user_id: p.userId,
+      amount_cents: p.amountCents,
+    }));
+    const { error } = await supabase.from("bill_payers").insert(payerRows);
+    if (error) {
+      console.error("Failed to insert draft payers:", error);
+      errors.push(error.message);
+    }
+  }
+
+  // Persist itemized bill data
+  if (bill.billType === "itemized" && items && items.length > 0) {
+    // Remove old items (cascades to item_splits via FK)
+    await supabase.from("bill_items").delete().eq("bill_id", billId);
+
+    for (const item of items) {
+      const { data: insertedItem, error: itemError } = await supabase
+        .from("bill_items")
+        .insert({
+          bill_id: billId,
+          description: item.description,
+          quantity: item.quantity,
+          unit_price_cents: item.unitPriceCents,
+          total_price_cents: item.totalPriceCents,
+        })
+        .select("id")
+        .single();
+
+      if (itemError || !insertedItem) {
+        console.error("Failed to insert draft item:", itemError);
+        errors.push(itemError?.message ?? "Erro ao salvar item");
+        continue;
+      }
+
+      const itemSplitRows = (splits ?? [])
+        .filter((s) => s.itemId === item.id)
+        .map((s) => ({
+          item_id: insertedItem.id,
+          user_id: s.userId,
+          split_type: s.splitType,
+          value: s.value,
+          computed_amount_cents: s.computedAmountCents,
+        }));
+
+      if (itemSplitRows.length > 0) {
+        const { error } = await supabase.from("item_splits").insert(itemSplitRows);
+        if (error) {
+          console.error("Failed to insert draft item splits:", error);
+          errors.push(error.message);
+        }
+      }
+    }
+  }
+
+  // Persist single_amount bill splits
+  if (bill.billType === "single_amount" && billSplits && billSplits.length > 0) {
+    await supabase.from("bill_splits").delete().eq("bill_id", billId);
+    const splitRows = billSplits.map((s) => ({
+      bill_id: billId,
+      user_id: s.userId,
+      split_type: s.splitType,
+      value: s.value,
+      computed_amount_cents: s.computedAmountCents,
+    }));
+    const { error } = await supabase.from("bill_splits").insert(splitRows);
+    if (error) {
+      console.error("Failed to insert draft bill splits:", error);
+      errors.push(error.message);
+    }
+  }
+
+  return errors;
 }
