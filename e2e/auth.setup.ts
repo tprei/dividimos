@@ -78,7 +78,7 @@ setup("setup alice browser session", async ({ page }) => {
   // Check if we need to complete onboarding
   if (page.url().includes("/auth/onboard")) {
     // Complete onboarding: set handle and skip Pix key (optional in dev)
-    const handleInput = page.getByPlaceholder(/handle|usuario/i).or(page.getByRole("textbox").first());
+    const handleInput = page.getByPlaceholder(/handle|usuario/i);
     await handleInput.fill("alice_test");
     await page.getByRole("button", { name: /salvar|continuar|pronto|proximo/i }).click();
 
@@ -116,7 +116,7 @@ setup("setup bob browser session", async ({ page }) => {
   await page.waitForLoadState("networkidle");
 
   if (page.url().includes("/auth/onboard")) {
-    const handleInput = page.getByPlaceholder(/handle|usuario/i).or(page.getByRole("textbox").first());
+    const handleInput = page.getByPlaceholder(/handle|usuario/i);
     await handleInput.fill("bob_test");
     await page.getByRole("button", { name: /salvar|continuar|pronto|proximo/i }).click();
     await page.waitForURL("/app**", { timeout: 10000 });
@@ -151,7 +151,7 @@ setup("setup carol browser session", async ({ page }) => {
   await page.waitForLoadState("networkidle");
 
   if (page.url().includes("/auth/onboard")) {
-    const handleInput = page.getByPlaceholder(/handle|usuario/i).or(page.getByRole("textbox").first());
+    const handleInput = page.getByPlaceholder(/handle|usuario/i);
     await handleInput.fill("carol_test");
     await page.getByRole("button", { name: /salvar|continuar|pronto|proximo/i }).click();
     await page.waitForURL("/app**", { timeout: 10000 });

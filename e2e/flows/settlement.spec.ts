@@ -29,10 +29,8 @@ test.describe("Settlement Flow", () => {
       // Wait for bill detail page
       await page.waitForLoadState("networkidle");
 
-      // Verify some bill detail content is visible (heading, amount, participants)
-      await expect(
-        page.getByRole("heading").first()
-      ).toBeVisible();
+      // Verify we're on the bill detail page
+      await expect(page).toHaveURL(/\/app\/bill\/[a-f0-9-]+/);
 
       // Check for debt/settlement related content
       const debtContent = page.getByText(/deve|pagar a|receber de|divida|pagar|receber/i);

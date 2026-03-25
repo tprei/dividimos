@@ -62,8 +62,7 @@ test.describe("Group Invite Flow", () => {
       await expect(alicePage.getByText(/bob test/i)).toBeVisible({ timeout: 10000 });
 
       // Click the "Convidar" button in the lookup result card (not the header one)
-      // The result card button contains UserPlus icon + "Convidar" text
-      const resultCard = alicePage.locator(".bg-muted\\/30");
+      const resultCard = alicePage.getByTestId("lookup-result");
       const inviteResultBtn = resultCard.getByRole("button", { name: /convidar/i });
       await expect(inviteResultBtn).toBeVisible();
       await inviteResultBtn.click();
@@ -182,7 +181,7 @@ test.describe("Group Invite Flow", () => {
       await expect(alicePage.getByText(/carol test/i)).toBeVisible({ timeout: 10000 });
 
       // Click the invite button in the result card
-      const resultCard = alicePage.locator(".bg-muted\\/30");
+      const resultCard = alicePage.getByTestId("lookup-result");
       const inviteBtn = resultCard.getByRole("button", { name: /convidar/i });
       await expect(inviteBtn).toBeVisible();
       await inviteBtn.click();

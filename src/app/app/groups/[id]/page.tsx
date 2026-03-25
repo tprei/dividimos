@@ -346,6 +346,7 @@ export default function GroupDetailPage({
               <motion.div
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
+                data-testid="lookup-result"
                 className="mt-3 flex items-center gap-3 rounded-xl border bg-muted/30 p-3"
               >
                 <UserAvatar

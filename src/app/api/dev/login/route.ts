@@ -166,19 +166,27 @@ export async function POST(request: Request) {
         .eq("id", userId)
         .single();
 
-      if (existingProfile) {
-        const updates: Record<string, unknown> = {};
-        if (profileName) updates.name = profileName;
-        if (profileHandle) updates.handle = profileHandle;
-        updates.onboarded = true;
-        await admin.from("users").update(updates).eq("id", userId);
-      } else {
-        await admin.from("users").insert({
-          id: userId,
-          name: profileName || "",
-          handle: profileHandle || userId.slice(0, 8),
-          onboarded: true,
-        });
+      const { error: upsertError } = existingProfile
+        ? await admin
+            .from("users")
+            .update({
+              ...(profileName ? { name: profileName } : {}),
+              ...(profileHandle ? { handle: profileHandle } : {}),
+              onboarded: true,
+            })
+            .eq("id", userId)
+        : await admin.from("users").insert({
+            id: userId,
+            name: profileName || "",
+            handle: profileHandle || userId.slice(0, 8),
+            onboarded: true,
+          });
+
+      if (upsertError) {
+        return NextResponse.json(
+          { error: `Profile setup failed: ${upsertError.message}` },
+          { status: 500 },
+        );
       }
     }
 
