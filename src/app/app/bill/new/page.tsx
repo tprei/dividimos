@@ -366,7 +366,18 @@ function NewBillPageContent() {
       return;
     }
     const next = steps[stepIndex + 1];
-    if (next) setStep(next.key);
+    if (next) {
+      // When entering the payer step, reset stale payer amounts if they don't match the current total
+      if (next.key === "payer") {
+        const currentState = useBillStore.getState();
+        const gt = currentState.bill ? store.getGrandTotal() : 0;
+        const paid = (currentState.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
+        if (paid > 0 && gt > 0 && Math.abs(gt - paid) > 1) {
+          store.splitPaymentEqually(currentState.participants.map((p) => p.id));
+        }
+      }
+      setStep(next.key);
+    }
   }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees]);
 
   const isNextDisabled = useCallback(() => {
@@ -555,6 +566,25 @@ function NewBillPageContent() {
                   onChange={(e) => setTitle(e.target.value)}
                   autoFocus
                 />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {(billType === "single_amount"
+                    ? ["Airbnb", "Uber", "Assinatura", "Passagem", "Presente"]
+                    : ["Restaurante", "Bar", "Mercado", "Delivery", "Churrasco"]
+                  ).map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setTitle(suggestion)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                        title === suggestion
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                      }`}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {billType === "itemized" && (
@@ -996,7 +1026,7 @@ function NewBillPageContent() {
         } else if (step === "payer") {
           const gt = store.getGrandTotal();
           const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
-          if (gt > 0 && Math.abs(gt - paid) > 1) {
+          if (paid > 0 && gt > 0 && Math.abs(gt - paid) > 1) {
             errorMsg = `O pagamento (${formatBRL(paid)}) nao corresponde ao total (${formatBRL(gt)})`;
           }
         }

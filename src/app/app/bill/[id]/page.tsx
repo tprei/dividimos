@@ -345,7 +345,7 @@ export default function BillDetailPage({
   });
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
-  const [loadingFromDb, setLoadingFromDb] = useState(false);
+  const [loadingFromDb, setLoadingFromDb] = useState(true);
   const loadedBillIdRef = useRef<string | null>(null);
 
   const loadAndSetBill = useCallback(async (billId: string) => {
@@ -385,7 +385,10 @@ export default function BillDetailPage({
 
   // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
-    if (id === "demo") return;
+    if (id === "demo") {
+      setLoadingFromDb(false);
+      return;
+    }
     // Skip if we've already loaded this bill (data is in store)
     if (loadedBillIdRef.current === id) {
       setLoadingFromDb(false);
@@ -464,7 +467,7 @@ export default function BillDetailPage({
     return simplifyDebts(rawEdges, participants);
   }, [bill, participants, splits, billSplits, items]);
 
-  if (loadingFromDb) {
+  if (loadingFromDb || (bill && bill.id !== id)) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6 space-y-4">
         <Skeleton className="h-8 w-48" />

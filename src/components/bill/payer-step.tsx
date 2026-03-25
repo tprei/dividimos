@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
-import { useState } from "react";
+import { startTransition, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -225,8 +225,11 @@ export function PayerStep({
                           const next = new Map(localPercentages);
                           next.set(user.id, e.target.value);
                           setLocalPercentages(next);
-                          const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
-                          onSetPayerAmount(user.id, cents);
+                          const val = parseFloat(e.target.value);
+                          startTransition(() => {
+                            const cents = Math.round((grandTotal * val) / 100);
+                            onSetPayerAmount(user.id, cents);
+                          });
                         }}
                         className="mt-2 w-full"
                       />
@@ -271,7 +274,8 @@ export function PayerStep({
             );
           })()}
 
-          {paymentInputMode === "fixed" && <div className="space-y-3">{participants.map((user) => {
+          {paymentInputMode === "fixed" && <div className="space-y-3">
+            {participants.map((user) => {
             const localVal = localAmounts.get(user.id) || "";
             const storeAmount = payerMap.get(user.id) || 0;
             const hasValue = localVal !== "" || storeAmount > 0;
@@ -331,54 +335,56 @@ export function PayerStep({
                       const cents = parseInt(e.target.value);
                       const formatted = (cents / 100).toFixed(2).replace(".", ",");
                       handleLocalChange(user.id, formatted);
-                      onSetPayerAmount(user.id, cents);
+                      startTransition(() => {
+                        onSetPayerAmount(user.id, cents);
+                      });
                     }}
                     className="mt-2 w-full"
                   />
                 )}
               </div>
             );
-          })}</div>}
+          })}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2"
+              onClick={() => {
+                onSplitPaymentEqually(participants.map((p) => p.id));
+                const perPerson = grandTotal / participants.length;
+                const m = new Map<string, string>();
+                participants.forEach((p) =>
+                  m.set(p.id, (perPerson / 100).toFixed(2).replace(".", ",")),
+                );
+                setLocalAmounts(m);
+              }}
+            >
+              <Users className="h-4 w-4" />
+              Dividiu igualmente
+            </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full gap-2"
-            onClick={() => {
-              onSplitPaymentEqually(participants.map((p) => p.id));
-              const perPerson = grandTotal / participants.length;
-              const m = new Map<string, string>();
-              participants.forEach((p) =>
-                m.set(p.id, (perPerson / 100).toFixed(2).replace(".", ",")),
-              );
-              setLocalAmounts(m);
-            }}
-          >
-            <Users className="h-4 w-4" />
-            Dividiu igualmente
-          </Button>
-
-          <AnimatePresence>
-            {Math.abs(remaining) > 1 && totalPaid > 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-                  remaining > 0
-                    ? "bg-warning/10 text-warning-foreground"
-                    : "bg-destructive/10 text-destructive"
-                }`}
-              >
-                <span>
-                  {remaining > 0 ? "Falta atribuir" : "Excedente"}
-                </span>
-                <span className="font-semibold tabular-nums">
-                  {formatBRL(Math.abs(remaining))}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            <AnimatePresence>
+              {Math.abs(remaining) > 1 && totalPaid > 0 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                    remaining > 0
+                      ? "bg-warning/10 text-warning-foreground"
+                      : "bg-destructive/10 text-destructive"
+                  }`}
+                >
+                  <span>
+                    {remaining > 0 ? "Falta atribuir" : "Excedente"}
+                  </span>
+                  <span className="font-semibold tabular-nums">
+                    {formatBRL(Math.abs(remaining))}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>}
         </div>
       )}
     </div>

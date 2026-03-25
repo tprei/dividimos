@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Equal, Hash, Percent, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -214,13 +214,16 @@ export function SingleAmountStep({
                       value={pct}
                       onChange={(e) => {
                         handlePercentageChange(user.id, e.target.value);
-                        const assignments = participants.map((p) => ({
-                          userId: p.id,
-                          percentage: p.id === user.id
-                            ? parseFloat(e.target.value)
-                            : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
-                        }));
-                        onSplitByPercentage(assignments);
+                        const val = e.target.value;
+                        startTransition(() => {
+                          const assignments = participants.map((p) => ({
+                            userId: p.id,
+                            percentage: p.id === user.id
+                              ? parseFloat(val)
+                              : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
+                          }));
+                          onSplitByPercentage(assignments);
+                        });
                       }}
                       className="mt-2 w-full"
                     />
