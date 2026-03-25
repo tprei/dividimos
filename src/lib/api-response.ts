@@ -55,8 +55,8 @@ export function apiSuccessResponse<T>(
  */
 export function withApiHandler<T>(
   handler: (request: Request, context: ApiHandlerContext) => Promise<T>
-): (request: Request) => Promise<NextResponse<T | ApiErrorResponse>> {
-  return async (request: Request): Promise<NextResponse<T | ApiErrorResponse>> => {
+): (request: Request) => Promise<NextResponse<ApiSuccessResponse<T> | ApiErrorResponse>> {
+  return async (request: Request): Promise<NextResponse<ApiSuccessResponse<T> | ApiErrorResponse>> => {
     const requestId = generateRequestId();
     const logger = createRequestLogger(requestId)
 
