@@ -338,8 +338,7 @@ export function PayerStep({
                 )}
               </div>
             );
-          })}</div>}
-
+          })}
           <Button
             variant="outline"
             size="sm"
@@ -357,6 +356,7 @@ export function PayerStep({
             <Users className="h-4 w-4" />
             Dividiu igualmente
           </Button>
+          </div>}
 
           <AnimatePresence>
             {Math.abs(remaining) > 1 && totalPaid > 0 && (
