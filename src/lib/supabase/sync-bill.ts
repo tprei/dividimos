@@ -6,6 +6,16 @@ type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
 
 type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
 
+type BillInsert = Database["public"]["Tables"]["bills"]["Insert"];
+type BillParticipantInsert = Database["public"]["Tables"]["bill_participants"]["Insert"];
+
+type BillItemInsert = Database["public"]["Tables"]["bill_items"]["Insert"];
+type BillSplitInsert = Database["public"]["Tables"]["bill_splits"]["Insert"];
+type ItemSplitInsert = Database["public"]["Tables"]["item_splits"]["Insert"];
+type LedgerInsert = Database["public"]["Tables"]["ledger"]["Insert"];
+
+type SupabaseClient = ReturnType<typeof createClient>;
+
 interface BillData {
   bill: Bill;
   participants: User[];
@@ -73,19 +83,22 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
 
     return { billId };
   } else {
+    const insertPayload: BillInsert = {
+      creator_id: user.id,
+      title: data.bill.title,
+      merchant_name: data.bill.merchantName || null,
+      status: data.bill.status === "settled" ? "settled" : "active",
+      service_fee_percent: data.bill.serviceFeePercent,
+      fixed_fees: data.bill.fixedFees,
+      total_amount: data.bill.totalAmount,
+      bill_type: data.bill.billType,
+      total_amount_input: data.bill.totalAmountInput,
+      group_id: data.groupId,
+    };
+
     const { data: inserted, error: billError } = await supabase
       .from("bills")
-      .insert({
-        creator_id: user.id,
-        title: data.bill.title,
-        merchant_name: data.bill.merchantName || null,
-        status: data.bill.status === "settled" ? "settled" : "active",
-        service_fee_percent: data.bill.serviceFeePercent,
-        fixed_fees: data.bill.fixedFees,
-        total_amount: data.bill.totalAmount,
-        bill_type: data.bill.billType,
-        total_amount_input: data.bill.totalAmountInput,
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
 
@@ -95,7 +108,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
     }
     billId = inserted.id;
 
-    const participantRows = data.participants.map((p) => ({
+    const participantRows: BillParticipantInsert[] = data.participants.map((p) => ({
       bill_id: billId,
       user_id: p.id,
       status: "accepted" as const,
@@ -112,7 +125,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
 }
 
 async function insertChildData(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   billId: string,
   data: BillData,
   { cleanExisting = false }: { cleanExisting?: boolean } = {},
@@ -144,15 +157,17 @@ async function insertChildData(
 
   if (data.bill.billType === "itemized" && data.items.length > 0) {
     for (const item of data.items) {
+      const itemInsert: BillItemInsert = {
+        bill_id: billId,
+        description: item.description,
+        quantity: item.quantity,
+        unit_price_cents: item.unitPriceCents,
+        total_price_cents: item.totalPriceCents,
+      };
+
       const { data: insertedItem, error: itemError } = await supabase
         .from("bill_items")
-        .insert({
-          bill_id: billId,
-          description: item.description,
-          quantity: item.quantity,
-          unit_price_cents: item.unitPriceCents,
-          total_price_cents: item.totalPriceCents,
-        })
+        .insert(itemInsert)
         .select("id")
         .single();
 
@@ -166,7 +181,7 @@ async function insertChildData(
         continue;
       }
 
-      const itemSplits = data.splits
+      const itemSplitRows: ItemSplitInsert[] = (data.splits ?? [])
         .filter((s) => s.itemId === item.id)
         .map((s) => ({
           item_id: insertedItem.id,
@@ -176,15 +191,15 @@ async function insertChildData(
           computed_amount_cents: s.computedAmountCents,
         }));
 
-      if (itemSplits.length > 0) {
-        const { error } = await supabase.from("item_splits").insert(itemSplits);
+      if (itemSplitRows.length > 0) {
+        const { error } = await supabase.from("item_splits").insert(itemSplitRows);
         if (error) logError(logger, "Failed to insert item splits", { billId, itemId: insertedItem.id, error, operation: "insertItemSplits" });
       }
     }
   }
 
   if (data.bill.billType === "single_amount" && data.billSplits.length > 0) {
-    const splitRows = data.billSplits.map((s) => ({
+    const splitRows: BillSplitInsert[] = data.billSplits.map((s) => ({
       bill_id: billId,
       user_id: s.userId,
       split_type: s.splitType,
@@ -206,7 +221,7 @@ async function insertChildData(
   }
 
   if (data.ledger.length > 0) {
-    const ledgerRows = data.ledger.map((e) => ({
+    const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
       bill_id: billId,
       from_user_id: e.fromUserId,
       to_user_id: e.toUserId,
