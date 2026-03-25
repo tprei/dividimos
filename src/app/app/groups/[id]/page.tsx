@@ -88,6 +88,9 @@ export default function GroupDetailPage({
 
     if (!group) return;
 
+    setGroupName(group.name);
+    setCreatorId(group.creator_id);
+
     const memberRows = groupMembers ?? [];
     const allUserIds = [
       ...new Set([group.creator_id, ...memberRows.map((m) => m.user_id)]),
