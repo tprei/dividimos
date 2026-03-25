@@ -1,17 +1,5 @@
-/**
- * Type-safe mappers between database snake_case rows and application camelCase types.
- */
-import type {
-  Bill,
-  BillItem,
-  BillPayer,
-  BillSplit,
-  ItemSplit,
-  LedgerEntry,
-  User,
-} from "@/types";
+import type { Bill, BillItem, BillPayer, BillSplit, BillType, DebtStatus, ItemSplit, LedgerEntry, SplitType, User } from "@/types";
 import type { Database } from "@/types/database";
-import { coerceBillType, coerceSplitType } from "@/lib/type-guards";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
 type BillItemRow = Database["public"]["Tables"]["bill_items"]["Row"];
@@ -86,7 +74,7 @@ export function ledgerRowToLedgerEntry(row: LedgerRow): LedgerEntry {
     fromUserId: row.from_user_id,
     toUserId: row.to_user_id,
     amountCents: row.amount_cents,
-    status: row.status,
+    status: coerceDebtStatus(row.status, "pending"),
     paidAt: row.paid_at ?? undefined,
     confirmedAt: row.confirmed_at ?? undefined,
     createdAt: row.created_at,
@@ -105,4 +93,20 @@ export function userProfileRowToUser(row: UserProfileRow): User {
     onboarded: true,
     createdAt: "",
   };
+}
+
+function coerceBillType(value: string | null, fallback: BillType): BillType {
+  if (value === "single_amount" || value === "itemized") return value;
+  return fallback;
+}
+
+function coerceSplitType(value: string | null, fallback: SplitType): SplitType {
+  if (value === "equal" || value === "percentage" || value === "fixed") return value;
+  return fallback;
+}
+
+function coerceDebtStatus(value: string | null, fallback: DebtStatus): DebtStatus {
+  const valid: DebtStatus[] = ["pending", "paid_unconfirmed", "settled"];
+  if (value && valid.includes(value as DebtStatus)) return value as DebtStatus;
+  return fallback;
 }

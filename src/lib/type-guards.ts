@@ -45,7 +45,7 @@ export function isBillType(value: unknown): value is BillType {
  * @returns true if value is a valid BillParticipantStatus
  */
 export function isBillParticipantStatus(
-  value: unknown
+  value: unknown,
 ): value is BillParticipantStatus {
   return (
     typeof value === "string" &&
@@ -101,7 +101,7 @@ export function isSplitType(value: unknown): value is SplitType {
 export function assertBillStatus(value: unknown, context?: string): asserts value is BillStatus {
   if (!isBillStatus(value)) {
     throw new Error(
-      `Invalid BillStatus: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`
+      `Invalid BillStatus: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`,
     );
   }
 }
@@ -115,7 +115,7 @@ export function assertBillStatus(value: unknown, context?: string): asserts valu
 export function assertBillType(value: unknown, context?: string): asserts value is BillType {
   if (!isBillType(value)) {
     throw new Error(
-      `Invalid BillType: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`
+      `Invalid BillType: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`,
     );
   }
 }
@@ -129,7 +129,7 @@ export function assertBillType(value: unknown, context?: string): asserts value 
 export function assertSplitType(value: unknown, context?: string): asserts value is SplitType {
   if (!isSplitType(value)) {
     throw new Error(
-      `Invalid SplitType: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`
+      `Invalid SplitType: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`,
     );
   }
 }
@@ -143,7 +143,7 @@ export function assertSplitType(value: unknown, context?: string): asserts value
 export function assertDebtStatus(value: unknown, context?: string): asserts value is DebtStatus {
   if (!isDebtStatus(value)) {
     throw new Error(
-      `Invalid DebtStatus: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`
+      `Invalid DebtStatus: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`,
     );
   }
 }

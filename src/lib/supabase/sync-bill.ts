@@ -1,8 +1,21 @@
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database";
 import type { Bill, BillItem, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
+import { createLogger, logError } from "@/lib/logger";
+
+const logger = createLogger("sync-bill");
 
 type BillUpdate = Database["public"]["Tables"]["bills"]["Update"];
+
+type BillInsert = Database["public"]["Tables"]["bills"]["Insert"];
+type BillParticipantInsert = Database["public"]["Tables"]["bill_participants"]["Insert"];
+
+type BillItemInsert = Database["public"]["Tables"]["bill_items"]["Insert"];
+type BillSplitInsert = Database["public"]["Tables"]["bill_splits"]["Insert"];
+type ItemSplitInsert = Database["public"]["Tables"]["item_splits"]["Insert"];
+type LedgerInsert = Database["public"]["Tables"]["ledger"]["Insert"];
+
+type SupabaseClient = ReturnType<typeof createClient>;
 
 interface BillData {
   bill: Bill;
@@ -21,7 +34,10 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { error: "Nao autenticado" };
+  if (!user) {
+    logError(logger, "User not authenticated", { operation: "syncBillToSupabase" });
+    return { error: "Nao autenticado" };
+  }
 
   let billId: string;
 
@@ -62,42 +78,45 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
       .eq("id", billId);
 
     if (updateError) {
-      console.error("Failed to update bill:", updateError);
+      logError(logger, "Failed to update bill", { billId, error: updateError, operation: "updateBill" });
       return { error: updateError.message };
     }
 
     return { billId };
   } else {
+    const insertPayload: BillInsert = {
+      creator_id: user.id,
+      title: data.bill.title,
+      merchant_name: data.bill.merchantName || null,
+      status: data.bill.status === "settled" ? "settled" : "active",
+      service_fee_percent: data.bill.serviceFeePercent,
+      fixed_fees: data.bill.fixedFees,
+      total_amount: data.bill.totalAmount,
+      bill_type: data.bill.billType,
+      total_amount_input: data.bill.totalAmountInput,
+      group_id: data.groupId,
+    };
+
     const { data: inserted, error: billError } = await supabase
       .from("bills")
-      .insert({
-        creator_id: user.id,
-        title: data.bill.title,
-        merchant_name: data.bill.merchantName || null,
-        status: data.bill.status === "settled" ? "settled" : "active",
-        service_fee_percent: data.bill.serviceFeePercent,
-        fixed_fees: data.bill.fixedFees,
-        total_amount: data.bill.totalAmount,
-        bill_type: data.bill.billType,
-        total_amount_input: data.bill.totalAmountInput,
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
 
     if (billError || !inserted) {
-      console.error("Failed to insert bill:", billError);
+      logError(logger, "Failed to insert bill", { error: billError, operation: "insertBill" });
       return { error: billError?.message ?? "Erro ao salvar conta" };
     }
     billId = inserted.id;
 
-    const participantRows = data.participants.map((p) => ({
+    const participantRows: BillParticipantInsert[] = data.participants.map((p) => ({
       bill_id: billId,
       user_id: p.id,
       status: "accepted" as const,
     }));
     if (participantRows.length > 0) {
       const { error } = await supabase.from("bill_participants").insert(participantRows);
-      if (error) console.error("Failed to insert participants:", error);
+      if (error) logError(logger, "Failed to insert participants", { billId, error, operation: "insertParticipants" });
     }
   }
 
@@ -107,7 +126,7 @@ export async function syncBillToSupabase(data: BillData): Promise<{ billId: stri
 }
 
 async function insertChildData(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   billId: string,
   data: BillData,
   { cleanExisting = false }: { cleanExisting?: boolean } = {},
@@ -122,33 +141,48 @@ async function insertChildData(
     ]);
     for (const result of cleanupResults) {
       if (result.status === "rejected") {
-        console.error("Failed to clean up draft child data:", result.reason);
+        logError(logger, "Failed to clean up draft child data (rejected)", {
+          billId,
+          reason: result.reason,
+          operation: "cleanupChildData",
+        });
       } else if (result.value.error) {
-        console.error("Failed to clean up draft child data:", result.value.error);
+        logError(logger, "Failed to clean up draft child data", {
+          billId,
+          error: result.value.error,
+          operation: "cleanupChildData",
+        });
       }
     }
   }
 
   if (data.bill.billType === "itemized" && data.items.length > 0) {
     for (const item of data.items) {
+      const itemInsert: BillItemInsert = {
+        bill_id: billId,
+        description: item.description,
+        quantity: item.quantity,
+        unit_price_cents: item.unitPriceCents,
+        total_price_cents: item.totalPriceCents,
+      };
+
       const { data: insertedItem, error: itemError } = await supabase
         .from("bill_items")
-        .insert({
-          bill_id: billId,
-          description: item.description,
-          quantity: item.quantity,
-          unit_price_cents: item.unitPriceCents,
-          total_price_cents: item.totalPriceCents,
-        })
+        .insert(itemInsert)
         .select("id")
         .single();
 
       if (itemError || !insertedItem) {
-        console.error("Failed to insert item:", itemError);
+        logError(logger, "Failed to insert item", {
+          billId,
+          itemDescription: item.description,
+          error: itemError,
+          operation: "insertItem",
+        });
         continue;
       }
 
-      const itemSplits = data.splits
+      const itemSplitRows: ItemSplitInsert[] = (data.splits ?? [])
         .filter((s) => s.itemId === item.id)
         .map((s) => ({
           item_id: insertedItem.id,
@@ -158,15 +192,15 @@ async function insertChildData(
           computed_amount_cents: s.computedAmountCents,
         }));
 
-      if (itemSplits.length > 0) {
-        const { error } = await supabase.from("item_splits").insert(itemSplits);
-        if (error) console.error("Failed to insert item splits:", error);
+      if (itemSplitRows.length > 0) {
+        const { error } = await supabase.from("item_splits").insert(itemSplitRows);
+        if (error) logError(logger, "Failed to insert item splits", { billId, itemId: insertedItem.id, error, operation: "insertItemSplits" });
       }
     }
   }
 
   if (data.bill.billType === "single_amount" && data.billSplits.length > 0) {
-    const splitRows = data.billSplits.map((s) => ({
+    const splitRows: BillSplitInsert[] = data.billSplits.map((s) => ({
       bill_id: billId,
       user_id: s.userId,
       split_type: s.splitType,
@@ -174,7 +208,7 @@ async function insertChildData(
       computed_amount_cents: s.computedAmountCents,
     }));
     const { error } = await supabase.from("bill_splits").insert(splitRows);
-    if (error) console.error("Failed to insert bill splits:", error);
+    if (error) logError(logger, "Failed to insert bill splits", { billId, error, operation: "insertBillSplits" });
   }
 
   if (data.bill.payers.length > 0) {
@@ -184,11 +218,11 @@ async function insertChildData(
       amount_cents: p.amountCents,
     }));
     const { error } = await supabase.from("bill_payers").insert(payerRows);
-    if (error) console.error("Failed to insert payers:", error);
+    if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
   }
 
   if (data.ledger.length > 0) {
-    const ledgerRows = data.ledger.map((e) => ({
+    const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
       bill_id: billId,
       from_user_id: e.fromUserId,
       to_user_id: e.toUserId,
@@ -196,6 +230,6 @@ async function insertChildData(
       status: e.status,
     }));
     const { error } = await supabase.from("ledger").insert(ledgerRows);
-    if (error) console.error("Failed to insert ledger:", error);
+    if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
   }
 }

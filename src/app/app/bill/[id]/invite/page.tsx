@@ -2,8 +2,8 @@
 
 import { motion } from "framer-motion";
 import {
-  AlertTriangle,
   ArrowLeft,
+  AlertTriangle,
   Check,
   KeyRound,
   Shield,
