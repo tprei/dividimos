@@ -996,7 +996,7 @@ function NewBillPageContent() {
         } else if (step === "payer") {
           const gt = store.getGrandTotal();
           const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
-          if (gt > 0 && Math.abs(gt - paid) > 1) {
+          if (paid > 0 && gt > 0 && Math.abs(gt - paid) > 1) {
             errorMsg = `O pagamento (${formatBRL(paid)}) nao corresponde ao total (${formatBRL(gt)})`;
           }
         }
