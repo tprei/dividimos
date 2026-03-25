@@ -11,9 +11,11 @@ import { createServerClient } from "@supabase/ssr";
  *
  * Only available when NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true.
  *
- * Body: { phone?: string, email?: string }
+ * Body: { phone?: string, email?: string, name?: string, handle?: string }
  *   - phone: creates/finds user by phone (e.g. "5511999990001")
  *   - email: signs in with email+password for seed users (e.g. "alice@test.pixwise.local")
+ *   - name: optional display name to set on the user profile
+ *   - handle: optional @handle to set on the user profile
  *
  * Returns: { success, userId, redirect, cookies }
  */
@@ -26,7 +28,12 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const { phone, email } = body as { phone?: string; email?: string };
+  const { phone, email, name: profileName, handle: profileHandle } = body as {
+    phone?: string;
+    email?: string;
+    name?: string;
+    handle?: string;
+  };
 
   if (!phone && !email) {
     return NextResponse.json(
@@ -149,6 +156,38 @@ export async function POST(request: Request) {
         { error: `Session verification failed: ${verifyError.message}` },
         { status: 500 },
       );
+    }
+
+    // If name/handle provided, ensure profile exists and is up to date
+    if (profileName || profileHandle) {
+      const { data: existingProfile } = await admin
+        .from("users")
+        .select("id, onboarded")
+        .eq("id", userId)
+        .single();
+
+      const { error: upsertError } = existingProfile
+        ? await admin
+            .from("users")
+            .update({
+              ...(profileName ? { name: profileName } : {}),
+              ...(profileHandle ? { handle: profileHandle } : {}),
+              onboarded: true,
+            })
+            .eq("id", userId)
+        : await admin.from("users").insert({
+            id: userId,
+            name: profileName || "",
+            handle: profileHandle || userId.slice(0, 8),
+            onboarded: true,
+          });
+
+      if (upsertError) {
+        return NextResponse.json(
+          { error: `Profile setup failed: ${upsertError.message}` },
+          { status: 500 },
+        );
+      }
     }
 
     // Check if user needs onboarding

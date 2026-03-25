@@ -14,16 +14,20 @@ const authFile = (name: string) => `e2e/.auth/${name}.json`;
  */
 
 const testUsers = [
-  { name: "alice", phone: "11999990001" },
-  { name: "bob", phone: "11999990002" },
-  { name: "carol", phone: "11999990003" },
+  { name: "alice", phone: "11999990001", displayName: "Alice Test", handle: "alice_test" },
+  { name: "bob", phone: "11999990002", displayName: "Bob Test", handle: "bob_test" },
+  { name: "carol", phone: "11999990003", displayName: "Carol Test", handle: "carol_test" },
 ];
 
 for (const user of testUsers) {
   setup(`authenticate as ${user.name}`, async ({ request }) => {
-    // Call dev login API to get authenticated session
+    // Call dev login API to get authenticated session (with profile setup)
     const response = await request.post("/api/dev/login", {
-      data: { phone: user.phone },
+      data: {
+        phone: user.phone,
+        name: user.displayName,
+        handle: user.handle,
+      },
     });
 
     expect(response.ok()).toBeTruthy();
@@ -44,7 +48,7 @@ for (const user of testUsers) {
 setup("setup alice browser session", async ({ page }) => {
   // Use dev login API via fetch, then navigate to set cookies
   const response = await page.request.post("/api/dev/login", {
-    data: { phone: "11999990001" },
+    data: { phone: "11999990001", name: "Alice Test", handle: "alice_test" },
   });
 
   const body = await response.json();
@@ -74,8 +78,9 @@ setup("setup alice browser session", async ({ page }) => {
   // Check if we need to complete onboarding
   if (page.url().includes("/auth/onboard")) {
     // Complete onboarding: set handle and skip Pix key (optional in dev)
-    await page.getByLabel(/handle|@/i).fill("alice_test");
-    await page.getByRole("button", { name: /salvar|continuar|pronto/i }).click();
+    const handleInput = page.getByPlaceholder(/handle|usuario/i);
+    await handleInput.fill("alice_test");
+    await page.getByRole("button", { name: /salvar|continuar|pronto|proximo/i }).click();
 
     // Wait for redirect to app
     await page.waitForURL("/app**", { timeout: 10000 });
@@ -87,7 +92,7 @@ setup("setup alice browser session", async ({ page }) => {
 
 setup("setup bob browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
-    data: { phone: "11999990002" },
+    data: { phone: "11999990002", name: "Bob Test", handle: "bob_test" },
   });
 
   const body = await response.json();
@@ -111,8 +116,9 @@ setup("setup bob browser session", async ({ page }) => {
   await page.waitForLoadState("networkidle");
 
   if (page.url().includes("/auth/onboard")) {
-    await page.getByLabel(/handle|@/i).fill("bob_test");
-    await page.getByRole("button", { name: /salvar|continuar|pronto/i }).click();
+    const handleInput = page.getByPlaceholder(/handle|usuario/i);
+    await handleInput.fill("bob_test");
+    await page.getByRole("button", { name: /salvar|continuar|pronto|proximo/i }).click();
     await page.waitForURL("/app**", { timeout: 10000 });
   }
 
@@ -121,7 +127,7 @@ setup("setup bob browser session", async ({ page }) => {
 
 setup("setup carol browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
-    data: { phone: "11999990003" },
+    data: { phone: "11999990003", name: "Carol Test", handle: "carol_test" },
   });
 
   const body = await response.json();
@@ -145,8 +151,9 @@ setup("setup carol browser session", async ({ page }) => {
   await page.waitForLoadState("networkidle");
 
   if (page.url().includes("/auth/onboard")) {
-    await page.getByLabel(/handle|@/i).fill("carol_test");
-    await page.getByRole("button", { name: /salvar|continuar|pronto/i }).click();
+    const handleInput = page.getByPlaceholder(/handle|usuario/i);
+    await handleInput.fill("carol_test");
+    await page.getByRole("button", { name: /salvar|continuar|pronto|proximo/i }).click();
     await page.waitForURL("/app**", { timeout: 10000 });
   }
 
