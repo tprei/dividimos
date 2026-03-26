@@ -5,12 +5,10 @@ export async function recordPaymentInSupabase(
   fromUserId: string,
   toUserId: string,
   amountCents: number,
-  newPaidAmountCents: number,
-  newStatus: "partially_paid" | "paid_unconfirmed",
 ): Promise<{ error?: string }> {
   const supabase = createClient();
 
-  const { error: paymentError } = await supabase
+  const { error } = await supabase
     .from("payments")
     .insert({
       ledger_id: entryId,
@@ -19,18 +17,7 @@ export async function recordPaymentInSupabase(
       amount_cents: amountCents,
     });
 
-  if (paymentError) return { error: paymentError.message };
-
-  const { error: ledgerError } = await supabase
-    .from("ledger")
-    .update({
-      paid_amount_cents: newPaidAmountCents,
-      status: newStatus,
-      paid_at: new Date().toISOString(),
-    })
-    .eq("id", entryId);
-
-  return { error: ledgerError?.message };
+  return { error: error?.message };
 }
 
 export async function markPaidInSupabase(entryId: string) {

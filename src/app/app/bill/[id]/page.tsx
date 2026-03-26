@@ -419,11 +419,17 @@ export default function BillDetailPage({
             // New ledger entry — reload the full bill to get consistent data
             loadAndSetBill(billId);
           } else if (payload.eventType === "UPDATE") {
-            const updated = payload.new as { id: string; status: string; paid_at: string | null; confirmed_at: string | null };
+            const updated = payload.new as { id: string; status: string; paid_amount_cents: number; paid_at: string | null; confirmed_at: string | null };
             useBillStore.setState((state) => ({
               ledger: state.ledger.map((e) =>
                 e.id === updated.id
-                  ? { ...e, status: coerceDebtStatus(updated.status, "pending"), paidAt: updated.paid_at ?? undefined, confirmedAt: updated.confirmed_at ?? undefined }
+                  ? {
+                      ...e,
+                      status: coerceDebtStatus(updated.status, "pending"),
+                      paidAmountCents: updated.paid_amount_cents ?? e.paidAmountCents,
+                      paidAt: updated.paid_at ?? undefined,
+                      confirmedAt: updated.confirmed_at ?? undefined,
+                    }
                   : e,
               ),
             }));
@@ -449,13 +455,25 @@ export default function BillDetailPage({
     return () => { supabase.removeChannel(channel); };
   }, [billId, loadAndSetBill]);
 
+  useEffect(() => {
+    if (!billId || !currentUser?.id) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`payments:creditor:${billId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "payments", filter: `to_user_id=eq.${currentUser.id}` },
+        () => { loadAndSetBill(billId); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [billId, currentUser?.id, loadAndSetBill]);
+
   const handleRecordPayment = async (entryId: string, amountCents: number) => {
     const entry = ledger.find((e) => e.id === entryId);
     if (!entry) return;
-    const newPaid = Math.min(entry.paidAmountCents + amountCents, entry.amountCents);
-    const newStatus = newPaid >= entry.amountCents ? "paid_unconfirmed" : "partially_paid";
     store.recordPayment(entryId, amountCents);
-    await recordPaymentInSupabase(entryId, entry.fromUserId, entry.toUserId, amountCents, newPaid, newStatus);
+    await recordPaymentInSupabase(entryId, entry.fromUserId, entry.toUserId, amountCents);
   };
 
   const handleConfirmPayment = async (entryId: string) => {
@@ -993,15 +1011,23 @@ export default function BillDetailPage({
                               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                                 entry.status === "pending"
                                   ? "bg-warning/15 text-warning-foreground"
-                                  : entry.status === "paid_unconfirmed"
-                                    ? "bg-primary/15 text-primary"
-                                    : "bg-success/15 text-success"
+                                  : entry.status === "partially_paid"
+                                    ? "bg-primary/10 text-primary"
+                                    : entry.status === "paid_unconfirmed"
+                                      ? "bg-primary/15 text-primary"
+                                      : "bg-success/15 text-success"
                               }`}
                             >
                               {entry.status === "pending" && (
                                 <>
                                   <Clock className="h-3 w-3" />
                                   Pendente
+                                </>
+                              )}
+                              {entry.status === "partially_paid" && (
+                                <>
+                                  <Clock className="h-3 w-3" />
+                                  Parcialmente pago
                                 </>
                               )}
                               {entry.status === "paid_unconfirmed" && (
@@ -1019,18 +1045,25 @@ export default function BillDetailPage({
                             </motion.span>
                           </div>
                         </div>
-                        <motion.p
-                          key={entry.amountCents}
-                          initial={{ y: 6, opacity: 0 }}
-                          animate={{ y: 0, opacity: 1 }}
-                          className="text-lg font-bold tabular-nums"
-                        >
-                          {formatBRL(entry.amountCents)}
-                        </motion.p>
+                        <div className="text-right">
+                          <motion.p
+                            key={entry.amountCents}
+                            initial={{ y: 6, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            className="text-lg font-bold tabular-nums"
+                          >
+                            {formatBRL(entry.amountCents)}
+                          </motion.p>
+                          {entry.paidAmountCents > 0 && entry.status !== "settled" && (
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {formatBRL(entry.paidAmountCents)} pago
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       <AnimatePresence mode="wait">
-                        {entry.status === "pending" && isDebtor && (
+                        {(entry.status === "pending" || entry.status === "partially_paid") && isDebtor && (
                           <motion.div
                             key="debtor-actions"
                             initial={{ opacity: 0, height: 0 }}
@@ -1060,7 +1093,7 @@ export default function BillDetailPage({
                           </motion.div>
                         )}
 
-                        {entry.status === "pending" && isCreditor && (
+                        {(entry.status === "pending" || entry.status === "partially_paid") && isCreditor && (
                           <motion.div
                             key="creditor-actions"
                             initial={{ opacity: 0, height: 0 }}

@@ -16,17 +16,14 @@ beforeEach(() => {
 });
 
 describe("recordPaymentInSupabase", () => {
-  it("inserts a payment row and updates ledger paid amount", async () => {
+  it("inserts a payment row — ledger is updated by DB trigger", async () => {
     mock.onTable("payments", { error: null });
-    mock.onTable("ledger", { error: null });
 
     const result = await recordPaymentInSupabase(
       "ledger-1",
       "user-bob",
       "user-alice",
       5000,
-      5000,
-      "paid_unconfirmed",
     );
 
     expect(result).toEqual({ error: undefined });
@@ -40,36 +37,10 @@ describe("recordPaymentInSupabase", () => {
       amount_cents: 5000,
     });
 
-    const updates = mock.findCalls("ledger", "update");
-    expect(updates).toHaveLength(1);
-    expect(updates[0].args[0]).toMatchObject({
-      paid_amount_cents: 5000,
-      status: "paid_unconfirmed",
-    });
-    expect(updates[0].args[0]).toHaveProperty("paid_at");
+    expect(mock.findCalls("ledger", "update")).toHaveLength(0);
   });
 
-  it("sets partially_paid status for a partial amount", async () => {
-    mock.onTable("payments", { error: null });
-    mock.onTable("ledger", { error: null });
-
-    await recordPaymentInSupabase(
-      "ledger-1",
-      "user-bob",
-      "user-alice",
-      3000,
-      3000,
-      "partially_paid",
-    );
-
-    const updates = mock.findCalls("ledger", "update");
-    expect(updates[0].args[0]).toMatchObject({
-      paid_amount_cents: 3000,
-      status: "partially_paid",
-    });
-  });
-
-  it("returns the payment error and skips the ledger update", async () => {
+  it("returns the insert error on failure", async () => {
     mock.onTable("payments", { error: { message: "RLS violation" } });
 
     const result = await recordPaymentInSupabase(
@@ -77,28 +48,9 @@ describe("recordPaymentInSupabase", () => {
       "user-bob",
       "user-alice",
       5000,
-      5000,
-      "paid_unconfirmed",
     );
 
     expect(result).toEqual({ error: "RLS violation" });
-    expect(mock.findCalls("ledger", "update")).toHaveLength(0);
-  });
-
-  it("returns the ledger error when the update fails", async () => {
-    mock.onTable("payments", { error: null });
-    mock.onTable("ledger", { error: { message: "DB error" } });
-
-    const result = await recordPaymentInSupabase(
-      "ledger-1",
-      "user-bob",
-      "user-alice",
-      5000,
-      5000,
-      "paid_unconfirmed",
-    );
-
-    expect(result).toEqual({ error: "DB error" });
   });
 });
 

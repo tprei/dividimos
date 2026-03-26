@@ -14,7 +14,7 @@ interface ChargeExplanationProps {
   items: BillItem[];
   splits: ItemSplit[];
   billSplits: BillSplit[];
-  ledger: { fromUserId: string; toUserId: string; amountCents: number }[];
+  ledger: { fromUserId: string; toUserId: string; amountCents: number; paidAmountCents: number }[];
   simplificationResult: SimplificationResult | null;
   currentUserId?: string;
 }
@@ -75,7 +75,13 @@ export function ChargeExplanation({
 
   const finalEdges: DebtEdge[] = simplificationResult
     ? simplificationResult.simplifiedEdges
-    : ledger.map((e) => ({ fromUserId: e.fromUserId, toUserId: e.toUserId, amountCents: e.amountCents }));
+    : ledger
+        .map((e) => ({
+          fromUserId: e.fromUserId,
+          toUserId: e.toUserId,
+          amountCents: e.amountCents - e.paidAmountCents,
+        }))
+        .filter((e) => e.amountCents > 0);
 
   return (
     <div className="rounded-2xl border bg-card overflow-hidden">
