@@ -31,7 +31,8 @@ async function handleMarkPaidLogic(
   fromUserId: string,
   toUserId: string,
 ): Promise<{ error?: string }> {
-  const result = await (markGroupSettlementPaid as ReturnType<typeof vi.fn>)(
+  const mocked = vi.mocked(markGroupSettlementPaid);
+  const result = await mocked(
     settlementId,
     amountCents,
     fromUserId,
