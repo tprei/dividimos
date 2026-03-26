@@ -81,3 +81,42 @@ CREATE TRIGGER after_payment_insert_group_settlement
   AFTER INSERT ON payments
   FOR EACH ROW
   EXECUTE FUNCTION update_group_settlement_on_payment();
+
+-- 7. Patch existing ledger trigger to skip when ledger_id is NULL
+CREATE OR REPLACE FUNCTION update_ledger_on_payment()
+RETURNS TRIGGER AS $$
+DECLARE
+  total_paid    INTEGER;
+  ledger_amount INTEGER;
+  new_status    debt_status;
+BEGIN
+  IF NEW.ledger_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COALESCE(SUM(amount_cents), 0)
+  INTO total_paid
+  FROM payments
+  WHERE ledger_id = NEW.ledger_id;
+
+  SELECT amount_cents
+  INTO ledger_amount
+  FROM ledger
+  WHERE id = NEW.ledger_id;
+
+  IF total_paid >= ledger_amount THEN
+    new_status := 'paid_unconfirmed';
+  ELSE
+    new_status := 'partially_paid';
+  END IF;
+
+  UPDATE ledger
+  SET
+    paid_amount_cents = LEAST(total_paid, ledger_amount),
+    status            = new_status,
+    paid_at           = COALESCE(paid_at, now())
+  WHERE id = NEW.ledger_id;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
