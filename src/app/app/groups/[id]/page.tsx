@@ -326,7 +326,7 @@ export default function GroupDetailPage({
                   placeholder="handle do usuario"
                   value={handleInput}
                   onChange={(e) => {
-                    setHandleInput(e.target.value);
+                    setHandleInput(e.target.value.replace(/ /g, "."));
                     setLookupResult(null);
                     setLookupError("");
                   }}
