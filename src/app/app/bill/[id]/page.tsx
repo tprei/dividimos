@@ -38,7 +38,7 @@ import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { coerceDebtStatus } from "@/lib/type-guards";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
-import { markPaidInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
+import { recordPaymentInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
@@ -450,8 +450,12 @@ export default function BillDetailPage({
   }, [billId, loadAndSetBill]);
 
   const handleRecordPayment = async (entryId: string, amountCents: number) => {
+    const entry = ledger.find((e) => e.id === entryId);
+    if (!entry) return;
+    const newPaid = Math.min(entry.paidAmountCents + amountCents, entry.amountCents);
+    const newStatus = newPaid >= entry.amountCents ? "paid_unconfirmed" : "partially_paid";
     store.recordPayment(entryId, amountCents);
-    await markPaidInSupabase(entryId);
+    await recordPaymentInSupabase(entryId, entry.fromUserId, entry.toUserId, amountCents, newPaid, newStatus);
   };
 
   const handleConfirmPayment = async (entryId: string) => {

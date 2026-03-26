@@ -42,7 +42,7 @@ export function PixQrModal({
   const [loading, setLoading] = useState(false);
 
   const remainingCents = amountCents - paidAmountCents;
-  const [inputValue, setInputValue] = useState(() => centsToDecimal(remainingCents));
+  const [inputValue, setInputValue] = useState(() => centsToDecimal(remainingCents).replace(".", ","));
   const paymentCents = decimalToCents(parseFloat(inputValue.replace(",", ".")) || 0);
   const isFullPayment = paymentCents >= remainingCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= remainingCents;
@@ -50,7 +50,7 @@ export function PixQrModal({
   // Reset input when modal opens or remaining changes
   useEffect(() => {
     if (open) {
-      setInputValue(centsToDecimal(remainingCents));
+      setInputValue(centsToDecimal(remainingCents).replace(".", ","));
     }
   }, [open, remainingCents]);
 

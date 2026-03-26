@@ -1,4 +1,3 @@
-import pino, { type Logger, type LoggerOptions } from "pino";
 import { isAppError } from "./errors";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
@@ -8,63 +7,74 @@ export interface LogContext {
 }
 
 export interface LoggerContext {
-  /** Module or component name for log grouping */
   module?: string;
-  /** Request ID for tracing */
   requestId?: string;
-  /** User ID for audit trails */
   userId?: string;
-  /** Additional context */
   [key: string]: unknown;
+}
+
+export interface Logger {
+  trace(obj: LogContext | undefined, msg: string): void;
+  debug(obj: LogContext | undefined, msg: string): void;
+  info(obj: LogContext | undefined, msg: string): void;
+  warn(obj: LogContext | undefined, msg: string): void;
+  error(obj: LogContext | undefined, msg: string): void;
+  fatal(obj: LogContext | undefined, msg: string): void;
+  child(bindings: LogContext): Logger;
+}
+
+const LEVELS: Record<LogLevel, number> = {
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50,
+  fatal: 60,
+};
+
+function getLogLevel(): LogLevel {
+  const level = (typeof process !== "undefined" && process.env?.LOG_LEVEL) as LogLevel | undefined;
+  if (level && level in LEVELS) return level;
+  return typeof process !== "undefined" && process.env?.NODE_ENV === "production" ? "info" : "debug";
+}
+
+function createLoggerInstance(base: LogContext = {}): Logger {
+  const minLevel = LEVELS[getLogLevel()];
+
+  function log(level: LogLevel, obj: LogContext | undefined, msg: string) {
+    if (LEVELS[level] < minLevel) return;
+    const data = { ...base, ...(obj ?? {}), level };
+    const consoleFn =
+      level === "error" || level === "fatal"
+        ? console.error
+        : level === "warn"
+          ? console.warn
+          : level === "debug" || level === "trace"
+            ? console.debug
+            : console.log;
+    consoleFn(`[${level.toUpperCase()}] ${msg}`, data);
+  }
+
+  return {
+    trace: (obj, msg) => log("trace", obj, msg),
+    debug: (obj, msg) => log("debug", obj, msg),
+    info: (obj, msg) => log("info", obj, msg),
+    warn: (obj, msg) => log("warn", obj, msg),
+    error: (obj, msg) => log("error", obj, msg),
+    fatal: (obj, msg) => log("fatal", obj, msg),
+    child: (bindings) => createLoggerInstance({ ...base, ...bindings }),
+  };
 }
 
 let globalLogger: Logger | null = null;
 
-/**
- * Get the log level from environment or default to 'info'.
- */
-function getLogLevel(): LogLevel {
-  const level = process.env.LOG_LEVEL as LogLevel;
-  if (level && ["trace", "debug", "info", "warn", "error", "fatal"].includes(level)) {
-    return level;
-  }
-  return process.env.NODE_ENV === "production" ? "info" : "debug";
-}
-
-/**
- * Create base logger options.
- */
-function createLoggerOptions(context?: LoggerContext): LoggerOptions {
-  const isProduction = process.env.NODE_ENV === "production";
-
-  return {
-    level: getLogLevel(),
-    base: {
+export function getLogger(context?: LoggerContext): Logger {
+  if (!globalLogger) {
+    globalLogger = createLoggerInstance({
       ...(context?.module && { module: context.module }),
       ...(context?.requestId && { requestId: context.requestId }),
       ...(context?.userId && { userId: context.userId }),
-    },
-    ...(isProduction
-      ? {}
-      : {
-          transport: {
-            target: "pino-pretty",
-            options: {
-              colorize: true,
-              translateTime: "SYS:standard",
-              ignore: "pid,hostname",
-            },
-          },
-        }),
-  };
-}
-
-/**
- * Get or create the global logger instance.
- */
-export function getLogger(context?: LoggerContext): Logger {
-  if (!globalLogger) {
-    globalLogger = pino(createLoggerOptions(context));
+    });
   } else if (context) {
     return globalLogger.child({
       ...(context.module && { module: context.module }),
@@ -75,16 +85,10 @@ export function getLogger(context?: LoggerContext): Logger {
   return globalLogger;
 }
 
-/**
- * Create a child logger with additional context.
- */
 export function createLogger(module: string, baseContext?: LogContext): Logger {
   return getLogger({ module, ...baseContext });
 }
 
-/**
- * Format an error for logging.
- */
 function formatError(error: unknown): Record<string, unknown> {
   if (isAppError(error)) {
     return {
@@ -109,49 +113,25 @@ function formatError(error: unknown): Record<string, unknown> {
   return { error: String(error) };
 }
 
-/**
- * Log an error with full context.
- */
-export function logError(
-  logger: Logger,
-  message: string,
-  error: unknown,
-  context?: LogContext
-): void {
+export function logError(logger: Logger, message: string, error: unknown, context?: LogContext): void {
   const errorInfo = formatError(error);
   logger.error({ ...context, error: errorInfo }, message);
 }
 
-/**
- * Log a warning with optional context.
- */
 export function logWarn(logger: Logger, message: string, context?: LogContext): void {
   logger.warn(context, message);
 }
 
-/**
- * Log an info message with optional context.
- */
 export function logInfo(logger: Logger, message: string, context?: LogContext): void {
   logger.info(context ?? {}, message);
 }
 
-/**
- * Log a debug message with optional context.
- */
 export function logDebug(logger: Logger, message: string, context?: LogContext): void {
   logger.debug(context, message);
 }
 
-/**
- * Server-side logger for API routes and server actions.
- * Automatically redacts sensitive fields.
- */
 export const serverLogger = createLogger("server");
 
-/**
- * Create a request-scoped logger with request ID for tracing.
- */
 export function createRequestLogger(requestId: string, userId?: string): Logger {
   return getLogger({
     module: "api",
@@ -160,12 +140,6 @@ export function createRequestLogger(requestId: string, userId?: string): Logger 
   });
 }
 
-/**
- * Generate a unique request ID.
- */
 export function generateRequestId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
 }
-
-// Re-export types
-export type { Logger };
