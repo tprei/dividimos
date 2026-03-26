@@ -186,6 +186,26 @@ export async function upsertGroupSettlements(
   }
 }
 
+export async function recordGroupSettlementPayment(
+  settlementId: string,
+  fromUserId: string,
+  toUserId: string,
+  amountCents: number,
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { error } = await supabase
+    .from("payments")
+    .insert({
+      group_settlement_id: settlementId,
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      amount_cents: amountCents,
+    });
+
+  return { error: error?.message };
+}
+
 export async function markGroupSettlementPaid(
   settlementId: string,
   amountCents: number,
