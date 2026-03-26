@@ -349,7 +349,7 @@ export default function BillDetailPage({
 
   const { bill, participants, items, splits, billSplits, ledger } = store;
   const [loadingFromDb, setLoadingFromDb] = useState(false);
-  const loadedBillIdRef = useRef<string | null>(null);
+  const loadedBillKeyRef = useRef<string | null>(null);
 
   const loadAndSetBill = useCallback(async (billId: string) => {
     const data = await loadBillFromSupabase(billId);
@@ -386,16 +386,19 @@ export default function BillDetailPage({
     return () => { cancelled = true; };
   }, [id, currentUser, router]);
 
+  const currentUserId = currentUser?.id;
+
   // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
     if (id === "demo") return;
-    // Skip if we've already loaded this bill (data is in store)
-    if (loadedBillIdRef.current === id) {
+    // Composite key ensures we reload when either the bill or the user changes
+    const cacheKey = `${currentUserId ?? "anon"}:${id}`;
+    if (loadedBillKeyRef.current === cacheKey) {
       setLoadingFromDb(false);
       return;
     }
 
-    loadedBillIdRef.current = id;
+    loadedBillKeyRef.current = cacheKey;
     let cancelled = false;
     setLoadingFromDb(true);
     (async () => {
@@ -403,7 +406,7 @@ export default function BillDetailPage({
       if (!cancelled) setLoadingFromDb(false);
     })();
     return () => { cancelled = true; };
-  }, [id, loadAndSetBill]);
+  }, [id, currentUserId, loadAndSetBill]);
 
   const billId = bill?.id;
 
