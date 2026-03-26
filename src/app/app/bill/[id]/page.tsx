@@ -842,7 +842,7 @@ export default function BillDetailPage({
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-5"
+          className="mt-5 space-y-4"
         >
           <Link
             href={`/app/groups/${bill.groupId}`}
@@ -858,6 +858,95 @@ export default function BillDetailPage({
               </p>
             </div>
           </Link>
+
+          <div>
+            <h2 className="mb-3 text-sm font-semibold">Cobrancas desta conta</h2>
+            <div className="space-y-3">
+              {ledger.map((entry, idx) => {
+                const debtor = participants.find((p) => p.id === entry.fromUserId);
+                const creditor = participants.find((p) => p.id === entry.toUserId);
+                const isDebtor = currentUser?.id === entry.fromUserId;
+                const isCreditor = currentUser?.id === entry.toUserId;
+
+                const entryLabel = isDebtor
+                  ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
+                  : isCreditor
+                    ? `${debtor?.name.split(" ")[0] || "?"} te deve`
+                    : `${debtor?.name.split(" ")[0] || "?"} → ${creditor?.name.split(" ")[0] || "?"}`;
+
+                return (
+                  <motion.div
+                    key={entry.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.06 }}
+                    className="overflow-hidden rounded-2xl border bg-card"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+                            {isDebtor ? (creditor?.name.charAt(0) || "?") : (debtor?.name.charAt(0) || "?")}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">
+                              {entryLabel}
+                            </p>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                entry.status === "pending"
+                                  ? "bg-warning/15 text-warning-foreground"
+                                  : entry.status === "partially_paid"
+                                    ? "bg-primary/10 text-primary"
+                                    : entry.status === "paid_unconfirmed"
+                                      ? "bg-primary/15 text-primary"
+                                      : "bg-success/15 text-success"
+                              }`}
+                            >
+                              {entry.status === "pending" && (
+                                <>
+                                  <Clock className="h-3 w-3" />
+                                  Pendente
+                                </>
+                              )}
+                              {entry.status === "partially_paid" && (
+                                <>
+                                  <Clock className="h-3 w-3" />
+                                  Parcialmente pago
+                                </>
+                              )}
+                              {entry.status === "paid_unconfirmed" && (
+                                <>
+                                  <PulsingDot className="bg-primary" />
+                                  Aguardando confirmacao
+                                </>
+                              )}
+                              {entry.status === "settled" && (
+                                <>
+                                  <CheckCheck className="h-3 w-3" />
+                                  Liquidado
+                                </>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-bold tabular-nums">
+                            {formatBRL(entry.amountCents)}
+                          </p>
+                          {entry.paidAmountCents > 0 && entry.status !== "settled" && (
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {formatBRL(entry.paidAmountCents)} pago
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
         </motion.div>
       )}
 
@@ -1218,6 +1307,18 @@ export default function BillDetailPage({
             </AnimatePresence>
           </div>
           )}
+        </motion.div>
+      )}
+
+      {activeTab === "payment" && ledger.length === 0 && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-5"
+        >
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Nenhuma cobranca nesta conta.
+          </p>
         </motion.div>
       )}
 
