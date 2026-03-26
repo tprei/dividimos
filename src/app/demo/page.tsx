@@ -135,6 +135,7 @@ function buildDemoData() {
       fromUserId: debtors[di].id,
       toUserId: creditors[ci].id,
       amountCents: transfer,
+      paidAmountCents: 0,
       status: "pending",
       createdAt: now,
     });
@@ -152,18 +153,21 @@ export default function DemoPage() {
   const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [showSimplifySteps, setShowSimplifySteps] = useState(false);
   const [debtStatuses, setDebtStatuses] = useState<Map<string, DebtStatus>>(new Map());
+  const [debtPaidAmounts, setDebtPaidAmounts] = useState<Map<string, number>>(new Map());
   const [pixModal, setPixModal] = useState<{
     open: boolean;
     entryId: string;
     pixKey: string;
     name: string;
     amount: number;
+    paidAmountCents: number;
   }>({
     open: false,
     entryId: "",
     pixKey: "",
     name: "",
     amount: 0,
+    paidAmountCents: 0,
   });
 
   const { bill, items, splits, ledger, grandTotal } = useMemo(() => buildDemoData(), []);
@@ -179,16 +183,17 @@ export default function DemoPage() {
       ledger.map((e) => ({
         ...e,
         status: debtStatuses.get(e.id) ?? e.status,
+        paidAmountCents: debtPaidAmounts.get(e.id) ?? e.paidAmountCents,
       })),
-    [ledger, debtStatuses],
+    [ledger, debtStatuses, debtPaidAmounts],
   );
 
-  function markPaid(entryId: string) {
-    setDebtStatuses((prev) => {
-      const next = new Map(prev);
-      next.set(entryId, "paid_unconfirmed");
-      return next;
-    });
+  function markPaid(entryId: string, amountCents: number, totalAmountCents: number) {
+    const prevPaid = debtPaidAmounts.get(entryId) ?? 0;
+    const newPaid = Math.min(prevPaid + amountCents, totalAmountCents);
+    const newStatus: DebtStatus = newPaid >= totalAmountCents ? "paid_unconfirmed" : "partially_paid";
+    setDebtPaidAmounts((prev) => new Map(prev).set(entryId, newPaid));
+    setDebtStatuses((prev) => new Map(prev).set(entryId, newStatus));
   }
 
   function confirmPayment(entryId: string) {
@@ -207,12 +212,13 @@ export default function DemoPage() {
         fromUserId: edge.fromUserId,
         toUserId: edge.toUserId,
         amountCents: edge.amountCents,
+        paidAmountCents: debtPaidAmounts.get(`edge_${idx}`) ?? 0,
         status: coerceDebtStatus(debtStatuses.get(`edge_${idx}`), "pending"),
         createdAt: new Date().toISOString(),
       }));
     }
     return ledgerWithStatus;
-  }, [simplifyEnabled, simplificationResult, ledgerWithStatus, debtStatuses]);
+  }, [simplifyEnabled, simplificationResult, ledgerWithStatus, debtStatuses, debtPaidAmounts]);
 
   const allSettled = displayEntries.length > 0 && displayEntries.every((e) => e.status === "settled");
   const pendingCount = displayEntries.filter((e) => e.status !== "settled").length;
@@ -480,6 +486,7 @@ export default function DemoPage() {
                                             pixKey: DEMO_PIX_KEYS[entry.toUserId] || "",
                                             name: receiver?.name || "",
                                             amount: entry.amountCents,
+                                            paidAmountCents: entry.paidAmountCents,
                                           })
                                         }
                                       >
@@ -564,8 +571,9 @@ export default function DemoPage() {
         pixKey={pixModal.pixKey}
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
-        onMarkPaid={() => {
-          markPaid(pixModal.entryId);
+        paidAmountCents={pixModal.paidAmountCents}
+        onMarkPaid={(amountCents) => {
+          markPaid(pixModal.entryId, amountCents, pixModal.amount);
           setPixModal({ ...pixModal, open: false });
         }}
       />

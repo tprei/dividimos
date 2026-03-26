@@ -134,6 +134,24 @@ describe("formatBillAmount", () => {
   });
 });
 
+describe("modal input value roundtrip", () => {
+  it("centsToDecimal with comma substitution roundtrips through sanitizeDecimalInput and decimalToCents", () => {
+    const cents = 10050;
+    const inputValue = centsToDecimal(cents).replace(".", ",");
+    expect(inputValue).toBe("100,50");
+    const sanitized = sanitizeDecimalInput(inputValue);
+    expect(sanitized).toBe("100,50");
+    expect(decimalToCents(parseFloat(sanitized.replace(",", ".")))).toBe(cents);
+  });
+
+  it("sanitizeDecimalInput preserves comma-format values produced by centsToDecimal", () => {
+    for (const cents of [0, 1, 99, 1000, 9999, 100000]) {
+      const input = centsToDecimal(cents).replace(".", ",");
+      expect(sanitizeDecimalInput(input)).toBe(input);
+    }
+  });
+});
+
 describe("sanitizeDecimalInput", () => {
   it("preserves digits and commas", () => {
     expect(sanitizeDecimalInput("10,50")).toBe("10,50");

@@ -4,7 +4,13 @@ export type SplitType = "equal" | "percentage" | "fixed";
 
 export type BillStatus = "draft" | "active" | "partially_settled" | "settled";
 
-export type DebtStatus = "pending" | "paid_unconfirmed" | "settled";
+export type DebtStatus =
+  | "pending"
+  | "partially_paid"
+  | "paid_unconfirmed"
+  | "settled";
+
+export type PaymentStatus = "unconfirmed" | "settled";
 
 export type BillType = "single_amount" | "itemized";
 
@@ -88,6 +94,7 @@ export interface GroupSettlement {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
+  paidAmountCents: number;
   status: DebtStatus;
   paidAt?: string;
   confirmedAt?: string;
@@ -129,10 +136,22 @@ export interface LedgerEntry {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
+  paidAmountCents: number;
   status: DebtStatus;
   paidAt?: string;
   confirmedAt?: string;
   createdAt: string;
+}
+
+export interface Payment {
+  id: string;
+  ledgerId: string;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
+  status: PaymentStatus;
+  createdAt: string;
+  confirmedAt?: string;
 }
 
 export interface ParticipantSummary {

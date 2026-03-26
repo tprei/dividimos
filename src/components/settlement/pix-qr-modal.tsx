@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
-import { formatBRL } from "@/lib/currency";
+import { formatBRL, centsToDecimal, sanitizeDecimalInput, decimalToCents } from "@/lib/currency";
 import { generatePixCopiaECola } from "@/lib/pix";
 
 interface PixQrModalProps {
@@ -14,7 +14,8 @@ interface PixQrModalProps {
   onClose: () => void;
   recipientName: string;
   amountCents: number;
-  onMarkPaid: () => void;
+  paidAmountCents?: number;
+  onMarkPaid: (amountCents: number) => void;
   pixKey?: string;
   recipientUserId?: string;
   billId?: string;
@@ -27,6 +28,7 @@ export function PixQrModal({
   onClose,
   recipientName,
   amountCents,
+  paidAmountCents = 0,
   onMarkPaid,
   pixKey,
   recipientUserId,
@@ -39,8 +41,24 @@ export function PixQrModal({
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const remainingCents = amountCents - paidAmountCents;
+  const [inputValue, setInputValue] = useState(() => centsToDecimal(remainingCents).replace(".", ","));
+  const paymentCents = decimalToCents(parseFloat(inputValue.replace(",", ".")) || 0);
+  const isFullPayment = paymentCents >= remainingCents;
+  const isValidAmount = paymentCents > 0 && paymentCents <= remainingCents;
+
+  // Reset input when modal opens or remaining changes
   useEffect(() => {
-    if (!open || amountCents <= 0) return;
+    if (open) {
+      setInputValue(centsToDecimal(remainingCents).replace(".", ","));
+    }
+  }, [open, remainingCents]);
+
+  // Generate QR code based on the entered amount
+  const qrAmountCents = isValidAmount ? paymentCents : remainingCents;
+
+  useEffect(() => {
+    if (!open || qrAmountCents <= 0) return;
 
     (async () => {
       setCopiaECola("");
@@ -51,7 +69,7 @@ export function PixQrModal({
           pixKey,
           merchantName: recipientName,
           merchantCity: "SAO PAULO",
-          amountCents,
+          amountCents: qrAmountCents,
         });
         setCopiaECola(payload);
         setLoading(false);
@@ -63,7 +81,7 @@ export function PixQrModal({
           const res = await fetch("/api/pix/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ recipientUserId, amountCents, billId, groupId }),
+            body: JSON.stringify({ recipientUserId, amountCents: qrAmountCents, billId, groupId }),
           });
           const data = await res.json();
           if (data.copiaECola) {
@@ -78,7 +96,7 @@ export function PixQrModal({
         setLoading(false);
       }
     })();
-  }, [open, pixKey, recipientUserId, recipientName, amountCents, billId, groupId]);
+  }, [open, pixKey, recipientUserId, recipientName, qrAmountCents, billId, groupId]);
 
   useEffect(() => {
     if (!copiaECola || !canvasRef.current) return;
@@ -94,6 +112,11 @@ export function PixQrModal({
     setCopied(true);
     toast.success("Pix Copia e Cola copiado!");
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handlePayment = () => {
+    if (!isValidAmount) return;
+    onMarkPaid(paymentCents);
   };
 
   if (!open) return null;
@@ -141,14 +164,36 @@ export function PixQrModal({
               {mode === "collect" ? "de" : "para"}{" "}
               <span className="font-medium text-foreground">{recipientName}</span>
             </p>
-            <motion.p
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-              className="mt-3 text-3xl font-bold tabular-nums text-primary"
-            >
-              {formatBRL(amountCents)}
-            </motion.p>
+
+            {/* Amount input for partial payments */}
+            <div className="mt-3">
+              {paidAmountCents > 0 && (
+                <p className="mb-1 text-xs text-muted-foreground">
+                  Ja pago: {formatBRL(paidAmountCents)} de {formatBRL(amountCents)}
+                </p>
+              )}
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-xl font-bold text-primary">R$</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(sanitizeDecimalInput(e.target.value))}
+                  className="w-32 border-b-2 border-primary bg-transparent text-center text-3xl font-bold tabular-nums text-primary outline-none focus:border-primary/80"
+                  aria-label="Valor do pagamento"
+                />
+              </div>
+              {!isFullPayment && isValidAmount && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Restante apos pagamento: {formatBRL(remainingCents - paymentCents)}
+                </p>
+              )}
+              {paymentCents > remainingCents && (
+                <p className="mt-1 text-xs text-destructive">
+                  Valor excede o restante ({formatBRL(remainingCents)})
+                </p>
+              )}
+            </div>
           </div>
 
           <motion.div
@@ -192,9 +237,16 @@ export function PixQrModal({
                 </>
               )}
             </Button>
-            <Button onClick={onMarkPaid} className="w-full gap-2" size="lg">
+            <Button
+              onClick={handlePayment}
+              className="w-full gap-2"
+              size="lg"
+              disabled={!isValidAmount}
+            >
               <Check className="h-4 w-4" />
-              {mode === "collect" ? "Ja recebi" : "Ja paguei"}
+              {mode === "collect"
+                ? isFullPayment ? "Ja recebi" : `Recebi ${formatBRL(paymentCents)}`
+                : isFullPayment ? "Ja paguei" : `Paguei ${formatBRL(paymentCents)}`}
             </Button>
           </div>
 

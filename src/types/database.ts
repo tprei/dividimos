@@ -106,7 +106,8 @@ export interface Database {
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
-          status: "pending" | "paid_unconfirmed" | "settled";
+          paid_amount_cents: number;
+          status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at: string | null;
           confirmed_at: string | null;
           created_at: string;
@@ -117,7 +118,8 @@ export interface Database {
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
-          status?: "pending" | "paid_unconfirmed" | "settled";
+          paid_amount_cents?: number;
+          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
           created_at?: string;
@@ -128,7 +130,8 @@ export interface Database {
           from_user_id?: string;
           to_user_id?: string;
           amount_cents?: number;
-          status?: "pending" | "paid_unconfirmed" | "settled";
+          paid_amount_cents?: number;
+          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
           created_at?: string;
@@ -271,7 +274,8 @@ export interface Database {
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
-          status: "pending" | "paid_unconfirmed" | "settled";
+          paid_amount_cents: number;
+          status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at: string | null;
           confirmed_at: string | null;
           created_at: string;
@@ -282,7 +286,8 @@ export interface Database {
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
-          status?: "pending" | "paid_unconfirmed" | "settled";
+          paid_amount_cents?: number;
+          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
           created_at?: string;
@@ -293,10 +298,44 @@ export interface Database {
           from_user_id?: string;
           to_user_id?: string;
           amount_cents?: number;
-          status?: "pending" | "paid_unconfirmed" | "settled";
+          paid_amount_cents?: number;
+          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      payments: {
+        Row: {
+          id: string;
+          ledger_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount_cents: number;
+          status: "unconfirmed" | "settled";
+          created_at: string;
+          confirmed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          ledger_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount_cents: number;
+          status?: "unconfirmed" | "settled";
+          created_at?: string;
+          confirmed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          ledger_id?: string;
+          from_user_id?: string;
+          to_user_id?: string;
+          amount_cents?: number;
+          status?: "unconfirmed" | "settled";
+          created_at?: string;
+          confirmed_at?: string | null;
         };
         Relationships: [];
       };
@@ -366,7 +405,8 @@ export interface Database {
       bill_status: "draft" | "active" | "partially_settled" | "settled";
       bill_participant_status: "invited" | "accepted" | "declined";
       split_type: "equal" | "percentage" | "fixed";
-      debt_status: "pending" | "paid_unconfirmed" | "settled";
+      debt_status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+      payment_status: "unconfirmed" | "settled";
       group_member_status: "invited" | "accepted";
     };
     CompositeTypes: Record<string, never>;

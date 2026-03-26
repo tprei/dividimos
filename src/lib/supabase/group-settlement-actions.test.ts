@@ -60,6 +60,7 @@ describe("loadGroupBillsAndLedger", () => {
           from_user_id: "user-bob",
           to_user_id: "user-alice",
           amount_cents: 2750,
+          paid_amount_cents: 0,
           status: "pending",
           paid_at: null,
           confirmed_at: null,
@@ -89,7 +90,7 @@ describe("loadGroupBillsAndLedger", () => {
 });
 
 describe("loadGroupSettlements", () => {
-  it("maps settlement rows to domain types", async () => {
+  it("maps settlement rows to domain types including paidAmountCents", async () => {
     mock.onTable("group_settlements", {
       data: [
         {
@@ -98,6 +99,7 @@ describe("loadGroupSettlements", () => {
           from_user_id: "user-bob",
           to_user_id: "user-alice",
           amount_cents: 5000,
+          paid_amount_cents: 2000,
           status: "pending",
           paid_at: null,
           confirmed_at: null,
@@ -115,8 +117,31 @@ describe("loadGroupSettlements", () => {
       fromUserId: "user-bob",
       toUserId: "user-alice",
       amountCents: 5000,
+      paidAmountCents: 2000,
       status: "pending",
     });
+  });
+
+  it("defaults paidAmountCents to 0 when absent from DB row", async () => {
+    mock.onTable("group_settlements", {
+      data: [
+        {
+          id: "gs-2",
+          group_id: "group-1",
+          from_user_id: "user-bob",
+          to_user_id: "user-alice",
+          amount_cents: 3000,
+          status: "pending",
+          paid_at: null,
+          confirmed_at: null,
+          created_at: "2024-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const result = await loadGroupSettlements("group-1");
+
+    expect(result[0].paidAmountCents).toBe(0);
   });
 
   it("returns empty array when no settlements exist", async () => {
@@ -160,6 +185,7 @@ describe("upsertGroupSettlements", () => {
           from_user_id: "user-bob",
           to_user_id: "user-alice",
           amount_cents: 3000,
+          paid_amount_cents: 0,
           status: "pending",
           paid_at: null,
           confirmed_at: null,
@@ -171,6 +197,7 @@ describe("upsertGroupSettlements", () => {
           from_user_id: "user-bob",
           to_user_id: "user-alice",
           amount_cents: 2000,
+          paid_amount_cents: 2000,
           status: "paid_unconfirmed",
           paid_at: "2024-01-02T00:00:00Z",
           confirmed_at: null,
