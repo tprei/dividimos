@@ -186,12 +186,24 @@ export async function upsertGroupSettlements(
   }
 }
 
-export async function markGroupSettlementPaid(settlementId: string): Promise<void> {
+export async function markGroupSettlementPaid(
+  settlementId: string,
+  amountCents: number,
+  fromUserId: string,
+  toUserId: string,
+): Promise<{ error?: string }> {
   const supabase = createClient();
-  await supabase
-    .from("group_settlements")
-    .update({ status: "paid_unconfirmed", paid_at: new Date().toISOString() })
-    .eq("id", settlementId);
+
+  const { error } = await supabase
+    .from("payments")
+    .insert({
+      group_settlement_id: settlementId,
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      amount_cents: amountCents,
+    });
+
+  return { error: error?.message };
 }
 
 export async function confirmGroupSettlement(settlementId: string): Promise<void> {

@@ -145,7 +145,8 @@ export interface LedgerEntry {
 
 export interface Payment {
   id: string;
-  ledgerId: string;
+  ledgerId?: string;
+  groupSettlementId?: string;
   fromUserId: string;
   toUserId: string;
   amountCents: number;

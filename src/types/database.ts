@@ -309,7 +309,8 @@ export interface Database {
       payments: {
         Row: {
           id: string;
-          ledger_id: string;
+          ledger_id: string | null;
+          group_settlement_id: string | null;
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
@@ -319,7 +320,8 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          ledger_id: string;
+          ledger_id?: string | null;
+          group_settlement_id?: string | null;
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
@@ -329,7 +331,8 @@ export interface Database {
         };
         Update: {
           id?: string;
-          ledger_id?: string;
+          ledger_id?: string | null;
+          group_settlement_id?: string | null;
           from_user_id?: string;
           to_user_id?: string;
           amount_cents?: number;
