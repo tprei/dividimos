@@ -114,7 +114,7 @@ export function GroupSettlementView({
   const getParticipant = (id: string) =>
     participants.find((p) => p.id === id) ?? { id, name: "?", handle: "", email: "", pixKeyType: "email" as const, pixKeyHint: "", onboarded: false, createdAt: "" };
 
-  async function handleMarkPaid(settlementId: string) {
+  async function handleMarkPaid(settlementId: string, _amountCents: number) {
     setSettling(settlementId);
     await markGroupSettlementPaid(settlementId);
     setPixModal(null);
@@ -365,11 +365,11 @@ export function GroupSettlementView({
           recipientUserId={pixModal.recipientId}
           groupId={groupId}
           mode={pixModal.mode}
-          onMarkPaid={async () => {
+          onMarkPaid={async (amountCents: number) => {
             if (pixModal.mode === "collect") {
               await handleConfirm(pixModal.settlementId);
             } else {
-              await handleMarkPaid(pixModal.settlementId);
+              await handleMarkPaid(pixModal.settlementId, amountCents);
             }
           }}
         />
