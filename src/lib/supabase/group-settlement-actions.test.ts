@@ -10,6 +10,7 @@ import {
   loadGroupBillsAndLedger,
   loadGroupSettlements,
   upsertGroupSettlements,
+  recordGroupSettlementPayment,
   markGroupSettlementPaid,
   confirmGroupSettlement,
 } from "./group-settlement-actions";
@@ -275,6 +276,42 @@ describe("upsertGroupSettlements", () => {
 
     const deletes = mock.findCalls("group_settlements", "delete");
     expect(deletes).toHaveLength(1);
+  });
+});
+
+describe("recordGroupSettlementPayment", () => {
+  it("inserts a payment row with group_settlement_id", async () => {
+    mock.onTable("payments", { error: null });
+
+    const result = await recordGroupSettlementPayment(
+      "gs-1",
+      "user-bob",
+      "user-alice",
+      2500,
+    );
+
+    expect(result.error).toBeUndefined();
+    const inserts = mock.findCalls("payments", "insert");
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].args[0]).toEqual({
+      group_settlement_id: "gs-1",
+      from_user_id: "user-bob",
+      to_user_id: "user-alice",
+      amount_cents: 2500,
+    });
+  });
+
+  it("returns error message on insert failure", async () => {
+    mock.onTable("payments", { error: { message: "RLS violation" } });
+
+    const result = await recordGroupSettlementPayment(
+      "gs-1",
+      "user-bob",
+      "user-alice",
+      2500,
+    );
+
+    expect(result.error).toBe("RLS violation");
   });
 });
 
