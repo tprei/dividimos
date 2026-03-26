@@ -44,7 +44,7 @@ export function GroupSettlementView({
   const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
-  const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; mode: "pay" | "collect" } | null>(null);
+  const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; paidAmountCents: number; mode: "pay" | "collect" } | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
 
   // Read-only refresh: just load current settlement state from DB
@@ -269,6 +269,7 @@ export function GroupSettlementView({
                         recipientId: settlement.toUserId,
                         recipientName: to.name,
                         amountCents: settlement.amountCents,
+                        paidAmountCents: 0,
                         mode: "pay",
                       })
                     }
@@ -298,6 +299,7 @@ export function GroupSettlementView({
                         recipientId: settlement.fromUserId,
                         recipientName: from.name,
                         amountCents: settlement.amountCents,
+                        paidAmountCents: 0,
                         mode: "collect",
                       })
                     }
