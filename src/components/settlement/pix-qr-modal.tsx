@@ -127,7 +127,7 @@ export function PixQrModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
+        className="fixed inset-0 z-[100] flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
         onClick={onClose}
       >
         <motion.div
