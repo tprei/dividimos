@@ -106,7 +106,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const pixKey = decryptPixKey(recipient.pix_key_encrypted);
+  let pixKey: string;
+  try {
+    pixKey = decryptPixKey(recipient.pix_key_encrypted);
+  } catch {
+    return NextResponse.json(
+      { error: "Erro ao processar chave Pix do destinatario" },
+      { status: 500 },
+    );
+  }
 
   const copiaECola = generatePixCopiaECola({
     pixKey,
