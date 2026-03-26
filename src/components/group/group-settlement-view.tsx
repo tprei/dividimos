@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import toast from "react-hot-toast";
 import { Check, CheckCheck, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
@@ -23,6 +24,7 @@ import {
   upsertGroupSettlements,
   markGroupSettlementPaid,
   confirmGroupSettlement,
+  recordGroupSettlementPayment,
 } from "@/lib/supabase/group-settlement-actions";
 import { createClient } from "@/lib/supabase/client";
 import type { GroupSettlement, User } from "@/types";
@@ -114,9 +116,34 @@ export function GroupSettlementView({
   const getParticipant = (id: string) =>
     participants.find((p) => p.id === id) ?? { id, name: "?", handle: "", email: "", pixKeyType: "email" as const, pixKeyHint: "", onboarded: false, createdAt: "" };
 
-  async function handleMarkPaid(settlementId: string, _amountCents: number) {
+  async function handleMarkPaid(settlementId: string, amountCents: number) {
     setSettling(settlementId);
-    await markGroupSettlementPaid(settlementId);
+    const settlement = settlements.find((s) => s.id === settlementId);
+    if (!settlement) {
+      setSettling(null);
+      return;
+    }
+
+    // Record the payment in the payments table
+    const { error } = await recordGroupSettlementPayment(
+      settlementId,
+      settlement.fromUserId,
+      settlement.toUserId,
+      amountCents,
+    );
+
+    if (error) {
+      toast.error("Erro ao registrar pagamento");
+      setSettling(null);
+      return;
+    }
+
+    // If full payment (covers remaining balance), mark as paid_unconfirmed
+    const remainingAfterPayment = settlement.amountCents - settlement.paidAmountCents - amountCents;
+    if (remainingAfterPayment <= 0) {
+      await markGroupSettlementPaid(settlementId);
+    }
+
     setPixModal(null);
     await refreshSettlements();
     setSettling(null);
