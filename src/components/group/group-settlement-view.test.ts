@@ -21,6 +21,15 @@ import {
   markGroupSettlementPaid,
 } from "@/lib/supabase/group-settlement-actions";
 
+type MarkPaidFn = (
+  settlementId: string,
+  amountCents: number,
+  fromUserId: string,
+  toUserId: string,
+) => Promise<{ error?: string }>;
+
+const mockedMarkPaid = markGroupSettlementPaid as unknown as ReturnType<typeof vi.fn<MarkPaidFn>>;
+
 /**
  * Mirrors the handleMarkPaid logic from GroupSettlementView.
  * This lets us unit-test the payment decision logic without rendering the component.
@@ -31,8 +40,7 @@ async function handleMarkPaidLogic(
   fromUserId: string,
   toUserId: string,
 ): Promise<{ error?: string }> {
-  const mocked = vi.mocked(markGroupSettlementPaid);
-  const result = await mocked(
+  const result = await mockedMarkPaid(
     settlementId,
     amountCents,
     fromUserId,
@@ -44,7 +52,7 @@ async function handleMarkPaidLogic(
 describe("handleMarkPaid logic", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(markGroupSettlementPaid).mockResolvedValue({ error: undefined });
+    mockedMarkPaid.mockResolvedValue({ error: undefined });
   });
 
   it("calls markGroupSettlementPaid with correct arguments", async () => {
@@ -65,7 +73,7 @@ describe("handleMarkPaid logic", () => {
   });
 
   it("returns error message on failure", async () => {
-    vi.mocked(markGroupSettlementPaid).mockResolvedValue({ error: "RLS violation" });
+    mockedMarkPaid.mockResolvedValue({ error: "RLS violation" });
 
     const result = await handleMarkPaidLogic("gs-1", 5000, "user-bob", "user-alice");
 
