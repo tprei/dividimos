@@ -569,6 +569,7 @@ export default function DemoPage() {
           markPaid(pixModal.entryId);
           setPixModal({ ...pixModal, open: false });
         }}
+
       />
 
       {simplificationResult && (

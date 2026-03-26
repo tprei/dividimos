@@ -334,6 +334,7 @@ export default function BillDetailPage({
     recipientUserId: string;
     name: string;
     amount: number;
+    paidAmountCents: number;
     mode: "pay" | "collect";
   }>({
     open: false,
@@ -341,6 +342,7 @@ export default function BillDetailPage({
     recipientUserId: "",
     name: "",
     amount: 0,
+    paidAmountCents: 0,
     mode: "pay",
   });
 
@@ -447,8 +449,8 @@ export default function BillDetailPage({
     return () => { supabase.removeChannel(channel); };
   }, [billId, loadAndSetBill]);
 
-  const handleMarkPaid = async (entryId: string) => {
-    store.markPaid(entryId);
+  const handleRecordPayment = async (entryId: string, amountCents: number) => {
+    store.recordPayment(entryId, amountCents);
     await markPaidInSupabase(entryId);
   };
 
@@ -921,6 +923,7 @@ export default function BillDetailPage({
                                       recipientUserId: receiver?.id || "",
                                       name: receiver?.name || "",
                                       amount: edge.amountCents,
+                                      paidAmountCents: 0,
                                       mode: "pay",
                                     })
                                   }
@@ -1042,12 +1045,13 @@ export default function BillDetailPage({
                                   recipientUserId: creditor?.id || "",
                                   name: creditor?.name || "",
                                   amount: entry.amountCents,
+                                  paidAmountCents: entry.paidAmountCents,
                                   mode: "pay",
                                 })
                               }
                             >
                               <QrCode className="h-4 w-4" />
-                              Pagar {formatBRL(entry.amountCents)} para {creditor?.name.split(" ")[0]}
+                              Pagar {formatBRL(entry.amountCents - entry.paidAmountCents)} para {creditor?.name.split(" ")[0]}
                             </Button>
                           </motion.div>
                         )}
@@ -1072,6 +1076,7 @@ export default function BillDetailPage({
                                   recipientUserId: currentUser?.id || "",
                                   name: debtor?.name || "",
                                   amount: entry.amountCents,
+                                  paidAmountCents: entry.paidAmountCents,
                                   mode: "collect",
                                 })
                               }
@@ -1165,12 +1170,13 @@ export default function BillDetailPage({
         billId={bill.id}
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
+        paidAmountCents={pixModal.paidAmountCents}
         mode={pixModal.mode}
-        onMarkPaid={() => {
+        onMarkPaid={(amountCents) => {
           if (pixModal.mode === "collect") {
             handleConfirmPayment(pixModal.entryId);
           } else {
-            handleMarkPaid(pixModal.entryId);
+            handleRecordPayment(pixModal.entryId, amountCents);
           }
           setPixModal({ ...pixModal, open: false });
         }}
