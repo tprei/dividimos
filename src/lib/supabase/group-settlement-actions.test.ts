@@ -10,7 +10,6 @@ import {
   loadGroupBillsAndLedger,
   loadGroupSettlements,
   upsertGroupSettlements,
-  recordGroupSettlementPayment,
   markGroupSettlementPaid,
   confirmGroupSettlement,
 } from "./group-settlement-actions";
@@ -279,54 +278,29 @@ describe("upsertGroupSettlements", () => {
   });
 });
 
-describe("recordGroupSettlementPayment", () => {
-  it("inserts a payment row with group_settlement_id", async () => {
+describe("markGroupSettlementPaid", () => {
+  it("inserts a payment row for the group settlement", async () => {
     mock.onTable("payments", { error: null });
 
-    const result = await recordGroupSettlementPayment(
-      "gs-1",
-      "user-bob",
-      "user-alice",
-      2500,
-    );
+    const result = await markGroupSettlementPaid("gs-1", 4000, "user-bob", "user-alice");
 
     expect(result.error).toBeUndefined();
     const inserts = mock.findCalls("payments", "insert");
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].args[0]).toEqual({
+    expect(inserts[0].args[0]).toMatchObject({
       group_settlement_id: "gs-1",
       from_user_id: "user-bob",
       to_user_id: "user-alice",
-      amount_cents: 2500,
+      amount_cents: 4000,
     });
   });
 
   it("returns error message on insert failure", async () => {
     mock.onTable("payments", { error: { message: "RLS violation" } });
 
-    const result = await recordGroupSettlementPayment(
-      "gs-1",
-      "user-bob",
-      "user-alice",
-      2500,
-    );
+    const result = await markGroupSettlementPaid("gs-1", 4000, "user-bob", "user-alice");
 
     expect(result.error).toBe("RLS violation");
-  });
-});
-
-describe("markGroupSettlementPaid", () => {
-  it("updates status to paid_unconfirmed with timestamp", async () => {
-    mock.onTable("group_settlements", { error: null });
-
-    await markGroupSettlementPaid("gs-1");
-
-    const updates = mock.findCalls("group_settlements", "update");
-    expect(updates).toHaveLength(1);
-    expect(updates[0].args[0]).toMatchObject({
-      status: "paid_unconfirmed",
-    });
-    expect(updates[0].args[0]).toHaveProperty("paid_at");
   });
 });
 

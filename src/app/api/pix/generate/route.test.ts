@@ -22,6 +22,7 @@ vi.mock("@/lib/pix", () => ({
   generatePixCopiaECola: vi.fn(() => "00020126580014br.gov.bcb.pix...test"),
 }));
 
+import { decryptPixKey } from "@/lib/crypto";
 import { POST } from "./route";
 
 beforeEach(() => {
@@ -205,5 +206,32 @@ describe("POST /api/pix/generate", () => {
       const body = await response.json();
       expect(body).toHaveProperty("copiaECola");
     });
+  });
+
+  it("returns 500 when pix key decryption fails", async () => {
+    serverMock.setUser({ id: "user-alice" });
+
+    serverMock.onTable("bill_participants", {
+      data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
+    });
+    serverMock.onTable("bill_participants", {
+      data: { status: "accepted" },
+    });
+
+    adminMock.onTable("users", {
+      data: { pix_key_encrypted: "corrupted-data", name: "Bob Santos" },
+    });
+
+    vi.mocked(decryptPixKey).mockImplementationOnce(() => {
+      throw new Error("Invalid encryption payload");
+    });
+
+    const response = await POST(
+      makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toContain("chave Pix");
   });
 });

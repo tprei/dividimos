@@ -40,6 +40,7 @@ export function PixQrModal({
   const [copiaECola, setCopiaECola] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const remainingCents = amountCents - paidAmountCents;
   const [inputValue, setInputValue] = useState(() => centsToDecimal(remainingCents).replace(".", ","));
@@ -62,6 +63,7 @@ export function PixQrModal({
 
     (async () => {
       setCopiaECola("");
+      setError("");
       setLoading(true);
 
       if (pixKey) {
@@ -87,8 +89,10 @@ export function PixQrModal({
           if (data.copiaECola) {
             setCopiaECola(data.copiaECola);
           } else {
-            toast.error(data.error || "Erro ao gerar Pix");
+            setError(data.error || "Erro ao gerar Pix");
           }
+        } catch {
+          setError("Erro de conexao. Tente novamente.");
         } finally {
           setLoading(false);
         }
@@ -127,7 +131,7 @@ export function PixQrModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
+        className="fixed inset-0 z-[100] flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
         onClick={onClose}
       >
         <motion.div
@@ -205,6 +209,11 @@ export function PixQrModal({
             {loading ? (
               <div className="flex h-[240px] w-[240px] items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : error ? (
+              <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
+                <QrCode className="h-12 w-12 text-muted-foreground/30" />
+                <p className="text-sm text-destructive">{error}</p>
               </div>
             ) : (
               <canvas ref={canvasRef} />

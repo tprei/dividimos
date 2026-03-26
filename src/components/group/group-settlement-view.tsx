@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import toast from "react-hot-toast";
 import { Check, CheckCheck, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
@@ -24,7 +23,6 @@ import {
   upsertGroupSettlements,
   markGroupSettlementPaid,
   confirmGroupSettlement,
-  recordGroupSettlementPayment,
 } from "@/lib/supabase/group-settlement-actions";
 import { createClient } from "@/lib/supabase/client";
 import type { GroupSettlement, User } from "@/types";
@@ -46,7 +44,7 @@ export function GroupSettlementView({
   const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
-  const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; mode: "pay" | "collect" } | null>(null);
+  const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; paidAmountCents: number; mode: "pay" | "collect" } | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
 
   // Read-only refresh: just load current settlement state from DB
@@ -110,40 +108,15 @@ export function GroupSettlementView({
     : simplificationResult?.originalEdges ?? [];
 
   const myDebts = settlements.filter(
-    (s) => s.fromUserId === currentUserId && s.status === "pending",
+    (s) => s.fromUserId === currentUserId && (s.status === "pending" || s.status === "partially_paid"),
   );
 
   const getParticipant = (id: string) =>
     participants.find((p) => p.id === id) ?? { id, name: "?", handle: "", email: "", pixKeyType: "email" as const, pixKeyHint: "", onboarded: false, createdAt: "" };
 
-  async function handleMarkPaid(settlementId: string, amountCents: number) {
+  async function handleMarkPaid(settlementId: string, amountCents: number, fromUserId: string, toUserId: string) {
     setSettling(settlementId);
-    const settlement = settlements.find((s) => s.id === settlementId);
-    if (!settlement) {
-      setSettling(null);
-      return;
-    }
-
-    // Record the payment in the payments table
-    const { error } = await recordGroupSettlementPayment(
-      settlementId,
-      settlement.fromUserId,
-      settlement.toUserId,
-      amountCents,
-    );
-
-    if (error) {
-      toast.error("Erro ao registrar pagamento");
-      setSettling(null);
-      return;
-    }
-
-    // If full payment (covers remaining balance), mark as paid_unconfirmed
-    const remainingAfterPayment = settlement.amountCents - settlement.paidAmountCents - amountCents;
-    if (remainingAfterPayment <= 0) {
-      await markGroupSettlementPaid(settlementId);
-    }
-
+    await markGroupSettlementPaid(settlementId, amountCents, fromUserId, toUserId);
     setPixModal(null);
     await refreshSettlements();
     setSettling(null);
@@ -158,7 +131,11 @@ export function GroupSettlementView({
 
   async function handleSettleAll() {
     setSettling("all");
-    await Promise.all(myDebts.map((s) => markGroupSettlementPaid(s.id)));
+    await Promise.all(
+      myDebts.map((s) =>
+        markGroupSettlementPaid(s.id, s.amountCents - s.paidAmountCents, s.fromUserId, s.toUserId),
+      ),
+    );
     await refreshSettlements();
     setSettling(null);
   }
@@ -275,18 +252,29 @@ export function GroupSettlementView({
                 </div>
                 <div className="text-right">
                   <p className="font-semibold tabular-nums text-sm">{formatBRL(settlement.amountCents)}</p>
+                  {settlement.paidAmountCents > 0 && settlement.status !== "paid_unconfirmed" && (
+                    <p className="text-[10px] text-muted-foreground tabular-nums">
+                      Pago: {formatBRL(settlement.paidAmountCents)}
+                    </p>
+                  )}
                   <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${
                     settlement.status === "paid_unconfirmed"
                       ? "bg-warning/15 text-warning-foreground"
-                      : "bg-muted text-muted-foreground"
+                      : settlement.status === "partially_paid"
+                        ? "bg-primary/15 text-primary"
+                        : "bg-muted text-muted-foreground"
                   }`}>
-                    {settlement.status === "paid_unconfirmed" ? "Aguardando" : "Pendente"}
+                    {settlement.status === "paid_unconfirmed"
+                      ? "Aguardando"
+                      : settlement.status === "partially_paid"
+                        ? "Parcial"
+                        : "Pendente"}
                   </span>
                 </div>
               </div>
 
               <div className="flex gap-2">
-                {isDebtor && settlement.status === "pending" && (
+                {isDebtor && (settlement.status === "pending" || settlement.status === "partially_paid") && (
                   <Button
                     className="flex-1"
                     size="sm"
@@ -296,6 +284,7 @@ export function GroupSettlementView({
                         recipientId: settlement.toUserId,
                         recipientName: to.name,
                         amountCents: settlement.amountCents,
+                        paidAmountCents: settlement.paidAmountCents,
                         mode: "pay",
                       })
                     }
@@ -314,7 +303,7 @@ export function GroupSettlementView({
                   </div>
                 )}
 
-                {isCreditor && settlement.status === "pending" && (
+                {isCreditor && (settlement.status === "pending" || settlement.status === "partially_paid") && (
                   <Button
                     variant="outline"
                     className="flex-1"
@@ -325,6 +314,7 @@ export function GroupSettlementView({
                         recipientId: settlement.fromUserId,
                         recipientName: from.name,
                         amountCents: settlement.amountCents,
+                        paidAmountCents: settlement.paidAmountCents,
                         mode: "collect",
                       })
                     }
@@ -389,6 +379,7 @@ export function GroupSettlementView({
           onClose={() => setPixModal(null)}
           recipientName={pixModal.recipientName}
           amountCents={pixModal.amountCents}
+          paidAmountCents={pixModal.paidAmountCents}
           recipientUserId={pixModal.recipientId}
           groupId={groupId}
           mode={pixModal.mode}
@@ -396,7 +387,7 @@ export function GroupSettlementView({
             if (pixModal.mode === "collect") {
               await handleConfirm(pixModal.settlementId);
             } else {
-              await handleMarkPaid(pixModal.settlementId, amountCents);
+              await handleMarkPaid(pixModal.settlementId, amountCents, currentUserId, pixModal.recipientId);
             }
           }}
         />
