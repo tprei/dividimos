@@ -269,7 +269,7 @@ export function GroupSettlementView({
                         recipientId: settlement.toUserId,
                         recipientName: to.name,
                         amountCents: settlement.amountCents,
-                        paidAmountCents: 0,
+                        paidAmountCents: settlement.paidAmountCents,
                         mode: "pay",
                       })
                     }
@@ -299,7 +299,7 @@ export function GroupSettlementView({
                         recipientId: settlement.fromUserId,
                         recipientName: from.name,
                         amountCents: settlement.amountCents,
-                        paidAmountCents: 0,
+                        paidAmountCents: settlement.paidAmountCents,
                         mode: "collect",
                       })
                     }
