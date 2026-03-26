@@ -90,7 +90,7 @@ export function AddParticipantByHandle({
             placeholder="handle do usuario"
             value={handle}
             onChange={(e) => {
-              setHandle(e.target.value);
+              setHandle(e.target.value.replace(/ /g, "."));
               setResult(null);
             }}
             onKeyDown={handleKeyDown}

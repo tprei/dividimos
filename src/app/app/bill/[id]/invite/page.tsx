@@ -43,6 +43,32 @@ export default function BillInvitePage({
 
   const supabase = createClient();
 
+  // Listen for bill deletion in real-time
+  useEffect(() => {
+    if (!user || loading) return;
+
+    const channel = supabase
+      .channel(`invite-bill-deleted:${billId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "bills",
+          filter: `id=eq.${billId}`,
+        },
+        () => {
+          toast("Este rascunho foi excluido.", { icon: "🗑️" });
+          router.push("/app");
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, loading, billId, router, supabase]);
+
   useEffect(() => {
     if (!user) return;
 

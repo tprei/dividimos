@@ -42,6 +42,7 @@ import { recordPaymentInSupabase, confirmPaymentInSupabase } from "@/lib/supabas
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
+import toast from "react-hot-toast";
 import type { BillParticipantStatus, BillStatus, DebtStatus, User } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
@@ -468,6 +469,23 @@ export default function BillDetailPage({
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [billId, currentUser?.id, loadAndSetBill]);
+
+  useEffect(() => {
+    if (!billId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`bill-deleted:${billId}`)
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "bills", filter: `id=eq.${billId}` },
+        () => {
+          toast("Este rascunho foi excluido.", { icon: "🗑️" });
+          router.push("/app");
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [billId, router]);
 
   const handleRecordPayment = async (entryId: string, amountCents: number) => {
     const entry = ledger.find((e) => e.id === entryId);
