@@ -112,9 +112,61 @@ describe("syncBillToSupabase", () => {
     const payerInserts = mock.findCalls("bill_payers", "insert");
     expect(payerInserts).toHaveLength(1);
 
-    // Verify ledger
+    // Verify ledger includes entry_type and paid_amount_cents
     const ledgerInserts = mock.findCalls("ledger", "insert");
     expect(ledgerInserts).toHaveLength(1);
+    expect(ledgerInserts[0].args[0][0]).toMatchObject({
+      bill_id: "new-bill-1",
+      entry_type: "debt",
+      group_id: null,
+      from_user_id: "user-bob",
+      to_user_id: "user-alice",
+      amount_cents: 5000,
+      paid_amount_cents: 0,
+      status: "pending",
+    });
+  });
+
+  it("sets group_id on ledger entries for group bills", async () => {
+    mock.setUser({ id: "user-alice" });
+
+    mock.onTable("bills", { data: { id: "new-bill-group" } });
+    mock.onTable("bill_participants", { error: null });
+    mock.onTable("bill_payers", { error: null });
+    mock.onTable("ledger", { error: null });
+
+    const bill = makeSingleAmountBill({
+      status: "active",
+      totalAmount: 10000,
+      payers: [{ userId: "user-alice", amountCents: 10000 }],
+    });
+
+    const result = await syncBillToSupabase({
+      bill,
+      participants: [userAlice, userBob],
+      items: [],
+      splits: [],
+      billSplits: [
+        {
+          userId: "user-bob",
+          splitType: "equal",
+          value: 1,
+          computedAmountCents: 5000,
+        },
+      ],
+      ledger: [makeLedgerEntry({ amountCents: 5000 })],
+      groupId: "group-42",
+    });
+
+    expect(result).toEqual({ billId: "new-bill-group" });
+
+    const ledgerInserts = mock.findCalls("ledger", "insert");
+    expect(ledgerInserts).toHaveLength(1);
+    expect(ledgerInserts[0].args[0][0]).toMatchObject({
+      entry_type: "debt",
+      group_id: "group-42",
+      paid_amount_cents: 0,
+    });
   });
 
   it("inserts a new single_amount bill with bill splits", async () => {
