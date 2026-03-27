@@ -79,7 +79,7 @@ export function distributeProportionally(
  * @returns Array of distributed amounts
  */
 export function distributeEvenly(total: number, count: number): number[] {
-  if (count === 0 || total === 0) {
+  if (count === 0) {
     return [];
   }
   return distributeProportionally(total, new Array(count).fill(1));

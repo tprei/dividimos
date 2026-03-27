@@ -23,7 +23,7 @@ describe("distributeProportionally", () => {
   });
   it("should handle remainder distribution correctly", () => {
     const result = distributeProportionally(100, [30, 40, 26]);
-    expect(result).toEqual([30, 44, 26]);
+    expect(result).toEqual([31, 42, 27]);
     expect(result.reduce((a, b) => a + b, 0)).toBe(100);
   });
   it("should handle unequal weights", () => {
@@ -61,8 +61,8 @@ describe("distributeEvenly", () => {
 
 describe("formatBRL integration", () => {
   it("should format cents to BRL string", () => {
-    expect(formatBRL(100)).toBe("R$\u00a0 1,00");
-    expect(formatBRL(1)).toBe("R$\u00a0 0,01");
-    expect(formatBRL(12345)).toBe("R$\u00a0 123,45");
+    expect(formatBRL(100)).toBe("R$\u00a01,00");
+    expect(formatBRL(1)).toBe("R$\u00a00,01");
+    expect(formatBRL(12345)).toBe("R$\u00a0123,45");
   });
 });
