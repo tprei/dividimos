@@ -413,7 +413,7 @@ export default function BillDetailPage({
               ledger: [...state.ledger, newEntry],
             }));
           } else if (payload.eventType === "UPDATE") {
-            const updated = payload.new as { id: string; status: string; paid_amount_cents: number; paid_at: string | null; confirmed_at: string | null };
+            const updated = payload.new as { id: string; status: string; paid_amount_cents: number; paid_at: string | null };
             useBillStore.setState((state) => ({
               ledger: state.ledger.map((e) =>
                 e.id === updated.id
@@ -422,7 +422,6 @@ export default function BillDetailPage({
                       status: coerceDebtStatus(updated.status, "pending"),
                       paidAmountCents: updated.paid_amount_cents ?? e.paidAmountCents,
                       paidAt: updated.paid_at ?? undefined,
-                      confirmedAt: updated.confirmed_at ?? undefined,
                     }
                   : e,
               ),
@@ -638,9 +637,6 @@ export default function BillDetailPage({
   const allSettled = ledger.length > 0 && ledger.every((e) => e.status === "settled");
   const settledCount = ledger.filter((e) => e.status === "settled").length;
   const isGroupBill = !!bill.groupId;
-  const hasGroupCascadeSettled = isGroupBill && ledger.some(
-    (e) => e.status === "settled" && !e.paidAt && e.confirmedAt,
-  );
 
   const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
   const grandTotal =
@@ -803,9 +799,7 @@ export default function BillDetailPage({
           <AnimatedCheckmark size={64} />
           <h3 className="mt-4 text-lg font-bold">Tudo liquidado!</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            {hasGroupCascadeSettled
-              ? "Liquidado via acerto do grupo."
-              : "Todos os pagamentos foram confirmados."}
+            Todos os pagamentos foram liquidados.
           </p>
           {isGroupBill && (
             <Link
@@ -1215,11 +1209,9 @@ export default function BillDetailPage({
                           >
                             <CheckCheck className="h-4 w-4 shrink-0 text-success" />
                             <span className="text-xs text-success">
-                              {isGroupBill && !entry.paidAt && entry.confirmedAt
-                                ? "Liquidado via acerto do grupo"
-                                : "Liquidado"}
-                              {entry.confirmedAt &&
-                                ` em ${new Date(entry.confirmedAt).toLocaleString("pt-BR", {
+                              Liquidado
+                              {entry.paidAt &&
+                                ` em ${new Date(entry.paidAt).toLocaleString("pt-BR", {
                                   day: "2-digit",
                                   month: "short",
                                   hour: "2-digit",

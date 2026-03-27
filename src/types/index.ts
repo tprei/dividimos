@@ -9,8 +9,6 @@ export type DebtStatus =
   | "partially_paid"
   | "settled";
 
-export type PaymentStatus = "unconfirmed" | "settled";
-
 export type LedgerEntryType = "debt" | "payment";
 
 export type BillType = "single_amount" | "itemized";
@@ -98,7 +96,6 @@ export interface GroupSettlement {
   paidAmountCents: number;
   status: DebtStatus;
   paidAt?: string;
-  confirmedAt?: string;
   createdAt: string;
 }
 
@@ -142,8 +139,6 @@ export interface LedgerEntry {
   paidAmountCents: number;
   status: DebtStatus;
   paidAt?: string;
-  confirmedAt?: string;
-  confirmedBy?: string;
   createdAt: string;
 }
 

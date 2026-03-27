@@ -63,8 +63,6 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     paidAmountCents: e.paid_amount_cents ?? 0,
     status: e.status === "paid_unconfirmed" ? "settled" : e.status,
     paidAt: e.paid_at ?? undefined,
-    confirmedAt: e.confirmed_at ?? undefined,
-    confirmedBy: e.confirmed_by ?? undefined,
     createdAt: e.created_at,
   }));
 
@@ -115,7 +113,6 @@ export async function loadGroupSettlements(groupId: string): Promise<GroupSettle
     paidAmountCents: s.paid_amount_cents ?? 0,
     status: s.status === "paid_unconfirmed" ? "settled" : s.status,
     paidAt: s.paid_at ?? undefined,
-    confirmedAt: s.confirmed_at ?? undefined,
     createdAt: s.created_at,
   }));
 }

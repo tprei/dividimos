@@ -198,7 +198,7 @@ describe("upsertGroupSettlements", () => {
           to_user_id: "user-alice",
           amount_cents: 2000,
           paid_amount_cents: 2000,
-          status: "paid_unconfirmed",
+          status: "partially_paid",
           paid_at: "2024-01-02T00:00:00Z",
           confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",

@@ -35,7 +35,7 @@ describe("Settlement flows", () => {
     const { ledger } = useBillStore.getState();
 
     for (const entry of ledger) {
-      useBillStore.getState().confirmPayment(entry.id);
+      useBillStore.getState().markPaid(entry.id);
     }
 
     expect(useBillStore.getState().bill!.status).toBe("settled");
@@ -43,7 +43,7 @@ describe("Settlement flows", () => {
 
   it("settling first entry only → partially_settled", () => {
     const { ledger } = useBillStore.getState();
-    useBillStore.getState().confirmPayment(ledger[0].id);
+    useBillStore.getState().markPaid(ledger[0].id);
 
     expect(useBillStore.getState().bill!.status).toBe("partially_settled");
   });

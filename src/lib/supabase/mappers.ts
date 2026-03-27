@@ -79,8 +79,6 @@ export function ledgerRowToLedgerEntry(row: LedgerRow): LedgerEntry {
     paidAmountCents: row.paid_amount_cents,
     status: coerceDebtStatus(row.status, "pending"),
     paidAt: row.paid_at ?? undefined,
-    confirmedAt: row.confirmed_at ?? undefined,
-    confirmedBy: row.confirmed_by ?? undefined,
     createdAt: row.created_at,
   };
 }

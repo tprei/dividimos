@@ -54,8 +54,6 @@ interface BillState {
   computeLedger: () => void;
   recordPayment: (entryId: string, amountCents: number) => void;
   markPaid: (entryId: string) => void;
-  confirmPayment: (entryId: string) => void;
-
   getParticipantTotal: (userId: string) => number;
   reset: () => void;
 }
@@ -457,17 +455,6 @@ export const useBillStore = create<BillState>((set, get) => ({
     if (!entry) return;
     const remaining = entry.amountCents - entry.paidAmountCents;
     get().recordPayment(entryId, remaining);
-  },
-
-  confirmPayment: (entryId) => {
-    set({
-      ledger: get().ledger.map((e) =>
-        e.id === entryId
-          ? { ...e, status: "settled" as DebtStatus, confirmedAt: new Date().toISOString() }
-          : e,
-      ),
-    });
-    checkAllSettled(get, set);
   },
 
   getParticipantTotal: (userId) => {
