@@ -116,4 +116,85 @@ describe("PixQrModal", () => {
     // No error message should be present
     expect(screen.queryByText(/Erro/)).not.toBeInTheDocument();
   });
+
+  describe("slider input", () => {
+    it("renders a range slider when modal is open", () => {
+      render(
+        <PixQrModal
+          {...defaultProps}
+          pixKey="test@pix.com"
+        />,
+      );
+
+      const slider = screen.getByRole("slider", { name: /ajustar valor/i });
+      expect(slider).toBeInTheDocument();
+      expect(slider).toHaveAttribute("min", "1");
+      expect(slider).toHaveAttribute("max", "10000");
+    });
+
+    it("slider value syncs with the text input", () => {
+      render(
+        <PixQrModal
+          {...defaultProps}
+          pixKey="test@pix.com"
+          amountCents={50000}
+        />,
+      );
+
+      const slider = screen.getByRole("slider", { name: /ajustar valor/i });
+      expect(slider).toHaveValue("50000");
+
+      const textInput = screen.getByRole("textbox", { name: /valor do pagamento/i });
+      expect(textInput).toHaveValue("500,00");
+    });
+
+    it("updates text input when slider changes", async () => {
+      const { default: userEvent } = await import("@testing-library/user-event");
+      const user = userEvent.setup();
+
+      render(
+        <PixQrModal
+          {...defaultProps}
+          pixKey="test@pix.com"
+          amountCents={10000}
+        />,
+      );
+
+      const slider = screen.getByRole("slider", { name: /ajustar valor/i });
+      // Simulate changing the slider via fireEvent since userEvent doesn't support range well
+      const { fireEvent } = await import("@testing-library/react");
+      fireEvent.change(slider, { target: { value: "5000" } });
+
+      const textInput = screen.getByRole("textbox", { name: /valor do pagamento/i });
+      expect(textInput).toHaveValue("50,00");
+    });
+
+    it("does not render slider when remainingCents is 0", () => {
+      render(
+        <PixQrModal
+          {...defaultProps}
+          pixKey="test@pix.com"
+          amountCents={10000}
+          paidAmountCents={10000}
+        />,
+      );
+
+      expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    });
+
+    it("clamps slider value to remainingCents with partial payment", () => {
+      render(
+        <PixQrModal
+          {...defaultProps}
+          pixKey="test@pix.com"
+          amountCents={10000}
+          paidAmountCents={3000}
+        />,
+      );
+
+      const slider = screen.getByRole("slider", { name: /ajustar valor/i });
+      expect(slider).toHaveAttribute("max", "7000");
+      expect(slider).toHaveValue("7000");
+    });
+  });
 });
