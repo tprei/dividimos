@@ -230,3 +230,91 @@ export async function createTestGroup(
 
   return group;
 }
+
+export async function addBillParticipant(
+  billId: string,
+  userId: string,
+  status: Database["public"]["Enums"]["bill_participant_status"] = "accepted",
+  invitedBy?: string,
+): Promise<void> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  const { error } = await adminClient.from("bill_participants").insert({
+    bill_id: billId,
+    user_id: userId,
+    status,
+    invited_by: invitedBy ?? null,
+  });
+
+  if (error) {
+    throw new Error(`Failed to add bill participant: ${error.message}`);
+  }
+}
+
+export async function insertBillItems(
+  billId: string,
+  items: Array<{
+    description: string;
+    unit_price_cents: number;
+    total_price_cents: number;
+    quantity?: number;
+  }>,
+): Promise<Database["public"]["Tables"]["bill_items"]["Row"][]> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  const { data, error } = await adminClient
+    .from("bill_items")
+    .insert(
+      items.map((item) => ({
+        bill_id: billId,
+        description: item.description,
+        unit_price_cents: item.unit_price_cents,
+        total_price_cents: item.total_price_cents,
+        quantity: item.quantity ?? 1,
+      })),
+    )
+    .select();
+
+  if (error || !data) {
+    throw new Error(`Failed to insert bill items: ${error?.message}`);
+  }
+
+  return data as Database["public"]["Tables"]["bill_items"]["Row"][];
+}
+
+export async function insertItemSplits(
+  itemId: string,
+  splits: Array<{
+    user_id: string;
+    split_type?: Database["public"]["Enums"]["split_type"];
+    value: number;
+    computed_amount_cents: number;
+  }>,
+): Promise<Database["public"]["Tables"]["item_splits"]["Row"][]> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  const { data, error } = await adminClient
+    .from("item_splits")
+    .insert(
+      splits.map((split) => ({
+        item_id: itemId,
+        user_id: split.user_id,
+        split_type: split.split_type ?? "equal",
+        value: split.value,
+        computed_amount_cents: split.computed_amount_cents,
+      })),
+    )
+    .select();
+
+  if (error || !data) {
+    throw new Error(`Failed to insert item splits: ${error?.message}`);
+  }
+
+  return data as Database["public"]["Tables"]["item_splits"]["Row"][];
+}
