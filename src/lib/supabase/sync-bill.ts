@@ -224,9 +224,12 @@ async function insertChildData(
   if (data.ledger.length > 0) {
     const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
       bill_id: billId,
+      entry_type: "debt" as const,
+      group_id: data.groupId ?? null,
       from_user_id: e.fromUserId,
       to_user_id: e.toUserId,
       amount_cents: e.amountCents,
+      paid_amount_cents: 0,
       status: e.status,
     }));
     const { error } = await supabase.from("ledger").insert(ledgerRows);
