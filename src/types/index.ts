@@ -90,19 +90,6 @@ export interface Bill {
   updatedAt: string;
 }
 
-export interface GroupSettlement {
-  id: string;
-  groupId: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-  paidAmountCents: number;
-  status: DebtStatus;
-  paidAt?: string;
-  confirmedAt?: string;
-  createdAt: string;
-}
-
 export interface BillParticipant {
   billId: string;
   userId: string;
