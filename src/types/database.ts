@@ -99,45 +99,6 @@ export interface Database {
         };
         Relationships: [];
       };
-      group_settlements: {
-        Row: {
-          id: string;
-          group_id: string;
-          from_user_id: string;
-          to_user_id: string;
-          amount_cents: number;
-          paid_amount_cents: number;
-          status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
-          paid_at: string | null;
-          confirmed_at: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          group_id: string;
-          from_user_id: string;
-          to_user_id: string;
-          amount_cents: number;
-          paid_amount_cents?: number;
-          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
-          paid_at?: string | null;
-          confirmed_at?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          group_id?: string;
-          from_user_id?: string;
-          to_user_id?: string;
-          amount_cents?: number;
-          paid_amount_cents?: number;
-          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
-          paid_at?: string | null;
-          confirmed_at?: string | null;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
       bill_participants: {
         Row: {
           bill_id: string;
@@ -319,7 +280,7 @@ export interface Database {
         Row: {
           id: string;
           ledger_id: string | null;
-          group_settlement_id: string | null;
+
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
