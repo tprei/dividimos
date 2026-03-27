@@ -12,7 +12,6 @@ import {
   upsertGroupSettlements,
   recordGroupSettlementPayment,
   markGroupSettlementPaid,
-  confirmGroupSettlement,
 } from "./group-settlement-actions";
 
 let mock: MockSupabase;
@@ -341,17 +340,3 @@ describe("markGroupSettlementPaid", () => {
   });
 });
 
-describe("confirmGroupSettlement", () => {
-  it("updates status to settled with timestamp", async () => {
-    mock.onTable("group_settlements", { error: null });
-
-    await confirmGroupSettlement("gs-1");
-
-    const updates = mock.findCalls("group_settlements", "update");
-    expect(updates).toHaveLength(1);
-    expect(updates[0].args[0]).toMatchObject({
-      status: "settled",
-    });
-    expect(updates[0].args[0]).toHaveProperty("confirmed_at");
-  });
-});

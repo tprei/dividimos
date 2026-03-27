@@ -55,7 +55,7 @@ describe("recordPaymentInSupabase", () => {
 });
 
 describe("markPaidInSupabase", () => {
-  it("updates ledger entry to paid_unconfirmed", async () => {
+  it("updates ledger entry to settled", async () => {
     mock.onTable("ledger", { error: null });
 
     const result = await markPaidInSupabase("ledger-1");
@@ -65,7 +65,7 @@ describe("markPaidInSupabase", () => {
     const updates = mock.findCalls("ledger", "update");
     expect(updates).toHaveLength(1);
     expect(updates[0].args[0]).toMatchObject({
-      status: "paid_unconfirmed",
+      status: "settled",
     });
     expect(updates[0].args[0]).toHaveProperty("paid_at");
   });

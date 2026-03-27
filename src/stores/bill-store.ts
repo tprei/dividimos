@@ -439,7 +439,7 @@ export const useBillStore = create<BillState>((set, get) => ({
         if (e.id !== entryId) return e;
         const newPaid = e.paidAmountCents + amountCents;
         const remaining = e.amountCents - newPaid;
-        const status: DebtStatus = remaining <= 0 ? "paid_unconfirmed" : "partially_paid";
+        const status: DebtStatus = remaining <= 0 ? "settled" : "partially_paid";
         return {
           ...e,
           paidAmountCents: Math.min(newPaid, e.amountCents),
@@ -448,6 +448,7 @@ export const useBillStore = create<BillState>((set, get) => ({
         };
       }),
     });
+    checkAllSettled(get, set);
   },
 
   markPaid: (entryId) => {

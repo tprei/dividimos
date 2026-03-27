@@ -35,9 +35,9 @@ describe("computeGroupNetEdges", () => {
     expect(edges[0].amountCents).toBe(3000);
   });
 
-  it("includes paid_unconfirmed entries (not settled)", () => {
+  it("includes partially_paid entries (not settled)", () => {
     const entries = [
-      makeLedgerEntry({ fromUserId: "user-bob", toUserId: "user-alice", amountCents: 2000, status: "paid_unconfirmed" }),
+      makeLedgerEntry({ fromUserId: "user-bob", toUserId: "user-alice", amountCents: 2000, status: "partially_paid" }),
     ];
     const edges = computeGroupNetEdges(entries, participants);
     expect(edges).toHaveLength(1);

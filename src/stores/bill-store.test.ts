@@ -267,17 +267,16 @@ describe("markPaid / confirmPayment", () => {
     return useBillStore.getState().ledger[0].id;
   }
 
-  it("markPaid sets status to paid_unconfirmed", () => {
+  it("markPaid sets status to settled", () => {
     const entryId = setupLedger();
     useBillStore.getState().markPaid(entryId);
     const entry = useBillStore.getState().ledger.find((e) => e.id === entryId);
-    expect(entry?.status).toBe("paid_unconfirmed");
+    expect(entry?.status).toBe("settled");
     expect(entry?.paidAt).toBeDefined();
   });
 
   it("confirmPayment sets status to settled", () => {
     const entryId = setupLedger();
-    useBillStore.getState().markPaid(entryId);
     useBillStore.getState().confirmPayment(entryId);
     const entry = useBillStore.getState().ledger.find((e) => e.id === entryId);
     expect(entry?.status).toBe("settled");
