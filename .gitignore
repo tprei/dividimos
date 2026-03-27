@@ -53,3 +53,20 @@ next-env.d.ts
 *.log
 .cache/
 session-log.json
+
+# local dotfiles / tooling
+.bash_profile
+.bashrc
+.zprofile
+.zshrc
+.gitconfig
+.gitmodules
+.profile
+.ripgreprc
+.idea
+.vscode
+.mcp.json
+.claude/
+
+# HAR captures
+*.har
