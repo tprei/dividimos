@@ -25,8 +25,8 @@ jobs:
         id: supabase
         run: |
           supabase start
-          ANON_KEY=$(supabase status --output json | jq -r '.anonKey')
-          SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.serviceRoleKey')
+          ANON_KEY=$(supabase status --output json | jq -r '.ANON_KEY')
+          SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.SERVICE_ROLE_KEY')
           echo "anon_key=${ANON_KEY}" >> $GITHUB_OUTPUT
           echo "service_role_key=${SERVICE_ROLE_KEY}" >> $GITHUB_OUTPUT
 
