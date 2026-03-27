@@ -17,6 +17,8 @@ type BillItemRow = Database["public"]["Tables"]["bill_items"]["Row"];
 type ItemSplitRow = Database["public"]["Tables"]["item_splits"]["Row"];
 type BillParticipantRow =
   Database["public"]["Tables"]["bill_participants"]["Row"];
+type BillPayerRow = Database["public"]["Tables"]["bill_payers"]["Row"];
+type BillSplitRow = Database["public"]["Tables"]["bill_splits"]["Row"];
 
 describe.skipIf(!isIntegrationTestReady)(
   "Bills RLS, participants, and items",
@@ -44,11 +46,11 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can read their own bill", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bills")
           .select("*")
           .eq("id", billId)
-          .maybeSingle();
+          .maybeSingle()) as { data: BillRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data).not.toBeNull();
@@ -59,11 +61,11 @@ describe.skipIf(!isIntegrationTestReady)(
         await addBillParticipant(billId, bob.id);
 
         const bobClient = authenticateAs(bob);
-        const { data, error } = await bobClient
+        const { data, error } = (await bobClient
           .from("bills")
           .select("*")
           .eq("id", billId)
-          .maybeSingle();
+          .maybeSingle()) as { data: BillRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data).not.toBeNull();
@@ -88,7 +90,7 @@ describe.skipIf(!isIntegrationTestReady)(
     describe("bills INSERT", () => {
       it("authenticated user can insert a bill with themselves as creator", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bills")
           .insert({
             creator_id: alice.id,
@@ -98,7 +100,7 @@ describe.skipIf(!isIntegrationTestReady)(
             total_amount_input: 5000,
           })
           .select()
-          .single();
+          .single()) as { data: BillRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data).not.toBeNull();
@@ -136,12 +138,12 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can update their own bill", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bills")
           .update({ title: "Jantar" })
           .eq("id", billId)
           .select()
-          .single();
+          .single()) as { data: BillRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.title).toBe("Jantar");
@@ -151,12 +153,12 @@ describe.skipIf(!isIntegrationTestReady)(
         await addBillParticipant(billId, bob.id);
 
         const bobClient = authenticateAs(bob);
-        const { data, error } = await bobClient
+        const { data, error } = (await bobClient
           .from("bills")
           .update({ status: "active" })
           .eq("id", billId)
           .select()
-          .single();
+          .single()) as { data: BillRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.status).toBe("active");
@@ -262,11 +264,11 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("group member who is not a bill participant can still read the bill", async () => {
         const bobClient = authenticateAs(bob);
-        const { data, error } = await bobClient
+        const { data, error } = (await bobClient
           .from("bills")
           .select("*")
           .eq("id", groupBillId)
-          .maybeSingle();
+          .maybeSingle()) as { data: BillRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data).not.toBeNull();
@@ -327,10 +329,10 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can read participants", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bill_participants")
           .select("*")
-          .eq("bill_id", billId);
+          .eq("bill_id", billId)) as { data: BillParticipantRow[] | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data).toHaveLength(1);
@@ -419,13 +421,13 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("invited user can accept the invitation", async () => {
         const bobClient = authenticateAs(bob);
-        const { data, error } = await bobClient
+        const { data, error } = (await bobClient
           .from("bill_participants")
           .update({ status: "accepted" })
           .eq("bill_id", billId)
           .eq("user_id", bob.id)
           .select()
-          .single();
+          .single()) as { data: BillParticipantRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.status).toBe("accepted");
@@ -434,13 +436,13 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("invited user can decline the invitation", async () => {
         const bobClient = authenticateAs(bob);
-        const { data, error } = await bobClient
+        const { data, error } = (await bobClient
           .from("bill_participants")
           .update({ status: "declined" })
           .eq("bill_id", billId)
           .eq("user_id", bob.id)
           .select()
-          .single();
+          .single()) as { data: BillParticipantRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.status).toBe("declined");
@@ -500,11 +502,11 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can read bill items", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bill_items")
           .select("*")
           .eq("id", itemId)
-          .maybeSingle();
+          .maybeSingle()) as { data: BillItemRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data).not.toBeNull();
@@ -549,7 +551,7 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can insert bill items", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bill_items")
           .insert({
             bill_id: billId,
@@ -558,7 +560,7 @@ describe.skipIf(!isIntegrationTestReady)(
             total_price_cents: 800,
           })
           .select()
-          .single();
+          .single()) as { data: BillItemRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.description).toBe("Refrigerante");
@@ -586,12 +588,12 @@ describe.skipIf(!isIntegrationTestReady)(
         ]);
 
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bill_items")
           .update({ description: "Updated" })
           .eq("id", items[0].id)
           .select()
-          .single();
+          .single()) as { data: BillItemRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.description).toBe("Updated");
@@ -744,7 +746,7 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can insert item splits", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("item_splits")
           .insert({
             item_id: itemId,
@@ -754,7 +756,7 @@ describe.skipIf(!isIntegrationTestReady)(
             computed_amount_cents: 2000,
           })
           .select()
-          .single();
+          .single()) as { data: ItemSplitRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.computed_amount_cents).toBe(2000);
@@ -783,12 +785,12 @@ describe.skipIf(!isIntegrationTestReady)(
         ]);
 
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("item_splits")
           .update({ computed_amount_cents: 1500 })
           .eq("id", splits[0].id)
           .select()
-          .single();
+          .single()) as { data: ItemSplitRow | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data!.computed_amount_cents).toBe(1500);
@@ -931,10 +933,10 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can read bill payers", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { data, error } = (await aliceClient
           .from("bill_payers")
           .select("*")
-          .eq("bill_id", billId);
+          .eq("bill_id", billId)) as { data: BillPayerRow[] | null; error: unknown };
 
         expect(error).toBeNull();
         expect(data).toHaveLength(1);
@@ -1012,7 +1014,7 @@ describe.skipIf(!isIntegrationTestReady)(
         billId = bill.id;
         await addBillParticipant(billId, bob.id);
 
-        const { data, error } = await adminClient!
+        const { data, error } = (await adminClient!
           .from("bill_splits")
           .insert({
             bill_id: billId,
@@ -1022,10 +1024,10 @@ describe.skipIf(!isIntegrationTestReady)(
             computed_amount_cents: 2500,
           })
           .select()
-          .single();
+          .single()) as { data: BillSplitRow | null; error: unknown };
 
         if (error || !data) {
-          throw new Error(`Failed to create test bill_split: ${error?.message}`);
+          throw new Error(`Failed to create test bill_split: ${(error as Error)?.message}`);
         }
         splitId = data.id;
       });
