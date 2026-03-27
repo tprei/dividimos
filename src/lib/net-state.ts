@@ -196,6 +196,98 @@ export function computeGroupNetEdgesDetailed(
   return edges;
 }
 
+/**
+ * A settlement edge with payment status, used by the group settlement view.
+ * Unlike NetEdge (which derives status from mutable fields on debt entries),
+ * this derives status from separate payment entries in the ledger.
+ */
+export interface SettlementEdge {
+  fromUserId: string;
+  toUserId: string;
+  /** Net amount still owed (total debt minus confirmed payments). */
+  netAmountCents: number;
+  /** Total of unconfirmed payments from debtor to creditor. */
+  unconfirmedCents: number;
+  /** Derived status: pending | paid_unconfirmed. */
+  status: DebtStatus;
+}
+
+/**
+ * Compute settlement edges from ledger entries, fully event-sourced.
+ *
+ * Processes debt entries (obligations) and payment entries (transfers) to
+ * produce per-pair edges showing the net owed amount and unconfirmed payments.
+ * Nets opposing pairs (A→B vs B→A) so the result has at most one edge per pair.
+ */
+export function computeSettlementEdges(entries: LedgerEntry[]): SettlementEdge[] {
+  const debtByPair = new Map<string, number>();
+  const confirmedByPair = new Map<string, number>();
+  const unconfirmedByPair = new Map<string, number>();
+
+  for (const entry of entries) {
+    const key = pairKey(entry.fromUserId, entry.toUserId);
+    if (entry.entryType === "debt") {
+      debtByPair.set(key, (debtByPair.get(key) ?? 0) + entry.amountCents);
+    } else if (entry.status === "settled") {
+      confirmedByPair.set(key, (confirmedByPair.get(key) ?? 0) + entry.amountCents);
+    } else {
+      unconfirmedByPair.set(key, (unconfirmedByPair.get(key) ?? 0) + entry.amountCents);
+    }
+  }
+
+  const allKeys = new Set([
+    ...debtByPair.keys(),
+    ...confirmedByPair.keys(),
+    ...unconfirmedByPair.keys(),
+  ]);
+  const processed = new Set<string>();
+  const edges: SettlementEdge[] = [];
+
+  for (const key of allKeys) {
+    if (processed.has(key)) continue;
+    const [from, to] = key.split(":");
+    const reverseKey = pairKey(to, from);
+    processed.add(key);
+    processed.add(reverseKey);
+
+    const forwardRemaining =
+      (debtByPair.get(key) ?? 0) -
+      (confirmedByPair.get(key) ?? 0);
+    const reverseRemaining =
+      (debtByPair.get(reverseKey) ?? 0) -
+      (confirmedByPair.get(reverseKey) ?? 0);
+    const netForward = forwardRemaining - reverseRemaining;
+
+    if (Math.abs(netForward) <= 1) continue;
+
+    const [edgeFrom, edgeTo] = netForward > 0 ? [from, to] : [to, from];
+    const netAmount = Math.abs(netForward);
+    const unconfirmed =
+      netForward > 0
+        ? unconfirmedByPair.get(key) ?? 0
+        : unconfirmedByPair.get(reverseKey) ?? 0;
+
+    let status: DebtStatus;
+    if (unconfirmed >= netAmount) {
+      status = "paid_unconfirmed";
+    } else if (unconfirmed > 0) {
+      status = "paid_unconfirmed";
+    } else {
+      status = "pending";
+    }
+
+    edges.push({
+      fromUserId: edgeFrom,
+      toUserId: edgeTo,
+      netAmountCents: netAmount,
+      unconfirmedCents: unconfirmed,
+      status,
+    });
+  }
+
+  return edges;
+}
+
 // --- internal ---
 
 function greedyMatch(balances: Map<string, number>): DebtEdge[] {
