@@ -56,12 +56,14 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 const mockMarkGroupSettlementPaid = vi.fn();
+const mockBatchMarkGroupSettlementsPaid = vi.fn();
 const mockLoadGroupSettlements = vi.fn();
 const mockSyncGroupSettlements = vi.fn();
 const mockLoadGroupBillsAndLedger = vi.fn();
 
 vi.mock("@/lib/supabase/group-settlement-actions", () => ({
   markGroupSettlementPaid: (...args: unknown[]) => mockMarkGroupSettlementPaid(...args),
+  batchMarkGroupSettlementsPaid: (...args: unknown[]) => mockBatchMarkGroupSettlementsPaid(...args),
   loadGroupSettlements: (...args: unknown[]) => mockLoadGroupSettlements(...args),
   syncGroupSettlements: (...args: unknown[]) => mockSyncGroupSettlements(...args),
   loadGroupBillsAndLedger: (...args: unknown[]) => mockLoadGroupBillsAndLedger(...args),
@@ -164,10 +166,10 @@ describe("GroupSettlementView error handling", () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
-  it("shows error toast when all payments in handleSettleAll fail", async () => {
+  it("shows error toast when batch payment insert fails", async () => {
     mockSyncGroupSettlements.mockResolvedValue(twoPendingSettlements);
     mockLoadGroupSettlements.mockResolvedValue(twoPendingSettlements);
-    mockMarkGroupSettlementPaid.mockResolvedValue({ error: "invalid uuid" });
+    mockBatchMarkGroupSettlementsPaid.mockResolvedValue({ paymentIds: [], error: "invalid uuid" });
 
     const { GroupSettlementView } = await import("./group-settlement-view");
     render(
@@ -183,12 +185,10 @@ describe("GroupSettlementView error handling", () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
-  it("shows partial failure toast when some payments in handleSettleAll fail", async () => {
+  it("calls batchMarkGroupSettlementsPaid with all debts in a single call", async () => {
     mockSyncGroupSettlements.mockResolvedValue(twoPendingSettlements);
     mockLoadGroupSettlements.mockResolvedValue(twoPendingSettlements);
-    mockMarkGroupSettlementPaid
-      .mockResolvedValueOnce({ paymentId: "pay-1" })
-      .mockResolvedValueOnce({ error: "invalid uuid" });
+    mockBatchMarkGroupSettlementsPaid.mockResolvedValue({ paymentIds: ["pay-1", "pay-2"] });
 
     const { GroupSettlementView } = await import("./group-settlement-view");
     render(
@@ -199,14 +199,18 @@ describe("GroupSettlementView error handling", () => {
     await userEvent.click(settleAllBtn);
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("1 de 2 pagamentos falharam");
+      expect(mockBatchMarkGroupSettlementsPaid).toHaveBeenCalledTimes(1);
     });
+    const callArgs = mockBatchMarkGroupSettlementsPaid.mock.calls[0][0];
+    expect(callArgs).toHaveLength(2);
+    expect(callArgs[0]).toMatchObject({ settlementId: "s-1", amountCents: 5000 });
+    expect(callArgs[1]).toMatchObject({ settlementId: "s-2", amountCents: 3000 });
   });
 
   it("shows success toast when handleSettleAll succeeds", async () => {
     mockSyncGroupSettlements.mockResolvedValue(twoPendingSettlements);
     mockLoadGroupSettlements.mockResolvedValue(twoPendingSettlements);
-    mockMarkGroupSettlementPaid.mockResolvedValue({ paymentId: "pay-1" });
+    mockBatchMarkGroupSettlementsPaid.mockResolvedValue({ paymentIds: ["pay-1", "pay-2"] });
 
     const { GroupSettlementView } = await import("./group-settlement-view");
     render(

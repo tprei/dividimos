@@ -153,6 +153,40 @@ export async function syncGroupSettlements(
   }));
 }
 
+export async function batchMarkGroupSettlementsPaid(
+  payments: Array<{
+    settlementId: string;
+    amountCents: number;
+    fromUserId: string;
+    toUserId: string;
+  }>,
+): Promise<{ paymentIds: string[]; error?: string }> {
+  const valid = payments.filter((p) => p.settlementId && p.amountCents > 0);
+  if (valid.length === 0) {
+    return { paymentIds: [], error: "No valid payments to insert" };
+  }
+
+  const supabase = createClient();
+
+  const rows = valid.map((p) => ({
+    group_settlement_id: p.settlementId,
+    from_user_id: p.fromUserId,
+    to_user_id: p.toUserId,
+    amount_cents: p.amountCents,
+  }));
+
+  const { data, error } = await supabase
+    .from("payments")
+    .insert(rows)
+    .select("id");
+
+  if (error) {
+    return { paymentIds: [], error: error.message };
+  }
+
+  return { paymentIds: (data ?? []).map((d) => d.id) };
+}
+
 export async function markGroupSettlementPaid(
   settlementId: string,
   amountCents: number,
