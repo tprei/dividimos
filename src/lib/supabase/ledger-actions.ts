@@ -164,34 +164,112 @@ export async function confirmPaymentsForPair(
   return { error: error?.message };
 }
 
-// --- Backward-compatible aliases (consumed by bill detail page) ---
-// These will be removed once the bill detail page migrates to the new API.
-
-export async function recordPaymentInSupabase(
-  entryId: string,
+/**
+ * Record a bill-level payment as a ledger entry.
+ *
+ * Creates a payment entry with `bill_id` set (so it appears in bill queries
+ * and realtime subscriptions) and updates the debt entry's `paid_amount_cents`
+ * so that `computeBillDebtView` derives the correct status.
+ */
+export async function recordBillPayment(
+  billId: string,
+  debtEntryId: string,
   fromUserId: string,
   toUserId: string,
   amountCents: number,
-): Promise<{ error?: string }> {
+): Promise<{ id: string; error?: string }> {
   const supabase = createClient();
 
-  const { error } = await supabase
-    .from("payments")
+  // 1. Create append-only payment entry in the ledger
+  const { data, error: insertError } = await supabase
+    .from("ledger")
     .insert({
-      ledger_id: entryId,
+      bill_id: billId,
+      entry_type: "payment" as const,
       from_user_id: fromUserId,
       to_user_id: toUserId,
       amount_cents: amountCents,
-    });
+      paid_amount_cents: 0,
+      status: "paid_unconfirmed" as const,
+      paid_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
 
-  return { error: error?.message };
+  if (insertError) {
+    return { id: "", error: insertError.message };
+  }
+
+  // 2. Update the debt entry's paid_amount_cents for computeBillDebtView
+  const { data: debtRow } = await supabase
+    .from("ledger")
+    .select("paid_amount_cents, amount_cents")
+    .eq("id", debtEntryId)
+    .single();
+
+  if (debtRow) {
+    const newPaid = Math.min(
+      (debtRow.paid_amount_cents ?? 0) + amountCents,
+      debtRow.amount_cents,
+    );
+    const newStatus = newPaid >= debtRow.amount_cents ? "paid_unconfirmed" : "partially_paid";
+    await supabase
+      .from("ledger")
+      .update({ paid_amount_cents: newPaid, status: newStatus, paid_at: new Date().toISOString() })
+      .eq("id", debtEntryId);
+  }
+
+  return { id: data.id };
 }
 
-export async function confirmPaymentInSupabase(entryId: string) {
+/**
+ * Confirm a bill-level payment. Sets confirmed_at on the debt entry
+ * so that `computeBillDebtView` derives status as "settled".
+ * Also marks any related payment entries as settled.
+ */
+export async function confirmBillPayment(
+  debtEntryId: string,
+  confirmedByUserId: string,
+): Promise<{ error?: string }> {
   const supabase = createClient();
+
+  const now = new Date().toISOString();
+
+  // Update the debt entry with confirmation
   const { error } = await supabase
     .from("ledger")
-    .update({ status: "settled", confirmed_at: new Date().toISOString() })
-    .eq("id", entryId);
-  return { error: error?.message };
+    .update({
+      status: "settled" as const,
+      confirmed_at: now,
+      confirmed_by: confirmedByUserId,
+    })
+    .eq("id", debtEntryId);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  // Also mark related payment entries as settled
+  const { data: debtRow } = await supabase
+    .from("ledger")
+    .select("bill_id, from_user_id, to_user_id")
+    .eq("id", debtEntryId)
+    .single();
+
+  if (debtRow?.bill_id) {
+    await supabase
+      .from("ledger")
+      .update({
+        status: "settled" as const,
+        confirmed_at: now,
+        confirmed_by: confirmedByUserId,
+      })
+      .eq("bill_id", debtRow.bill_id)
+      .eq("entry_type", "payment" as const)
+      .eq("from_user_id", debtRow.from_user_id)
+      .eq("to_user_id", debtRow.to_user_id)
+      .eq("status", "paid_unconfirmed" as const);
+  }
+
+  return {};
 }
