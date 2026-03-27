@@ -131,6 +131,7 @@ function buildDemoData() {
     ledger.push({
       id: `ledger_${entryId++}`,
       billId: BILL_ID,
+      entryType: "debt",
       fromUserId: debtors[di].id,
       toUserId: creditors[ci].id,
       amountCents: transfer,
@@ -200,6 +201,7 @@ export default function DemoPage() {
       return simplificationResult.simplifiedEdges.map((edge, idx) => ({
         id: `edge_${idx}`,
         billId: BILL_ID,
+        entryType: "debt" as const,
         fromUserId: edge.fromUserId,
         toUserId: edge.toUserId,
         amountCents: edge.amountCents,

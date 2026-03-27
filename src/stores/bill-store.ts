@@ -410,6 +410,7 @@ export const useBillStore = create<BillState>((set, get) => ({
       entries.push({
         id: generateId(),
         billId: bill.id,
+        entryType: "debt",
         fromUserId: debtors[di].id,
         toUserId: creditors[ci].id,
         amountCents: transfer,

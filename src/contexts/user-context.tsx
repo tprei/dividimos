@@ -1,36 +1,47 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@/types";
 import type { Database } from "@/types/database";
 
 type UserRow = Database["public"]["Tables"]["users"]["Row"];
 
-interface AuthContextValue {
+interface UserContextValue {
   user: User | null;
-  loading: boolean;
 }
 
-const AuthContext = createContext<AuthContextValue>({ user: null, loading: true });
+const UserContext = createContext<UserContextValue>({ user: null });
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+export function UserProvider({
+  initialUser,
+  children,
+}: {
+  initialUser: User | null;
+  children: React.ReactNode;
+}) {
+  const [user, setUser] = useState<User | null>(initialUser);
+  const lastAuthUserId = useRef<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
 
-    async function fetchUser() {
+    async function refreshUser() {
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser();
 
       if (!authUser) {
+        lastAuthUserId.current = null;
         setUser(null);
-        setLoading(false);
         return;
       }
+
+      if (authUser.id === lastAuthUserId.current) {
+        return;
+      }
+
+      lastAuthUserId.current = authUser.id;
 
       const { data: profile } = await supabase
         .from("users")
@@ -53,24 +64,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           createdAt: p.created_at,
         });
       }
-
-      setLoading(false);
     }
-
-    fetchUser();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      fetchUser();
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        refreshUser();
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  return <AuthContext.Provider value={{ user, loading }}>{children}</AuthContext.Provider>;
+  return <UserContext.Provider value={{ user }}>{children}</UserContext.Provider>;
 }
 
-export function useAuth() {
-  return useContext(AuthContext);
+export function useUser() {
+  return useContext(UserContext).user;
+}
+
+export function useAuth(): { user: User | null; loading: boolean } {
+  return { user: useContext(UserContext).user, loading: false };
 }

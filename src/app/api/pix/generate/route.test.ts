@@ -101,13 +101,12 @@ describe("POST /api/pix/generate", () => {
     it("returns 403 when recipient has not accepted the invite", async () => {
       serverMock.setUser({ id: "user-alice" });
 
-      // Both are participants
+      // Both are participants; bob has not accepted
       serverMock.onTable("bill_participants", {
-        data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
-      });
-      // Recipient status check → invited (not accepted)
-      serverMock.onTable("bill_participants", {
-        data: { status: "invited" },
+        data: [
+          { user_id: "user-alice", status: "accepted" },
+          { user_id: "user-bob", status: "invited" },
+        ],
       });
 
       const response = await POST(

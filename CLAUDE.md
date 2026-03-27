@@ -112,3 +112,19 @@ supabase db push --linked    # Apply migrations to remote
 - Supabase proxy in `src/proxy.ts` with `export async function proxy()`
 - Circular `UserAvatar` component for all user display (never square initial badges)
 - Pix keys: encrypted at rest, decrypted server-side only, hints for display
+
+## Data fetching rules
+
+The remote Supabase instance has meaningful network latency (~1-5s per round trip from Brazil). Every unnecessary query is felt by the user. These rules are non-negotiable.
+
+**Parallel over sequential.** When multiple Supabase queries don't depend on each other's results, run them with `Promise.all`. Never chain `await` calls to independent tables. This applies in both client components and API routes.
+
+**Filter `onAuthStateChange` events.** Only act on `SIGNED_IN`, `SIGNED_OUT`, and `USER_UPDATED`. Ignore `TOKEN_REFRESHED` and `INITIAL_SESSION` — these fire frequently and don't change the user profile. The current `UserProvider` (`src/contexts/user-context.tsx`) also guards with a user ID ref to skip redundant DB fetches.
+
+**Realtime handlers must patch, not reload.** When a Supabase realtime event arrives, update only the changed fields in the Zustand store directly. Never call a full data-loading function (like `loadBillFromSupabase`) from a realtime handler unless the event represents a structural change (e.g., `draft → active` status transition). Each full reload issues 5-8 queries — one per realtime event compounds quickly.
+
+**Debounce API calls triggered by user input.** Any `useEffect` that fires an API call based on a value the user types must debounce it (500ms). Use a `useRef` timer + an `AbortController` to cancel in-flight requests when a new one starts. See `PixQrModal` for the established pattern.
+
+**Fetch shared data once, pass it down.** If a parent and child both need the same data (e.g., `bill_participants` status), fetch it in the parent and pass it as a prop. Never let sibling or parent/child components independently query the same table for the same rows. The `loadBillFromSupabase` return value includes `participantStatuses` for exactly this reason.
+
+**Consolidate queries at the load boundary.** When a page loads, all the data it needs should be fetched in one place (`loadBillFromSupabase`, `fetchDashboard`, etc.), not scattered across multiple `useEffect` hooks in different components. Components receive data as props or read from the Zustand store — they don't fetch independently.

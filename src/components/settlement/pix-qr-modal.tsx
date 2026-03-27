@@ -37,6 +37,9 @@ export function PixQrModal({
   mode = "pay",
 }: PixQrModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const prevOpenRef = useRef(false);
   const [copiaECola, setCopiaECola] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,18 +51,37 @@ export function PixQrModal({
   const isFullPayment = paymentCents >= remainingCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= remainingCents;
 
-  // Reset input when modal opens or remaining changes
   useEffect(() => {
     if (open) {
       setInputValue(centsToDecimal(remainingCents).replace(".", ","));
     }
   }, [open, remainingCents]);
 
-  // Generate QR code based on the entered amount
   const qrAmountCents = isValidAmount ? paymentCents : remainingCents;
 
+  const [debouncedAmountCents, setDebouncedAmountCents] = useState(qrAmountCents);
+
   useEffect(() => {
-    if (!open || qrAmountCents <= 0) return;
+    if (!open) {
+      prevOpenRef.current = false;
+      return;
+    }
+    if (!prevOpenRef.current) {
+      prevOpenRef.current = true;
+      setDebouncedAmountCents(qrAmountCents);
+      return;
+    }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setDebouncedAmountCents(qrAmountCents);
+    }, 500);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [open, qrAmountCents]);
+
+  useEffect(() => {
+    if (!open || debouncedAmountCents <= 0) return;
 
     (async () => {
       setCopiaECola("");
@@ -71,7 +93,7 @@ export function PixQrModal({
           pixKey,
           merchantName: recipientName,
           merchantCity: "SAO PAULO",
-          amountCents: qrAmountCents,
+          amountCents: debouncedAmountCents,
         });
         setCopiaECola(payload);
         setLoading(false);
@@ -79,11 +101,14 @@ export function PixQrModal({
       }
 
       if (recipientUserId) {
+        abortRef.current?.abort();
+        abortRef.current = new AbortController();
         try {
           const res = await fetch("/api/pix/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ recipientUserId, amountCents: qrAmountCents, billId, groupId }),
+            body: JSON.stringify({ recipientUserId, amountCents: debouncedAmountCents, billId, groupId }),
+            signal: abortRef.current.signal,
           });
           const data = await res.json();
           if (data.copiaECola) {
@@ -91,7 +116,8 @@ export function PixQrModal({
           } else {
             setError(data.error || "Erro ao gerar Pix");
           }
-        } catch {
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") return;
           setError("Erro de conexao. Tente novamente.");
         } finally {
           setLoading(false);
@@ -100,7 +126,7 @@ export function PixQrModal({
         setLoading(false);
       }
     })();
-  }, [open, pixKey, recipientUserId, recipientName, qrAmountCents, billId, groupId]);
+  }, [open, pixKey, recipientUserId, recipientName, debouncedAmountCents, billId, groupId]);
 
   useEffect(() => {
     if (!copiaECola || !canvasRef.current) return;

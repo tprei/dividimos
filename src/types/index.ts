@@ -11,6 +11,8 @@ export type DebtStatus =
 
 export type PaymentStatus = "unconfirmed" | "settled";
 
+export type LedgerEntryType = "debt" | "payment";
+
 export type BillType = "single_amount" | "itemized";
 
 export type GroupMemberStatus = "invited" | "accepted";
@@ -131,7 +133,9 @@ export interface ItemSplit {
 
 export interface LedgerEntry {
   id: string;
-  billId: string;
+  billId?: string;
+  entryType: LedgerEntryType;
+  groupId?: string;
   fromUserId: string;
   toUserId: string;
   amountCents: number;
@@ -139,19 +143,8 @@ export interface LedgerEntry {
   status: DebtStatus;
   paidAt?: string;
   confirmedAt?: string;
+  confirmedBy?: string;
   createdAt: string;
-}
-
-export interface Payment {
-  id: string;
-  ledgerId?: string;
-  groupSettlementId?: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-  status: PaymentStatus;
-  createdAt: string;
-  confirmedAt?: string;
 }
 
 export interface ParticipantSummary {

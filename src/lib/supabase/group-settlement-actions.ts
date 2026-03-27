@@ -54,7 +54,9 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
 
   const ledger: LedgerEntry[] = (ledgerRows as LedgerRow[] ?? []).map((e) => ({
     id: e.id,
-    billId: e.bill_id,
+    billId: e.bill_id ?? undefined,
+    entryType: e.entry_type ?? ("debt" as const),
+    groupId: e.group_id ?? undefined,
     fromUserId: e.from_user_id,
     toUserId: e.to_user_id,
     amountCents: e.amount_cents,
@@ -62,6 +64,7 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     status: e.status === "paid_unconfirmed" ? "settled" : e.status,
     paidAt: e.paid_at ?? undefined,
     confirmedAt: e.confirmed_at ?? undefined,
+    confirmedBy: e.confirmed_by ?? undefined,
     createdAt: e.created_at,
   }));
 
