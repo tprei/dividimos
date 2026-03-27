@@ -34,3 +34,53 @@ export function formatBillAmount(
   if (status === "draft") return "Em criação...";
   return formatBRL(totalAmountCents);
 }
+
+/**
+ * Distribute a total proportionally among participants using the largest remainder method.
+ * Guarantees that the sum of returned values equals the original total exactly.
+ *
+ * @param total - The total amount to distribute (in cents)
+ * @param weights - Array of weights for each participant (e.g., item totals)
+ * @returns Array of distributed amounts, one per weight
+ */
+export function distributeProportionally(
+  total: number,
+  weights: number[],
+): number[] {
+  const weightSum = weights.reduce((a, b) => a + b, 0);
+  if (weightSum === 0 || total === 0) {
+    return weights.map(() => 0);
+  }
+
+  const exact = weights.map((w) => (w / weightSum) * total);
+  const floored = exact.map(Math.floor);
+  let remainder = total - floored.reduce((a, b) => a + b, 0);
+
+  // Sort indices by largest fractional part, give 1 centavo to each
+  const indices = exact
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac);
+
+  for (const { i } of indices) {
+    if (remainder <= 0) break;
+    floored[i]++;
+    remainder--;
+  }
+
+  return floored;
+}
+
+/**
+ * Distribute a total evenly among n participants using the largest remainder method.
+ * Guarantees that the sum of returned values equals the original total exactly.
+ *
+ * @param total - The total amount to distribute (in cents)
+ * @param count - Number of participants
+ * @returns Array of distributed amounts
+ */
+export function distributeEvenly(total: number, count: number): number[] {
+  if (count === 0 || total === 0) {
+    return [];
+  }
+  return distributeProportionally(total, new Array(count).fill(1));
+}

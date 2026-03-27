@@ -1,4 +1,4 @@
-import { formatBRL } from "./currency";
+import { formatBRL, distributeProportionally, distributeEvenly } from "./currency";
 import type { Bill, BillSplit, ItemSplit, User } from "@/types";
 
 export interface DebtEdge {
@@ -99,17 +99,17 @@ export function computeRawEdges(
     }
     if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
       const totalFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
-      const snapshot = new Map(consumption);
-      for (const [userId, itemTotal] of snapshot) {
-        const fee = Math.round((itemTotal / itemsTotal) * totalFee);
-        consumption.set(userId, (consumption.get(userId) || 0) + fee);
-      }
+      const weights = participants.map((p) => consumption.get(p.id) || 0);
+      const fees = distributeProportionally(totalFee, weights);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
     }
     if (bill.fixedFees > 0) {
-      const perPerson = Math.round(bill.fixedFees / participants.length);
-      for (const p of participants) {
-        consumption.set(p.id, (consumption.get(p.id) || 0) + perPerson);
-      }
+      const fees = distributeEvenly(bill.fixedFees, participants.length);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
     }
   }
 

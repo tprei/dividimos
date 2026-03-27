@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Calculator, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { DebtGraph } from "./debt-graph";
-import { formatBRL } from "@/lib/currency";
+import { formatBRL, distributeProportionally, distributeEvenly } from "@/lib/currency";
 import type { DebtEdge, SimplificationResult } from "@/lib/simplify";
 import type { Bill, BillItem, BillSplit, ItemSplit, User } from "@/types";
 
@@ -49,17 +49,17 @@ export function ChargeExplanation({
       consumption.set(s.userId, (consumption.get(s.userId) || 0) + s.computedAmountCents);
     }
     if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
-      const snapshot = new Map(consumption);
-      for (const [userId, itemTotal] of snapshot) {
-        const fee = Math.round((itemTotal / itemsTotal) * serviceFee);
-        consumption.set(userId, (consumption.get(userId) || 0) + fee);
-      }
+      const weights = participants.map((p) => consumption.get(p.id) || 0);
+      const fees = distributeProportionally(serviceFee, weights);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
     }
     if (bill.fixedFees > 0) {
-      const perPerson = Math.round(bill.fixedFees / participants.length);
-      for (const p of participants) {
-        consumption.set(p.id, (consumption.get(p.id) || 0) + perPerson);
-      }
+      const fees = distributeEvenly(bill.fixedFees, participants.length);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
     }
   }
 

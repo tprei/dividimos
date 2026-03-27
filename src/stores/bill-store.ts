@@ -1,6 +1,9 @@
 "use client";
 
+"use client";
+
 import { create } from "zustand";
+import { distributeProportionally, distributeEvenly } from "@/lib/currency";
 import type {
   Bill,
   BillItem,
@@ -358,16 +361,17 @@ export const useBillStore = create<BillState>((set, get) => ({
       }
       if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
         const totalServiceFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
-        for (const [userId, itemTotal] of consumption) {
-          const fee = Math.round((itemTotal / itemsTotal) * totalServiceFee);
-          consumption.set(userId, (consumption.get(userId) || 0) + fee);
-        }
+        const weights = participants.map((p) => consumption.get(p.id) || 0);
+        const fees = distributeProportionally(totalServiceFee, weights);
+        participants.forEach((p, i) => {
+          consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+        });
       }
       if (bill.fixedFees > 0) {
-        const perPerson = Math.round(bill.fixedFees / participants.length);
-        for (const p of participants) {
-          consumption.set(p.id, (consumption.get(p.id) || 0) + perPerson);
-        }
+        const fees = distributeEvenly(bill.fixedFees, participants.length);
+        participants.forEach((p, i) => {
+          consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+        });
       }
     }
 

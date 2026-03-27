@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Calculator, Receipt } from "lucide-react";
-import { formatBRL } from "@/lib/currency";
+import { formatBRL, distributeProportionally, distributeEvenly } from "@/lib/currency";
 import type { Bill, BillItem, BillSplit, ItemSplit, User } from "@/types";
 
 interface BillSummaryProps {
@@ -22,8 +22,9 @@ export function BillSummary({ bill, items, splits, billSplits = [], participants
     ? bill.totalAmountInput
     : itemsTotal + serviceFee + bill.fixedFees;
 
-  const perPerson = isSingleAmount
-    ? participants.map((user) => {
+  const perPerson = (() => {
+    if (isSingleAmount) {
+      return participants.map((user) => {
         const bs = billSplits.find((s) => s.userId === user.id);
         return {
           user,
@@ -39,28 +40,26 @@ export function BillSummary({ bill, items, splits, billSplits = [], participants
                 : undefined
             : undefined,
         };
-      })
-    : participants.map((user) => {
-        const userSplits = splits.filter((s) => s.userId === user.id);
-        const userItemTotal = userSplits.reduce((sum, s) => sum + s.computedAmountCents, 0);
-
-        let userServiceFee = 0;
-        if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
-          userServiceFee = Math.round((userItemTotal / itemsTotal) * serviceFee);
-        }
-
-        const fixedFeeShare =
-          participants.length > 0 ? Math.round(bill.fixedFees / participants.length) : 0;
-
-        return {
-          user,
-          itemTotal: userItemTotal,
-          serviceFee: userServiceFee,
-          fixedFee: fixedFeeShare,
-          total: userItemTotal + userServiceFee + fixedFeeShare,
-          splitLabel: undefined as string | undefined,
-        };
       });
+    }
+
+    const itemTotals = participants.map((user) => {
+      const userSplits = splits.filter((s) => s.userId === user.id);
+      return userSplits.reduce((sum, s) => sum + s.computedAmountCents, 0);
+    });
+
+    const serviceFees = distributeProportionally(serviceFee, itemTotals);
+    const fixedFees = distributeEvenly(bill.fixedFees, participants.length);
+
+    return participants.map((user, i) => ({
+      user,
+      itemTotal: itemTotals[i],
+      serviceFee: serviceFees[i],
+      fixedFee: fixedFees[i],
+      total: itemTotals[i] + serviceFees[i] + fixedFees[i],
+      splitLabel: undefined as string | undefined,
+    }));
+  })();
 
   const unassigned = isSingleAmount
     ? grandTotal - billSplits.reduce((sum, s) => sum + s.computedAmountCents, 0)
