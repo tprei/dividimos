@@ -78,8 +78,53 @@ The response sets session cookies. Or use the UI: navigate to `/auth` → "Entra
 npm run dev                  # Start dev server
 npm run build                # Production build (verifies types)
 npm run lint                 # ESLint
+npm run test                 # Run tests once
+npm run test:watch           # Run tests in watch mode
 ./scripts/dev-setup.sh       # One-command local setup
 supabase db push --linked    # Apply migrations to remote
+```
+
+## Testing
+
+Tests use Vitest with React Testing Library. Tests are colocated with source files using `.test.ts`/`.test.tsx` suffix.
+
+**Configuration**: `vitest.config.mts` with happy-dom environment and tsconfig paths.
+
+**Test setup**: `src/test/setup.ts` provides:
+- jest-dom matchers (`@testing-library/jest-dom/vitest`)
+- Automatic cleanup after each test
+- Framer Motion mock (stubs `motion` components to render underlying elements)
+
+**Writing tests**:
+```tsx
+// src/lib/currency.test.ts
+import { describe, it, expect } from "vitest";
+import { formatBRL } from "./currency";
+
+describe("formatBRL", () => {
+  it("formats centavos to BRL string", () => {
+    expect(formatBRL(12345)).toBe("R$ 123,45");
+  });
+});
+```
+
+**Testing React components**:
+```tsx
+// src/components/shared/empty-state.test.tsx
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { EmptyState } from "./empty-state";
+
+describe("EmptyState", () => {
+  it("renders message and fires action", async () => {
+    const onAction = vi.fn();
+    render(<EmptyState message="No items" actionLabel="Add" onAction={onAction} />);
+
+    expect(screen.getByText("No items")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(onAction).toHaveBeenCalledOnce();
+  });
+});
 ```
 
 ## Key concepts
