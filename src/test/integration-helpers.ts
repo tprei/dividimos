@@ -337,7 +337,7 @@ export async function createTestBill(
     throw new Error(`Failed to create test bill: ${error?.message}`);
   }
 
-  return data;
+  return data as Database["public"]["Tables"]["bills"]["Row"];
 }
 
 /**
@@ -357,7 +357,7 @@ export async function createTestGroup(
 
   const testId = generateTestId();
 
-  const { data: group, error: groupError } = await adminClient
+  const { data: groupData, error: groupError } = await adminClient
     .from("groups")
     .insert({
       name: `Test Group ${testId.slice(0, 8)}`,
@@ -366,9 +366,11 @@ export async function createTestGroup(
     .select()
     .single();
 
-  if (groupError || !group) {
+  if (groupError || !groupData) {
     throw new Error(`Failed to create test group: ${groupError?.message}`);
   }
+
+  const group = groupData as Database["public"]["Tables"]["groups"]["Row"];
 
   // Add creator as accepted member
   await adminClient.from("group_members").insert({
