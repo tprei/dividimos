@@ -75,8 +75,8 @@ export function GroupSettlementView({
       setSimplificationResult(null);
     }
 
-    await upsertGroupSettlements(groupId, netEdges);
-    await refreshSettlements();
+    const upserted = await upsertGroupSettlements(groupId, netEdges);
+    setSettlements(upserted.filter((s) => s.status !== "settled"));
     setLoading(false);
   }, [groupId, participants, refreshSettlements]);
 

@@ -105,13 +105,14 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    setDeleting(true);
-    const result = await deleteDraftFromSupabase(deleteTarget);
-    if (!result.error) {
-      setBills((prev) => prev.filter((b) => b.id !== deleteTarget));
-    }
-    setDeleting(false);
+    const targetId = deleteTarget;
+    const removed = bills.find((b) => b.id === targetId);
+    setBills((prev) => prev.filter((b) => b.id !== targetId));
     setDeleteTarget(null);
+    const result = await deleteDraftFromSupabase(targetId);
+    if (result.error && removed) {
+      setBills((prev) => [...prev, removed]);
+    }
   };
 
   const fetchDashboard = useCallback(async () => {

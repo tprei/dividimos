@@ -12,12 +12,68 @@ import type { Bill, BillItem, BillPayer, BillSplit, ItemSplit, LedgerEntry, User
 import type { Database } from "@/types/database";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
-type BillItemRow = Database["public"]["Tables"]["bill_items"]["Row"];
-type BillPayerRow = Database["public"]["Tables"]["bill_payers"]["Row"];
-type BillSplitRow = Database["public"]["Tables"]["bill_splits"]["Row"];
-type ItemSplitRow = Database["public"]["Tables"]["item_splits"]["Row"];
-type LedgerRow = Database["public"]["Tables"]["ledger"]["Row"];
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
+
+interface BillWithRelations {
+  id: string;
+  creator_id: string;
+  title: string;
+  merchant_name: string | null;
+  bill_type: string;
+  status: "draft" | "active" | "partially_settled" | "settled";
+  service_fee_percent: number;
+  fixed_fees: number;
+  total_amount: number;
+  total_amount_input: number;
+  group_id: string | null;
+  created_at: string;
+  updated_at: string;
+  bill_participants: Array<{
+    user_id: string;
+    status: string;
+    users: { id: string; handle: string | null; name: string; avatar_url: string | null } | null;
+  }>;
+  bill_payers: Array<{ bill_id: string; user_id: string; amount_cents: number }>;
+  ledger: Array<{
+    id: string;
+    bill_id: string | null;
+    entry_type: "debt" | "payment";
+    group_id: string | null;
+    from_user_id: string;
+    to_user_id: string;
+    amount_cents: number;
+    paid_amount_cents: number;
+    status: "pending" | "partially_paid" | "settled";
+    paid_at: string | null;
+    confirmed_at: string | null;
+    created_at: string;
+  }>;
+  bill_items: Array<{
+    id: string;
+    bill_id: string;
+    description: string;
+    quantity: number;
+    unit_price_cents: number;
+    total_price_cents: number;
+    created_at: string;
+    item_splits: Array<{
+      id: string;
+      item_id: string;
+      user_id: string;
+      split_type: "equal" | "percentage" | "fixed";
+      value: number;
+      computed_amount_cents: number;
+    }>;
+  }>;
+  bill_splits: Array<{
+    id: string;
+    bill_id: string;
+    user_id: string;
+    split_type: string;
+    value: number;
+    computed_amount_cents: number;
+  }>;
+}
 
 interface LoadedBill {
   bill: Bill;
@@ -32,68 +88,68 @@ interface LoadedBill {
 export async function loadBillFromSupabase(billId: string): Promise<LoadedBill | null> {
   const supabase = createClient();
 
-  const { data: billRow } = await supabase
+  const { data } = await supabase
     .from("bills")
-    .select("*")
+    .select(
+      "*, bill_participants(user_id, status, users:user_id(id, handle, name, avatar_url)), bill_payers(*), ledger(*), bill_items(*, item_splits(*)), bill_splits(*)"
+    )
     .eq("id", billId)
     .single();
 
-  if (!billRow) return null;
+  if (!data) return null;
 
-  const typedBillRow = billRow as BillRow;
-  const billType = typedBillRow.bill_type === "single_amount" ? "single_amount" : "itemized";
-
-  const [participantResult, payerResult, ledgerResult, itemOrSplitResult] = await Promise.all([
-    supabase.from("bill_participants").select("user_id, status").eq("bill_id", billId),
-    supabase.from("bill_payers").select("*").eq("bill_id", billId),
-    supabase.from("ledger").select("*").eq("bill_id", billId),
-    billType === "itemized"
-      ? supabase.from("bill_items").select("*").eq("bill_id", billId)
-      : supabase.from("bill_splits").select("*").eq("bill_id", billId),
-  ]);
+  const row = data as unknown as BillWithRelations;
 
   const participantStatuses = new Map<string, string>();
-  for (const row of (participantResult.data ?? [])) {
-    participantStatuses.set(row.user_id, row.status);
+  for (const p of row.bill_participants) {
+    participantStatuses.set(p.user_id, p.status);
   }
 
-  const userIds = (participantResult.data ?? []).map((p) => p.user_id);
-  if (!userIds.includes(typedBillRow.creator_id)) {
-    userIds.push(typedBillRow.creator_id);
+  const seenIds = new Set<string>();
+  const profileRows: UserProfileRow[] = [];
+
+  for (const p of row.bill_participants) {
+    if (p.users && !seenIds.has(p.users.id)) {
+      seenIds.add(p.users.id);
+      profileRows.push(p.users as unknown as UserProfileRow);
+    }
   }
 
-  const payers: BillPayer[] = (payerResult.data as BillPayerRow[] ?? []).map(billPayerRowToBillPayer);
+  if (!seenIds.has(row.creator_id)) {
+    const creatorParticipant = row.bill_participants.find((p) => p.user_id === row.creator_id);
+    if (!creatorParticipant?.users) {
+      const { data: creatorProfile } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("id", row.creator_id)
+        .single();
+      if (creatorProfile) profileRows.push(creatorProfile as unknown as UserProfileRow);
+    }
+  }
+
+  const payers: BillPayer[] = row.bill_payers.map(billPayerRowToBillPayer);
 
   const bill: Bill = {
-    ...billRowToBill(typedBillRow),
+    ...billRowToBill(row as unknown as BillRow),
     payers,
   };
 
-  let items: BillItem[] = [];
-  let splits: ItemSplit[] = [];
-  let billSplits: BillSplit[] = [];
+  const billType = row.bill_type === "single_amount" ? "single_amount" : "itemized";
 
-  if (billType === "itemized") {
-    items = (itemOrSplitResult.data as BillItemRow[] ?? []).map(billItemRowToBillItem);
-  } else {
-    billSplits = (itemOrSplitResult.data as BillSplitRow[] ?? []).map(billSplitRowToBillSplit);
-  }
+  const items: BillItem[] =
+    billType === "itemized" ? row.bill_items.map(billItemRowToBillItem) : [];
 
-  const itemIds = items.map((i) => i.id);
-  const [profileResult, splitResult] = await Promise.all([
-    userIds.length > 0
-      ? supabase.from("user_profiles").select("*").in("id", userIds)
-      : Promise.resolve({ data: [] }),
-    billType === "itemized" && itemIds.length > 0
-      ? supabase.from("item_splits").select("*").in("item_id", itemIds)
-      : Promise.resolve({ data: [] }),
-  ]);
+  const splits: ItemSplit[] =
+    billType === "itemized"
+      ? row.bill_items.flatMap((item) => item.item_splits.map(itemSplitRowToItemSplit))
+      : [];
 
-  splits = (splitResult.data as ItemSplitRow[] ?? []).map(itemSplitRowToItemSplit);
+  const billSplits: BillSplit[] =
+    billType === "single_amount" ? row.bill_splits.map(billSplitRowToBillSplit) : [];
 
-  const participants: User[] = (profileResult.data as UserProfileRow[] ?? []).map(userProfileRowToUser);
+  const ledger: LedgerEntry[] = row.ledger.map(ledgerRowToLedgerEntry);
 
-  const ledger: LedgerEntry[] = (ledgerResult.data as LedgerRow[] ?? []).map(ledgerRowToLedgerEntry);
+  const participants: User[] = profileRows.map(userProfileRowToUser);
 
   return { bill, participants, items, splits, billSplits, ledger, participantStatuses };
 }

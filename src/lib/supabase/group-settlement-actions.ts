@@ -48,10 +48,12 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
 
   const billIds = bills.map((b) => b.id);
 
-  const { data: ledgerRows } = await supabase
-    .from("ledger")
-    .select("*")
-    .in("bill_id", billIds);
+  const [ledgerResult, participantResult] = await Promise.all([
+    supabase.from("ledger").select("*").in("bill_id", billIds),
+    supabase.from("bill_participants").select("user_id").in("bill_id", billIds),
+  ]);
+  const ledgerRows = ledgerResult.data;
+  const participantRows = participantResult.data;
 
   const ledger: LedgerEntry[] = (ledgerRows as LedgerRow[] ?? []).map((e) => ({
     id: e.id,
@@ -66,12 +68,6 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     paidAt: e.paid_at ?? undefined,
     createdAt: e.created_at,
   }));
-
-  // Collect all participant IDs from bill_participants
-  const { data: participantRows } = await supabase
-    .from("bill_participants")
-    .select("user_id")
-    .in("bill_id", billIds);
 
   const participantIds = [...new Set((participantRows ?? []).map((p) => p.user_id))];
 
@@ -121,7 +117,7 @@ export async function loadGroupSettlements(groupId: string): Promise<GroupSettle
 export async function upsertGroupSettlements(
   groupId: string,
   edges: DebtEdge[],
-): Promise<void> {
+): Promise<GroupSettlement[]> {
   const supabase = createClient();
   const existing = await loadGroupSettlements(groupId);
 
@@ -174,17 +170,24 @@ export async function upsertGroupSettlements(
     }
   }
 
-  if (toDelete.length > 0) {
-    await supabase
-      .from("group_settlements")
-      .delete()
-      .in("id", toDelete);
-  }
-  if (toInsert.length > 0) {
-    await supabase
-      .from("group_settlements")
-      .insert(toInsert);
-  }
+  await Promise.all([
+    toDelete.length > 0 ? supabase.from("group_settlements").delete().in("id", toDelete) : null,
+    toInsert.length > 0 ? supabase.from("group_settlements").insert(toInsert) : null,
+  ]);
+
+  const surviving = existing.filter((s) => !toDelete.includes(s.id));
+  const inserted: GroupSettlement[] = toInsert.map((row) => ({
+    id: "",
+    groupId: row.group_id,
+    fromUserId: row.from_user_id,
+    toUserId: row.to_user_id,
+    amountCents: row.amount_cents,
+    paidAmountCents: 0,
+    status: "pending" as DebtStatus,
+    paidAt: undefined,
+    createdAt: new Date().toISOString(),
+  }));
+  return [...surviving, ...inserted];
 }
 
 export async function markGroupSettlementPaid(

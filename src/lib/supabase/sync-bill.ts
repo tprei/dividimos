@@ -157,46 +157,70 @@ async function insertChildData(
   }
 
   if (data.bill.billType === "itemized" && data.items.length > 0) {
+    const localIdToUuid = new Map<string, string>();
     for (const item of data.items) {
-      const itemInsert: BillItemInsert = {
-        bill_id: billId,
-        description: item.description,
-        quantity: item.quantity,
-        unit_price_cents: item.unitPriceCents,
-        total_price_cents: item.totalPriceCents,
-      };
-
-      const { data: insertedItem, error: itemError } = await supabase
-        .from("bill_items")
-        .insert(itemInsert)
-        .select("id")
-        .single();
-
-      if (itemError || !insertedItem) {
-        logError(logger, "Failed to insert item", {
-          billId,
-          itemDescription: item.description,
-          error: itemError,
-          operation: "insertItem",
-        });
-        continue;
-      }
-
-      const itemSplitRows: ItemSplitInsert[] = (data.splits ?? [])
-        .filter((s) => s.itemId === item.id)
-        .map((s) => ({
-          item_id: insertedItem.id,
-          user_id: s.userId,
-          split_type: s.splitType,
-          value: s.value,
-          computed_amount_cents: s.computedAmountCents,
-        }));
-
-      if (itemSplitRows.length > 0) {
-        const { error } = await supabase.from("item_splits").insert(itemSplitRows);
-        if (error) logError(logger, "Failed to insert item splits", { billId, itemId: insertedItem.id, error, operation: "insertItemSplits" });
-      }
+      localIdToUuid.set(item.id, crypto.randomUUID());
     }
+
+    const itemRows: BillItemInsert[] = data.items.map((item) => ({
+      id: localIdToUuid.get(item.id),
+      bill_id: billId,
+      description: item.description,
+      quantity: item.quantity,
+      unit_price_cents: item.unitPriceCents,
+      total_price_cents: item.totalPriceCents,
+    }));
+
+    const { error: itemsError } = await supabase.from("bill_items").insert(itemRows);
+    if (itemsError) {
+      logError(logger, "Failed to insert items", { billId, error: itemsError, operation: "insertItems" });
+    }
+
+    const itemSplitRows: ItemSplitInsert[] = (data.splits ?? []).flatMap((s) => {
+      const itemUuid = localIdToUuid.get(s.itemId);
+      if (!itemUuid) return [];
+      return [{
+        item_id: itemUuid,
+        user_id: s.userId,
+        split_type: s.splitType,
+        value: s.value,
+        computed_amount_cents: s.computedAmountCents,
+      }];
+    });
+
+    const payerRows = data.bill.payers.map((p) => ({
+      bill_id: billId,
+      user_id: p.userId,
+      amount_cents: p.amountCents,
+    }));
+
+    const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
+      bill_id: billId,
+      from_user_id: e.fromUserId,
+      to_user_id: e.toUserId,
+      amount_cents: e.amountCents,
+      status: e.status,
+    }));
+
+    await Promise.all([
+      itemSplitRows.length > 0
+        ? supabase.from("item_splits").insert(itemSplitRows).then(({ error }) => {
+            if (error) logError(logger, "Failed to insert item splits", { billId, error, operation: "insertItemSplits" });
+          })
+        : Promise.resolve(),
+      payerRows.length > 0
+        ? supabase.from("bill_payers").insert(payerRows).then(({ error }) => {
+            if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
+          })
+        : Promise.resolve(),
+      ledgerRows.length > 0
+        ? supabase.from("ledger").insert(ledgerRows).then(({ error }) => {
+            if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
+          })
+        : Promise.resolve(),
+    ]);
+
+    return;
   }
 
   if (data.bill.billType === "single_amount" && data.billSplits.length > 0) {
@@ -207,21 +231,13 @@ async function insertChildData(
       value: s.value,
       computed_amount_cents: s.computedAmountCents,
     }));
-    const { error } = await supabase.from("bill_splits").insert(splitRows);
-    if (error) logError(logger, "Failed to insert bill splits", { billId, error, operation: "insertBillSplits" });
-  }
 
-  if (data.bill.payers.length > 0) {
     const payerRows = data.bill.payers.map((p) => ({
       bill_id: billId,
       user_id: p.userId,
       amount_cents: p.amountCents,
     }));
-    const { error } = await supabase.from("bill_payers").insert(payerRows);
-    if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
-  }
 
-  if (data.ledger.length > 0) {
     const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
       bill_id: billId,
       from_user_id: e.fromUserId,
@@ -229,7 +245,50 @@ async function insertChildData(
       amount_cents: e.amountCents,
       status: e.status,
     }));
-    const { error } = await supabase.from("ledger").insert(ledgerRows);
-    if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
+
+    await Promise.all([
+      supabase.from("bill_splits").insert(splitRows).then(({ error }) => {
+        if (error) logError(logger, "Failed to insert bill splits", { billId, error, operation: "insertBillSplits" });
+      }),
+      payerRows.length > 0
+        ? supabase.from("bill_payers").insert(payerRows).then(({ error }) => {
+            if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
+          })
+        : Promise.resolve(),
+      ledgerRows.length > 0
+        ? supabase.from("ledger").insert(ledgerRows).then(({ error }) => {
+            if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
+          })
+        : Promise.resolve(),
+    ]);
+
+    return;
   }
+
+  const payerRows = data.bill.payers.map((p) => ({
+    bill_id: billId,
+    user_id: p.userId,
+    amount_cents: p.amountCents,
+  }));
+
+  const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
+    bill_id: billId,
+    from_user_id: e.fromUserId,
+    to_user_id: e.toUserId,
+    amount_cents: e.amountCents,
+    status: e.status,
+  }));
+
+  await Promise.all([
+    payerRows.length > 0
+      ? supabase.from("bill_payers").insert(payerRows).then(({ error }) => {
+          if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
+        })
+      : Promise.resolve(),
+    ledgerRows.length > 0
+      ? supabase.from("ledger").insert(ledgerRows).then(({ error }) => {
+          if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
+        })
+      : Promise.resolve(),
+  ]);
 }

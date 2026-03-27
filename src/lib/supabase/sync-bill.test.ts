@@ -96,10 +96,12 @@ describe("syncBillToSupabase", () => {
     expect(participantInserts).toHaveLength(1);
     expect(participantInserts[0].args[0]).toHaveLength(2);
 
-    // Verify item was inserted
+    // Verify items were batch-inserted
     const itemInserts = mock.findCalls("bill_items", "insert");
     expect(itemInserts).toHaveLength(1);
-    expect(itemInserts[0].args[0]).toMatchObject({
+    const insertedItems = itemInserts[0].args[0] as Record<string, unknown>[];
+    expect(insertedItems).toHaveLength(1);
+    expect(insertedItems[0]).toMatchObject({
       description: "Pizza",
       unit_price_cents: 5000,
     });
@@ -260,10 +262,7 @@ describe("syncBillToSupabase", () => {
 
     mock.onTable("bills", { data: { id: "new-bill-3" } });
     mock.onTable("bill_participants", { error: null });
-    // Two items
-    mock.onTable("bill_items", { data: { id: "db-item-1" } });
-    mock.onTable("item_splits", { error: null });
-    mock.onTable("bill_items", { data: { id: "db-item-2" } });
+    mock.onTable("bill_items", { error: null });
     mock.onTable("item_splits", { error: null });
     mock.onTable("bill_payers", { error: null });
     mock.onTable("ledger", { error: null });
@@ -307,7 +306,11 @@ describe("syncBillToSupabase", () => {
     });
 
     expect(result).toEqual({ billId: "new-bill-3" });
-    expect(mock.findCalls("bill_items", "insert")).toHaveLength(2);
-    expect(mock.findCalls("item_splits", "insert")).toHaveLength(2);
+    const itemInserts = mock.findCalls("bill_items", "insert");
+    expect(itemInserts).toHaveLength(1);
+    expect(itemInserts[0].args[0] as unknown[]).toHaveLength(2);
+    const splitInserts = mock.findCalls("item_splits", "insert");
+    expect(splitInserts).toHaveLength(1);
+    expect(splitInserts[0].args[0] as unknown[]).toHaveLength(2);
   });
 });

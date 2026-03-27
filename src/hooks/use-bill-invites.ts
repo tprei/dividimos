@@ -28,14 +28,14 @@ async function loadInvites(userId: string): Promise<BillInvite[]> {
   const billIds = pending.map((p) => p.bill_id);
   const inviterIds = [...new Set(pending.map((p) => p.invited_by).filter((id): id is string => Boolean(id)))];
 
-  const { data: bills } = await supabase
-    .from("bills")
-    .select("id, title, total_amount")
-    .in("id", billIds);
-
-  const { data: inviters } = inviterIds.length > 0
-    ? await supabase.from("user_profiles").select("id, name").in("id", inviterIds)
-    : { data: [] };
+  const [billsResult, invitersResult] = await Promise.all([
+    supabase.from("bills").select("id, title, total_amount").in("id", billIds),
+    inviterIds.length > 0
+      ? supabase.from("user_profiles").select("id, name").in("id", inviterIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; name: string }> }),
+  ]);
+  const bills = billsResult.data;
+  const inviters = invitersResult.data;
 
   const billMap = new Map((bills ?? []).map((b) => [b.id, b]));
   const inviterMap = new Map((inviters ?? []).map((i) => [(i as { id: string; name: string }).id, (i as { id: string; name: string }).name]));
