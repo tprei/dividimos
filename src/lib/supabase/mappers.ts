@@ -70,7 +70,9 @@ export function itemSplitRowToItemSplit(row: ItemSplitRow): ItemSplit {
 export function ledgerRowToLedgerEntry(row: LedgerRow): LedgerEntry {
   return {
     id: row.id,
-    billId: row.bill_id,
+    billId: row.bill_id ?? undefined,
+    entryType: row.entry_type,
+    groupId: row.group_id ?? undefined,
     fromUserId: row.from_user_id,
     toUserId: row.to_user_id,
     amountCents: row.amount_cents,
@@ -78,6 +80,7 @@ export function ledgerRowToLedgerEntry(row: LedgerRow): LedgerEntry {
     status: coerceDebtStatus(row.status, "pending"),
     paidAt: row.paid_at ?? undefined,
     confirmedAt: row.confirmed_at ?? undefined,
+    confirmedBy: row.confirmed_by ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -107,7 +110,7 @@ function coerceSplitType(value: string | null, fallback: SplitType): SplitType {
 }
 
 function coerceDebtStatus(value: string | null, fallback: DebtStatus): DebtStatus {
-  const valid: DebtStatus[] = ["pending", "paid_unconfirmed", "settled"];
+  const valid: DebtStatus[] = ["pending", "partially_paid", "paid_unconfirmed", "settled"];
   if (value && valid.includes(value as DebtStatus)) return value as DebtStatus;
   return fallback;
 }
