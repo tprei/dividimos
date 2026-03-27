@@ -34,9 +34,9 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
 
     const { data, error } = await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000 },
-      ]),
+      ],
     });
 
     expect(error).toBeNull();
@@ -56,10 +56,10 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
 
     const { data, error } = await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 3000 },
         { from_user_id: carol.id, to_user_id: alice.id, amount_cents: 2000 },
-      ]),
+      ],
     });
 
     expect(error).toBeNull();
@@ -73,18 +73,18 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
     // First sync: bob→alice 5000
     await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000 },
-      ]),
+      ],
     });
 
     // Second sync: bob→alice 3000, carol→alice 2000
     const { data, error } = await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 3000 },
         { from_user_id: carol.id, to_user_id: alice.id, amount_cents: 2000 },
-      ]),
+      ],
     });
 
     expect(error).toBeNull();
@@ -104,9 +104,9 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
     // First sync: bob→alice 5000
     await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000 },
-      ]),
+      ],
     });
 
     // Get the settlement ID and mark it as partially paid via a payment
@@ -130,9 +130,9 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
     // Re-sync with a higher total: bob→alice 8000
     const { data, error } = await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 8000 },
-      ]),
+      ],
     });
 
     expect(error).toBeNull();
@@ -154,15 +154,15 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
     // First sync: bob→alice 5000
     await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000 },
-      ]),
+      ],
     });
 
     // Second sync: empty edges
     const { data, error } = await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([]),
+      p_edges: [],
     });
 
     expect(error).toBeNull();
@@ -186,9 +186,9 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
     // Sync with same amount — remaining is 0
     const { data, error } = await aliceClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000 },
-      ]),
+      ],
     });
 
     expect(error).toBeNull();
@@ -205,9 +205,9 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
 
     const { error } = await outsiderClient.rpc("sync_group_settlements", {
       p_group_id: groupId,
-      p_edges: JSON.stringify([
+      p_edges: [
         { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000 },
-      ]),
+      ],
     });
 
     expect(error).not.toBeNull();
@@ -217,9 +217,9 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
     const aliceClient = authenticateAs(alice);
     const bobClient = authenticateAs(bob);
 
-    const edges = JSON.stringify([
+    const edges = [
       { from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000 },
-    ]);
+    ];
 
     // Fire two concurrent calls — one should succeed, the other should
     // either succeed or fail gracefully (no 409 CONFLICT)
