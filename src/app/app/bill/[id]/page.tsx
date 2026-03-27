@@ -34,16 +34,18 @@ import { SimplificationViewer } from "@/components/settlement/simplification-vie
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
+import { computeBillDebtView } from "@/lib/net-state";
+import type { BillDebtEntry } from "@/lib/net-state";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { coerceDebtStatus } from "@/lib/type-guards";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
-import { recordPaymentInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
+import { recordBillPayment, confirmBillPayment } from "@/lib/supabase/ledger-actions";
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
-import type { BillParticipantStatus, BillStatus, DebtStatus, User } from "@/types";
+import type { BillParticipantStatus, BillStatus, User } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -460,20 +462,6 @@ export default function BillDetailPage({
   }, [billId, loadAndSetBill]);
 
   useEffect(() => {
-    if (!billId || !currentUser?.id) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`payments:creditor:${billId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "payments", filter: `to_user_id=eq.${currentUser.id}` },
-        () => { loadAndSetBill(billId); },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [billId, currentUser?.id, loadAndSetBill]);
-
-  useEffect(() => {
     if (!billId) return;
     const supabase = createClient();
     const channel = supabase
@@ -492,14 +480,14 @@ export default function BillDetailPage({
 
   const handleRecordPayment = async (entryId: string, amountCents: number) => {
     const entry = ledger.find((e) => e.id === entryId);
-    if (!entry) return;
+    if (!entry || !bill) return;
     store.recordPayment(entryId, amountCents);
-    await recordPaymentInSupabase(entryId, entry.fromUserId, entry.toUserId, amountCents);
+    await recordBillPayment(bill.id, entryId, entry.fromUserId, entry.toUserId, amountCents);
   };
 
   const handleConfirmPayment = async (entryId: string) => {
     store.confirmPayment(entryId);
-    await confirmPaymentInSupabase(entryId);
+    await confirmBillPayment(entryId, currentUser?.id ?? "");
   };
 
   const simplificationResult = useMemo(() => {
@@ -508,6 +496,11 @@ export default function BillDetailPage({
     if (rawEdges.length < 2) return null;
     return simplifyDebts(rawEdges, participants);
   }, [bill, participants, splits, billSplits, items]);
+
+  const debtView: BillDebtEntry[] = useMemo(
+    () => (bill ? computeBillDebtView(ledger, bill.id) : []),
+    [ledger, bill],
+  );
 
   if (loadingFromDb) {
     return (
@@ -655,12 +648,14 @@ export default function BillDetailPage({
   }
 
   const billStatus = billStatusConfig[bill.status];
-  const allSettled = ledger.length > 0 && ledger.every((e) => e.status === "settled");
-  const settledCount = ledger.filter((e) => e.status === "settled").length;
+
+  const allSettled = debtView.length > 0 && debtView.every((e) => e.status === "settled");
+  const settledCount = debtView.filter((e) => e.status === "settled").length;
   const isGroupBill = !!bill.groupId;
-  const hasGroupCascadeSettled = isGroupBill && ledger.some(
-    (e) => e.status === "settled" && !e.paidAt && e.confirmedAt,
-  );
+  const hasGroupCascadeSettled = isGroupBill && debtView.some((e) => {
+    const raw = ledger.find((l) => l.id === e.ledgerEntryId);
+    return e.status === "settled" && !raw?.paidAt && raw?.confirmedAt;
+  });
 
   const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
   const grandTotal =
@@ -725,10 +720,10 @@ export default function BillDetailPage({
               <Users className="h-3.5 w-3.5" />
               {participants.length} pessoas
             </span>
-            {ledger.length > 0 && (
+            {debtView.length > 0 && (
               <span className="flex items-center gap-1">
                 <Check className="h-3.5 w-3.5" />
-                {settledCount}/{ledger.length}
+                {settledCount}/{debtView.length}
               </span>
             )}
           </div>
@@ -753,9 +748,9 @@ export default function BillDetailPage({
             }`}
           >
             {tab.label}
-            {tab.key === "payment" && ledger.length > 0 && (
+            {tab.key === "payment" && debtView.length > 0 && (
               <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
-                {ledger.filter((e) => e.status !== "settled").length || "✓"}
+                {debtView.filter((e) => e.status !== "settled").length || "✓"}
               </span>
             )}
           </button>
@@ -813,7 +808,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && allSettled && ledger.length > 0 && (
+      {activeTab === "payment" && allSettled && debtView.length > 0 && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -838,7 +833,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && isGroupBill && !allSettled && ledger.length > 0 && (
+      {activeTab === "payment" && isGroupBill && !allSettled && debtView.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -862,11 +857,11 @@ export default function BillDetailPage({
           <div>
             <h2 className="mb-3 text-sm font-semibold">Cobrancas desta conta</h2>
             <div className="space-y-3">
-              {ledger.map((entry, idx) => {
-                const debtor = participants.find((p) => p.id === entry.fromUserId);
-                const creditor = participants.find((p) => p.id === entry.toUserId);
-                const isDebtor = currentUser?.id === entry.fromUserId;
-                const isCreditor = currentUser?.id === entry.toUserId;
+              {debtView.map((debt, idx) => {
+                const debtor = participants.find((p) => p.id === debt.fromUserId);
+                const creditor = participants.find((p) => p.id === debt.toUserId);
+                const isDebtor = currentUser?.id === debt.fromUserId;
+                const isCreditor = currentUser?.id === debt.toUserId;
 
                 const entryLabel = isDebtor
                   ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
@@ -876,7 +871,7 @@ export default function BillDetailPage({
 
                 return (
                   <motion.div
-                    key={entry.id}
+                    key={debt.ledgerEntryId}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: idx * 0.06 }}
@@ -894,34 +889,34 @@ export default function BillDetailPage({
                             </p>
                             <span
                               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                entry.status === "pending"
+                                debt.status === "pending"
                                   ? "bg-warning/15 text-warning-foreground"
-                                  : entry.status === "partially_paid"
+                                  : debt.status === "partially_paid"
                                     ? "bg-primary/10 text-primary"
-                                    : entry.status === "paid_unconfirmed"
+                                    : debt.status === "paid_unconfirmed"
                                       ? "bg-primary/15 text-primary"
                                       : "bg-success/15 text-success"
                               }`}
                             >
-                              {entry.status === "pending" && (
+                              {debt.status === "pending" && (
                                 <>
                                   <Clock className="h-3 w-3" />
                                   Pendente
                                 </>
                               )}
-                              {entry.status === "partially_paid" && (
+                              {debt.status === "partially_paid" && (
                                 <>
                                   <Clock className="h-3 w-3" />
                                   Parcialmente pago
                                 </>
                               )}
-                              {entry.status === "paid_unconfirmed" && (
+                              {debt.status === "paid_unconfirmed" && (
                                 <>
                                   <PulsingDot className="bg-primary" />
                                   Aguardando confirmacao
                                 </>
                               )}
-                              {entry.status === "settled" && (
+                              {debt.status === "settled" && (
                                 <>
                                   <CheckCheck className="h-3 w-3" />
                                   Liquidado
@@ -932,11 +927,11 @@ export default function BillDetailPage({
                         </div>
                         <div className="text-right">
                           <p className="text-lg font-bold tabular-nums">
-                            {formatBRL(entry.amountCents)}
+                            {formatBRL(debt.amountCents)}
                           </p>
-                          {entry.paidAmountCents > 0 && entry.status !== "settled" && (
+                          {debt.paidAmountCents > 0 && debt.status !== "settled" && (
                             <p className="text-xs text-muted-foreground tabular-nums">
-                              {formatBRL(entry.paidAmountCents)} pago
+                              {formatBRL(debt.paidAmountCents)} pago
                             </p>
                           )}
                         </div>
@@ -950,7 +945,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && ledger.length > 0 && !allSettled && !isGroupBill && (
+      {activeTab === "payment" && debtView.length > 0 && !allSettled && !isGroupBill && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1078,11 +1073,12 @@ export default function BillDetailPage({
           {(simplifyEnabled || !simplificationResult) && (
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {ledger.map((entry, idx) => {
-                const debtor = participants.find((p) => p.id === entry.fromUserId);
-                const creditor = participants.find((p) => p.id === entry.toUserId);
-                const isDebtor = currentUser?.id === entry.fromUserId;
-                const isCreditor = currentUser?.id === entry.toUserId;
+              {debtView.map((debt, idx) => {
+                const debtor = participants.find((p) => p.id === debt.fromUserId);
+                const creditor = participants.find((p) => p.id === debt.toUserId);
+                const isDebtor = currentUser?.id === debt.fromUserId;
+                const isCreditor = currentUser?.id === debt.toUserId;
+                const rawEntry = ledger.find((l) => l.id === debt.ledgerEntryId);
 
                 const entryLabel = isDebtor
                   ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
@@ -1092,7 +1088,7 @@ export default function BillDetailPage({
 
                 return (
                   <motion.div
-                    key={entry.id}
+                    key={debt.ledgerEntryId}
                     layout
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1110,7 +1106,7 @@ export default function BillDetailPage({
                               {entryLabel}
                             </p>
                             <motion.span
-                              key={entry.status}
+                              key={debt.status}
                               initial={{ scale: 0.8, opacity: 0 }}
                               animate={{ scale: 1, opacity: 1 }}
                               transition={{
@@ -1119,34 +1115,34 @@ export default function BillDetailPage({
                                 damping: 20,
                               }}
                               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                entry.status === "pending"
+                                debt.status === "pending"
                                   ? "bg-warning/15 text-warning-foreground"
-                                  : entry.status === "partially_paid"
+                                  : debt.status === "partially_paid"
                                     ? "bg-primary/10 text-primary"
-                                    : entry.status === "paid_unconfirmed"
+                                    : debt.status === "paid_unconfirmed"
                                       ? "bg-primary/15 text-primary"
                                       : "bg-success/15 text-success"
                               }`}
                             >
-                              {entry.status === "pending" && (
+                              {debt.status === "pending" && (
                                 <>
                                   <Clock className="h-3 w-3" />
                                   Pendente
                                 </>
                               )}
-                              {entry.status === "partially_paid" && (
+                              {debt.status === "partially_paid" && (
                                 <>
                                   <Clock className="h-3 w-3" />
                                   Parcialmente pago
                                 </>
                               )}
-                              {entry.status === "paid_unconfirmed" && (
+                              {debt.status === "paid_unconfirmed" && (
                                 <>
                                   <PulsingDot className="bg-primary" />
                                   Aguardando confirmacao
                                 </>
                               )}
-                              {entry.status === "settled" && (
+                              {debt.status === "settled" && (
                                 <>
                                   <CheckCheck className="h-3 w-3" />
                                   Liquidado
@@ -1157,23 +1153,23 @@ export default function BillDetailPage({
                         </div>
                         <div className="text-right">
                           <motion.p
-                            key={entry.amountCents}
+                            key={debt.amountCents}
                             initial={{ y: 6, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             className="text-lg font-bold tabular-nums"
                           >
-                            {formatBRL(entry.amountCents)}
+                            {formatBRL(debt.amountCents)}
                           </motion.p>
-                          {entry.paidAmountCents > 0 && entry.status !== "settled" && (
+                          {debt.paidAmountCents > 0 && debt.status !== "settled" && (
                             <p className="text-xs text-muted-foreground tabular-nums">
-                              {formatBRL(entry.paidAmountCents)} pago
+                              {formatBRL(debt.paidAmountCents)} pago
                             </p>
                           )}
                         </div>
                       </div>
 
                       <AnimatePresence mode="wait">
-                        {(entry.status === "pending" || entry.status === "partially_paid") && isDebtor && (
+                        {(debt.status === "pending" || debt.status === "partially_paid") && isDebtor && (
                           <motion.div
                             key="debtor-actions"
                             initial={{ opacity: 0, height: 0 }}
@@ -1188,22 +1184,22 @@ export default function BillDetailPage({
                               onClick={() =>
                                 setPixModal({
                                   open: true,
-                                  entryId: entry.id,
+                                  entryId: debt.ledgerEntryId,
                                   recipientUserId: creditor?.id || "",
                                   name: creditor?.name || "",
-                                  amount: entry.amountCents,
-                                  paidAmountCents: entry.paidAmountCents,
+                                  amount: debt.amountCents,
+                                  paidAmountCents: debt.paidAmountCents,
                                   mode: "pay",
                                 })
                               }
                             >
                               <QrCode className="h-4 w-4" />
-                              Pagar {formatBRL(entry.amountCents - entry.paidAmountCents)} para {creditor?.name.split(" ")[0]}
+                              Pagar {formatBRL(debt.amountCents - debt.paidAmountCents)} para {creditor?.name.split(" ")[0]}
                             </Button>
                           </motion.div>
                         )}
 
-                        {(entry.status === "pending" || entry.status === "partially_paid") && isCreditor && (
+                        {(debt.status === "pending" || debt.status === "partially_paid") && isCreditor && (
                           <motion.div
                             key="creditor-actions"
                             initial={{ opacity: 0, height: 0 }}
@@ -1219,11 +1215,11 @@ export default function BillDetailPage({
                               onClick={() =>
                                 setPixModal({
                                   open: true,
-                                  entryId: entry.id,
+                                  entryId: debt.ledgerEntryId,
                                   recipientUserId: currentUser?.id || "",
                                   name: debtor?.name || "",
-                                  amount: entry.amountCents,
-                                  paidAmountCents: entry.paidAmountCents,
+                                  amount: debt.amountCents,
+                                  paidAmountCents: debt.paidAmountCents,
                                   mode: "collect",
                                 })
                               }
@@ -1242,7 +1238,7 @@ export default function BillDetailPage({
                           </motion.div>
                         )}
 
-                        {entry.status === "paid_unconfirmed" && isCreditor && (
+                        {debt.status === "paid_unconfirmed" && isCreditor && (
                           <motion.div
                             key="confirm-actions"
                             initial={{ opacity: 0, scale: 0.98 }}
@@ -1255,15 +1251,15 @@ export default function BillDetailPage({
                               size="sm"
                               variant="outline"
                               className="w-full gap-1.5 border-success/30 text-success hover:bg-success/10"
-                              onClick={() => handleConfirmPayment(entry.id)}
+                              onClick={() => handleConfirmPayment(debt.ledgerEntryId)}
                             >
                               <Check className="h-4 w-4" />
-                              Confirmar recebimento de {formatBRL(entry.amountCents)}
+                              Confirmar recebimento de {formatBRL(debt.amountCents)}
                             </Button>
                           </motion.div>
                         )}
 
-                        {entry.status === "paid_unconfirmed" && isDebtor && (
+                        {debt.status === "paid_unconfirmed" && isDebtor && (
                           <motion.div
                             key="waiting-info"
                             initial={{ opacity: 0 }}
@@ -1277,7 +1273,7 @@ export default function BillDetailPage({
                           </motion.div>
                         )}
 
-                        {entry.status === "settled" && (
+                        {debt.status === "settled" && (
                           <motion.div
                             key="settled-info"
                             initial={{ opacity: 0 }}
@@ -1286,11 +1282,11 @@ export default function BillDetailPage({
                           >
                             <CheckCheck className="h-4 w-4 shrink-0 text-success" />
                             <span className="text-xs text-success">
-                              {isGroupBill && !entry.paidAt && entry.confirmedAt
+                              {isGroupBill && !rawEntry?.paidAt && rawEntry?.confirmedAt
                                 ? "Liquidado via acerto do grupo"
                                 : "Liquidado"}
-                              {entry.confirmedAt &&
-                                ` em ${new Date(entry.confirmedAt).toLocaleString("pt-BR", {
+                              {rawEntry?.confirmedAt &&
+                                ` em ${new Date(rawEntry.confirmedAt).toLocaleString("pt-BR", {
                                   day: "2-digit",
                                   month: "short",
                                   hour: "2-digit",
@@ -1310,7 +1306,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && ledger.length === 0 && (
+      {activeTab === "payment" && debtView.length === 0 && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
