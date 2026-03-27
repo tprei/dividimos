@@ -13,7 +13,7 @@ vi.mock("@/lib/supabase/group-settlement-actions", () => ({
   markGroupSettlementPaid: vi.fn(),
   loadGroupSettlements: vi.fn(),
   loadGroupBillsAndLedger: vi.fn(),
-  upsertGroupSettlements: vi.fn(),
+  syncGroupSettlements: vi.fn(),
 }));
 
 import {

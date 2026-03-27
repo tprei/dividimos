@@ -114,80 +114,39 @@ export async function loadGroupSettlements(groupId: string): Promise<GroupSettle
   }));
 }
 
-export async function upsertGroupSettlements(
+export async function syncGroupSettlements(
   groupId: string,
   edges: DebtEdge[],
 ): Promise<GroupSettlement[]> {
   const supabase = createClient();
-  const existing = await loadGroupSettlements(groupId);
 
-  // Build map by key "from->to"
-  const existingMap = new Map<string, GroupSettlement[]>();
-  for (const s of existing) {
-    const key = `${s.fromUserId}->${s.toUserId}`;
-    if (!existingMap.has(key)) existingMap.set(key, []);
-    existingMap.get(key)!.push(s);
-  }
-
-  const toDelete: string[] = [];
-  const toInsert: { group_id: string; from_user_id: string; to_user_id: string; amount_cents: number }[] = [];
-
-  const processedKeys = new Set<string>();
-
-  for (const edge of edges) {
-    const key = `${edge.fromUserId}->${edge.toUserId}`;
-    processedKeys.add(key);
-    const existingForPair = existingMap.get(key) ?? [];
-
-    // Sum already-settled or in-progress amounts
-    const settledAmount = existingForPair
-      .filter((s) => s.status !== "pending")
-      .reduce((sum, s) => sum + s.amountCents, 0);
-
-    // Delete pending rows for this pair
-    for (const s of existingForPair.filter((s) => s.status === "pending")) {
-      toDelete.push(s.id);
-    }
-
-    // Insert new pending row for remaining amount
-    const remaining = edge.amountCents - settledAmount;
-    if (remaining > 1) {
-      toInsert.push({
-        group_id: groupId,
-        from_user_id: edge.fromUserId,
-        to_user_id: edge.toUserId,
-        amount_cents: remaining,
-      });
-    }
-  }
-
-  // Delete pending rows for edges that no longer exist
-  for (const [key, entries] of existingMap) {
-    if (!processedKeys.has(key)) {
-      for (const s of entries) {
-        if (s.status === "pending") toDelete.push(s.id);
-      }
-    }
-  }
-
-  await Promise.all([
-    toDelete.length > 0 ? supabase.from("group_settlements").delete().in("id", toDelete) : null,
-    toInsert.length > 0 ? supabase.from("group_settlements").insert(toInsert) : null,
-  ]);
-
-  const surviving = existing.filter((s) => !toDelete.includes(s.id));
-  const inserted: GroupSettlement[] = toInsert.map((row) => ({
-    id: "",
-    groupId: row.group_id,
-    fromUserId: row.from_user_id,
-    toUserId: row.to_user_id,
-    amountCents: row.amount_cents,
-    paidAmountCents: 0,
-    status: "pending" as DebtStatus,
-    paidAt: undefined,
-    createdAt: new Date().toISOString(),
+  const p_edges = edges.map((e) => ({
+    from_user_id: e.fromUserId,
+    to_user_id: e.toUserId,
+    amount_cents: e.amountCents,
   }));
-  return [...surviving, ...inserted];
+
+  const { data, error } = await supabase.rpc("sync_group_settlements", {
+    p_group_id: groupId,
+    p_edges,
+  });
+
+  if (error) {
+    console.error("sync_group_settlements RPC failed:", error.message);
+    return [];
+  }
+
+  return ((data as GroupSettlementRow[]) ?? []).map((s) => ({
+    id: s.id,
+    groupId: s.group_id,
+    fromUserId: s.from_user_id,
+    toUserId: s.to_user_id,
+    amountCents: s.amount_cents,
+    paidAmountCents: s.paid_amount_cents ?? 0,
+    status: (isDebtStatus(s.status) ? s.status : "pending") as DebtStatus,
+    paidAt: s.paid_at ?? undefined,
+    createdAt: s.created_at,
+  }));
 }
 
 export async function markGroupSettlementPaid(

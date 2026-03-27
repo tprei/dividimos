@@ -102,6 +102,10 @@ export function createMockSupabase() {
       _calls.push({ table, method: "from", args: [table] });
       return makeChain(table);
     },
+    rpc: (fn: string, params?: Record<string, unknown>) => {
+      _calls.push({ table: `rpc:${fn}`, method: "rpc", args: [fn, params] });
+      return makeChain(`rpc:${fn}`);
+    },
     auth: {
       getUser: async () => ({ data: { user: _user }, error: null }),
     },

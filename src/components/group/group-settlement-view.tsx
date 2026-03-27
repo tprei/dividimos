@@ -20,7 +20,7 @@ import { simplifyDebts } from "@/lib/simplify";
 import {
   loadGroupBillsAndLedger,
   loadGroupSettlements,
-  upsertGroupSettlements,
+  syncGroupSettlements,
   markGroupSettlementPaid,
 } from "@/lib/supabase/group-settlement-actions";
 import { createClient } from "@/lib/supabase/client";
@@ -75,10 +75,10 @@ export function GroupSettlementView({
       setSimplificationResult(null);
     }
 
-    const upserted = await upsertGroupSettlements(groupId, netEdges);
-    setSettlements(upserted.filter((s) => s.status !== "settled"));
+    const synced = await syncGroupSettlements(groupId, netEdges);
+    setSettlements(synced.filter((s) => s.status !== "settled"));
     setLoading(false);
-  }, [groupId, participants, refreshSettlements]);
+  }, [groupId, participants]);
 
   useEffect(() => {
     initializeSettlements();
