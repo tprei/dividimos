@@ -1,0 +1,41 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+
+      - run: npm ci
+
+      - name: Start Supabase
+        id: supabase
+        run: |
+          supabase start
+          # Extract keys from supabase status
+          ANON_KEY=$(supabase status --output json | jq -r '.anonKey')
+          SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.serviceRoleKey')
+          echo "anon_key=${ANON_KEY}" >> $GITHUB_OUTPUT
+          echo "service_role_key=${SERVICE_ROLE_KEY}" >> $GITHUB_OUTPUT
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
+          # Test encryption key (32 bytes hex = 64 chars)
+          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
