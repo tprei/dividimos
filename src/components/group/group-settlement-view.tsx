@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Check, CheckCheck, Loader2 } from "lucide-react";
+import { CheckCheck, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
@@ -22,7 +22,6 @@ import {
   loadGroupSettlements,
   upsertGroupSettlements,
   markGroupSettlementPaid,
-  confirmGroupSettlement,
 } from "@/lib/supabase/group-settlement-actions";
 import { createClient } from "@/lib/supabase/client";
 import type { GroupSettlement, User } from "@/types";
@@ -118,13 +117,6 @@ export function GroupSettlementView({
     setSettling(settlementId);
     await markGroupSettlementPaid(settlementId, amountCents, fromUserId, toUserId);
     setPixModal(null);
-    await refreshSettlements();
-    setSettling(null);
-  }
-
-  async function handleConfirm(settlementId: string) {
-    setSettling(settlementId);
-    await confirmGroupSettlement(settlementId);
     await refreshSettlements();
     setSettling(null);
   }
@@ -252,23 +244,19 @@ export function GroupSettlementView({
                 </div>
                 <div className="text-right">
                   <p className="font-semibold tabular-nums text-sm">{formatBRL(settlement.amountCents)}</p>
-                  {settlement.paidAmountCents > 0 && settlement.status !== "paid_unconfirmed" && (
+                  {settlement.paidAmountCents > 0 && (
                     <p className="text-[10px] text-muted-foreground tabular-nums">
                       Pago: {formatBRL(settlement.paidAmountCents)}
                     </p>
                   )}
                   <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${
-                    settlement.status === "paid_unconfirmed"
-                      ? "bg-warning/15 text-warning-foreground"
-                      : settlement.status === "partially_paid"
-                        ? "bg-primary/15 text-primary"
-                        : "bg-muted text-muted-foreground"
+                    settlement.status === "partially_paid"
+                      ? "bg-primary/15 text-primary"
+                      : "bg-muted text-muted-foreground"
                   }`}>
-                    {settlement.status === "paid_unconfirmed"
-                      ? "Aguardando"
-                      : settlement.status === "partially_paid"
-                        ? "Parcial"
-                        : "Pendente"}
+                    {settlement.status === "partially_paid"
+                      ? "Parcial"
+                      : "Pendente"}
                   </span>
                 </div>
               </div>
@@ -294,15 +282,6 @@ export function GroupSettlementView({
                   </Button>
                 )}
 
-                {isDebtor && settlement.status === "paid_unconfirmed" && (
-                  <div className="flex flex-1 items-center gap-2 rounded-xl bg-muted/50 px-3 py-2">
-                    <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-warning" />
-                    <p className="text-xs text-muted-foreground">
-                      Aguardando {to.name.split(" ")[0]} confirmar
-                    </p>
-                  </div>
-                )}
-
                 {isCreditor && (settlement.status === "pending" || settlement.status === "partially_paid") && (
                   <Button
                     variant="outline"
@@ -324,29 +303,9 @@ export function GroupSettlementView({
                   </Button>
                 )}
 
-                {isCreditor && settlement.status === "paid_unconfirmed" && (
-                  <Button
-                    className="flex-1"
-                    size="sm"
-                    onClick={() => handleConfirm(settlement.id)}
-                    disabled={isSettling}
-                  >
-                    {isSettling ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4 mr-1" />
-                        Confirmar recebimento de {formatBRL(settlement.amountCents)}
-                      </>
-                    )}
-                  </Button>
-                )}
-
                 {!isDebtor && !isCreditor && (
                   <div className="flex-1 text-center text-xs text-muted-foreground py-2">
-                    {settlement.status === "paid_unconfirmed"
-                      ? `${from.name.split(" ")[0]} marcou como pago`
-                      : "Aguardando pagamento"}
+                    Aguardando pagamento
                   </div>
                 )}
               </div>
@@ -385,8 +344,10 @@ export function GroupSettlementView({
           mode={pixModal.mode}
           onMarkPaid={async (amountCents: number) => {
             if (pixModal.mode === "collect") {
-              await handleConfirm(pixModal.settlementId);
+              // Creditor recording payment: debtor=recipientId, creditor=currentUserId
+              await handleMarkPaid(pixModal.settlementId, amountCents, pixModal.recipientId, currentUserId);
             } else {
+              // Debtor recording payment: debtor=currentUserId, creditor=recipientId
               await handleMarkPaid(pixModal.settlementId, amountCents, currentUserId, pixModal.recipientId);
             }
           }}

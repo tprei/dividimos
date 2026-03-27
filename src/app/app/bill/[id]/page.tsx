@@ -38,12 +38,12 @@ import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { coerceDebtStatus } from "@/lib/type-guards";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
-import { recordPaymentInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
+import { recordPaymentInSupabase } from "@/lib/supabase/ledger-actions";
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
-import type { BillParticipantStatus, BillStatus, DebtStatus, User } from "@/types";
+import type { BillParticipantStatus, BillStatus, User } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -497,11 +497,6 @@ export default function BillDetailPage({
     await recordPaymentInSupabase(entryId, entry.fromUserId, entry.toUserId, amountCents);
   };
 
-  const handleConfirmPayment = async (entryId: string) => {
-    store.confirmPayment(entryId);
-    await confirmPaymentInSupabase(entryId);
-  };
-
   const simplificationResult = useMemo(() => {
     if (!bill || participants.length < 3) return null;
     const rawEdges = computeRawEdges(bill, participants, splits, billSplits, items);
@@ -898,9 +893,7 @@ export default function BillDetailPage({
                                   ? "bg-warning/15 text-warning-foreground"
                                   : entry.status === "partially_paid"
                                     ? "bg-primary/10 text-primary"
-                                    : entry.status === "paid_unconfirmed"
-                                      ? "bg-primary/15 text-primary"
-                                      : "bg-success/15 text-success"
+                                    : "bg-success/15 text-success"
                               }`}
                             >
                               {entry.status === "pending" && (
@@ -913,12 +906,6 @@ export default function BillDetailPage({
                                 <>
                                   <Clock className="h-3 w-3" />
                                   Parcialmente pago
-                                </>
-                              )}
-                              {entry.status === "paid_unconfirmed" && (
-                                <>
-                                  <PulsingDot className="bg-primary" />
-                                  Aguardando confirmacao
                                 </>
                               )}
                               {entry.status === "settled" && (
@@ -1123,9 +1110,7 @@ export default function BillDetailPage({
                                   ? "bg-warning/15 text-warning-foreground"
                                   : entry.status === "partially_paid"
                                     ? "bg-primary/10 text-primary"
-                                    : entry.status === "paid_unconfirmed"
-                                      ? "bg-primary/15 text-primary"
-                                      : "bg-success/15 text-success"
+                                    : "bg-success/15 text-success"
                               }`}
                             >
                               {entry.status === "pending" && (
@@ -1138,12 +1123,6 @@ export default function BillDetailPage({
                                 <>
                                   <Clock className="h-3 w-3" />
                                   Parcialmente pago
-                                </>
-                              )}
-                              {entry.status === "paid_unconfirmed" && (
-                                <>
-                                  <PulsingDot className="bg-primary" />
-                                  Aguardando confirmacao
                                 </>
                               )}
                               {entry.status === "settled" && (
@@ -1242,41 +1221,6 @@ export default function BillDetailPage({
                           </motion.div>
                         )}
 
-                        {entry.status === "paid_unconfirmed" && isCreditor && (
-                          <motion.div
-                            key="confirm-actions"
-                            initial={{ opacity: 0, scale: 0.98 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.98 }}
-                            transition={{ duration: 0.2 }}
-                            className="mt-3"
-                          >
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full gap-1.5 border-success/30 text-success hover:bg-success/10"
-                              onClick={() => handleConfirmPayment(entry.id)}
-                            >
-                              <Check className="h-4 w-4" />
-                              Confirmar recebimento de {formatBRL(entry.amountCents)}
-                            </Button>
-                          </motion.div>
-                        )}
-
-                        {entry.status === "paid_unconfirmed" && isDebtor && (
-                          <motion.div
-                            key="waiting-info"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="mt-3 flex items-center gap-2 rounded-lg bg-primary/5 px-3 py-2"
-                          >
-                            <PulsingDot className="bg-primary" />
-                            <span className="text-xs text-primary">
-                              Aguardando {creditor?.name.split(" ")[0]} confirmar
-                            </span>
-                          </motion.div>
-                        )}
-
                         {entry.status === "settled" && (
                           <motion.div
                             key="settled-info"
@@ -1332,11 +1276,7 @@ export default function BillDetailPage({
         paidAmountCents={pixModal.paidAmountCents}
         mode={pixModal.mode}
         onMarkPaid={(amountCents) => {
-          if (pixModal.mode === "collect") {
-            handleConfirmPayment(pixModal.entryId);
-          } else {
-            handleRecordPayment(pixModal.entryId, amountCents);
-          }
+          handleRecordPayment(pixModal.entryId, amountCents);
           setPixModal({ ...pixModal, open: false });
         }}
       />

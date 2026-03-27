@@ -107,7 +107,7 @@ function coerceSplitType(value: string | null, fallback: SplitType): SplitType {
 }
 
 function coerceDebtStatus(value: string | null, fallback: DebtStatus): DebtStatus {
-  const valid: DebtStatus[] = ["pending", "paid_unconfirmed", "settled"];
+  const valid: DebtStatus[] = ["pending", "partially_paid", "settled"];
   if (value && valid.includes(value as DebtStatus)) return value as DebtStatus;
   return fallback;
 }

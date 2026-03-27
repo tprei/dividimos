@@ -29,10 +29,8 @@ export function useRealtimeLedger(billId: string | undefined) {
             confirmed_at: string | null;
           };
 
-          const { markPaid, confirmPayment } = useBillStore.getState();
-          if (updated.status === "paid_unconfirmed") {
-            markPaid(updated.id);
-          } else if (updated.status === "settled") {
+          const { confirmPayment } = useBillStore.getState();
+          if (updated.status === "settled") {
             confirmPayment(updated.id);
           }
         },

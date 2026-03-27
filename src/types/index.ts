@@ -7,7 +7,6 @@ export type BillStatus = "draft" | "active" | "partially_settled" | "settled";
 export type DebtStatus =
   | "pending"
   | "partially_paid"
-  | "paid_unconfirmed"
   | "settled";
 
 export type PaymentStatus = "unconfirmed" | "settled";
