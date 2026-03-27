@@ -88,15 +88,27 @@ export function GroupSettlementView({
   const refreshSettlementsRef = useRef(refreshSettlements);
   useEffect(() => { refreshSettlementsRef.current = refreshSettlements; });
 
+  const initializeSettlementsRef = useRef(initializeSettlements);
+  useEffect(() => { initializeSettlementsRef.current = initializeSettlements; });
+
   useEffect(() => {
-    // Realtime: read-only refresh (no upsert) to avoid write → subscribe → write loop
+    // Realtime: listen to all events on group_settlements
+    // UPDATE → lightweight read-only refresh (e.g. payment status change)
+    // INSERT/DELETE → full recompute (e.g. new bill added, settlement removed)
     const supabase = createClient();
     const channel = supabase
       .channel(`group-settlements:${groupId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
-        () => refreshSettlementsRef.current(),
+        { event: "*", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
+        (payload) => {
+          if (payload.eventType === "UPDATE") {
+            refreshSettlementsRef.current();
+          } else {
+            // INSERT or DELETE: structural change, recompute everything
+            initializeSettlementsRef.current();
+          }
+        },
       )
       .subscribe();
 

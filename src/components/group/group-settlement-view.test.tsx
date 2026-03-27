@@ -40,13 +40,18 @@ vi.mock("@/components/settlement/pix-qr-modal", () => ({
   ),
 }));
 
-// Mock supabase client
+// Mock supabase client — captures the realtime callback
+let realtimeCallback: ((payload: { eventType: string }) => void) | null = null;
+const mockRemoveChannel = vi.fn();
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     channel: () => ({
-      on: () => ({ subscribe: () => ({}) }),
+      on: (_type: string, _filter: unknown, cb: (payload: { eventType: string }) => void) => {
+        realtimeCallback = cb;
+        return { subscribe: () => ({}) };
+      },
     }),
-    removeChannel: vi.fn(),
+    removeChannel: mockRemoveChannel,
   }),
 }));
 
@@ -215,5 +220,94 @@ describe("GroupSettlementView error handling", () => {
       expect(toast.success).toHaveBeenCalledWith("Todos os pagamentos registrados");
     });
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("GroupSettlementView realtime subscriptions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    realtimeCallback = null;
+    mockLoadGroupBillsAndLedger.mockResolvedValue({ bills: [], ledger: [], participants: [] });
+    mockSyncGroupSettlements.mockResolvedValue(pendingSettlements);
+    mockLoadGroupSettlements.mockResolvedValue(pendingSettlements);
+  });
+
+  it("calls refreshSettlements on UPDATE event", async () => {
+    const { GroupSettlementView } = await import("./group-settlement-view");
+    render(
+      <GroupSettlementView groupId="g-1" participants={participants} currentUserId="user-1" />,
+    );
+
+    // Wait for initial load
+    await waitFor(() => {
+      expect(mockSyncGroupSettlements).toHaveBeenCalled();
+    });
+
+    // Clear call counts after initialization
+    mockLoadGroupSettlements.mockClear();
+    mockLoadGroupBillsAndLedger.mockClear();
+    mockSyncGroupSettlements.mockClear();
+
+    // Simulate an UPDATE event (e.g. payment status change)
+    expect(realtimeCallback).not.toBeNull();
+    realtimeCallback!({ eventType: "UPDATE" });
+
+    await waitFor(() => {
+      // UPDATE should trigger lightweight refresh (loadGroupSettlements)
+      expect(mockLoadGroupSettlements).toHaveBeenCalledTimes(1);
+    });
+    // Should NOT trigger full recompute
+    expect(mockLoadGroupBillsAndLedger).not.toHaveBeenCalled();
+    expect(mockSyncGroupSettlements).not.toHaveBeenCalled();
+  });
+
+  it("calls initializeSettlements on INSERT event", async () => {
+    const { GroupSettlementView } = await import("./group-settlement-view");
+    render(
+      <GroupSettlementView groupId="g-1" participants={participants} currentUserId="user-1" />,
+    );
+
+    await waitFor(() => {
+      expect(mockSyncGroupSettlements).toHaveBeenCalled();
+    });
+
+    mockLoadGroupBillsAndLedger.mockClear();
+    mockSyncGroupSettlements.mockClear();
+    mockLoadGroupSettlements.mockClear();
+
+    // Simulate an INSERT event (e.g. new settlement from new bill)
+    realtimeCallback!({ eventType: "INSERT" });
+
+    await waitFor(() => {
+      // INSERT should trigger full recompute
+      expect(mockLoadGroupBillsAndLedger).toHaveBeenCalledTimes(1);
+      expect(mockSyncGroupSettlements).toHaveBeenCalledTimes(1);
+    });
+    // Should NOT call the lightweight refresh
+    expect(mockLoadGroupSettlements).not.toHaveBeenCalled();
+  });
+
+  it("calls initializeSettlements on DELETE event", async () => {
+    const { GroupSettlementView } = await import("./group-settlement-view");
+    render(
+      <GroupSettlementView groupId="g-1" participants={participants} currentUserId="user-1" />,
+    );
+
+    await waitFor(() => {
+      expect(mockSyncGroupSettlements).toHaveBeenCalled();
+    });
+
+    mockLoadGroupBillsAndLedger.mockClear();
+    mockSyncGroupSettlements.mockClear();
+    mockLoadGroupSettlements.mockClear();
+
+    // Simulate a DELETE event (e.g. settlement removed)
+    realtimeCallback!({ eventType: "DELETE" });
+
+    await waitFor(() => {
+      expect(mockLoadGroupBillsAndLedger).toHaveBeenCalledTimes(1);
+      expect(mockSyncGroupSettlements).toHaveBeenCalledTimes(1);
+    });
+    expect(mockLoadGroupSettlements).not.toHaveBeenCalled();
   });
 });
