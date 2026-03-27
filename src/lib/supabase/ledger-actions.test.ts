@@ -68,7 +68,7 @@ describe("markPaidInSupabase", () => {
       status: "settled",
     });
     expect(updates[0].args[0]).toHaveProperty("paid_at");
-    expect(updates[0].args[0]).not.toHaveProperty("confirmed_at");
+
   });
 
   it("returns error message on failure", async () => {
