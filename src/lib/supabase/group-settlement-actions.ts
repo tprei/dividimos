@@ -154,18 +154,28 @@ export async function markGroupSettlementPaid(
   amountCents: number,
   fromUserId: string,
   toUserId: string,
-): Promise<{ error?: string }> {
+): Promise<{ paymentId?: string; error?: string }> {
+  if (!settlementId) {
+    return { error: "Settlement ID is required" };
+  }
+
   const supabase = createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("payments")
     .insert({
       group_settlement_id: settlementId,
       from_user_id: fromUserId,
       to_user_id: toUserId,
       amount_cents: amountCents,
-    });
+    })
+    .select("id")
+    .single();
 
-  return { error: error?.message };
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { paymentId: data.id };
 }
 

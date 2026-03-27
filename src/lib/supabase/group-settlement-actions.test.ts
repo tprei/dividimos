@@ -275,12 +275,13 @@ describe("syncGroupSettlements", () => {
 });
 
 describe("markGroupSettlementPaid", () => {
-  it("inserts a payment row for the group settlement", async () => {
-    mock.onTable("payments", { error: null });
+  it("inserts a payment row and returns the generated payment ID", async () => {
+    mock.onTable("payments", { data: { id: "pay-1" }, error: null });
 
     const result = await markGroupSettlementPaid("gs-1", 4000, "user-bob", "user-alice");
 
     expect(result.error).toBeUndefined();
+    expect(result.paymentId).toBe("pay-1");
     const inserts = mock.findCalls("payments", "insert");
     expect(inserts).toHaveLength(1);
     expect(inserts[0].args[0]).toMatchObject({
@@ -291,12 +292,35 @@ describe("markGroupSettlementPaid", () => {
     });
   });
 
+  it("chains .select() and .single() to capture the generated UUID", async () => {
+    mock.onTable("payments", { data: { id: "pay-2" }, error: null });
+
+    await markGroupSettlementPaid("gs-1", 4000, "user-bob", "user-alice");
+
+    const selectCalls = mock.findCalls("payments", "select");
+    expect(selectCalls).toHaveLength(1);
+    expect(selectCalls[0].args[0]).toBe("id");
+
+    const singleCalls = mock.findCalls("payments", "single");
+    expect(singleCalls).toHaveLength(1);
+  });
+
   it("returns error message on insert failure", async () => {
     mock.onTable("payments", { error: { message: "RLS violation" } });
 
     const result = await markGroupSettlementPaid("gs-1", 4000, "user-bob", "user-alice");
 
     expect(result.error).toBe("RLS violation");
+    expect(result.paymentId).toBeUndefined();
+  });
+
+  it("rejects empty settlement ID without hitting the database", async () => {
+    const result = await markGroupSettlementPaid("", 4000, "user-bob", "user-alice");
+
+    expect(result.error).toBe("Settlement ID is required");
+    expect(result.paymentId).toBeUndefined();
+    const inserts = mock.findCalls("payments", "insert");
+    expect(inserts).toHaveLength(0);
   });
 });
 
