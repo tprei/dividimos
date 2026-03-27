@@ -12,7 +12,7 @@ INSERT INTO auth.users (
   'a1111111-1111-1111-1111-111111111111',
   'authenticated', 'authenticated',
   'alice@test.pixwise.local',
-  crypt('password123', gen_salt('bf')),
+  '$2b$10$Zqg7YqulB1zYL80MCW43TO.6T6Y1NikGDfeIfHGhSDacoQC4uJ0Xa',
   now(), '{"full_name": "Alice Teste"}'::jsonb,
   now(), now(), '', '', '', ''
 ), (
@@ -20,7 +20,7 @@ INSERT INTO auth.users (
   'b2222222-2222-2222-2222-222222222222',
   'authenticated', 'authenticated',
   'bob@test.pixwise.local',
-  crypt('password123', gen_salt('bf')),
+  '$2b$10$Zqg7YqulB1zYL80MCW43TO.6T6Y1NikGDfeIfHGhSDacoQC4uJ0Xa',
   now(), '{"full_name": "Bob Teste"}'::jsonb,
   now(), now(), '', '', '', ''
 ), (
@@ -28,7 +28,7 @@ INSERT INTO auth.users (
   'c3333333-3333-3333-3333-333333333333',
   'authenticated', 'authenticated',
   'carol@test.pixwise.local',
-  crypt('password123', gen_salt('bf')),
+  '$2b$10$Zqg7YqulB1zYL80MCW43TO.6T6Y1NikGDfeIfHGhSDacoQC4uJ0Xa',
   now(), '{"full_name": "Carol Teste"}'::jsonb,
   now(), now(), '', '', '', ''
 );
