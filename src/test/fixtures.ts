@@ -86,6 +86,7 @@ export function makeLedgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEnt
   return {
     id: "ledger-1",
     billId: "bill-1",
+    entryType: "debt",
     fromUserId: "user-bob",
     toUserId: "user-alice",
     amountCents: 5000,

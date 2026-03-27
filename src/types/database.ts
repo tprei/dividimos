@@ -270,7 +270,9 @@ export interface Database {
       ledger: {
         Row: {
           id: string;
-          bill_id: string;
+          bill_id: string | null;
+          entry_type: "debt" | "payment";
+          group_id: string | null;
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
@@ -278,11 +280,14 @@ export interface Database {
           status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at: string | null;
           confirmed_at: string | null;
+          confirmed_by: string | null;
           created_at: string;
         };
         Insert: {
           id?: string;
-          bill_id: string;
+          bill_id?: string | null;
+          entry_type?: "debt" | "payment";
+          group_id?: string | null;
           from_user_id: string;
           to_user_id: string;
           amount_cents: number;
@@ -290,11 +295,14 @@ export interface Database {
           status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
+          confirmed_by?: string | null;
           created_at?: string;
         };
         Update: {
           id?: string;
-          bill_id?: string;
+          bill_id?: string | null;
+          entry_type?: "debt" | "payment";
+          group_id?: string | null;
           from_user_id?: string;
           to_user_id?: string;
           amount_cents?: number;
@@ -302,6 +310,7 @@ export interface Database {
           status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
+          confirmed_by?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -410,6 +419,7 @@ export interface Database {
       split_type: "equal" | "percentage" | "fixed";
       debt_status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
       payment_status: "unconfirmed" | "settled";
+      ledger_entry_type: "debt" | "payment";
       group_member_status: "invited" | "accepted";
     };
     CompositeTypes: Record<string, never>;
