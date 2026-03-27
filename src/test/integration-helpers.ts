@@ -30,7 +30,9 @@ export interface CreateTestUserOptions {
 }
 
 function generateTestId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const ts = Date.now().toString(36).slice(-4);
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `${ts}_${rand}`;
 }
 
 export async function createTestUser(
