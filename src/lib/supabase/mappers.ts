@@ -79,8 +79,6 @@ export function ledgerRowToLedgerEntry(row: LedgerRow): LedgerEntry {
     paidAmountCents: row.paid_amount_cents,
     status: coerceDebtStatus(row.status, "pending"),
     paidAt: row.paid_at ?? undefined,
-    confirmedAt: row.confirmed_at ?? undefined,
-    confirmedBy: row.confirmed_by ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -110,7 +108,7 @@ function coerceSplitType(value: string | null, fallback: SplitType): SplitType {
 }
 
 function coerceDebtStatus(value: string | null, fallback: DebtStatus): DebtStatus {
-  const valid: DebtStatus[] = ["pending", "partially_paid", "paid_unconfirmed", "settled"];
+  const valid: DebtStatus[] = ["pending", "partially_paid", "settled"];
   if (value && valid.includes(value as DebtStatus)) return value as DebtStatus;
   return fallback;
 }

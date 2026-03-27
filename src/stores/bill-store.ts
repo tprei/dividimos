@@ -54,8 +54,6 @@ interface BillState {
   computeLedger: () => void;
   recordPayment: (entryId: string, amountCents: number) => void;
   markPaid: (entryId: string) => void;
-  confirmPayment: (entryId: string) => void;
-
   getParticipantTotal: (userId: string) => number;
   reset: () => void;
 }
@@ -440,7 +438,7 @@ export const useBillStore = create<BillState>((set, get) => ({
         if (e.id !== entryId) return e;
         const newPaid = e.paidAmountCents + amountCents;
         const remaining = e.amountCents - newPaid;
-        const status: DebtStatus = remaining <= 0 ? "paid_unconfirmed" : "partially_paid";
+        const status: DebtStatus = remaining <= 0 ? "settled" : "partially_paid";
         return {
           ...e,
           paidAmountCents: Math.min(newPaid, e.amountCents),
@@ -449,6 +447,7 @@ export const useBillStore = create<BillState>((set, get) => ({
         };
       }),
     });
+    checkAllSettled(get, set);
   },
 
   markPaid: (entryId) => {
@@ -456,17 +455,6 @@ export const useBillStore = create<BillState>((set, get) => ({
     if (!entry) return;
     const remaining = entry.amountCents - entry.paidAmountCents;
     get().recordPayment(entryId, remaining);
-  },
-
-  confirmPayment: (entryId) => {
-    set({
-      ledger: get().ledger.map((e) =>
-        e.id === entryId
-          ? { ...e, status: "settled" as DebtStatus, confirmedAt: new Date().toISOString() }
-          : e,
-      ),
-    });
-    checkAllSettled(get, set);
   },
 
   getParticipantTotal: (userId) => {

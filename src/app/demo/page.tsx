@@ -3,7 +3,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
-  Check,
   CheckCheck,
   Clock,
   QrCode,
@@ -192,17 +191,9 @@ export default function DemoPage() {
   function markPaid(entryId: string, amountCents: number, totalAmountCents: number) {
     const prevPaid = debtPaidAmounts.get(entryId) ?? 0;
     const newPaid = Math.min(prevPaid + amountCents, totalAmountCents);
-    const newStatus: DebtStatus = newPaid >= totalAmountCents ? "paid_unconfirmed" : "partially_paid";
+    const newStatus: DebtStatus = newPaid >= totalAmountCents ? "settled" : "partially_paid";
     setDebtPaidAmounts((prev) => new Map(prev).set(entryId, newPaid));
     setDebtStatuses((prev) => new Map(prev).set(entryId, newStatus));
-  }
-
-  function confirmPayment(entryId: string) {
-    setDebtStatuses((prev) => {
-      const next = new Map(prev);
-      next.set(entryId, "settled");
-      return next;
-    });
   }
 
   const displayEntries = useMemo(() => {
@@ -432,21 +423,13 @@ export default function DemoPage() {
                                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                                           entry.status === "pending"
                                             ? "bg-warning/15 text-warning-foreground"
-                                            : entry.status === "paid_unconfirmed"
-                                              ? "bg-primary/15 text-primary"
-                                              : "bg-success/15 text-success"
+                                            : "bg-success/15 text-success"
                                         }`}
                                       >
                                         {entry.status === "pending" && (
                                           <>
                                             <Clock className="h-3 w-3" />
                                             Pendente
-                                          </>
-                                        )}
-                                        {entry.status === "paid_unconfirmed" && (
-                                          <>
-                                            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                                            Aguardando confirmacao
                                           </>
                                         )}
                                         {entry.status === "settled" && (
@@ -494,27 +477,6 @@ export default function DemoPage() {
                                       >
                                         <QrCode className="h-4 w-4" />
                                         Pagar via Pix
-                                      </Button>
-                                    </motion.div>
-                                  )}
-
-                                  {entry.status === "paid_unconfirmed" && (
-                                    <motion.div
-                                      key="confirm-actions"
-                                      initial={{ opacity: 0, scale: 0.98 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      exit={{ opacity: 0, scale: 0.98 }}
-                                      transition={{ duration: 0.2 }}
-                                      className="mt-3"
-                                    >
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="w-full gap-1.5 border-success/30 text-success hover:bg-success/10"
-                                        onClick={() => confirmPayment(entry.id)}
-                                      >
-                                        <Check className="h-4 w-4" />
-                                        Confirmar recebimento
                                       </Button>
                                     </motion.div>
                                   )}

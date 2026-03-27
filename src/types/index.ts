@@ -7,10 +7,7 @@ export type BillStatus = "draft" | "active" | "partially_settled" | "settled";
 export type DebtStatus =
   | "pending"
   | "partially_paid"
-  | "paid_unconfirmed"
   | "settled";
-
-export type PaymentStatus = "unconfirmed" | "settled";
 
 export type LedgerEntryType = "debt" | "payment";
 
@@ -99,7 +96,6 @@ export interface GroupSettlement {
   paidAmountCents: number;
   status: DebtStatus;
   paidAt?: string;
-  confirmedAt?: string;
   createdAt: string;
 }
 
@@ -143,8 +139,6 @@ export interface LedgerEntry {
   paidAmountCents: number;
   status: DebtStatus;
   paidAt?: string;
-  confirmedAt?: string;
-  confirmedBy?: string;
   createdAt: string;
 }
 

@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Bill, BillPayer, BillStatus, GroupSettlement, LedgerEntry, User } from "@/types";
+import type { Bill, BillPayer, DebtStatus, GroupSettlement, LedgerEntry, User } from "@/types";
 import type { DebtEdge } from "@/lib/simplify";
 import type { Database } from "@/types/database";
+import { isDebtStatus } from "@/lib/type-guards";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
 type LedgerRow = Database["public"]["Tables"]["ledger"]["Row"];
@@ -61,10 +62,8 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     toUserId: e.to_user_id,
     amountCents: e.amount_cents,
     paidAmountCents: e.paid_amount_cents ?? 0,
-    status: e.status,
+    status: (isDebtStatus(e.status) ? e.status : "pending") as DebtStatus,
     paidAt: e.paid_at ?? undefined,
-    confirmedAt: e.confirmed_at ?? undefined,
-    confirmedBy: e.confirmed_by ?? undefined,
     createdAt: e.created_at,
   }));
 
@@ -113,9 +112,8 @@ export async function loadGroupSettlements(groupId: string): Promise<GroupSettle
     toUserId: s.to_user_id,
     amountCents: s.amount_cents,
     paidAmountCents: s.paid_amount_cents ?? 0,
-    status: s.status,
+    status: (isDebtStatus(s.status) ? s.status : "pending") as DebtStatus,
     paidAt: s.paid_at ?? undefined,
-    confirmedAt: s.confirmed_at ?? undefined,
     createdAt: s.created_at,
   }));
 }
@@ -229,10 +227,3 @@ export async function markGroupSettlementPaid(
   return { error: error?.message };
 }
 
-export async function confirmGroupSettlement(settlementId: string): Promise<void> {
-  const supabase = createClient();
-  await supabase
-    .from("group_settlements")
-    .update({ status: "settled", confirmed_at: new Date().toISOString() })
-    .eq("id", settlementId);
-}

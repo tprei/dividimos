@@ -255,7 +255,7 @@ describe("computeLedger", () => {
   });
 });
 
-describe("markPaid / confirmPayment", () => {
+describe("markPaid", () => {
   function setupLedger() {
     const s = setup();
     s.createBill("Test", "single_amount");
@@ -267,31 +267,21 @@ describe("markPaid / confirmPayment", () => {
     return useBillStore.getState().ledger[0].id;
   }
 
-  it("markPaid sets status to paid_unconfirmed", () => {
+  it("markPaid sets status to settled", () => {
     const entryId = setupLedger();
     useBillStore.getState().markPaid(entryId);
     const entry = useBillStore.getState().ledger.find((e) => e.id === entryId);
-    expect(entry?.status).toBe("paid_unconfirmed");
+    expect(entry?.status).toBe("settled");
     expect(entry?.paidAt).toBeDefined();
   });
 
-  it("confirmPayment sets status to settled", () => {
+  it("bill status becomes settled when all entries paid", () => {
     const entryId = setupLedger();
     useBillStore.getState().markPaid(entryId);
-    useBillStore.getState().confirmPayment(entryId);
-    const entry = useBillStore.getState().ledger.find((e) => e.id === entryId);
-    expect(entry?.status).toBe("settled");
-    expect(entry?.confirmedAt).toBeDefined();
-  });
-
-  it("bill status becomes settled when all entries confirmed", () => {
-    const entryId = setupLedger();
-    useBillStore.getState().markPaid(entryId);
-    useBillStore.getState().confirmPayment(entryId);
     expect(useBillStore.getState().bill?.status).toBe("settled");
   });
 
-  it("bill status becomes partially_settled when only some entries confirmed", () => {
+  it("bill status becomes partially_settled when only some entries paid", () => {
     setup().createBill("Test", "single_amount");
     useBillStore.getState().addParticipant(userBob);
     useBillStore.getState().addParticipant(userCarlos);
@@ -301,9 +291,7 @@ describe("markPaid / confirmPayment", () => {
     useBillStore.getState().computeLedger();
     const { ledger } = useBillStore.getState();
     expect(ledger.length).toBeGreaterThan(1);
-    // Confirm only the first entry
     useBillStore.getState().markPaid(ledger[0].id);
-    useBillStore.getState().confirmPayment(ledger[0].id);
     expect(useBillStore.getState().bill?.status).toBe("partially_settled");
   });
 });

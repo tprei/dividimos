@@ -26,15 +26,21 @@ export function useRealtimeLedger(billId: string | undefined) {
             id: string;
             status: DebtStatus;
             paid_at: string | null;
-            confirmed_at: string | null;
+            paid_amount_cents: number;
           };
 
-          const { markPaid, confirmPayment } = useBillStore.getState();
-          if (updated.status === "paid_unconfirmed") {
-            markPaid(updated.id);
-          } else if (updated.status === "settled") {
-            confirmPayment(updated.id);
-          }
+          useBillStore.setState((state) => ({
+            ledger: state.ledger.map((e) =>
+              e.id === updated.id
+                ? {
+                    ...e,
+                    status: updated.status,
+                    paidAmountCents: updated.paid_amount_cents ?? e.paidAmountCents,
+                    paidAt: updated.paid_at ?? undefined,
+                  }
+                : e,
+            ),
+          }));
         },
       )
       .subscribe();

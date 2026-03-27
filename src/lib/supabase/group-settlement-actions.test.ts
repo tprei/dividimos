@@ -12,7 +12,6 @@ import {
   upsertGroupSettlements,
   recordGroupSettlementPayment,
   markGroupSettlementPaid,
-  confirmGroupSettlement,
 } from "./group-settlement-actions";
 
 let mock: MockSupabase;
@@ -64,7 +63,6 @@ describe("loadGroupBillsAndLedger", () => {
           paid_amount_cents: 0,
           status: "pending",
           paid_at: null,
-          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
       ],
@@ -103,7 +101,6 @@ describe("loadGroupSettlements", () => {
           paid_amount_cents: 2000,
           status: "pending",
           paid_at: null,
-          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
       ],
@@ -134,7 +131,6 @@ describe("loadGroupSettlements", () => {
           amount_cents: 3000,
           status: "pending",
           paid_at: null,
-          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
       ],
@@ -189,7 +185,6 @@ describe("upsertGroupSettlements", () => {
           paid_amount_cents: 0,
           status: "pending",
           paid_at: null,
-          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
         {
@@ -199,9 +194,8 @@ describe("upsertGroupSettlements", () => {
           to_user_id: "user-alice",
           amount_cents: 2000,
           paid_amount_cents: 2000,
-          status: "paid_unconfirmed",
+          status: "partially_paid",
           paid_at: "2024-01-02T00:00:00Z",
-          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
       ],
@@ -238,7 +232,6 @@ describe("upsertGroupSettlements", () => {
           amount_cents: 5000,
           status: "settled",
           paid_at: "2024-01-02T00:00:00Z",
-          confirmed_at: "2024-01-03T00:00:00Z",
           created_at: "2024-01-01T00:00:00Z",
         },
       ],
@@ -264,7 +257,6 @@ describe("upsertGroupSettlements", () => {
           amount_cents: 1000,
           status: "pending",
           paid_at: null,
-          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
       ],
@@ -341,17 +333,3 @@ describe("markGroupSettlementPaid", () => {
   });
 });
 
-describe("confirmGroupSettlement", () => {
-  it("updates status to settled with timestamp", async () => {
-    mock.onTable("group_settlements", { error: null });
-
-    await confirmGroupSettlement("gs-1");
-
-    const updates = mock.findCalls("group_settlements", "update");
-    expect(updates).toHaveLength(1);
-    expect(updates[0].args[0]).toMatchObject({
-      status: "settled",
-    });
-    expect(updates[0].args[0]).toHaveProperty("confirmed_at");
-  });
-});

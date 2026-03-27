@@ -16,7 +16,7 @@ import type {
 const BILL_STATUSES = ["draft", "active", "partially_settled", "settled"] as const;
 const BILL_TYPES = ["single_amount", "itemized"] as const;
 const BILL_PARTICIPANT_STATUSES = ["invited", "accepted", "declined"] as const;
-const DEBT_STATUSES = ["pending", "partially_paid", "paid_unconfirmed", "settled"] as const;
+const DEBT_STATUSES = ["pending", "partially_paid", "settled"] as const;
 const GROUP_MEMBER_STATUSES = ["invited", "accepted"] as const;
 const PIX_KEY_TYPES = ["phone", "cpf", "email", "random"] as const;
 const SPLIT_TYPES = ["equal", "percentage", "fixed"] as const;

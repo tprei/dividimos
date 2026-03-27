@@ -60,7 +60,6 @@ describe("loadBillFromSupabase", () => {
           amount_cents: 2750,
           status: "pending",
           paid_at: null,
-          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
       ],

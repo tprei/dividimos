@@ -16,7 +16,7 @@ describe("Settlement flows", () => {
     store.computeLedger();
   });
 
-  it("full settlement lifecycle: pending → paid → confirmed", () => {
+  it("full settlement lifecycle: pending → settled", () => {
     const { ledger } = useBillStore.getState();
     const bobEntry = ledger.find((e) => e.fromUserId === "user-bob")!;
 
@@ -25,13 +25,8 @@ describe("Settlement flows", () => {
 
     useBillStore.getState().markPaid(bobEntry.id);
     const updated = useBillStore.getState().ledger.find((e) => e.id === bobEntry.id)!;
-    expect(updated.status).toBe("paid_unconfirmed");
+    expect(updated.status).toBe("settled");
     expect(updated.paidAt).toBeDefined();
-
-    useBillStore.getState().confirmPayment(bobEntry.id);
-    const confirmed = useBillStore.getState().ledger.find((e) => e.id === bobEntry.id)!;
-    expect(confirmed.status).toBe("settled");
-    expect(confirmed.confirmedAt).toBeDefined();
 
     expect(useBillStore.getState().bill!.status).toBe("partially_settled");
   });
@@ -40,7 +35,7 @@ describe("Settlement flows", () => {
     const { ledger } = useBillStore.getState();
 
     for (const entry of ledger) {
-      useBillStore.getState().confirmPayment(entry.id);
+      useBillStore.getState().markPaid(entry.id);
     }
 
     expect(useBillStore.getState().bill!.status).toBe("settled");
@@ -48,7 +43,7 @@ describe("Settlement flows", () => {
 
   it("settling first entry only → partially_settled", () => {
     const { ledger } = useBillStore.getState();
-    useBillStore.getState().confirmPayment(ledger[0].id);
+    useBillStore.getState().markPaid(ledger[0].id);
 
     expect(useBillStore.getState().bill!.status).toBe("partially_settled");
   });
