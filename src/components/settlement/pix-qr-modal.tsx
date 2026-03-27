@@ -213,6 +213,21 @@ export function PixQrModal({
                   aria-label="Valor do pagamento"
                 />
               </div>
+              {remainingCents > 0 && (
+                <input
+                  type="range"
+                  min={1}
+                  max={remainingCents}
+                  step={1}
+                  value={Math.min(Math.max(paymentCents, 1), remainingCents)}
+                  onChange={(e) => {
+                    const cents = Number(e.target.value);
+                    setInputValue(centsToDecimal(cents).replace(".", ","));
+                  }}
+                  className="mt-3 w-full"
+                  aria-label="Ajustar valor do pagamento"
+                />
+              )}
               {!isFullPayment && isValidAmount && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   Restante apos pagamento: {formatBRL(remainingCents - paymentCents)}
