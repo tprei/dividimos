@@ -78,9 +78,37 @@ The response sets session cookies. Or use the UI: navigate to `/auth` → "Entra
 npm run dev                  # Start dev server
 npm run build                # Production build (verifies types)
 npm run lint                 # ESLint
+npm run test                 # Run unit tests once
+npm run test:watch           # Run unit tests in watch mode
+npm run test:integration     # Run integration tests (requires supabase start)
+npm run test:all             # Run unit + integration tests
 ./scripts/dev-setup.sh       # One-command local setup
 supabase db push --linked    # Apply migrations to remote
 ```
+
+## Testing
+
+Unit tests use Vitest with React Testing Library. Tests are colocated with source files using `.test.ts`/`.test.tsx` suffix.
+
+**Configuration**: `vitest.config.mts` with happy-dom environment and tsconfig paths.
+
+**Test setup**: `src/test/setup.ts` provides jest-dom matchers and a Framer Motion mock.
+
+Integration tests run against a real local Supabase instance and verify RLS policies.
+
+**Configuration**: `vitest.integration.config.mts` with node environment, 30s timeout, sequential execution.
+
+**Test setup**: `src/test/integration-setup.ts` — connects with service role key, cleans up test users after each run.
+
+**Helpers**: `src/test/integration-helpers.ts` — `createTestUser`, `authenticateAs`, `createTestBill`, `createTestGroup`.
+
+**Running integration tests locally**:
+```bash
+supabase start
+npm run test:integration
+```
+
+**Writing integration tests**: use `.integration.test.ts` suffix, wrap in `describe.skipIf(!isIntegrationTestReady)` so they are skipped when env vars are absent.
 
 ## Key concepts
 
