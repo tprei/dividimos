@@ -125,6 +125,45 @@ export async function confirmPayment(
   return {};
 }
 
+/**
+ * Confirm all unconfirmed payment entries for a (group, from, to) pair.
+ * Used by the group settlement view where individual payment entry IDs
+ * are not tracked — instead we confirm all pending payments for the pair.
+ */
+export async function confirmPaymentsForPair(
+  groupId: string,
+  fromUserId: string,
+  toUserId: string,
+  confirmedByUserId: string,
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+
+  const { data: entries } = await supabase
+    .from("ledger")
+    .select("id")
+    .eq("group_id", groupId)
+    .eq("entry_type", "payment" as const)
+    .eq("from_user_id", fromUserId)
+    .eq("to_user_id", toUserId)
+    .eq("status", "paid_unconfirmed" as const);
+
+  if (!entries?.length) return {};
+
+  const { error } = await supabase
+    .from("ledger")
+    .update({
+      status: "settled" as const,
+      confirmed_at: new Date().toISOString(),
+      confirmed_by: confirmedByUserId,
+    })
+    .in(
+      "id",
+      entries.map((e) => e.id),
+    );
+
+  return { error: error?.message };
+}
+
 // --- Backward-compatible aliases (consumed by bill detail page) ---
 // These will be removed once the bill detail page migrates to the new API.
 

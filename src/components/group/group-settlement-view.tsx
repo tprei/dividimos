@@ -15,17 +15,13 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
-import { computeGroupNetEdges } from "@/lib/group-settlement";
+import { computeGroupNetStateFromEvents, computeSettlementEdges } from "@/lib/net-state";
+import type { SettlementEdge } from "@/lib/net-state";
 import { simplifyDebts } from "@/lib/simplify";
-import {
-  loadGroupBillsAndLedger,
-  loadGroupSettlements,
-  upsertGroupSettlements,
-  markGroupSettlementPaid,
-  confirmGroupSettlement,
-} from "@/lib/supabase/group-settlement-actions";
+import { loadLedgerEntries } from "@/lib/supabase/ledger-actions";
+import { recordPayment, confirmPaymentsForPair } from "@/lib/supabase/ledger-actions";
 import { createClient } from "@/lib/supabase/client";
-import type { GroupSettlement, User } from "@/types";
+import type { User } from "@/types";
 import type { SimplificationResult } from "@/lib/simplify";
 
 interface GroupSettlementViewProps {
@@ -40,63 +36,58 @@ export function GroupSettlementView({
   currentUserId,
 }: GroupSettlementViewProps) {
   const [loading, setLoading] = useState(true);
-  const [settlements, setSettlements] = useState<GroupSettlement[]>([]);
+  const [settlements, setSettlements] = useState<SettlementEdge[]>([]);
   const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
-  const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; paidAmountCents: number; mode: "pay" | "collect" } | null>(null);
+  const [pixModal, setPixModal] = useState<{
+    fromUserId: string;
+    toUserId: string;
+    recipientId: string;
+    recipientName: string;
+    amountCents: number;
+    unconfirmedCents: number;
+    mode: "pay" | "collect";
+  } | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
 
-  // Read-only refresh: just load current settlement state from DB
-  const refreshSettlements = useCallback(async () => {
-    const loaded = await loadGroupSettlements(groupId);
-    setSettlements(loaded.filter((s) => s.status !== "settled"));
-  }, [groupId]);
+  // Load ledger entries, compute settlement edges and simplification
+  const reloadSettlements = useCallback(async () => {
+    const entries = await loadLedgerEntries({ groupId });
 
-  // Full compute + sync: runs once on mount and after user actions
-  const initializeSettlements = useCallback(async () => {
-    setLoading(true);
-    const { ledger, participants: billParticipants } = await loadGroupBillsAndLedger(groupId);
-
-    const allParticipantIds = new Set(participants.map((p) => p.id));
-    const mergedParticipants = [...participants];
-    for (const p of billParticipants) {
-      if (!allParticipantIds.has(p.id)) {
-        mergedParticipants.push(p);
-        allParticipantIds.add(p.id);
-      }
-    }
-
-    const netEdges = computeGroupNetEdges(ledger, mergedParticipants);
-
-    if (netEdges.length >= 2 && mergedParticipants.length >= 3) {
-      const result = simplifyDebts(netEdges, mergedParticipants);
+    // Compute net edges for the debt graph / simplification
+    const netEdges = computeGroupNetStateFromEvents(entries, participants);
+    if (netEdges.length >= 2 && participants.length >= 3) {
+      const result = simplifyDebts(netEdges, participants);
       setSimplificationResult(result);
     } else {
       setSimplificationResult(null);
     }
 
-    await upsertGroupSettlements(groupId, netEdges);
-    await refreshSettlements();
-    setLoading(false);
-  }, [groupId, participants, refreshSettlements]);
+    // Compute settlement edges with payment status
+    const edges = computeSettlementEdges(entries);
+    setSettlements(edges.filter((e) => e.status !== "settled"));
+  }, [groupId, participants]);
 
   useEffect(() => {
-    initializeSettlements();
-  }, [initializeSettlements]);
+    (async () => {
+      setLoading(true);
+      await reloadSettlements();
+      setLoading(false);
+    })();
+  }, [reloadSettlements]);
 
-  const refreshSettlementsRef = useRef(refreshSettlements);
-  useEffect(() => { refreshSettlementsRef.current = refreshSettlements; });
+  const reloadRef = useRef(reloadSettlements);
+  useEffect(() => { reloadRef.current = reloadSettlements; });
 
   useEffect(() => {
-    // Realtime: read-only refresh (no upsert) to avoid write → subscribe → write loop
     const supabase = createClient();
     const channel = supabase
-      .channel(`group-settlements:${groupId}`)
+      .channel(`group-ledger:${groupId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
-        () => refreshSettlementsRef.current(),
+        { event: "*", schema: "public", table: "ledger", filter: `group_id=eq.${groupId}` },
+        () => reloadRef.current(),
       )
       .subscribe();
 
@@ -108,24 +99,26 @@ export function GroupSettlementView({
     : simplificationResult?.originalEdges ?? [];
 
   const myDebts = settlements.filter(
-    (s) => s.fromUserId === currentUserId && (s.status === "pending" || s.status === "partially_paid"),
+    (s) => s.fromUserId === currentUserId && s.status === "pending",
   );
 
   const getParticipant = (id: string) =>
     participants.find((p) => p.id === id) ?? { id, name: "?", handle: "", email: "", pixKeyType: "email" as const, pixKeyHint: "", onboarded: false, createdAt: "" };
 
-  async function handleMarkPaid(settlementId: string, amountCents: number, fromUserId: string, toUserId: string) {
-    setSettling(settlementId);
-    await markGroupSettlementPaid(settlementId, amountCents, fromUserId, toUserId);
+  const edgeKey = (from: string, to: string) => `${from}->${to}`;
+
+  async function handleMarkPaid(amountCents: number, fromUserId: string, toUserId: string) {
+    setSettling(edgeKey(fromUserId, toUserId));
+    await recordPayment(groupId, fromUserId, toUserId, amountCents);
     setPixModal(null);
-    await refreshSettlements();
+    await reloadSettlements();
     setSettling(null);
   }
 
-  async function handleConfirm(settlementId: string) {
-    setSettling(settlementId);
-    await confirmGroupSettlement(settlementId);
-    await refreshSettlements();
+  async function handleConfirm(fromUserId: string, toUserId: string) {
+    setSettling(edgeKey(fromUserId, toUserId));
+    await confirmPaymentsForPair(groupId, fromUserId, toUserId, currentUserId);
+    await reloadSettlements();
     setSettling(null);
   }
 
@@ -133,10 +126,10 @@ export function GroupSettlementView({
     setSettling("all");
     await Promise.all(
       myDebts.map((s) =>
-        markGroupSettlementPaid(s.id, s.amountCents - s.paidAmountCents, s.fromUserId, s.toUserId),
+        recordPayment(groupId, s.fromUserId, s.toUserId, s.netAmountCents),
       ),
     );
-    await refreshSettlements();
+    await reloadSettlements();
     setSettling(null);
   }
 
@@ -167,10 +160,10 @@ export function GroupSettlementView({
           {participants.map((p) => {
             const totalOwed = settlements
               .filter((s) => s.fromUserId === p.id)
-              .reduce((sum, s) => sum + s.amountCents, 0);
+              .reduce((sum, s) => sum + s.netAmountCents, 0);
             const totalToReceive = settlements
               .filter((s) => s.toUserId === p.id)
-              .reduce((sum, s) => sum + s.amountCents, 0);
+              .reduce((sum, s) => sum + s.netAmountCents, 0);
             const net = totalToReceive - totalOwed;
             if (Math.abs(net) < 2) return null;
             return (
@@ -231,11 +224,11 @@ export function GroupSettlementView({
           const to = getParticipant(settlement.toUserId);
           const isDebtor = settlement.fromUserId === currentUserId;
           const isCreditor = settlement.toUserId === currentUserId;
-          const isSettling = settling === settlement.id;
+          const isSettling = settling === edgeKey(settlement.fromUserId, settlement.toUserId);
 
           return (
             <motion.div
-              key={settlement.id}
+              key={edgeKey(settlement.fromUserId, settlement.toUserId)}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               className="rounded-2xl border bg-card p-4"
@@ -251,40 +244,37 @@ export function GroupSettlementView({
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold tabular-nums text-sm">{formatBRL(settlement.amountCents)}</p>
-                  {settlement.paidAmountCents > 0 && settlement.status !== "paid_unconfirmed" && (
+                  <p className="font-semibold tabular-nums text-sm">{formatBRL(settlement.netAmountCents)}</p>
+                  {settlement.unconfirmedCents > 0 && settlement.unconfirmedCents < settlement.netAmountCents && (
                     <p className="text-[10px] text-muted-foreground tabular-nums">
-                      Pago: {formatBRL(settlement.paidAmountCents)}
+                      Pago: {formatBRL(settlement.unconfirmedCents)}
                     </p>
                   )}
                   <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${
                     settlement.status === "paid_unconfirmed"
                       ? "bg-warning/15 text-warning-foreground"
-                      : settlement.status === "partially_paid"
-                        ? "bg-primary/15 text-primary"
-                        : "bg-muted text-muted-foreground"
+                      : "bg-muted text-muted-foreground"
                   }`}>
                     {settlement.status === "paid_unconfirmed"
                       ? "Aguardando"
-                      : settlement.status === "partially_paid"
-                        ? "Parcial"
-                        : "Pendente"}
+                      : "Pendente"}
                   </span>
                 </div>
               </div>
 
               <div className="flex gap-2">
-                {isDebtor && (settlement.status === "pending" || settlement.status === "partially_paid") && (
+                {isDebtor && settlement.status === "pending" && (
                   <Button
                     className="flex-1"
                     size="sm"
                     onClick={() =>
                       setPixModal({
-                        settlementId: settlement.id,
+                        fromUserId: settlement.fromUserId,
+                        toUserId: settlement.toUserId,
                         recipientId: settlement.toUserId,
                         recipientName: to.name,
-                        amountCents: settlement.amountCents,
-                        paidAmountCents: settlement.paidAmountCents,
+                        amountCents: settlement.netAmountCents,
+                        unconfirmedCents: settlement.unconfirmedCents,
                         mode: "pay",
                       })
                     }
@@ -303,18 +293,19 @@ export function GroupSettlementView({
                   </div>
                 )}
 
-                {isCreditor && (settlement.status === "pending" || settlement.status === "partially_paid") && (
+                {isCreditor && settlement.status === "pending" && (
                   <Button
                     variant="outline"
                     className="flex-1"
                     size="sm"
                     onClick={() =>
                       setPixModal({
-                        settlementId: settlement.id,
+                        fromUserId: settlement.fromUserId,
+                        toUserId: settlement.toUserId,
                         recipientId: settlement.fromUserId,
                         recipientName: from.name,
-                        amountCents: settlement.amountCents,
-                        paidAmountCents: settlement.paidAmountCents,
+                        amountCents: settlement.netAmountCents,
+                        unconfirmedCents: settlement.unconfirmedCents,
                         mode: "collect",
                       })
                     }
@@ -328,7 +319,7 @@ export function GroupSettlementView({
                   <Button
                     className="flex-1"
                     size="sm"
-                    onClick={() => handleConfirm(settlement.id)}
+                    onClick={() => handleConfirm(settlement.fromUserId, settlement.toUserId)}
                     disabled={isSettling}
                   >
                     {isSettling ? (
@@ -336,7 +327,7 @@ export function GroupSettlementView({
                     ) : (
                       <>
                         <Check className="h-4 w-4 mr-1" />
-                        Confirmar recebimento de {formatBRL(settlement.amountCents)}
+                        Confirmar recebimento de {formatBRL(settlement.unconfirmedCents || settlement.netAmountCents)}
                       </>
                     )}
                   </Button>
@@ -379,15 +370,15 @@ export function GroupSettlementView({
           onClose={() => setPixModal(null)}
           recipientName={pixModal.recipientName}
           amountCents={pixModal.amountCents}
-          paidAmountCents={pixModal.paidAmountCents}
+          paidAmountCents={pixModal.unconfirmedCents}
           recipientUserId={pixModal.recipientId}
           groupId={groupId}
           mode={pixModal.mode}
           onMarkPaid={async (amountCents: number) => {
             if (pixModal.mode === "collect") {
-              await handleConfirm(pixModal.settlementId);
+              await handleConfirm(pixModal.fromUserId, pixModal.toUserId);
             } else {
-              await handleMarkPaid(pixModal.settlementId, amountCents, currentUserId, pixModal.recipientId);
+              await handleMarkPaid(amountCents, pixModal.fromUserId, pixModal.toUserId);
             }
           }}
         />
