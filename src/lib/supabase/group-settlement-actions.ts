@@ -1,5 +1,9 @@
+// DEPRECATED: This file is a backward-compatibility stub.
+// All ledger operations have moved to ./ledger-actions.ts.
+// This file will be removed once group-settlement-view.tsx is migrated.
+
 import { createClient } from "@/lib/supabase/client";
-import type { Bill, BillPayer, BillStatus, GroupSettlement, LedgerEntry, User } from "@/types";
+import type { GroupSettlement, LedgerEntry, User, Bill, BillPayer } from "@/types";
 import type { DebtEdge } from "@/lib/simplify";
 import type { Database } from "@/types/database";
 
@@ -26,7 +30,7 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     return {
       id: b.id,
       creatorId: b.creator_id,
-      billType: b.bill_type === "single_amount" ? "single_amount" : "itemized",
+      billType: b.bill_type === "single_amount" ? "single_amount" as const : "itemized" as const,
       title: b.title,
       merchantName: b.merchant_name ?? undefined,
       status: b.status,
@@ -68,7 +72,6 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     createdAt: e.created_at,
   }));
 
-  // Collect all participant IDs from bill_participants
   const { data: participantRows } = await supabase
     .from("bill_participants")
     .select("user_id")
@@ -127,7 +130,6 @@ export async function upsertGroupSettlements(
   const supabase = createClient();
   const existing = await loadGroupSettlements(groupId);
 
-  // Build map by key "from->to"
   const existingMap = new Map<string, GroupSettlement[]>();
   for (const s of existing) {
     const key = `${s.fromUserId}->${s.toUserId}`;
@@ -137,25 +139,18 @@ export async function upsertGroupSettlements(
 
   const toDelete: string[] = [];
   const toInsert: { group_id: string; from_user_id: string; to_user_id: string; amount_cents: number }[] = [];
-
   const processedKeys = new Set<string>();
 
   for (const edge of edges) {
     const key = `${edge.fromUserId}->${edge.toUserId}`;
     processedKeys.add(key);
     const existingForPair = existingMap.get(key) ?? [];
-
-    // Sum already-settled or in-progress amounts
     const settledAmount = existingForPair
       .filter((s) => s.status !== "pending")
       .reduce((sum, s) => sum + s.amountCents, 0);
-
-    // Delete pending rows for this pair
     for (const s of existingForPair.filter((s) => s.status === "pending")) {
       toDelete.push(s.id);
     }
-
-    // Insert new pending row for remaining amount
     const remaining = edge.amountCents - settledAmount;
     if (remaining > 1) {
       toInsert.push({
@@ -167,7 +162,6 @@ export async function upsertGroupSettlements(
     }
   }
 
-  // Delete pending rows for edges that no longer exist
   for (const [key, entries] of existingMap) {
     if (!processedKeys.has(key)) {
       for (const s of entries) {
@@ -177,15 +171,10 @@ export async function upsertGroupSettlements(
   }
 
   if (toDelete.length > 0) {
-    await supabase
-      .from("group_settlements")
-      .delete()
-      .in("id", toDelete);
+    await supabase.from("group_settlements").delete().in("id", toDelete);
   }
   if (toInsert.length > 0) {
-    await supabase
-      .from("group_settlements")
-      .insert(toInsert);
+    await supabase.from("group_settlements").insert(toInsert);
   }
 }
 
@@ -196,7 +185,6 @@ export async function recordGroupSettlementPayment(
   amountCents: number,
 ): Promise<{ error?: string }> {
   const supabase = createClient();
-
   const { error } = await supabase
     .from("payments")
     .insert({
@@ -205,7 +193,6 @@ export async function recordGroupSettlementPayment(
       to_user_id: toUserId,
       amount_cents: amountCents,
     });
-
   return { error: error?.message };
 }
 
@@ -216,7 +203,6 @@ export async function markGroupSettlementPaid(
   toUserId: string,
 ): Promise<{ error?: string }> {
   const supabase = createClient();
-
   const { error } = await supabase
     .from("payments")
     .insert({
@@ -225,7 +211,6 @@ export async function markGroupSettlementPaid(
       to_user_id: toUserId,
       amount_cents: amountCents,
     });
-
   return { error: error?.message };
 }
 
