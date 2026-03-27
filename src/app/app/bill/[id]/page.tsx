@@ -38,12 +38,13 @@ import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
 import { coerceDebtStatus } from "@/lib/type-guards";
 import { createClient } from "@/lib/supabase/client";
 import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
+import { ledgerRowToLedgerEntry } from "@/lib/supabase/mappers";
 import { recordPaymentInSupabase, confirmPaymentInSupabase } from "@/lib/supabase/ledger-actions";
 import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
-import type { BillParticipantStatus, BillStatus, DebtStatus, User } from "@/types";
+import type { Bill, BillParticipantStatus, BillStatus, DebtStatus, User } from "@/types";
 
 const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -63,27 +64,20 @@ function CreatorDraftParticipants({
   participants,
   creatorId,
   onAcceptanceChange,
+  initialStatuses,
 }: {
   billId: string;
   participants: User[];
   creatorId: string;
   onAcceptanceChange?: (allAccepted: boolean) => void;
+  initialStatuses?: Map<string, string>;
 }) {
-  const [statuses, setStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
+  const [statuses, setStatuses] = useState<Map<string, BillParticipantStatus>>(
+    (initialStatuses as Map<string, BillParticipantStatus> | undefined) ?? new Map(),
+  );
 
   useEffect(() => {
     const supabase = createClient();
-    (async () => {
-      const { data } = await supabase
-        .from("bill_participants")
-        .select("user_id, status")
-        .eq("bill_id", billId);
-      if (data) {
-        const map = new Map<string, BillParticipantStatus>();
-        for (const row of data) map.set(row.user_id, row.status as BillParticipantStatus);
-        setStatuses(map);
-      }
-    })();
 
     const channel = supabase
       .channel(`draft-participants:${billId}`)
@@ -152,6 +146,7 @@ function CreatorDraftView({
   splits,
   billSplits,
   store,
+  initialStatuses,
 }: {
   bill: NonNullable<ReturnType<typeof useBillStore.getState>["bill"]>;
   participants: User[];
@@ -159,6 +154,7 @@ function CreatorDraftView({
   splits: ReturnType<typeof useBillStore.getState>["splits"];
   billSplits: ReturnType<typeof useBillStore.getState>["billSplits"];
   store: ReturnType<typeof useBillStore.getState>;
+  initialStatuses?: Map<string, string>;
 }) {
   const [draftAllAccepted, setDraftAllAccepted] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -259,6 +255,7 @@ function CreatorDraftView({
           participants={participants}
           creatorId={bill.creatorId}
           onAcceptanceChange={setDraftAllAccepted}
+          initialStatuses={initialStatuses}
         />
       )}
 
@@ -350,8 +347,13 @@ export default function BillDetailPage({
   const { bill, participants, items, splits, billSplits, ledger } = store;
   const [loadingFromDb, setLoadingFromDb] = useState(false);
   const loadedBillKeyRef = useRef<string | null>(null);
+  const lastLoadTimestamp = useRef(0);
+  const [participantStatuses, setParticipantStatuses] = useState<Map<string, string>>(new Map());
 
   const loadAndSetBill = useCallback(async (billId: string) => {
+    const now = Date.now();
+    if (now - lastLoadTimestamp.current < 2000) return null;
+    lastLoadTimestamp.current = now;
     const data = await loadBillFromSupabase(billId);
     if (data) {
       useBillStore.setState({
@@ -366,32 +368,10 @@ export default function BillDetailPage({
     return data;
   }, []);
 
-  // Redirect invited users to the invite page — runs independently of bill loading
-  // so the redirect fires even when bill data is already cached in the store.
-  useEffect(() => {
-    if (id === "demo" || !currentUser) return;
-    let cancelled = false;
-    const supabase = createClient();
-    (async () => {
-      const { data: myStatus } = await supabase
-        .from("bill_participants")
-        .select("status")
-        .eq("bill_id", id)
-        .eq("user_id", currentUser.id)
-        .single();
-      if (!cancelled && myStatus?.status === "invited") {
-        router.push(`/app/bill/${id}/invite`);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [id, currentUser, router]);
-
   const currentUserId = currentUser?.id;
 
-  // Load bill data from Supabase (separate from participant status check)
   useEffect(() => {
     if (id === "demo") return;
-    // Composite key ensures we reload when either the bill or the user changes
     const cacheKey = `${currentUserId ?? "anon"}:${id}`;
     if (loadedBillKeyRef.current === cacheKey) {
       setLoadingFromDb(false);
@@ -402,11 +382,19 @@ export default function BillDetailPage({
     let cancelled = false;
     setLoadingFromDb(true);
     (async () => {
-      await loadAndSetBill(id);
-      if (!cancelled) setLoadingFromDb(false);
+      const data = await loadAndSetBill(id);
+      if (!cancelled) {
+        setLoadingFromDb(false);
+        if (data?.participantStatuses) {
+          setParticipantStatuses(data.participantStatuses);
+          if (currentUserId && data.participantStatuses.get(currentUserId) === "invited") {
+            router.push(`/app/bill/${id}/invite`);
+          }
+        }
+      }
     })();
     return () => { cancelled = true; };
-  }, [id, currentUserId, loadAndSetBill]);
+  }, [id, currentUserId, loadAndSetBill, router]);
 
   const billId = bill?.id;
 
@@ -420,8 +408,10 @@ export default function BillDetailPage({
         { event: "*", schema: "public", table: "ledger", filter: `bill_id=eq.${billId}` },
         (payload) => {
           if (payload.eventType === "INSERT") {
-            // New ledger entry — reload the full bill to get consistent data
-            loadAndSetBill(billId);
+            const newEntry = ledgerRowToLedgerEntry(payload.new as Parameters<typeof ledgerRowToLedgerEntry>[0]);
+            useBillStore.setState((state) => ({
+              ledger: [...state.ledger, newEntry],
+            }));
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as { id: string; status: string; paid_amount_cents: number; paid_at: string | null; confirmed_at: string | null };
             useBillStore.setState((state) => ({
@@ -443,7 +433,7 @@ export default function BillDetailPage({
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [billId, loadAndSetBill]);
+  }, [billId]);
 
   useEffect(() => {
     if (!billId) return;
@@ -453,25 +443,19 @@ export default function BillDetailPage({
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "bills", filter: `id=eq.${billId}` },
-        () => { loadAndSetBill(billId); },
+        (payload) => {
+          const updated = payload.new as { id: string; status: string };
+          useBillStore.setState((state) => ({
+            bill: state.bill ? { ...state.bill, status: updated.status as Bill["status"] } : null,
+          }));
+          if (updated.status === "active") {
+            loadAndSetBill(billId);
+          }
+        },
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [billId, loadAndSetBill]);
-
-  useEffect(() => {
-    if (!billId || !currentUser?.id) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`payments:creditor:${billId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "payments", filter: `to_user_id=eq.${currentUser.id}` },
-        () => { loadAndSetBill(billId); },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [billId, currentUser?.id, loadAndSetBill]);
 
   useEffect(() => {
     if (!billId) return;
@@ -650,6 +634,7 @@ export default function BillDetailPage({
         splits={splits}
         billSplits={billSplits}
         store={store}
+        initialStatuses={participantStatuses}
       />
     );
   }

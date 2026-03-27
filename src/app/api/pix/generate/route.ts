@@ -26,19 +26,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Dados invalidos" }, { status: 400 });
   }
 
-  if (groupId) {
-    // Group settlement: validate both users are group members
-    const { data: memberRows } = await supabase
-      .from("group_members")
-      .select("user_id")
-      .eq("group_id", groupId)
-      .in("user_id", [user.id, recipientUserId]);
+  const admin = createAdminClient();
+  let recipient: { pix_key_encrypted: string | null; name: string } | null = null;
 
-    const { data: groupRow } = await supabase
-      .from("groups")
-      .select("creator_id")
-      .eq("id", groupId)
-      .single();
+  if (groupId) {
+    const [{ data: memberRows }, { data: groupRow }, { data: recipientData }] = await Promise.all([
+      supabase
+        .from("group_members")
+        .select("user_id")
+        .eq("group_id", groupId)
+        .in("user_id", [user.id, recipientUserId]),
+      supabase.from("groups").select("creator_id").eq("id", groupId).single(),
+      admin.from("users").select("pix_key_encrypted, name").eq("id", recipientUserId).single(),
+    ]);
 
     const callerIsCreator = groupRow?.creator_id === user.id;
     const recipientIsCreator = groupRow?.creator_id === recipientUserId;
@@ -51,13 +51,17 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     }
+
+    recipient = recipientData;
   } else if (billId) {
-    // Bill settlement: validate both users are bill participants
-    const { data: participation } = await supabase
-      .from("bill_participants")
-      .select("user_id")
-      .eq("bill_id", billId)
-      .in("user_id", [user.id, recipientUserId]);
+    const [{ data: participation }, { data: recipientData }] = await Promise.all([
+      supabase
+        .from("bill_participants")
+        .select("user_id, status")
+        .eq("bill_id", billId)
+        .in("user_id", [user.id, recipientUserId]),
+      admin.from("users").select("pix_key_encrypted, name").eq("id", recipientUserId).single(),
+    ]);
 
     const callerIsParticipant = participation?.some((p) => p.user_id === user.id);
     const recipientIsParticipant = participation?.some((p) => p.user_id === recipientUserId);
@@ -77,27 +81,16 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data: recipientStatus } = await supabase
-      .from("bill_participants")
-      .select("status")
-      .eq("bill_id", billId)
-      .eq("user_id", recipientUserId)
-      .single();
-
-    if (recipientStatus?.status && recipientStatus.status !== "accepted") {
+    const recipientParticipation = participation?.find((p) => p.user_id === recipientUserId);
+    if (recipientParticipation?.status && recipientParticipation.status !== "accepted") {
       return NextResponse.json(
         { error: "Participante ainda nao aceitou o convite" },
         { status: 403 },
       );
     }
-  }
 
-  const admin = createAdminClient();
-  const { data: recipient } = await admin
-    .from("users")
-    .select("pix_key_encrypted, name")
-    .eq("id", recipientUserId)
-    .single();
+    recipient = recipientData;
+  }
 
   if (!recipient?.pix_key_encrypted) {
     return NextResponse.json(
