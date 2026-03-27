@@ -11,6 +11,7 @@ import {
   loadGroupSettlements,
   syncGroupSettlements,
   markGroupSettlementPaid,
+  batchMarkGroupSettlementsPaid,
 } from "./group-settlement-actions";
 
 let mock: MockSupabase;
@@ -422,6 +423,114 @@ describe("markGroupSettlementPaid", () => {
     expect(result.paymentId).toBeUndefined();
     const inserts = mock.findCalls("payments", "insert");
     expect(inserts).toHaveLength(0);
+  });
+});
+
+describe("batchMarkGroupSettlementsPaid", () => {
+  it("inserts all payments in a single batch and returns IDs", async () => {
+    mock.onTable("payments", {
+      data: [{ id: "pay-1" }, { id: "pay-2" }],
+      error: null,
+    });
+
+    const result = await batchMarkGroupSettlementsPaid([
+      { settlementId: "gs-1", amountCents: 3000, fromUserId: "user-bob", toUserId: "user-alice" },
+      { settlementId: "gs-2", amountCents: 2000, fromUserId: "user-bob", toUserId: "user-carol" },
+    ]);
+
+    expect(result.error).toBeUndefined();
+    expect(result.paymentIds).toEqual(["pay-1", "pay-2"]);
+
+    const inserts = mock.findCalls("payments", "insert");
+    expect(inserts).toHaveLength(1);
+    const rows = inserts[0].args[0] as Record<string, unknown>[];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      group_settlement_id: "gs-1",
+      amount_cents: 3000,
+    });
+    expect(rows[1]).toMatchObject({
+      group_settlement_id: "gs-2",
+      amount_cents: 2000,
+    });
+  });
+
+  it("chains .select() to capture generated UUIDs", async () => {
+    mock.onTable("payments", { data: [{ id: "pay-1" }], error: null });
+
+    await batchMarkGroupSettlementsPaid([
+      { settlementId: "gs-1", amountCents: 5000, fromUserId: "user-bob", toUserId: "user-alice" },
+    ]);
+
+    const selectCalls = mock.findCalls("payments", "select");
+    expect(selectCalls).toHaveLength(1);
+    expect(selectCalls[0].args[0]).toBe("id");
+  });
+
+  it("filters out entries with empty settlementId", async () => {
+    mock.onTable("payments", { data: [{ id: "pay-1" }], error: null });
+
+    const result = await batchMarkGroupSettlementsPaid([
+      { settlementId: "", amountCents: 3000, fromUserId: "user-bob", toUserId: "user-alice" },
+      { settlementId: "gs-2", amountCents: 2000, fromUserId: "user-bob", toUserId: "user-carol" },
+    ]);
+
+    expect(result.error).toBeUndefined();
+    const inserts = mock.findCalls("payments", "insert");
+    expect(inserts).toHaveLength(1);
+    const rows = inserts[0].args[0] as Record<string, unknown>[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].group_settlement_id).toBe("gs-2");
+  });
+
+  it("filters out entries with zero or negative amountCents", async () => {
+    mock.onTable("payments", { data: [{ id: "pay-1" }], error: null });
+
+    const result = await batchMarkGroupSettlementsPaid([
+      { settlementId: "gs-1", amountCents: 0, fromUserId: "user-bob", toUserId: "user-alice" },
+      { settlementId: "gs-2", amountCents: -100, fromUserId: "user-bob", toUserId: "user-carol" },
+      { settlementId: "gs-3", amountCents: 5000, fromUserId: "user-bob", toUserId: "user-carol" },
+    ]);
+
+    expect(result.error).toBeUndefined();
+    const inserts = mock.findCalls("payments", "insert");
+    const rows = inserts[0].args[0] as Record<string, unknown>[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].group_settlement_id).toBe("gs-3");
+  });
+
+  it("returns error when all entries are invalid", async () => {
+    const result = await batchMarkGroupSettlementsPaid([
+      { settlementId: "", amountCents: 3000, fromUserId: "user-bob", toUserId: "user-alice" },
+      { settlementId: "gs-2", amountCents: 0, fromUserId: "user-bob", toUserId: "user-carol" },
+    ]);
+
+    expect(result.error).toBe("No valid payments to insert");
+    expect(result.paymentIds).toEqual([]);
+    const inserts = mock.findCalls("payments", "insert");
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("returns error on insert failure", async () => {
+    mock.onTable("payments", { error: { message: "RLS violation" } });
+
+    const result = await batchMarkGroupSettlementsPaid([
+      { settlementId: "gs-1", amountCents: 3000, fromUserId: "user-bob", toUserId: "user-alice" },
+    ]);
+
+    expect(result.error).toBe("RLS violation");
+    expect(result.paymentIds).toEqual([]);
+  });
+
+  it("returns empty paymentIds when data is null", async () => {
+    mock.onTable("payments", { data: null, error: null });
+
+    const result = await batchMarkGroupSettlementsPaid([
+      { settlementId: "gs-1", amountCents: 3000, fromUserId: "user-bob", toUserId: "user-alice" },
+    ]);
+
+    expect(result.error).toBeUndefined();
+    expect(result.paymentIds).toEqual([]);
   });
 });
 

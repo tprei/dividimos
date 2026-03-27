@@ -23,6 +23,7 @@ import {
   loadGroupSettlements,
   syncGroupSettlements,
   markGroupSettlementPaid,
+  batchMarkGroupSettlementsPaid,
 } from "@/lib/supabase/group-settlement-actions";
 import { createClient } from "@/lib/supabase/client";
 import type { GroupSettlement, User } from "@/types";
@@ -142,18 +143,16 @@ export function GroupSettlementView({
 
   async function handleSettleAll() {
     setSettling("all");
-    const results = await Promise.all(
-      myDebts.map((s) =>
-        markGroupSettlementPaid(s.id, s.amountCents - s.paidAmountCents, s.fromUserId, s.toUserId),
-      ),
+    const result = await batchMarkGroupSettlementsPaid(
+      myDebts.map((s) => ({
+        settlementId: s.id,
+        amountCents: s.amountCents - s.paidAmountCents,
+        fromUserId: s.fromUserId,
+        toUserId: s.toUserId,
+      })),
     );
-    const failures = results.filter((r) => r.error);
-    if (failures.length > 0) {
-      toast.error(
-        failures.length === results.length
-          ? "Erro ao registrar pagamentos"
-          : `${failures.length} de ${results.length} pagamentos falharam`,
-      );
+    if (result.error) {
+      toast.error("Erro ao registrar pagamentos");
     } else {
       toast.success("Todos os pagamentos registrados");
     }
