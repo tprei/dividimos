@@ -115,7 +115,7 @@ describe("syncBillToSupabase", () => {
     // Verify ledger includes entry_type and paid_amount_cents
     const ledgerInserts = mock.findCalls("ledger", "insert");
     expect(ledgerInserts).toHaveLength(1);
-    expect(ledgerInserts[0].args[0][0]).toMatchObject({
+    expect((ledgerInserts[0].args[0] as Record<string, unknown>[])[0]).toMatchObject({
       bill_id: "new-bill-1",
       entry_type: "debt",
       group_id: null,
@@ -162,7 +162,7 @@ describe("syncBillToSupabase", () => {
 
     const ledgerInserts = mock.findCalls("ledger", "insert");
     expect(ledgerInserts).toHaveLength(1);
-    expect(ledgerInserts[0].args[0][0]).toMatchObject({
+    expect((ledgerInserts[0].args[0] as Record<string, unknown>[])[0]).toMatchObject({
       entry_type: "debt",
       group_id: "group-42",
       paid_amount_cents: 0,

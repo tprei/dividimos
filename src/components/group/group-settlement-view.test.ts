@@ -1,93 +1,124 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * Tests for the handleMarkPaid integration logic in GroupSettlementView.
+ * Tests for the group settlement view's payment logic.
  *
- * The component delegates payment recording to markGroupSettlementPaid,
- * which inserts a payment row. A DB trigger cascades updates to the
- * group_settlements table (paid_amount_cents, status).
+ * The component uses the unified ledger: it loads entries via
+ * loadLedgerEntries, computes settlement edges via computeSettlementEdges,
+ * and records payments via recordPayment / confirmPaymentsForPair.
  */
 
-// Mock the action module
-vi.mock("@/lib/supabase/group-settlement-actions", () => ({
-  markGroupSettlementPaid: vi.fn(),
-  loadGroupSettlements: vi.fn(),
-  loadGroupBillsAndLedger: vi.fn(),
-  upsertGroupSettlements: vi.fn(),
-  confirmGroupSettlement: vi.fn(),
+// Mock the ledger-actions module
+vi.mock("@/lib/supabase/ledger-actions", () => ({
+  loadLedgerEntries: vi.fn(),
+  recordPayment: vi.fn(),
+  confirmPaymentsForPair: vi.fn(),
 }));
 
 import {
-  markGroupSettlementPaid,
-} from "@/lib/supabase/group-settlement-actions";
+  recordPayment,
+  confirmPaymentsForPair,
+} from "@/lib/supabase/ledger-actions";
 
-type MarkPaidFn = (
-  settlementId: string,
-  amountCents: number,
-  fromUserId: string,
-  toUserId: string,
-) => Promise<{ error?: string }>;
-
-const mockedMarkPaid = markGroupSettlementPaid as unknown as ReturnType<typeof vi.fn<MarkPaidFn>>;
+const mockedRecordPayment = vi.mocked(recordPayment);
+const mockedConfirmPaymentsForPair = vi.mocked(confirmPaymentsForPair);
 
 /**
  * Mirrors the handleMarkPaid logic from GroupSettlementView.
- * This lets us unit-test the payment decision logic without rendering the component.
  */
 async function handleMarkPaidLogic(
-  settlementId: string,
-  amountCents: number,
+  groupId: string,
   fromUserId: string,
   toUserId: string,
-): Promise<{ error?: string }> {
-  const result = await mockedMarkPaid(
-    settlementId,
-    amountCents,
-    fromUserId,
-    toUserId,
-  );
-  return { error: result?.error };
+  amountCents: number,
+): Promise<{ id: string; error?: string }> {
+  return mockedRecordPayment(groupId, fromUserId, toUserId, amountCents);
 }
 
-describe("handleMarkPaid logic", () => {
+/**
+ * Mirrors the handleConfirm logic from GroupSettlementView.
+ */
+async function handleConfirmLogic(
+  groupId: string,
+  fromUserId: string,
+  toUserId: string,
+  currentUserId: string,
+): Promise<{ error?: string }> {
+  return mockedConfirmPaymentsForPair(groupId, fromUserId, toUserId, currentUserId);
+}
+
+describe("handleMarkPaid logic (unified ledger)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedMarkPaid.mockResolvedValue({ error: undefined });
+    mockedRecordPayment.mockResolvedValue({ id: "payment-1" });
   });
 
-  it("calls markGroupSettlementPaid with correct arguments", async () => {
-    await handleMarkPaidLogic("gs-1", 5000, "user-bob", "user-alice");
+  it("calls recordPayment with correct arguments", async () => {
+    await handleMarkPaidLogic("group-1", "user-bob", "user-alice", 5000);
 
-    expect(markGroupSettlementPaid).toHaveBeenCalledWith(
-      "gs-1",
-      5000,
+    expect(recordPayment).toHaveBeenCalledWith(
+      "group-1",
       "user-bob",
       "user-alice",
+      5000,
     );
   });
 
-  it("returns no error on success", async () => {
-    const result = await handleMarkPaidLogic("gs-1", 5000, "user-bob", "user-alice");
+  it("returns payment id on success", async () => {
+    const result = await handleMarkPaidLogic("group-1", "user-bob", "user-alice", 5000);
 
+    expect(result.id).toBe("payment-1");
     expect(result.error).toBeUndefined();
   });
 
-  it("returns error message on failure", async () => {
-    mockedMarkPaid.mockResolvedValue({ error: "RLS violation" });
+  it("returns error on failure", async () => {
+    mockedRecordPayment.mockResolvedValue({ id: "", error: "RLS violation" });
 
-    const result = await handleMarkPaidLogic("gs-1", 5000, "user-bob", "user-alice");
+    const result = await handleMarkPaidLogic("group-1", "user-bob", "user-alice", 5000);
 
     expect(result.error).toBe("RLS violation");
   });
 
   it("supports partial payment amounts", async () => {
-    await handleMarkPaidLogic("gs-1", 2000, "user-bob", "user-alice");
+    await handleMarkPaidLogic("group-1", "user-bob", "user-alice", 2000);
 
-    expect(markGroupSettlementPaid).toHaveBeenCalledWith(
-      "gs-1",
-      2000,
+    expect(recordPayment).toHaveBeenCalledWith(
+      "group-1",
       "user-bob",
       "user-alice",
+      2000,
     );
+  });
+});
+
+describe("handleConfirm logic (unified ledger)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedConfirmPaymentsForPair.mockResolvedValue({});
+  });
+
+  it("calls confirmPaymentsForPair with correct arguments", async () => {
+    await handleConfirmLogic("group-1", "user-bob", "user-alice", "user-alice");
+
+    expect(confirmPaymentsForPair).toHaveBeenCalledWith(
+      "group-1",
+      "user-bob",
+      "user-alice",
+      "user-alice",
+    );
+  });
+
+  it("returns no error on success", async () => {
+    const result = await handleConfirmLogic("group-1", "user-bob", "user-alice", "user-alice");
+
+    expect(result.error).toBeUndefined();
+  });
+
+  it("returns error on failure", async () => {
+    mockedConfirmPaymentsForPair.mockResolvedValue({ error: "Permission denied" });
+
+    const result = await handleConfirmLogic("group-1", "user-bob", "user-alice", "user-alice");
+
+    expect(result.error).toBe("Permission denied");
   });
 });

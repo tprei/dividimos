@@ -82,16 +82,23 @@ export function GroupSettlementView({
 
   useEffect(() => {
     const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel(`group-ledger:${groupId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "ledger", filter: `group_id=eq.${groupId}` },
-        () => reloadRef.current(),
+        () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => reloadRef.current(), 300);
+        },
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
   }, [groupId]);
 
   const displayEdges = simplifyEnabled && simplificationResult
