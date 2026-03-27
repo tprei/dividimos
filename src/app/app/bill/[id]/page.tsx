@@ -415,16 +415,17 @@ export default function BillDetailPage({
           } else if (payload.eventType === "UPDATE") {
             const updated = payload.new as { id: string; status: string; paid_amount_cents: number; paid_at: string | null };
             useBillStore.setState((state) => ({
-              ledger: state.ledger.map((e) =>
-                e.id === updated.id
-                  ? {
-                      ...e,
-                      status: coerceDebtStatus(updated.status, "pending"),
-                      paidAmountCents: updated.paid_amount_cents ?? e.paidAmountCents,
-                      paidAt: updated.paid_at ?? undefined,
-                    }
-                  : e,
-              ),
+              ledger: state.ledger.map((e) => {
+                if (e.id !== updated.id) return e;
+                const remotePaid = updated.paid_amount_cents ?? 0;
+                if (remotePaid < e.paidAmountCents) return e;
+                return {
+                  ...e,
+                  status: coerceDebtStatus(updated.status, "pending"),
+                  paidAmountCents: remotePaid,
+                  paidAt: updated.paid_at ?? undefined,
+                };
+              }),
             }));
           }
         },
