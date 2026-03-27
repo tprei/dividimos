@@ -6,7 +6,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 import { createClient } from "@/lib/supabase/client";
-import { markPaidInSupabase, recordPaymentInSupabase } from "./ledger-actions";
+import { recordPaymentInSupabase } from "./ledger-actions";
 
 let mock: MockSupabase;
 
@@ -54,28 +54,3 @@ describe("recordPaymentInSupabase", () => {
   });
 });
 
-describe("markPaidInSupabase", () => {
-  it("updates ledger entry to settled", async () => {
-    mock.onTable("ledger", { error: null });
-
-    const result = await markPaidInSupabase("ledger-1");
-
-    expect(result).toEqual({ error: undefined });
-
-    const updates = mock.findCalls("ledger", "update");
-    expect(updates).toHaveLength(1);
-    expect(updates[0].args[0]).toMatchObject({
-      status: "settled",
-    });
-    expect(updates[0].args[0]).toHaveProperty("paid_at");
-
-  });
-
-  it("returns error message on failure", async () => {
-    mock.onTable("ledger", { error: { message: "Not found" } });
-
-    const result = await markPaidInSupabase("nonexistent");
-
-    expect(result).toEqual({ error: "Not found" });
-  });
-});

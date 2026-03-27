@@ -13,9 +13,6 @@ ALTER TABLE public.ledger
 ALTER TABLE public.ledger
   ADD COLUMN group_id UUID REFERENCES public.groups(id) ON DELETE CASCADE;
 
-ALTER TABLE public.ledger
-  ADD COLUMN confirmed_by UUID REFERENCES public.users(id);
-
 -- 3. Make bill_id nullable (payment entries may not reference a bill)
 ALTER TABLE public.ledger ALTER COLUMN bill_id DROP NOT NULL;
 
@@ -49,15 +46,3 @@ CREATE POLICY "debtors_insert_payment_entries"
     AND group_id IN (SELECT public.my_group_ids())
   );
 
--- 8. RLS: creditors can update payment entries to confirm them
-CREATE POLICY "creditors_confirm_payment_entries"
-  ON public.ledger FOR UPDATE
-  USING (
-    entry_type = 'payment'
-    AND to_user_id = auth.uid()
-    AND status IN ('pending', 'paid_unconfirmed')
-  )
-  WITH CHECK (
-    status = 'settled'
-    AND confirmed_by = auth.uid()
-  );

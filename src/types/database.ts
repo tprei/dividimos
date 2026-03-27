@@ -107,7 +107,7 @@ export interface Database {
           to_user_id: string;
           amount_cents: number;
           paid_amount_cents: number;
-          status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+          status: "pending" | "partially_paid" | "settled";
           paid_at: string | null;
           confirmed_at: string | null;
           created_at: string;
@@ -119,7 +119,7 @@ export interface Database {
           to_user_id: string;
           amount_cents: number;
           paid_amount_cents?: number;
-          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+          status?: "pending" | "partially_paid" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
           created_at?: string;
@@ -131,7 +131,7 @@ export interface Database {
           to_user_id?: string;
           amount_cents?: number;
           paid_amount_cents?: number;
-          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+          status?: "pending" | "partially_paid" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
           created_at?: string;
@@ -277,10 +277,9 @@ export interface Database {
           to_user_id: string;
           amount_cents: number;
           paid_amount_cents: number;
-          status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+          status: "pending" | "partially_paid" | "settled";
           paid_at: string | null;
           confirmed_at: string | null;
-          confirmed_by: string | null;
           created_at: string;
         };
         Insert: {
@@ -292,10 +291,9 @@ export interface Database {
           to_user_id: string;
           amount_cents: number;
           paid_amount_cents?: number;
-          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+          status?: "pending" | "partially_paid" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
-          confirmed_by?: string | null;
           created_at?: string;
         };
         Update: {
@@ -307,10 +305,9 @@ export interface Database {
           to_user_id?: string;
           amount_cents?: number;
           paid_amount_cents?: number;
-          status?: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+          status?: "pending" | "partially_paid" | "settled";
           paid_at?: string | null;
           confirmed_at?: string | null;
-          confirmed_by?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -417,7 +414,7 @@ export interface Database {
       bill_status: "draft" | "active" | "partially_settled" | "settled";
       bill_participant_status: "invited" | "accepted" | "declined";
       split_type: "equal" | "percentage" | "fixed";
-      debt_status: "pending" | "partially_paid" | "paid_unconfirmed" | "settled";
+      debt_status: "pending" | "partially_paid" | "settled";
       payment_status: "unconfirmed" | "settled";
       ledger_entry_type: "debt" | "payment";
       group_member_status: "invited" | "accepted";

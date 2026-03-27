@@ -20,11 +20,3 @@ export async function recordPaymentInSupabase(
   return { error: error?.message };
 }
 
-export async function markPaidInSupabase(entryId: string) {
-  const supabase = createClient();
-  const { error } = await supabase
-    .from("ledger")
-    .update({ status: "settled", paid_at: new Date().toISOString() })
-    .eq("id", entryId);
-  return { error: error?.message };
-}
