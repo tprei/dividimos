@@ -31,7 +31,8 @@ describe("loadGroupBillsAndLedger", () => {
     expect(result.participants).toHaveLength(0);
   });
 
-  it("loads and maps bills, ledger, and participants", async () => {
+  it("loads and maps bills, ledger, and participants via nested select", async () => {
+    // Nested PostgREST select returns ledger + bill_participants inline
     mock.onTable("bills", {
       data: [
         {
@@ -48,26 +49,25 @@ describe("loadGroupBillsAndLedger", () => {
           group_id: "group-1",
           created_at: "2024-01-01T00:00:00Z",
           updated_at: "2024-01-01T00:00:00Z",
+          ledger: [
+            {
+              id: "ledger-1",
+              bill_id: "bill-1",
+              from_user_id: "user-bob",
+              to_user_id: "user-alice",
+              amount_cents: 2750,
+              paid_amount_cents: 0,
+              status: "pending",
+              paid_at: null,
+              created_at: "2024-01-01T00:00:00Z",
+            },
+          ],
+          bill_participants: [
+            { user_id: "user-alice" },
+            { user_id: "user-bob" },
+          ],
         },
       ],
-    });
-    mock.onTable("ledger", {
-      data: [
-        {
-          id: "ledger-1",
-          bill_id: "bill-1",
-          from_user_id: "user-bob",
-          to_user_id: "user-alice",
-          amount_cents: 2750,
-          paid_amount_cents: 0,
-          status: "pending",
-          paid_at: null,
-          created_at: "2024-01-01T00:00:00Z",
-        },
-      ],
-    });
-    mock.onTable("bill_participants", {
-      data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
     });
     mock.onTable("user_profiles", {
       data: [
@@ -84,6 +84,107 @@ describe("loadGroupBillsAndLedger", () => {
     expect(result.ledger).toHaveLength(1);
     expect(result.ledger[0].fromUserId).toBe("user-bob");
     expect(result.participants).toHaveLength(2);
+  });
+
+  it("uses a single query with nested select instead of separate queries", async () => {
+    mock.onTable("bills", {
+      data: [
+        {
+          id: "bill-1",
+          creator_id: "user-alice",
+          bill_type: "single_amount",
+          title: "Uber",
+          merchant_name: null,
+          status: "active",
+          service_fee_percent: 0,
+          fixed_fees: 0,
+          total_amount: 4000,
+          total_amount_input: 4000,
+          group_id: "group-1",
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+          ledger: [],
+          bill_participants: [{ user_id: "user-alice" }],
+        },
+      ],
+    });
+    mock.onTable("user_profiles", {
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice", avatar_url: null },
+      ],
+    });
+
+    await loadGroupBillsAndLedger("group-1");
+
+    // Should use nested select: "*, ledger(*), bill_participants(user_id)"
+    const selectCalls = mock.findCalls("bills", "select");
+    expect(selectCalls).toHaveLength(1);
+    expect(selectCalls[0].args[0]).toBe("*, ledger(*), bill_participants(user_id)");
+
+    // No separate ledger or bill_participants queries
+    const ledgerCalls = mock.findCalls("ledger");
+    expect(ledgerCalls).toHaveLength(0);
+    const participantCalls = mock.findCalls("bill_participants");
+    expect(participantCalls).toHaveLength(0);
+  });
+
+  it("deduplicates participant IDs across multiple bills", async () => {
+    mock.onTable("bills", {
+      data: [
+        {
+          id: "bill-1",
+          creator_id: "user-alice",
+          bill_type: "single_amount",
+          title: "Bill 1",
+          merchant_name: null,
+          status: "active",
+          service_fee_percent: 0,
+          fixed_fees: 0,
+          total_amount: 2000,
+          total_amount_input: 2000,
+          group_id: "group-1",
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+          ledger: [],
+          bill_participants: [
+            { user_id: "user-alice" },
+            { user_id: "user-bob" },
+          ],
+        },
+        {
+          id: "bill-2",
+          creator_id: "user-bob",
+          bill_type: "single_amount",
+          title: "Bill 2",
+          merchant_name: null,
+          status: "active",
+          service_fee_percent: 0,
+          fixed_fees: 0,
+          total_amount: 3000,
+          total_amount_input: 3000,
+          group_id: "group-1",
+          created_at: "2024-01-02T00:00:00Z",
+          updated_at: "2024-01-02T00:00:00Z",
+          ledger: [],
+          bill_participants: [
+            { user_id: "user-bob" },
+            { user_id: "user-carol" },
+          ],
+        },
+      ],
+    });
+    mock.onTable("user_profiles", {
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice", avatar_url: null },
+        { id: "user-bob", handle: "bob", name: "Bob", avatar_url: null },
+        { id: "user-carol", handle: "carol", name: "Carol", avatar_url: null },
+      ],
+    });
+
+    const result = await loadGroupBillsAndLedger("group-1");
+
+    expect(result.bills).toHaveLength(2);
+    expect(result.participants).toHaveLength(3);
   });
 });
 

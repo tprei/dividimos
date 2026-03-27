@@ -16,13 +16,21 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
 }> {
   const supabase = createClient();
 
+  // Single nested PostgREST query: bills + ledger + participant user_ids
   const { data: billRows } = await supabase
     .from("bills")
-    .select("*")
+    .select("*, ledger(*), bill_participants(user_id)")
     .eq("group_id", groupId)
     .neq("status", "draft");
 
-  const bills: Bill[] = (billRows as BillRow[] ?? []).map((b) => {
+  type BillWithNested = BillRow & {
+    ledger: LedgerRow[];
+    bill_participants: { user_id: string }[];
+  };
+
+  const rows = (billRows as BillWithNested[] | null) ?? [];
+
+  const bills: Bill[] = rows.map((b) => {
     const payers: BillPayer[] = [];
     return {
       id: b.id,
@@ -46,30 +54,26 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     return { bills, ledger: [], participants: [] };
   }
 
-  const billIds = bills.map((b) => b.id);
+  // Extract ledger and participant IDs from nested response
+  const ledger: LedgerEntry[] = rows.flatMap((b) =>
+    (b.ledger ?? []).map((e) => ({
+      id: e.id,
+      billId: e.bill_id ?? undefined,
+      entryType: e.entry_type ?? ("debt" as const),
+      groupId: e.group_id ?? undefined,
+      fromUserId: e.from_user_id,
+      toUserId: e.to_user_id,
+      amountCents: e.amount_cents,
+      paidAmountCents: e.paid_amount_cents ?? 0,
+      status: (isDebtStatus(e.status) ? e.status : "pending") as DebtStatus,
+      paidAt: e.paid_at ?? undefined,
+      createdAt: e.created_at,
+    })),
+  );
 
-  const [ledgerResult, participantResult] = await Promise.all([
-    supabase.from("ledger").select("*").in("bill_id", billIds),
-    supabase.from("bill_participants").select("user_id").in("bill_id", billIds),
-  ]);
-  const ledgerRows = ledgerResult.data;
-  const participantRows = participantResult.data;
-
-  const ledger: LedgerEntry[] = (ledgerRows as LedgerRow[] ?? []).map((e) => ({
-    id: e.id,
-    billId: e.bill_id ?? undefined,
-    entryType: e.entry_type ?? ("debt" as const),
-    groupId: e.group_id ?? undefined,
-    fromUserId: e.from_user_id,
-    toUserId: e.to_user_id,
-    amountCents: e.amount_cents,
-    paidAmountCents: e.paid_amount_cents ?? 0,
-    status: (isDebtStatus(e.status) ? e.status : "pending") as DebtStatus,
-    paidAt: e.paid_at ?? undefined,
-    createdAt: e.created_at,
-  }));
-
-  const participantIds = [...new Set((participantRows ?? []).map((p) => p.user_id))];
+  const participantIds = [
+    ...new Set(rows.flatMap((b) => (b.bill_participants ?? []).map((p) => p.user_id))),
+  ];
 
   let participants: User[] = [];
   if (participantIds.length > 0) {
