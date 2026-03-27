@@ -116,14 +116,13 @@ afterAll(async () => {
   // Delete from auth.users (cascade should handle this, but be explicit)
   // Delete users one at a time since deleteUsers doesn't exist in this API version
   for (const userId of userIds) {
-    await adminClient!.auth.admin.deleteUser(userId);
-  }
-
-  if (authError) {
-    console.error(
-      "[integration-setup] Failed to clean up auth.users:",
-      authError.message,
-    );
+    const { error: deleteError } = await adminClient!.auth.admin.deleteUser(userId);
+    if (deleteError) {
+      console.error(
+        `[integration-setup] Failed to clean up auth user ${userId}:`,
+        deleteError.message,
+      );
+    }
   }
 
   testUserIds.clear();

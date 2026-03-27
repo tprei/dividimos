@@ -7,11 +7,6 @@ export default defineConfig({
     include: ["src/**/*.integration.test.ts"],
     setupFiles: ["./src/test/integration-setup.ts"],
     // Run integration tests sequentially to avoid DB conflicts
-    pool: "threads",
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-    },
+    fileParallelism: false,
   },
 });
