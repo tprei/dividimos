@@ -20,8 +20,8 @@ import {
   confirmPaymentsForPair,
 } from "@/lib/supabase/ledger-actions";
 
-const mockedRecordPayment = recordPayment as unknown as ReturnType<typeof vi.fn>;
-const mockedConfirmPaymentsForPair = confirmPaymentsForPair as unknown as ReturnType<typeof vi.fn>;
+const mockedRecordPayment = vi.mocked(recordPayment);
+const mockedConfirmPaymentsForPair = vi.mocked(confirmPaymentsForPair);
 
 /**
  * Mirrors the handleMarkPaid logic from GroupSettlementView.
