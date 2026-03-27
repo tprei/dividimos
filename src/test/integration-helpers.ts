@@ -86,35 +86,19 @@ export async function createTestUser(
     throw new Error(`Failed to update user profile: ${profileError.message}`);
   }
 
-  const { data: sessionData, error: sessionError } =
-    await adminClient.auth.admin.generateLink({
-      type: "magiclink",
-      email,
-    });
+  const password = `test_${testId}_pass!`;
+  await adminClient.auth.admin.updateUserById(userId, { password });
 
-  let accessToken: string | undefined;
-  let refreshToken: string | undefined;
+  const anonClient = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false } },
+  );
+  const { data: signInData, error: signInError } =
+    await anonClient.auth.signInWithPassword({ email, password });
 
-  if (sessionData && !sessionError) {
-    const linkUrl = new URL(sessionData.properties.action_link);
-    const tokenHash = linkUrl.searchParams.get("token_hash");
-
-    if (tokenHash) {
-      const tempClient = createClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      );
-
-      const { data: verifyData } = await tempClient.auth.verifyOtp({
-        token_hash: tokenHash,
-        type: "magiclink",
-      });
-
-      if (verifyData.session) {
-        accessToken = verifyData.session.access_token;
-        refreshToken = verifyData.session.refresh_token;
-      }
-    }
+  if (signInError || !signInData.session) {
+    throw new Error(`Failed to sign in test user: ${signInError?.message}`);
   }
 
   return {
@@ -126,8 +110,8 @@ export async function createTestUser(
     pixKeyType,
     pixKeyHint: `${pixKeyType === "email" ? "test" : "***"}@hint.local`,
     onboarded,
-    accessToken,
-    refreshToken,
+    accessToken: signInData.session.access_token,
+    refreshToken: signInData.session.refresh_token,
   };
 }
 
@@ -139,19 +123,20 @@ export function authenticateAs(user: TestUser): SupabaseClient<Database> {
     );
   }
 
-  const client = createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
-
-  if (user.accessToken) {
-    client.auth.setSession({
-      access_token: user.accessToken,
-      refresh_token: user.refreshToken ?? "",
-    });
+  if (!user.accessToken) {
+    throw new Error(`User ${user.handle} has no access token`);
   }
 
-  return client;
+  return createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: { Authorization: `Bearer ${user.accessToken}` },
+      },
+      auth: { persistSession: false, autoRefreshToken: false },
+    },
+  );
 }
 
 export async function createTestUsers(
