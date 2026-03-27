@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import toast from "react-hot-toast";
 import { CheckCheck, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
@@ -115,7 +116,13 @@ export function GroupSettlementView({
 
   async function handleMarkPaid(settlementId: string, amountCents: number, fromUserId: string, toUserId: string) {
     setSettling(settlementId);
-    await markGroupSettlementPaid(settlementId, amountCents, fromUserId, toUserId);
+    const result = await markGroupSettlementPaid(settlementId, amountCents, fromUserId, toUserId);
+    if (result.error) {
+      toast.error("Erro ao registrar pagamento");
+      setSettling(null);
+      return;
+    }
+    toast.success("Pagamento registrado");
     setPixModal(null);
     await refreshSettlements();
     setSettling(null);
@@ -123,11 +130,21 @@ export function GroupSettlementView({
 
   async function handleSettleAll() {
     setSettling("all");
-    await Promise.all(
+    const results = await Promise.all(
       myDebts.map((s) =>
         markGroupSettlementPaid(s.id, s.amountCents - s.paidAmountCents, s.fromUserId, s.toUserId),
       ),
     );
+    const failures = results.filter((r) => r.error);
+    if (failures.length > 0) {
+      toast.error(
+        failures.length === results.length
+          ? "Erro ao registrar pagamentos"
+          : `${failures.length} de ${results.length} pagamentos falharam`,
+      );
+    } else {
+      toast.success("Todos os pagamentos registrados");
+    }
     await refreshSettlements();
     setSettling(null);
   }
