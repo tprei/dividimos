@@ -31,7 +31,6 @@ interface BillWithRelations {
   bill_participants: Array<{
     user_id: string;
     status: string;
-    users: { id: string; handle: string | null; name: string; avatar_url: string | null } | null;
   }>;
   bill_payers: Array<{ bill_id: string; user_id: string; amount_cents: number }>;
   ledger: Array<{
@@ -91,7 +90,7 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
   const { data } = await supabase
     .from("bills")
     .select(
-      "*, bill_participants(user_id, status, users:user_id(id, handle, name, avatar_url)), bill_payers(*), ledger(*), bill_items(*, item_splits(*)), bill_splits(*)"
+      "*, bill_participants(user_id, status), bill_payers(*), ledger(*), bill_items(*, item_splits(*)), bill_splits(*)"
     )
     .eq("id", billId)
     .single();
@@ -105,27 +104,16 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
     participantStatuses.set(p.user_id, p.status);
   }
 
-  const seenIds = new Set<string>();
-  const profileRows: UserProfileRow[] = [];
+  // Collect all user IDs (participants + creator) and batch-fetch from user_profiles view
+  const userIds = new Set<string>(row.bill_participants.map((p) => p.user_id));
+  userIds.add(row.creator_id);
 
-  for (const p of row.bill_participants) {
-    if (p.users && !seenIds.has(p.users.id)) {
-      seenIds.add(p.users.id);
-      profileRows.push(p.users as unknown as UserProfileRow);
-    }
-  }
+  const { data: profiles } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .in("id", [...userIds]);
 
-  if (!seenIds.has(row.creator_id)) {
-    const creatorParticipant = row.bill_participants.find((p) => p.user_id === row.creator_id);
-    if (!creatorParticipant?.users) {
-      const { data: creatorProfile } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", row.creator_id)
-        .single();
-      if (creatorProfile) profileRows.push(creatorProfile as unknown as UserProfileRow);
-    }
-  }
+  const profileRows: UserProfileRow[] = (profiles ?? []) as UserProfileRow[];
 
   const payers: BillPayer[] = row.bill_payers.map(billPayerRowToBillPayer);
 
