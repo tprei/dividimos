@@ -24,7 +24,7 @@ describe.skipIf(!isIntegrationTestReady)("Groups RLS and membership", () => {
       const { data, error } = await client
         .from("groups")
         .insert({ name: "Test Group", creator_id: alice.id })
-        .select()
+        .select("id, name, creator_id")
         .single();
 
       expect(error).toBeNull();
@@ -53,7 +53,7 @@ describe.skipIf(!isIntegrationTestReady)("Groups RLS and membership", () => {
 
       const { data, error } = await client
         .from("groups")
-        .select("*")
+        .select("id")
         .eq("id", group.id)
         .maybeSingle();
 
@@ -75,7 +75,7 @@ describe.skipIf(!isIntegrationTestReady)("Groups RLS and membership", () => {
       const bobClient = authenticateAs(bob);
       const { data, error } = await bobClient
         .from("groups")
-        .select("*")
+        .select("id")
         .eq("id", group.id)
         .maybeSingle();
 
@@ -91,7 +91,7 @@ describe.skipIf(!isIntegrationTestReady)("Groups RLS and membership", () => {
       const bobClient = authenticateAs(bob);
       const { data, error } = await bobClient
         .from("groups")
-        .select("*")
+        .select("id")
         .eq("id", group.id)
         .maybeSingle();
 
@@ -106,7 +106,7 @@ describe.skipIf(!isIntegrationTestReady)("Groups RLS and membership", () => {
       const carolClient = authenticateAs(carol);
       const { data, error } = await carolClient
         .from("groups")
-        .select("*")
+        .select("id")
         .eq("id", group.id)
         .maybeSingle();
 
@@ -516,7 +516,7 @@ describe.skipIf(!isIntegrationTestReady)("Groups RLS and membership", () => {
       const { data: group, error: groupError } = await aliceClient
         .from("groups")
         .insert({ name: "Dinner Club", creator_id: alice.id })
-        .select()
+        .select("id, name")
         .single();
 
       expect(groupError).toBeNull();
