@@ -60,7 +60,16 @@ const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
 
-type Tab = "membros" | "contas" | "acerto";
+type Tab = "membros" | "contas" | "acerto" | "pagamentos";
+
+interface PaymentEntry {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
+  status: string;
+  createdAt: string;
+}
 
 export default function GroupDetailPage({
   params,
@@ -74,6 +83,7 @@ export default function GroupDetailPage({
   const [creatorId, setCreatorId] = useState("");
   const [members, setMembers] = useState<MemberEntry[]>([]);
   const [bills, setBills] = useState<BillSummaryEntry[]>([]);
+  const [payments, setPayments] = useState<PaymentEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("membros");
   const [showInvite, setShowInvite] = useState(false);
@@ -144,12 +154,18 @@ export default function GroupDetailPage({
 
     setMembers(entries);
 
-    // Fetch group bills
-    const { data: billRows } = await supabase
-      .from("bills")
-      .select("id, title, total_amount, status, created_at")
-      .eq("group_id", id)
-      .order("created_at", { ascending: false });
+    // Fetch group bills + settlement payments in parallel
+    const [{ data: billRows }, { data: settlementRows }] = await Promise.all([
+      supabase
+        .from("bills")
+        .select("id, title, total_amount, status, created_at")
+        .eq("group_id", id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("group_settlements")
+        .select("id")
+        .eq("group_id", id),
+    ]);
 
     setBills(
       (billRows ?? []).map((b: BillQueryRow) => ({
@@ -160,6 +176,29 @@ export default function GroupDetailPage({
         createdAt: b.created_at,
       }))
     );
+
+    const settlementIds = (settlementRows ?? []).map((s: { id: string }) => s.id);
+    if (settlementIds.length > 0) {
+      const { data: paymentRows } = await supabase
+        .from("payments")
+        .select("id, from_user_id, to_user_id, amount_cents, status, created_at")
+        .in("group_settlement_id", settlementIds)
+        .order("created_at", { ascending: false });
+
+      setPayments(
+        (paymentRows ?? []).map((p: { id: string; from_user_id: string; to_user_id: string; amount_cents: number; status: string; created_at: string }) => ({
+          id: p.id,
+          fromUserId: p.from_user_id,
+          toUserId: p.to_user_id,
+          amountCents: p.amount_cents,
+          status: p.status,
+          createdAt: p.created_at,
+        }))
+      );
+    } else {
+      setPayments([]);
+    }
+
     setLoading(false);
   }, [id]);
 
@@ -376,19 +415,22 @@ export default function GroupDetailPage({
 
       {/* Tab bar */}
       <div className="mt-5 flex gap-1 rounded-xl bg-muted p-1">
-        {(["membros", "contas", "acerto"] as Tab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 rounded-lg py-1.5 text-xs font-medium capitalize transition-all ${
-              activeTab === tab
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {tab === "membros" ? "Membros" : tab === "contas" ? "Contas" : "Acerto"}
-          </button>
-        ))}
+        {(["membros", "contas", "acerto", "pagamentos"] as Tab[]).map((tab) => {
+          const label = { membros: "Membros", contas: "Contas", acerto: "Acerto", pagamentos: "Pagamentos" }[tab];
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition-all ${
+                activeTab === tab
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Members tab */}
@@ -510,6 +552,55 @@ export default function GroupDetailPage({
             participants={participantsAsUsers}
             currentUserId={user.id}
           />
+        </div>
+      )}
+
+      {/* Payments tab */}
+      {activeTab === "pagamentos" && (
+        <div className="mt-4 space-y-2">
+          {payments.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              <Receipt className="mx-auto h-8 w-8 opacity-50" />
+              <p className="mt-2 text-sm">Nenhum pagamento ainda</p>
+            </div>
+          ) : (
+            payments.map((payment) => {
+              const from = members.find((m) => m.userId === payment.fromUserId);
+              const to = members.find((m) => m.userId === payment.toUserId);
+              return (
+                <div
+                  key={payment.id}
+                  className="flex items-center gap-3 rounded-xl border bg-card p-3"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                    <span className="text-sm font-bold text-primary">
+                      {from?.profile.name.charAt(0) || "?"}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {from?.profile.name.split(" ")[0] || "?"} → {to?.profile.name.split(" ")[0] || "?"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(payment.createdAt).toLocaleDateString("pt-BR")}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="font-semibold text-sm tabular-nums">
+                      {formatBRL(payment.amountCents)}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      payment.status === "settled"
+                        ? "bg-success/15 text-success"
+                        : "bg-warning/15 text-warning-foreground"
+                    }`}>
+                      {payment.status === "settled" ? "Confirmado" : "Pendente"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       )}
     </div>

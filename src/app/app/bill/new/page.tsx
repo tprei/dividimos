@@ -90,6 +90,7 @@ function NewBillPageContent() {
   const [navigating, setNavigating] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
+  const [groupMembers, setGroupMembers] = useState<UserProfile[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const editLoadedRef = useRef(false);
@@ -271,6 +272,12 @@ function NewBillPageContent() {
 
       setSelectedGroupId(groupIdParam);
       setSelectedGroupName(group.name);
+      setGroupMembers((profiles ?? []).map((p) => ({
+        id: p.id,
+        handle: p.handle ?? "",
+        name: p.name,
+        avatarUrl: p.avatar_url ?? undefined,
+      })));
 
       for (const p of [...store.participants]) {
         if (p.id !== authUser.id) store.removeParticipant(p.id);
@@ -656,7 +663,7 @@ function NewBillPageContent() {
                 onSelectGroup={(groupId, groupName, members) => {
                   setSelectedGroupId(groupId);
                   setSelectedGroupName(groupName);
-                  // Clear existing non-creator participants and add group members
+                  setGroupMembers(members);
                   for (const p of [...store.participants]) {
                     if (p.id !== authUser?.id) store.removeParticipant(p.id);
                   }
@@ -678,7 +685,7 @@ function NewBillPageContent() {
                 onDeselectGroup={() => {
                   setSelectedGroupId(null);
                   setSelectedGroupName(null);
-                  // Remove all group members, keep only creator
+                  setGroupMembers([]);
                   for (const p of [...store.participants]) {
                     if (p.id !== authUser?.id) store.removeParticipant(p.id);
                   }
@@ -686,24 +693,74 @@ function NewBillPageContent() {
               />
 
               <div className="space-y-2">
-                {store.participants.map((p) => (
-                  <div key={p.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                    <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">@{p.handle}</p>
-                    </div>
-                    {p.id === authUser?.id ? (
+                {selectedGroupId && groupMembers.length > 0 ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">Quem participou desta conta?</p>
+                    <div
+                      key={authUser?.id}
+                      className="flex items-center gap-3 rounded-xl border bg-card p-3"
+                    >
+                      <input type="checkbox" checked disabled className="h-4 w-4 accent-primary" />
+                      <UserAvatar name={authUser?.name ?? ""} avatarUrl={authUser?.avatarUrl} size="sm" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{authUser?.name}</p>
+                        <p className="text-xs text-muted-foreground">@{authUser?.handle}</p>
+                      </div>
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Voce</span>
-                    ) : selectedGroupId ? (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Grupo</span>
-                    ) : (
-                      <button onClick={() => store.removeParticipant(p.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                    </div>
+                    {groupMembers.map((m) => {
+                      const isChecked = store.participants.some((p) => p.id === m.id);
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            if (isChecked) {
+                              store.removeParticipant(m.id);
+                            } else {
+                              store.addParticipant({
+                                id: m.id,
+                                email: "",
+                                handle: m.handle,
+                                name: m.name,
+                                pixKeyType: "email",
+                                pixKeyHint: "",
+                                avatarUrl: m.avatarUrl,
+                                onboarded: true,
+                                createdAt: new Date().toISOString(),
+                              });
+                            }
+                          }}
+                          className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/30"
+                        >
+                          <input type="checkbox" checked={isChecked} readOnly className="h-4 w-4 accent-primary pointer-events-none" />
+                          <UserAvatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{m.name}</p>
+                            <p className="text-xs text-muted-foreground">@{m.handle}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </>
+                ) : (
+                  store.participants.map((p) => (
+                    <div key={p.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
+                      <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{p.name}</p>
+                        <p className="text-xs text-muted-foreground">@{p.handle}</p>
+                      </div>
+                      {p.id === authUser?.id ? (
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Voce</span>
+                      ) : (
+                        <button onClick={() => store.removeParticipant(p.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* Individual add options — only when no group is selected */}
