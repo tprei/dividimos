@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, computeEdgesFromShares } from "@/stores/bill-store";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
 import type { User } from "@/types";
 
@@ -53,14 +53,14 @@ describe("Itemized bill flows", () => {
     store.setPayerFull("user-alice");
     expect(useBillStore.getState().bill!.payers[0].amountCents).toBe(15510);
 
-    store.computeLedger();
-    const { ledger } = useBillStore.getState();
+    store.computeShares();
+    const { shares } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
 
-    expect(ledger.length).toBeGreaterThanOrEqual(1);
-    expect(ledger.every((e) => e.toUserId === "user-alice")).toBe(true);
-    expect(ledger.every((e) => e.status === "pending")).toBe(true);
+    expect(edges.length).toBeGreaterThanOrEqual(1);
+    expect(edges.every((e) => e.toUserId === "user-alice")).toBe(true);
 
-    const totalOwed = ledger.reduce((s, e) => s + e.amountCents, 0);
+    const totalOwed = edges.reduce((s, e) => s + e.amountCents, 0);
     const bobTotal = useBillStore.getState().getParticipantTotal("user-bob");
     const carlosTotal = useBillStore.getState().getParticipantTotal("user-carlos");
     expect(Math.abs(totalOwed - (bobTotal + carlosTotal))).toBeLessThanOrEqual(2);
@@ -91,12 +91,13 @@ describe("Itemized bill flows", () => {
     store.setPayerAmount("user-alice", Math.ceil(grandTotal * 0.6));
     store.setPayerAmount("user-bob", grandTotal - Math.ceil(grandTotal * 0.6));
 
-    store.computeLedger();
+    store.computeShares();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger.length).toBeGreaterThan(0);
+    const { shares } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
+    expect(edges.length).toBeGreaterThan(0);
 
-    const totalLedger = ledger.reduce((s, e) => s + e.amountCents, 0);
+    const totalLedger = edges.reduce((s, e) => s + e.amountCents, 0);
     expect(totalLedger).toBeGreaterThan(0);
   });
 

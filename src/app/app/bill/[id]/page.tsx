@@ -173,7 +173,7 @@ function CreatorDraftView({
 
   const handleFinalize = async () => {
     setFinalizing(true);
-    store.computeLedger();
+    store.computeShares();
     const state = useBillStore.getState();
     if (state.bill) {
       const result = await syncBillToSupabase({

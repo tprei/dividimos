@@ -75,7 +75,7 @@ export function DevTestButtons() {
     store.setPayerAmount(pIds[1], Math.floor(gt * 0.45));
     store.setPayerAmount(pIds[3], gt - Math.floor(gt * 0.45));
 
-    store.computeLedger();
+    store.computeShares();
   };
 
   return (

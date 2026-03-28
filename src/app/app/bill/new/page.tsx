@@ -347,7 +347,7 @@ function NewBillPageContent() {
       if (!allAccepted && store.participants.length > 1) {
         return;
       }
-      store.computeLedger();
+      store.computeShares();
       setSyncing(true);
       const state = useBillStore.getState();
       if (state.bill) {

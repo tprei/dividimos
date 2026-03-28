@@ -1,9 +1,8 @@
 "use client";
 
-"use client";
-
 import { create } from "zustand";
 import { distributeProportionally, distributeEvenly } from "@/lib/currency";
+import type { DebtEdge } from "@/lib/simplify";
 import type {
   Bill,
   BillItem,
@@ -12,6 +11,7 @@ import type {
   BillStatus,
   BillType,
   DebtStatus,
+  ExpenseShare,
   ItemSplit,
   LedgerEntry,
   SplitType,
@@ -26,6 +26,7 @@ interface BillState {
   splits: ItemSplit[];
   billSplits: BillSplit[];
   ledger: LedgerEntry[];
+  shares: ExpenseShare[];
 
   setCurrentUser: (user: User) => void;
 
@@ -54,7 +55,7 @@ interface BillState {
   splitBillByFixed: (assignments: { userId: string; amountCents: number }[]) => void;
 
   getGrandTotal: () => number;
-  computeLedger: () => void;
+  computeShares: () => void;
   recordPayment: (entryId: string, amountCents: number) => void;
   markPaid: (entryId: string) => void;
   getParticipantTotal: (userId: string) => number;
@@ -74,6 +75,7 @@ export const useBillStore = create<BillState>((set, get) => ({
   splits: [],
   billSplits: [],
   ledger: [],
+  shares: [],
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -102,6 +104,7 @@ export const useBillStore = create<BillState>((set, get) => ({
       splits: [],
       billSplits: [],
       ledger: [],
+      shares: [],
     });
   },
 
@@ -338,100 +341,22 @@ export const useBillStore = create<BillState>((set, get) => ({
     );
   },
 
-  computeLedger: () => {
+  computeShares: () => {
     const { bill, participants, items, splits, billSplits } = get();
     if (!bill || participants.length === 0) return;
 
-    const consumption = new Map<string, number>();
-    const payment = new Map<string, number>();
+    const newShares = calculateShares(
+      bill,
+      participants,
+      items,
+      splits,
+      billSplits,
+    );
 
-    for (const p of participants) {
-      consumption.set(p.id, 0);
-      payment.set(p.id, 0);
-    }
-
-    if (bill.billType === "single_amount") {
-      for (const bs of billSplits) {
-        consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
-      }
-    } else {
-      const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-      for (const split of splits) {
-        consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
-      }
-      if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
-        const totalServiceFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
-        const weights = participants.map((p) => consumption.get(p.id) || 0);
-        const fees = distributeProportionally(totalServiceFee, weights);
-        participants.forEach((p, i) => {
-          consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
-        });
-      }
-      if (bill.fixedFees > 0) {
-        const fees = distributeEvenly(bill.fixedFees, participants.length);
-        participants.forEach((p, i) => {
-          consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
-        });
-      }
-    }
-
-    const payers = bill.payers.length > 0
-      ? bill.payers
-      : [{ userId: bill.creatorId, amountCents: get().getGrandTotal() }];
-
-    for (const payer of payers) {
-      payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
-    }
-
-    const netBalance = new Map<string, number>();
-    for (const p of participants) {
-      const paid = payment.get(p.id) || 0;
-      const consumed = consumption.get(p.id) || 0;
-      netBalance.set(p.id, paid - consumed);
-    }
-
-    const debtors: { id: string; amount: number }[] = [];
-    const creditors: { id: string; amount: number }[] = [];
-
-    for (const [id, balance] of netBalance) {
-      if (balance < -1) debtors.push({ id, amount: Math.abs(balance) });
-      if (balance > 1) creditors.push({ id, amount: balance });
-    }
-
-    debtors.sort((a, b) => b.amount - a.amount);
-    creditors.sort((a, b) => b.amount - a.amount);
-
-    const entries: LedgerEntry[] = [];
-    let di = 0;
-    let ci = 0;
-
-    while (di < debtors.length && ci < creditors.length) {
-      const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
-      if (transfer <= 0) break;
-
-      entries.push({
-        id: generateId(),
-        billId: bill.id,
-        entryType: "debt",
-        fromUserId: debtors[di].id,
-        toUserId: creditors[ci].id,
-        amountCents: transfer,
-        paidAmountCents: 0,
-        status: "pending",
-        createdAt: new Date().toISOString(),
-      });
-
-      debtors[di].amount -= transfer;
-      creditors[ci].amount -= transfer;
-
-      if (debtors[di].amount <= 1) di++;
-      if (creditors[ci].amount <= 1) ci++;
-    }
-
-    const newStatus: BillStatus = entries.length === 0 ? "settled" : "active";
+    const newStatus: BillStatus = newShares.every((s) => s.netCents === 0) ? "settled" : "active";
 
     set({
-      ledger: entries,
+      shares: newShares,
       bill: { ...bill, status: newStatus, updatedAt: new Date().toISOString() },
     });
   },
@@ -499,8 +424,132 @@ export const useBillStore = create<BillState>((set, get) => ({
       splits: [],
       billSplits: [],
       ledger: [],
+      shares: [],
     }),
 }));
+
+/**
+ * Convert bill data (payers + splits + item_splits with fees) into ExpenseShare[]
+ * with correct paidCents/owedCents per user.
+ *
+ * For each participant:
+ *   paidCents = sum of what they paid (from bill.payers)
+ *   owedCents = sum of what they consumed (items + fees)
+ *   netCents = paidCents - owedCents (positive = creditor, negative = debtor)
+ */
+export function calculateShares(
+  bill: Bill,
+  participants: User[],
+  items: BillItem[],
+  splits: ItemSplit[],
+  billSplits: BillSplit[],
+): ExpenseShare[] {
+  if (participants.length === 0) return [];
+
+  const consumption = new Map<string, number>();
+  const payment = new Map<string, number>();
+
+  for (const p of participants) {
+    consumption.set(p.id, 0);
+    payment.set(p.id, 0);
+  }
+
+  // Calculate what each person consumed (owed)
+  if (bill.billType === "single_amount") {
+    for (const bs of billSplits) {
+      consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
+    }
+  } else {
+    const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+    for (const split of splits) {
+      consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
+    }
+    if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
+      const totalServiceFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
+      const weights = participants.map((p) => consumption.get(p.id) || 0);
+      const fees = distributeProportionally(totalServiceFee, weights);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
+    }
+    if (bill.fixedFees > 0) {
+      const fees = distributeEvenly(bill.fixedFees, participants.length);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
+    }
+  }
+
+  // Calculate what each person paid
+  const totalConsumption = Array.from(consumption.values()).reduce((a, b) => a + b, 0);
+  const payers = bill.payers.length > 0
+    ? bill.payers
+    : [{ userId: bill.creatorId, amountCents: totalConsumption || items.reduce((s, i) => s + i.totalPriceCents, 0) }];
+
+  for (const payer of payers) {
+    payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
+  }
+
+  const now = new Date().toISOString();
+
+  return participants.map((p) => {
+    const paidCents = payment.get(p.id) || 0;
+    const owedCents = consumption.get(p.id) || 0;
+    return {
+      billId: bill.id,
+      userId: p.id,
+      paidCents,
+      owedCents,
+      netCents: paidCents - owedCents,
+      createdAt: now,
+    };
+  });
+}
+
+/**
+ * Takes ExpenseShare[] and produces DebtEdge[] for the simplification algorithm.
+ *
+ * Creditors (netCents > 0) receive from debtors (netCents < 0).
+ * Uses greedy pairing: largest debtor pays largest creditor first.
+ */
+export function computeEdgesFromShares(shares: ExpenseShare[]): DebtEdge[] {
+  const debtors: { userId: string; amount: number }[] = [];
+  const creditors: { userId: string; amount: number }[] = [];
+
+  for (const share of shares) {
+    if (share.netCents < -1) {
+      debtors.push({ userId: share.userId, amount: Math.abs(share.netCents) });
+    } else if (share.netCents > 1) {
+      creditors.push({ userId: share.userId, amount: share.netCents });
+    }
+  }
+
+  debtors.sort((a, b) => b.amount - a.amount);
+  creditors.sort((a, b) => b.amount - a.amount);
+
+  const edges: DebtEdge[] = [];
+  let di = 0;
+  let ci = 0;
+
+  while (di < debtors.length && ci < creditors.length) {
+    const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
+    if (transfer <= 0) break;
+
+    edges.push({
+      fromUserId: debtors[di].userId,
+      toUserId: creditors[ci].userId,
+      amountCents: transfer,
+    });
+
+    debtors[di].amount -= transfer;
+    creditors[ci].amount -= transfer;
+
+    if (debtors[di].amount <= 1) di++;
+    if (creditors[ci].amount <= 1) ci++;
+  }
+
+  return edges;
+}
 
 function recalcTotal(
   get: () => BillState,

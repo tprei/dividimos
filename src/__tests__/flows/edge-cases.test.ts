@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, computeEdgesFromShares } from "@/stores/bill-store";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
 import type { User } from "@/types";
 
@@ -30,13 +30,14 @@ describe("Edge cases", () => {
 
     store.splitBillByFixed([{ userId: "user-bob", amountCents: 5000 }]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
+    store.computeShares();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0].fromUserId).toBe("user-bob");
-    expect(ledger[0].toUserId).toBe("user-alice");
-    expect(ledger[0].amountCents).toBe(5000);
+    const { shares } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].fromUserId).toBe("user-bob");
+    expect(edges[0].toUserId).toBe("user-alice");
+    expect(edges[0].amountCents).toBe(5000);
   });
 
   it("everyone consumed and paid equally → no debts", () => {
@@ -49,10 +50,11 @@ describe("Edge cases", () => {
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
     store.splitPaymentEqually(["user-alice", "user-bob", "user-carlos"]);
-    store.computeLedger();
+    store.computeShares();
 
-    const { ledger, bill } = useBillStore.getState();
-    expect(ledger).toHaveLength(0);
+    const { shares, bill } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
+    expect(edges).toHaveLength(0);
     expect(bill!.status).toBe("settled");
   });
 
@@ -71,10 +73,11 @@ describe("Edge cases", () => {
     expect(total).toBe(1);
 
     store.setPayerFull("user-alice");
-    store.computeLedger();
+    store.computeShares();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger.length).toBeLessThanOrEqual(1);
+    const { shares } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
+    expect(edges.length).toBeLessThanOrEqual(1);
   });
 
   it("switching bill type clears data properly", () => {
@@ -96,11 +99,12 @@ describe("Edge cases", () => {
     store.updateBill({ totalAmountInput: 10000 });
     store.splitBillEqually(["user-alice", "user-bob"]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
+    store.computeShares();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0].amountCents).toBe(5000);
+    const { shares } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].amountCents).toBe(5000);
   });
 
   it("switching from single_amount to itemized clears billSplits", () => {
@@ -131,11 +135,12 @@ describe("Edge cases", () => {
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos", "dave", "eve"]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
+    store.computeShares();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(4);
-    const total = ledger.reduce((s, e) => s + e.amountCents, 0);
+    const { shares } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
+    expect(edges).toHaveLength(4);
+    const total = edges.reduce((s, e) => s + e.amountCents, 0);
     expect(total).toBe(800000);
   });
 
@@ -148,11 +153,12 @@ describe("Edge cases", () => {
     store.addParticipant(userCarlos);
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
-    store.computeLedger();
+    store.computeShares();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(2);
-    expect(ledger.every((e) => e.toUserId === "user-alice")).toBe(true);
+    const { shares } = useBillStore.getState();
+    const edges = computeEdgesFromShares(shares);
+    expect(edges).toHaveLength(2);
+    expect(edges.every((e) => e.toUserId === "user-alice")).toBe(true);
   });
 
   it("rounding: 3-way split totals match", () => {
