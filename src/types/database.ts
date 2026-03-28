@@ -369,6 +369,177 @@ export interface Database {
         };
         Relationships: [];
       };
+      expenses: {
+        Row: {
+          id: string;
+          group_id: string;
+          creator_id: string;
+          title: string;
+          merchant_name: string | null;
+          expense_type: "itemized" | "single_amount";
+          total_amount: number;
+          service_fee_percent: number;
+          fixed_fees: number;
+          status: "draft" | "active" | "settled";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          creator_id: string;
+          title: string;
+          merchant_name?: string | null;
+          expense_type?: "itemized" | "single_amount";
+          total_amount?: number;
+          service_fee_percent?: number;
+          fixed_fees?: number;
+          status?: "draft" | "active" | "settled";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          group_id?: string;
+          creator_id?: string;
+          title?: string;
+          merchant_name?: string | null;
+          expense_type?: "itemized" | "single_amount";
+          total_amount?: number;
+          service_fee_percent?: number;
+          fixed_fees?: number;
+          status?: "draft" | "active" | "settled";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      expense_items: {
+        Row: {
+          id: string;
+          expense_id: string;
+          description: string;
+          quantity: number;
+          unit_price_cents: number;
+          total_price_cents: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          description: string;
+          quantity?: number;
+          unit_price_cents: number;
+          total_price_cents: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          description?: string;
+          quantity?: number;
+          unit_price_cents?: number;
+          total_price_cents?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      expense_shares: {
+        Row: {
+          id: string;
+          expense_id: string;
+          user_id: string;
+          share_amount_cents: number;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          user_id: string;
+          share_amount_cents: number;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          user_id?: string;
+          share_amount_cents?: number;
+        };
+        Relationships: [];
+      };
+      expense_payers: {
+        Row: {
+          expense_id: string;
+          user_id: string;
+          amount_cents: number;
+        };
+        Insert: {
+          expense_id: string;
+          user_id: string;
+          amount_cents: number;
+        };
+        Update: {
+          expense_id?: string;
+          user_id?: string;
+          amount_cents?: number;
+        };
+        Relationships: [];
+      };
+      balances: {
+        Row: {
+          group_id: string;
+          user_a: string;
+          user_b: string;
+          amount_cents: number;
+          updated_at: string;
+        };
+        Insert: {
+          group_id: string;
+          user_a: string;
+          user_b: string;
+          amount_cents?: number;
+          updated_at?: string;
+        };
+        Update: {
+          group_id?: string;
+          user_a?: string;
+          user_b?: string;
+          amount_cents?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      settlements: {
+        Row: {
+          id: string;
+          group_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount_cents: number;
+          status: "pending" | "confirmed";
+          created_at: string;
+          confirmed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          from_user_id: string;
+          to_user_id: string;
+          amount_cents: number;
+          status?: "pending" | "confirmed";
+          created_at?: string;
+          confirmed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          group_id?: string;
+          from_user_id?: string;
+          to_user_id?: string;
+          amount_cents?: number;
+          status?: "pending" | "confirmed";
+          created_at?: string;
+          confirmed_at?: string | null;
+        };
+        Relationships: [];
+      };
       group_members: {
         Row: {
           group_id: string;
@@ -446,6 +617,9 @@ export interface Database {
       payment_status: "unconfirmed" | "settled";
       ledger_entry_type: "debt" | "payment";
       group_member_status: "invited" | "accepted";
+      expense_status: "draft" | "active" | "settled";
+      expense_type: "itemized" | "single_amount";
+      settlement_status: "pending" | "confirmed";
     };
     CompositeTypes: Record<string, never>;
   };
