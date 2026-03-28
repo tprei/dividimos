@@ -304,6 +304,8 @@ export const useBillStore = create<BillState>((set, get) => ({
   splitBillByPercentage: (assignments) => {
     const bill = get().bill;
     if (!bill) return;
+    const pctSum = assignments.reduce((s, a) => s + a.percentage, 0);
+    if (Math.abs(pctSum - 100) > 0.01) return;
     const total = bill.totalAmountInput;
     const billSplits: BillSplit[] = assignments.map((a) => ({
       userId: a.userId,
