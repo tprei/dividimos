@@ -1,43 +1,47 @@
 "use client";
 
-"use client";
-
 import { create } from "zustand";
 import { distributeProportionally, distributeEvenly } from "@/lib/currency";
 import type {
-  Bill,
-  BillItem,
-  BillPayer,
-  BillSplit,
-  BillStatus,
-  BillType,
-  DebtStatus,
+  DebtEdge,
+  Expense,
+  ExpenseItem,
+  ExpensePayer,
+  ExpenseShare,
+  ExpenseStatus,
+  ExpenseType,
   ItemSplit,
-  LedgerEntry,
+  BillSplit,
   SplitType,
   User,
 } from "@/types";
 
-interface BillState {
+interface ExpenseState {
   currentUser: User | null;
-  bill: Bill | null;
+  expense: Expense | null;
+  /** User-entered total for single_amount expenses (before computing shares). */
+  totalAmountInput: number;
   participants: User[];
-  items: BillItem[];
+  items: ExpenseItem[];
+  payers: ExpensePayer[];
+  /** Per-item split assignments (itemized wizard). */
   splits: ItemSplit[];
+  /** Whole-expense split assignments (single_amount wizard). */
   billSplits: BillSplit[];
-  ledger: LedgerEntry[];
+  /** Client-side preview of debts (computed by computeLedger). */
+  previewDebts: DebtEdge[];
 
   setCurrentUser: (user: User) => void;
 
-  createBill: (title: string, billType: BillType, merchantName?: string, groupId?: string) => void;
-  updateBill: (updates: Partial<Bill>) => void;
-  setBillType: (billType: BillType) => void;
+  createExpense: (title: string, expenseType: ExpenseType, merchantName?: string, groupId?: string) => void;
+  updateExpense: (updates: Partial<Expense> & { totalAmountInput?: number }) => void;
+  setExpenseType: (expenseType: ExpenseType) => void;
 
   addParticipant: (user: User) => void;
   removeParticipant: (userId: string) => void;
 
-  addItem: (item: Omit<BillItem, "id" | "billId" | "createdAt">) => void;
-  updateItem: (itemId: string, updates: Partial<BillItem>) => void;
+  addItem: (item: Omit<ExpenseItem, "id" | "expenseId" | "createdAt">) => void;
+  updateItem: (itemId: string, updates: Partial<ExpenseItem>) => void;
   removeItem: (itemId: string) => void;
 
   assignItem: (itemId: string, userId: string, splitType: SplitType, value: number) => void;
@@ -54,9 +58,17 @@ interface BillState {
   splitBillByFixed: (assignments: { userId: string; amountCents: number }[]) => void;
 
   getGrandTotal: () => number;
+  /**
+   * Computes client-side preview debts from current splits and payers.
+   * Stores result in `previewDebts` as DebtEdge[].
+   * Updates expense status to "active" if debts exist, "settled" if none.
+   */
   computeLedger: () => void;
-  recordPayment: (entryId: string, amountCents: number) => void;
-  markPaid: (entryId: string) => void;
+  /**
+   * Computes final ExpenseShare[] from current splits/billSplits.
+   * Used when activating an expense to send to the server.
+   */
+  getExpenseShares: () => ExpenseShare[];
   getParticipantTotal: (userId: string) => number;
   reset: () => void;
 }
@@ -66,63 +78,74 @@ function generateId(): string {
   return `local_${Date.now()}_${nextId++}`;
 }
 
-export const useBillStore = create<BillState>((set, get) => ({
+export const useBillStore = create<ExpenseState>((set, get) => ({
   currentUser: null,
-  bill: null,
+  expense: null,
+  totalAmountInput: 0,
   participants: [],
   items: [],
+  payers: [],
   splits: [],
   billSplits: [],
-  ledger: [],
+  previewDebts: [],
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
-  createBill: (title, billType, merchantName, groupId) => {
-    const bill: Bill = {
+  createExpense: (title, expenseType, merchantName, groupId) => {
+    const now = new Date().toISOString();
+    const expense: Expense = {
       id: generateId(),
+      groupId: groupId || "",
       creatorId: get().currentUser?.id || "",
-      billType,
+      expenseType,
       title,
       merchantName,
-      status: "draft",
-      serviceFeePercent: billType === "itemized" ? 10 : 0,
-      fixedFees: 0,
       totalAmount: 0,
-      totalAmountInput: 0,
-      payers: [],
-      groupId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      serviceFeePercent: expenseType === "itemized" ? 10 : 0,
+      fixedFees: 0,
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
     };
     const currentUser = get().currentUser;
     set({
-      bill,
+      expense,
+      totalAmountInput: 0,
       participants: currentUser ? [currentUser] : [],
       items: [],
+      payers: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      previewDebts: [],
     });
   },
 
-  updateBill: (updates) => {
-    const bill = get().bill;
-    if (!bill) return;
-    set({ bill: { ...bill, ...updates, updatedAt: new Date().toISOString() } });
+  updateExpense: (updates) => {
+    const expense = get().expense;
+    if (!expense) return;
+    const { totalAmountInput, ...expenseUpdates } = updates;
+    const newState: Partial<ExpenseState> = {
+      expense: { ...expense, ...expenseUpdates, updatedAt: new Date().toISOString() },
+    };
+    if (totalAmountInput !== undefined) {
+      newState.totalAmountInput = totalAmountInput;
+    }
+    set(newState);
   },
 
-  setBillType: (billType) => {
-    const bill = get().bill;
-    if (!bill) return;
-    if (billType === "single_amount") {
+  setExpenseType: (expenseType) => {
+    const expense = get().expense;
+    if (!expense) return;
+    if (expenseType === "single_amount") {
       set({
-        bill: { ...bill, billType, serviceFeePercent: 0, fixedFees: 0, updatedAt: new Date().toISOString() },
+        expense: { ...expense, expenseType, serviceFeePercent: 0, fixedFees: 0, updatedAt: new Date().toISOString() },
         items: [],
         splits: [],
       });
     } else {
       set({
-        bill: { ...bill, billType, serviceFeePercent: 10, totalAmountInput: 0, updatedAt: new Date().toISOString() },
+        expense: { ...expense, expenseType, serviceFeePercent: 10, updatedAt: new Date().toISOString() },
+        totalAmountInput: 0,
         billSplits: [],
       });
     }
@@ -143,13 +166,13 @@ export const useBillStore = create<BillState>((set, get) => ({
   },
 
   addItem: (item) => {
-    const billItem: BillItem = {
+    const expenseItem: ExpenseItem = {
       ...item,
       id: generateId(),
-      billId: get().bill?.id || "",
+      expenseId: get().expense?.id || "",
       createdAt: new Date().toISOString(),
     };
-    set({ items: [...get().items, billItem] });
+    set({ items: [...get().items, expenseItem] });
     recalcTotal(get, set);
   },
 
@@ -233,63 +256,54 @@ export const useBillStore = create<BillState>((set, get) => ({
 
   setPayerFull: (userId) => {
     const grandTotal = get().getGrandTotal();
-    const bill = get().bill;
-    if (!bill) return;
+    const expense = get().expense;
+    if (!expense) return;
     set({
-      bill: {
-        ...bill,
-        payers: [{ userId, amountCents: grandTotal }],
-        updatedAt: new Date().toISOString(),
-      },
+      payers: [{ expenseId: expense.id, userId, amountCents: grandTotal }],
     });
   },
 
   splitPaymentEqually: (userIds) => {
     const grandTotal = get().getGrandTotal();
-    const bill = get().bill;
-    if (!bill || userIds.length === 0) return;
+    const expense = get().expense;
+    if (!expense || userIds.length === 0) return;
     const perPerson = Math.floor(grandTotal / userIds.length);
     const remainder = grandTotal - perPerson * userIds.length;
-    const payers: BillPayer[] = userIds.map((userId, idx) => ({
+    const newPayers: ExpensePayer[] = userIds.map((userId, idx) => ({
+      expenseId: expense.id,
       userId,
       amountCents: perPerson + (idx < remainder ? 1 : 0),
     }));
-    set({
-      bill: { ...bill, payers, updatedAt: new Date().toISOString() },
-    });
+    set({ payers: newPayers });
   },
 
   setPayerAmount: (userId, amountCents) => {
-    const bill = get().bill;
-    if (!bill) return;
-    const existing = bill.payers.find((p) => p.userId === userId);
-    let payers: BillPayer[];
+    const expense = get().expense;
+    if (!expense) return;
+    const existing = get().payers.find((p) => p.userId === userId);
     if (existing) {
-      payers = bill.payers.map((p) =>
-        p.userId === userId ? { ...p, amountCents } : p,
-      );
+      set({
+        payers: get().payers.map((p) =>
+          p.userId === userId ? { ...p, amountCents } : p,
+        ),
+      });
     } else {
-      payers = [...bill.payers, { userId, amountCents }];
+      set({
+        payers: [...get().payers, { expenseId: expense.id, userId, amountCents }],
+      });
     }
-    set({ bill: { ...bill, payers, updatedAt: new Date().toISOString() } });
   },
 
   removePayerEntry: (userId) => {
-    const bill = get().bill;
-    if (!bill) return;
     set({
-      bill: {
-        ...bill,
-        payers: bill.payers.filter((p) => p.userId !== userId),
-        updatedAt: new Date().toISOString(),
-      },
+      payers: get().payers.filter((p) => p.userId !== userId),
     });
   },
 
   splitBillEqually: (userIds) => {
-    const bill = get().bill;
-    if (!bill || userIds.length === 0) return;
-    const total = bill.totalAmountInput;
+    const expense = get().expense;
+    if (!expense || userIds.length === 0) return;
+    const total = get().totalAmountInput;
     const perPerson = Math.floor(total / userIds.length);
     const remainder = total - perPerson * userIds.length;
     const billSplits: BillSplit[] = userIds.map((userId, idx) => ({
@@ -302,9 +316,7 @@ export const useBillStore = create<BillState>((set, get) => ({
   },
 
   splitBillByPercentage: (assignments) => {
-    const bill = get().bill;
-    if (!bill) return;
-    const total = bill.totalAmountInput;
+    const total = get().totalAmountInput;
     const billSplits: BillSplit[] = assignments.map((a) => ({
       userId: a.userId,
       splitType: "percentage" as SplitType,
@@ -325,22 +337,22 @@ export const useBillStore = create<BillState>((set, get) => ({
   },
 
   getGrandTotal: () => {
-    const { bill, items } = get();
-    if (!bill) return 0;
-    if (bill.billType === "single_amount") {
-      return bill.totalAmountInput;
+    const { expense, items, totalAmountInput } = get();
+    if (!expense) return 0;
+    if (expense.expenseType === "single_amount") {
+      return totalAmountInput;
     }
     const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
     return (
       itemsTotal +
-      Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
-      bill.fixedFees
+      Math.round((itemsTotal * expense.serviceFeePercent) / 100) +
+      expense.fixedFees
     );
   },
 
   computeLedger: () => {
-    const { bill, participants, items, splits, billSplits } = get();
-    if (!bill || participants.length === 0) return;
+    const { expense, participants, items, splits, billSplits, totalAmountInput, payers } = get();
+    if (!expense || participants.length === 0) return;
 
     const consumption = new Map<string, number>();
     const payment = new Map<string, number>();
@@ -350,7 +362,7 @@ export const useBillStore = create<BillState>((set, get) => ({
       payment.set(p.id, 0);
     }
 
-    if (bill.billType === "single_amount") {
+    if (expense.expenseType === "single_amount") {
       for (const bs of billSplits) {
         consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
       }
@@ -359,27 +371,27 @@ export const useBillStore = create<BillState>((set, get) => ({
       for (const split of splits) {
         consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
       }
-      if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
-        const totalServiceFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
+      if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
+        const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
         const weights = participants.map((p) => consumption.get(p.id) || 0);
         const fees = distributeProportionally(totalServiceFee, weights);
         participants.forEach((p, i) => {
           consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
         });
       }
-      if (bill.fixedFees > 0) {
-        const fees = distributeEvenly(bill.fixedFees, participants.length);
+      if (expense.fixedFees > 0) {
+        const fees = distributeEvenly(expense.fixedFees, participants.length);
         participants.forEach((p, i) => {
           consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
         });
       }
     }
 
-    const payers = bill.payers.length > 0
-      ? bill.payers
-      : [{ userId: bill.creatorId, amountCents: get().getGrandTotal() }];
+    const effectivePayers = payers.length > 0
+      ? payers
+      : [{ expenseId: expense.id, userId: expense.creatorId, amountCents: get().getGrandTotal() }];
 
-    for (const payer of payers) {
+    for (const payer of effectivePayers) {
       payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
     }
 
@@ -401,7 +413,7 @@ export const useBillStore = create<BillState>((set, get) => ({
     debtors.sort((a, b) => b.amount - a.amount);
     creditors.sort((a, b) => b.amount - a.amount);
 
-    const entries: LedgerEntry[] = [];
+    const debts: DebtEdge[] = [];
     let di = 0;
     let ci = 0;
 
@@ -409,16 +421,10 @@ export const useBillStore = create<BillState>((set, get) => ({
       const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
       if (transfer <= 0) break;
 
-      entries.push({
-        id: generateId(),
-        billId: bill.id,
-        entryType: "debt",
+      debts.push({
         fromUserId: debtors[di].id,
         toUserId: creditors[ci].id,
         amountCents: transfer,
-        paidAmountCents: 0,
-        status: "pending",
-        createdAt: new Date().toISOString(),
       });
 
       debtors[di].amount -= transfer;
@@ -428,44 +434,70 @@ export const useBillStore = create<BillState>((set, get) => ({
       if (creditors[ci].amount <= 1) ci++;
     }
 
-    const newStatus: BillStatus = entries.length === 0 ? "settled" : "active";
+    const newStatus: ExpenseStatus = debts.length === 0 ? "settled" : "active";
 
     set({
-      ledger: entries,
-      bill: { ...bill, status: newStatus, updatedAt: new Date().toISOString() },
+      previewDebts: debts,
+      expense: { ...expense, status: newStatus, updatedAt: new Date().toISOString() },
     });
   },
 
-  recordPayment: (entryId, amountCents) => {
-    set({
-      ledger: get().ledger.map((e) => {
-        if (e.id !== entryId) return e;
-        const newPaid = e.paidAmountCents + amountCents;
-        const remaining = e.amountCents - newPaid;
-        const status: DebtStatus = remaining <= 0 ? "settled" : "partially_paid";
-        return {
-          ...e,
-          paidAmountCents: Math.min(newPaid, e.amountCents),
-          status,
-          paidAt: new Date().toISOString(),
-        };
-      }),
-    });
-    checkAllSettled(get, set);
-  },
+  getExpenseShares: () => {
+    const { expense, participants, items, splits, billSplits, totalAmountInput } = get();
+    if (!expense) return [];
 
-  markPaid: (entryId) => {
-    const entry = get().ledger.find((e) => e.id === entryId);
-    if (!entry) return;
-    const remaining = entry.amountCents - entry.paidAmountCents;
-    get().recordPayment(entryId, remaining);
+    if (expense.expenseType === "single_amount") {
+      return billSplits.map((bs) => ({
+        id: generateId(),
+        expenseId: expense.id,
+        userId: bs.userId,
+        shareAmountCents: bs.computedAmountCents,
+      }));
+    }
+
+    // Itemized: compute each participant's total share including fees
+    const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+    const consumption = new Map<string, number>();
+
+    for (const p of participants) {
+      consumption.set(p.id, 0);
+    }
+
+    for (const split of splits) {
+      consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
+    }
+
+    if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
+      const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
+      const weights = participants.map((p) => consumption.get(p.id) || 0);
+      const fees = distributeProportionally(totalServiceFee, weights);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
+    }
+
+    if (expense.fixedFees > 0) {
+      const fees = distributeEvenly(expense.fixedFees, participants.length);
+      participants.forEach((p, i) => {
+        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      });
+    }
+
+    return participants
+      .filter((p) => (consumption.get(p.id) || 0) > 0)
+      .map((p) => ({
+        id: generateId(),
+        expenseId: expense.id,
+        userId: p.id,
+        shareAmountCents: consumption.get(p.id) || 0,
+      }));
   },
 
   getParticipantTotal: (userId) => {
-    const { bill, items, splits, billSplits, participants } = get();
-    if (!bill) return 0;
+    const { expense, items, splits, billSplits, participants, totalAmountInput } = get();
+    if (!expense) return 0;
 
-    if (bill.billType === "single_amount") {
+    if (expense.expenseType === "single_amount") {
       const bs = billSplits.find((s) => s.userId === userId);
       return bs?.computedAmountCents || 0;
     }
@@ -477,15 +509,15 @@ export const useBillStore = create<BillState>((set, get) => ({
     const itemsGrandTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
 
     let serviceFee = 0;
-    if (bill.serviceFeePercent > 0 && itemsGrandTotal > 0) {
+    if (expense.serviceFeePercent > 0 && itemsGrandTotal > 0) {
       serviceFee = Math.round(
-        (itemTotal / itemsGrandTotal) * (itemsGrandTotal * bill.serviceFeePercent) / 100,
+        (itemTotal / itemsGrandTotal) * (itemsGrandTotal * expense.serviceFeePercent) / 100,
       );
     }
 
     const fixedFeeShare =
       participants.length > 0
-        ? Math.round(bill.fixedFees / participants.length)
+        ? Math.round(expense.fixedFees / participants.length)
         : 0;
 
     return itemTotal + serviceFee + fixedFeeShare;
@@ -493,44 +525,23 @@ export const useBillStore = create<BillState>((set, get) => ({
 
   reset: () =>
     set({
-      bill: null,
+      expense: null,
+      totalAmountInput: 0,
       participants: [],
       items: [],
+      payers: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      previewDebts: [],
     }),
 }));
 
 function recalcTotal(
-  get: () => BillState,
-  set: (state: Partial<BillState>) => void,
+  get: () => ExpenseState,
+  set: (state: Partial<ExpenseState>) => void,
 ) {
-  const { bill, items } = get();
-  if (!bill || bill.billType === "single_amount") return;
+  const { expense, items } = get();
+  if (!expense || expense.expenseType === "single_amount") return;
   const totalAmount = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-  set({ bill: { ...bill, totalAmount, updatedAt: new Date().toISOString() } });
-}
-
-function checkAllSettled(
-  get: () => BillState,
-  set: (state: Partial<BillState>) => void,
-) {
-  const { bill, ledger } = get();
-  if (!bill) return;
-  const allSettled = ledger.every((e) => e.status === "settled");
-  if (allSettled) {
-    set({ bill: { ...bill, status: "settled", updatedAt: new Date().toISOString() } });
-  } else {
-    const anySettled = ledger.some((e) => e.status === "settled");
-    if (anySettled) {
-      set({
-        bill: {
-          ...bill,
-          status: "partially_settled",
-          updatedAt: new Date().toISOString(),
-        },
-      });
-    }
-  }
+  set({ expense: { ...expense, totalAmount, updatedAt: new Date().toISOString() } });
 }

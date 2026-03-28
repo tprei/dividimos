@@ -1,92 +1,237 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Balance, Settlement } from "@/types";
+import type { DebtEdge } from "@/lib/simplify";
 
 /**
- * Tests for the handleMarkPaid integration logic in GroupSettlementView.
- *
- * The component delegates payment recording to markGroupSettlementPaid,
- * which inserts a payment row. A DB trigger cascades updates to the
- * group_settlements table (paid_amount_cents, status).
+ * Tests for GroupSettlementView logic:
+ * - balancesToEdges: converts Balance[] (canonical ordering) to directed DebtEdge[]
+ * - Settlement flow: recordSettlement creates pending, confirmSettlement finalizes
+ * - Realtime patching: balance and settlement updates are applied locally
  */
 
-// Mock the action module
-vi.mock("@/lib/supabase/group-settlement-actions", () => ({
-  markGroupSettlementPaid: vi.fn(),
-  loadGroupSettlements: vi.fn(),
-  loadGroupBillsAndLedger: vi.fn(),
-  syncGroupSettlements: vi.fn(),
+// ============================================================
+// balancesToEdges — extracted logic (mirrors the component's helper)
+// ============================================================
+
+function balancesToEdges(balances: Balance[]): DebtEdge[] {
+  const edges: DebtEdge[] = [];
+  for (const b of balances) {
+    if (b.amountCents > 0) {
+      edges.push({ fromUserId: b.userA, toUserId: b.userB, amountCents: b.amountCents });
+    } else if (b.amountCents < 0) {
+      edges.push({ fromUserId: b.userB, toUserId: b.userA, amountCents: Math.abs(b.amountCents) });
+    }
+  }
+  return edges;
+}
+
+describe("balancesToEdges", () => {
+  it("converts positive balance to edge from userA to userB", () => {
+    const balances: Balance[] = [
+      { groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 5000, updatedAt: "" },
+    ];
+
+    const edges = balancesToEdges(balances);
+
+    expect(edges).toEqual([
+      { fromUserId: "aaa", toUserId: "bbb", amountCents: 5000 },
+    ]);
+  });
+
+  it("converts negative balance to edge from userB to userA", () => {
+    const balances: Balance[] = [
+      { groupId: "g1", userA: "aaa", userB: "bbb", amountCents: -3000, updatedAt: "" },
+    ];
+
+    const edges = balancesToEdges(balances);
+
+    expect(edges).toEqual([
+      { fromUserId: "bbb", toUserId: "aaa", amountCents: 3000 },
+    ]);
+  });
+
+  it("skips zero balances", () => {
+    const balances: Balance[] = [
+      { groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 0, updatedAt: "" },
+    ];
+
+    const edges = balancesToEdges(balances);
+
+    expect(edges).toEqual([]);
+  });
+
+  it("handles multiple balances in a group", () => {
+    const balances: Balance[] = [
+      { groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 5000, updatedAt: "" },
+      { groupId: "g1", userA: "aaa", userB: "ccc", amountCents: -2000, updatedAt: "" },
+      { groupId: "g1", userA: "bbb", userB: "ccc", amountCents: 1000, updatedAt: "" },
+    ];
+
+    const edges = balancesToEdges(balances);
+
+    expect(edges).toHaveLength(3);
+    expect(edges).toContainEqual({ fromUserId: "aaa", toUserId: "bbb", amountCents: 5000 });
+    expect(edges).toContainEqual({ fromUserId: "ccc", toUserId: "aaa", amountCents: 2000 });
+    expect(edges).toContainEqual({ fromUserId: "bbb", toUserId: "ccc", amountCents: 1000 });
+  });
+});
+
+// ============================================================
+// Settlement actions — mock tests
+// ============================================================
+
+vi.mock("@/lib/supabase/settlement-actions", () => ({
+  queryBalances: vi.fn(),
+  querySettlements: vi.fn(),
+  recordSettlement: vi.fn(),
+  confirmSettlement: vi.fn(),
 }));
 
 import {
-  markGroupSettlementPaid,
-} from "@/lib/supabase/group-settlement-actions";
+  recordSettlement,
+  confirmSettlement,
+} from "@/lib/supabase/settlement-actions";
 
-type MarkPaidFn = (
-  settlementId: string,
-  amountCents: number,
+type RecordFn = (
+  groupId: string,
   fromUserId: string,
   toUserId: string,
-) => Promise<{ error?: string }>;
-
-const mockedMarkPaid = markGroupSettlementPaid as unknown as ReturnType<typeof vi.fn<MarkPaidFn>>;
-
-/**
- * Mirrors the handleMarkPaid logic from GroupSettlementView.
- * This lets us unit-test the payment decision logic without rendering the component.
- */
-async function handleMarkPaidLogic(
-  settlementId: string,
   amountCents: number,
-  fromUserId: string,
-  toUserId: string,
-): Promise<{ error?: string }> {
-  const result = await mockedMarkPaid(
-    settlementId,
-    amountCents,
-    fromUserId,
-    toUserId,
-  );
-  return { error: result?.error };
-}
+) => Promise<Settlement>;
 
-describe("handleMarkPaid logic", () => {
+type ConfirmFn = (settlementId: string) => Promise<void>;
+
+const mockedRecord = recordSettlement as unknown as ReturnType<typeof vi.fn<RecordFn>>;
+const mockedConfirm = confirmSettlement as unknown as ReturnType<typeof vi.fn<ConfirmFn>>;
+
+describe("settlement recording logic", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedMarkPaid.mockResolvedValue({ error: undefined });
+    mockedRecord.mockResolvedValue({
+      id: "s1",
+      groupId: "g1",
+      fromUserId: "debtor",
+      toUserId: "creditor",
+      amountCents: 5000,
+      status: "pending",
+      createdAt: "",
+    });
+    mockedConfirm.mockResolvedValue(undefined);
   });
 
-  it("calls markGroupSettlementPaid with correct arguments", async () => {
-    await handleMarkPaidLogic("gs-1", 5000, "user-bob", "user-alice");
+  it("records a settlement with correct arguments", async () => {
+    await recordSettlement("g1", "debtor", "creditor", 5000);
 
-    expect(markGroupSettlementPaid).toHaveBeenCalledWith(
-      "gs-1",
-      5000,
-      "user-bob",
-      "user-alice",
+    expect(mockedRecord).toHaveBeenCalledWith("g1", "debtor", "creditor", 5000);
+  });
+
+  it("confirms a settlement by ID", async () => {
+    await confirmSettlement("s1");
+
+    expect(mockedConfirm).toHaveBeenCalledWith("s1");
+  });
+});
+
+// ============================================================
+// Realtime balance patching logic
+// ============================================================
+
+describe("realtime balance patching", () => {
+  it("patches existing balance in array", () => {
+    const balances: Balance[] = [
+      { groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 5000, updatedAt: "t1" },
+      { groupId: "g1", userA: "aaa", userB: "ccc", amountCents: 3000, updatedAt: "t1" },
+    ];
+
+    const updatedBalance: Balance = {
+      groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 2000, updatedAt: "t2",
+    };
+
+    // Mirrors the realtime handler logic
+    const idx = balances.findIndex(
+      (b) => b.userA === updatedBalance.userA && b.userB === updatedBalance.userB,
     );
+    const next = idx >= 0
+      ? balances.map((b, i) => (i === idx ? updatedBalance : b))
+      : [...balances, updatedBalance];
+    const filtered = next.filter((b) => b.amountCents !== 0);
+
+    expect(filtered).toHaveLength(2);
+    expect(filtered[0].amountCents).toBe(2000);
+    expect(filtered[1].amountCents).toBe(3000);
   });
 
-  it("returns no error on success", async () => {
-    const result = await handleMarkPaidLogic("gs-1", 5000, "user-bob", "user-alice");
+  it("adds new balance when pair not found", () => {
+    const balances: Balance[] = [
+      { groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 5000, updatedAt: "t1" },
+    ];
 
-    expect(result.error).toBeUndefined();
-  });
+    const newBalance: Balance = {
+      groupId: "g1", userA: "bbb", userB: "ccc", amountCents: 1000, updatedAt: "t2",
+    };
 
-  it("returns error message on failure", async () => {
-    mockedMarkPaid.mockResolvedValue({ error: "RLS violation" });
-
-    const result = await handleMarkPaidLogic("gs-1", 5000, "user-bob", "user-alice");
-
-    expect(result.error).toBe("RLS violation");
-  });
-
-  it("supports partial payment amounts", async () => {
-    await handleMarkPaidLogic("gs-1", 2000, "user-bob", "user-alice");
-
-    expect(markGroupSettlementPaid).toHaveBeenCalledWith(
-      "gs-1",
-      2000,
-      "user-bob",
-      "user-alice",
+    const idx = balances.findIndex(
+      (b) => b.userA === newBalance.userA && b.userB === newBalance.userB,
     );
+    const next = idx >= 0
+      ? balances.map((b, i) => (i === idx ? newBalance : b))
+      : [...balances, newBalance];
+
+    expect(next).toHaveLength(2);
+    expect(next[1]).toEqual(newBalance);
+  });
+
+  it("removes balance when updated to zero", () => {
+    const balances: Balance[] = [
+      { groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 5000, updatedAt: "t1" },
+    ];
+
+    const zeroed: Balance = {
+      groupId: "g1", userA: "aaa", userB: "bbb", amountCents: 0, updatedAt: "t2",
+    };
+
+    const idx = balances.findIndex(
+      (b) => b.userA === zeroed.userA && b.userB === zeroed.userB,
+    );
+    const next = idx >= 0
+      ? balances.map((b, i) => (i === idx ? zeroed : b))
+      : [...balances, zeroed];
+    const filtered = next.filter((b) => b.amountCents !== 0);
+
+    expect(filtered).toHaveLength(0);
+  });
+});
+
+// ============================================================
+// Settlement event patching logic
+// ============================================================
+
+describe("realtime settlement patching", () => {
+  it("adds new pending settlement", () => {
+    const settlements: Settlement[] = [];
+    const newSettlement: Settlement = {
+      id: "s1", groupId: "g1", fromUserId: "debtor", toUserId: "creditor",
+      amountCents: 5000, status: "pending", createdAt: "",
+    };
+
+    // Mirrors the handler: inserted + pending → prepend
+    const next = [newSettlement, ...settlements];
+    expect(next).toHaveLength(1);
+    expect(next[0].id).toBe("s1");
+  });
+
+  it("removes settlement when confirmed", () => {
+    const settlements: Settlement[] = [
+      {
+        id: "s1", groupId: "g1", fromUserId: "debtor", toUserId: "creditor",
+        amountCents: 5000, status: "pending", createdAt: "",
+      },
+    ];
+
+    const confirmed: Settlement = { ...settlements[0], status: "confirmed", confirmedAt: "now" };
+
+    // Mirrors the handler: updated + confirmed → remove from pending list
+    const next = settlements.filter((s) => s.id !== confirmed.id);
+    expect(next).toHaveLength(0);
   });
 });
