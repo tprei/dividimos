@@ -56,10 +56,9 @@ describe("drop old bill tables migration", () => {
   });
 
   it("drops all old functions", () => {
-    for (const func of oldFunctions) {
+    for (const func of [...oldFunctions, "my_bill_ids"]) {
       expect(sql).toContain(`DROP FUNCTION IF EXISTS ${func}`);
     }
-    expect(sql).toContain("proname = 'my_bill_ids'");
   });
 
   it("drops tables before enums to respect dependencies", () => {
