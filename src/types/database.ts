@@ -396,6 +396,31 @@ export interface Database {
         };
         Relationships: [];
       };
+      expense_shares: {
+        Row: {
+          bill_id: string;
+          user_id: string;
+          paid_cents: number;
+          owed_cents: number;
+          net_cents: number;
+          created_at: string;
+        };
+        Insert: {
+          bill_id: string;
+          user_id: string;
+          paid_cents?: number;
+          owed_cents?: number;
+          created_at?: string;
+        };
+        Update: {
+          bill_id?: string;
+          user_id?: string;
+          paid_cents?: number;
+          owed_cents?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       user_profiles: {
@@ -434,6 +459,23 @@ export interface Database {
           paid_at: string | null;
           confirmed_at: string | null;
           created_at: string;
+        }[];
+      };
+      create_payment: {
+        Args: {
+          p_from_user_id: string;
+          p_to_user_id: string;
+          p_amount_cents: number;
+          p_group_id?: string | null;
+          p_creator_id?: string | null;
+        };
+        Returns: string;
+      };
+      get_group_balances: {
+        Args: { p_group_id: string };
+        Returns: {
+          user_id: string;
+          net_cents: number;
         }[];
       };
     };
