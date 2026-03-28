@@ -296,7 +296,7 @@ export function GroupSettlementView({
       {/* Simplification viewer */}
       {simplificationResult && (
         <Sheet open={showSimplificationViewer} onOpenChange={setShowSimplificationViewer}>
-          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-3xl">
+          <SheetContent side="bottom" className="h-[100dvh] overflow-y-auto rounded-t-3xl">
             <SheetHeader>
               <SheetTitle>Simplificacao passo a passo</SheetTitle>
             </SheetHeader>

@@ -1,10 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, MoveHorizontal } from "lucide-react";
 import { useRef, useState } from "react";
 import { DebtGraph } from "./debt-graph";
-import { Button } from "@/components/ui/button";
 import { springs } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import type { SimplificationResult } from "@/lib/simplify";
@@ -333,28 +332,9 @@ export function SimplificationViewer({
         </AnimatePresence>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => goTo(currentStep - 1)}
-          disabled={currentStep === 0}
-          aria-label="Passo anterior"
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-
-        <div className="flex-1" />
-
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => goTo(currentStep + 1)}
-          disabled={currentStep === totalSteps - 1}
-          aria-label="Proximo passo"
-        >
-          <ChevronRight className="size-4" />
-        </Button>
+      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+        <MoveHorizontal className="h-4 w-4" />
+        <span>Deslize para navegar</span>
       </div>
     </div>
   );
