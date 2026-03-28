@@ -205,7 +205,7 @@ export function GroupSettlementView({
         >
           <Info className="h-4 w-4 shrink-0" />
           <span>
-            {simplificationResult.originalCount} dividas simplificadas para {simplificationResult.simplifiedCount}
+            {simplificationResult.steps.length} transacoes
           </span>
         </button>
       )}

@@ -191,27 +191,29 @@ export function DebtGraph({
                 transition={{ duration: 0.4, ease: "easeOut" }}
               />
 
-              <foreignObject
-                x={labelPos.x - 28}
-                y={labelPos.y - 10}
-                width={56}
-                height={20}
-                style={{ overflow: "visible" }}
-              >
-                <div
-                  className="flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold tabular-nums bg-card border border-border shadow-sm"
-                  style={{
-                    color: highlighted
-                      ? "var(--color-success)"
-                      : fading
-                        ? "var(--color-muted-foreground)"
-                        : "var(--color-primary)",
-                    whiteSpace: "nowrap",
-                  }}
+              {!dimmed && (
+                <foreignObject
+                  x={labelPos.x - 28}
+                  y={labelPos.y - 10}
+                  width={56}
+                  height={20}
+                  style={{ overflow: "visible" }}
                 >
-                  {formatBRL(edge.amountCents)}
-                </div>
-              </foreignObject>
+                  <div
+                    className="flex items-center justify-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold tabular-nums bg-card border border-border shadow-sm"
+                    style={{
+                      color: highlighted
+                        ? "var(--color-success)"
+                        : fading
+                          ? "var(--color-muted-foreground)"
+                          : "var(--color-primary)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatBRL(edge.amountCents)}
+                  </div>
+                </foreignObject>
+              )}
             </motion.g>
           );
         })}
