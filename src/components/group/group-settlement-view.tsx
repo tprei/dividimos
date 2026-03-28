@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, Loader2 } from "lucide-react";
+import { CheckCheck, Info, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
-import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
 const PixQrModal = dynamic(
@@ -16,7 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
 import { computeGroupNetEdges } from "@/lib/group-settlement";
-import { simplifyDebts } from "@/lib/simplify";
+import { consolidateEdges, simplifyDebts } from "@/lib/simplify";
+import type { DebtEdge } from "@/lib/simplify";
 import {
   loadGroupBillsAndLedger,
   loadGroupSettlements,
@@ -40,7 +40,6 @@ export function GroupSettlementView({
 }: GroupSettlementViewProps) {
   const [loading, setLoading] = useState(true);
   const [settlements, setSettlements] = useState<GroupSettlement[]>([]);
-  const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
   const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; paidAmountCents: number; mode: "pay" | "collect" } | null>(null);
@@ -68,8 +67,31 @@ export function GroupSettlementView({
 
     const netEdges = computeGroupNetEdges(ledger, mergedParticipants);
 
-    if (netEdges.length >= 2 && mergedParticipants.length >= 3) {
-      const result = simplifyDebts(netEdges, mergedParticipants);
+    const supabase = createClient();
+    const { data: settlementRows } = await supabase
+      .from("group_settlements")
+      .select("id")
+      .eq("group_id", groupId);
+    const settlementIds = (settlementRows ?? []).map((s: { id: string }) => s.id);
+
+    const rawEdges: DebtEdge[] = [];
+    for (const entry of ledger) {
+      rawEdges.push({ fromUserId: entry.fromUserId, toUserId: entry.toUserId, amountCents: entry.amountCents });
+    }
+
+    if (settlementIds.length > 0) {
+      const { data: paymentRows } = await supabase
+        .from("payments")
+        .select("from_user_id, to_user_id, amount_cents")
+        .in("group_settlement_id", settlementIds);
+      for (const p of paymentRows ?? []) {
+        rawEdges.push({ fromUserId: p.to_user_id, toUserId: p.from_user_id, amountCents: p.amount_cents });
+      }
+    }
+
+    const consolidated = consolidateEdges(rawEdges);
+    if (consolidated.length >= 2 && mergedParticipants.length >= 3) {
+      const result = simplifyDebts(consolidated, mergedParticipants);
       setSimplificationResult(result);
     } else {
       setSimplificationResult(null);
@@ -109,9 +131,7 @@ export function GroupSettlementView({
     return () => { supabase.removeChannel(channel); };
   }, [groupId]);
 
-  const displayEdges = simplifyEnabled && simplificationResult
-    ? simplificationResult.simplifiedEdges
-    : simplificationResult?.originalEdges ?? [];
+  const displayEdges = simplificationResult?.simplifiedEdges ?? [];
 
   const myDebts = settlements.filter(
     (s) => s.fromUserId === currentUserId && (s.status === "pending" || s.status === "partially_paid"),
@@ -195,15 +215,16 @@ export function GroupSettlementView({
         </div>
       )}
 
-      {/* Simplification toggle */}
       {simplificationResult && simplificationResult.steps.length > 0 && (
-        <SimplificationToggle
-          originalCount={simplificationResult.originalCount}
-          simplifiedCount={simplificationResult.simplifiedCount}
-          enabled={simplifyEnabled}
-          onToggle={setSimplifyEnabled}
-          onViewSteps={() => setShowSimplificationViewer(true)}
-        />
+        <button
+          onClick={() => setShowSimplificationViewer(true)}
+          className="flex w-full items-center gap-2 rounded-xl border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/30"
+        >
+          <Info className="h-4 w-4 shrink-0" />
+          <span>
+            {simplificationResult.originalCount} dividas simplificadas para {simplificationResult.simplifiedCount}
+          </span>
+        </button>
       )}
 
       {/* Settle all button */}
