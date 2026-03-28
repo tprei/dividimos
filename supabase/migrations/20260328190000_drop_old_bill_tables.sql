@@ -79,8 +79,6 @@ DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
 DROP FUNCTION IF EXISTS my_bill_ids CASCADE;
 DROP FUNCTION IF EXISTS sync_group_settlements(uuid) CASCADE;
 
-NOTIFY pgrst, 'reload schema';
-
 -- ============================================================
 -- 5. Drop old enums
 -- ============================================================
