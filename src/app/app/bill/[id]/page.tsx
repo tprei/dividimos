@@ -4,8 +4,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
   Bell,
+  Calculator,
   Check,
-  CheckCheck,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Loader2,
   Pencil,
@@ -16,195 +18,133 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BillSummary } from "@/components/bill/bill-summary";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
-import { PulsingDot } from "@/components/shared/pulsing-dot";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import dynamic from "next/dynamic";
 const PixQrModal = dynamic(
   () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
   { ssr: false },
 );
-import { ChargeExplanation } from "@/components/settlement/charge-explanation";
-import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
-import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
+import { DebtGraph } from "@/components/settlement/debt-graph";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
-import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
-import { coerceDebtStatus } from "@/lib/type-guards";
-import { createClient } from "@/lib/supabase/client";
-import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
-import { ledgerRowToLedgerEntry } from "@/lib/supabase/mappers";
-import { recordPaymentInSupabase } from "@/lib/supabase/ledger-actions";
-import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
+import { loadExpense } from "@/lib/supabase/expense-actions";
+import { activateExpense } from "@/lib/supabase/expense-rpc";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
+import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import toast from "react-hot-toast";
-import type { Bill, BillParticipantStatus, BillStatus, User } from "@/types";
+import type {
+  DebtEdge,
+  Expense,
+  ExpenseItem,
+  ExpensePayer,
+  ExpenseStatus,
+  ExpenseWithDetails,
+  UserProfile,
+} from "@/types";
 
-const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
+const expenseStatusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
-  active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
+  active: { label: "Ativo", color: "bg-warning/15 text-warning-foreground" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
 
-const statusBadge: Record<BillParticipantStatus, { label: string; color: string }> = {
-  accepted: { label: "Aceito", color: "bg-success/15 text-success" },
-  invited: { label: "Aguardando", color: "bg-warning/15 text-warning-foreground" },
-  declined: { label: "Recusou", color: "bg-destructive/15 text-destructive" },
-};
+/** Compute debt edges from shares and payers (net-balance algorithm). */
+function computeDebtsFromExpense(
+  shares: { userId: string; shareAmountCents: number }[],
+  payers: { userId: string; amountCents: number }[],
+): DebtEdge[] {
+  const netBalance = new Map<string, number>();
 
-function CreatorDraftParticipants({
-  billId,
-  participants,
-  creatorId,
-  onAcceptanceChange,
-  initialStatuses,
-}: {
-  billId: string;
-  participants: User[];
-  creatorId: string;
-  onAcceptanceChange?: (allAccepted: boolean) => void;
-  initialStatuses?: Map<string, string>;
-}) {
-  const [statuses, setStatuses] = useState<Map<string, BillParticipantStatus>>(
-    (initialStatuses as Map<string, BillParticipantStatus> | undefined) ?? new Map(),
-  );
+  for (const s of shares) {
+    netBalance.set(s.userId, (netBalance.get(s.userId) || 0) - s.shareAmountCents);
+  }
+  for (const p of payers) {
+    netBalance.set(p.userId, (netBalance.get(p.userId) || 0) + p.amountCents);
+  }
 
-  useEffect(() => {
-    const supabase = createClient();
+  const debtors: { id: string; amount: number }[] = [];
+  const creditors: { id: string; amount: number }[] = [];
 
-    const channel = supabase
-      .channel(`draft-participants:${billId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "bill_participants", filter: `bill_id=eq.${billId}` },
-        (payload) => {
-          const updated = payload.new as { user_id: string; status: string };
-          setStatuses((prev) => new Map(prev).set(updated.user_id, updated.status as BillParticipantStatus));
-        },
-      )
-      .subscribe();
+  for (const [id, balance] of netBalance) {
+    if (balance < -1) debtors.push({ id, amount: Math.abs(balance) });
+    if (balance > 1) creditors.push({ id, amount: balance });
+  }
 
-    return () => { supabase.removeChannel(channel); };
-  }, [billId]);
+  debtors.sort((a, b) => b.amount - a.amount);
+  creditors.sort((a, b) => b.amount - a.amount);
 
-  useEffect(() => {
-    if (!onAcceptanceChange || statuses.size === 0) return;
-    const allAccepted = participants
-      .filter((p) => p.id !== creatorId)
-      .every((p) => statuses.get(p.id) === "accepted");
-    onAcceptanceChange(allAccepted);
-  }, [statuses, participants, creatorId, onAcceptanceChange]);
+  const debts: DebtEdge[] = [];
+  let di = 0;
+  let ci = 0;
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.2, duration: 0.4 }}
-      className="mt-5"
-    >
-      <h2 className="mb-3 text-sm font-semibold">Participantes</h2>
-      <div className="space-y-2">
-        {participants.map((p) => {
-          const st = statuses.get(p.id) ?? "accepted";
-          const badge = statusBadge[st];
-          return (
-            <div
-              key={p.id}
-              className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
-            >
-              <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
-              <span className="flex-1 text-sm font-medium">{p.name}</span>
-              {p.id === creatorId ? (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  Voce
-                </span>
-              ) : (
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.color}`}>
-                  {st === "invited" && <PulsingDot className="mr-1 inline-block h-1.5 w-1.5 bg-warning" />}
-                  {badge.label}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </motion.div>
-  );
+  while (di < debtors.length && ci < creditors.length) {
+    const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
+    if (transfer <= 0) break;
+    debts.push({
+      fromUserId: debtors[di].id,
+      toUserId: creditors[ci].id,
+      amountCents: transfer,
+    });
+    debtors[di].amount -= transfer;
+    creditors[ci].amount -= transfer;
+    if (debtors[di].amount <= 1) di++;
+    if (creditors[ci].amount <= 1) ci++;
+  }
+
+  return debts;
 }
 
 function CreatorDraftView({
-  bill,
+  expense,
   participants,
   items,
-  splits,
-  billSplits,
+  shares,
+  payers,
   store,
-  initialStatuses,
 }: {
-  bill: NonNullable<ReturnType<typeof useBillStore.getState>["bill"]>;
-  participants: User[];
-  items: ReturnType<typeof useBillStore.getState>["items"];
-  splits: ReturnType<typeof useBillStore.getState>["splits"];
-  billSplits: ReturnType<typeof useBillStore.getState>["billSplits"];
+  expense: Expense;
+  participants: UserProfile[];
+  items: ExpenseItem[];
+  shares: { userId: string; shareAmountCents: number }[];
+  payers: ExpensePayer[];
   store: ReturnType<typeof useBillStore.getState>;
-  initialStatuses?: Map<string, string>;
 }) {
-  const [draftAllAccepted, setDraftAllAccepted] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
 
-  const isGroupBill = !!bill.groupId;
-  const canFinalize = isGroupBill || draftAllAccepted;
-  const hasContent = items.length > 0 || billSplits.length > 0;
-
-  const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
-  const grandTotal =
-    bill.billType === "single_amount"
-      ? bill.totalAmountInput
-      : itemsTotal +
-        Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
-        bill.fixedFees;
+  const hasContent = shares.length > 0 || items.length > 0;
 
   const handleFinalize = async () => {
     setFinalizing(true);
-    store.computeLedger();
-    const state = useBillStore.getState();
-    if (state.bill) {
-      const result = await syncBillToSupabase({
-        bill: state.bill,
-        participants: state.participants,
-        items: state.items,
-        splits: state.splits,
-        billSplits: state.billSplits,
-        ledger: state.ledger,
-        existingBillId: bill.id,
-        groupId: bill.groupId,
+    const result = await activateExpense({ expense_id: expense.id });
+    if ("error" in result) {
+      toast.error(result.error);
+      setFinalizing(false);
+      return;
+    }
+    // Reload from DB to get authoritative state
+    const fresh = await loadExpense(expense.id);
+    if (fresh) {
+      useBillStore.setState({
+        expense: {
+          id: fresh.id,
+          groupId: fresh.groupId,
+          creatorId: fresh.creatorId,
+          title: fresh.title,
+          merchantName: fresh.merchantName,
+          expenseType: fresh.expenseType,
+          totalAmount: fresh.totalAmount,
+          serviceFeePercent: fresh.serviceFeePercent,
+          fixedFees: fresh.fixedFees,
+          status: fresh.status,
+          createdAt: fresh.createdAt,
+          updatedAt: fresh.updatedAt,
+        },
       });
-      if ("billId" in result) {
-        // Reload from DB to get authoritative status + real ledger entry IDs
-        const fresh = await loadBillFromSupabase(result.billId);
-        if (fresh) {
-          useBillStore.setState({
-            bill: fresh.bill,
-            participants: fresh.participants,
-            items: fresh.items,
-            splits: fresh.splits,
-            billSplits: fresh.billSplits,
-            ledger: fresh.ledger,
-          });
-        }
-        // No router.push needed: store update causes React re-render;
-        // bill.status is now 'active' so the page transitions out of CreatorDraftView
-        setFinalizing(false);
-        return;
-      }
-      console.error("Finalize failed:", result.error);
     }
     setFinalizing(false);
   };
@@ -219,13 +159,13 @@ function CreatorDraftView({
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="flex-1">
-          <h1 className="font-semibold">{bill.title}</h1>
-          {bill.merchantName && (
-            <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+          <h1 className="font-semibold">{expense.title}</h1>
+          {expense.merchantName && (
+            <p className="text-xs text-muted-foreground">{expense.merchantName}</p>
           )}
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatusConfig.draft.color}`}>
-          {billStatusConfig.draft.label}
+        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${expenseStatusConfig.draft.color}`}>
+          {expenseStatusConfig.draft.label}
         </span>
       </div>
 
@@ -236,9 +176,9 @@ function CreatorDraftView({
         className="mt-6"
       >
         <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
-          <p className="text-sm text-white/70">Total da conta</p>
+          <p className="text-sm text-white/70">Total da despesa</p>
           <p className="mt-1 text-3xl font-bold tabular-nums">
-            {formatBRL(grandTotal)}
+            {formatBRL(expense.totalAmount)}
           </p>
           <div className="mt-2 flex gap-4 text-sm text-white/70">
             <span className="flex items-center gap-1">
@@ -249,61 +189,54 @@ function CreatorDraftView({
         </div>
       </motion.div>
 
-      {!isGroupBill && (
-        <CreatorDraftParticipants
-          billId={bill.id}
-          participants={participants}
-          creatorId={bill.creatorId}
-          onAcceptanceChange={setDraftAllAccepted}
-          initialStatuses={initialStatuses}
-        />
-      )}
-
-      {hasContent && (
+      {participants.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.4 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
           className="mt-5"
         >
-          <BillSummary
-            bill={bill}
-            items={items}
-            splits={splits}
-            billSplits={billSplits}
-            participants={participants}
-          />
+          <h2 className="mb-3 text-sm font-semibold">Participantes</h2>
+          <div className="space-y-2">
+            {participants.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
+              >
+                <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
+                <span className="flex-1 text-sm font-medium">{p.name}</span>
+                {p.id === expense.creatorId && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    Criador
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </motion.div>
       )}
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.4, duration: 0.4 }}
+        transition={{ delay: 0.3, duration: 0.4 }}
         className="mt-6 space-y-3"
       >
         {hasContent && (
           <Button
             onClick={handleFinalize}
-            disabled={!canFinalize || finalizing}
+            disabled={finalizing}
             className="w-full gap-2"
           >
             {finalizing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <QrCode className="h-4 w-4" />
+              <Check className="h-4 w-4" />
             )}
-            {!canFinalize && !isGroupBill
-              ? "Aguardando participantes..."
-              : "Gerar cobrancas Pix"}
+            Finalizar despesa
           </Button>
         )}
-        {!canFinalize && !isGroupBill && (
-          <p className="text-xs text-center text-muted-foreground">
-            Aguardando todos os participantes aceitarem o convite para finalizar.
-          </p>
-        )}
-        <Link href={`/app/bill/new?draft=${bill.id}`}>
+        <Link href={`/app/bill/new?draft=${expense.id}`}>
           <Button variant="outline" className="w-full gap-2">
             <Pencil className="h-4 w-4" />
             Editar rascunho
@@ -324,45 +257,45 @@ export default function BillDetailPage({
   const store = useBillStore();
   const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
-  const [simplifyEnabled, setSimplifyEnabled] = useState(true);
-  const [showSimplifySteps, setShowSimplifySteps] = useState(false);
   const [pixModal, setPixModal] = useState<{
     open: boolean;
-    entryId: string;
     recipientUserId: string;
     name: string;
     amount: number;
-    paidAmountCents: number;
     mode: "pay" | "collect";
   }>({
     open: false,
-    entryId: "",
     recipientUserId: "",
     name: "",
     amount: 0,
-    paidAmountCents: 0,
     mode: "pay",
   });
 
-  const { bill, participants, items, splits, billSplits, ledger } = store;
+  const [expenseData, setExpenseData] = useState<ExpenseWithDetails | null>(null);
   const [loadingFromDb, setLoadingFromDb] = useState(false);
-  const loadedBillKeyRef = useRef<string | null>(null);
-  const lastLoadTimestamp = useRef(0);
-  const [participantStatuses, setParticipantStatuses] = useState<Map<string, string>>(new Map());
+  const loadedKeyRef = useRef<string | null>(null);
 
-  const loadAndSetBill = useCallback(async (billId: string) => {
-    const now = Date.now();
-    if (now - lastLoadTimestamp.current < 2000) return null;
-    lastLoadTimestamp.current = now;
-    const data = await loadBillFromSupabase(billId);
+  const loadExpenseData = useCallback(async (expenseId: string) => {
+    const data = await loadExpense(expenseId);
     if (data) {
+      setExpenseData(data);
+      // Also update the store so draft editing works
       useBillStore.setState({
-        bill: data.bill,
-        participants: data.participants,
+        expense: {
+          id: data.id,
+          groupId: data.groupId,
+          creatorId: data.creatorId,
+          title: data.title,
+          merchantName: data.merchantName,
+          expenseType: data.expenseType,
+          totalAmount: data.totalAmount,
+          serviceFeePercent: data.serviceFeePercent,
+          fixedFees: data.fixedFees,
+          status: data.status,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+        },
         items: data.items,
-        splits: data.splits,
-        billSplits: data.billSplits,
-        ledger: data.ledger,
       });
     }
     return data;
@@ -373,120 +306,59 @@ export default function BillDetailPage({
   useEffect(() => {
     if (id === "demo") return;
     const cacheKey = `${currentUserId ?? "anon"}:${id}`;
-    if (loadedBillKeyRef.current === cacheKey) {
+    if (loadedKeyRef.current === cacheKey) {
       setLoadingFromDb(false);
       return;
     }
 
-    loadedBillKeyRef.current = cacheKey;
+    loadedKeyRef.current = cacheKey;
     let cancelled = false;
     setLoadingFromDb(true);
     (async () => {
-      const data = await loadAndSetBill(id);
+      await loadExpenseData(id);
       if (!cancelled) {
         setLoadingFromDb(false);
-        if (data?.participantStatuses) {
-          setParticipantStatuses(data.participantStatuses);
-          if (currentUserId && data.participantStatuses.get(currentUserId) === "invited") {
-            router.push(`/app/bill/${id}/invite`);
-          }
-        }
       }
     })();
     return () => { cancelled = true; };
-  }, [id, currentUserId, loadAndSetBill, router]);
+  }, [id, currentUserId, loadExpenseData]);
 
-  const billId = bill?.id;
+  // Realtime: subscribe to expense status changes
+  const onExpenseUpdate = useCallback(
+    (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => {
+      setExpenseData((prev) => {
+        if (!prev || prev.id !== updated.id) return prev;
+        return { ...prev, status: updated.status, updatedAt: updated.updatedAt };
+      });
+      useBillStore.setState((state) => ({
+        expense: state.expense
+          ? { ...state.expense, status: updated.status, updatedAt: updated.updatedAt }
+          : null,
+      }));
+      // If activated, reload to get full data
+      if (updated.status === "active") {
+        loadExpenseData(updated.id);
+      }
+    },
+    [loadExpenseData],
+  );
 
-  useEffect(() => {
-    if (!billId) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`ledger:${billId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ledger", filter: `bill_id=eq.${billId}` },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const newEntry = ledgerRowToLedgerEntry(payload.new as Parameters<typeof ledgerRowToLedgerEntry>[0]);
-            useBillStore.setState((state) => ({
-              ledger: [...state.ledger, newEntry],
-            }));
-          } else if (payload.eventType === "UPDATE") {
-            const updated = payload.new as { id: string; status: string; paid_amount_cents: number; paid_at: string | null };
-            useBillStore.setState((state) => ({
-              ledger: state.ledger.map((e) => {
-                if (e.id !== updated.id) return e;
-                const remotePaid = updated.paid_amount_cents ?? 0;
-                if (remotePaid < e.paidAmountCents) return e;
-                return {
-                  ...e,
-                  status: coerceDebtStatus(updated.status, "pending"),
-                  paidAmountCents: remotePaid,
-                  paidAt: updated.paid_at ?? undefined,
-                };
-              }),
-            }));
-          }
-        },
-      )
-      .subscribe();
+  useRealtimeExpense(expenseData?.id, onExpenseUpdate);
 
-    return () => { supabase.removeChannel(channel); };
-  }, [billId]);
+  const expense = expenseData;
+  // Unique participants from shares + payers
+  const allParticipants = useMemo(() => {
+    if (!expense) return [];
+    const map = new Map<string, UserProfile>();
+    for (const s of expense.shares) map.set(s.user.id, s.user);
+    for (const p of expense.payers) map.set(p.user.id, p.user);
+    return Array.from(map.values());
+  }, [expense]);
 
-  useEffect(() => {
-    if (!billId) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`bill:${billId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "bills", filter: `id=eq.${billId}` },
-        (payload) => {
-          const updated = payload.new as { id: string; status: string };
-          useBillStore.setState((state) => ({
-            bill: state.bill ? { ...state.bill, status: updated.status as Bill["status"] } : null,
-          }));
-          if (updated.status === "active") {
-            loadAndSetBill(billId);
-          }
-        },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [billId, loadAndSetBill]);
-
-  useEffect(() => {
-    if (!billId) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`bill-deleted:${billId}`)
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "bills", filter: `id=eq.${billId}` },
-        () => {
-          toast("Este rascunho foi excluido.", { icon: "🗑️" });
-          router.push("/app");
-        },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [billId, router]);
-
-  const handleRecordPayment = async (entryId: string, amountCents: number) => {
-    const entry = ledger.find((e) => e.id === entryId);
-    if (!entry) return;
-    store.recordPayment(entryId, amountCents);
-    await recordPaymentInSupabase(entryId, entry.fromUserId, entry.toUserId, amountCents);
-  };
-
-  const simplificationResult = useMemo(() => {
-    if (!bill || participants.length < 3) return null;
-    const rawEdges = computeRawEdges(bill, participants, splits, billSplits, items);
-    if (rawEdges.length < 2) return null;
-    return simplifyDebts(rawEdges, participants);
-  }, [bill, participants, splits, billSplits, items]);
+  const debts = useMemo(() => {
+    if (!expense || expense.status === "draft") return [];
+    return computeDebtsFromExpense(expense.shares, expense.payers);
+  }, [expense]);
 
   if (loadingFromDb) {
     return (
@@ -500,7 +372,7 @@ export default function BillDetailPage({
     );
   }
 
-  if (!bill) {
+  if (!expense) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6">
         <div className="flex items-center gap-3">
@@ -510,30 +382,23 @@ export default function BillDetailPage({
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="font-semibold">Conta</h1>
+          <h1 className="font-semibold">Despesa</h1>
         </div>
         <EmptyState
           icon={Receipt}
-          title="Nenhuma conta ativa"
-          description="Crie uma nova conta para dividir com amigos, ou use o botao 'Experimentar demo' na pagina inicial."
-          actionLabel="Nova conta"
+          title="Despesa nao encontrada"
+          description="Crie uma nova despesa para dividir com amigos."
+          actionLabel="Nova despesa"
           onAction={() => router.push("/app/bill/new")}
         />
       </div>
     );
   }
 
-  if (bill.status === "draft" && currentUser?.id !== bill.creatorId) {
-    const creator = participants.find((p) => p.id === bill.creatorId);
+  // Draft view for non-creator: show waiting message
+  if (expense.status === "draft" && currentUser?.id !== expense.creatorId) {
+    const creator = allParticipants.find((p) => p.id === expense.creatorId);
     const creatorFirstName = creator?.name.split(" ")[0] ?? "criador";
-
-    const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
-    const grandTotal =
-      bill.billType === "single_amount"
-        ? bill.totalAmountInput
-        : itemsTotal +
-          Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
-          bill.fixedFees;
 
     return (
       <div className="mx-auto max-w-lg px-4 py-6">
@@ -545,13 +410,13 @@ export default function BillDetailPage({
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div className="flex-1">
-            <h1 className="font-semibold">{bill.title}</h1>
-            {bill.merchantName && (
-              <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+            <h1 className="font-semibold">{expense.title}</h1>
+            {expense.merchantName && (
+              <p className="text-xs text-muted-foreground">{expense.merchantName}</p>
             )}
           </div>
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatusConfig.draft.color}`}>
-            {billStatusConfig.draft.label}
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${expenseStatusConfig.draft.color}`}>
+            {expenseStatusConfig.draft.label}
           </span>
         </div>
 
@@ -562,14 +427,14 @@ export default function BillDetailPage({
           className="mt-6"
         >
           <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
-            <p className="text-sm text-white/70">Total da conta</p>
+            <p className="text-sm text-white/70">Total da despesa</p>
             <p className="mt-1 text-3xl font-bold tabular-nums">
-              {formatBRL(grandTotal)}
+              {formatBRL(expense.totalAmount)}
             </p>
             <div className="mt-2 flex gap-4 text-sm text-white/70">
               <span className="flex items-center gap-1">
                 <Users className="h-3.5 w-3.5" />
-                {participants.length} pessoas
+                {allParticipants.length} pessoas
               </span>
             </div>
           </div>
@@ -581,16 +446,16 @@ export default function BillDetailPage({
           transition={{ delay: 0.2, duration: 0.4 }}
           className="mt-5 flex flex-col items-center rounded-2xl border border-dashed border-border bg-muted/30 px-6 py-8"
         >
-          <PulsingDot className="bg-primary h-3 w-3" />
+          <Clock className="h-6 w-6 text-muted-foreground" />
           <p className="mt-4 text-sm font-medium text-foreground">
-            Aguardando {creatorFirstName} finalizar a conta
+            Aguardando {creatorFirstName} finalizar a despesa
           </p>
           <p className="mt-1 text-xs text-muted-foreground text-center">
-            Voce sera notificado assim que a conta estiver pronta para divisao.
+            Voce sera notificado assim que a despesa estiver pronta.
           </p>
         </motion.div>
 
-        {participants.length > 0 && (
+        {allParticipants.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -599,14 +464,14 @@ export default function BillDetailPage({
           >
             <h2 className="mb-3 text-sm font-semibold">Participantes</h2>
             <div className="space-y-2">
-              {participants.map((p) => (
+              {allParticipants.map((p) => (
                 <div
                   key={p.id}
                   className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
                 >
-                  <UserAvatar name={p.name} size="sm" />
+                  <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
                   <span className="text-sm font-medium">{p.name}</span>
-                  {p.id === bill.creatorId && (
+                  {p.id === expense.creatorId && (
                     <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                       criador
                     </span>
@@ -620,32 +485,23 @@ export default function BillDetailPage({
     );
   }
 
-  if (bill.status === "draft" && currentUser?.id === bill.creatorId) {
+  // Draft view for creator
+  if (expense.status === "draft" && currentUser?.id === expense.creatorId) {
     return (
       <CreatorDraftView
-        bill={bill}
-        participants={participants}
-        items={items}
-        splits={splits}
-        billSplits={billSplits}
+        expense={expense}
+        participants={allParticipants}
+        items={expense.items}
+        shares={expense.shares}
+        payers={expense.payers}
         store={store}
-        initialStatuses={participantStatuses}
       />
     );
   }
 
-  const billStatus = billStatusConfig[bill.status];
-  const allSettled = ledger.length > 0 && ledger.every((e) => e.status === "settled");
-  const settledCount = ledger.filter((e) => e.status === "settled").length;
-  const isGroupBill = !!bill.groupId;
-
-  const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
-  const grandTotal =
-    bill.billType === "single_amount"
-      ? bill.totalAmountInput
-      : itemsTotal +
-        Math.round((itemsTotal * bill.serviceFeePercent) / 100) +
-        bill.fixedFees;
+  // Active / settled view
+  const statusConfig = expenseStatusConfig[expense.status];
+  const allSettled = expense.status === "settled";
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -657,13 +513,13 @@ export default function BillDetailPage({
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="flex-1">
-          <h1 className="font-semibold">{bill.title}</h1>
-          {bill.merchantName && (
-            <p className="text-xs text-muted-foreground">{bill.merchantName}</p>
+          <h1 className="font-semibold">{expense.title}</h1>
+          {expense.merchantName && (
+            <p className="text-xs text-muted-foreground">{expense.merchantName}</p>
           )}
-          {isGroupBill && (
+          {expense.groupId && (
             <Link
-              href={`/app/groups/${bill.groupId}`}
+              href={`/app/groups/${expense.groupId}`}
               className="flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
             >
               <Users className="h-3 w-3" />
@@ -672,13 +528,13 @@ export default function BillDetailPage({
           )}
         </div>
         <motion.span
-          key={bill.status}
+          key={expense.status}
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 400, damping: 20 }}
-          className={`rounded-full px-2.5 py-1 text-xs font-medium ${billStatus.color}`}
+          className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusConfig.color}`}
         >
-          {billStatus.label}
+          {statusConfig.label}
         </motion.span>
       </div>
 
@@ -689,23 +545,23 @@ export default function BillDetailPage({
         className="mt-6"
       >
         <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
-          <p className="text-sm text-white/70">Total da conta</p>
+          <p className="text-sm text-white/70">Total da despesa</p>
           <p className="mt-1 text-3xl font-bold tabular-nums">
-            {formatBRL(grandTotal)}
+            {formatBRL(expense.totalAmount)}
           </p>
           <div className="mt-2 flex gap-4 text-sm text-white/70">
             <span className="flex items-center gap-1">
               <Receipt className="h-3.5 w-3.5" />
-              {items.length} itens
+              {expense.items.length} itens
             </span>
             <span className="flex items-center gap-1">
               <Users className="h-3.5 w-3.5" />
-              {participants.length} pessoas
+              {allParticipants.length} pessoas
             </span>
-            {ledger.length > 0 && (
+            {debts.length > 0 && (
               <span className="flex items-center gap-1">
                 <Check className="h-3.5 w-3.5" />
-                {settledCount}/{ledger.length}
+                {debts.length} cobranca{debts.length !== 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -730,9 +586,9 @@ export default function BillDetailPage({
             }`}
           >
             {tab.label}
-            {tab.key === "payment" && ledger.length > 0 && (
+            {tab.key === "payment" && debts.length > 0 && (
               <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
-                {ledger.filter((e) => e.status !== "settled").length || "✓"}
+                {allSettled ? "\u2713" : debts.length}
               </span>
             )}
           </button>
@@ -747,7 +603,7 @@ export default function BillDetailPage({
           transition={{ duration: 0.2 }}
           className="mt-5 space-y-2"
         >
-          {items.map((item) => (
+          {expense.items.map((item) => (
             <div
               key={item.id}
               className="flex items-center justify-between rounded-xl border bg-card px-4 py-3"
@@ -764,9 +620,9 @@ export default function BillDetailPage({
               </span>
             </div>
           ))}
-          {items.length === 0 && (
+          {expense.items.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Nenhum item nesta conta.
+              Nenhum item nesta despesa.
             </p>
           )}
         </motion.div>
@@ -780,17 +636,11 @@ export default function BillDetailPage({
           transition={{ duration: 0.2 }}
           className="mt-5"
         >
-          <BillSummary
-            bill={bill}
-            items={items}
-            splits={splits}
-            billSplits={billSplits}
-            participants={participants}
-          />
+          <ExpenseSharesSummary expense={expense} allParticipants={allParticipants} />
         </motion.div>
       )}
 
-      {activeTab === "payment" && allSettled && ledger.length > 0 && (
+      {activeTab === "payment" && allSettled && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -802,9 +652,9 @@ export default function BillDetailPage({
           <p className="mt-1 text-sm text-muted-foreground">
             Todos os pagamentos foram liquidados.
           </p>
-          {isGroupBill && (
+          {expense.groupId && (
             <Link
-              href={`/app/groups/${bill.groupId}`}
+              href={`/app/groups/${expense.groupId}`}
               className="mt-3 text-sm text-primary hover:underline"
             >
               Ver acerto do grupo
@@ -813,14 +663,14 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && isGroupBill && !allSettled && ledger.length > 0 && (
+      {activeTab === "payment" && !allSettled && expense.groupId && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           className="mt-5 space-y-4"
         >
           <Link
-            href={`/app/groups/${bill.groupId}`}
+            href={`/app/groups/${expense.groupId}`}
             className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 hover:bg-primary/10 transition-colors"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
@@ -829,29 +679,29 @@ export default function BillDetailPage({
             <div className="flex-1">
               <p className="font-medium text-sm">Ir para acerto do grupo</p>
               <p className="text-xs text-muted-foreground">
-                Liquidar dividas consolidadas de todas as contas do grupo
+                Liquidar dividas consolidadas de todas as despesas do grupo
               </p>
             </div>
           </Link>
 
           <div>
-            <h2 className="mb-3 text-sm font-semibold">Cobrancas desta conta</h2>
+            <h2 className="mb-3 text-sm font-semibold">Cobrancas desta despesa</h2>
             <div className="space-y-3">
-              {ledger.map((entry, idx) => {
-                const debtor = participants.find((p) => p.id === entry.fromUserId);
-                const creditor = participants.find((p) => p.id === entry.toUserId);
-                const isDebtor = currentUser?.id === entry.fromUserId;
-                const isCreditor = currentUser?.id === entry.toUserId;
+              {debts.map((debt, idx) => {
+                const debtor = allParticipants.find((p) => p.id === debt.fromUserId);
+                const creditor = allParticipants.find((p) => p.id === debt.toUserId);
+                const isDebtor = currentUser?.id === debt.fromUserId;
+                const isCreditor = currentUser?.id === debt.toUserId;
 
                 const entryLabel = isDebtor
                   ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
                   : isCreditor
                     ? `${debtor?.name.split(" ")[0] || "?"} te deve`
-                    : `${debtor?.name.split(" ")[0] || "?"} → ${creditor?.name.split(" ")[0] || "?"}`;
+                    : `${debtor?.name.split(" ")[0] || "?"} \u2192 ${creditor?.name.split(" ")[0] || "?"}`;
 
                 return (
                   <motion.div
-                    key={entry.id}
+                    key={`${debt.fromUserId}-${debt.toUserId}`}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: idx * 0.06 }}
@@ -860,53 +710,16 @@ export default function BillDetailPage({
                     <div className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
-                            {isDebtor ? (creditor?.name.charAt(0) || "?") : (debtor?.name.charAt(0) || "?")}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">
-                              {entryLabel}
-                            </p>
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                entry.status === "pending"
-                                  ? "bg-warning/15 text-warning-foreground"
-                                  : entry.status === "partially_paid"
-                                    ? "bg-primary/10 text-primary"
-                                    : "bg-success/15 text-success"
-                              }`}
-                            >
-                              {entry.status === "pending" && (
-                                <>
-                                  <Clock className="h-3 w-3" />
-                                  Pendente
-                                </>
-                              )}
-                              {entry.status === "partially_paid" && (
-                                <>
-                                  <Clock className="h-3 w-3" />
-                                  Parcialmente pago
-                                </>
-                              )}
-                              {entry.status === "settled" && (
-                                <>
-                                  <CheckCheck className="h-3 w-3" />
-                                  Liquidado
-                                </>
-                              )}
-                            </span>
-                          </div>
+                          <UserAvatar
+                            name={(isDebtor ? creditor?.name : debtor?.name) || "?"}
+                            avatarUrl={isDebtor ? creditor?.avatarUrl : debtor?.avatarUrl}
+                            size="sm"
+                          />
+                          <p className="text-sm font-medium">{entryLabel}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-lg font-bold tabular-nums">
-                            {formatBRL(entry.amountCents)}
-                          </p>
-                          {entry.paidAmountCents > 0 && entry.status !== "settled" && (
-                            <p className="text-xs text-muted-foreground tabular-nums">
-                              {formatBRL(entry.paidAmountCents)} pago
-                            </p>
-                          )}
-                        </div>
+                        <p className="text-lg font-bold tabular-nums">
+                          {formatBRL(debt.amountCents)}
+                        </p>
                       </div>
                     </div>
                   </motion.div>
@@ -917,7 +730,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && ledger.length > 0 && !allSettled && !isGroupBill && (
+      {activeTab === "payment" && !allSettled && !expense.groupId && debts.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -925,141 +738,41 @@ export default function BillDetailPage({
           className="mt-5"
         >
           <div className="mb-4">
-            <ChargeExplanation
-              bill={bill}
-              participants={participants}
-              items={items}
-              splits={splits}
-              billSplits={billSplits}
-              ledger={ledger}
-              simplificationResult={simplificationResult}
+            <ExpenseChargeExplanation
+              expense={expense}
+              allParticipants={allParticipants}
+              debts={debts}
               currentUserId={currentUser?.id}
             />
           </div>
 
-          {simplificationResult && (
+          {expense.payers.length > 0 && (
             <div className="mb-4">
-              <SimplificationToggle
-                originalCount={simplificationResult.originalCount}
-                simplifiedCount={simplificationResult.simplifiedCount}
-                enabled={simplifyEnabled}
-                onToggle={setSimplifyEnabled}
-                onViewSteps={() => setShowSimplifySteps(true)}
+              <PayerSummaryCard
+                payers={expense.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))}
+                participants={allParticipants}
               />
             </div>
           )}
 
-          {bill.payers.length > 0 && (
-            <div className="mb-4">
-              <PayerSummaryCard payers={bill.payers} participants={participants} />
-            </div>
-          )}
-
-          <h2 className="mb-3 text-sm font-semibold">
-            Cobrancas
-            {simplificationResult && (
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                {simplifyEnabled
-                  ? `(${simplificationResult.simplifiedCount} simplificadas)`
-                  : `(${simplificationResult.originalCount} detalhadas)`}
-              </span>
-            )}
-          </h2>
-          {!simplifyEnabled && simplificationResult && (() => {
-            const raw = simplificationResult.originalEdges;
-            const grouped = new Map<string, typeof raw>();
-            for (const edge of raw) {
-              const list = grouped.get(edge.toUserId) || [];
-              list.push(edge);
-              grouped.set(edge.toUserId, list);
-            }
-            return (
-              <div className="space-y-4">
-                {Array.from(grouped.entries()).map(([receiverId, edges]) => {
-                  const receiver = participants.find((p) => p.id === receiverId);
-                  const groupTotal = edges.reduce((s, e) => s + e.amountCents, 0);
-                  return (
-                    <div key={receiverId} className="rounded-2xl border bg-card overflow-hidden">
-                      <div className="flex items-center justify-between bg-muted/30 px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-                            {receiver?.name.charAt(0) || "?"}
-                          </span>
-                          <span className="text-sm font-semibold">
-                            Para {receiver?.name.split(" ")[0] || "?"}
-                          </span>
-                        </div>
-                        <span className="text-sm font-bold tabular-nums text-primary">
-                          {formatBRL(groupTotal)}
-                        </span>
-                      </div>
-                      <div className="divide-y divide-border">
-                        {edges.map((edge, i) => {
-                          const from = participants.find((p) => p.id === edge.fromUserId);
-                          return (
-                            <div key={i} className="px-4 py-2.5">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
-                                    {from?.name.charAt(0) || "?"}
-                                  </span>
-                                  <span className="text-sm text-muted-foreground">
-                                    {from?.name.split(" ")[0] || "?"}
-                                  </span>
-                                </div>
-                                <span className="text-sm font-medium tabular-nums">
-                                  {formatBRL(edge.amountCents)}
-                                </span>
-                              </div>
-                              <div className="mt-2 flex gap-2">
-                                <Button
-                                  size="sm"
-                                  className="flex-1 gap-1.5 bg-success text-success-foreground hover:bg-success/90 h-8 text-xs"
-                                  onClick={() =>
-                                    setPixModal({
-                                      open: true,
-                                      entryId: `raw_${i}_${edge.fromUserId}`,
-                                      recipientUserId: receiver?.id || "",
-                                      name: receiver?.name || "",
-                                      amount: edge.amountCents,
-                                      paidAmountCents: 0,
-                                      mode: "pay",
-                                    })
-                                  }
-                                >
-                                  <QrCode className="h-3.5 w-3.5" />
-                                  Pagar via Pix
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-
-          {(simplifyEnabled || !simplificationResult) && (
+          <h2 className="mb-3 text-sm font-semibold">Cobrancas</h2>
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {ledger.map((entry, idx) => {
-                const debtor = participants.find((p) => p.id === entry.fromUserId);
-                const creditor = participants.find((p) => p.id === entry.toUserId);
-                const isDebtor = currentUser?.id === entry.fromUserId;
-                const isCreditor = currentUser?.id === entry.toUserId;
+              {debts.map((debt, idx) => {
+                const debtor = allParticipants.find((p) => p.id === debt.fromUserId);
+                const creditor = allParticipants.find((p) => p.id === debt.toUserId);
+                const isDebtor = currentUser?.id === debt.fromUserId;
+                const isCreditor = currentUser?.id === debt.toUserId;
 
                 const entryLabel = isDebtor
                   ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
                   : isCreditor
                     ? `${debtor?.name.split(" ")[0] || "?"} te deve`
-                    : `${debtor?.name.split(" ")[0] || "?"} → ${creditor?.name.split(" ")[0] || "?"}`;
+                    : `${debtor?.name.split(" ")[0] || "?"} \u2192 ${creditor?.name.split(" ")[0] || "?"}`;
 
                 return (
                   <motion.div
-                    key={entry.id}
+                    key={`${debt.fromUserId}-${debt.toUserId}`}
                     layout
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1069,177 +782,85 @@ export default function BillDetailPage({
                     <div className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
-                            {isDebtor ? (creditor?.name.charAt(0) || "?") : (debtor?.name.charAt(0) || "?")}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium">
-                              {entryLabel}
-                            </p>
-                            <motion.span
-                              key={entry.status}
-                              initial={{ scale: 0.8, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              transition={{
-                                type: "spring",
-                                stiffness: 400,
-                                damping: 20,
-                              }}
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                                entry.status === "pending"
-                                  ? "bg-warning/15 text-warning-foreground"
-                                  : entry.status === "partially_paid"
-                                    ? "bg-primary/10 text-primary"
-                                    : "bg-success/15 text-success"
-                              }`}
-                            >
-                              {entry.status === "pending" && (
-                                <>
-                                  <Clock className="h-3 w-3" />
-                                  Pendente
-                                </>
-                              )}
-                              {entry.status === "partially_paid" && (
-                                <>
-                                  <Clock className="h-3 w-3" />
-                                  Parcialmente pago
-                                </>
-                              )}
-                              {entry.status === "settled" && (
-                                <>
-                                  <CheckCheck className="h-3 w-3" />
-                                  Liquidado
-                                </>
-                              )}
-                            </motion.span>
-                          </div>
+                          <UserAvatar
+                            name={(isDebtor ? creditor?.name : debtor?.name) || "?"}
+                            avatarUrl={isDebtor ? creditor?.avatarUrl : debtor?.avatarUrl}
+                            size="sm"
+                          />
+                          <p className="text-sm font-medium">{entryLabel}</p>
                         </div>
-                        <div className="text-right">
-                          <motion.p
-                            key={entry.amountCents}
-                            initial={{ y: 6, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            className="text-lg font-bold tabular-nums"
-                          >
-                            {formatBRL(entry.amountCents)}
-                          </motion.p>
-                          {entry.paidAmountCents > 0 && entry.status !== "settled" && (
-                            <p className="text-xs text-muted-foreground tabular-nums">
-                              {formatBRL(entry.paidAmountCents)} pago
-                            </p>
-                          )}
-                        </div>
+                        <p className="text-lg font-bold tabular-nums">
+                          {formatBRL(debt.amountCents)}
+                        </p>
                       </div>
 
-                      <AnimatePresence mode="wait">
-                        {(entry.status === "pending" || entry.status === "partially_paid") && isDebtor && (
-                          <motion.div
-                            key="debtor-actions"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="mt-3"
+                      {isDebtor && (
+                        <div className="mt-3">
+                          <Button
+                            size="sm"
+                            className="w-full gap-1.5 bg-success text-success-foreground hover:bg-success/90"
+                            onClick={() =>
+                              setPixModal({
+                                open: true,
+                                recipientUserId: creditor?.id || "",
+                                name: creditor?.name || "",
+                                amount: debt.amountCents,
+                                mode: "pay",
+                              })
+                            }
                           >
-                            <Button
-                              size="sm"
-                              className="w-full gap-1.5 bg-success text-success-foreground hover:bg-success/90"
-                              onClick={() =>
-                                setPixModal({
-                                  open: true,
-                                  entryId: entry.id,
-                                  recipientUserId: creditor?.id || "",
-                                  name: creditor?.name || "",
-                                  amount: entry.amountCents,
-                                  paidAmountCents: entry.paidAmountCents,
-                                  mode: "pay",
-                                })
-                              }
-                            >
-                              <QrCode className="h-4 w-4" />
-                              Pagar {formatBRL(entry.amountCents - entry.paidAmountCents)} para {creditor?.name.split(" ")[0]}
-                            </Button>
-                          </motion.div>
-                        )}
+                            <QrCode className="h-4 w-4" />
+                            Pagar {formatBRL(debt.amountCents)} para {creditor?.name.split(" ")[0]}
+                          </Button>
+                        </div>
+                      )}
 
-                        {(entry.status === "pending" || entry.status === "partially_paid") && isCreditor && (
-                          <motion.div
-                            key="creditor-actions"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="mt-3 flex gap-2"
+                      {isCreditor && (
+                        <div className="mt-3 flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 gap-1.5"
+                            onClick={() =>
+                              setPixModal({
+                                open: true,
+                                recipientUserId: currentUser?.id || "",
+                                name: debtor?.name || "",
+                                amount: debt.amountCents,
+                                mode: "collect",
+                              })
+                            }
                           >
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1 gap-1.5"
-                              onClick={() =>
-                                setPixModal({
-                                  open: true,
-                                  entryId: entry.id,
-                                  recipientUserId: currentUser?.id || "",
-                                  name: debtor?.name || "",
-                                  amount: entry.amountCents,
-                                  paidAmountCents: entry.paidAmountCents,
-                                  mode: "collect",
-                                })
-                              }
-                            >
-                              <QrCode className="h-4 w-4" />
-                              Gerar cobranca
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="gap-1 text-muted-foreground"
-                            >
-                              <Bell className="h-3.5 w-3.5" />
-                              Lembrar
-                            </Button>
-                          </motion.div>
-                        )}
-
-                        {entry.status === "settled" && (
-                          <motion.div
-                            key="settled-info"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="mt-3 flex items-center gap-2 rounded-lg bg-success/5 px-3 py-2"
+                            <QrCode className="h-4 w-4" />
+                            Gerar cobranca
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1 text-muted-foreground"
                           >
-                            <CheckCheck className="h-4 w-4 shrink-0 text-success" />
-                            <span className="text-xs text-success">
-                              Liquidado
-                              {entry.paidAt &&
-                                ` em ${new Date(entry.paidAt).toLocaleString("pt-BR", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}`}
-                            </span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                            <Bell className="h-3.5 w-3.5" />
+                            Lembrar
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 );
               })}
             </AnimatePresence>
           </div>
-          )}
         </motion.div>
       )}
 
-      {activeTab === "payment" && ledger.length === 0 && (
+      {activeTab === "payment" && debts.length === 0 && !allSettled && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="mt-5"
         >
           <p className="py-8 text-center text-sm text-muted-foreground">
-            Nenhuma cobranca nesta conta.
+            Nenhuma cobranca nesta despesa.
           </p>
         </motion.div>
       )}
@@ -1248,32 +869,226 @@ export default function BillDetailPage({
         open={pixModal.open}
         onClose={() => setPixModal({ ...pixModal, open: false })}
         recipientUserId={pixModal.recipientUserId}
-        billId={bill.id}
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
-        paidAmountCents={pixModal.paidAmountCents}
         mode={pixModal.mode}
-        onMarkPaid={(amountCents) => {
-          handleRecordPayment(pixModal.entryId, amountCents);
+        groupId={expense.groupId}
+        onMarkPaid={() => {
           setPixModal({ ...pixModal, open: false });
+          toast.success("Pagamento registrado!");
         }}
       />
+    </div>
+  );
+}
 
-      {simplificationResult && (
-        <Sheet open={showSimplifySteps} onOpenChange={setShowSimplifySteps}>
-          <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-3xl">
-            <SheetHeader>
-              <SheetTitle>Simplificacao passo a passo</SheetTitle>
-            </SheetHeader>
-            <div className="mt-4 pb-8">
-              <SimplificationViewer
-                result={simplificationResult}
-                participants={participants}
-              />
-            </div>
-          </SheetContent>
-        </Sheet>
+/** Shows per-person share breakdown for the "Divisao" tab. */
+function ExpenseSharesSummary({
+  expense,
+  allParticipants,
+}: {
+  expense: ExpenseWithDetails;
+  allParticipants: UserProfile[];
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border bg-card p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Receipt className="h-4 w-4 text-primary" />
+          Por pessoa
+        </div>
+        <div className="mt-3 space-y-3">
+          {expense.shares.map((share, idx) => {
+            const payer = expense.payers.find((p) => p.userId === share.userId);
+            const net = (payer?.amountCents ?? 0) - share.shareAmountCents;
+
+            return (
+              <motion.div
+                key={share.userId}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.05 }}
+                className="rounded-xl bg-muted/50 p-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserAvatar name={share.user.name} avatarUrl={share.user.avatarUrl} size="xs" />
+                    <span className="font-medium text-sm">
+                      {share.user.name.split(" ")[0]}
+                    </span>
+                  </div>
+                  <span className="text-lg font-bold tabular-nums">
+                    {formatBRL(share.shareAmountCents)}
+                  </span>
+                </div>
+                <div className="mt-1 flex gap-3 text-[11px] text-muted-foreground">
+                  <span>Consumo: {formatBRL(share.shareAmountCents)}</span>
+                  {payer && (
+                    <span>Pagou: {formatBRL(payer.amountCents)}</span>
+                  )}
+                  {Math.abs(net) > 1 && (
+                    <span className={net > 0 ? "text-success" : "text-destructive"}>
+                      {net > 0 ? "+" : ""}{formatBRL(Math.abs(net))} {net > 0 ? "a receber" : "a pagar"}
+                    </span>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
+      {expense.payers.length > 0 && (
+        <PayerSummaryCard
+          payers={expense.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))}
+          participants={allParticipants}
+        />
       )}
+    </div>
+  );
+}
+
+/** Simplified charge explanation for expense model. */
+function ExpenseChargeExplanation({
+  expense,
+  allParticipants,
+  debts,
+  currentUserId,
+}: {
+  expense: ExpenseWithDetails;
+  allParticipants: UserProfile[];
+  debts: DebtEdge[];
+  currentUserId?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-2xl border bg-card overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-muted/30"
+      >
+        <div className="flex items-center gap-2">
+          <Calculator className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">Como chegamos nesse valor</span>
+        </div>
+        {expanded ? (
+          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        )}
+      </button>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="overflow-hidden"
+          >
+            <div className="border-t px-4 pb-4 pt-3 space-y-5">
+              {debts.length > 0 && allParticipants.length >= 2 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                    Fluxo de pagamentos
+                  </p>
+                  <DebtGraph participants={allParticipants} edges={debts} />
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">
+                  Consumo por pessoa
+                </p>
+                <div className="space-y-1.5">
+                  {expense.shares.map((share) => {
+                    const payer = expense.payers.find((p) => p.userId === share.userId);
+                    const isMe = share.userId === currentUserId;
+                    return (
+                      <div
+                        key={share.userId}
+                        className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                          isMe ? "bg-primary/5" : "bg-muted/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={share.user.name} avatarUrl={share.user.avatarUrl} size="xs" />
+                          <span className={isMe ? "font-medium" : ""}>
+                            {share.user.name.split(" ")[0]}
+                            {isMe && " (voce)"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="tabular-nums font-medium">
+                            {formatBRL(share.shareAmountCents)}
+                          </span>
+                          {payer && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              pagou {formatBRL(payer.amountCents)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">
+                  Saldo liquido
+                </p>
+                <div className="space-y-1">
+                  {expense.shares.map((share) => {
+                    const payer = expense.payers.find((p) => p.userId === share.userId);
+                    const net = (payer?.amountCents ?? 0) - share.shareAmountCents;
+                    if (Math.abs(net) < 2) return null;
+                    return (
+                      <div
+                        key={share.userId}
+                        className="flex items-center justify-between text-sm px-3 py-1"
+                      >
+                        <span className="text-muted-foreground">
+                          {share.user.name.split(" ")[0]}
+                        </span>
+                        <span
+                          className={`font-medium tabular-nums ${
+                            net > 0 ? "text-success" : "text-destructive"
+                          }`}
+                        >
+                          {net > 0 ? "+" : ""}
+                          {formatBRL(Math.abs(net))}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {net > 0 ? "a receber" : "a pagar"}
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-muted/30 p-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total da despesa</span>
+                  <span className="font-bold tabular-nums">{formatBRL(expense.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>Pagadores</span>
+                  <span>
+                    {expense.payers.map((py) => {
+                      const name = py.user.name.split(" ")[0];
+                      return `${name} (${formatBRL(py.amountCents)})`;
+                    }).join(", ")}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
