@@ -478,15 +478,23 @@ export const useBillStore = create<BillState>((set, get) => ({
 
     let serviceFee = 0;
     if (bill.serviceFeePercent > 0 && itemsGrandTotal > 0) {
-      serviceFee = Math.round(
-        (itemTotal / itemsGrandTotal) * (itemsGrandTotal * bill.serviceFeePercent) / 100,
+      const totalServiceFee = Math.round((itemsGrandTotal * bill.serviceFeePercent) / 100);
+      const weights = participants.map((p) =>
+        splits
+          .filter((s) => s.userId === p.id)
+          .reduce((sum, s) => sum + s.computedAmountCents, 0),
       );
+      const fees = distributeProportionally(totalServiceFee, weights);
+      const idx = participants.findIndex((p) => p.id === userId);
+      if (idx >= 0) serviceFee = fees[idx];
     }
 
-    const fixedFeeShare =
-      participants.length > 0
-        ? Math.round(bill.fixedFees / participants.length)
-        : 0;
+    let fixedFeeShare = 0;
+    if (bill.fixedFees > 0 && participants.length > 0) {
+      const fees = distributeEvenly(bill.fixedFees, participants.length);
+      const idx = participants.findIndex((p) => p.id === userId);
+      if (idx >= 0) fixedFeeShare = fees[idx];
+    }
 
     return itemTotal + serviceFee + fixedFeeShare;
   },

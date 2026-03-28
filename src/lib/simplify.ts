@@ -125,16 +125,17 @@ export function computeRawEdges(
     const consumed = consumption.get(p.id) || 0;
     if (consumed <= 0) continue;
 
-    for (const payer of payers) {
-      if (payer.userId === p.id) continue;
-      const payerShare = payer.amountCents / totalPaid;
-      const owedToPayer = Math.round(consumed * payerShare);
-      if (owedToPayer <= 0) continue;
+    const payerWeights = payers.map((payer) => payer.amountCents);
+    const shares = distributeProportionally(consumed, payerWeights);
+
+    for (let i = 0; i < payers.length; i++) {
+      if (payers[i].userId === p.id) continue;
+      if (shares[i] <= 0) continue;
 
       edges.push({
         fromUserId: p.id,
-        toUserId: payer.userId,
-        amountCents: owedToPayer,
+        toUserId: payers[i].userId,
+        amountCents: shares[i],
       });
     }
   }
