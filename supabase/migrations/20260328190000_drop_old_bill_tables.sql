@@ -10,12 +10,32 @@
 
 DO $$
 BEGIN
-  ALTER PUBLICATION supabase_realtime DROP TABLE IF EXISTS payments;
-  ALTER PUBLICATION supabase_realtime DROP TABLE IF EXISTS group_settlements;
-  ALTER PUBLICATION supabase_realtime DROP TABLE IF EXISTS ledger;
-  ALTER PUBLICATION supabase_realtime DROP TABLE IF EXISTS bill_participants;
-  ALTER PUBLICATION supabase_realtime DROP TABLE IF EXISTS bills;
-EXCEPTION WHEN undefined_object THEN NULL;
+  ALTER PUBLICATION supabase_realtime DROP TABLE payments;
+EXCEPTION WHEN undefined_table OR undefined_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime DROP TABLE group_settlements;
+EXCEPTION WHEN undefined_table OR undefined_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime DROP TABLE ledger;
+EXCEPTION WHEN undefined_table OR undefined_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime DROP TABLE bill_participants;
+EXCEPTION WHEN undefined_table OR undefined_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime DROP TABLE bills;
+EXCEPTION WHEN undefined_table OR undefined_object THEN NULL;
 END $$;
 
 -- ============================================================
