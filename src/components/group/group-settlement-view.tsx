@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, Info, Loader2 } from "lucide-react";
+import { CheckCheck, Clock, Info, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
@@ -14,17 +14,17 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
-import { computeGroupNetEdges } from "@/lib/group-settlement";
 import { consolidateEdges, simplifyDebts } from "@/lib/simplify";
 import type { DebtEdge } from "@/lib/simplify";
+import { queryBalances } from "@/lib/supabase/settlement-actions";
 import {
-  loadGroupBillsAndLedger,
-  loadGroupSettlements,
-  syncGroupSettlements,
-  markGroupSettlementPaid,
-} from "@/lib/supabase/group-settlement-actions";
-import { createClient } from "@/lib/supabase/client";
-import type { GroupSettlement, User } from "@/types";
+  recordSettlement,
+  confirmSettlement,
+  querySettlements,
+} from "@/lib/supabase/settlement-actions";
+import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
+import { useRealtimeSettlements } from "@/hooks/use-realtime-settlements";
+import type { Balance, Settlement, User } from "@/types";
 import type { SimplificationResult } from "@/lib/simplify";
 
 interface GroupSettlementViewProps {
@@ -33,130 +33,152 @@ interface GroupSettlementViewProps {
   currentUserId: string;
 }
 
+/**
+ * Convert Balance[] (canonical userA < userB ordering) to directed DebtEdge[].
+ * Positive amountCents = userA owes userB.
+ * Negative amountCents = userB owes userA.
+ */
+function balancesToEdges(balances: Balance[]): DebtEdge[] {
+  const edges: DebtEdge[] = [];
+  for (const b of balances) {
+    if (b.amountCents > 0) {
+      edges.push({ fromUserId: b.userA, toUserId: b.userB, amountCents: b.amountCents });
+    } else if (b.amountCents < 0) {
+      edges.push({ fromUserId: b.userB, toUserId: b.userA, amountCents: Math.abs(b.amountCents) });
+    }
+  }
+  return edges;
+}
+
 export function GroupSettlementView({
   groupId,
   participants,
   currentUserId,
 }: GroupSettlementViewProps) {
   const [loading, setLoading] = useState(true);
-  const [settlements, setSettlements] = useState<GroupSettlement[]>([]);
+  const [balances, setBalances] = useState<Balance[]>([]);
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
-  const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; paidAmountCents: number; mode: "pay" | "collect" } | null>(null);
-  const [settling, setSettling] = useState<string | null>(null);
+  const [pixModal, setPixModal] = useState<{
+    recipientId: string;
+    recipientName: string;
+    amountCents: number;
+    mode: "pay" | "collect";
+  } | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
 
-  // Read-only refresh: just load current settlement state from DB
-  const refreshSettlements = useCallback(async () => {
-    const loaded = await loadGroupSettlements(groupId);
-    setSettlements(loaded.filter((s) => s.status !== "settled"));
-  }, [groupId]);
-
-  // Full compute + sync: runs once on mount and after user actions
-  const initializeSettlements = useCallback(async () => {
+  // Load balances + pending settlements in parallel (2 queries total)
+  const loadData = useCallback(async () => {
     setLoading(true);
-    const { ledger, participants: billParticipants } = await loadGroupBillsAndLedger(groupId);
+    const [loadedBalances, loadedSettlements] = await Promise.all([
+      queryBalances(groupId),
+      querySettlements(groupId),
+    ]);
 
-    const allParticipantIds = new Set(participants.map((p) => p.id));
-    const mergedParticipants = [...participants];
-    for (const p of billParticipants) {
-      if (!allParticipantIds.has(p.id)) {
-        mergedParticipants.push(p);
-        allParticipantIds.add(p.id);
-      }
-    }
+    setBalances(loadedBalances);
+    setSettlements(loadedSettlements.filter((s) => s.status === "pending"));
 
-    const netEdges = computeGroupNetEdges(ledger, mergedParticipants);
-
-    const supabase = createClient();
-    const { data: settlementRows } = await supabase
-      .from("group_settlements")
-      .select("id")
-      .eq("group_id", groupId);
-    const settlementIds = (settlementRows ?? []).map((s: { id: string }) => s.id);
-
-    const rawEdges: DebtEdge[] = [];
-    for (const entry of ledger) {
-      rawEdges.push({ fromUserId: entry.fromUserId, toUserId: entry.toUserId, amountCents: entry.amountCents });
-    }
-
-    if (settlementIds.length > 0) {
-      const { data: paymentRows } = await supabase
-        .from("payments")
-        .select("from_user_id, to_user_id, amount_cents")
-        .in("group_settlement_id", settlementIds);
-      for (const p of paymentRows ?? []) {
-        rawEdges.push({ fromUserId: p.to_user_id, toUserId: p.from_user_id, amountCents: p.amount_cents });
-      }
-    }
-
-    const consolidated = consolidateEdges(rawEdges);
-    if (consolidated.length >= 2 && mergedParticipants.length >= 3) {
-      const result = simplifyDebts(consolidated, mergedParticipants);
-      setSimplificationResult(result);
+    // Compute simplification from balance-derived edges
+    const rawEdges = balancesToEdges(loadedBalances);
+    if (rawEdges.length >= 2 && participants.length >= 3) {
+      setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), participants));
     } else {
       setSimplificationResult(null);
     }
 
-    const upserted = await syncGroupSettlements(groupId, netEdges);
-    setSettlements(upserted.filter((s) => s.status !== "settled"));
     setLoading(false);
-  }, [groupId, participants, refreshSettlements]);
+  }, [groupId, participants]);
 
   useEffect(() => {
-    initializeSettlements();
-  }, [initializeSettlements]);
+    loadData();
+  }, [loadData]);
 
-  const initializeSettlementsRef = useRef(initializeSettlements);
-  useEffect(() => { initializeSettlementsRef.current = initializeSettlements; });
+  // Realtime: patch balances locally
+  useRealtimeBalances(groupId, useCallback((updatedBalance: Balance) => {
+    setBalances((prev) => {
+      const idx = prev.findIndex(
+        (b) => b.userA === updatedBalance.userA && b.userB === updatedBalance.userB,
+      );
+      const next = idx >= 0
+        ? prev.map((b, i) => (i === idx ? updatedBalance : b))
+        : [...prev, updatedBalance];
 
-  const refreshSettlementsRef = useRef(refreshSettlements);
-  useEffect(() => { refreshSettlementsRef.current = refreshSettlements; });
+      // Filter out zero balances
+      const filtered = next.filter((b) => b.amountCents !== 0);
 
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`group-settlements:${groupId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
-        () => refreshSettlementsRef.current(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "bills", filter: `group_id=eq.${groupId}` },
-        () => initializeSettlementsRef.current(),
-      )
-      .subscribe();
+      // Recompute simplification
+      const rawEdges = balancesToEdges(filtered);
+      if (rawEdges.length >= 2 && participants.length >= 3) {
+        setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), participants));
+      } else {
+        setSimplificationResult(null);
+      }
 
-    return () => { supabase.removeChannel(channel); };
-  }, [groupId]);
+      return filtered;
+    });
+  }, [participants]));
 
-  const displayEdges = simplificationResult?.simplifiedEdges ?? [];
+  // Realtime: patch settlements locally
+  useRealtimeSettlements(groupId, useCallback((event) => {
+    if (event.type === "inserted") {
+      if (event.settlement.status === "pending") {
+        setSettlements((prev) => [event.settlement, ...prev]);
+      }
+    } else {
+      // Updated — if confirmed, remove from pending list
+      if (event.settlement.status === "confirmed") {
+        setSettlements((prev) => prev.filter((s) => s.id !== event.settlement.id));
+      } else {
+        setSettlements((prev) =>
+          prev.map((s) => (s.id === event.settlement.id ? event.settlement : s)),
+        );
+      }
+    }
+  }, []));
 
-  const myDebts = settlements.filter(
-    (s) => s.fromUserId === currentUserId && (s.status === "pending" || s.status === "partially_paid"),
-  );
+  // Derived: debt edges from balances
+  const debtEdges = balancesToEdges(balances);
+  const displayEdges = simplificationResult?.simplifiedEdges ?? debtEdges;
+
+  // Pending settlements where current user is the creditor (needs to confirm)
+  const pendingConfirmations = settlements.filter((s) => s.toUserId === currentUserId);
 
   const getParticipant = (id: string) =>
-    participants.find((p) => p.id === id) ?? { id, name: "?", handle: "", email: "", pixKeyType: "email" as const, pixKeyHint: "", onboarded: false, createdAt: "" };
+    participants.find((p) => p.id === id) ?? {
+      id,
+      name: "?",
+      handle: "",
+      email: "",
+      pixKeyType: "email" as const,
+      pixKeyHint: "",
+      onboarded: false,
+      createdAt: "",
+    };
 
-  async function handleMarkPaid(settlementId: string, amountCents: number, fromUserId: string, toUserId: string) {
-    setSettling(settlementId);
-    await markGroupSettlementPaid(settlementId, amountCents, fromUserId, toUserId);
-    setPixModal(null);
-    await refreshSettlements();
-    setSettling(null);
+  // Compute per-user net balance from debt edges
+  const userNetBalances = new Map<string, number>();
+  for (const edge of debtEdges) {
+    userNetBalances.set(edge.fromUserId, (userNetBalances.get(edge.fromUserId) ?? 0) - edge.amountCents);
+    userNetBalances.set(edge.toUserId, (userNetBalances.get(edge.toUserId) ?? 0) + edge.amountCents);
   }
 
-  async function handleSettleAll() {
-    setSettling("all");
-    await Promise.all(
-      myDebts.map((s) =>
-        markGroupSettlementPaid(s.id, s.amountCents - s.paidAmountCents, s.fromUserId, s.toUserId),
-      ),
-    );
-    await refreshSettlements();
-    setSettling(null);
+  async function handleRecordSettlement(
+    fromUserId: string,
+    toUserId: string,
+    amountCents: number,
+  ) {
+    setActing(`${fromUserId}-${toUserId}`);
+    await recordSettlement(groupId, fromUserId, toUserId, amountCents);
+    setPixModal(null);
+    setActing(null);
+  }
+
+  async function handleConfirmSettlement(settlementId: string) {
+    setActing(settlementId);
+    await confirmSettlement(settlementId);
+    setSettlements((prev) => prev.filter((s) => s.id !== settlementId));
+    setActing(null);
   }
 
   if (loading) {
@@ -167,7 +189,7 @@ export function GroupSettlementView({
     );
   }
 
-  if (settlements.length === 0) {
+  if (debtEdges.length === 0 && pendingConfirmations.length === 0) {
     return (
       <div className="py-12 text-center text-muted-foreground">
         <CheckCheck className="mx-auto h-10 w-10 opacity-40 text-success" />
@@ -184,13 +206,7 @@ export function GroupSettlementView({
         <h3 className="text-sm font-semibold mb-3">Saldo consolidado</h3>
         <div className="space-y-2">
           {participants.map((p) => {
-            const totalOwed = settlements
-              .filter((s) => s.fromUserId === p.id)
-              .reduce((sum, s) => sum + s.amountCents, 0);
-            const totalToReceive = settlements
-              .filter((s) => s.toUserId === p.id)
-              .reduce((sum, s) => sum + s.amountCents, 0);
-            const net = totalToReceive - totalOwed;
+            const net = userNetBalances.get(p.id) ?? 0;
             if (Math.abs(net) < 2) return null;
             return (
               <div key={p.id} className="flex items-center gap-3">
@@ -227,120 +243,134 @@ export function GroupSettlementView({
         </button>
       )}
 
-      {/* Settle all button */}
-      {myDebts.length > 1 && (
-        <Button
-          variant="outline"
-          className="w-full gap-2"
-          onClick={handleSettleAll}
-          disabled={settling === "all"}
-        >
-          {settling === "all" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CheckCheck className="h-4 w-4" />
-          )}
-          Liquidar tudo ({myDebts.length} pagamentos)
-        </Button>
+      {/* Pending confirmations (settlements waiting for creditor to confirm) */}
+      {pendingConfirmations.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Pagamentos para confirmar
+          </h3>
+          {pendingConfirmations.map((settlement) => {
+            const from = getParticipant(settlement.fromUserId);
+            const isConfirming = acting === settlement.id;
+            return (
+              <motion.div
+                key={settlement.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl border bg-card p-4"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      {from.name.split(" ")[0]} pagou voce
+                    </p>
+                    <p className="text-xs text-muted-foreground">Aguardando confirmacao</p>
+                  </div>
+                  <p className="font-semibold tabular-nums text-sm">{formatBRL(settlement.amountCents)}</p>
+                </div>
+                <Button
+                  className="w-full"
+                  size="sm"
+                  onClick={() => handleConfirmSettlement(settlement.id)}
+                  disabled={isConfirming}
+                >
+                  {isConfirming ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCheck className="h-4 w-4 mr-2" />
+                  )}
+                  Confirmar recebimento
+                </Button>
+              </motion.div>
+            );
+          })}
+        </div>
       )}
 
-      {/* Settlement cards */}
-      <div className="space-y-3">
-        {settlements.map((settlement) => {
-          const from = getParticipant(settlement.fromUserId);
-          const to = getParticipant(settlement.toUserId);
-          const isDebtor = settlement.fromUserId === currentUserId;
-          const isCreditor = settlement.toUserId === currentUserId;
-          const isSettling = settling === settlement.id;
+      {/* Debt cards (balance-derived — who owes whom) */}
+      {debtEdges.length > 0 && (
+        <div className="space-y-3">
+          {debtEdges.map((edge) => {
+            const from = getParticipant(edge.fromUserId);
+            const to = getParticipant(edge.toUserId);
+            const isDebtor = edge.fromUserId === currentUserId;
+            const isCreditor = edge.toUserId === currentUserId;
+            const edgeKey = `${edge.fromUserId}-${edge.toUserId}`;
+            const isActing = acting === edgeKey;
 
-          return (
-            <motion.div
-              key={settlement.id}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border bg-card p-4"
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">
-                    {from.name.split(" ")[0]} → {to.name.split(" ")[0]}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {isDebtor ? "Voce deve" : isCreditor ? "Voce recebe" : "Pendente"}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold tabular-nums text-sm">{formatBRL(settlement.amountCents)}</p>
-                  {settlement.paidAmountCents > 0 && (
-                    <p className="text-[10px] text-muted-foreground tabular-nums">
-                      Pago: {formatBRL(settlement.paidAmountCents)}
+            return (
+              <motion.div
+                key={edgeKey}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-2xl border bg-card p-4"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      {from.name.split(" ")[0]} → {to.name.split(" ")[0]}
                     </p>
-                  )}
-                  <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${
-                    settlement.status === "partially_paid"
-                      ? "bg-primary/15 text-primary"
-                      : "bg-muted text-muted-foreground"
-                  }`}>
-                    {settlement.status === "partially_paid"
-                      ? "Parcial"
-                      : "Pendente"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                {isDebtor && (settlement.status === "pending" || settlement.status === "partially_paid") && (
-                  <Button
-                    className="flex-1"
-                    size="sm"
-                    onClick={() =>
-                      setPixModal({
-                        settlementId: settlement.id,
-                        recipientId: settlement.toUserId,
-                        recipientName: to.name,
-                        amountCents: settlement.amountCents,
-                        paidAmountCents: settlement.paidAmountCents,
-                        mode: "pay",
-                      })
-                    }
-                    disabled={isSettling}
-                  >
-                    Pagar via Pix
-                  </Button>
-                )}
-
-                {isCreditor && (settlement.status === "pending" || settlement.status === "partially_paid") && (
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    size="sm"
-                    onClick={() =>
-                      setPixModal({
-                        settlementId: settlement.id,
-                        recipientId: settlement.fromUserId,
-                        recipientName: from.name,
-                        amountCents: settlement.amountCents,
-                        paidAmountCents: settlement.paidAmountCents,
-                        mode: "collect",
-                      })
-                    }
-                    disabled={isSettling}
-                  >
-                    Gerar cobranca
-                  </Button>
-                )}
-
-                {!isDebtor && !isCreditor && (
-                  <div className="flex-1 text-center text-xs text-muted-foreground py-2">
-                    Aguardando pagamento
+                    <p className="text-xs text-muted-foreground">
+                      {isDebtor ? "Voce deve" : isCreditor ? "Voce recebe" : "Pendente"}
+                    </p>
                   </div>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
+                  <div className="text-right">
+                    <p className="font-semibold tabular-nums text-sm">{formatBRL(edge.amountCents)}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  {isDebtor && (
+                    <Button
+                      className="flex-1"
+                      size="sm"
+                      onClick={() =>
+                        setPixModal({
+                          recipientId: edge.toUserId,
+                          recipientName: to.name,
+                          amountCents: edge.amountCents,
+                          mode: "pay",
+                        })
+                      }
+                      disabled={isActing}
+                    >
+                      Pagar via Pix
+                    </Button>
+                  )}
+
+                  {isCreditor && (
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      size="sm"
+                      onClick={() =>
+                        setPixModal({
+                          recipientId: edge.fromUserId,
+                          recipientName: from.name,
+                          amountCents: edge.amountCents,
+                          mode: "collect",
+                        })
+                      }
+                      disabled={isActing}
+                    >
+                      Gerar cobranca
+                    </Button>
+                  )}
+
+                  {!isDebtor && !isCreditor && (
+                    <div className="flex-1 text-center text-xs text-muted-foreground py-2">
+                      Aguardando pagamento
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Simplification viewer */}
       {simplificationResult && (
@@ -366,17 +396,16 @@ export function GroupSettlementView({
           onClose={() => setPixModal(null)}
           recipientName={pixModal.recipientName}
           amountCents={pixModal.amountCents}
-          paidAmountCents={pixModal.paidAmountCents}
           recipientUserId={pixModal.recipientId}
           groupId={groupId}
           mode={pixModal.mode}
           onMarkPaid={async (amountCents: number) => {
             if (pixModal.mode === "collect") {
-              // Creditor recording payment: debtor=recipientId, creditor=currentUserId
-              await handleMarkPaid(pixModal.settlementId, amountCents, pixModal.recipientId, currentUserId);
+              // Creditor recording: debtor=recipientId, creditor=currentUserId
+              await handleRecordSettlement(pixModal.recipientId, currentUserId, amountCents);
             } else {
-              // Debtor recording payment: debtor=currentUserId, creditor=recipientId
-              await handleMarkPaid(pixModal.settlementId, amountCents, currentUserId, pixModal.recipientId);
+              // Debtor recording: debtor=currentUserId, creditor=recipientId
+              await handleRecordSettlement(currentUserId, pixModal.recipientId, amountCents);
             }
           }}
         />
