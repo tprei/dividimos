@@ -35,9 +35,7 @@ export function AddParticipantByHandle({
 
     const supabase = createClient();
     const { data } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("handle", trimmed)
+      .rpc("lookup_user_by_handle", { p_handle: trimmed })
       .single();
 
     setLoading(false);

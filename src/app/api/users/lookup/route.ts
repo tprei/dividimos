@@ -19,9 +19,7 @@ export async function GET(request: Request) {
   }
 
   const { data: profile } = await supabase
-    .from("user_profiles")
-    .select("*")
-    .eq("handle", handle)
+    .rpc("lookup_user_by_handle", { p_handle: handle })
     .single();
 
   if (!profile) {

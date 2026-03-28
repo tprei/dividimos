@@ -38,7 +38,7 @@ describe("GET /api/users/lookup", () => {
 
   it("returns 404 when user is not found", async () => {
     mock.setUser({ id: "user-alice" });
-    mock.onTable("user_profiles", { data: null });
+    mock.onRpc("lookup_user_by_handle", { data: null });
 
     const request = new Request("http://localhost/api/users/lookup?handle=nobody");
     const response = await GET(request);
@@ -50,7 +50,7 @@ describe("GET /api/users/lookup", () => {
 
   it("returns profile on success", async () => {
     mock.setUser({ id: "user-alice" });
-    mock.onTable("user_profiles", {
+    mock.onRpc("lookup_user_by_handle", {
       data: {
         id: "user-bob",
         handle: "bob",
@@ -71,15 +71,15 @@ describe("GET /api/users/lookup", () => {
     });
   });
 
-  it("normalizes handle to lowercase and trims whitespace", async () => {
+  it("passes normalized handle to the RPC", async () => {
     mock.setUser({ id: "user-alice" });
-    mock.onTable("user_profiles", { data: { id: "user-bob", handle: "bob", name: "Bob" } });
+    mock.onRpc("lookup_user_by_handle", { data: { id: "user-bob", handle: "bob", name: "Bob" } });
 
     const request = new Request("http://localhost/api/users/lookup?handle=%20BOB%20");
     await GET(request);
 
-    const eqCalls = mock.findCalls("user_profiles", "eq");
-    expect(eqCalls).toHaveLength(1);
-    expect(eqCalls[0].args).toEqual(["handle", "bob"]);
+    const rpcCalls = mock.findCalls("rpc:lookup_user_by_handle", "rpc");
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].args[1]).toEqual({ p_handle: "bob" });
   });
 });

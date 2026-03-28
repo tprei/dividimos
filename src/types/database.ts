@@ -409,6 +409,15 @@ export interface Database {
       };
     };
     Functions: {
+      lookup_user_by_handle: {
+        Args: { p_handle: string };
+        Returns: {
+          id: string;
+          handle: string;
+          name: string;
+          avatar_url: string | null;
+        }[];
+      };
       sync_group_settlements: {
         Args: {
           p_group_id: string;

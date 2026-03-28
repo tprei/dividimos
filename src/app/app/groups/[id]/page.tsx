@@ -182,9 +182,7 @@ export default function GroupDetailPage({
     setLookupError("");
 
     const { data: profile } = await createClient()
-      .from("user_profiles")
-      .select("*")
-      .eq("handle", handle)
+      .rpc("lookup_user_by_handle", { p_handle: handle })
       .single();
 
     const typedProfile = profile as UserProfileRow | null;
