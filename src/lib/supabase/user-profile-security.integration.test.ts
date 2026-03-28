@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
   authenticateAs,
+  createTestGroup,
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
@@ -60,37 +61,45 @@ describe.skipIf(!isIntegrationTestReady)(
           .update({ name: "Hacked" })
           .eq("id", bob.id);
 
-        expect(error).not.toBeNull();
+        // RLS UPDATE on users only allows own row — silently drops
+        expect(error).toBeNull();
+
+        // Verify bob's name was NOT changed
+        const { data } = await adminClient!
+          .from("users")
+          .select("name")
+          .eq("id", bob.id)
+          .single();
+        expect(data!.name).toBe(bob.name);
       });
     });
 
     describe("user_profiles view", () => {
-      it("authenticated user can look up another user by handle via the view", async () => {
+      it("user can see own profile via the view", async () => {
         const aliceClient = authenticateAs(alice);
         const { data, error } = await aliceClient
           .from("user_profiles")
           .select("id, handle, name, avatar_url")
-          .eq("handle", bob.handle)
+          .eq("id", alice.id)
           .single();
 
         expect(error).toBeNull();
-        expect(data!.handle).toBe(bob.handle);
-        expect(data!.name).toBe(bob.name);
+        expect(data!.handle).toBe(alice.handle);
+        expect(data!.name).toBe(alice.name);
       });
 
-      it("user_profiles never exposes pix_key_encrypted", async () => {
-        // The view only selects id, handle, name, avatar_url
-        // Attempting to select pix_key_encrypted should fail
+      it("user_profiles never exposes sensitive columns", async () => {
+        // Query own profile (guaranteed visible) and verify column set
         const aliceClient = authenticateAs(alice);
 
         const { data, error } = await aliceClient
           .from("user_profiles")
           .select("id, handle, name, avatar_url")
-          .eq("handle", bob.handle)
+          .eq("id", alice.id)
           .single();
 
         expect(error).toBeNull();
-        // The returned object should not have pix_key_encrypted
+        // The returned object should not have sensitive columns
         const keys = Object.keys(data!);
         expect(keys).not.toContain("pix_key_encrypted");
         expect(keys).not.toContain("email");
@@ -110,11 +119,15 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(data).toBeNull();
       });
 
-      it("user_profiles view is security_invoker=false (bypasses RLS)", async () => {
-        // This test verifies that authenticated users can see OTHER users
-        // through the view, even though the underlying users table has
-        // users_read_own RLS. The view has security_invoker=false, so
-        // it runs as the view owner (postgres) and bypasses RLS.
+      it("user_profiles view allows cross-user lookup within shared context", async () => {
+        // Give alice and bob shared context via a group
+        const group = await createTestGroup(alice.id, [bob.id]);
+        await adminClient!
+          .from("group_members")
+          .update({ status: "accepted" })
+          .eq("group_id", group.id)
+          .eq("user_id", bob.id);
+
         const aliceClient = authenticateAs(alice);
         const { data, error } = await aliceClient
           .from("user_profiles")
@@ -170,11 +183,11 @@ describe.skipIf(!isIntegrationTestReady)(
       it("pix_key_encrypted is not accessible via user_profiles view", async () => {
         const aliceClient = authenticateAs(alice);
 
-        // Try a broad select on user_profiles
+        // Query own profile (guaranteed visible) to verify column set
         const { data } = await aliceClient
           .from("user_profiles")
           .select("*")
-          .eq("id", bob.id)
+          .eq("id", alice.id)
           .single();
 
         // Should only have the safe columns

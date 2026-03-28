@@ -144,7 +144,16 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         .update({ title: "Hacked" })
         .eq("id", bill.id);
 
-      expect(error).not.toBeNull();
+      // RLS UPDATE silently drops rows when no policy matches
+      expect(error).toBeNull();
+
+      // Verify the title was NOT changed
+      const { data } = await adminClient!
+        .from("bills")
+        .select("title")
+        .eq("id", bill.id)
+        .single();
+      expect(data!.title).not.toBe("Hacked");
     });
   });
 
@@ -170,7 +179,16 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         .delete()
         .eq("id", bill.id);
 
-      expect(error).not.toBeNull();
+      // RLS DELETE silently drops rows when no policy matches
+      expect(error).toBeNull();
+
+      // Verify the bill still exists
+      const { data } = await adminClient!
+        .from("bills")
+        .select("id")
+        .eq("id", bill.id)
+        .single();
+      expect(data).not.toBeNull();
     });
 
     it("creator cannot delete a settled bill", async () => {
@@ -182,7 +200,16 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         .delete()
         .eq("id", bill.id);
 
-      expect(error).not.toBeNull();
+      // RLS DELETE silently drops rows when no policy matches
+      expect(error).toBeNull();
+
+      // Verify the bill still exists
+      const { data } = await adminClient!
+        .from("bills")
+        .select("id")
+        .eq("id", bill.id)
+        .single();
+      expect(data).not.toBeNull();
     });
 
     it("non-creator cannot delete even a draft bill", async () => {
@@ -194,19 +221,26 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         .delete()
         .eq("id", bill.id);
 
-      expect(error).not.toBeNull();
+      // RLS DELETE silently drops rows when no policy matches
+      expect(error).toBeNull();
+
+      // Verify the bill still exists
+      const { data } = await adminClient!
+        .from("bills")
+        .select("id")
+        .eq("id", bill.id)
+        .single();
+      expect(data).not.toBeNull();
     });
   });
 
   describe("Bill items RLS", () => {
     let billId: string;
-    let itemId: string;
-
     beforeEach(async () => {
       const bill = await createTestBill(alice.id);
       billId = bill.id;
 
-      const { data: itemData } = await adminClient!
+      await adminClient!
         .from("bill_items")
         .insert({
           bill_id: billId,
@@ -216,8 +250,6 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         })
         .select()
         .single();
-
-      itemId = (itemData as BillItemRow).id;
     });
 
     it("creator can read items", async () => {
@@ -286,6 +318,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         total_price_cents: 500,
       });
 
+      // INSERT with failing WITH CHECK returns RLS violation error
       expect(error).not.toBeNull();
     });
   });

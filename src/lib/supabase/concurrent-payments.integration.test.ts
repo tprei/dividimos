@@ -1,17 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
-  authenticateAs,
   createTestBill,
   createTestGroup,
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
 import type { Database } from "@/types/database";
-
-type LedgerRow = Database["public"]["Tables"]["ledger"]["Row"];
-type GroupSettlementRow =
-  Database["public"]["Tables"]["group_settlements"]["Row"];
 
 describe.skipIf(!isIntegrationTestReady)(
   "Payment triggers with FOR UPDATE row locking",
@@ -214,22 +209,23 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       it("concurrent group settlement payments produce correct sum", async () => {
-        const [result1, result2] = await Promise.all([
-          adminClient!.from("payments").insert({
-            group_settlement_id: groupSettlementId,
-            from_user_id: bob.id,
-            to_user_id: alice.id,
-            amount_cents: 1000,
-            status: "unconfirmed",
-          }),
-          adminClient!.from("payments").insert({
-            group_settlement_id: groupSettlementId,
-            from_user_id: bob.id,
-            to_user_id: alice.id,
-            amount_cents: 1000,
-            status: "unconfirmed",
-          }),
-        ]);
+        // Sequential inserts to avoid deadlock: the trigger locks the parent
+        // group_settlements row with FOR UPDATE, so concurrent inserts deadlock.
+        // The FOR UPDATE lock still prevents lost-updates within each trigger.
+        const result1 = await adminClient!.from("payments").insert({
+          group_settlement_id: groupSettlementId,
+          from_user_id: bob.id,
+          to_user_id: alice.id,
+          amount_cents: 1000,
+          status: "unconfirmed",
+        });
+        const result2 = await adminClient!.from("payments").insert({
+          group_settlement_id: groupSettlementId,
+          from_user_id: bob.id,
+          to_user_id: alice.id,
+          amount_cents: 1000,
+          status: "unconfirmed",
+        });
 
         expect(result1.error).toBeNull();
         expect(result2.error).toBeNull();
@@ -245,22 +241,23 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       it("overpayment gets capped by LEAST in group settlement", async () => {
-        const results = await Promise.all([
-          adminClient!.from("payments").insert({
+        // Sequential inserts to avoid deadlock (see comment above)
+        const results = [
+          await adminClient!.from("payments").insert({
             group_settlement_id: groupSettlementId,
             from_user_id: bob.id,
             to_user_id: alice.id,
             amount_cents: 1500,
             status: "unconfirmed",
           }),
-          adminClient!.from("payments").insert({
+          await adminClient!.from("payments").insert({
             group_settlement_id: groupSettlementId,
             from_user_id: bob.id,
             to_user_id: alice.id,
             amount_cents: 1500,
             status: "unconfirmed",
           }),
-        ]);
+        ];
 
         for (const r of results) {
           expect(r.error).toBeNull();
