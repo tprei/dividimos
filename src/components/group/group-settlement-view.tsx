@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, Loader2 } from "lucide-react";
+import { CheckCheck, Info, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
-import { SimplificationToggle } from "@/components/settlement/simplification-toggle";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
 const PixQrModal = dynamic(
@@ -15,12 +14,13 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
-import { computeGroupNetEdges, ledgerToRawEdges } from "@/lib/group-settlement";
-import { simplifyDebts } from "@/lib/simplify";
+import { computeGroupNetEdges } from "@/lib/group-settlement";
+import { consolidateEdges, simplifyDebts } from "@/lib/simplify";
+import type { DebtEdge } from "@/lib/simplify";
 import {
   loadGroupBillsAndLedger,
   loadGroupSettlements,
-  upsertGroupSettlements,
+  syncGroupSettlements,
   markGroupSettlementPaid,
 } from "@/lib/supabase/group-settlement-actions";
 import { createClient } from "@/lib/supabase/client";
@@ -40,7 +40,6 @@ export function GroupSettlementView({
 }: GroupSettlementViewProps) {
   const [loading, setLoading] = useState(true);
   const [settlements, setSettlements] = useState<GroupSettlement[]>([]);
-  const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
   const [pixModal, setPixModal] = useState<{ settlementId: string; recipientId: string; recipientName: string; amountCents: number; paidAmountCents: number; mode: "pay" | "collect" } | null>(null);
@@ -66,17 +65,39 @@ export function GroupSettlementView({
       }
     }
 
-    const rawEdges = ledgerToRawEdges(ledger);
     const netEdges = computeGroupNetEdges(ledger, mergedParticipants);
 
-    if (rawEdges.length >= 2) {
-      const result = simplifyDebts(rawEdges, mergedParticipants);
+    const supabase = createClient();
+    const { data: settlementRows } = await supabase
+      .from("group_settlements")
+      .select("id")
+      .eq("group_id", groupId);
+    const settlementIds = (settlementRows ?? []).map((s: { id: string }) => s.id);
+
+    const rawEdges: DebtEdge[] = [];
+    for (const entry of ledger) {
+      rawEdges.push({ fromUserId: entry.fromUserId, toUserId: entry.toUserId, amountCents: entry.amountCents });
+    }
+
+    if (settlementIds.length > 0) {
+      const { data: paymentRows } = await supabase
+        .from("payments")
+        .select("from_user_id, to_user_id, amount_cents")
+        .in("group_settlement_id", settlementIds);
+      for (const p of paymentRows ?? []) {
+        rawEdges.push({ fromUserId: p.to_user_id, toUserId: p.from_user_id, amountCents: p.amount_cents });
+      }
+    }
+
+    const consolidated = consolidateEdges(rawEdges);
+    if (consolidated.length >= 2 && mergedParticipants.length >= 3) {
+      const result = simplifyDebts(consolidated, mergedParticipants);
       setSimplificationResult(result);
     } else {
       setSimplificationResult(null);
     }
 
-    const upserted = await upsertGroupSettlements(groupId, netEdges);
+    const upserted = await syncGroupSettlements(groupId, netEdges);
     setSettlements(upserted.filter((s) => s.status !== "settled"));
     setLoading(false);
   }, [groupId, participants, refreshSettlements]);
@@ -85,27 +106,32 @@ export function GroupSettlementView({
     initializeSettlements();
   }, [initializeSettlements]);
 
+  const initializeSettlementsRef = useRef(initializeSettlements);
+  useEffect(() => { initializeSettlementsRef.current = initializeSettlements; });
+
   const refreshSettlementsRef = useRef(refreshSettlements);
   useEffect(() => { refreshSettlementsRef.current = refreshSettlements; });
 
   useEffect(() => {
-    // Realtime: read-only refresh (no upsert) to avoid write → subscribe → write loop
     const supabase = createClient();
     const channel = supabase
       .channel(`group-settlements:${groupId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
+        { event: "*", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
         () => refreshSettlementsRef.current(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bills", filter: `group_id=eq.${groupId}` },
+        () => initializeSettlementsRef.current(),
       )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [groupId]);
 
-  const displayEdges = simplifyEnabled && simplificationResult
-    ? simplificationResult.simplifiedEdges
-    : simplificationResult?.originalEdges ?? [];
+  const displayEdges = simplificationResult?.simplifiedEdges ?? [];
 
   const myDebts = settlements.filter(
     (s) => s.fromUserId === currentUserId && (s.status === "pending" || s.status === "partially_paid"),
@@ -189,15 +215,16 @@ export function GroupSettlementView({
         </div>
       )}
 
-      {/* Simplification toggle */}
-      {simplificationResult && simplificationResult.originalCount > simplificationResult.simplifiedCount && (
-        <SimplificationToggle
-          originalCount={simplificationResult.originalCount}
-          simplifiedCount={simplificationResult.simplifiedCount}
-          enabled={simplifyEnabled}
-          onToggle={setSimplifyEnabled}
-          onViewSteps={() => setShowSimplificationViewer(true)}
-        />
+      {simplificationResult && simplificationResult.steps.length > 0 && (
+        <button
+          onClick={() => setShowSimplificationViewer(true)}
+          className="flex w-full items-center gap-2 rounded-xl border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/30"
+        >
+          <Info className="h-4 w-4 shrink-0" />
+          <span>
+            {simplificationResult.originalCount} dividas simplificadas para {simplificationResult.simplifiedCount}
+          </span>
+        </button>
       )}
 
       {/* Settle all button */}

@@ -19,10 +19,8 @@ export async function GET(request: Request) {
   }
 
   const { data: profile } = await supabase
-    .from("user_profiles")
-    .select("*")
-    .eq("handle", handle)
-    .single();
+    .rpc("lookup_user_by_handle", { p_handle: handle })
+    .maybeSingle();
 
   if (!profile) {
     return NextResponse.json({ error: "Usuario nao encontrado" }, { status: 404 });

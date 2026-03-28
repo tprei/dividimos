@@ -97,17 +97,26 @@ export function createMockSupabase() {
     });
   }
 
+  function onRpc(name: string, response: Partial<MockResponse> = {}) {
+    onTable(`rpc:${name}`, response);
+  }
+
   const client = {
     from: (table: string) => {
       _calls.push({ table, method: "from", args: [table] });
       return makeChain(table);
+    },
+    rpc: (name: string, args?: unknown) => {
+      const key = `rpc:${name}`;
+      _calls.push({ table: key, method: "rpc", args: [name, args] });
+      return makeChain(key);
     },
     auth: {
       getUser: async () => ({ data: { user: _user }, error: null }),
     },
   } as unknown as SupabaseClient;
 
-  return { client, onTable, findCalls, setUser, reset, calls: _calls };
+  return { client, onTable, onRpc, findCalls, setUser, reset, calls: _calls };
 }
 
 export type MockSupabase = ReturnType<typeof createMockSupabase>;

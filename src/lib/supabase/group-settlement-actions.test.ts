@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   loadGroupBillsAndLedger,
   loadGroupSettlements,
-  upsertGroupSettlements,
+  syncGroupSettlements,
   markGroupSettlementPaid,
 } from "./group-settlement-actions";
 
@@ -148,125 +148,67 @@ describe("loadGroupSettlements", () => {
   });
 });
 
-describe("upsertGroupSettlements", () => {
-  it("inserts new pending settlements for edges", async () => {
-    // loadGroupSettlements (called internally) → no existing
-    mock.onTable("group_settlements", { data: [] });
-    // insert new settlements
-    mock.onTable("group_settlements", { error: null });
-
-    await upsertGroupSettlements("group-1", [
-      { fromUserId: "user-bob", toUserId: "user-alice", amountCents: 5000 },
-    ]);
-
-    const inserts = mock.findCalls("group_settlements", "insert");
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0].args[0]).toEqual([
-      {
-        group_id: "group-1",
-        from_user_id: "user-bob",
-        to_user_id: "user-alice",
-        amount_cents: 5000,
-      },
-    ]);
-  });
-
-  it("deletes stale pending rows and inserts updated amounts", async () => {
-    // Existing: bob→alice 3000 pending + 2000 already paid
-    mock.onTable("group_settlements", {
+describe("syncGroupSettlements", () => {
+  it("calls the RPC with snake_case edges and returns mapped settlements", async () => {
+    mock.onRpc("sync_group_settlements", {
       data: [
         {
-          id: "gs-pending",
-          group_id: "group-1",
-          from_user_id: "user-bob",
-          to_user_id: "user-alice",
-          amount_cents: 3000,
-          paid_amount_cents: 0,
-          status: "pending",
-          paid_at: null,
-          created_at: "2024-01-01T00:00:00Z",
-        },
-        {
-          id: "gs-paid",
-          group_id: "group-1",
-          from_user_id: "user-bob",
-          to_user_id: "user-alice",
-          amount_cents: 2000,
-          paid_amount_cents: 2000,
-          status: "partially_paid",
-          paid_at: "2024-01-02T00:00:00Z",
-          created_at: "2024-01-01T00:00:00Z",
-        },
-      ],
-    });
-    // delete stale pending
-    mock.onTable("group_settlements", { error: null });
-    // insert new pending for remaining
-    mock.onTable("group_settlements", { error: null });
-
-    // New edge: bob→alice owes 6000 total, but 2000 already paid
-    await upsertGroupSettlements("group-1", [
-      { fromUserId: "user-bob", toUserId: "user-alice", amountCents: 6000 },
-    ]);
-
-    // Should delete the old pending row
-    const deletes = mock.findCalls("group_settlements", "delete");
-    expect(deletes).toHaveLength(1);
-
-    // Should insert a new pending row for 6000 - 2000 = 4000
-    const inserts = mock.findCalls("group_settlements", "insert");
-    expect(inserts).toHaveLength(1);
-    const insertedRows = inserts[0].args[0] as { amount_cents: number }[];
-    expect(insertedRows[0].amount_cents).toBe(4000);
-  });
-
-  it("does not insert if remaining amount is <= 1 centavo", async () => {
-    mock.onTable("group_settlements", {
-      data: [
-        {
-          id: "gs-paid",
+          id: "gs-1",
           group_id: "group-1",
           from_user_id: "user-bob",
           to_user_id: "user-alice",
           amount_cents: 5000,
-          status: "settled",
-          paid_at: "2024-01-02T00:00:00Z",
+          paid_amount_cents: 0,
+          status: "pending",
+          paid_at: null,
+          confirmed_at: null,
           created_at: "2024-01-01T00:00:00Z",
         },
       ],
+      error: null,
     });
 
-    // Edge amount equals what's already settled
-    await upsertGroupSettlements("group-1", [
+    const result = await syncGroupSettlements("group-1", [
       { fromUserId: "user-bob", toUserId: "user-alice", amountCents: 5000 },
     ]);
 
-    // Should not insert anything (remaining is 0)
-    expect(mock.findCalls("group_settlements", "insert")).toHaveLength(0);
+    const rpcCalls = mock.findCalls("rpc:sync_group_settlements", "rpc");
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].args[1]).toEqual({
+      p_group_id: "group-1",
+      p_edges: [{ from_user_id: "user-bob", to_user_id: "user-alice", amount_cents: 5000 }],
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: "gs-1",
+      groupId: "group-1",
+      fromUserId: "user-bob",
+      toUserId: "user-alice",
+      amountCents: 5000,
+      paidAmountCents: 0,
+      status: "pending",
+    });
   });
 
-  it("deletes pending rows for edges that no longer exist", async () => {
-    mock.onTable("group_settlements", {
-      data: [
-        {
-          id: "gs-stale",
-          group_id: "group-1",
-          from_user_id: "user-carlos",
-          to_user_id: "user-alice",
-          amount_cents: 1000,
-          status: "pending",
-          paid_at: null,
-          created_at: "2024-01-01T00:00:00Z",
-        },
-      ],
-    });
-    mock.onTable("group_settlements", { error: null }); // delete
+  it("passes empty edges array when there are no debts", async () => {
+    mock.onRpc("sync_group_settlements", { data: [], error: null });
 
-    // Empty edges — the carlos→alice edge no longer exists
-    await upsertGroupSettlements("group-1", []);
+    const result = await syncGroupSettlements("group-1", []);
 
-    const deletes = mock.findCalls("group_settlements", "delete");
-    expect(deletes).toHaveLength(1);
+    const rpcCalls = mock.findCalls("rpc:sync_group_settlements", "rpc");
+    expect((rpcCalls[0].args[1] as { p_edges: unknown[] }).p_edges).toEqual([]);
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty array when RPC returns null data", async () => {
+    mock.onRpc("sync_group_settlements", { data: null, error: null });
+
+    const result = await syncGroupSettlements("group-1", [
+      { fromUserId: "user-bob", toUserId: "user-alice", amountCents: 5000 },
+    ]);
+
+    expect(result).toHaveLength(0);
   });
 });
 
