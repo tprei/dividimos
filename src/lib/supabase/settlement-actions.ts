@@ -105,9 +105,10 @@ export async function queryBalanceBetween(
 // ============================================================
 
 /**
- * Record a new settlement (payment from debtor to creditor).
- * Inserts a pending settlement row. The creditor must call
- * confirmSettlement to finalize it and update balances.
+ * Record a settlement and update balances atomically.
+ * Either the debtor or creditor can call this.
+ * Uses the record_and_settle RPC which inserts a confirmed settlement
+ * and updates the running balance in one transaction.
  */
 export async function recordSettlement(
   groupId: string,
@@ -124,43 +125,27 @@ export async function recordSettlement(
 
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from("settlements")
-    .insert({
-      group_id: groupId,
-      from_user_id: fromUserId,
-      to_user_id: toUserId,
-      amount_cents: amountCents,
-    })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc("record_and_settle", {
+    p_group_id: groupId,
+    p_from_user_id: fromUserId,
+    p_to_user_id: toUserId,
+    p_amount_cents: amountCents,
+  });
 
   if (error) {
     throw new Error(`Failed to record settlement: ${error.message}`);
   }
 
-  return mapSettlementRow(data as SettlementRow);
-}
-
-/**
- * Confirm a pending settlement. Only the creditor (to_user) can confirm.
- * Calls the confirm_settlement RPC which atomically:
- * 1. Marks the settlement as confirmed
- * 2. Updates the running balance between the two users
- */
-export async function confirmSettlement(
-  settlementId: string,
-): Promise<void> {
-  const supabase = createClient();
-
-  const { error } = await supabase.rpc(
-    "confirm_settlement" as never,
-    { p_settlement_id: settlementId } as never,
-  );
-
-  if (error) {
-    throw new Error(`Failed to confirm settlement: ${error.message}`);
-  }
+  return {
+    id: data as string,
+    groupId,
+    fromUserId,
+    toUserId,
+    amountCents,
+    status: "confirmed",
+    createdAt: new Date().toISOString(),
+    confirmedAt: new Date().toISOString(),
+  };
 }
 
 // ============================================================
@@ -216,30 +201,6 @@ export async function querySettlementHistoryForBalance(
   return (data as SettlementRow[] ?? []).map(mapSettlementRow);
 }
 
-/**
- * Query pending settlements where the current user is the creditor
- * (i.e., settlements waiting for this user's confirmation).
- */
-export async function queryPendingSettlementsForUser(
-  groupId: string,
-  userId: string,
-): Promise<Settlement[]> {
-  const supabase = createClient();
-
-  const { data, error } = await supabase
-    .from("settlements")
-    .select("*")
-    .eq("group_id", groupId)
-    .eq("to_user_id", userId)
-    .eq("status", "pending")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw new Error(`Failed to query pending settlements: ${error.message}`);
-  }
-
-  return (data as SettlementRow[] ?? []).map(mapSettlementRow);
-}
 
 // ============================================================
 // Composite queries (with user profiles)

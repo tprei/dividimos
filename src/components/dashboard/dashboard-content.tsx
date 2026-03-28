@@ -30,7 +30,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
-import { useBillInvites } from "@/hooks/use-bill-invites";
 import { createClient } from "@/lib/supabase/client";
 import { deleteExpense } from "@/lib/supabase/expense-actions";
 import { useUser } from "@/hooks/use-auth";
@@ -92,7 +91,6 @@ interface DashboardContentProps {
 export function DashboardContent({ initialBills, initialNetBalance }: DashboardContentProps) {
   const router = useRouter();
   const user = useUser();
-  const { invites: billInvites, loading: invitesLoading } = useBillInvites();
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [bills, setBills] = useState<RecentBill[]>(initialBills);
   const [netBalance, setNetBalance] = useState(initialNetBalance);
@@ -310,35 +308,6 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
         <QuickAction icon={ScanLine} label="Escanear" href="/app/bill/new" />
         <QuickAction icon={Users} label="Grupos" href="/app/groups" />
       </motion.div>
-
-      {!invitesLoading && billInvites.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.18, duration: 0.4 }}
-          className="mt-6"
-        >
-          <h2 className="mb-3 text-sm font-semibold flex items-center gap-2">
-            <Receipt className="h-4 w-4 text-primary" />
-            Convites de conta
-          </h2>
-          <div className="space-y-2">
-            {billInvites.map((invite) => (
-              <Link key={invite.billId} href={`/app/bill/${invite.billId}/invite`}>
-                <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-colors hover:border-primary/40">
-                  <div>
-                    <p className="font-medium">{invite.billTitle}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Convidado por {invite.invitedByName} · {invite.totalAmount > 0 ? formatBRL(invite.totalAmount) : "Em criação"}
-                    </p>
-                  </div>
-                  <Button size="sm" className="shrink-0">Ver</Button>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </motion.div>
-      )}
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}

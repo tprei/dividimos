@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, Clock, Info, Loader2 } from "lucide-react";
+import { CheckCheck, Info, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
@@ -16,15 +16,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { formatBRL } from "@/lib/currency";
 import { consolidateEdges, simplifyDebts } from "@/lib/simplify";
 import type { DebtEdge } from "@/lib/simplify";
-import { queryBalances } from "@/lib/supabase/settlement-actions";
 import {
+  queryBalances,
   recordSettlement,
-  confirmSettlement,
-  querySettlements,
 } from "@/lib/supabase/settlement-actions";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
-import { useRealtimeSettlements } from "@/hooks/use-realtime-settlements";
-import type { Balance, Settlement, User } from "@/types";
+import type { Balance, User } from "@/types";
 import type { SimplificationResult } from "@/lib/simplify";
 
 interface GroupSettlementViewProps {
@@ -57,7 +54,6 @@ export function GroupSettlementView({
 }: GroupSettlementViewProps) {
   const [loading, setLoading] = useState(true);
   const [balances, setBalances] = useState<Balance[]>([]);
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
   const [pixModal, setPixModal] = useState<{
@@ -68,18 +64,12 @@ export function GroupSettlementView({
   } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
 
-  // Load balances + pending settlements in parallel (2 queries total)
   const loadData = useCallback(async () => {
     setLoading(true);
-    const [loadedBalances, loadedSettlements] = await Promise.all([
-      queryBalances(groupId),
-      querySettlements(groupId),
-    ]);
+    const loadedBalances = await queryBalances(groupId);
 
     setBalances(loadedBalances);
-    setSettlements(loadedSettlements.filter((s) => s.status === "pending"));
 
-    // Compute simplification from balance-derived edges
     const rawEdges = balancesToEdges(loadedBalances);
     if (rawEdges.length >= 2 && participants.length >= 3) {
       setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), participants));
@@ -119,30 +109,8 @@ export function GroupSettlementView({
     });
   }, [participants]));
 
-  // Realtime: patch settlements locally
-  useRealtimeSettlements(groupId, useCallback((event) => {
-    if (event.type === "inserted") {
-      if (event.settlement.status === "pending") {
-        setSettlements((prev) => [event.settlement, ...prev]);
-      }
-    } else {
-      // Updated — if confirmed, remove from pending list
-      if (event.settlement.status === "confirmed") {
-        setSettlements((prev) => prev.filter((s) => s.id !== event.settlement.id));
-      } else {
-        setSettlements((prev) =>
-          prev.map((s) => (s.id === event.settlement.id ? event.settlement : s)),
-        );
-      }
-    }
-  }, []));
-
-  // Derived: debt edges from balances
   const debtEdges = balancesToEdges(balances);
   const displayEdges = simplificationResult?.simplifiedEdges ?? debtEdges;
-
-  // Pending settlements where current user is the creditor (needs to confirm)
-  const pendingConfirmations = settlements.filter((s) => s.toUserId === currentUserId);
 
   const getParticipant = (id: string) =>
     participants.find((p) => p.id === id) ?? {
@@ -174,13 +142,6 @@ export function GroupSettlementView({
     setActing(null);
   }
 
-  async function handleConfirmSettlement(settlementId: string) {
-    setActing(settlementId);
-    await confirmSettlement(settlementId);
-    setSettlements((prev) => prev.filter((s) => s.id !== settlementId));
-    setActing(null);
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -189,7 +150,7 @@ export function GroupSettlementView({
     );
   }
 
-  if (debtEdges.length === 0 && pendingConfirmations.length === 0) {
+  if (debtEdges.length === 0) {
     return (
       <div className="py-12 text-center text-muted-foreground">
         <CheckCheck className="mx-auto h-10 w-10 opacity-40 text-success" />
@@ -241,52 +202,6 @@ export function GroupSettlementView({
             {simplificationResult.originalCount} dividas simplificadas para {simplificationResult.simplifiedCount}
           </span>
         </button>
-      )}
-
-      {/* Pending confirmations (settlements waiting for creditor to confirm) */}
-      {pendingConfirmations.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            Pagamentos para confirmar
-          </h3>
-          {pendingConfirmations.map((settlement) => {
-            const from = getParticipant(settlement.fromUserId);
-            const isConfirming = acting === settlement.id;
-            return (
-              <motion.div
-                key={settlement.id}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-2xl border bg-card p-4"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <UserAvatar name={from.name} avatarUrl={from.avatarUrl} size="sm" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">
-                      {from.name.split(" ")[0]} pagou voce
-                    </p>
-                    <p className="text-xs text-muted-foreground">Aguardando confirmacao</p>
-                  </div>
-                  <p className="font-semibold tabular-nums text-sm">{formatBRL(settlement.amountCents)}</p>
-                </div>
-                <Button
-                  className="w-full"
-                  size="sm"
-                  onClick={() => handleConfirmSettlement(settlement.id)}
-                  disabled={isConfirming}
-                >
-                  {isConfirming ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCheck className="h-4 w-4 mr-2" />
-                  )}
-                  Confirmar recebimento
-                </Button>
-              </motion.div>
-            );
-          })}
-        </div>
       )}
 
       {/* Debt cards (balance-derived — who owes whom) */}

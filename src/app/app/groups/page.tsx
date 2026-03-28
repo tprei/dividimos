@@ -37,7 +37,7 @@ export default async function GroupsPage() {
     supabase.from("groups").select("id, name, creator_id").in("id", groupIdArray),
     supabase.from("group_members").select("group_id, user_id").in("group_id", groupIdArray).eq("status", "accepted"),
     nonPendingGroupIds.length > 0
-      ? supabase.from("bills").select("group_id").in("group_id", nonPendingGroupIds).neq("status", "settled")
+      ? supabase.from("expenses").select("group_id").in("group_id", nonPendingGroupIds).neq("status", "draft")
       : Promise.resolve({ data: [] }),
   ]);
 

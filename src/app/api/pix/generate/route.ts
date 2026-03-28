@@ -22,75 +22,40 @@ export async function POST(request: Request) {
     groupId?: string;
   };
 
-  if (!recipientUserId || !amountCents || amountCents <= 0 || (!billId && !groupId)) {
+  if (billId) {
+    return NextResponse.json({ error: "Dados invalidos" }, { status: 400 });
+  }
+
+  if (!recipientUserId || !amountCents || amountCents <= 0 || !groupId) {
     return NextResponse.json({ error: "Dados invalidos" }, { status: 400 });
   }
 
   const admin = createAdminClient();
   let recipient: { pix_key_encrypted: string | null; name: string } | null = null;
 
-  if (groupId) {
-    const [{ data: memberRows }, { data: groupRow }, { data: recipientData }] = await Promise.all([
-      supabase
-        .from("group_members")
-        .select("user_id")
-        .eq("group_id", groupId)
-        .in("user_id", [user.id, recipientUserId]),
-      supabase.from("groups").select("creator_id").eq("id", groupId).single(),
-      admin.from("users").select("pix_key_encrypted, name").eq("id", recipientUserId).single(),
-    ]);
+  const [{ data: memberRows }, { data: groupRow }, { data: recipientData }] = await Promise.all([
+    supabase
+      .from("group_members")
+      .select("user_id")
+      .eq("group_id", groupId)
+      .in("user_id", [user.id, recipientUserId]),
+    supabase.from("groups").select("creator_id").eq("id", groupId).single(),
+    admin.from("users").select("pix_key_encrypted, name").eq("id", recipientUserId).single(),
+  ]);
 
-    const callerIsCreator = groupRow?.creator_id === user.id;
-    const recipientIsCreator = groupRow?.creator_id === recipientUserId;
-    const callerIsMember = callerIsCreator || memberRows?.some((m) => m.user_id === user.id);
-    const recipientIsMember = recipientIsCreator || memberRows?.some((m) => m.user_id === recipientUserId);
+  const callerIsCreator = groupRow?.creator_id === user.id;
+  const recipientIsCreator = groupRow?.creator_id === recipientUserId;
+  const callerIsMember = callerIsCreator || memberRows?.some((m) => m.user_id === user.id);
+  const recipientIsMember = recipientIsCreator || memberRows?.some((m) => m.user_id === recipientUserId);
 
-    if (!callerIsMember || !recipientIsMember) {
-      return NextResponse.json(
-        { error: "Acesso negado — voces nao pertencem ao mesmo grupo" },
-        { status: 403 },
-      );
-    }
-
-    recipient = recipientData;
-  } else if (billId) {
-    const [{ data: participation }, { data: recipientData }] = await Promise.all([
-      supabase
-        .from("bill_participants")
-        .select("user_id, status")
-        .eq("bill_id", billId)
-        .in("user_id", [user.id, recipientUserId]),
-      admin.from("users").select("pix_key_encrypted, name").eq("id", recipientUserId).single(),
-    ]);
-
-    const callerIsParticipant = participation?.some((p) => p.user_id === user.id);
-    const recipientIsParticipant = participation?.some((p) => p.user_id === recipientUserId);
-
-    if (!callerIsParticipant || !recipientIsParticipant) {
-      const { data: bill } = await supabase
-        .from("bills")
-        .select("creator_id")
-        .eq("id", billId)
-        .single();
-
-      if (bill?.creator_id !== user.id) {
-        return NextResponse.json(
-          { error: "Acesso negado — voces nao participam da mesma conta" },
-          { status: 403 },
-        );
-      }
-    }
-
-    const recipientParticipation = participation?.find((p) => p.user_id === recipientUserId);
-    if (recipientParticipation?.status && recipientParticipation.status !== "accepted") {
-      return NextResponse.json(
-        { error: "Participante ainda nao aceitou o convite" },
-        { status: 403 },
-      );
-    }
-
-    recipient = recipientData;
+  if (!callerIsMember || !recipientIsMember) {
+    return NextResponse.json(
+      { error: "Acesso negado — voces nao pertencem ao mesmo grupo" },
+      { status: 403 },
+    );
   }
+
+  recipient = recipientData;
 
   if (!recipient?.pix_key_encrypted) {
     return NextResponse.json(
