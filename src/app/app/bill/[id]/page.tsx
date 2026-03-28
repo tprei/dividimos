@@ -267,10 +267,19 @@ function CreatorDraftView({
           className="mt-5"
         >
           <BillSummary
-            bill={bill}
+            expense={{
+              expenseType: bill.billType,
+              totalAmount: bill.billType === "single_amount" ? bill.totalAmountInput : (items.reduce((s, i) => s + i.totalPriceCents, 0)),
+              serviceFeePercent: bill.serviceFeePercent,
+              fixedFees: bill.fixedFees,
+            }}
             items={items}
-            splits={splits}
-            billSplits={billSplits}
+            itemSplits={splits}
+            shares={billSplits.map((bs) => ({
+              userId: bs.userId,
+              shareAmountCents: bs.computedAmountCents,
+              splitLabel: bs.splitType === "percentage" ? `${bs.value.toFixed(1)}%` : bs.splitType === "equal" ? "igual" : undefined,
+            }))}
             participants={participants}
           />
         </motion.div>
@@ -781,10 +790,19 @@ export default function BillDetailPage({
           className="mt-5"
         >
           <BillSummary
-            bill={bill}
+            expense={{
+              expenseType: bill.billType,
+              totalAmount: bill.billType === "single_amount" ? bill.totalAmountInput : (items.reduce((s, i) => s + i.totalPriceCents, 0)),
+              serviceFeePercent: bill.serviceFeePercent,
+              fixedFees: bill.fixedFees,
+            }}
             items={items}
-            splits={splits}
-            billSplits={billSplits}
+            itemSplits={splits}
+            shares={billSplits.map((bs) => ({
+              userId: bs.userId,
+              shareAmountCents: bs.computedAmountCents,
+              splitLabel: bs.splitType === "percentage" ? `${bs.value.toFixed(1)}%` : bs.splitType === "equal" ? "igual" : undefined,
+            }))}
             participants={participants}
           />
         </motion.div>

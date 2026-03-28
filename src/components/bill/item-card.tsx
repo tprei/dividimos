@@ -3,12 +3,29 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Trash2, Users, UsersRound } from "lucide-react";
 import { formatBRL } from "@/lib/currency";
-import type { BillItem, ItemSplit, User } from "@/types";
+import type { UserProfile } from "@/types";
+
+/** Fields the card actually reads from an item — compatible with both BillItem and ExpenseItem. */
+interface WizardItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  totalPriceCents: number;
+}
+
+/** Per-item assignment used during the split step (wizard-only, not persisted in Expense model). */
+interface WizardItemSplit {
+  id: string;
+  userId: string;
+  computedAmountCents: number;
+  user?: UserProfile;
+}
 
 interface ItemCardProps {
-  item: BillItem;
-  splits: (ItemSplit & { user?: User })[];
-  participants: User[];
+  item: WizardItem;
+  splits: WizardItemSplit[];
+  participants: UserProfile[];
   onAssign: (itemId: string, userId: string) => void;
   onUnassign: (itemId: string, userId: string) => void;
   onAssignAll: (itemId: string) => void;

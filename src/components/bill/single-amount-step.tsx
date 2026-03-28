@@ -6,10 +6,10 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
-import type { SplitType, User } from "@/types";
+import type { SplitType, UserProfile } from "@/types";
 
 interface SingleAmountStepProps {
-  participants: User[];
+  participants: UserProfile[];
   totalAmountInput: number;
   onSetTotal: (cents: number) => void;
   onSplitEqually: (userIds: string[]) => void;

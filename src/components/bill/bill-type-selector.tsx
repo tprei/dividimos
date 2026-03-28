@@ -2,14 +2,14 @@
 
 import { motion } from "framer-motion";
 import { CreditCard, ScanLine } from "lucide-react";
-import type { BillType } from "@/types";
+import type { ExpenseType } from "@/types";
 
 interface BillTypeSelectorProps {
-  onSelect: (billType: BillType) => void;
+  onSelect: (expenseType: ExpenseType) => void;
 }
 
 const options: {
-  type: BillType;
+  type: ExpenseType;
   icon: React.ElementType;
   title: string;
   subtitle: string;

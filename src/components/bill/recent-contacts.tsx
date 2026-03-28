@@ -25,20 +25,45 @@ export function RecentContacts({
     async function fetchContacts() {
       const supabase = createClient();
 
-      const { data: myBills } = await supabase
-        .from("bill_participants")
-        .select("bill_id")
-        .eq("user_id", currentUserId);
+      // Find expenses where current user has a share or is a payer
+      const [{ data: myShares }, { data: myPayments }] = await Promise.all([
+        supabase
+          .from("expense_shares")
+          .select("expense_id")
+          .eq("user_id", currentUserId),
+        supabase
+          .from("expense_payers")
+          .select("expense_id")
+          .eq("user_id", currentUserId),
+      ]);
 
-      if (!myBills || myBills.length === 0) return;
+      const expenseIds = [
+        ...new Set([
+          ...(myShares ?? []).map((s) => s.expense_id),
+          ...(myPayments ?? []).map((p) => p.expense_id),
+        ]),
+      ];
 
-      const billIds = myBills.map((b) => b.bill_id);
+      if (expenseIds.length === 0) return;
 
-      const { data: coParticipants } = await supabase
-        .from("bill_participants")
-        .select("user_id")
-        .in("bill_id", billIds)
-        .neq("user_id", currentUserId);
+      // Find other users who participated in those expenses
+      const [{ data: coSharers }, { data: coPayers }] = await Promise.all([
+        supabase
+          .from("expense_shares")
+          .select("user_id")
+          .in("expense_id", expenseIds)
+          .neq("user_id", currentUserId),
+        supabase
+          .from("expense_payers")
+          .select("user_id")
+          .in("expense_id", expenseIds)
+          .neq("user_id", currentUserId),
+      ]);
+
+      const coParticipants = [
+        ...(coSharers ?? []),
+        ...(coPayers ?? []),
+      ];
 
       if (!coParticipants || coParticipants.length === 0) return;
 
