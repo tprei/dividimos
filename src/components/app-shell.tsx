@@ -125,9 +125,10 @@ export function AppShell({
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    window.dispatchEvent(new CustomEvent("app-refresh"));
     router.refresh();
-    await new Promise((r) => setTimeout(r, 500));
-    window.location.reload();
+    await new Promise((r) => setTimeout(r, 800));
+    setRefreshing(false);
   }, [router]);
 
   const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(handleRefresh);

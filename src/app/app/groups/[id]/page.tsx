@@ -206,6 +206,15 @@ export default function GroupDetailPage({
     fetchGroup();
   }, [fetchGroup]);
 
+  useEffect(() => {
+    const handleRefresh = () => {
+      setLoading(true);
+      fetchGroup();
+    };
+    window.addEventListener("app-refresh", handleRefresh);
+    return () => window.removeEventListener("app-refresh", handleRefresh);
+  }, [fetchGroup]);
+
   const isCreator = user?.id === creatorId;
   const isAcceptedMember = members.some(
     (m) => m.userId === user?.id && m.status === "accepted",
