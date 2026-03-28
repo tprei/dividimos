@@ -84,18 +84,25 @@ export function GroupSettlementView({
     initializeSettlements();
   }, [initializeSettlements]);
 
+  const initializeSettlementsRef = useRef(initializeSettlements);
+  useEffect(() => { initializeSettlementsRef.current = initializeSettlements; });
+
   const refreshSettlementsRef = useRef(refreshSettlements);
   useEffect(() => { refreshSettlementsRef.current = refreshSettlements; });
 
   useEffect(() => {
-    // Realtime: read-only refresh (no upsert) to avoid write → subscribe → write loop
     const supabase = createClient();
     const channel = supabase
       .channel(`group-settlements:${groupId}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
+        { event: "*", schema: "public", table: "group_settlements", filter: `group_id=eq.${groupId}` },
         () => refreshSettlementsRef.current(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "bills", filter: `group_id=eq.${groupId}` },
+        () => initializeSettlementsRef.current(),
       )
       .subscribe();
 

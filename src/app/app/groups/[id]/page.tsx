@@ -183,7 +183,7 @@ export default function GroupDetailPage({
 
     const { data: profile } = await createClient()
       .rpc("lookup_user_by_handle", { p_handle: handle })
-      .single();
+      .maybeSingle();
 
     const typedProfile = profile as UserProfileRow | null;
 
