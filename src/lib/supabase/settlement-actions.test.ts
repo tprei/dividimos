@@ -40,10 +40,8 @@ import {
   queryBalances,
   queryBalanceBetween,
   recordSettlement,
-  confirmSettlement,
   querySettlements,
   querySettlementHistoryForBalance,
-  queryPendingSettlementsForUser,
 } from "./settlement-actions";
 
 describe("settlement-actions", () => {
@@ -140,37 +138,20 @@ describe("settlement-actions", () => {
   });
 
   describe("recordSettlement", () => {
-    it("inserts a settlement and returns mapped result", async () => {
-      const row = {
-        id: "s1",
-        group_id: "g1",
-        from_user_id: "u1",
-        to_user_id: "u2",
-        amount_cents: 5000,
-        status: "pending" as const,
-        created_at: "2026-01-01T00:00:00Z",
-        confirmed_at: null,
-      };
-      chain.single.mockReturnValue({ data: row, error: null });
+    it("calls record_and_settle RPC and returns settlement", async () => {
+      mockRpc.mockResolvedValue({ data: "s1", error: null });
 
       const result = await recordSettlement("g1", "u1", "u2", 5000);
 
-      expect(mockInsert).toHaveBeenCalledWith({
-        group_id: "g1",
-        from_user_id: "u1",
-        to_user_id: "u2",
-        amount_cents: 5000,
+      expect(mockRpc).toHaveBeenCalledWith("record_and_settle", {
+        p_group_id: "g1",
+        p_from_user_id: "u1",
+        p_to_user_id: "u2",
+        p_amount_cents: 5000,
       });
-      expect(result).toEqual({
-        id: "s1",
-        groupId: "g1",
-        fromUserId: "u1",
-        toUserId: "u2",
-        amountCents: 5000,
-        status: "pending",
-        createdAt: "2026-01-01T00:00:00Z",
-        confirmedAt: undefined,
-      });
+      expect(result.id).toBe("s1");
+      expect(result.status).toBe("confirmed");
+      expect(result.amountCents).toBe(5000);
     });
 
     it("rejects zero amount", async () => {
@@ -190,18 +171,6 @@ describe("settlement-actions", () => {
         "Cannot settle with yourself",
       );
     });
-  });
-
-  describe("confirmSettlement", () => {
-    it("calls confirm_settlement RPC", async () => {
-      mockRpc.mockResolvedValue({ data: null, error: null });
-
-      await confirmSettlement("s1");
-
-      expect(mockRpc).toHaveBeenCalledWith("confirm_settlement", {
-        p_settlement_id: "s1",
-      });
-    });
 
     it("throws on RPC error", async () => {
       mockRpc.mockResolvedValue({
@@ -209,8 +178,8 @@ describe("settlement-actions", () => {
         error: { message: "Not authorized" },
       });
 
-      await expect(confirmSettlement("s1")).rejects.toThrow(
-        "Failed to confirm settlement: Not authorized",
+      await expect(recordSettlement("g1", "u1", "u2", 5000)).rejects.toThrow(
+        "Failed to record settlement: Not authorized",
       );
     });
   });
@@ -240,14 +209,4 @@ describe("settlement-actions", () => {
     });
   });
 
-  describe("queryPendingSettlementsForUser", () => {
-    it("queries pending settlements where user is creditor", async () => {
-      chain.order.mockReturnValue({ data: [], error: null });
-
-      await queryPendingSettlementsForUser("g1", "u2");
-
-      expect(mockEq).toHaveBeenCalledWith("to_user_id", "u2");
-      expect(mockEq).toHaveBeenCalledWith("status", "pending");
-    });
-  });
 });

@@ -597,6 +597,15 @@ export interface Database {
         Args: { p_settlement_id: string };
         Returns: void;
       };
+      record_and_settle: {
+        Args: {
+          p_group_id: string;
+          p_from_user_id: string;
+          p_to_user_id: string;
+          p_amount_cents: number;
+        };
+        Returns: string;
+      };
     };
     Enums: {
       pix_key_type: "phone" | "cpf" | "email" | "random";

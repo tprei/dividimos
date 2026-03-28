@@ -41,7 +41,7 @@ function makeRequest(body: Record<string, unknown>) {
 describe("POST /api/pix/generate", () => {
   it("returns 401 when not authenticated", async () => {
     const response = await POST(
-      makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
+      makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
     );
 
     expect(response.status).toBe(401);
@@ -60,7 +60,7 @@ describe("POST /api/pix/generate", () => {
     expect(body.error).toBe("Dados invalidos");
   });
 
-  it("returns 400 when neither billId nor groupId is provided", async () => {
+  it("returns 400 when groupId is not provided", async () => {
     serverMock.setUser({ id: "user-alice" });
 
     const response = await POST(
@@ -74,94 +74,20 @@ describe("POST /api/pix/generate", () => {
     serverMock.setUser({ id: "user-alice" });
 
     const response = await POST(
-      makeRequest({ recipientUserId: "user-bob", amountCents: 0, billId: "bill-1" }),
+      makeRequest({ recipientUserId: "user-bob", amountCents: 0, groupId: "group-1" }),
     );
 
     expect(response.status).toBe(400);
   });
 
-  describe("bill settlement flow", () => {
-    it("returns 403 when caller is not a bill participant or creator", async () => {
-      serverMock.setUser({ id: "user-eve" });
+  it("returns 400 when billId is provided", async () => {
+    serverMock.setUser({ id: "user-alice" });
 
-      // bill_participants.select → no match
-      serverMock.onTable("bill_participants", { data: [] });
-      // bills.select for creator check → different creator
-      serverMock.onTable("bills", { data: { creator_id: "user-alice" } });
+    const response = await POST(
+      makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
+    );
 
-      const response = await POST(
-        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
-      );
-
-      expect(response.status).toBe(403);
-      const body = await response.json();
-      expect(body.error).toContain("nao participam");
-    });
-
-    it("returns 403 when recipient has not accepted the invite", async () => {
-      serverMock.setUser({ id: "user-alice" });
-
-      // Both are participants; bob has not accepted
-      serverMock.onTable("bill_participants", {
-        data: [
-          { user_id: "user-alice", status: "accepted" },
-          { user_id: "user-bob", status: "invited" },
-        ],
-      });
-
-      const response = await POST(
-        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
-      );
-
-      expect(response.status).toBe(403);
-      const body = await response.json();
-      expect(body.error).toContain("nao aceitou");
-    });
-
-    it("returns 404 when recipient has no pix key", async () => {
-      serverMock.setUser({ id: "user-alice" });
-
-      serverMock.onTable("bill_participants", {
-        data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
-      });
-      serverMock.onTable("bill_participants", {
-        data: { status: "accepted" },
-      });
-
-      // Admin query for recipient pix key → null
-      adminMock.onTable("users", { data: { pix_key_encrypted: null, name: "Bob" } });
-
-      const response = await POST(
-        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
-      );
-
-      expect(response.status).toBe(404);
-      const body = await response.json();
-      expect(body.error).toContain("sem chave Pix");
-    });
-
-    it("returns copiaECola on successful bill settlement", async () => {
-      serverMock.setUser({ id: "user-alice" });
-
-      serverMock.onTable("bill_participants", {
-        data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
-      });
-      serverMock.onTable("bill_participants", {
-        data: { status: "accepted" },
-      });
-
-      adminMock.onTable("users", {
-        data: { pix_key_encrypted: "encrypted-key", name: "Bob Santos" },
-      });
-
-      const response = await POST(
-        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
-      );
-
-      expect(response.status).toBe(200);
-      const body = await response.json();
-      expect(body.copiaECola).toBe("00020126580014br.gov.bcb.pix...test");
-    });
+    expect(response.status).toBe(400);
   });
 
   describe("group settlement flow", () => {
@@ -210,12 +136,10 @@ describe("POST /api/pix/generate", () => {
   it("returns 500 when pix key decryption fails", async () => {
     serverMock.setUser({ id: "user-alice" });
 
-    serverMock.onTable("bill_participants", {
+    serverMock.onTable("group_members", {
       data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
     });
-    serverMock.onTable("bill_participants", {
-      data: { status: "accepted" },
-    });
+    serverMock.onTable("groups", { data: { creator_id: "user-other" } });
 
     adminMock.onTable("users", {
       data: { pix_key_encrypted: "corrupted-data", name: "Bob Santos" },
@@ -226,7 +150,7 @@ describe("POST /api/pix/generate", () => {
     });
 
     const response = await POST(
-      makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
+      makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
     );
 
     expect(response.status).toBe(500);

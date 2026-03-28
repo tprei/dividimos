@@ -20,11 +20,6 @@ vi.mock("@/hooks/use-auth", () => ({
   useUser: () => ({ id: "user-1", name: "Test User", avatarUrl: null }),
 }));
 
-// Mock useBillInvites
-vi.mock("@/hooks/use-bill-invites", () => ({
-  useBillInvites: () => ({ invites: [], loading: false }),
-}));
-
 // Mock supabase client
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
