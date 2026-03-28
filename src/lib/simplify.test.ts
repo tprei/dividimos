@@ -233,4 +233,18 @@ describe("simplifyDebts", () => {
     // A triangle should simplify (all balance to zero via netAndMinimize)
     expect(result.simplifiedEdges.length).toBeLessThanOrEqual(edges.length);
   });
+
+  it("preserves 1-centavo reverse-pair net (no tolerance)", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "user-alice", toUserId: "user-bob", amountCents: 5001 },
+      { fromUserId: "user-bob", toUserId: "user-alice", amountCents: 5000 },
+    ];
+    const result = simplifyDebts(edges, twoParticipants);
+    expect(result.simplifiedEdges).toHaveLength(1);
+    expect(result.simplifiedEdges[0]).toMatchObject({
+      fromUserId: "user-alice",
+      toUserId: "user-bob",
+      amountCents: 1,
+    });
+  });
 });

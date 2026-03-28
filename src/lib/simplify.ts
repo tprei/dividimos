@@ -55,8 +55,8 @@ function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
   const debtors: { id: string; amount: number }[] = [];
   const creditors: { id: string; amount: number }[] = [];
   for (const [id, balance] of balances) {
-    if (balance < -1) debtors.push({ id, amount: Math.abs(balance) });
-    if (balance > 1) creditors.push({ id, amount: balance });
+    if (balance < 0) debtors.push({ id, amount: Math.abs(balance) });
+    if (balance > 0) creditors.push({ id, amount: balance });
   }
   debtors.sort((a, b) => b.amount - a.amount);
   creditors.sort((a, b) => b.amount - a.amount);
@@ -70,8 +70,8 @@ function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
     result.push({ fromUserId: debtors[di].id, toUserId: creditors[ci].id, amountCents: transfer });
     debtors[di].amount -= transfer;
     creditors[ci].amount -= transfer;
-    if (debtors[di].amount <= 1) di++;
-    if (creditors[ci].amount <= 1) ci++;
+    if (debtors[di].amount <= 0) di++;
+    if (creditors[ci].amount <= 0) ci++;
   }
   return result;
 }
@@ -174,7 +174,7 @@ export function simplifyDebts(
         const nameA = getUserName(a.fromUserId, participants);
         const nameB = getUserName(a.toUserId, participants);
 
-        if (Math.abs(net) > 1) {
+        if (Math.abs(net) > 0) {
           const newEdge: DebtEdge = net > 0
             ? { fromUserId: a.fromUserId, toUserId: a.toUserId, amountCents: net }
             : { fromUserId: a.toUserId, toUserId: a.fromUserId, amountCents: Math.abs(net) };

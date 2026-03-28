@@ -394,8 +394,8 @@ export const useBillStore = create<BillState>((set, get) => ({
     const creditors: { id: string; amount: number }[] = [];
 
     for (const [id, balance] of netBalance) {
-      if (balance < -1) debtors.push({ id, amount: Math.abs(balance) });
-      if (balance > 1) creditors.push({ id, amount: balance });
+      if (balance < 0) debtors.push({ id, amount: Math.abs(balance) });
+      if (balance > 0) creditors.push({ id, amount: balance });
     }
 
     debtors.sort((a, b) => b.amount - a.amount);
@@ -424,8 +424,8 @@ export const useBillStore = create<BillState>((set, get) => ({
       debtors[di].amount -= transfer;
       creditors[ci].amount -= transfer;
 
-      if (debtors[di].amount <= 1) di++;
-      if (creditors[ci].amount <= 1) ci++;
+      if (debtors[di].amount <= 0) di++;
+      if (creditors[ci].amount <= 0) ci++;
     }
 
     const newStatus: BillStatus = entries.length === 0 ? "settled" : "active";
