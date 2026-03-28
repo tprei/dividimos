@@ -57,6 +57,7 @@ function getCurvedPath(
 function getLabelPosition(
   from: { x: number; y: number },
   to: { x: number; y: number },
+  hasReverse: boolean,
 ): { x: number; y: number } {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -64,9 +65,12 @@ function getLabelPosition(
   const nx = -dy / len;
   const ny = dx / len;
   const curvature = len * 0.25;
+  const t = hasReverse ? 0.35 : 0.5;
+  const mx = from.x + dx * t;
+  const my = from.y + dy * t;
   return {
-    x: (from.x + to.x) / 2 + nx * curvature * 0.6,
-    y: (from.y + to.y) / 2 + ny * curvature * 0.6,
+    x: mx + nx * curvature * 0.8,
+    y: my + ny * curvature * 0.8,
   };
 }
 
@@ -152,8 +156,11 @@ export function DebtGraph({
           const dimmed = dimOthers && !isInvolved;
           const edgeKey = `${edge.fromUserId}-${edge.toUserId}-${edgeIdx}`;
 
+          const hasReverse = edges.some(
+            (e) => e.fromUserId === edge.toUserId && e.toUserId === edge.fromUserId,
+          );
           const pathD = getCurvedPath(fromPos, toPos);
-          const labelPos = getLabelPosition(fromPos, toPos);
+          const labelPos = getLabelPosition(fromPos, toPos, hasReverse);
           const strokeColor = highlighted
             ? "var(--color-success)"
             : fading
