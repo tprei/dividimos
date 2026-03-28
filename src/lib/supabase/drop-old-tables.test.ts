@@ -40,7 +40,6 @@ describe("drop old bill tables migration", () => {
     "update_group_settlement_on_payment",
     "cascade_group_settlement",
     "update_updated_at",
-    "my_bill_ids",
     "sync_group_settlements",
   ];
 
@@ -60,6 +59,7 @@ describe("drop old bill tables migration", () => {
     for (const func of oldFunctions) {
       expect(sql).toContain(`DROP FUNCTION IF EXISTS ${func}`);
     }
+    expect(sql).toContain("proname = 'my_bill_ids'");
   });
 
   it("drops tables before enums to respect dependencies", () => {
@@ -135,7 +135,7 @@ describe("drop old bill tables migration", () => {
   });
 
   it("removes old tables from realtime publication", () => {
-    expect(sql).toContain("supabase_realtime DROP TABLE IF EXISTS payments");
-    expect(sql).toContain("supabase_realtime DROP TABLE IF EXISTS bills");
+    expect(sql).toContain("supabase_realtime DROP TABLE payments");
+    expect(sql).toContain("supabase_realtime DROP TABLE bills");
   });
 });

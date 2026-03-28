@@ -41,7 +41,6 @@ import type {
   DebtEdge,
   Expense,
   ExpenseItem,
-  ExpensePayer,
   ExpenseStatus,
   ExpenseWithDetails,
   UserProfile,
@@ -104,15 +103,11 @@ function CreatorDraftView({
   participants,
   items,
   shares,
-  payers,
-  store,
 }: {
   expense: Expense;
   participants: UserProfile[];
   items: ExpenseItem[];
   shares: { userId: string; shareAmountCents: number }[];
-  payers: ExpensePayer[];
-  store: ReturnType<typeof useBillStore.getState>;
 }) {
   const [finalizing, setFinalizing] = useState(false);
 
@@ -254,7 +249,6 @@ export default function BillDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const store = useBillStore();
   const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
   const [pixModal, setPixModal] = useState<{
@@ -493,8 +487,6 @@ export default function BillDetailPage({
         participants={allParticipants}
         items={expense.items}
         shares={expense.shares}
-        payers={expense.payers}
-        store={store}
       />
     );
   }

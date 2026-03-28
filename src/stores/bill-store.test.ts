@@ -156,7 +156,7 @@ describe("splitBillByPercentage", () => {
   });
 
   it("rejects assignments that sum to less than 100%", () => {
-    const s = setupSingleAmountBill();
+    const s = setupSingleAmountExpense();
     s.addParticipant(userBob);
     s.splitBillByPercentage([
       { userId: "user-alice", percentage: 40 },
@@ -166,7 +166,7 @@ describe("splitBillByPercentage", () => {
   });
 
   it("rejects assignments that sum to more than 100%", () => {
-    const s = setupSingleAmountBill();
+    const s = setupSingleAmountExpense();
     s.addParticipant(userBob);
     s.splitBillByPercentage([
       { userId: "user-alice", percentage: 60 },
@@ -176,7 +176,7 @@ describe("splitBillByPercentage", () => {
   });
 
   it("accepts assignments that sum to exactly 100 with floating point", () => {
-    const s = setupSingleAmountBill();
+    const s = setupSingleAmountExpense();
     s.addParticipant(userBob);
     s.addParticipant(userCarlos);
     // 33.33 + 33.33 + 33.34 = 100
@@ -265,7 +265,7 @@ describe("getParticipantTotal", () => {
 
   it("participant totals sum exactly to grandTotal with 3-way split and service fee", () => {
     const s = setup();
-    s.createBill("Test", "itemized");
+    s.createExpense("Test", "itemized");
     const { addParticipant, addItem, splitItemEqually, getGrandTotal, getParticipantTotal } = useBillStore.getState();
     addParticipant(userBob);
     addParticipant(userCarlos);
@@ -281,8 +281,8 @@ describe("getParticipantTotal", () => {
 
   it("participant totals sum exactly with fixed fees", () => {
     const s = setup();
-    s.createBill("Test", "itemized");
-    useBillStore.getState().updateBill({ fixedFees: 100 });
+    s.createExpense("Test", "itemized");
+    useBillStore.getState().updateExpense({ fixedFees: 100 });
     const { addParticipant, addItem, splitItemEqually, getGrandTotal, getParticipantTotal } = useBillStore.getState();
     addParticipant(userBob);
     addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });

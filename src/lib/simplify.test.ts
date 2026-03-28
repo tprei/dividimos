@@ -150,7 +150,6 @@ describe("computeRawEdges", () => {
     const items = [{ totalPriceCents: 9000 }];
     // Dave-equivalent: one participant consumed 1001 across 3 payers
     // 1001 * 3000/9000 = 333.67 → independent Math.round would give 334+334+334=1002
-    const itemSplits = [makeItemSplit("user-alice", 1001, "item-1")];
     // Need a 4th participant as consumer to avoid self-edge overlap
     const consumerOnly = { id: "user-dave", email: "dave@example.com", handle: "dave", name: "Dave", pixKeyType: "email" as const, pixKeyHint: "d***e@example.com", onboarded: true, createdAt: "2024-01-01T00:00:00Z" };
     const allParticipants = [userAlice, userBob, userCarlos, consumerOnly];

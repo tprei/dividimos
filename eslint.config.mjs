@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Playwright transform cache
     ".home/**",
+    // Claude Code agent worktrees
+    ".claude/worktrees/**",
   ]),
   // Project-level rule overrides — this codebase uses client-side data fetching
   // in effects (fetch → setState), which is a legitimate pattern that the strict

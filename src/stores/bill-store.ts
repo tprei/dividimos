@@ -316,6 +316,9 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   splitBillByPercentage: (assignments) => {
+    if (!get().expense) return;
+    const sum = assignments.reduce((s, a) => s + a.percentage, 0);
+    if (Math.abs(sum - 100) > 0.01) return;
     const total = get().totalAmountInput;
     const billSplits: BillSplit[] = assignments.map((a) => ({
       userId: a.userId,
@@ -351,7 +354,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   computeLedger: () => {
-    const { expense, participants, items, splits, billSplits, totalAmountInput, payers } = get();
+    const { expense, participants, items, splits, billSplits, payers } = get();
     if (!expense || participants.length === 0) return;
 
     const consumption = new Map<string, number>();
@@ -443,7 +446,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   getExpenseShares: () => {
-    const { expense, participants, items, splits, billSplits, totalAmountInput } = get();
+    const { expense, participants, items, splits, billSplits } = get();
     if (!expense) return [];
 
     if (expense.expenseType === "single_amount") {
@@ -494,7 +497,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   getParticipantTotal: (userId) => {
-    const { expense, items, splits, billSplits, participants, totalAmountInput } = get();
+    const { expense, items, splits, billSplits, participants } = get();
     if (!expense) return 0;
 
     if (expense.expenseType === "single_amount") {
@@ -502,22 +505,25 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       return bs?.computedAmountCents || 0;
     }
 
-    const itemTotal = splits
-      .filter((s) => s.userId === userId)
-      .reduce((sum, s) => sum + s.computedAmountCents, 0);
-
     const itemsGrandTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+    const userIndex = participants.findIndex((p) => p.id === userId);
+    if (userIndex === -1) return 0;
+
+    const participantItemTotals = participants.map((p) =>
+      splits.filter((s) => s.userId === p.id).reduce((sum, s) => sum + s.computedAmountCents, 0),
+    );
+
+    const itemTotal = participantItemTotals[userIndex];
 
     let serviceFee = 0;
     if (expense.serviceFeePercent > 0 && itemsGrandTotal > 0) {
-      serviceFee = Math.round(
-        (itemTotal / itemsGrandTotal) * (itemsGrandTotal * expense.serviceFeePercent) / 100,
-      );
+      const totalServiceFee = Math.round((itemsGrandTotal * expense.serviceFeePercent) / 100);
+      serviceFee = distributeProportionally(totalServiceFee, participantItemTotals)[userIndex];
     }
 
     const fixedFeeShare =
       participants.length > 0
-        ? Math.round(expense.fixedFees / participants.length)
+        ? distributeEvenly(expense.fixedFees, participants.length)[userIndex]
         : 0;
 
     return itemTotal + serviceFee + fixedFeeShare;

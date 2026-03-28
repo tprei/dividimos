@@ -56,8 +56,8 @@ export function DevTestButtons() {
       id: "test_self", email: "pedro@test.com", handle: "pedro.reis", name: "Pedro Reis",
       pixKeyType: "phone", pixKeyHint: "(**) *****-4321", onboarded: true, createdAt: new Date().toISOString(),
     });
-    store.createBill("Churrascaria Teste", "itemized", "Fogo de Chao");
-    store.updateBill({ serviceFeePercent: 10, fixedFees: 0 });
+    store.createExpense("Churrascaria Teste", "itemized", "Fogo de Chao");
+    store.updateExpense({ serviceFeePercent: 10, fixedFees: 0 });
     for (const user of TEST_USERS) store.addParticipant(user);
     for (const item of RESTAURANT_ITEMS) store.addItem(item);
 

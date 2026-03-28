@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Suspense } from "react";
 
 // Mock next/navigation
 const mockPush = vi.fn();
@@ -74,10 +75,16 @@ vi.mock("react-hot-toast", () => ({
 // We need to wrap it to provide the params promise
 import GroupDetailPage from "./page";
 
-function renderPage(groupId = "group-1") {
-  return render(
-    <GroupDetailPage params={Promise.resolve({ id: groupId })} />,
-  );
+async function renderPage(groupId = "group-1") {
+  let result: ReturnType<typeof render>;
+  await act(async () => {
+    result = render(
+      <Suspense fallback={<div>Loading...</div>}>
+        <GroupDetailPage params={Promise.resolve({ id: groupId })} />
+      </Suspense>,
+    );
+  });
+  return result!;
 }
 
 describe("GroupDetailPage", () => {
@@ -116,21 +123,20 @@ describe("GroupDetailPage", () => {
     ];
   });
 
-  it("renders loading skeleton initially", () => {
-    renderPage();
-    // While loading, skeletons are shown
+  it("renders loading skeleton initially", async () => {
+    await renderPage();
     expect(document.querySelectorAll("[class*='animate-pulse'], [class*='skeleton']").length).toBeGreaterThanOrEqual(0);
   });
 
   it("renders group name after loading", async () => {
-    renderPage();
+    await renderPage();
     await waitFor(() => {
       expect(screen.getByText("Test Group")).toBeTruthy();
     });
   });
 
   it("shows members tab by default with member list", async () => {
-    renderPage();
+    await renderPage();
     await waitFor(() => {
       expect(screen.getByText("Alice Test")).toBeTruthy();
     });
@@ -138,7 +144,7 @@ describe("GroupDetailPage", () => {
 
   it("switches to contas tab and shows expenses", async () => {
     const user = userEvent.setup();
-    renderPage();
+    await renderPage();
 
     await waitFor(() => {
       expect(screen.getByText("Test Group")).toBeTruthy();
@@ -154,7 +160,7 @@ describe("GroupDetailPage", () => {
 
   it("switches to pagamentos tab and shows settlement history", async () => {
     const user = userEvent.setup();
-    renderPage();
+    await renderPage();
 
     await waitFor(() => {
       expect(screen.getByText("Test Group")).toBeTruthy();
@@ -169,7 +175,7 @@ describe("GroupDetailPage", () => {
 
   it("switches to acerto tab and shows settlement view", async () => {
     const user = userEvent.setup();
-    renderPage();
+    await renderPage();
 
     await waitFor(() => {
       expect(screen.getByText("Test Group")).toBeTruthy();
@@ -183,7 +189,7 @@ describe("GroupDetailPage", () => {
   });
 
   it("shows invite button for group creator", async () => {
-    renderPage();
+    await renderPage();
 
     await waitFor(() => {
       expect(screen.getByText("Convidar")).toBeTruthy();
@@ -192,7 +198,7 @@ describe("GroupDetailPage", () => {
 
   it("shows new expense button in contas tab", async () => {
     const user = userEvent.setup();
-    renderPage();
+    await renderPage();
 
     await waitFor(() => {
       expect(screen.getByText("Test Group")).toBeTruthy();
