@@ -4,53 +4,35 @@ import { motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  CheckCheck,
   Eye,
   EyeOff,
   Loader2,
   Plus,
-  Receipt,
   RefreshCw,
   ScanLine,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { SwipeableBillCard } from "@/components/bill/swipeable-bill-card";
+import { DebtCard } from "@/components/dashboard/debt-card";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
-import { createClient } from "@/lib/supabase/client";
-import { deleteExpense } from "@/lib/supabase/expense-actions";
 import { useUser } from "@/hooks/use-auth";
-import type { ExpenseStatus } from "@/types";
+import { recordSettlement } from "@/lib/supabase/settlement-actions";
+import { fetchUserDebts } from "@/lib/supabase/debt-actions";
+import type { DebtSummary } from "@/types";
 
-interface RecentBill {
-  id: string;
-  title: string;
-  date: string;
-  total: number;
-  participants: number;
-  status: ExpenseStatus;
-  myBalance: number;
-  creatorId: string;
-}
-
-const statusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
-  draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
-  active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  settled: { label: "Liquidado", color: "bg-success/15 text-success" },
-};
+const PixQrModal = dynamic(
+  () =>
+    import("@/components/settlement/pix-qr-modal").then((m) => ({
+      default: m.PixQrModal,
+    })),
+  { ssr: false },
+);
 
 function QuickAction({
   icon: Icon,
@@ -84,100 +66,60 @@ function getGreeting(): string {
 }
 
 interface DashboardContentProps {
-  initialBills: RecentBill[];
+  initialDebts: DebtSummary[];
   initialNetBalance: number;
 }
 
-export function DashboardContent({ initialBills, initialNetBalance }: DashboardContentProps) {
-  const router = useRouter();
+export function DashboardContent({
+  initialDebts,
+  initialNetBalance,
+}: DashboardContentProps) {
   const user = useUser();
   const [balanceVisible, setBalanceVisible] = useState(true);
-  const [bills, setBills] = useState<RecentBill[]>(initialBills);
+  const [debts, setDebts] = useState<DebtSummary[]>(initialDebts);
   const [netBalance, setNetBalance] = useState(initialNetBalance);
   const [refreshing, setRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState<"owes" | "owed">("owes");
+  const [pixModal, setPixModal] = useState<{
+    debt: DebtSummary;
+    mode: "pay" | "collect";
+  } | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
   const touchStartY = useRef(0);
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    const targetId = deleteTarget;
-    const removed = bills.find((b) => b.id === targetId);
-    setBills((prev) => prev.filter((b) => b.id !== targetId));
-    setDeleteTarget(null);
-    const result = await deleteExpense(targetId);
-    if (result.error && removed) {
-      setBills((prev) => [...prev, removed]);
-    }
-    setDeleting(false);
-  };
+  const owesCount = debts.filter((d) => d.direction === "owes").length;
+  const owedCount = debts.filter((d) => d.direction === "owed").length;
+  const filteredDebts = debts.filter((d) => d.direction === activeTab);
 
   const fetchDashboard = useCallback(async () => {
     if (!user) return;
-    const supabase = createClient();
 
-    const [expensesResult, balancesResult] = await Promise.all([
-      supabase
-        .from("expenses")
-        .select("id, title, status, total_amount, created_at, creator_id")
-        .order("created_at", { ascending: false })
-        .limit(5),
-      supabase
-        .from("balances")
-        .select("user_a, user_b, amount_cents")
-        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`),
-    ]);
+    const refreshed = await fetchUserDebts(user.id);
+    setDebts(refreshed);
 
-    const myExpenses = expensesResult.data ?? [];
-
-    if (myExpenses.length > 0) {
-      const expenseIds = myExpenses.map((e) => e.id);
-      const { data: shareRows } = await supabase
-        .from("expense_shares")
-        .select("expense_id, user_id")
-        .in("expense_id", expenseIds);
-
-      const countMap = new Map<string, Set<string>>();
-      for (const row of shareRows ?? []) {
-        if (!countMap.has(row.expense_id)) {
-          countMap.set(row.expense_id, new Set());
-        }
-        countMap.get(row.expense_id)!.add(row.user_id);
-      }
-
-      setBills(
-        myExpenses.map((expense) => ({
-          id: expense.id,
-          title: expense.title,
-          date: new Date(expense.created_at).toLocaleDateString("pt-BR", {
-            day: "2-digit",
-            month: "short",
-          }),
-          total: expense.total_amount,
-          participants: countMap.get(expense.id)?.size ?? 0,
-          status: expense.status,
-          myBalance: 0,
-          creatorId: expense.creator_id,
-        })),
-      );
-    } else {
-      setBills([]);
-    }
-
-    // Compute net balance from balances table
-    // Convention: positive amount_cents = user_a owes user_b
     let net = 0;
-    for (const row of balancesResult.data ?? []) {
-      if (row.user_a === user.id) {
-        net -= row.amount_cents;
-      } else {
-        net += row.amount_cents;
-      }
+    for (const d of refreshed) {
+      net += d.direction === "owes" ? -d.amountCents : d.amountCents;
     }
     setNetBalance(net);
   }, [user]);
+
+  const handleRecordSettlement = async (
+    debt: DebtSummary,
+    amountCents: number,
+  ) => {
+    const fromUserId =
+      debt.direction === "owes" ? user!.id : debt.counterpartyId;
+    const toUserId =
+      debt.direction === "owes" ? debt.counterpartyId : user!.id;
+
+    setActing(debt.groupId + debt.counterpartyId);
+    await recordSettlement(debt.groupId, fromUserId, toUserId, amountCents);
+    setPixModal(null);
+    setActing(null);
+    fetchDashboard();
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (window.scrollY === 0) {
@@ -231,17 +173,18 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setRefreshing(true); fetchDashboard().finally(() => setRefreshing(false)); }}
+              onClick={() => {
+                setRefreshing(true);
+                fetchDashboard().finally(() => setRefreshing(false));
+              }}
               className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
             >
-              <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`}
+              />
             </button>
             <Link href="/app/profile">
-              <UserAvatar
-                name={user?.name ?? ""}
-                avatarUrl={user?.avatarUrl}
-                size="md"
-              />
+              <UserAvatar name={user?.name ?? ""} avatarUrl={user?.avatarUrl} size="md" />
             </Link>
           </div>
         </div>
@@ -291,9 +234,9 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
             {balanceVisible ? formatBRL(Math.abs(netBalance)) : "R$ ••••••"}
           </motion.p>
           <p className="mt-1 text-sm text-white/60">
-            {bills.filter((b) => b.status === "active").length} conta
-            {bills.filter((b) => b.status === "active").length !== 1 ? "s" : ""}{" "}
-            pendente{bills.filter((b) => b.status === "active").length !== 1 ? "s" : ""}
+            {owesCount} divida
+            {owesCount !== 1 ? "s" : ""} pendente
+            {owesCount !== 1 ? "s" : ""}
           </p>
         </div>
       </motion.div>
@@ -316,26 +259,67 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
         className="mt-8"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Contas recentes</h2>
+          <h2 className="text-lg font-semibold">Suas dividas</h2>
           <Link
-            href="/app/bills"
+            href="/app/groups"
             className="flex items-center gap-1 text-sm font-medium text-primary"
           >
             Ver todas
           </Link>
         </div>
 
-        {bills.length === 0 && (
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => setActiveTab("owes")}
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === "owes"
+                ? "bg-destructive/10 text-destructive"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            Voce deve{" "}
+            <span
+              className={`ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold ${
+                activeTab === "owes"
+                  ? "bg-destructive/20 text-destructive"
+                  : "bg-muted-foreground/15 text-muted-foreground"
+              }`}
+            >
+              {owesCount}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("owed")}
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === "owed"
+                ? "bg-success/10 text-success"
+                : "bg-muted text-muted-foreground"
+            }`}
+          >
+            Voce recebe{" "}
+            <span
+              className={`ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold ${
+                activeTab === "owed"
+                  ? "bg-success/20 text-success"
+                  : "bg-muted-foreground/15 text-muted-foreground"
+              }`}
+            >
+              {owedCount}
+            </span>
+          </button>
+        </div>
+
+        {filteredDebts.length === 0 && (
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center">
-            <Receipt className="mx-auto h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-sm text-muted-foreground">
-              Nenhuma conta ainda
+            <CheckCheck className="mx-auto h-8 w-8 text-success opacity-50" />
+            <p className="mt-2 text-sm font-medium text-foreground">
+              {activeTab === "owes" ? "Tudo em dia!" : "Nada a receber"}
             </p>
-            <Link href="/app/bill/new">
-              <Button size="sm" className="mt-3">
-                Criar primeira conta
-              </Button>
-            </Link>
+            <p className="text-sm text-muted-foreground">
+              {activeTab === "owes"
+                ? "Nenhuma divida pendente"
+                : "Nenhum pagamento pendente"}
+            </p>
           </div>
         )}
 
@@ -345,82 +329,37 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
           animate="visible"
           className="mt-4 space-y-3"
         >
-          {bills.map((bill) => {
-            const status = statusConfig[bill.status];
-            const isDraft = bill.status === "draft" && bill.creatorId === user?.id;
+          {filteredDebts.map((debt) => {
+            const debtKey = `${debt.groupId}-${debt.counterpartyId}`;
+            const isActingOnThis = acting === debtKey;
             return (
-              <motion.div key={bill.id} variants={staggerItem}>
-                <SwipeableBillCard
-                  enabled={isDraft}
-                  onEdit={() => router.push(`/app/bill/new?draft=${bill.id}`)}
-                  onDelete={() => setDeleteTarget(bill.id)}
-                >
-                  <Link href={`/app/bill/${bill.id}`}>
-                    <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
-                        <Receipt className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{bill.title}</p>
-                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{bill.date}</span>
-                          <span>·</span>
-                          <span>{bill.participants} pessoas</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold tabular-nums">
-                          {bill.total > 0 ? formatBRL(bill.total) : bill.status === "draft" ? "Em criação" : formatBRL(bill.total)}
-                        </p>
-                        <span
-                          className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
-                        >
-                          {status.label}
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                </SwipeableBillCard>
+              <motion.div key={debtKey} variants={staggerItem}>
+                <DebtCard
+                  debt={debt}
+                  onPay={(d) => setPixModal({ debt: d, mode: "pay" })}
+                  onCollect={(d) => setPixModal({ debt: d, mode: "collect" })}
+                  isActing={isActingOnThis}
+                />
               </motion.div>
             );
           })}
         </motion.div>
       </motion.div>
 
-      <Dialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Excluir rascunho?</DialogTitle>
-            <DialogDescription>
-              Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose
-              render={<Button variant="outline" />}
-              disabled={deleting}
-            >
-              Cancelar
-            </DialogClose>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              {deleting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                "Excluir"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {pixModal && (
+        <PixQrModal
+          open
+          onClose={() => setPixModal(null)}
+          recipientName={pixModal.debt.counterpartyName}
+          amountCents={pixModal.debt.amountCents}
+          recipientUserId={pixModal.debt.counterpartyId}
+          groupId={pixModal.debt.groupId}
+          mode={pixModal.mode}
+          onMarkPaid={async (amountCents: number) => {
+            await handleRecordSettlement(pixModal!.debt, amountCents);
+          }}
+        />
+      )}
     </div>
   );
 }

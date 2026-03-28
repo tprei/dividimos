@@ -243,6 +243,16 @@ export interface GroupBalanceSummary {
   totalDebtCents: number;
 }
 
+export interface DebtSummary {
+  groupId: string;
+  groupName: string;
+  counterpartyId: string;
+  counterpartyName: string;
+  counterpartyAvatarUrl: string | null;
+  amountCents: number;
+  direction: "owes" | "owed";
+}
+
 // ============================================================
 // Legacy type aliases (for gradual migration of components)
 // ============================================================
@@ -354,24 +364,6 @@ export interface LedgerEntry {
   createdAt: string;
 }
 
-/** @deprecated Use ExpenseParticipantSummary instead */
-export interface ParticipantSummary {
-  userId: string;
-  user: User;
-  itemsTotal: number;
-  serviceFee: number;
-  fixedFeeShare: number;
-  grandTotal: number;
-  debts: DebtSummary[];
-}
-
-/** @deprecated Use DebtEdge instead */
-export interface DebtSummary {
-  toUserId: string;
-  toUser: User;
-  amountCents: number;
-  status: DebtStatus;
-}
 
 /** @deprecated Use ExpenseWithDetails instead */
 export interface BillWithDetails extends Bill {
