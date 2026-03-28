@@ -374,6 +374,138 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     const bobToAlice = findBalance(balances, bob.id, alice.id);
     expect(bobToAlice!.amount).toBe(2500);
   });
+
+  it("concurrent activation of same expense — only one succeeds", async () => {
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Race condition",
+      totalAmount: 6000,
+      shares: [
+        { userId: alice.id, amount: 2000 },
+        { userId: bob.id, amount: 2000 },
+        { userId: carol.id, amount: 2000 },
+      ],
+      payers: [{ userId: alice.id, amount: 6000 }],
+    });
+
+    // Two concurrent activation attempts by the same creator
+    const client1 = authenticateAs(alice);
+    const client2 = authenticateAs(alice);
+
+    const results = await Promise.allSettled([
+      client1.rpc("activate_expense", { p_expense_id: expenseId }),
+      client2.rpc("activate_expense", { p_expense_id: expenseId }),
+    ]);
+
+    // Exactly one should succeed, the other should fail with invalid_status
+    const successes = results.filter(
+      (r) =>
+        r.status === "fulfilled" &&
+        !(r.value as { error: unknown }).error,
+    );
+    const failures = results.filter(
+      (r) =>
+        r.status === "fulfilled" &&
+        !!(r.value as { error: unknown }).error,
+    );
+
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+
+    // The failure should be invalid_status (the row was already activated by the winner)
+    const failResult = failures[0] as PromiseFulfilledResult<{
+      error: { message: string } | null;
+    }>;
+    expect(failResult.value.error!.message).toContain("invalid_status");
+
+    // Balances should reflect exactly one activation (not doubled)
+    const balances = await getBalances(groupId);
+    const bobToAlice = findBalance(balances, bob.id, alice.id);
+    expect(bobToAlice!.amount).toBe(2000);
+  });
+
+  it("concurrent activation of different expenses — balances accumulate correctly", async () => {
+    // Expense 1: Alice pays 6000, split equally
+    const exp1 = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Concurrent exp 1",
+      totalAmount: 6000,
+      shares: [
+        { userId: alice.id, amount: 2000 },
+        { userId: bob.id, amount: 2000 },
+        { userId: carol.id, amount: 2000 },
+      ],
+      payers: [{ userId: alice.id, amount: 6000 }],
+    });
+
+    // Expense 2: Bob pays 3000, split equally
+    const exp2 = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Concurrent exp 2",
+      totalAmount: 3000,
+      shares: [
+        { userId: alice.id, amount: 1000 },
+        { userId: bob.id, amount: 1000 },
+        { userId: carol.id, amount: 1000 },
+      ],
+      payers: [{ userId: bob.id, amount: 3000 }],
+    });
+
+    // Activate both concurrently
+    const client = authenticateAs(alice);
+    const [r1, r2] = await Promise.all([
+      client.rpc("activate_expense", { p_expense_id: exp1 }),
+      client.rpc("activate_expense", { p_expense_id: exp2 }),
+    ]);
+
+    expect(r1.error).toBeNull();
+    expect(r2.error).toBeNull();
+
+    // Expected net balances:
+    //   exp1: Bob→Alice=2000, Carol→Alice=2000
+    //   exp2: Alice→Bob=1000, Carol→Bob=1000
+    //   Net Bob↔Alice: Bob owes Alice 2000-1000=1000
+    //   Net Carol↔Alice: Carol owes Alice 2000
+    //   Net Carol↔Bob: Carol owes Bob 1000
+    const balances = await getBalances(groupId);
+    expect(findBalance(balances, bob.id, alice.id)!.amount).toBe(1000);
+    expect(findBalance(balances, carol.id, alice.id)!.amount).toBe(2000);
+    expect(findBalance(balances, carol.id, bob.id)!.amount).toBe(1000);
+  });
+
+  it("handles rounding with indivisible amounts", async () => {
+    // 10001 cents split 3 ways: ROUND(10001/3) = 3334, 3334, 3333
+    // But shares must sum to total, so caller provides exact split
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Odd split",
+      totalAmount: 10001,
+      shares: [
+        { userId: alice.id, amount: 3334 },
+        { userId: bob.id, amount: 3334 },
+        { userId: carol.id, amount: 3333 },
+      ],
+      payers: [{ userId: alice.id, amount: 10001 }],
+    });
+
+    const client = authenticateAs(alice);
+    const { error } = await client.rpc("activate_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+    // Bob owes Alice: ROUND(3334 * 10001 / 10001) = 3334
+    // Carol owes Alice: ROUND(3333 * 10001 / 10001) = 3333
+    const bobToAlice = findBalance(balances, bob.id, alice.id);
+    const carolToAlice = findBalance(balances, carol.id, alice.id);
+    expect(bobToAlice!.amount).toBe(3334);
+    expect(carolToAlice!.amount).toBe(3333);
+  });
 });
 
 describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
@@ -556,5 +688,90 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     const balances = await getBalances(groupId);
     const bobToAlice = findBalance(balances, bob.id, alice.id);
     expect(bobToAlice!.amount).toBe(-3000); // Negative = Alice owes Bob
+  });
+
+  it("settlement overshoot flips balance direction", async () => {
+    // Bob owes Alice 2000
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Small debt",
+      totalAmount: 4000,
+      shares: [
+        { userId: alice.id, amount: 2000 },
+        { userId: bob.id, amount: 2000 },
+      ],
+      payers: [{ userId: alice.id, amount: 4000 }],
+    });
+
+    const aliceClient = authenticateAs(alice);
+    await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
+
+    // Bob pays 5000 (overshoots by 3000)
+    const bobClient = authenticateAs(bob);
+    const { data: settlement } = await bobClient
+      .from("settlements")
+      .insert({
+        group_id: groupId,
+        from_user_id: bob.id,
+        to_user_id: alice.id,
+        amount_cents: 5000,
+      })
+      .select()
+      .single();
+
+    await aliceClient.rpc("confirm_settlement", {
+      p_settlement_id: settlement!.id,
+    });
+
+    // Balance was 2000 (Bob owes Alice), settlement subtracts 5000 → -3000 (Alice owes Bob)
+    const balances = await getBalances(groupId);
+    const bobToAlice = findBalance(balances, bob.id, alice.id);
+    expect(bobToAlice!.amount).toBe(-3000);
+  });
+
+  it("concurrent settlement confirmation — only one succeeds", async () => {
+    const bobClient = authenticateAs(bob);
+    const { data: settlement } = await bobClient
+      .from("settlements")
+      .insert({
+        group_id: groupId,
+        from_user_id: bob.id,
+        to_user_id: alice.id,
+        amount_cents: 1000,
+      })
+      .select()
+      .single();
+
+    const client1 = authenticateAs(alice);
+    const client2 = authenticateAs(alice);
+
+    const results = await Promise.allSettled([
+      client1.rpc("confirm_settlement", {
+        p_settlement_id: settlement!.id,
+      }),
+      client2.rpc("confirm_settlement", {
+        p_settlement_id: settlement!.id,
+      }),
+    ]);
+
+    const successes = results.filter(
+      (r) =>
+        r.status === "fulfilled" &&
+        !(r.value as { error: unknown }).error,
+    );
+    const failures = results.filter(
+      (r) =>
+        r.status === "fulfilled" &&
+        !!(r.value as { error: unknown }).error,
+    );
+
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+
+    const failResult = failures[0] as PromiseFulfilledResult<{
+      error: { message: string } | null;
+    }>;
+    expect(failResult.value.error!.message).toContain("invalid_status");
   });
 });
