@@ -1,26 +1,9 @@
--- Fix three bugs in sync_group_settlements:
+-- No-op: this migration was applied to remote via MCP to fix the auth check
+-- in sync_group_settlements. The fix (using my_group_ids() instead of querying
+-- group_members directly) is already included in the local version of
+-- 20260327000005_fix_settlement_constraint_and_locking.sql.
 --
--- Bug 1: The broad UNIQUE(group_id, from_user_id, to_user_id) constraint prevented
--- inserting a new pending settlement when a partially_paid row already exists for
--- the same pair. Replace it with a partial unique index covering only pending rows,
--- which allows one pending + one-or-more non-pending rows per pair.
---
--- Bug 2: SELECT ... FOR UPDATE acquires no lock when the group has no existing
--- settlements (empty result set = no rows to lock), so two concurrent callers raced
--- past the lock step and both tried to insert the same row. Replace with an
--- advisory lock keyed on the group_id, which serialises callers regardless of
--- whether rows exist.
---
--- Bug 3: The auth check queried group_members directly, rejecting group creators
--- who are authorized via groups.creator_id but may not have a group_members row.
--- Use my_group_ids() instead, consistent with all RLS policies in the app.
-
-ALTER TABLE public.group_settlements
-  DROP CONSTRAINT group_settlements_group_id_from_user_id_to_user_id_key;
-
-CREATE UNIQUE INDEX group_settlements_pending_unique
-  ON public.group_settlements (group_id, from_user_id, to_user_id)
-  WHERE (status = 'pending');
+-- This file exists only to keep the local migration history in sync with remote.
 
 CREATE OR REPLACE FUNCTION public.sync_group_settlements(
   p_group_id UUID,
@@ -44,8 +27,6 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  -- Serialise concurrent callers for the same group. Advisory locks work even
-  -- when there are no existing rows to SELECT ... FOR UPDATE.
   PERFORM pg_advisory_xact_lock(1, hashtext(p_group_id::text));
 
   DELETE FROM public.group_settlements

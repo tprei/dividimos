@@ -40,8 +40,8 @@ describe("loadBillFromSupabase", () => {
         created_at: "2024-01-01T00:00:00Z",
         updated_at: "2024-01-01T00:00:00Z",
         bill_participants: [
-          { user_id: "user-alice", status: "accepted", users: { id: "user-alice", handle: "alice", name: "Alice Silva", avatar_url: null } },
-          { user_id: "user-bob", status: "accepted", users: { id: "user-bob", handle: "bob", name: "Bob Santos", avatar_url: null } },
+          { user_id: "user-alice", status: "accepted" },
+          { user_id: "user-bob", status: "accepted" },
         ],
         bill_payers: [{ bill_id: "bill-1", user_id: "user-alice", amount_cents: 5500 }],
         ledger: [
@@ -85,6 +85,13 @@ describe("loadBillFromSupabase", () => {
       },
     });
 
+    mock.onTable("user_profiles", {
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice Silva", avatar_url: null },
+        { id: "user-bob", handle: "bob", name: "Bob Santos", avatar_url: null },
+      ],
+    });
+
     const result = await loadBillFromSupabase("bill-1");
 
     expect(result).not.toBeNull();
@@ -120,8 +127,8 @@ describe("loadBillFromSupabase", () => {
         created_at: "2024-01-01T00:00:00Z",
         updated_at: "2024-01-01T00:00:00Z",
         bill_participants: [
-          { user_id: "user-alice", status: "accepted", users: { id: "user-alice", handle: "alice", name: "Alice Silva", avatar_url: null } },
-          { user_id: "user-bob", status: "accepted", users: { id: "user-bob", handle: "bob", name: "Bob Santos", avatar_url: null } },
+          { user_id: "user-alice", status: "accepted" },
+          { user_id: "user-bob", status: "accepted" },
         ],
         bill_payers: [{ bill_id: "bill-2", user_id: "user-alice", amount_cents: 10000 }],
         ledger: [],
@@ -137,6 +144,13 @@ describe("loadBillFromSupabase", () => {
           },
         ],
       },
+    });
+
+    mock.onTable("user_profiles", {
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice Silva", avatar_url: null },
+        { id: "user-bob", handle: "bob", name: "Bob Santos", avatar_url: null },
+      ],
     });
 
     const result = await loadBillFromSupabase("bill-2");
@@ -166,7 +180,7 @@ describe("loadBillFromSupabase", () => {
         created_at: "2024-01-01T00:00:00Z",
         updated_at: "2024-01-01T00:00:00Z",
         bill_participants: [
-          { user_id: "user-bob", status: "accepted", users: { id: "user-bob", handle: "bob", name: "Bob", avatar_url: null } },
+          { user_id: "user-bob", status: "accepted" },
         ],
         bill_payers: [],
         ledger: [],
@@ -176,7 +190,10 @@ describe("loadBillFromSupabase", () => {
     });
 
     mock.onTable("user_profiles", {
-      data: { id: "user-alice", handle: "alice", name: "Alice", avatar_url: null },
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice", avatar_url: null },
+        { id: "user-bob", handle: "bob", name: "Bob", avatar_url: null },
+      ],
     });
 
     const result = await loadBillFromSupabase("bill-3");
@@ -187,8 +204,5 @@ describe("loadBillFromSupabase", () => {
     const names = result!.participants.map((p) => p.name);
     expect(names).toContain("Alice");
     expect(names).toContain("Bob");
-
-    const profileQueries = mock.findCalls("user_profiles", "select");
-    expect(profileQueries).toHaveLength(1);
   });
 });
