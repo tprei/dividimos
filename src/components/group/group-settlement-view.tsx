@@ -12,7 +12,7 @@ const PixQrModal = dynamic(
 );
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
 import { consolidateEdges, simplifyDebts } from "@/lib/simplify";
 import type { DebtEdge } from "@/lib/simplify";
@@ -295,19 +295,17 @@ export function GroupSettlementView({
 
       {/* Simplification viewer */}
       {simplificationResult && (
-        <Sheet open={showSimplificationViewer} onOpenChange={setShowSimplificationViewer}>
-          <SheetContent side="bottom" className="!h-[100dvh] overflow-y-auto rounded-t-3xl">
-            <SheetHeader>
-              <SheetTitle>Simplificacao passo a passo</SheetTitle>
-            </SheetHeader>
-            <div className="mt-4 pb-8">
-              <SimplificationViewer
-                result={simplificationResult}
-                participants={participants}
-              />
-            </div>
-          </SheetContent>
-        </Sheet>
+        <Dialog open={showSimplificationViewer} onOpenChange={setShowSimplificationViewer}>
+          <DialogContent className="max-w-lg max-h-[85dvh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Simplificacao passo a passo</DialogTitle>
+            </DialogHeader>
+            <SimplificationViewer
+              result={simplificationResult}
+              participants={participants}
+            />
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Pix QR modal */}
