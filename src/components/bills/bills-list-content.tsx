@@ -65,6 +65,7 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    setDeleting(true);
     const targetId = deleteTarget;
     const removed = bills.find((b) => b.id === targetId);
     setBills((prev) => prev.filter((b) => b.id !== targetId));
@@ -73,6 +74,7 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
     if (result.error && removed) {
       setBills((prev) => [...prev, removed]);
     }
+    setDeleting(false);
   };
 
   const filtered = bills.filter((bill) => {

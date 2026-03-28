@@ -105,6 +105,7 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    setDeleting(true);
     const targetId = deleteTarget;
     const removed = bills.find((b) => b.id === targetId);
     setBills((prev) => prev.filter((b) => b.id !== targetId));
@@ -113,6 +114,7 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
     if (result.error && removed) {
       setBills((prev) => [...prev, removed]);
     }
+    setDeleting(false);
   };
 
   const fetchDashboard = useCallback(async () => {
