@@ -16,7 +16,7 @@ function makeUser(id: string, name: string): User {
   };
 }
 
-describe("Itemized bill flows", () => {
+describe("Itemized expense flows", () => {
   beforeEach(() => {
     useBillStore.getState().reset();
   });
@@ -24,7 +24,7 @@ describe("Itemized bill flows", () => {
   it("Flow 1: classic restaurant — 3 people, 3 items, 10% service, one payer", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Restaurante", "itemized", "Churrascaria");
+    store.createExpense("Restaurante", "itemized", "Churrascaria");
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
@@ -51,16 +51,15 @@ describe("Itemized bill flows", () => {
     expect(useBillStore.getState().getGrandTotal()).toBe(15510);
 
     store.setPayerFull("user-alice");
-    expect(useBillStore.getState().bill!.payers[0].amountCents).toBe(15510);
+    expect(useBillStore.getState().payers[0].amountCents).toBe(15510);
 
     store.computeLedger();
-    const { ledger } = useBillStore.getState();
+    const { previewDebts } = useBillStore.getState();
 
-    expect(ledger.length).toBeGreaterThanOrEqual(1);
-    expect(ledger.every((e) => e.toUserId === "user-alice")).toBe(true);
-    expect(ledger.every((e) => e.status === "pending")).toBe(true);
+    expect(previewDebts.length).toBeGreaterThanOrEqual(1);
+    expect(previewDebts.every((e) => e.toUserId === "user-alice")).toBe(true);
 
-    const totalOwed = ledger.reduce((s, e) => s + e.amountCents, 0);
+    const totalOwed = previewDebts.reduce((s, e) => s + e.amountCents, 0);
     const bobTotal = useBillStore.getState().getParticipantTotal("user-bob");
     const carlosTotal = useBillStore.getState().getParticipantTotal("user-carlos");
     expect(Math.abs(totalOwed - (bobTotal + carlosTotal))).toBeLessThanOrEqual(2);
@@ -69,7 +68,7 @@ describe("Itemized bill flows", () => {
   it("Flow 2: 5-person dinner with two payers", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Jantar", "itemized");
+    store.createExpense("Jantar", "itemized");
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
     const dave = makeUser("dave", "Dave");
@@ -85,7 +84,7 @@ describe("Itemized bill flows", () => {
     store.splitItemEqually(items[0].id, ["user-alice", "user-bob", "user-carlos", "dave", "eve"]);
     store.splitItemEqually(items[1].id, ["user-alice", "user-bob", "user-carlos", "dave", "eve"]);
 
-    store.updateBill({ fixedFees: 2500 });
+    store.updateExpense({ fixedFees: 2500 });
 
     const grandTotal = useBillStore.getState().getGrandTotal();
     store.setPayerAmount("user-alice", Math.ceil(grandTotal * 0.6));
@@ -93,17 +92,17 @@ describe("Itemized bill flows", () => {
 
     store.computeLedger();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger.length).toBeGreaterThan(0);
+    const { previewDebts } = useBillStore.getState();
+    expect(previewDebts.length).toBeGreaterThan(0);
 
-    const totalLedger = ledger.reduce((s, e) => s + e.amountCents, 0);
-    expect(totalLedger).toBeGreaterThan(0);
+    const totalDebts = previewDebts.reduce((s, e) => s + e.amountCents, 0);
+    expect(totalDebts).toBeGreaterThan(0);
   });
 
   it("Flow 3: adding and removing items mid-flow", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Test", "itemized");
+    store.createExpense("Test", "itemized");
     store.addParticipant(userBob);
 
     store.addItem({ description: "Item1", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
@@ -118,9 +117,9 @@ describe("Itemized bill flows", () => {
     store.removeItem(items[0].id);
     expect(useBillStore.getState().items).toHaveLength(1);
     expect(useBillStore.getState().splits).toHaveLength(2);
-    expect(useBillStore.getState().bill!.totalAmount).toBe(3000);
+    expect(useBillStore.getState().expense!.totalAmount).toBe(3000);
 
     store.addItem({ description: "Item3", quantity: 2, unitPriceCents: 2000, totalPriceCents: 4000 });
-    expect(useBillStore.getState().bill!.totalAmount).toBe(7000);
+    expect(useBillStore.getState().expense!.totalAmount).toBe(7000);
   });
 });
