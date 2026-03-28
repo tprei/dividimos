@@ -142,6 +142,49 @@ describe("splitBillByPercentage", () => {
     s.splitBillByPercentage([{ userId: "user-alice", percentage: 100 }]);
     expect(useBillStore.getState().billSplits[0].computedAmountCents).toBe(10000);
   });
+
+  it("rejects assignments that sum to less than 100%", () => {
+    const s = setupSingleAmountBill();
+    s.addParticipant(userBob);
+    s.splitBillByPercentage([
+      { userId: "user-alice", percentage: 40 },
+      { userId: "user-bob", percentage: 40 },
+    ]);
+    expect(useBillStore.getState().billSplits).toHaveLength(0);
+  });
+
+  it("rejects assignments that sum to more than 100%", () => {
+    const s = setupSingleAmountBill();
+    s.addParticipant(userBob);
+    s.splitBillByPercentage([
+      { userId: "user-alice", percentage: 60 },
+      { userId: "user-bob", percentage: 60 },
+    ]);
+    expect(useBillStore.getState().billSplits).toHaveLength(0);
+  });
+
+  it("accepts assignments that sum to exactly 100 with floating point", () => {
+    const s = setupSingleAmountBill();
+    s.addParticipant(userBob);
+    s.addParticipant(userCarlos);
+    // 33.33 + 33.33 + 33.34 = 100
+    s.splitBillByPercentage([
+      { userId: "user-alice", percentage: 33.33 },
+      { userId: "user-bob", percentage: 33.33 },
+      { userId: "user-carlos", percentage: 33.34 },
+    ]);
+    const splits = useBillStore.getState().billSplits;
+    expect(splits).toHaveLength(3);
+    expect(splits.reduce((sum, sp) => sum + sp.computedAmountCents, 0)).toBe(10000);
+  });
+
+  it("is a no-op when no bill exists", () => {
+    useBillStore.getState().splitBillByPercentage([
+      { userId: "user-alice", percentage: 50 },
+      { userId: "user-bob", percentage: 50 },
+    ]);
+    expect(useBillStore.getState().billSplits).toHaveLength(0);
+  });
 });
 
 describe("splitPaymentEqually", () => {
