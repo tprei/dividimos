@@ -32,13 +32,11 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
-import { loadBillFromSupabase } from "@/lib/supabase/load-bill";
-import { saveDraftToSupabase } from "@/lib/supabase/save-draft";
-import { syncBillToSupabase } from "@/lib/supabase/sync-bill";
+import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { useBillStore } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import type { BillParticipantStatus, BillType, User, UserProfile } from "@/types";
+import type { ExpenseType, User, UserProfile } from "@/types";
 
 type Step = "type" | "info" | "participants" | "items" | "split" | "amount-split" | "payer" | "summary";
 
@@ -78,7 +76,7 @@ function NewBillPageContent() {
   const store = useBillStore();
   const { user: authUser } = useAuth();
 
-  const [billType, setBillType] = useState<BillType | null>(null);
+  const [billType, setBillType] = useState<ExpenseType | null>(null);
   const [step, setStep] = useState<Step>("type");
   const [title, setTitle] = useState("");
   const [merchantName, setMerchantName] = useState("");
@@ -102,7 +100,7 @@ function NewBillPageContent() {
   const stepIndex = steps.findIndex((s) => s.key === step);
   const isTypeStep = step === "type";
 
-  const handleTypeSelect = (type: BillType) => {
+  const handleTypeSelect = (type: ExpenseType) => {
     setBillType(type);
     setStep("info");
   };
@@ -129,52 +127,103 @@ function NewBillPageContent() {
     }
 
     (async () => {
-      const loaded = await loadBillFromSupabase(draftId);
+      const loaded = await loadExpense(draftId);
       if (!loaded || editLoadedRef.current) return;
       editLoadedRef.current = true;
 
-      const { bill, participants, items, splits, billSplits } = loaded;
+      // Convert loaded expense data back to store format for wizard state
+      const participants = loaded.shares.map((s) => ({
+        id: s.user.id,
+        email: "",
+        handle: s.user.handle,
+        name: s.user.name,
+        pixKeyType: "email" as const,
+        pixKeyHint: "",
+        avatarUrl: s.user.avatarUrl,
+        onboarded: true,
+        createdAt: new Date().toISOString(),
+      }));
 
-      // Restore store state
+      // Also add payers who might not be in shares
+      for (const p of loaded.payers) {
+        if (!participants.find((u) => u.id === p.user.id)) {
+          participants.push({
+            id: p.user.id,
+            email: "",
+            handle: p.user.handle,
+            name: p.user.name,
+            pixKeyType: "email" as const,
+            pixKeyHint: "",
+            avatarUrl: p.user.avatarUrl,
+            onboarded: true,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      // Build a Bill object the store can hold (bridge during migration)
+      const billForStore = {
+        id: loaded.id,
+        creatorId: loaded.creatorId,
+        billType: loaded.expenseType,
+        title: loaded.title,
+        merchantName: loaded.merchantName,
+        status: loaded.status,
+        serviceFeePercent: loaded.serviceFeePercent,
+        fixedFees: loaded.fixedFees,
+        totalAmount: loaded.totalAmount,
+        totalAmountInput: loaded.expenseType === "single_amount" ? loaded.totalAmount : 0,
+        payers: loaded.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents })),
+        groupId: loaded.groupId,
+        createdAt: loaded.createdAt,
+        updatedAt: loaded.updatedAt,
+      };
+
       store.setCurrentUser(authUser);
       useBillStore.setState({
-        bill,
+        bill: billForStore,
         participants,
-        items,
-        splits,
-        billSplits,
+        items: loaded.items.map((item) => ({
+          ...item,
+          billId: loaded.id, // bridge: store expects billId
+        })),
+        splits: [], // per-item splits not stored in expense model
+        billSplits: loaded.expenseType === "single_amount"
+          ? loaded.shares.map((s) => ({
+              userId: s.userId,
+              splitType: "fixed" as const,
+              value: s.shareAmountCents,
+              computedAmountCents: s.shareAmountCents,
+            }))
+          : [],
         ledger: [],
       });
 
       // Restore local form state
       setIsEditing(true);
       setEditDraftId(draftId);
-      setBillType(bill.billType);
-      setTitle(bill.title);
-      setMerchantName(bill.merchantName ?? "");
-      setServiceFee(String(bill.serviceFeePercent || 10));
-      setFixedFees(bill.fixedFees ? String(bill.fixedFees / 100) : "");
+      setBillType(loaded.expenseType);
+      setTitle(loaded.title);
+      setMerchantName(loaded.merchantName ?? "");
+      setServiceFee(String(loaded.serviceFeePercent || 10));
+      setFixedFees(loaded.fixedFees ? String(loaded.fixedFees / 100) : "");
       setRemoteBillId(draftId);
 
-      if (bill.groupId) {
-        setSelectedGroupId(bill.groupId);
-        const supabase = createClient();
-        const { data: group } = await supabase
-          .from("groups")
-          .select("name")
-          .eq("id", bill.groupId)
-          .single();
-        if (group) setSelectedGroupName(group.name);
-      }
+      setSelectedGroupId(loaded.groupId);
+      const supabase = createClient();
+      const { data: group } = await supabase
+        .from("groups")
+        .select("name")
+        .eq("id", loaded.groupId)
+        .single();
+      if (group) setSelectedGroupName(group.name);
 
       // Determine starting step based on what data exists
-      if (bill.payers.length > 0) {
+      if (loaded.payers.length > 0) {
         setStep("payer");
-      } else if (bill.billType === "itemized" && splits.length > 0) {
-        setStep("split");
-      } else if (bill.billType === "itemized" && items.length > 0) {
+      } else if (loaded.expenseType === "itemized" && loaded.items.length > 0) {
         setStep("items");
-      } else if (bill.billType === "single_amount" && billSplits.length > 0) {
+      } else if (loaded.expenseType === "single_amount" && loaded.shares.length > 0) {
         setStep("amount-split");
       } else {
         setStep("participants");
@@ -196,48 +245,10 @@ function NewBillPageContent() {
 
   const [, setSyncing] = useState(false);
   const [remoteBillId, setRemoteBillId] = useState<string | null>(null);
-  const [participantStatuses, setParticipantStatuses] = useState<Map<string, BillParticipantStatus>>(new Map());
 
-  const refreshParticipantStatuses = useCallback(async () => {
-    if (!remoteBillId) return;
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("bill_participants")
-      .select("user_id, status")
-      .eq("bill_id", remoteBillId);
-    if (data) {
-      const map = new Map<string, BillParticipantStatus>();
-      for (const row of data) {
-        map.set(row.user_id, row.status as BillParticipantStatus);
-      }
-      setParticipantStatuses(map);
-    }
-  }, [remoteBillId]);
-
-  const refreshStatusesRef = useRef(refreshParticipantStatuses);
-  refreshStatusesRef.current = refreshParticipantStatuses;
-
-  useEffect(() => {
-    if (!remoteBillId) return;
-    refreshParticipantStatuses();
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`bill-participants:${remoteBillId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "bill_participants", filter: `bill_id=eq.${remoteBillId}` },
-        () => { refreshStatusesRef.current(); },
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [remoteBillId, refreshParticipantStatuses]);
-
-  // Group bills skip acceptance entirely — all participants are auto-accepted
-  const allAccepted = selectedGroupId
-    ? true
-    : store.participants
-        .filter((p) => p.id !== authUser?.id)
-        .every((p) => participantStatuses.get(p.id) === "accepted");
+  // In the expense model, all expenses belong to a group.
+  // Group members are already accepted — no per-expense acceptance needed.
+  const allAccepted = true;
 
   // Auto-select group from ?groupId URL param when entering participants step
   useEffect(() => {
@@ -298,6 +309,45 @@ function NewBillPageContent() {
     })();
   }, [step, searchParams, selectedGroupId, authUser, store]);
 
+  /** Compute expense shares from store state. Returns one entry per participant. */
+  const computeShares = useCallback(() => {
+    const state = useBillStore.getState();
+    return state.participants.map((p) => ({
+      userId: p.id,
+      shareAmountCents: state.getParticipantTotal(p.id),
+    }));
+  }, []);
+
+  /** Build the saveExpenseDraft params from current store state. */
+  const buildDraftParams = useCallback((existingId?: string) => {
+    const state = useBillStore.getState();
+    if (!state.bill || !authUser || !selectedGroupId) return null;
+
+    return {
+      groupId: selectedGroupId,
+      creatorId: authUser.id,
+      title: state.bill.title,
+      merchantName: state.bill.merchantName,
+      expenseType: state.bill.billType,
+      totalAmount: state.getGrandTotal(),
+      serviceFeePercent: state.bill.serviceFeePercent,
+      fixedFees: state.bill.fixedFees,
+      existingExpenseId: existingId,
+      items: state.bill.billType === "itemized"
+        ? state.items.map((i) => ({
+            description: i.description,
+            quantity: i.quantity,
+            unitPriceCents: i.unitPriceCents,
+            totalPriceCents: i.totalPriceCents,
+          }))
+        : undefined,
+      shares: computeShares(),
+      payers: state.bill.payers.length > 0
+        ? state.bill.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))
+        : undefined,
+    };
+  }, [authUser, selectedGroupId, computeShares]);
+
   const goNext = useCallback(async () => {
     if (step === "info") {
       if (!isEditing) {
@@ -313,73 +363,66 @@ function NewBillPageContent() {
         });
       }
     }
-    if (step === "participants" && authUser) {
+    if (step === "participants" && authUser && selectedGroupId) {
       const state = useBillStore.getState();
       if (state.bill && state.participants.length >= 2) {
-        const result = await saveDraftToSupabase({
-          bill: state.bill,
-          participants: state.participants,
-          creatorId: authUser.id,
-          existingBillId: remoteBillId ?? undefined,
-          groupId: selectedGroupId ?? undefined,
-        });
-        if ("billId" in result) {
-          setRemoteBillId(result.billId);
+        const params = buildDraftParams(remoteBillId ?? undefined);
+        if (params) {
+          const result = await saveExpenseDraft(params);
+          if ("expenseId" in result) {
+            setRemoteBillId(result.expenseId);
+          }
         }
       }
     }
     if ((step === "items" || step === "split" || step === "amount-split" || step === "payer") && remoteBillId && authUser) {
-      const draftState = useBillStore.getState();
-      if (draftState.bill) {
-        await saveDraftToSupabase({
-          bill: draftState.bill,
-          participants: draftState.participants,
-          creatorId: authUser.id,
-          existingBillId: remoteBillId,
-          groupId: selectedGroupId ?? undefined,
-          items: draftState.items,
-          splits: draftState.splits,
-          billSplits: draftState.billSplits,
-        });
+      const params = buildDraftParams(remoteBillId);
+      if (params) {
+        await saveExpenseDraft(params);
       }
     }
     if (step === "summary") {
       if (!allAccepted && store.participants.length > 1) {
         return;
       }
-      store.computeLedger();
       setSyncing(true);
-      const state = useBillStore.getState();
-      if (state.bill) {
-        const result = await syncBillToSupabase({
-          bill: state.bill,
-          participants: state.participants,
-          items: state.items,
-          splits: state.splits,
-          billSplits: state.billSplits,
-          ledger: state.ledger,
-          existingBillId: remoteBillId ?? undefined,
-          groupId: selectedGroupId ?? undefined,
-        });
-        if ("billId" in result) {
-          // Clear store so BillDetailPage forces a fresh DB load (not stale draft data)
-          useBillStore.setState({ bill: null, items: [], splits: [], billSplits: [], ledger: [] });
-          router.push(`/app/bill/${result.billId}`);
-          return;
+
+      // Save final state as draft, then activate via RPC
+      const params = buildDraftParams(remoteBillId ?? undefined);
+      if (params) {
+        const saveResult = await saveExpenseDraft(params);
+        const expenseId = "expenseId" in saveResult
+          ? saveResult.expenseId
+          : remoteBillId;
+
+        if (expenseId) {
+          // Activate the expense — this transitions draft→active and updates balances
+          const supabase = createClient();
+          // RPC defined in migration but not yet in generated DB types — cast needed
+          const { error: rpcError } = await (supabase.rpc as unknown as (fn: string, params: Record<string, unknown>) => Promise<{ error: { message: string } | null }>)(
+            "activate_expense",
+            { p_expense_id: expenseId },
+          );
+
+          if (!rpcError) {
+            useBillStore.setState({ bill: null, items: [], splits: [], billSplits: [], ledger: [] });
+            router.push(`/app/bill/${expenseId}`);
+            return;
+          }
+          console.error("Activation failed:", rpcError.message);
         }
-        console.error("Sync failed:", result.error);
       }
-      router.push(`/app/bill/${remoteBillId || state.bill?.id || "new"}`);
+      router.push(`/app/bill/${remoteBillId || "new"}`);
       return;
     }
     const next = steps[stepIndex + 1];
     if (next) setStep(next.key);
-  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees]);
+  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams, computeShares]);
 
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
     if (step === "info") return !title.trim();
-    if (step === "participants") return store.participants.length < 2;
+    if (step === "participants") return store.participants.length < 2 || !selectedGroupId;
     if (step === "amount-split") {
       const total = store.bill?.totalAmountInput || 0;
       if (total <= 0) return true;
@@ -391,11 +434,8 @@ function NewBillPageContent() {
       const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
       return gt <= 0 || Math.abs(gt - paid) > 1;
     }
-    if (step === "summary") {
-      return !allAccepted && store.participants.length > 1 && !selectedGroupId;
-    }
     return false;
-  }, [navigating, isTypeStep, step, title, store, allAccepted, selectedGroupId]);
+  }, [navigating, isTypeStep, step, title, store, selectedGroupId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1002,44 +1042,26 @@ function NewBillPageContent() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              {remoteBillId && store.participants.length > 1 && !selectedGroupId && (
-                <div className="rounded-2xl border bg-card p-4">
-                  <h3 className="text-sm font-semibold mb-3">Participantes</h3>
-                  <div className="space-y-2">
-                    {store.participants.map((p) => {
-                      const isCreator = p.id === authUser?.id;
-                      const status = isCreator ? "accepted" : (participantStatuses.get(p.id) ?? "invited");
-                      return (
-                        <div key={p.id} className="flex items-center gap-3">
-                          <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
-                          <span className="flex-1 text-sm font-medium">{p.name}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                            status === "accepted"
-                              ? "bg-success/15 text-success"
-                              : status === "declined"
-                                ? "bg-destructive/15 text-destructive"
-                                : "bg-warning/15 text-warning-foreground"
-                          }`}>
-                            {status === "accepted" ? "Aceito" : status === "declined" ? "Recusou" : "Aguardando"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {!allAccepted && (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      Aguardando todos os participantes aceitarem o convite para finalizar.
-                    </p>
-                  )}
-                </div>
-              )}
               {store.bill && (
                 <>
                   <BillSummary
-                    bill={store.bill}
+                    expense={{
+                      expenseType: store.bill.billType,
+                      totalAmount: store.getGrandTotal(),
+                      serviceFeePercent: store.bill.serviceFeePercent,
+                      fixedFees: store.bill.fixedFees,
+                    }}
                     items={store.items}
-                    splits={store.splits}
-                    billSplits={store.billSplits}
+                    itemSplits={store.splits}
+                    shares={store.billSplits.map((bs) => ({
+                      userId: bs.userId,
+                      shareAmountCents: bs.computedAmountCents,
+                      splitLabel: bs.splitType === "percentage"
+                        ? `${bs.value.toFixed(1)}%`
+                        : bs.splitType === "equal"
+                          ? "igual"
+                          : undefined,
+                    }))}
                     participants={store.participants}
                   />
                   {store.bill.payers.length > 0 && (
@@ -1057,7 +1079,9 @@ function NewBillPageContent() {
 
       {!isTypeStep && (() => {
         let errorMsg: string | null = null;
-        if (step === "amount-split") {
+        if (step === "participants" && !selectedGroupId && store.participants.length >= 2) {
+          errorMsg = "Selecione um grupo para continuar";
+        } else if (step === "amount-split") {
           const total = store.bill?.totalAmountInput || 0;
           const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
           if (total <= 0) {
@@ -1099,9 +1123,7 @@ function NewBillPageContent() {
                 ) : step === "summary" ? (
                   <>
                     <QrCode className="h-4 w-4" />
-                    {!allAccepted && store.participants.length > 1 && !selectedGroupId
-                      ? "Aguardando participantes..."
-                      : "Gerar cobrancas Pix"}
+                    Gerar cobrancas Pix
                   </>
                 ) : (
                   <>

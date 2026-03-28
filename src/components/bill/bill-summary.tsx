@@ -3,53 +3,75 @@
 import { motion } from "framer-motion";
 import { Calculator, Receipt } from "lucide-react";
 import { formatBRL, distributeProportionally, distributeEvenly } from "@/lib/currency";
-import type { Bill, BillItem, BillSplit, ItemSplit, User } from "@/types";
+import type { ExpenseType, UserProfile } from "@/types";
 
-interface BillSummaryProps {
-  bill: Bill;
-  items: BillItem[];
-  splits: ItemSplit[];
-  billSplits?: BillSplit[];
-  participants: User[];
+/** Fields the summary reads from the expense config. */
+interface ExpenseConfig {
+  expenseType: ExpenseType;
+  totalAmount: number;
+  serviceFeePercent: number;
+  fixedFees: number;
 }
 
-export function BillSummary({ bill, items, splits, billSplits = [], participants }: BillSummaryProps) {
-  const isSingleAmount = bill.billType === "single_amount";
+/** Per-user share with optional label (for display of split method). */
+interface ShareEntry {
+  userId: string;
+  shareAmountCents: number;
+  splitLabel?: string;
+}
+
+/** Item with price (for itemized breakdown). */
+interface SummaryItem {
+  totalPriceCents: number;
+}
+
+/** Per-item assignment (for computing itemized per-person fees). */
+interface SummaryItemSplit {
+  userId: string;
+  computedAmountCents: number;
+}
+
+interface BillSummaryProps {
+  expense: ExpenseConfig;
+  items: SummaryItem[];
+  /** Per-item splits (only used for itemized expenses). */
+  itemSplits?: SummaryItemSplit[];
+  /** Pre-computed shares per user (used for single_amount expenses). */
+  shares?: ShareEntry[];
+  participants: UserProfile[];
+}
+
+export function BillSummary({ expense, items, itemSplits = [], shares = [], participants }: BillSummaryProps) {
+  const isSingleAmount = expense.expenseType === "single_amount";
 
   const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-  const serviceFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
+  const serviceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
   const grandTotal = isSingleAmount
-    ? bill.totalAmountInput
-    : itemsTotal + serviceFee + bill.fixedFees;
+    ? expense.totalAmount
+    : itemsTotal + serviceFee + expense.fixedFees;
 
   const perPerson = (() => {
     if (isSingleAmount) {
       return participants.map((user) => {
-        const bs = billSplits.find((s) => s.userId === user.id);
+        const share = shares.find((s) => s.userId === user.id);
         return {
           user,
-          itemTotal: bs?.computedAmountCents || 0,
+          itemTotal: share?.shareAmountCents || 0,
           serviceFee: 0,
           fixedFee: 0,
-          total: bs?.computedAmountCents || 0,
-          splitLabel: bs
-            ? bs.splitType === "percentage"
-              ? `${bs.value.toFixed(1)}%`
-              : bs.splitType === "equal"
-                ? "igual"
-                : undefined
-            : undefined,
+          total: share?.shareAmountCents || 0,
+          splitLabel: share?.splitLabel,
         };
       });
     }
 
     const itemTotals = participants.map((user) => {
-      const userSplits = splits.filter((s) => s.userId === user.id);
+      const userSplits = itemSplits.filter((s) => s.userId === user.id);
       return userSplits.reduce((sum, s) => sum + s.computedAmountCents, 0);
     });
 
     const serviceFees = distributeProportionally(serviceFee, itemTotals);
-    const fixedFees = distributeEvenly(bill.fixedFees, participants.length);
+    const fixedFees = distributeEvenly(expense.fixedFees, participants.length);
 
     return participants.map((user, i) => ({
       user,
@@ -62,8 +84,8 @@ export function BillSummary({ bill, items, splits, billSplits = [], participants
   })();
 
   const unassigned = isSingleAmount
-    ? grandTotal - billSplits.reduce((sum, s) => sum + s.computedAmountCents, 0)
-    : itemsTotal - splits.reduce((sum, s) => sum + s.computedAmountCents, 0);
+    ? grandTotal - shares.reduce((sum, s) => sum + s.shareAmountCents, 0)
+    : itemsTotal - itemSplits.reduce((sum, s) => sum + s.computedAmountCents, 0);
 
   return (
     <div className="space-y-4">
@@ -85,18 +107,18 @@ export function BillSummary({ bill, items, splits, billSplits = [], participants
                 <span className="text-muted-foreground">Subtotal dos itens</span>
                 <span className="tabular-nums">{formatBRL(itemsTotal)}</span>
               </div>
-              {bill.serviceFeePercent > 0 && (
+              {expense.serviceFeePercent > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
-                    Servico ({bill.serviceFeePercent}%)
+                    Servico ({expense.serviceFeePercent}%)
                   </span>
                   <span className="tabular-nums">{formatBRL(serviceFee)}</span>
                 </div>
               )}
-              {bill.fixedFees > 0 && (
+              {expense.fixedFees > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Couvert / taxas fixas</span>
-                  <span className="tabular-nums">{formatBRL(bill.fixedFees)}</span>
+                  <span className="tabular-nums">{formatBRL(expense.fixedFees)}</span>
                 </div>
               )}
               <div className="flex justify-between border-t border-border pt-2 font-semibold">

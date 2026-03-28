@@ -332,9 +332,14 @@ export default function DemoPage() {
               transition={{ duration: 0.2 }}
             >
               <BillSummary
-                bill={bill}
+                expense={{
+                  expenseType: bill.billType,
+                  totalAmount: bill.totalAmount || items.reduce((s, i) => s + i.totalPriceCents, 0),
+                  serviceFeePercent: bill.serviceFeePercent,
+                  fixedFees: bill.fixedFees,
+                }}
                 items={items}
-                splits={splits}
+                itemSplits={splits}
                 participants={DEMO_USERS}
               />
             </motion.div>
