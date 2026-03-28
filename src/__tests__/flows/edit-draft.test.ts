@@ -3,11 +3,11 @@ import { useBillStore } from "@/stores/bill-store";
 import {
   userAlice,
   userBob,
-  makeItemizedBill,
-  makeSingleAmountBill,
-  makeBillItem,
+  makeExpense,
+  makeSingleAmountExpense,
+  makeExpenseItem,
 } from "@/test/fixtures";
-import type { Bill, BillSplit, ItemSplit } from "@/types";
+import type { Expense, BillSplit, ItemSplit } from "@/types";
 
 /**
  * Tests for the draft editing flow — verifying that store state
@@ -18,16 +18,15 @@ describe("Edit Draft Flow", () => {
     useBillStore.getState().reset();
   });
 
-  it("restores an itemized draft bill into the store", () => {
-    const bill = makeItemizedBill({
+  it("restores an itemized draft expense into the store", () => {
+    const expense = makeExpense({
       id: "draft-1",
       title: "Jantar editavel",
       serviceFeePercent: 10,
       fixedFees: 500,
-      payers: [{ userId: "user-alice", amountCents: 5500 }],
     });
     const items = [
-      makeBillItem({ id: "item-1", description: "Pizza", totalPriceCents: 5000 }),
+      makeExpenseItem({ id: "item-1", description: "Pizza", totalPriceCents: 5000 }),
     ];
     const splits: ItemSplit[] = [
       {
@@ -43,28 +42,29 @@ describe("Edit Draft Flow", () => {
     // Simulate what the edit draft useEffect does
     useBillStore.setState({
       currentUser: userAlice,
-      bill,
+      expense,
+      totalAmountInput: 0,
       participants: [userAlice, userBob],
       items,
+      payers: [{ expenseId: "draft-1", userId: "user-alice", amountCents: 5500 }],
       splits,
       billSplits: [],
-      ledger: [],
+      previewDebts: [],
     });
 
     const state = useBillStore.getState();
-    expect(state.bill?.id).toBe("draft-1");
-    expect(state.bill?.title).toBe("Jantar editavel");
+    expect(state.expense?.id).toBe("draft-1");
+    expect(state.expense?.title).toBe("Jantar editavel");
     expect(state.participants).toHaveLength(2);
     expect(state.items).toHaveLength(1);
     expect(state.splits).toHaveLength(1);
-    expect(state.bill?.payers).toHaveLength(1);
+    expect(state.payers).toHaveLength(1);
   });
 
-  it("restores a single_amount draft bill into the store", () => {
-    const bill = makeSingleAmountBill({
+  it("restores a single_amount draft expense into the store", () => {
+    const expense = makeSingleAmountExpense({
       id: "draft-2",
       title: "Aluguel editavel",
-      totalAmountInput: 200000,
     });
     const billSplits: BillSplit[] = [
       { userId: "user-alice", splitType: "equal", value: 1, computedAmountCents: 100000 },
@@ -73,35 +73,38 @@ describe("Edit Draft Flow", () => {
 
     useBillStore.setState({
       currentUser: userAlice,
-      bill,
+      expense,
+      totalAmountInput: 200000,
       participants: [userAlice, userBob],
       items: [],
+      payers: [],
       splits: [],
       billSplits,
-      ledger: [],
+      previewDebts: [],
     });
 
     const state = useBillStore.getState();
-    expect(state.bill?.billType).toBe("single_amount");
+    expect(state.expense?.expenseType).toBe("single_amount");
     expect(state.billSplits).toHaveLength(2);
     expect(state.items).toHaveLength(0);
   });
 
-  it("allows updating bill metadata after restoring a draft", () => {
-    const bill = makeItemizedBill({ id: "draft-3", title: "Titulo antigo" });
+  it("allows updating expense metadata after restoring a draft", () => {
+    const expense = makeExpense({ id: "draft-3", title: "Titulo antigo" });
 
     useBillStore.setState({
       currentUser: userAlice,
-      bill,
+      expense,
+      totalAmountInput: 0,
       participants: [userAlice, userBob],
       items: [],
+      payers: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      previewDebts: [],
     });
 
-    // Simulate what goNext("info") does in edit mode
-    useBillStore.getState().updateBill({
+    useBillStore.getState().updateExpense({
       title: "Titulo novo",
       merchantName: "Restaurante Novo",
       serviceFeePercent: 12,
@@ -109,37 +112,39 @@ describe("Edit Draft Flow", () => {
     });
 
     const state = useBillStore.getState();
-    expect(state.bill?.title).toBe("Titulo novo");
-    expect(state.bill?.merchantName).toBe("Restaurante Novo");
-    expect(state.bill?.serviceFeePercent).toBe(12);
-    expect(state.bill?.fixedFees).toBe(300);
-    // Verify id is preserved (not reset by createBill)
-    expect(state.bill?.id).toBe("draft-3");
+    expect(state.expense?.title).toBe("Titulo novo");
+    expect(state.expense?.merchantName).toBe("Restaurante Novo");
+    expect(state.expense?.serviceFeePercent).toBe(12);
+    expect(state.expense?.fixedFees).toBe(300);
+    // Verify id is preserved (not reset by createExpense)
+    expect(state.expense?.id).toBe("draft-3");
   });
 
-  it("preserves existing participants when modifying bill metadata", () => {
-    const bill = makeItemizedBill({ id: "draft-4" });
+  it("preserves existing participants when modifying expense metadata", () => {
+    const expense = makeExpense({ id: "draft-4" });
 
     useBillStore.setState({
       currentUser: userAlice,
-      bill,
+      expense,
+      totalAmountInput: 0,
       participants: [userAlice, userBob],
       items: [],
+      payers: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      previewDebts: [],
     });
 
-    useBillStore.getState().updateBill({ title: "Updated" });
+    useBillStore.getState().updateExpense({ title: "Updated" });
 
     expect(useBillStore.getState().participants).toHaveLength(2);
     expect(useBillStore.getState().participants[0].id).toBe("user-alice");
     expect(useBillStore.getState().participants[1].id).toBe("user-bob");
   });
 
-  it("preserves items and splits when modifying bill metadata", () => {
-    const bill = makeItemizedBill({ id: "draft-5" });
-    const items = [makeBillItem({ id: "item-1" })];
+  it("preserves items and splits when modifying expense metadata", () => {
+    const expense = makeExpense({ id: "draft-5" });
+    const items = [makeExpenseItem({ id: "item-1" })];
     const splits: ItemSplit[] = [
       {
         id: "split-1",
@@ -153,15 +158,17 @@ describe("Edit Draft Flow", () => {
 
     useBillStore.setState({
       currentUser: userAlice,
-      bill,
+      expense,
+      totalAmountInput: 0,
       participants: [userAlice, userBob],
       items,
+      payers: [],
       splits,
       billSplits: [],
-      ledger: [],
+      previewDebts: [],
     });
 
-    useBillStore.getState().updateBill({ title: "Modified" });
+    useBillStore.getState().updateExpense({ title: "Modified" });
 
     expect(useBillStore.getState().items).toHaveLength(1);
     expect(useBillStore.getState().splits).toHaveLength(1);
@@ -169,17 +176,19 @@ describe("Edit Draft Flow", () => {
   });
 
   it("can add new items to a restored draft", () => {
-    const bill = makeItemizedBill({ id: "draft-6" });
-    const items = [makeBillItem({ id: "item-1", description: "Pizza" })];
+    const expense = makeExpense({ id: "draft-6" });
+    const items = [makeExpenseItem({ id: "item-1", description: "Pizza" })];
 
     useBillStore.setState({
       currentUser: userAlice,
-      bill,
+      expense,
+      totalAmountInput: 0,
       participants: [userAlice, userBob],
       items,
+      payers: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      previewDebts: [],
     });
 
     useBillStore.getState().addItem({
@@ -194,48 +203,46 @@ describe("Edit Draft Flow", () => {
   });
 
   it("determines correct starting step based on draft data", () => {
-    // Helper to simulate step determination logic from the useEffect
-    function determineStep(bill: Bill, items: { length: number }, splits: { length: number }, billSplits: { length: number }) {
-      if (bill.payers.length > 0) return "payer";
-      if (bill.billType === "itemized" && splits.length > 0) return "split";
-      if (bill.billType === "itemized" && items.length > 0) return "items";
-      if (bill.billType === "single_amount" && billSplits.length > 0) return "amount-split";
+    function determineStep(expense: Expense, items: { length: number }, splits: { length: number }, billSplits: { length: number }, payers: { length: number }) {
+      if (payers.length > 0) return "payer";
+      if (expense.expenseType === "itemized" && splits.length > 0) return "split";
+      if (expense.expenseType === "itemized" && items.length > 0) return "items";
+      if (expense.expenseType === "single_amount" && billSplits.length > 0) return "amount-split";
       return "participants";
     }
 
     // Draft with payers → payer step
     expect(
       determineStep(
-        makeItemizedBill({ payers: [{ userId: "user-alice", amountCents: 5000 }] }),
-        { length: 1 }, { length: 1 }, { length: 0 },
+        makeExpense(), { length: 1 }, { length: 1 }, { length: 0 }, { length: 1 },
       ),
     ).toBe("payer");
 
     // Itemized with splits → split step
     expect(
       determineStep(
-        makeItemizedBill(), { length: 1 }, { length: 1 }, { length: 0 },
+        makeExpense(), { length: 1 }, { length: 1 }, { length: 0 }, { length: 0 },
       ),
     ).toBe("split");
 
     // Itemized with items but no splits → items step
     expect(
       determineStep(
-        makeItemizedBill(), { length: 1 }, { length: 0 }, { length: 0 },
+        makeExpense(), { length: 1 }, { length: 0 }, { length: 0 }, { length: 0 },
       ),
     ).toBe("items");
 
     // Single amount with bill splits → amount-split step
     expect(
       determineStep(
-        makeSingleAmountBill(), { length: 0 }, { length: 0 }, { length: 2 },
+        makeSingleAmountExpense(), { length: 0 }, { length: 0 }, { length: 2 }, { length: 0 },
       ),
     ).toBe("amount-split");
 
     // Empty draft → participants step
     expect(
       determineStep(
-        makeItemizedBill(), { length: 0 }, { length: 0 }, { length: 0 },
+        makeExpense(), { length: 0 }, { length: 0 }, { length: 0 }, { length: 0 },
       ),
     ).toBe("participants");
   });
