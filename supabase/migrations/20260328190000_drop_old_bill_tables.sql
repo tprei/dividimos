@@ -48,6 +48,12 @@ DROP TRIGGER IF EXISTS group_settlement_cascade ON group_settlements;
 DROP TRIGGER IF EXISTS bills_updated_at ON bills;
 
 -- ============================================================
+-- 2.5. Drop policies on non-dropped tables that reference old functions
+-- ============================================================
+-- users_read_visible references my_bill_ids() — drop before the function
+DROP POLICY IF EXISTS "users_read_visible" ON public.users;
+
+-- ============================================================
 -- 3. Drop tables (dependents first)
 -- ============================================================
 -- CASCADE drops all policies, indexes, and constraints automatically.

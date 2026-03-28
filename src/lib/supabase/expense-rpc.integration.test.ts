@@ -78,7 +78,7 @@ function findBalance(
   // Return oriented as "userX owes userY"
   const sign = userX < userY ? 1 : -1;
   return {
-    amount: row.amount_cents * sign,
+    amount: row.amount_cents === 0 ? 0 : row.amount_cents * sign,
     userAOwesUserB: row.amount_cents > 0,
   };
 }

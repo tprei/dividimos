@@ -589,23 +589,13 @@ export interface Database {
           avatar_url: string | null;
         }[];
       };
-      sync_group_settlements: {
-        Args: {
-          p_group_id: string;
-          p_edges?: Json;
-        };
-        Returns: {
-          id: string;
-          group_id: string;
-          from_user_id: string;
-          to_user_id: string;
-          amount_cents: number;
-          paid_amount_cents: number;
-          status: "pending" | "partially_paid" | "settled";
-          paid_at: string | null;
-          confirmed_at: string | null;
-          created_at: string;
-        }[];
+      activate_expense: {
+        Args: { p_expense_id: string };
+        Returns: void;
+      };
+      confirm_settlement: {
+        Args: { p_settlement_id: string };
+        Returns: void;
       };
     };
     Enums: {

@@ -63,12 +63,12 @@ describe.skipIf(!isIntegrationTestReady)(
     ];
 
     async function tableExists(tableName: string): Promise<boolean> {
-      const { data } = await adminClient!.rpc("execute_sql" as never, {
+      await adminClient!.rpc("execute_sql" as never, {
         query: `SELECT EXISTS (
           SELECT 1 FROM information_schema.tables
           WHERE table_schema = 'public' AND table_name = '${tableName}'
         ) AS exists`,
-      });
+      } as never);
       // Fallback: try a direct query
       const { error } = await adminClient!
         .from(tableName as never)
@@ -78,11 +78,11 @@ describe.skipIf(!isIntegrationTestReady)(
     }
 
     async function enumExists(enumName: string): Promise<boolean> {
-      const { data } = await adminClient!.rpc("execute_sql" as never, {
+      await adminClient!.rpc("execute_sql" as never, {
         query: `SELECT EXISTS (
           SELECT 1 FROM pg_type WHERE typname = '${enumName}'
         ) AS exists`,
-      });
+      } as never);
       // Fallback: check pg_type via a query on the enum
       // We'll use the from() approach with a raw SQL check
       const { error } = await adminClient!

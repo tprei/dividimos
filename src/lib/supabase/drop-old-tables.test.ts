@@ -135,7 +135,7 @@ describe("drop old bill tables migration", () => {
   });
 
   it("removes old tables from realtime publication", () => {
-    expect(sql).toContain("supabase_realtime DROP TABLE IF EXISTS payments");
-    expect(sql).toContain("supabase_realtime DROP TABLE IF EXISTS bills");
+    expect(sql).toContain("supabase_realtime DROP TABLE payments");
+    expect(sql).toContain("supabase_realtime DROP TABLE bills");
   });
 });

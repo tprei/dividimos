@@ -112,15 +112,15 @@ function NewBillPageContent() {
 
     // If store already has this draft loaded, just restore local state
     const storeState = useBillStore.getState();
-    if (storeState.bill?.id === draftId) {
+    if (storeState.expense?.id === draftId) {
       editLoadedRef.current = true;
       setIsEditing(true);
       setEditDraftId(draftId);
-      setBillType(storeState.bill.billType);
-      setTitle(storeState.bill.title);
-      setMerchantName(storeState.bill.merchantName ?? "");
-      setServiceFee(String(storeState.bill.serviceFeePercent || 10));
-      setFixedFees(storeState.bill.fixedFees ? String(storeState.bill.fixedFees / 100) : "");
+      setBillType(storeState.expense.expenseType);
+      setTitle(storeState.expense.title);
+      setMerchantName(storeState.expense.merchantName ?? "");
+      setServiceFee(String(storeState.expense.serviceFeePercent || 10));
+      setFixedFees(storeState.expense.fixedFees ? String(storeState.expense.fixedFees / 100) : "");
       setRemoteBillId(draftId);
       setStep("participants");
       return;
@@ -161,33 +161,33 @@ function NewBillPageContent() {
         }
       }
 
-      // Build a Bill object the store can hold (bridge during migration)
-      const billForStore = {
+      // Build an Expense object the store can hold
+      const expenseForStore = {
         id: loaded.id,
+        groupId: loaded.groupId,
         creatorId: loaded.creatorId,
-        billType: loaded.expenseType,
+        expenseType: loaded.expenseType,
         title: loaded.title,
         merchantName: loaded.merchantName,
         status: loaded.status,
         serviceFeePercent: loaded.serviceFeePercent,
         fixedFees: loaded.fixedFees,
         totalAmount: loaded.totalAmount,
-        totalAmountInput: loaded.expenseType === "single_amount" ? loaded.totalAmount : 0,
-        payers: loaded.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents })),
-        groupId: loaded.groupId,
         createdAt: loaded.createdAt,
         updatedAt: loaded.updatedAt,
       };
 
       store.setCurrentUser(authUser);
       useBillStore.setState({
-        bill: billForStore,
+        expense: expenseForStore,
+        totalAmountInput: loaded.expenseType === "single_amount" ? loaded.totalAmount : 0,
         participants,
         items: loaded.items.map((item) => ({
           ...item,
-          billId: loaded.id, // bridge: store expects billId
+          expenseId: loaded.id,
         })),
-        splits: [], // per-item splits not stored in expense model
+        payers: loaded.payers.map((p) => ({ expenseId: loaded.id, userId: p.userId, amountCents: p.amountCents })),
+        splits: [],
         billSplits: loaded.expenseType === "single_amount"
           ? loaded.shares.map((s) => ({
               userId: s.userId,
@@ -196,7 +196,6 @@ function NewBillPageContent() {
               computedAmountCents: s.shareAmountCents,
             }))
           : [],
-        ledger: [],
       });
 
       // Restore local form state
@@ -234,9 +233,9 @@ function NewBillPageContent() {
   const initBill = useCallback(() => {
     if (!billType || !authUser) return;
     store.setCurrentUser(authUser);
-    store.createBill(title || "Nova conta", billType, merchantName || undefined);
+    store.createExpense(title || "Nova conta", billType, merchantName || undefined);
     if (billType === "itemized") {
-      store.updateBill({
+      store.updateExpense({
         serviceFeePercent: parseFloat(serviceFee) || 0,
         fixedFees: Math.round((parseFloat(fixedFees.replace(",", ".")) || 0) * 100),
       });
@@ -321,19 +320,19 @@ function NewBillPageContent() {
   /** Build the saveExpenseDraft params from current store state. */
   const buildDraftParams = useCallback((existingId?: string) => {
     const state = useBillStore.getState();
-    if (!state.bill || !authUser || !selectedGroupId) return null;
+    if (!state.expense || !authUser || !selectedGroupId) return null;
 
     return {
       groupId: selectedGroupId,
       creatorId: authUser.id,
-      title: state.bill.title,
-      merchantName: state.bill.merchantName,
-      expenseType: state.bill.billType,
+      title: state.expense.title,
+      merchantName: state.expense.merchantName,
+      expenseType: state.expense.expenseType,
       totalAmount: state.getGrandTotal(),
-      serviceFeePercent: state.bill.serviceFeePercent,
-      fixedFees: state.bill.fixedFees,
+      serviceFeePercent: state.expense.serviceFeePercent,
+      fixedFees: state.expense.fixedFees,
       existingExpenseId: existingId,
-      items: state.bill.billType === "itemized"
+      items: state.expense.expenseType === "itemized"
         ? state.items.map((i) => ({
             description: i.description,
             quantity: i.quantity,
@@ -342,8 +341,8 @@ function NewBillPageContent() {
           }))
         : undefined,
       shares: computeShares(),
-      payers: state.bill.payers.length > 0
-        ? state.bill.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))
+      payers: state.payers.length > 0
+        ? state.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))
         : undefined,
     };
   }, [authUser, selectedGroupId, computeShares]);
@@ -353,7 +352,7 @@ function NewBillPageContent() {
       if (!isEditing) {
         initBill();
       } else {
-        store.updateBill({
+        store.updateExpense({
           title: title || "Nova conta",
           merchantName: merchantName || undefined,
           serviceFeePercent: billType === "itemized" ? parseFloat(serviceFee) || 0 : 0,
@@ -365,7 +364,7 @@ function NewBillPageContent() {
     }
     if (step === "participants" && authUser && selectedGroupId) {
       const state = useBillStore.getState();
-      if (state.bill && state.participants.length >= 2) {
+      if (state.expense && state.participants.length >= 2) {
         const params = buildDraftParams(remoteBillId ?? undefined);
         if (params) {
           const result = await saveExpenseDraft(params);
@@ -405,7 +404,7 @@ function NewBillPageContent() {
           );
 
           if (!rpcError) {
-            useBillStore.setState({ bill: null, items: [], splits: [], billSplits: [], ledger: [] });
+            useBillStore.setState({ expense: null, items: [], splits: [], billSplits: [], payers: [] });
             router.push(`/app/bill/${expenseId}`);
             return;
           }
@@ -424,14 +423,14 @@ function NewBillPageContent() {
     if (step === "info") return !title.trim();
     if (step === "participants") return store.participants.length < 2 || !selectedGroupId;
     if (step === "amount-split") {
-      const total = store.bill?.totalAmountInput || 0;
+      const total = store.totalAmountInput || 0;
       if (total <= 0) return true;
       const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
       return Math.abs(total - assigned) > 1;
     }
     if (step === "payer") {
       const gt = store.getGrandTotal();
-      const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
+      const paid = store.payers.reduce((s, p) => s + p.amountCents, 0);
       return gt <= 0 || Math.abs(gt - paid) > 1;
     }
     return false;
@@ -897,7 +896,7 @@ function NewBillPageContent() {
                 Adicione os itens da conta.{" "}
                 {store.items.length > 0 && (
                   <span className="font-medium text-foreground">
-                    {store.items.length} itens — {formatBRL(store.bill?.totalAmount || 0)}
+                    {store.items.length} itens — {formatBRL(store.expense?.totalAmount || 0)}
                   </span>
                 )}
               </p>
@@ -928,20 +927,20 @@ function NewBillPageContent() {
                   Adicionar item
                 </Button>
               )}
-              {store.items.length > 0 && store.bill && store.bill.serviceFeePercent > 0 && (
+              {store.items.length > 0 && store.expense && store.expense.serviceFeePercent > 0 && (
                 <div className="rounded-xl bg-muted/50 p-3 text-sm space-y-1">
                   <div className="flex justify-between text-muted-foreground">
                     <span>Subtotal</span>
-                    <span className="tabular-nums">{formatBRL(store.bill.totalAmount)}</span>
+                    <span className="tabular-nums">{formatBRL(store.expense.totalAmount)}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Servico ({store.bill.serviceFeePercent}%)</span>
-                    <span className="tabular-nums">{formatBRL(Math.round(store.bill.totalAmount * store.bill.serviceFeePercent / 100))}</span>
+                    <span>Servico ({store.expense.serviceFeePercent}%)</span>
+                    <span className="tabular-nums">{formatBRL(Math.round(store.expense.totalAmount * store.expense.serviceFeePercent / 100))}</span>
                   </div>
-                  {store.bill.fixedFees > 0 && (
+                  {store.expense.fixedFees > 0 && (
                     <div className="flex justify-between text-muted-foreground">
                       <span>Couvert</span>
-                      <span className="tabular-nums">{formatBRL(store.bill.fixedFees)}</span>
+                      <span className="tabular-nums">{formatBRL(store.expense.fixedFees)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-semibold border-t border-border pt-1">
@@ -1004,8 +1003,8 @@ function NewBillPageContent() {
             >
               <SingleAmountStep
                 participants={store.participants}
-                totalAmountInput={store.bill?.totalAmountInput || 0}
-                onSetTotal={(cents) => store.updateBill({ totalAmountInput: cents, totalAmount: cents })}
+                totalAmountInput={store.totalAmountInput || 0}
+                onSetTotal={(cents) => store.updateExpense({ totalAmountInput: cents, totalAmount: cents })}
                 onSplitEqually={(ids) => store.splitBillEqually(ids)}
                 onSplitByPercentage={(a) => store.splitBillByPercentage(a)}
                 onSplitByFixed={(a) => store.splitBillByFixed(a)}
@@ -1023,7 +1022,7 @@ function NewBillPageContent() {
             >
               <PayerStep
                 participants={store.participants}
-                payers={store.bill?.payers || []}
+                payers={store.payers}
                 grandTotal={store.getGrandTotal()}
                 onSetPayerFull={(id) => store.setPayerFull(id)}
                 onSplitPaymentEqually={(ids) => store.splitPaymentEqually(ids)}
@@ -1042,14 +1041,14 @@ function NewBillPageContent() {
               transition={{ duration: 0.3 }}
               className="space-y-4"
             >
-              {store.bill && (
+              {store.expense && (
                 <>
                   <BillSummary
                     expense={{
-                      expenseType: store.bill.billType,
+                      expenseType: store.expense.expenseType,
                       totalAmount: store.getGrandTotal(),
-                      serviceFeePercent: store.bill.serviceFeePercent,
-                      fixedFees: store.bill.fixedFees,
+                      serviceFeePercent: store.expense.serviceFeePercent,
+                      fixedFees: store.expense.fixedFees,
                     }}
                     items={store.items}
                     itemSplits={store.splits}
@@ -1064,9 +1063,9 @@ function NewBillPageContent() {
                     }))}
                     participants={store.participants}
                   />
-                  {store.bill.payers.length > 0 && (
+                  {store.payers.length > 0 && (
                     <PayerSummaryCard
-                      payers={store.bill.payers}
+                      payers={store.payers}
                       participants={store.participants}
                     />
                   )}
@@ -1082,7 +1081,7 @@ function NewBillPageContent() {
         if (step === "participants" && !selectedGroupId && store.participants.length >= 2) {
           errorMsg = "Selecione um grupo para continuar";
         } else if (step === "amount-split") {
-          const total = store.bill?.totalAmountInput || 0;
+          const total = store.totalAmountInput || 0;
           const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
           if (total <= 0) {
             errorMsg = "Informe o valor total da conta";
@@ -1091,7 +1090,7 @@ function NewBillPageContent() {
           }
         } else if (step === "payer") {
           const gt = store.getGrandTotal();
-          const paid = (store.bill?.payers || []).reduce((s, p) => s + p.amountCents, 0);
+          const paid = store.payers.reduce((s, p) => s + p.amountCents, 0);
           if (paid > 0 && gt > 0 && Math.abs(gt - paid) > 1) {
             errorMsg = `O pagamento (${formatBRL(paid)}) nao corresponde ao total (${formatBRL(gt)})`;
           }
