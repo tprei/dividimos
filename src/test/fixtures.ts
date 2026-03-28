@@ -1,4 +1,4 @@
-import type { Bill, BillItem, LedgerEntry, User } from "@/types";
+import type { Expense, ExpenseItem, ExpensePayer, DebtEdge, User, Bill, BillItem, LedgerEntry } from "@/types";
 
 export const userAlice: User = {
   id: "user-alice",
@@ -33,6 +33,55 @@ export const userCarlos: User = {
   createdAt: "2024-01-01T00:00:00Z",
 };
 
+export function makeExpense(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: "expense-1",
+    groupId: "group-1",
+    creatorId: "user-alice",
+    expenseType: "itemized",
+    title: "Jantar",
+    totalAmount: 0,
+    serviceFeePercent: 10,
+    fixedFees: 0,
+    status: "draft",
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function makeSingleAmountExpense(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: "expense-1",
+    groupId: "group-1",
+    creatorId: "user-alice",
+    expenseType: "single_amount",
+    title: "Aluguel",
+    totalAmount: 0,
+    serviceFeePercent: 0,
+    fixedFees: 0,
+    status: "draft",
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function makeExpenseItem(overrides: Partial<ExpenseItem> = {}): ExpenseItem {
+  return {
+    id: "item-1",
+    expenseId: "expense-1",
+    description: "Pizza",
+    quantity: 1,
+    unitPriceCents: 5000,
+    totalPriceCents: 5000,
+    createdAt: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+// Legacy aliases for gradual migration of other test files
+/** @deprecated Use makeExpense instead */
 export function makeItemizedBill(overrides: Partial<Bill> = {}): Bill {
   return {
     id: "bill-1",
@@ -51,6 +100,7 @@ export function makeItemizedBill(overrides: Partial<Bill> = {}): Bill {
   };
 }
 
+/** @deprecated Use makeSingleAmountExpense instead */
 export function makeSingleAmountBill(overrides: Partial<Bill> = {}): Bill {
   return {
     id: "bill-1",
@@ -69,6 +119,7 @@ export function makeSingleAmountBill(overrides: Partial<Bill> = {}): Bill {
   };
 }
 
+/** @deprecated Use makeExpenseItem instead */
 export function makeBillItem(overrides: Partial<BillItem> = {}): BillItem {
   return {
     id: "item-1",
@@ -82,6 +133,7 @@ export function makeBillItem(overrides: Partial<BillItem> = {}): BillItem {
   };
 }
 
+/** @deprecated Use DebtEdge instead */
 export function makeLedgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEntry {
   return {
     id: "ledger-1",
