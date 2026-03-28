@@ -24,26 +24,26 @@ describe("Edge cases", () => {
   it("payer consumed nothing → full debt transfer to consumer", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Gift", "single_amount");
-    store.updateBill({ totalAmountInput: 5000 });
+    store.createExpense("Gift", "single_amount");
+    store.updateExpense({ totalAmountInput: 5000 });
     store.addParticipant(userBob);
 
     store.splitBillByFixed([{ userId: "user-bob", amountCents: 5000 }]);
     store.setPayerFull("user-alice");
     store.computeLedger();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0].fromUserId).toBe("user-bob");
-    expect(ledger[0].toUserId).toBe("user-alice");
-    expect(ledger[0].amountCents).toBe(5000);
+    const { previewDebts } = useBillStore.getState();
+    expect(previewDebts).toHaveLength(1);
+    expect(previewDebts[0].fromUserId).toBe("user-bob");
+    expect(previewDebts[0].toUserId).toBe("user-alice");
+    expect(previewDebts[0].amountCents).toBe(5000);
   });
 
   it("everyone consumed and paid equally → no debts", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Split", "single_amount");
-    store.updateBill({ totalAmountInput: 9000 });
+    store.createExpense("Split", "single_amount");
+    store.updateExpense({ totalAmountInput: 9000 });
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
@@ -51,16 +51,16 @@ describe("Edge cases", () => {
     store.splitPaymentEqually(["user-alice", "user-bob", "user-carlos"]);
     store.computeLedger();
 
-    const { ledger, bill } = useBillStore.getState();
-    expect(ledger).toHaveLength(0);
-    expect(bill!.status).toBe("settled");
+    const { previewDebts, expense } = useBillStore.getState();
+    expect(previewDebts).toHaveLength(0);
+    expect(expense!.status).toBe("settled");
   });
 
   it("R$0.01 between 3 people → handles sub-cent gracefully", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Tiny", "single_amount");
-    store.updateBill({ totalAmountInput: 1 });
+    store.createExpense("Tiny", "single_amount");
+    store.updateExpense({ totalAmountInput: 1 });
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
@@ -73,14 +73,14 @@ describe("Edge cases", () => {
     store.setPayerFull("user-alice");
     store.computeLedger();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger.length).toBeLessThanOrEqual(1);
+    const { previewDebts } = useBillStore.getState();
+    expect(previewDebts.length).toBeLessThanOrEqual(1);
   });
 
-  it("switching bill type clears data properly", () => {
+  it("switching expense type clears data properly", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Test", "itemized");
+    store.createExpense("Test", "itemized");
     store.addParticipant(userBob);
 
     store.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
@@ -88,40 +88,40 @@ describe("Edge cases", () => {
     store.splitItemEqually(itemId, ["user-alice", "user-bob"]);
     store.setPayerFull("user-alice");
 
-    store.setBillType("single_amount");
+    store.setExpenseType("single_amount");
     expect(useBillStore.getState().items).toHaveLength(0);
     expect(useBillStore.getState().splits).toHaveLength(0);
-    expect(useBillStore.getState().bill!.serviceFeePercent).toBe(0);
+    expect(useBillStore.getState().expense!.serviceFeePercent).toBe(0);
 
-    store.updateBill({ totalAmountInput: 10000 });
+    store.updateExpense({ totalAmountInput: 10000 });
     store.splitBillEqually(["user-alice", "user-bob"]);
     store.setPayerFull("user-alice");
     store.computeLedger();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(1);
-    expect(ledger[0].amountCents).toBe(5000);
+    const { previewDebts } = useBillStore.getState();
+    expect(previewDebts).toHaveLength(1);
+    expect(previewDebts[0].amountCents).toBe(5000);
   });
 
   it("switching from single_amount to itemized clears billSplits", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Test", "single_amount");
-    store.updateBill({ totalAmountInput: 10000 });
+    store.createExpense("Test", "single_amount");
+    store.updateExpense({ totalAmountInput: 10000 });
     store.addParticipant(userBob);
     store.splitBillEqually(["user-alice", "user-bob"]);
     expect(useBillStore.getState().billSplits).toHaveLength(2);
 
-    store.setBillType("itemized");
+    store.setExpenseType("itemized");
     expect(useBillStore.getState().billSplits).toHaveLength(0);
-    expect(useBillStore.getState().bill!.serviceFeePercent).toBe(10);
+    expect(useBillStore.getState().expense!.serviceFeePercent).toBe(10);
   });
 
-  it("large bill: R$10,000 split 5 ways", () => {
+  it("large expense: R$10,000 split 5 ways", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Expensive", "single_amount");
-    store.updateBill({ totalAmountInput: 1000000 });
+    store.createExpense("Expensive", "single_amount");
+    store.updateExpense({ totalAmountInput: 1000000 });
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
     const dave = makeUser("dave", "Dave");
@@ -133,33 +133,33 @@ describe("Edge cases", () => {
     store.setPayerFull("user-alice");
     store.computeLedger();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(4);
-    const total = ledger.reduce((s, e) => s + e.amountCents, 0);
+    const { previewDebts } = useBillStore.getState();
+    expect(previewDebts).toHaveLength(4);
+    const total = previewDebts.reduce((s, e) => s + e.amountCents, 0);
     expect(total).toBe(800000);
   });
 
   it("no payers set → defaults to creator", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Test", "single_amount");
-    store.updateBill({ totalAmountInput: 6000 });
+    store.createExpense("Test", "single_amount");
+    store.updateExpense({ totalAmountInput: 6000 });
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
     store.computeLedger();
 
-    const { ledger } = useBillStore.getState();
-    expect(ledger).toHaveLength(2);
-    expect(ledger.every((e) => e.toUserId === "user-alice")).toBe(true);
+    const { previewDebts } = useBillStore.getState();
+    expect(previewDebts).toHaveLength(2);
+    expect(previewDebts.every((e) => e.toUserId === "user-alice")).toBe(true);
   });
 
   it("rounding: 3-way split totals match", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Test", "single_amount");
-    store.updateBill({ totalAmountInput: 10000 });
+    store.createExpense("Test", "single_amount");
+    store.updateExpense({ totalAmountInput: 10000 });
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
@@ -173,7 +173,7 @@ describe("Edge cases", () => {
   it("itemized rounding: service fee on odd split", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Test", "itemized");
+    store.createExpense("Test", "itemized");
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
@@ -194,18 +194,18 @@ describe("Edge cases", () => {
   it("reset clears everything", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
-    store.createBill("Test", "itemized");
+    store.createExpense("Test", "itemized");
     store.addParticipant(userBob);
     store.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
 
     store.reset();
 
     const state = useBillStore.getState();
-    expect(state.bill).toBeNull();
+    expect(state.expense).toBeNull();
     expect(state.participants).toHaveLength(0);
     expect(state.items).toHaveLength(0);
     expect(state.splits).toHaveLength(0);
     expect(state.billSplits).toHaveLength(0);
-    expect(state.ledger).toHaveLength(0);
+    expect(state.previewDebts).toHaveLength(0);
   });
 });
