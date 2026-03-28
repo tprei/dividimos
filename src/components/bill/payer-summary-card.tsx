@@ -2,11 +2,16 @@
 
 import { CreditCard } from "lucide-react";
 import { formatBRL } from "@/lib/currency";
-import type { BillPayer, User } from "@/types";
+import type { UserProfile } from "@/types";
+
+interface PayerEntry {
+  userId: string;
+  amountCents: number;
+}
 
 interface PayerSummaryCardProps {
-  payers: BillPayer[];
-  participants: User[];
+  payers: PayerEntry[];
+  participants: UserProfile[];
 }
 
 export function PayerSummaryCard({ payers, participants }: PayerSummaryCardProps) {

@@ -146,7 +146,7 @@ async function saveExpenseChildData(
     supabase.from("expense_payers").delete().eq("expense_id", expenseId),
   ]);
 
-  const inserts: Promise<{ error: { message: string } | null }>[] = [];
+  const inserts: PromiseLike<{ error: { message: string } | null }>[] = [];
 
   // Insert items
   if (items && items.length > 0) {
@@ -157,7 +157,7 @@ async function saveExpenseChildData(
       unit_price_cents: item.unitPriceCents,
       total_price_cents: item.totalPriceCents,
     }));
-    inserts.push(supabase.from("expense_items").insert(itemRows));
+    inserts.push(supabase.from("expense_items").insert(itemRows).then(({ error }) => ({ error })));
   }
 
   // Insert shares
@@ -167,7 +167,7 @@ async function saveExpenseChildData(
       user_id: s.userId,
       share_amount_cents: s.shareAmountCents,
     }));
-    inserts.push(supabase.from("expense_shares").insert(shareRows));
+    inserts.push(supabase.from("expense_shares").insert(shareRows).then(({ error }) => ({ error })));
   }
 
   // Insert payers
@@ -177,7 +177,7 @@ async function saveExpenseChildData(
       user_id: p.userId,
       amount_cents: p.amountCents,
     }));
-    inserts.push(supabase.from("expense_payers").insert(payerRows));
+    inserts.push(supabase.from("expense_payers").insert(payerRows).then(({ error }) => ({ error })));
   }
 
   // Run all inserts in parallel

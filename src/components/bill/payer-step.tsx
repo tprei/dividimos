@@ -6,10 +6,10 @@ import { startTransition, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
-import type { User } from "@/types";
+import type { UserProfile } from "@/types";
 
 interface PayerStepProps {
-  participants: User[];
+  participants: UserProfile[];
   payers: { userId: string; amountCents: number }[];
   grandTotal: number;
   onSetPayerFull: (userId: string) => void;
