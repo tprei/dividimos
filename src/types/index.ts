@@ -159,9 +159,19 @@ export interface DebtSummary {
   status: DebtStatus;
 }
 
+export interface ExpenseShare {
+  billId: string;
+  userId: string;
+  paidCents: number;
+  owedCents: number;
+  netCents: number;
+  createdAt: string;
+}
+
 export interface BillWithDetails extends Bill {
   participants: (BillParticipant & { user: User })[];
   items: (BillItem & { splits: (ItemSplit & { user: User })[] })[];
   ledger: LedgerEntry[];
   billSplits: BillSplit[];
+  shares: ExpenseShare[];
 }

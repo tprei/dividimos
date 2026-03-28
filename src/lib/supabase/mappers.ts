@@ -1,4 +1,4 @@
-import type { Bill, BillItem, BillPayer, BillSplit, BillType, DebtStatus, ItemSplit, LedgerEntry, SplitType, User } from "@/types";
+import type { Bill, BillItem, BillPayer, BillSplit, BillType, DebtStatus, ExpenseShare, ItemSplit, LedgerEntry, SplitType, User } from "@/types";
 import type { Database } from "@/types/database";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
@@ -111,4 +111,24 @@ function coerceDebtStatus(value: string | null, fallback: DebtStatus): DebtStatu
   const valid: DebtStatus[] = ["pending", "partially_paid", "settled"];
   if (value && valid.includes(value as DebtStatus)) return value as DebtStatus;
   return fallback;
+}
+
+interface ExpenseShareRow {
+  bill_id: string;
+  user_id: string;
+  paid_cents: number;
+  owed_cents: number;
+  net_cents: number;
+  created_at: string;
+}
+
+export function expenseShareRowToExpenseShare(row: ExpenseShareRow): ExpenseShare {
+  return {
+    billId: row.bill_id,
+    userId: row.user_id,
+    paidCents: row.paid_cents,
+    owedCents: row.owed_cents,
+    netCents: row.net_cents,
+    createdAt: row.created_at,
+  };
 }
