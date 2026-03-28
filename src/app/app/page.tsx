@@ -1,7 +1,7 @@
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { BillStatus } from "@/types";
+import type { ExpenseStatus } from "@/types";
 
 export default async function AppHome() {
   const user = await getAuthUser();
@@ -10,66 +10,73 @@ export default async function AppHome() {
 
   const supabase = await createClient();
 
-  const [billsResult, debtOwedResult, debtToMeResult] = await Promise.all([
+  // Fetch recent expenses and balance data in parallel
+  const [expensesResult, balancesResult] = await Promise.all([
     supabase
-      .from("bills")
+      .from("expenses")
       .select("id, title, status, total_amount, created_at, creator_id")
       .order("created_at", { ascending: false })
       .limit(5),
     supabase
-      .from("ledger")
-      .select("amount_cents")
-      .eq("from_user_id", user.id)
-      .neq("status", "settled"),
-    supabase
-      .from("ledger")
-      .select("amount_cents")
-      .eq("to_user_id", user.id)
-      .neq("status", "settled"),
+      .from("balances")
+      .select("user_a, user_b, amount_cents")
+      .or(`user_a.eq.${user.id},user_b.eq.${user.id}`),
   ]);
 
-  const myBills = billsResult.data ?? [];
+  const myExpenses = expensesResult.data ?? [];
   let bills: {
     id: string;
     title: string;
     date: string;
     total: number;
     participants: number;
-    status: BillStatus;
+    status: ExpenseStatus;
     myBalance: number;
     creatorId: string;
   }[] = [];
 
-  if (myBills.length > 0) {
-    const billIds = myBills.map((b) => b.id);
-    const { data: participantRows } = await supabase
-      .from("bill_participants")
-      .select("bill_id")
-      .in("bill_id", billIds);
+  if (myExpenses.length > 0) {
+    const expenseIds = myExpenses.map((e) => e.id);
+    const { data: shareRows } = await supabase
+      .from("expense_shares")
+      .select("expense_id, user_id")
+      .in("expense_id", expenseIds);
 
-    const countMap = new Map<string, number>();
-    for (const row of participantRows ?? []) {
-      countMap.set(row.bill_id, (countMap.get(row.bill_id) ?? 0) + 1);
+    const countMap = new Map<string, Set<string>>();
+    for (const row of shareRows ?? []) {
+      if (!countMap.has(row.expense_id)) {
+        countMap.set(row.expense_id, new Set());
+      }
+      countMap.get(row.expense_id)!.add(row.user_id);
     }
 
-    bills = myBills.map((bill) => ({
-      id: bill.id,
-      title: bill.title,
-      date: new Date(bill.created_at).toLocaleDateString("pt-BR", {
+    bills = myExpenses.map((expense) => ({
+      id: expense.id,
+      title: expense.title,
+      date: new Date(expense.created_at).toLocaleDateString("pt-BR", {
         day: "2-digit",
         month: "short",
       }),
-      total: bill.total_amount,
-      participants: countMap.get(bill.id) ?? 0,
-      status: bill.status as BillStatus,
+      total: expense.total_amount,
+      participants: countMap.get(expense.id)?.size ?? 0,
+      status: expense.status as ExpenseStatus,
       myBalance: 0,
-      creatorId: bill.creator_id,
+      creatorId: expense.creator_id,
     }));
   }
 
-  const iOwe = (debtOwedResult.data ?? []).reduce((s, d) => s + d.amount_cents, 0);
-  const theyOweMe = (debtToMeResult.data ?? []).reduce((s, d) => s + d.amount_cents, 0);
-  const netBalance = theyOweMe - iOwe;
+  // Compute net balance from balances table
+  // Convention: positive amount_cents = user_a owes user_b
+  let netBalance = 0;
+  for (const row of balancesResult.data ?? []) {
+    if (row.user_a === user.id) {
+      // I am user_a: positive means I owe, so subtract from my balance
+      netBalance -= row.amount_cents;
+    } else {
+      // I am user_b: positive means they owe me, so add to my balance
+      netBalance += row.amount_cents;
+    }
+  }
 
   return <DashboardContent initialBills={bills} initialNetBalance={netBalance} />;
 }
