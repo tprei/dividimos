@@ -3,7 +3,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
+  CheckCheck,
   Clock,
   Plus,
   Receipt,
@@ -23,9 +25,8 @@ import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
-import { coerceBillStatus } from "@/lib/type-guards";
 import toast from "react-hot-toast";
-import type { BillStatus, GroupMemberStatus, User, UserProfile } from "@/types";
+import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } from "@/types";
 import type { Database } from "@/types/database";
 
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
@@ -37,39 +38,26 @@ interface MemberEntry {
   invitedBy: string;
 }
 
-interface BillSummaryEntry {
+interface ExpenseSummaryEntry {
   id: string;
   title: string;
   totalAmount: number;
-  status: BillStatus;
+  status: ExpenseStatus;
   createdAt: string;
 }
 
-interface BillQueryRow {
-  id: string;
-  title: string;
-  total_amount: number;
-  status: BillStatus;
-  created_at: string;
-}
-
-const billStatusConfig: Record<BillStatus, { label: string; color: string }> = {
+const expenseStatusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
 
-type Tab = "membros" | "contas" | "acerto" | "pagamentos";
+const settlementStatusConfig: Record<string, { label: string; color: string }> = {
+  pending: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
+  confirmed: { label: "Confirmado", color: "bg-success/15 text-success" },
+};
 
-interface PaymentEntry {
-  id: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-  status: string;
-  createdAt: string;
-}
+type Tab = "membros" | "contas" | "pagamentos" | "acerto";
 
 export default function GroupDetailPage({
   params,
@@ -82,8 +70,8 @@ export default function GroupDetailPage({
   const [groupName, setGroupName] = useState("");
   const [creatorId, setCreatorId] = useState("");
   const [members, setMembers] = useState<MemberEntry[]>([]);
-  const [bills, setBills] = useState<BillSummaryEntry[]>([]);
-  const [payments, setPayments] = useState<PaymentEntry[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseSummaryEntry[]>([]);
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>("membros");
   const [showInvite, setShowInvite] = useState(false);
@@ -154,50 +142,43 @@ export default function GroupDetailPage({
 
     setMembers(entries);
 
-    // Fetch group bills + settlement payments in parallel
-    const [{ data: billRows }, { data: settlementRows }] = await Promise.all([
+    // Fetch group expenses + settlements in parallel
+    const [{ data: expenseRows }, { data: settlementRows }] = await Promise.all([
       supabase
-        .from("bills")
+        .from("expenses")
         .select("id, title, total_amount, status, created_at")
         .eq("group_id", id)
+        .neq("status", "draft")
         .order("created_at", { ascending: false }),
       supabase
-        .from("group_settlements")
-        .select("id")
-        .eq("group_id", id),
+        .from("settlements")
+        .select("id, group_id, from_user_id, to_user_id, amount_cents, status, created_at, confirmed_at")
+        .eq("group_id", id)
+        .order("created_at", { ascending: false }),
     ]);
 
-    setBills(
-      (billRows ?? []).map((b: BillQueryRow) => ({
-        id: b.id,
-        title: b.title,
-        totalAmount: b.total_amount,
-        status: coerceBillStatus(b.status, "draft"),
-        createdAt: b.created_at,
+    setExpenses(
+      (expenseRows ?? []).map((e: { id: string; title: string; total_amount: number; status: string; created_at: string }) => ({
+        id: e.id,
+        title: e.title,
+        totalAmount: e.total_amount,
+        status: e.status as ExpenseStatus,
+        createdAt: e.created_at,
       }))
     );
 
-    const settlementIds = (settlementRows ?? []).map((s: { id: string }) => s.id);
-    if (settlementIds.length > 0) {
-      const { data: paymentRows } = await supabase
-        .from("payments")
-        .select("id, from_user_id, to_user_id, amount_cents, status, created_at")
-        .in("group_settlement_id", settlementIds)
-        .order("created_at", { ascending: false });
-
-      setPayments(
-        (paymentRows ?? []).map((p: { id: string; from_user_id: string; to_user_id: string; amount_cents: number; status: string; created_at: string }) => ({
-          id: p.id,
-          fromUserId: p.from_user_id,
-          toUserId: p.to_user_id,
-          amountCents: p.amount_cents,
-          status: p.status,
-          createdAt: p.created_at,
-        }))
-      );
-    } else {
-      setPayments([]);
-    }
+    setSettlements(
+      (settlementRows ?? []).map((s: { id: string; group_id: string; from_user_id: string; to_user_id: string; amount_cents: number; status: string; created_at: string; confirmed_at: string | null }) => ({
+        id: s.id,
+        groupId: s.group_id,
+        fromUserId: s.from_user_id,
+        toUserId: s.to_user_id,
+        amountCents: s.amount_cents,
+        status: s.status as Settlement["status"],
+        createdAt: s.created_at,
+        confirmedAt: s.confirmed_at ?? undefined,
+      }))
+    );
 
     setLoading(false);
   }, [id]);
@@ -307,7 +288,7 @@ export default function GroupDetailPage({
   }
 
   const acceptedCount = members.filter((m) => m.status === "accepted").length;
-  const activeBillCount = bills.filter((b) => b.status !== "settled").length;
+  const activeExpenseCount = expenses.filter((e) => e.status !== "settled").length;
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -323,7 +304,7 @@ export default function GroupDetailPage({
           <h1 className="font-semibold">{groupName}</h1>
           <p className="text-xs text-muted-foreground">
             {acceptedCount} membro{acceptedCount !== 1 ? "s" : ""}
-            {activeBillCount > 0 && ` · ${activeBillCount} conta${activeBillCount !== 1 ? "s" : ""} ativa${activeBillCount !== 1 ? "s" : ""}`}
+            {activeExpenseCount > 0 && ` · ${activeExpenseCount} conta${activeExpenseCount !== 1 ? "s" : ""} ativa${activeExpenseCount !== 1 ? "s" : ""}`}
           </p>
         </div>
         {canInvite && (
@@ -500,7 +481,7 @@ export default function GroupDetailPage({
         </div>
       )}
 
-      {/* Bills tab */}
+      {/* Expenses tab */}
       {activeTab === "contas" && (
         <div className="mt-4 space-y-3">
           <Button
@@ -512,17 +493,17 @@ export default function GroupDetailPage({
             Nova conta do grupo
           </Button>
 
-          {bills.length === 0 ? (
+          {expenses.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Receipt className="mx-auto h-8 w-8 opacity-50" />
               <p className="mt-2 text-sm">Nenhuma conta ainda</p>
               <p className="text-xs">Crie uma conta para comecar</p>
             </div>
           ) : (
-            bills.map((bill) => {
-              const statusCfg = billStatusConfig[bill.status];
+            expenses.map((expense) => {
+              const statusCfg = expenseStatusConfig[expense.status];
               return (
-                <Link key={bill.id} href={`/app/bill/${bill.id}`}>
+                <Link key={expense.id} href={`/app/bill/${expense.id}`}>
                   <motion.div
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -532,14 +513,14 @@ export default function GroupDetailPage({
                       <Receipt className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{bill.title}</p>
+                      <p className="font-medium text-sm truncate">{expense.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(bill.createdAt).toLocaleDateString("pt-BR")}
+                        {new Date(expense.createdAt).toLocaleDateString("pt-BR")}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <span className="font-semibold text-sm tabular-nums">
-                        {formatBRL(bill.totalAmount)}
+                        {formatBRL(expense.totalAmount)}
                       </span>
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusCfg.color}`}>
                         {statusCfg.label}
@@ -564,39 +545,55 @@ export default function GroupDetailPage({
         </div>
       )}
 
-      {/* Payments tab */}
+      {/* Payments (settlement history) tab */}
       {activeTab === "pagamentos" && (
         <div className="mt-4 space-y-2">
-          {payments.length === 0 ? (
+          {settlements.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <Receipt className="mx-auto h-8 w-8 opacity-50" />
               <p className="mt-2 text-sm">Nenhum pagamento ainda</p>
             </div>
           ) : (
-            payments.map((payment) => {
-              const from = members.find((m) => m.userId === payment.fromUserId);
-              const to = members.find((m) => m.userId === payment.toUserId);
+            settlements.map((settlement) => {
+              const from = members.find((m) => m.userId === settlement.fromUserId);
+              const to = members.find((m) => m.userId === settlement.toUserId);
+              const statusCfg = settlementStatusConfig[settlement.status] ?? settlementStatusConfig.pending;
               return (
                 <div
-                  key={payment.id}
+                  key={settlement.id}
                   className="flex items-center gap-3 rounded-xl border bg-card p-3"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                    <span className="text-sm font-bold text-primary">
-                      {from?.profile.name.charAt(0) || "?"}
+                  <UserAvatar
+                    name={from?.profile.name ?? "?"}
+                    avatarUrl={from?.profile.avatarUrl}
+                    size="sm"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate flex items-center gap-1">
+                      {from?.profile.name.split(" ")[0] ?? "?"}
+                      <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      {to?.profile.name.split(" ")[0] ?? "?"}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(settlement.createdAt).toLocaleDateString("pt-BR")}
+                      </p>
+                      {settlement.status === "confirmed" && (
+                        <CheckCheck className="h-3 w-3 text-success" />
+                      )}
+                      {settlement.status === "pending" && (
+                        <Clock className="h-3 w-3 text-warning-foreground" />
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="font-semibold text-sm tabular-nums">
+                      {formatBRL(settlement.amountCents)}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusCfg.color}`}>
+                      {statusCfg.label}
                     </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {from?.profile.name.split(" ")[0] || "?"} → {to?.profile.name.split(" ")[0] || "?"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(payment.createdAt).toLocaleDateString("pt-BR")}
-                    </p>
-                  </div>
-                  <span className="font-semibold text-sm tabular-nums">
-                    {formatBRL(payment.amountCents)}
-                  </span>
                 </div>
               );
             })
