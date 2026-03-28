@@ -1,7 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { userAlice, userBob, userCarlos, makeItemizedBill, makeSingleAmountBill, makeBillItem } from "@/test/fixtures";
 import { useBillStore, calculateShares, computeEdgesFromShares } from "./bill-store";
 import type { ExpenseShare, ItemSplit, BillSplit } from "@/types";
+
+vi.mock("@/lib/supabase/payment-actions", () => ({
+  recordPayment: vi.fn(),
+}));
+
+import { recordPayment } from "@/lib/supabase/payment-actions";
 
 function setup() {
   const s = useBillStore.getState();
@@ -532,5 +538,60 @@ describe("markPaid", () => {
     expect(ledger.length).toBeGreaterThan(1);
     useBillStore.getState().markPaid(ledger[0].id);
     expect(useBillStore.getState().bill?.status).toBe("partially_settled");
+  });
+});
+
+describe("createPayment", () => {
+  beforeEach(() => {
+    vi.mocked(recordPayment).mockReset();
+  });
+
+  it("calls recordPayment and adds offsetting shares to store", async () => {
+    vi.mocked(recordPayment).mockResolvedValue({ billId: "payment-bill-1" });
+    setup().createBill("Test", "single_amount");
+
+    const result = await useBillStore.getState().createPayment("user-bob", "user-alice", 5000);
+
+    expect(recordPayment).toHaveBeenCalledWith("user-bob", "user-alice", 5000, undefined);
+    expect(result.billId).toBe("payment-bill-1");
+    const { shares } = useBillStore.getState();
+    const paymentShares = shares.filter((s) => s.billId === "payment-bill-1");
+    expect(paymentShares).toHaveLength(2);
+    const bobShare = paymentShares.find((s) => s.userId === "user-bob")!;
+    const aliceShare = paymentShares.find((s) => s.userId === "user-alice")!;
+    expect(bobShare.paidCents).toBe(5000);
+    expect(bobShare.owedCents).toBe(0);
+    expect(bobShare.netCents).toBe(5000);
+    expect(aliceShare.paidCents).toBe(0);
+    expect(aliceShare.owedCents).toBe(5000);
+    expect(aliceShare.netCents).toBe(-5000);
+  });
+
+  it("passes groupId to recordPayment", async () => {
+    vi.mocked(recordPayment).mockResolvedValue({ billId: "payment-bill-1" });
+    setup().createBill("Test", "single_amount");
+
+    await useBillStore.getState().createPayment("user-bob", "user-alice", 3000, "group-1");
+
+    expect(recordPayment).toHaveBeenCalledWith("user-bob", "user-alice", 3000, "group-1");
+  });
+
+  it("returns error when recordPayment fails", async () => {
+    vi.mocked(recordPayment).mockResolvedValue({ error: "Not authorized" });
+    setup().createBill("Test", "single_amount");
+
+    const result = await useBillStore.getState().createPayment("user-bob", "user-alice", 5000);
+
+    expect(result.error).toBe("Not authorized");
+    expect(result.billId).toBeUndefined();
+  });
+
+  it("does not add shares when recordPayment fails", async () => {
+    vi.mocked(recordPayment).mockResolvedValue({ error: "Fail" });
+    setup().createBill("Test", "single_amount");
+
+    const sharesBefore = useBillStore.getState().shares.length;
+    await useBillStore.getState().createPayment("user-bob", "user-alice", 5000);
+    expect(useBillStore.getState().shares.length).toBe(sharesBefore);
   });
 });

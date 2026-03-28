@@ -1,8 +1,17 @@
 import type { DebtEdge } from "./simplify";
-import type { LedgerEntry, User } from "@/types";
+import type { ExpenseShare, User } from "@/types";
 
+/**
+ * Compute net settlement edges from ExpenseShare[] for a group.
+ *
+ * In the Splitwise model, each expense_share has a net_cents:
+ *   positive = creditor (owed money), negative = debtor (owes money)
+ *
+ * We aggregate net_cents per user across all shares, then use greedy
+ * matching to produce DebtEdge[].
+ */
 export function computeGroupNetEdges(
-  ledgerEntries: LedgerEntry[],
+  shares: ExpenseShare[],
   participants: User[],
 ): DebtEdge[] {
   const balances = new Map<string, number>();
@@ -10,10 +19,8 @@ export function computeGroupNetEdges(
     balances.set(p.id, 0);
   }
 
-  for (const entry of ledgerEntries) {
-    if (entry.status === "settled") continue;
-    balances.set(entry.fromUserId, (balances.get(entry.fromUserId) ?? 0) - entry.amountCents);
-    balances.set(entry.toUserId, (balances.get(entry.toUserId) ?? 0) + entry.amountCents);
+  for (const share of shares) {
+    balances.set(share.userId, (balances.get(share.userId) ?? 0) + share.netCents);
   }
 
   const debtors: { id: string; amount: number }[] = [];

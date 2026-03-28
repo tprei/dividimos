@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { distributeProportionally, distributeEvenly } from "@/lib/currency";
+import { recordPayment } from "@/lib/supabase/payment-actions";
 import type { DebtEdge } from "@/lib/simplify";
 import type {
   Bill,
@@ -57,6 +58,7 @@ interface BillState {
   getGrandTotal: () => number;
   computeShares: () => void;
   recordPayment: (entryId: string, amountCents: number) => void;
+  createPayment: (fromUserId: string, toUserId: string, amountCents: number, groupId?: string) => Promise<{ billId?: string; error?: string }>;
   markPaid: (entryId: string) => void;
   getParticipantTotal: (userId: string) => number;
   reset: () => void;
@@ -377,6 +379,22 @@ export const useBillStore = create<BillState>((set, get) => ({
       }),
     });
     checkAllSettled(get, set);
+  },
+
+  createPayment: async (fromUserId, toUserId, amountCents, groupId) => {
+    const result = await recordPayment(fromUserId, toUserId, amountCents, groupId);
+    if (result.billId) {
+      const now = new Date().toISOString();
+      const billId = result.billId;
+      set((state) => ({
+        shares: [
+          ...state.shares,
+          { billId, userId: fromUserId, paidCents: amountCents, owedCents: 0, netCents: amountCents, createdAt: now },
+          { billId, userId: toUserId, paidCents: 0, owedCents: amountCents, netCents: -amountCents, createdAt: now },
+        ],
+      }));
+    }
+    return result;
   },
 
   markPaid: (entryId) => {
