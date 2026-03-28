@@ -76,8 +76,21 @@ DROP FUNCTION IF EXISTS update_ledger_on_payment() CASCADE;
 DROP FUNCTION IF EXISTS update_group_settlement_on_payment() CASCADE;
 DROP FUNCTION IF EXISTS cascade_group_settlement() CASCADE;
 DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
-DROP FUNCTION IF EXISTS my_bill_ids() CASCADE;
 DROP FUNCTION IF EXISTS sync_group_settlements(uuid) CASCADE;
+
+-- my_bill_ids: drop by OID lookup to handle any signature mismatch
+DO $$
+DECLARE
+  fn_oid oid;
+BEGIN
+  FOR fn_oid IN
+    SELECT p.oid FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE p.proname = 'my_bill_ids' AND n.nspname = 'public'
+  LOOP
+    EXECUTE format('DROP FUNCTION %s CASCADE', fn_oid::regprocedure);
+  END LOOP;
+END $$;
 
 -- ============================================================
 -- 5. Drop old enums

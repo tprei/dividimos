@@ -63,10 +63,9 @@ describe.skipIf(!isIntegrationTestReady)(
     }
 
     async function functionExists(funcName: string): Promise<boolean> {
-      // Try calling a non-existent RPC to check if function exists
       const { error } = await adminClient!.rpc(funcName as never);
-      // 42883 = function does not exist
-      return !error || error.code !== "42883";
+      if (!error) return true;
+      return error.code !== "42883";
     }
 
     it("old tables should not exist", async () => {
