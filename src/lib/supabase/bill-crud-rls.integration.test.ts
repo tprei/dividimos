@@ -6,6 +6,10 @@ import {
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
+import type { Database } from "@/types/database";
+
+type BillRow = Database["public"]["Tables"]["bills"]["Row"];
+type BillItemRow = Database["public"]["Tables"]["bill_items"]["Row"];
 
 describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
   let alice: TestUser;
@@ -21,14 +25,14 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
       const bill = await createTestBill(alice.id);
       const aliceClient = authenticateAs(alice);
 
-      const { data, error } = await aliceClient
+      const result = await aliceClient
         .from("bills")
         .select("*")
         .eq("id", bill.id)
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.id).toBe(bill.id);
+      expect(result.error).toBeNull();
+      expect((result.data as BillRow).id).toBe(bill.id);
     });
 
     it("participant can read the bill", async () => {
@@ -40,14 +44,14 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
       });
 
       const bobClient = authenticateAs(bob);
-      const { data, error } = await bobClient
+      const result2 = await bobClient
         .from("bills")
         .select("*")
         .eq("id", bill.id)
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.id).toBe(bill.id);
+      expect(result2.error).toBeNull();
+      expect((result2.data as BillRow).id).toBe(bill.id);
     });
 
     it("non-participant cannot read the bill", async () => {
@@ -69,7 +73,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
     it("authenticated user can create a bill with their own creator_id", async () => {
       const aliceClient = authenticateAs(alice);
 
-      const { data, error } = await aliceClient
+      const result = await aliceClient
         .from("bills")
         .insert({
           creator_id: alice.id,
@@ -81,8 +85,8 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         .select()
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.creator_id).toBe(alice.id);
+      expect(result.error).toBeNull();
+      expect((result.data as BillRow).creator_id).toBe(alice.id);
     });
 
     it("user cannot create a bill with another user as creator_id", async () => {
@@ -202,7 +206,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
       const bill = await createTestBill(alice.id);
       billId = bill.id;
 
-      const { data } = await adminClient!
+      const { data: itemData } = await adminClient!
         .from("bill_items")
         .insert({
           bill_id: billId,
@@ -213,7 +217,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill CRUD + RLS", () => {
         .select()
         .single();
 
-      itemId = data!.id;
+      itemId = (itemData as BillItemRow).id;
     });
 
     it("creator can read items", async () => {
