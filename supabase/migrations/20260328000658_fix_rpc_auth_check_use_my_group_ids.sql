@@ -48,7 +48,7 @@ BEGIN
 
     v_remaining := v_amount - v_settled;
 
-    IF v_remaining > 1 THEN
+    IF v_remaining > 0 THEN
       INSERT INTO public.group_settlements (group_id, from_user_id, to_user_id, amount_cents)
       VALUES (p_group_id, v_from, v_to, v_remaining);
     END IF;

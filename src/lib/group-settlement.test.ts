@@ -121,14 +121,15 @@ describe("computeGroupNetEdges", () => {
     expect(total).toBe(10000);
   });
 
-  it("ignores 1-centavo balance (tolerance threshold)", () => {
-    // Balance of exactly 1 centavo is within the tolerance and should be ignored
+  it("preserves 1-centavo balance (no tolerance threshold)", () => {
+    // A balance of exactly 1 centavo must produce an edge, not be silently dropped
     const entries = [
       makeLedgerEntry({ fromUserId: "user-bob", toUserId: "user-alice", amountCents: 5000 }),
       makeLedgerEntry({ id: "l2", fromUserId: "user-alice", toUserId: "user-bob", amountCents: 4999 }),
     ];
     const edges = computeGroupNetEdges(entries, participants);
-    // Net balance is 1 centavo which is <= 1, so no edges
-    expect(edges).toHaveLength(0);
+    // Net balance is 1 centavo — must produce an edge
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ fromUserId: "user-bob", toUserId: "user-alice", amountCents: 1 });
   });
 });

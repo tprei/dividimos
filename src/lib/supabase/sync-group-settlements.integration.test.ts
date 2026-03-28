@@ -170,7 +170,7 @@ describe.skipIf(!isIntegrationTestReady)("sync_group_settlements RPC", () => {
     expect(settlements).toHaveLength(0);
   });
 
-  it("does not insert edge when remaining is <= 1 centavo", async () => {
+  it("does not insert edge when remaining is 0", async () => {
     const aliceClient = authenticateAs(alice);
 
     // Create a settled settlement via admin
