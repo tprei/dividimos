@@ -22,36 +22,42 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     .eq("group_id", groupId)
     .neq("status", "draft");
 
-  const bills: Bill[] = (billRows as BillRow[] ?? []).map((b) => {
-    const payers: BillPayer[] = [];
-    return {
-      id: b.id,
-      creatorId: b.creator_id,
-      billType: b.bill_type === "single_amount" ? "single_amount" : "itemized",
-      title: b.title,
-      merchantName: b.merchant_name ?? undefined,
-      status: b.status,
-      serviceFeePercent: b.service_fee_percent,
-      fixedFees: b.fixed_fees,
-      totalAmount: b.total_amount,
-      totalAmountInput: b.total_amount_input,
-      payers,
-      groupId: b.group_id ?? undefined,
-      createdAt: b.created_at,
-      updatedAt: b.updated_at,
-    };
-  });
+  const billIds = (billRows as BillRow[] ?? []).map((b) => b.id);
 
-  if (bills.length === 0) {
-    return { bills, ledger: [], participants: [] };
+  if (billIds.length === 0) {
+    return { bills: [], ledger: [], participants: [] };
   }
 
-  const billIds = bills.map((b) => b.id);
-
-  const [ledgerResult, participantResult] = await Promise.all([
+  const [ledgerResult, participantResult, payerResult] = await Promise.all([
     supabase.from("ledger").select("*").in("bill_id", billIds),
     supabase.from("bill_participants").select("user_id").in("bill_id", billIds),
+    supabase.from("bill_payers").select("*").in("bill_id", billIds),
   ]);
+
+  const payerRows = payerResult.data as Array<{ bill_id: string; user_id: string; amount_cents: number }> ?? [];
+  const payersByBill = new Map<string, BillPayer[]>();
+  for (const pr of payerRows) {
+    const list = payersByBill.get(pr.bill_id) ?? [];
+    list.push({ userId: pr.user_id, amountCents: pr.amount_cents });
+    payersByBill.set(pr.bill_id, list);
+  }
+
+  const bills: Bill[] = (billRows as BillRow[] ?? []).map((b) => ({
+    id: b.id,
+    creatorId: b.creator_id,
+    billType: b.bill_type === "single_amount" ? "single_amount" : "itemized",
+    title: b.title,
+    merchantName: b.merchant_name ?? undefined,
+    status: b.status,
+    serviceFeePercent: b.service_fee_percent,
+    fixedFees: b.fixed_fees,
+    totalAmount: b.total_amount,
+    totalAmountInput: b.total_amount_input,
+    payers: payersByBill.get(b.id) ?? [],
+    groupId: b.group_id ?? undefined,
+    createdAt: b.created_at,
+    updatedAt: b.updated_at,
+  }));
   const ledgerRows = ledgerResult.data;
   const participantRows = participantResult.data;
 
