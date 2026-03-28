@@ -12,8 +12,9 @@ export function computeGroupNetEdges(
 
   for (const entry of ledgerEntries) {
     if (entry.status === "settled") continue;
-    balances.set(entry.fromUserId, (balances.get(entry.fromUserId) ?? 0) - entry.amountCents);
-    balances.set(entry.toUserId, (balances.get(entry.toUserId) ?? 0) + entry.amountCents);
+    const remaining = entry.amountCents - (entry.paidAmountCents ?? 0);
+    balances.set(entry.fromUserId, (balances.get(entry.fromUserId) ?? 0) - remaining);
+    balances.set(entry.toUserId, (balances.get(entry.toUserId) ?? 0) + remaining);
   }
 
   const debtors: { id: string; amount: number }[] = [];

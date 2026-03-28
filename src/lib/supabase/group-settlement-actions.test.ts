@@ -69,6 +69,9 @@ describe("loadGroupBillsAndLedger", () => {
     mock.onTable("bill_participants", {
       data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
     });
+    mock.onTable("bill_payers", {
+      data: [{ bill_id: "bill-1", user_id: "user-alice", amount_cents: 5500 }],
+    });
     mock.onTable("user_profiles", {
       data: [
         { id: "user-alice", handle: "alice", name: "Alice", avatar_url: null },
@@ -81,9 +84,90 @@ describe("loadGroupBillsAndLedger", () => {
     expect(result.bills).toHaveLength(1);
     expect(result.bills[0].billType).toBe("itemized");
     expect(result.bills[0].groupId).toBe("group-1");
+    expect(result.bills[0].payers).toEqual([
+      { userId: "user-alice", amountCents: 5500 },
+    ]);
     expect(result.ledger).toHaveLength(1);
     expect(result.ledger[0].fromUserId).toBe("user-bob");
     expect(result.participants).toHaveLength(2);
+  });
+
+  it("loads multiple payers per bill for split-payment bills", async () => {
+    mock.onTable("bills", {
+      data: [
+        {
+          id: "bill-1",
+          creator_id: "user-alice",
+          bill_type: "single_amount",
+          title: "Almoco",
+          merchant_name: null,
+          status: "active",
+          service_fee_percent: 0,
+          fixed_fees: 0,
+          total_amount: 10000,
+          total_amount_input: 10000,
+          group_id: "group-1",
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+        },
+      ],
+    });
+    mock.onTable("ledger", { data: [] });
+    mock.onTable("bill_participants", {
+      data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
+    });
+    mock.onTable("bill_payers", {
+      data: [
+        { bill_id: "bill-1", user_id: "user-alice", amount_cents: 6000 },
+        { bill_id: "bill-1", user_id: "user-bob", amount_cents: 4000 },
+      ],
+    });
+    mock.onTable("user_profiles", {
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice", avatar_url: null },
+        { id: "user-bob", handle: "bob", name: "Bob", avatar_url: null },
+      ],
+    });
+
+    const result = await loadGroupBillsAndLedger("group-1");
+
+    expect(result.bills[0].payers).toHaveLength(2);
+    expect(result.bills[0].payers).toEqual([
+      { userId: "user-alice", amountCents: 6000 },
+      { userId: "user-bob", amountCents: 4000 },
+    ]);
+  });
+
+  it("defaults to empty payers when bill_payers returns null", async () => {
+    mock.onTable("bills", {
+      data: [
+        {
+          id: "bill-1",
+          creator_id: "user-alice",
+          bill_type: "single_amount",
+          title: "Test",
+          merchant_name: null,
+          status: "active",
+          service_fee_percent: 0,
+          fixed_fees: 0,
+          total_amount: 5000,
+          total_amount_input: 5000,
+          group_id: "group-1",
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+        },
+      ],
+    });
+    mock.onTable("ledger", { data: [] });
+    mock.onTable("bill_participants", { data: [{ user_id: "user-alice" }] });
+    // No bill_payers mock — defaults to null response
+    mock.onTable("user_profiles", {
+      data: [{ id: "user-alice", handle: "alice", name: "Alice", avatar_url: null }],
+    });
+
+    const result = await loadGroupBillsAndLedger("group-1");
+
+    expect(result.bills[0].payers).toEqual([]);
   });
 });
 
