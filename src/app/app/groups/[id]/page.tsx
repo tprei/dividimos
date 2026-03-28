@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Pencil,
   Plus,
   Receipt,
   Search,
@@ -79,6 +80,8 @@ export default function GroupDetailPage({
   const [lookupResult, setLookupResult] = useState<UserProfile | null>(null);
   const [lookupError, setLookupError] = useState("");
   const [searching, setSearching] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
 
   const fetchGroup = useCallback(async () => {
     const supabase = createClient();
@@ -202,6 +205,17 @@ export default function GroupDetailPage({
   );
   const canInvite = isCreator || isAcceptedMember;
 
+  const handleRename = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed || trimmed === groupName) {
+      setEditingName(false);
+      return;
+    }
+    await createClient().from("groups").update({ name: trimmed }).eq("id", id);
+    setGroupName(trimmed);
+    setEditingName(false);
+  };
+
   const handleLookup = async () => {
     const handle = handleInput.toLowerCase().replace(/^@/, "").trim();
     if (!handle) return;
@@ -303,7 +317,31 @@ export default function GroupDetailPage({
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="flex-1">
-          <h1 className="font-semibold">{groupName}</h1>
+          {editingName ? (
+            <input
+              autoFocus
+              className="font-semibold bg-transparent border-b border-primary outline-none w-full"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleRename();
+                if (e.key === "Escape") setEditingName(false);
+              }}
+              onBlur={handleRename}
+            />
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-semibold">{groupName}</h1>
+              {isCreator && (
+                <button
+                  onClick={() => { setNameInput(groupName); setEditingName(true); }}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             {acceptedCount} membro{acceptedCount !== 1 ? "s" : ""}
             {activeExpenseCount > 0 && ` · ${activeExpenseCount} conta${activeExpenseCount !== 1 ? "s" : ""} ativa${activeExpenseCount !== 1 ? "s" : ""}`}
