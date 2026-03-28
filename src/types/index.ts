@@ -144,6 +144,70 @@ export interface Settlement {
 }
 
 // ============================================================
+// RPC request / result types (type-safe Supabase RPC calls)
+// ============================================================
+
+/** Request payload for the activate_expense RPC function. */
+export interface ActivateExpenseRequest {
+  /** The expense to transition from draft → active. */
+  expense_id: string;
+}
+
+/**
+ * Result returned by the activate_expense RPC function.
+ * The RPC validates that shares sum to total, transitions the expense
+ * to active, and atomically updates the balances table.
+ */
+export interface ActivateExpenseResult {
+  /** The activated expense ID. */
+  expenseId: string;
+  /** New status (always "active" on success). */
+  status: "active";
+  /** Balances that were created or updated by this activation. */
+  updatedBalances: ActivateExpenseBalanceUpdate[];
+}
+
+/** A single balance row that was upserted during activation. */
+export interface ActivateExpenseBalanceUpdate {
+  groupId: string;
+  userA: string;
+  userB: string;
+  /** The new net balance after this expense was applied. */
+  newAmountCents: number;
+  /** The delta applied by this expense (positive = increased A's debt to B). */
+  deltaCents: number;
+}
+
+/** Request payload for the record_settlement RPC function. */
+export interface RecordSettlementRequest {
+  /** The group this settlement belongs to. */
+  group_id: string;
+  /** The user making the payment. */
+  from_user_id: string;
+  /** The user receiving the payment. */
+  to_user_id: string;
+  /** Amount in centavos. Must be positive. */
+  amount_cents: number;
+}
+
+/**
+ * Result returned by the record_settlement RPC function.
+ * The RPC creates a settlement record and atomically updates
+ * the balances table.
+ */
+export interface RecordSettlementResult {
+  /** The created settlement record. */
+  settlement: Settlement;
+  /** The updated balance between the two users after the settlement. */
+  updatedBalance: {
+    groupId: string;
+    userA: string;
+    userB: string;
+    newAmountCents: number;
+  };
+}
+
+// ============================================================
 // Composite types for UI consumption
 // ============================================================
 
