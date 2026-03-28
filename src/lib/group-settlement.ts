@@ -1,6 +1,27 @@
 import type { DebtEdge } from "./simplify";
 import type { LedgerEntry, User } from "@/types";
 
+/**
+ * Convert ledger entries to raw DebtEdge[] — consolidating same-direction
+ * edges but preserving reverse pairs for step-by-step simplification.
+ */
+export function ledgerToRawEdges(ledgerEntries: LedgerEntry[]): DebtEdge[] {
+  const map = new Map<string, number>();
+  for (const entry of ledgerEntries) {
+    if (entry.status === "settled") continue;
+    const remaining = entry.amountCents - (entry.paidAmountCents ?? 0);
+    if (remaining <= 0) continue;
+    const key = `${entry.fromUserId}->${entry.toUserId}`;
+    map.set(key, (map.get(key) || 0) + remaining);
+  }
+  return Array.from(map.entries())
+    .filter(([, amount]) => amount > 0)
+    .map(([key, amountCents]) => {
+      const [fromUserId, toUserId] = key.split("->");
+      return { fromUserId, toUserId, amountCents };
+    });
+}
+
 export function computeGroupNetEdges(
   ledgerEntries: LedgerEntry[],
   participants: User[],

@@ -100,7 +100,7 @@ export function GroupSettlementView({
     const upserted = await syncGroupSettlements(groupId, netEdges);
     setSettlements(upserted.filter((s) => s.status !== "settled"));
     setLoading(false);
-  }, [groupId, participants, refreshSettlements]);
+  }, [groupId, participants]);
 
   useEffect(() => {
     initializeSettlements();

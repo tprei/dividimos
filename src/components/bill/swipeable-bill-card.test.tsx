@@ -83,7 +83,7 @@ describe("SwipeableBillCard", () => {
   });
 
   it("does not wrap disabled card in swipeable container", () => {
-    const { container } = render(
+    render(
       <SwipeableBillCard {...defaultProps} enabled={false}>
         <div data-testid="child">Content</div>
       </SwipeableBillCard>,
