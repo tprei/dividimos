@@ -205,9 +205,9 @@ export function GroupSettlementView({
       )}
 
       {/* Debt cards (balance-derived — who owes whom) */}
-      {debtEdges.length > 0 && (
+      {displayEdges.length > 0 && (
         <div className="space-y-3">
-          {debtEdges.map((edge) => {
+          {displayEdges.map((edge) => {
             const from = getParticipant(edge.fromUserId);
             const to = getParticipant(edge.toUserId);
             const isDebtor = edge.fromUserId === currentUserId;

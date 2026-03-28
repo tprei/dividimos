@@ -329,7 +329,9 @@ function NewBillPageContent() {
       title: state.expense.title,
       merchantName: state.expense.merchantName,
       expenseType: state.expense.expenseType,
-      totalAmount: state.getGrandTotal(),
+      totalAmount: state.payers.length > 0
+        ? state.payers.reduce((s, p) => s + p.amountCents, 0)
+        : state.getGrandTotal(),
       serviceFeePercent: state.expense.serviceFeePercent,
       fixedFees: state.expense.fixedFees,
       existingExpenseId: existingId,
@@ -388,7 +390,7 @@ function NewBillPageContent() {
                 group_id: group.id,
                 user_id: p.id,
                 invited_by: authUser.id,
-                status: "accepted" as const,
+                status: "invited" as const,
               })),
             );
           }
