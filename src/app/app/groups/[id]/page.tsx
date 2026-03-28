@@ -424,8 +424,8 @@ export default function GroupDetailPage({
 
       {/* Tab bar */}
       <div className="mt-5 flex gap-1 rounded-xl bg-muted p-1">
-        {(["membros", "contas", "acerto", "pagamentos"] as Tab[]).map((tab) => {
-          const label = { membros: "Membros", contas: "Contas", acerto: "Acerto", pagamentos: "Pagamentos" }[tab];
+        {(["membros", "contas", "pagamentos", "acerto"] as Tab[]).map((tab) => {
+          const label = { membros: "Membros", contas: "Contas", pagamentos: "Pagamentos", acerto: "Acerto" }[tab];
           return (
             <button
               key={tab}
