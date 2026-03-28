@@ -1,4 +1,4 @@
-import type { Bill, BillItem, LedgerEntry, User } from "@/types";
+import type { Bill, BillItem, ExpenseShare, LedgerEntry, User } from "@/types";
 
 export const userAlice: User = {
   id: "user-alice",
@@ -92,6 +92,18 @@ export function makeLedgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEnt
     amountCents: 5000,
     paidAmountCents: 0,
     status: "pending",
+    createdAt: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+export function makeExpenseShare(overrides: Partial<ExpenseShare> = {}): ExpenseShare {
+  return {
+    billId: "bill-1",
+    userId: "user-bob",
+    paidCents: 0,
+    owedCents: 5000,
+    netCents: -5000,
     createdAt: "2024-01-01T00:00:00Z",
     ...overrides,
   };

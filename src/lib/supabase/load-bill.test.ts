@@ -23,7 +23,7 @@ describe("loadBillFromSupabase", () => {
     expect(result).toBeNull();
   });
 
-  it("loads an itemized bill with items, splits, participants, and ledger", async () => {
+  it("loads an itemized bill with items, splits, participants, and expense_shares", async () => {
     mock.onTable("bills", {
       data: {
         id: "bill-1",
@@ -44,19 +44,21 @@ describe("loadBillFromSupabase", () => {
           { user_id: "user-bob", status: "accepted" },
         ],
         bill_payers: [{ bill_id: "bill-1", user_id: "user-alice", amount_cents: 5500 }],
-        ledger: [
+        expense_shares: [
           {
-            id: "ledger-1",
             bill_id: "bill-1",
-            entry_type: "debt",
-            group_id: null,
-            from_user_id: "user-bob",
-            to_user_id: "user-alice",
-            amount_cents: 2750,
-            paid_amount_cents: 0,
-            status: "pending",
-            paid_at: null,
-            confirmed_at: null,
+            user_id: "user-alice",
+            paid_cents: 5500,
+            owed_cents: 500,
+            net_cents: 5000,
+            created_at: "2024-01-01T00:00:00Z",
+          },
+          {
+            bill_id: "bill-1",
+            user_id: "user-bob",
+            paid_cents: 0,
+            owed_cents: 5000,
+            net_cents: -5000,
             created_at: "2024-01-01T00:00:00Z",
           },
         ],
@@ -105,12 +107,19 @@ describe("loadBillFromSupabase", () => {
     expect(result!.items[0].description).toBe("Pizza");
     expect(result!.splits).toHaveLength(1);
     expect(result!.splits[0].userId).toBe("user-bob");
-    expect(result!.ledger).toHaveLength(1);
-    expect(result!.ledger[0].amountCents).toBe(2750);
+    expect(result!.shares).toHaveLength(2);
+    expect(result!.shares[0].userId).toBe("user-alice");
+    expect(result!.shares[0].paidCents).toBe(5500);
+    expect(result!.shares[0].owedCents).toBe(500);
+    expect(result!.shares[0].netCents).toBe(5000);
+    expect(result!.shares[1].userId).toBe("user-bob");
+    expect(result!.shares[1].paidCents).toBe(0);
+    expect(result!.shares[1].owedCents).toBe(5000);
+    expect(result!.shares[1].netCents).toBe(-5000);
     expect(result!.billSplits).toHaveLength(0);
   });
 
-  it("loads a single_amount bill with bill splits instead of items", async () => {
+  it("loads a single_amount bill with bill splits and expense_shares", async () => {
     mock.onTable("bills", {
       data: {
         id: "bill-2",
@@ -131,7 +140,24 @@ describe("loadBillFromSupabase", () => {
           { user_id: "user-bob", status: "accepted" },
         ],
         bill_payers: [{ bill_id: "bill-2", user_id: "user-alice", amount_cents: 10000 }],
-        ledger: [],
+        expense_shares: [
+          {
+            bill_id: "bill-2",
+            user_id: "user-alice",
+            paid_cents: 10000,
+            owed_cents: 5000,
+            net_cents: 5000,
+            created_at: "2024-01-01T00:00:00Z",
+          },
+          {
+            bill_id: "bill-2",
+            user_id: "user-bob",
+            paid_cents: 0,
+            owed_cents: 5000,
+            net_cents: -5000,
+            created_at: "2024-01-01T00:00:00Z",
+          },
+        ],
         bill_items: [],
         bill_splits: [
           {
@@ -161,6 +187,9 @@ describe("loadBillFromSupabase", () => {
     expect(result!.splits).toHaveLength(0);
     expect(result!.billSplits).toHaveLength(1);
     expect(result!.billSplits[0].computedAmountCents).toBe(5000);
+    expect(result!.shares).toHaveLength(2);
+    expect(result!.shares[0].netCents).toBe(5000);
+    expect(result!.shares[1].netCents).toBe(-5000);
   });
 
   it("includes the creator in participants even if not in bill_participants", async () => {
@@ -183,7 +212,7 @@ describe("loadBillFromSupabase", () => {
           { user_id: "user-bob", status: "accepted" },
         ],
         bill_payers: [],
-        ledger: [],
+        expense_shares: [],
         bill_items: [],
         bill_splits: [],
       },
@@ -204,5 +233,46 @@ describe("loadBillFromSupabase", () => {
     const names = result!.participants.map((p) => p.name);
     expect(names).toContain("Alice");
     expect(names).toContain("Bob");
+  });
+
+  it("returns participant statuses as a map", async () => {
+    mock.onTable("bills", {
+      data: {
+        id: "bill-4",
+        creator_id: "user-alice",
+        bill_type: "single_amount",
+        title: "Test",
+        merchant_name: null,
+        status: "active",
+        service_fee_percent: 0,
+        fixed_fees: 0,
+        total_amount: 1000,
+        total_amount_input: 1000,
+        group_id: null,
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+        bill_participants: [
+          { user_id: "user-alice", status: "accepted" },
+          { user_id: "user-bob", status: "invited" },
+        ],
+        bill_payers: [],
+        expense_shares: [],
+        bill_items: [],
+        bill_splits: [],
+      },
+    });
+
+    mock.onTable("user_profiles", {
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice", avatar_url: null },
+        { id: "user-bob", handle: "bob", name: "Bob", avatar_url: null },
+      ],
+    });
+
+    const result = await loadBillFromSupabase("bill-4");
+
+    expect(result).not.toBeNull();
+    expect(result!.participantStatuses.get("user-alice")).toBe("accepted");
+    expect(result!.participantStatuses.get("user-bob")).toBe("invited");
   });
 });

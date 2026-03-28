@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/types/database";
-import type { Bill, BillItem, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
+import type { Bill, BillItem, BillSplit, ExpenseShare, ItemSplit, User } from "@/types";
 import { createLogger, logError } from "@/lib/logger";
 
 const logger = createLogger("sync-bill");
@@ -13,7 +13,7 @@ type BillParticipantInsert = Database["public"]["Tables"]["bill_participants"]["
 type BillItemInsert = Database["public"]["Tables"]["bill_items"]["Insert"];
 type BillSplitInsert = Database["public"]["Tables"]["bill_splits"]["Insert"];
 type ItemSplitInsert = Database["public"]["Tables"]["item_splits"]["Insert"];
-type LedgerInsert = Database["public"]["Tables"]["ledger"]["Insert"];
+type ExpenseShareInsert = Database["public"]["Tables"]["expense_shares"]["Insert"];
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -23,7 +23,7 @@ interface BillData {
   items: BillItem[];
   splits: ItemSplit[];
   billSplits: BillSplit[];
-  ledger: LedgerEntry[];
+  shares: ExpenseShare[];
   existingBillId?: string;
   groupId?: string;
 }
@@ -137,7 +137,7 @@ async function insertChildData(
       supabase.from("bill_items").delete().eq("bill_id", billId),
       supabase.from("bill_splits").delete().eq("bill_id", billId),
       supabase.from("bill_payers").delete().eq("bill_id", billId),
-      supabase.from("ledger").delete().eq("bill_id", billId),
+      supabase.from("expense_shares").delete().eq("bill_id", billId),
     ]);
     for (const result of cleanupResults) {
       if (result.status === "rejected") {
@@ -155,6 +155,13 @@ async function insertChildData(
       }
     }
   }
+
+  const shareRows: ExpenseShareInsert[] = data.shares.map((s) => ({
+    bill_id: billId,
+    user_id: s.userId,
+    paid_cents: s.paidCents,
+    owed_cents: s.owedCents,
+  }));
 
   if (data.bill.billType === "itemized" && data.items.length > 0) {
     const localIdToUuid = new Map<string, string>();
@@ -194,14 +201,6 @@ async function insertChildData(
       amount_cents: p.amountCents,
     }));
 
-    const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
-      bill_id: billId,
-      from_user_id: e.fromUserId,
-      to_user_id: e.toUserId,
-      amount_cents: e.amountCents,
-      status: e.status,
-    }));
-
     await Promise.all([
       itemSplitRows.length > 0
         ? supabase.from("item_splits").insert(itemSplitRows).then(({ error }) => {
@@ -213,9 +212,9 @@ async function insertChildData(
             if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
           })
         : Promise.resolve(),
-      ledgerRows.length > 0
-        ? supabase.from("ledger").insert(ledgerRows).then(({ error }) => {
-            if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
+      shareRows.length > 0
+        ? supabase.from("expense_shares").insert(shareRows).then(({ error }) => {
+            if (error) logError(logger, "Failed to insert expense shares", { billId, error, operation: "insertExpenseShares" });
           })
         : Promise.resolve(),
     ]);
@@ -238,14 +237,6 @@ async function insertChildData(
       amount_cents: p.amountCents,
     }));
 
-    const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
-      bill_id: billId,
-      from_user_id: e.fromUserId,
-      to_user_id: e.toUserId,
-      amount_cents: e.amountCents,
-      status: e.status,
-    }));
-
     await Promise.all([
       supabase.from("bill_splits").insert(splitRows).then(({ error }) => {
         if (error) logError(logger, "Failed to insert bill splits", { billId, error, operation: "insertBillSplits" });
@@ -255,9 +246,9 @@ async function insertChildData(
             if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
           })
         : Promise.resolve(),
-      ledgerRows.length > 0
-        ? supabase.from("ledger").insert(ledgerRows).then(({ error }) => {
-            if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
+      shareRows.length > 0
+        ? supabase.from("expense_shares").insert(shareRows).then(({ error }) => {
+            if (error) logError(logger, "Failed to insert expense shares", { billId, error, operation: "insertExpenseShares" });
           })
         : Promise.resolve(),
     ]);
@@ -271,23 +262,15 @@ async function insertChildData(
     amount_cents: p.amountCents,
   }));
 
-  const ledgerRows: LedgerInsert[] = data.ledger.map((e) => ({
-    bill_id: billId,
-    from_user_id: e.fromUserId,
-    to_user_id: e.toUserId,
-    amount_cents: e.amountCents,
-    status: e.status,
-  }));
-
   await Promise.all([
     payerRows.length > 0
       ? supabase.from("bill_payers").insert(payerRows).then(({ error }) => {
           if (error) logError(logger, "Failed to insert payers", { billId, error, operation: "insertPayers" });
         })
       : Promise.resolve(),
-    ledgerRows.length > 0
-      ? supabase.from("ledger").insert(ledgerRows).then(({ error }) => {
-          if (error) logError(logger, "Failed to insert ledger", { billId, error, operation: "insertLedger" });
+    shareRows.length > 0
+      ? supabase.from("expense_shares").insert(shareRows).then(({ error }) => {
+          if (error) logError(logger, "Failed to insert expense shares", { billId, error, operation: "insertExpenseShares" });
         })
       : Promise.resolve(),
   ]);

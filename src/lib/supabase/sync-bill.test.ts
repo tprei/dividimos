@@ -6,7 +6,7 @@ import {
   makeItemizedBill,
   makeSingleAmountBill,
   makeBillItem,
-  makeLedgerEntry,
+  makeExpenseShare,
 } from "@/test/fixtures";
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -31,13 +31,13 @@ describe("syncBillToSupabase", () => {
       items: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      shares: [],
     });
 
     expect(result).toEqual({ error: "Nao autenticado" });
   });
 
-  it("inserts a new itemized bill with all related data", async () => {
+  it("inserts a new itemized bill with all related data including expense_shares", async () => {
     mock.setUser({ id: "user-alice" });
 
     // bills.insert → returns new bill id
@@ -50,8 +50,8 @@ describe("syncBillToSupabase", () => {
     mock.onTable("item_splits", { error: null });
     // bill_payers.insert
     mock.onTable("bill_payers", { error: null });
-    // ledger.insert
-    mock.onTable("ledger", { error: null });
+    // expense_shares.insert
+    mock.onTable("expense_shares", { error: null });
 
     const item = makeBillItem({ id: "local-item-1" });
     const bill = makeItemizedBill({
@@ -75,7 +75,10 @@ describe("syncBillToSupabase", () => {
         },
       ],
       billSplits: [],
-      ledger: [makeLedgerEntry()],
+      shares: [
+        makeExpenseShare({ userId: "user-alice", paidCents: 5500, owedCents: 500, netCents: 5000 }),
+        makeExpenseShare({ userId: "user-bob", paidCents: 0, owedCents: 5000, netCents: -5000 }),
+      ],
     });
 
     expect(result).toEqual({ billId: "new-bill-1" });
@@ -114,19 +117,24 @@ describe("syncBillToSupabase", () => {
     const payerInserts = mock.findCalls("bill_payers", "insert");
     expect(payerInserts).toHaveLength(1);
 
-    // Verify ledger
-    const ledgerInserts = mock.findCalls("ledger", "insert");
-    expect(ledgerInserts).toHaveLength(1);
+    // Verify expense_shares inserted instead of ledger
+    const shareInserts = mock.findCalls("expense_shares", "insert");
+    expect(shareInserts).toHaveLength(1);
+    const insertedShares = shareInserts[0].args[0] as Record<string, unknown>[];
+    expect(insertedShares).toHaveLength(2);
+
+    // No ledger inserts
+    expect(mock.findCalls("ledger", "insert")).toHaveLength(0);
   });
 
-  it("inserts a new single_amount bill with bill splits", async () => {
+  it("inserts a new single_amount bill with bill splits and expense_shares", async () => {
     mock.setUser({ id: "user-alice" });
 
     mock.onTable("bills", { data: { id: "new-bill-2" } });
     mock.onTable("bill_participants", { error: null });
     mock.onTable("bill_splits", { error: null });
     mock.onTable("bill_payers", { error: null });
-    mock.onTable("ledger", { error: null });
+    mock.onTable("expense_shares", { error: null });
 
     const bill = makeSingleAmountBill({
       status: "active",
@@ -147,13 +155,19 @@ describe("syncBillToSupabase", () => {
           computedAmountCents: 5000,
         },
       ],
-      ledger: [makeLedgerEntry({ amountCents: 5000 })],
+      shares: [
+        makeExpenseShare({ userId: "user-alice", paidCents: 10000, owedCents: 5000, netCents: 5000 }),
+        makeExpenseShare({ userId: "user-bob", paidCents: 0, owedCents: 5000, netCents: -5000 }),
+      ],
     });
 
     expect(result).toEqual({ billId: "new-bill-2" });
     expect(mock.findCalls("bill_splits", "insert")).toHaveLength(1);
     // No item-related inserts for single_amount
     expect(mock.findCalls("bill_items", "insert")).toHaveLength(0);
+    // expense_shares inserted
+    expect(mock.findCalls("expense_shares", "insert")).toHaveLength(1);
+    expect(mock.findCalls("ledger", "insert")).toHaveLength(0);
   });
 
   it("updates an existing bill when existingBillId is provided", async () => {
@@ -161,12 +175,18 @@ describe("syncBillToSupabase", () => {
 
     // Check pending participants → none
     mock.onTable("bill_participants", { data: [] });
-    // bills.update
-    mock.onTable("bills", { error: null });
+    // expense_shares.delete (cleanup)
+    mock.onTable("expense_shares", { error: null });
+    // bill_items.delete, bill_splits.delete, bill_payers.delete (cleanup)
+    mock.onTable("bill_items", { error: null });
+    mock.onTable("bill_splits", { error: null });
+    mock.onTable("bill_payers", { error: null });
     // bill_payers.insert
     mock.onTable("bill_payers", { error: null });
-    // ledger.insert
-    mock.onTable("ledger", { error: null });
+    // expense_shares.insert
+    mock.onTable("expense_shares", { error: null });
+    // bills.update
+    mock.onTable("bills", { error: null });
 
     const bill = makeItemizedBill({
       status: "active",
@@ -180,7 +200,7 @@ describe("syncBillToSupabase", () => {
       items: [],
       splits: [],
       billSplits: [],
-      ledger: [makeLedgerEntry()],
+      shares: [makeExpenseShare()],
       existingBillId: "existing-bill-1",
     });
 
@@ -188,6 +208,9 @@ describe("syncBillToSupabase", () => {
     // Should update, not insert
     expect(mock.findCalls("bills", "update")).toHaveLength(1);
     expect(mock.findCalls("bills", "insert")).toHaveLength(0);
+    // Should cleanup expense_shares, not ledger
+    expect(mock.findCalls("expense_shares", "delete")).toHaveLength(1);
+    expect(mock.findCalls("ledger", "delete")).toHaveLength(0);
   });
 
   it("returns error when non-group bill has pending participants", async () => {
@@ -204,7 +227,7 @@ describe("syncBillToSupabase", () => {
       items: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      shares: [],
       existingBillId: "existing-bill-1",
     });
 
@@ -216,10 +239,16 @@ describe("syncBillToSupabase", () => {
   it("skips pending check for group bills", async () => {
     mock.setUser({ id: "user-alice" });
 
+    // expense_shares.delete (cleanup)
+    mock.onTable("expense_shares", { error: null });
+    // bill_items.delete, bill_splits.delete, bill_payers.delete (cleanup)
+    mock.onTable("bill_items", { error: null });
+    mock.onTable("bill_splits", { error: null });
+    mock.onTable("bill_payers", { error: null });
+    // bill_payers.insert (empty, no payers in the test bill)
+    // expense_shares.insert (empty)
     // bills.update
     mock.onTable("bills", { error: null });
-    // bill_payers (empty)
-    // ledger (empty)
 
     const result = await syncBillToSupabase({
       bill: makeItemizedBill({ status: "active" }),
@@ -227,7 +256,7 @@ describe("syncBillToSupabase", () => {
       items: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      shares: [],
       existingBillId: "existing-bill-1",
       groupId: "group-1",
     });
@@ -251,7 +280,7 @@ describe("syncBillToSupabase", () => {
       items: [],
       splits: [],
       billSplits: [],
-      ledger: [],
+      shares: [],
     });
 
     expect(result).toEqual({ error: "DB constraint violated" });
@@ -265,7 +294,7 @@ describe("syncBillToSupabase", () => {
     mock.onTable("bill_items", { error: null });
     mock.onTable("item_splits", { error: null });
     mock.onTable("bill_payers", { error: null });
-    mock.onTable("ledger", { error: null });
+    mock.onTable("expense_shares", { error: null });
 
     const item1 = makeBillItem({ id: "item-1", description: "Pizza" });
     const item2 = makeBillItem({
@@ -302,7 +331,10 @@ describe("syncBillToSupabase", () => {
         },
       ],
       billSplits: [],
-      ledger: [makeLedgerEntry({ amountCents: 7000 })],
+      shares: [
+        makeExpenseShare({ userId: "user-alice", paidCents: 7000, owedCents: 0, netCents: 7000 }),
+        makeExpenseShare({ userId: "user-bob", paidCents: 0, owedCents: 7000, netCents: -7000 }),
+      ],
     });
 
     expect(result).toEqual({ billId: "new-bill-3" });
@@ -312,5 +344,9 @@ describe("syncBillToSupabase", () => {
     const splitInserts = mock.findCalls("item_splits", "insert");
     expect(splitInserts).toHaveLength(1);
     expect(splitInserts[0].args[0] as unknown[]).toHaveLength(2);
+    // Verify expense_shares
+    const shareInserts = mock.findCalls("expense_shares", "insert");
+    expect(shareInserts).toHaveLength(1);
+    expect(shareInserts[0].args[0] as unknown[]).toHaveLength(2);
   });
 });

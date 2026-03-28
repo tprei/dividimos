@@ -5,10 +5,10 @@ import {
   billPayerRowToBillPayer,
   billSplitRowToBillSplit,
   itemSplitRowToItemSplit,
-  ledgerRowToLedgerEntry,
+  expenseShareRowToExpenseShare,
   userProfileRowToUser,
 } from "@/lib/supabase/mappers";
-import type { Bill, BillItem, BillPayer, BillSplit, ItemSplit, LedgerEntry, User } from "@/types";
+import type { Bill, BillItem, BillPayer, BillSplit, ExpenseShare, ItemSplit, User } from "@/types";
 import type { Database } from "@/types/database";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
@@ -33,18 +33,12 @@ interface BillWithRelations {
     status: string;
   }>;
   bill_payers: Array<{ bill_id: string; user_id: string; amount_cents: number }>;
-  ledger: Array<{
-    id: string;
-    bill_id: string | null;
-    entry_type: "debt" | "payment";
-    group_id: string | null;
-    from_user_id: string;
-    to_user_id: string;
-    amount_cents: number;
-    paid_amount_cents: number;
-    status: "pending" | "partially_paid" | "settled";
-    paid_at: string | null;
-    confirmed_at: string | null;
+  expense_shares: Array<{
+    bill_id: string;
+    user_id: string;
+    paid_cents: number;
+    owed_cents: number;
+    net_cents: number;
     created_at: string;
   }>;
   bill_items: Array<{
@@ -80,7 +74,7 @@ interface LoadedBill {
   items: BillItem[];
   splits: ItemSplit[];
   billSplits: BillSplit[];
-  ledger: LedgerEntry[];
+  shares: ExpenseShare[];
   participantStatuses: Map<string, string>;
 }
 
@@ -90,7 +84,7 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
   const { data } = await supabase
     .from("bills")
     .select(
-      "*, bill_participants(user_id, status), bill_payers(*), ledger(*), bill_items(*, item_splits(*)), bill_splits(*)"
+      "*, bill_participants(user_id, status), bill_payers(*), expense_shares(*), bill_items(*, item_splits(*)), bill_splits(*)"
     )
     .eq("id", billId)
     .single();
@@ -136,9 +130,9 @@ export async function loadBillFromSupabase(billId: string): Promise<LoadedBill |
   const billSplits: BillSplit[] =
     billType === "single_amount" ? row.bill_splits.map(billSplitRowToBillSplit) : [];
 
-  const ledger: LedgerEntry[] = row.ledger.map(ledgerRowToLedgerEntry);
+  const shares: ExpenseShare[] = row.expense_shares.map(expenseShareRowToExpenseShare);
 
   const participants: User[] = profileRows.map(userProfileRowToUser);
 
-  return { bill, participants, items, splits, billSplits, ledger, participantStatuses };
+  return { bill, participants, items, splits, billSplits, shares, participantStatuses };
 }
