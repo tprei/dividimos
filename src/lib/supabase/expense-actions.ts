@@ -9,8 +9,6 @@ import {
 import type {
   Expense,
   ExpenseItem,
-  ExpensePayer,
-  ExpenseShare,
   ExpenseType,
   ExpenseWithDetails,
   UserProfile,

@@ -416,7 +416,7 @@ function NewBillPageContent() {
     }
     const next = steps[stepIndex + 1];
     if (next) setStep(next.key);
-  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams, computeShares]);
+  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams]);
 
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;

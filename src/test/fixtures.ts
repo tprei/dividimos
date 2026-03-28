@@ -1,4 +1,4 @@
-import type { Expense, ExpenseItem, ExpensePayer, DebtEdge, User, Bill, BillItem, LedgerEntry } from "@/types";
+import type { Expense, ExpenseItem, User, Bill, BillItem, LedgerEntry } from "@/types";
 
 export const userAlice: User = {
   id: "user-alice",

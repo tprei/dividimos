@@ -354,7 +354,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   computeLedger: () => {
-    const { expense, participants, items, splits, billSplits, totalAmountInput, payers } = get();
+    const { expense, participants, items, splits, billSplits, payers } = get();
     if (!expense || participants.length === 0) return;
 
     const consumption = new Map<string, number>();
@@ -446,7 +446,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   getExpenseShares: () => {
-    const { expense, participants, items, splits, billSplits, totalAmountInput } = get();
+    const { expense, participants, items, splits, billSplits } = get();
     if (!expense) return [];
 
     if (expense.expenseType === "single_amount") {

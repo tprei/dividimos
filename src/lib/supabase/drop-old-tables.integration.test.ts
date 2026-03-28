@@ -32,21 +32,6 @@ describe.skipIf(!isIntegrationTestReady)(
       "settlements",
     ];
 
-    const oldEnums = [
-      "bill_status",
-      "bill_participant_status",
-      "split_type",
-      "payment_status",
-      "debt_status",
-      "ledger_entry_type",
-    ];
-
-    const newEnums = [
-      "expense_status",
-      "expense_type",
-      "settlement_status",
-    ];
-
     const oldFunctions = [
       "my_bill_ids",
       "update_ledger_on_payment",
@@ -75,24 +60,6 @@ describe.skipIf(!isIntegrationTestReady)(
         .select("*")
         .limit(0);
       return !error || error.code !== "42P01"; // 42P01 = undefined_table
-    }
-
-    async function enumExists(enumName: string): Promise<boolean> {
-      await adminClient!.rpc("execute_sql" as never, {
-        query: `SELECT EXISTS (
-          SELECT 1 FROM pg_type WHERE typname = '${enumName}'
-        ) AS exists`,
-      } as never);
-      // Fallback: check pg_type via a query on the enum
-      // We'll use the from() approach with a raw SQL check
-      const { error } = await adminClient!
-        .from("pg_type" as never)
-        .select("typname")
-        .eq("typname", enumName)
-        .limit(1);
-      // If pg_type is not accessible, just skip
-      if (error) return true; // can't verify, assume exists
-      return false;
     }
 
     async function functionExists(funcName: string): Promise<boolean> {
