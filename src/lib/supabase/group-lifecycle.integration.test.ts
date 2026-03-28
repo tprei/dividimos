@@ -22,14 +22,15 @@ describe.skipIf(!isIntegrationTestReady)("Group lifecycle + RLS", () => {
       const group = await createTestGroup(alice.id);
       const aliceClient = authenticateAs(alice);
 
-      const { data, error }: { data: Database["public"]["Tables"]["groups"]["Row"] | null } = await aliceClient
+      const result = await aliceClient
         .from("groups")
         .select("*")
         .eq("id", group.id)
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.id).toBe(group.id);
+      expect(result.error).toBeNull();
+      const data = result.data as Database["public"]["Tables"]["groups"]["Row"];
+      expect(data.id).toBe(group.id);
     });
 
     it("accepted member can read the group", async () => {
@@ -84,14 +85,15 @@ describe.skipIf(!isIntegrationTestReady)("Group lifecycle + RLS", () => {
   describe("Group INSERT", () => {
     it("authenticated user can create a group", async () => {
       const aliceClient = authenticateAs(alice);
-      const { data, error }: { data: Database["public"]["Tables"]["groups"]["Row"] | null } = await aliceClient
+      const result = await aliceClient
         .from("groups")
         .insert({ name: "Test Group", creator_id: alice.id })
         .select()
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.creator_id).toBe(alice.id);
+      expect(result.error).toBeNull();
+      const data = result.data as Database["public"]["Tables"]["groups"]["Row"];
+      expect(data.creator_id).toBe(alice.id);
     });
 
     it("user cannot create a group with another user as creator", async () => {
@@ -224,7 +226,7 @@ describe.skipIf(!isIntegrationTestReady)("Group lifecycle + RLS", () => {
       const group = await createTestGroup(alice.id, [bob.id]);
 
       const bobClient = authenticateAs(bob);
-      const { data, error }: { data: Database["public"]["Tables"]["group_members"]["Row"] | null } = await bobClient
+      const result = await bobClient
         .from("group_members")
         .update({ status: "accepted" })
         .eq("group_id", group.id)
@@ -232,9 +234,10 @@ describe.skipIf(!isIntegrationTestReady)("Group lifecycle + RLS", () => {
         .select()
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.status).toBe("accepted");
-      expect(data!.accepted_at).not.toBeNull();
+      expect(result.error).toBeNull();
+      const data = result.data as Database["public"]["Tables"]["group_members"]["Row"];
+      expect(data.status).toBe("accepted");
+      expect(data.accepted_at).not.toBeNull();
     });
 
     it("user cannot accept someone else's invitation", async () => {
