@@ -357,13 +357,13 @@ function NewBillPageContent() {
           items: state.items,
           splits: state.splits,
           billSplits: state.billSplits,
-          ledger: state.ledger,
+          shares: state.shares,
           existingBillId: remoteBillId ?? undefined,
           groupId: selectedGroupId ?? undefined,
         });
         if ("billId" in result) {
           // Clear store so BillDetailPage forces a fresh DB load (not stale draft data)
-          useBillStore.setState({ bill: null, items: [], splits: [], billSplits: [], ledger: [] });
+          useBillStore.setState({ bill: null, items: [], splits: [], billSplits: [], ledger: [], shares: [] });
           router.push(`/app/bill/${result.billId}`);
           return;
         }

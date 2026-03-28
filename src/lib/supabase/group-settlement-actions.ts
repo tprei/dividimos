@@ -1,17 +1,18 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Bill, BillPayer, DebtStatus, GroupSettlement, LedgerEntry, User } from "@/types";
+import type { Bill, BillPayer, DebtStatus, ExpenseShare, GroupSettlement, User } from "@/types";
 import type { DebtEdge } from "@/lib/simplify";
 import type { Database } from "@/types/database";
 import { isDebtStatus } from "@/lib/type-guards";
+import { expenseShareRowToExpenseShare } from "@/lib/supabase/mappers";
 
 type BillRow = Database["public"]["Tables"]["bills"]["Row"];
-type LedgerRow = Database["public"]["Tables"]["ledger"]["Row"];
+type ExpenseShareRow = Database["public"]["Tables"]["expense_shares"]["Row"];
 type GroupSettlementRow = Database["public"]["Tables"]["group_settlements"]["Row"];
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 export async function loadGroupBillsAndLedger(groupId: string): Promise<{
   bills: Bill[];
-  ledger: LedgerEntry[];
+  shares: ExpenseShare[];
   participants: User[];
 }> {
   const supabase = createClient();
@@ -43,31 +44,17 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
   });
 
   if (bills.length === 0) {
-    return { bills, ledger: [], participants: [] };
+    return { bills, shares: [], participants: [] };
   }
 
   const billIds = bills.map((b) => b.id);
 
-  const [ledgerResult, participantResult] = await Promise.all([
-    supabase.from("ledger").select("*").in("bill_id", billIds),
+  const [sharesResult, participantResult] = await Promise.all([
+    supabase.from("expense_shares").select("*").in("bill_id", billIds),
     supabase.from("bill_participants").select("user_id").in("bill_id", billIds),
   ]);
-  const ledgerRows = ledgerResult.data;
+  const shares: ExpenseShare[] = (sharesResult.data as ExpenseShareRow[] ?? []).map(expenseShareRowToExpenseShare);
   const participantRows = participantResult.data;
-
-  const ledger: LedgerEntry[] = (ledgerRows as LedgerRow[] ?? []).map((e) => ({
-    id: e.id,
-    billId: e.bill_id ?? undefined,
-    entryType: e.entry_type ?? ("debt" as const),
-    groupId: e.group_id ?? undefined,
-    fromUserId: e.from_user_id,
-    toUserId: e.to_user_id,
-    amountCents: e.amount_cents,
-    paidAmountCents: e.paid_amount_cents ?? 0,
-    status: (isDebtStatus(e.status) ? e.status : "pending") as DebtStatus,
-    paidAt: e.paid_at ?? undefined,
-    createdAt: e.created_at,
-  }));
 
   const participantIds = [...new Set((participantRows ?? []).map((p) => p.user_id))];
 
@@ -91,7 +78,7 @@ export async function loadGroupBillsAndLedger(groupId: string): Promise<{
     }));
   }
 
-  return { bills, ledger, participants };
+  return { bills, shares, participants };
 }
 
 function mapSettlementRow(s: GroupSettlementRow): GroupSettlement {

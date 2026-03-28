@@ -54,7 +54,7 @@ export function GroupSettlementView({
   // Full compute + sync: runs once on mount and after user actions
   const initializeSettlements = useCallback(async () => {
     setLoading(true);
-    const { ledger, participants: billParticipants } = await loadGroupBillsAndLedger(groupId);
+    const { shares, participants: billParticipants } = await loadGroupBillsAndLedger(groupId);
 
     const allParticipantIds = new Set(participants.map((p) => p.id));
     const mergedParticipants = [...participants];
@@ -65,7 +65,7 @@ export function GroupSettlementView({
       }
     }
 
-    const netEdges = computeGroupNetEdges(ledger, mergedParticipants);
+    const netEdges = computeGroupNetEdges(shares, mergedParticipants);
 
     const supabase = createClient();
     const { data: settlementRows } = await supabase
@@ -74,10 +74,7 @@ export function GroupSettlementView({
       .eq("group_id", groupId);
     const settlementIds = (settlementRows ?? []).map((s: { id: string }) => s.id);
 
-    const rawEdges: DebtEdge[] = [];
-    for (const entry of ledger) {
-      rawEdges.push({ fromUserId: entry.fromUserId, toUserId: entry.toUserId, amountCents: entry.amountCents });
-    }
+    const rawEdges: DebtEdge[] = [...netEdges];
 
     if (settlementIds.length > 0) {
       const { data: paymentRows } = await supabase

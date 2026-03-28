@@ -182,12 +182,12 @@ function CreatorDraftView({
         items: state.items,
         splits: state.splits,
         billSplits: state.billSplits,
-        ledger: state.ledger,
+        shares: state.shares,
         existingBillId: bill.id,
         groupId: bill.groupId,
       });
       if ("billId" in result) {
-        // Reload from DB to get authoritative status + real ledger entry IDs
+        // Reload from DB to get authoritative status + real share entry IDs
         const fresh = await loadBillFromSupabase(result.billId);
         if (fresh) {
           useBillStore.setState({
@@ -196,7 +196,7 @@ function CreatorDraftView({
             items: fresh.items,
             splits: fresh.splits,
             billSplits: fresh.billSplits,
-            ledger: fresh.ledger,
+            shares: fresh.shares,
           });
         }
         // No router.push needed: store update causes React re-render;
@@ -362,7 +362,7 @@ export default function BillDetailPage({
         items: data.items,
         splits: data.splits,
         billSplits: data.billSplits,
-        ledger: data.ledger,
+        shares: data.shares,
       });
     }
     return data;

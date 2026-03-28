@@ -27,11 +27,11 @@ describe("loadGroupBillsAndLedger", () => {
     const result = await loadGroupBillsAndLedger("group-1");
 
     expect(result.bills).toHaveLength(0);
-    expect(result.ledger).toHaveLength(0);
+    expect(result.shares).toHaveLength(0);
     expect(result.participants).toHaveLength(0);
   });
 
-  it("loads and maps bills, ledger, and participants", async () => {
+  it("loads and maps bills, shares, and participants", async () => {
     mock.onTable("bills", {
       data: [
         {
@@ -51,18 +51,14 @@ describe("loadGroupBillsAndLedger", () => {
         },
       ],
     });
-    mock.onTable("ledger", {
+    mock.onTable("expense_shares", {
       data: [
         {
-          id: "ledger-1",
+          id: "share-1",
           bill_id: "bill-1",
-          from_user_id: "user-bob",
-          to_user_id: "user-alice",
-          amount_cents: 2750,
-          paid_amount_cents: 0,
-          status: "pending",
-          paid_at: null,
-          created_at: "2024-01-01T00:00:00Z",
+          user_id: "user-bob",
+          paid_cents: 0,
+          owed_cents: 2750,
         },
       ],
     });
@@ -81,8 +77,8 @@ describe("loadGroupBillsAndLedger", () => {
     expect(result.bills).toHaveLength(1);
     expect(result.bills[0].billType).toBe("itemized");
     expect(result.bills[0].groupId).toBe("group-1");
-    expect(result.ledger).toHaveLength(1);
-    expect(result.ledger[0].fromUserId).toBe("user-bob");
+    expect(result.shares).toHaveLength(1);
+    expect(result.shares[0].userId).toBe("user-bob");
     expect(result.participants).toHaveLength(2);
   });
 });
