@@ -23,7 +23,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
     const aliceClient = authenticateAs(alice);
 
     // 1. Create draft bill
-    const { data: bill, error: billError } = await aliceClient
+    const billResult = await aliceClient
       .from("bills")
       .insert({
         creator_id: alice.id,
@@ -36,9 +36,10 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
       .select()
       .single();
 
-    expect(billError).toBeNull();
-    expect(bill!.status).toBe("draft");
-    const billId = bill!.id;
+    expect(billResult.error).toBeNull();
+    const billData = billResult.data as BillRow;
+    expect(billData.status).toBe("draft");
+    const billId = billData.id;
 
     // 2. Add participants
     const { error: p1Error } = await aliceClient
@@ -60,7 +61,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
     expect(participants).toHaveLength(2);
 
     // 4. Add bill items
-    const { data: item, error: itemError } = await aliceClient
+    const { data: itemData, error: itemError } = await aliceClient
       .from("bill_items")
       .insert({
         bill_id: billId,
@@ -73,7 +74,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
       .single();
 
     expect(itemError).toBeNull();
-    const itemId = item!.id;
+    const itemId = (itemData as Database["public"]["Tables"]["bill_items"]["Row"]).id;
 
     // 5. Add item splits
     const { error: s1Error } = await aliceClient
@@ -117,7 +118,9 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
     expect(activateError).toBeNull();
 
     // 7. Add ledger entries (as creator)
-    const { data: ledger1, error: l1Error } = await aliceClient
+    type LedgerRow = Database["public"]["Tables"]["ledger"]["Row"];
+
+    const { data: ledger1Data, error: ledger1Error } = await aliceClient
       .from("ledger")
       .insert({
         bill_id: billId,
@@ -130,7 +133,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
       .select()
       .single();
 
-    const { data: ledger2, error: l2Error } = await aliceClient
+    const { data: ledger2Data, error: ledger2Error } = await aliceClient
       .from("ledger")
       .insert({
         bill_id: billId,
@@ -143,13 +146,15 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
       .select()
       .single();
 
-    expect(l1Error).toBeNull();
-    expect(l2Error).toBeNull();
+    expect(ledger1Error).toBeNull();
+    expect(ledger2Error).toBeNull();
+    const ledger1Id = (ledger1Data as LedgerRow).id;
+    const ledger2Id = (ledger2Data as LedgerRow).id;
 
     // 8. Bob pays via payment
     const bobClient = authenticateAs(bob);
     const { error: payError } = await bobClient.from("payments").insert({
-      ledger_id: ledger1!.id,
+      ledger_id: ledger1Id,
       from_user_id: bob.id,
       to_user_id: alice.id,
       amount_cents: 1667,
@@ -162,7 +167,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
     const { data: checkLedger1 } = await adminClient!
       .from("ledger")
       .select("status, paid_amount_cents")
-      .eq("id", ledger1!.id)
+      .eq("id", ledger1Id)
       .single();
 
     expect(checkLedger1!.status).toBe("settled");
@@ -171,7 +176,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
     // 10. Carol pays
     const carolClient = authenticateAs(carol);
     await carolClient.from("payments").insert({
-      ledger_id: ledger2!.id,
+      ledger_id: ledger2Id,
       from_user_id: carol.id,
       to_user_id: alice.id,
       amount_cents: 1666,

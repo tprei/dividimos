@@ -25,7 +25,7 @@ describe.skipIf(!isIntegrationTestReady)(
       const bill = await createTestBill(alice.id, { status: "draft" });
       const aliceClient = authenticateAs(alice);
 
-      const result = await aliceClient
+      const r = await aliceClient
         .from("bill_participants")
         .insert({
           bill_id: bill.id,
@@ -36,10 +36,10 @@ describe.skipIf(!isIntegrationTestReady)(
         .select()
         .single();
 
-      expect(result.error).toBeNull();
-      const data = result.data as BillParticipantRow;
-      expect(data.status).toBe("invited");
-      expect(data.user_id).toBe(bob.id);
+      expect(r.error).toBeNull();
+      const row = r.data as BillParticipantRow;
+      expect(row.status).toBe("invited");
+      expect(row.user_id).toBe(bob.id);
     });
 
     it("invited participant can accept the invitation", async () => {
@@ -52,7 +52,7 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       const bobClient = authenticateAs(bob);
-      const result = await bobClient
+      const r = await bobClient
         .from("bill_participants")
         .update({ status: "accepted" })
         .eq("bill_id", bill.id)
@@ -60,10 +60,10 @@ describe.skipIf(!isIntegrationTestReady)(
         .select()
         .single();
 
-      expect(result.error).toBeNull();
-      const data = result.data as BillParticipantRow;
-      expect(data.status).toBe("accepted");
-      expect(data.responded_at).not.toBeNull();
+      expect(r.error).toBeNull();
+      const row = r.data as BillParticipantRow;
+      expect(row.status).toBe("accepted");
+      expect(row.responded_at).not.toBeNull();
     });
 
     it("invited participant can decline the invitation", async () => {
@@ -76,7 +76,7 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       const bobClient = authenticateAs(bob);
-      const result = await bobClient
+      const r = await bobClient
         .from("bill_participants")
         .update({ status: "declined" })
         .eq("bill_id", bill.id)
@@ -84,9 +84,8 @@ describe.skipIf(!isIntegrationTestReady)(
         .select()
         .single();
 
-      expect(result.error).toBeNull();
-      const data = result.data as BillParticipantRow;
-      expect(data.status).toBe("declined");
+      expect(r.error).toBeNull();
+      expect((r.data as BillParticipantRow).status).toBe("declined");
     });
 
     it("non-invited user cannot accept an invitation meant for someone else", async () => {
