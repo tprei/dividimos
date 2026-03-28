@@ -4,13 +4,8 @@ import { CreditCard } from "lucide-react";
 import { formatBRL } from "@/lib/currency";
 import type { UserProfile } from "@/types";
 
-interface PayerEntry {
-  userId: string;
-  amountCents: number;
-}
-
 interface PayerSummaryCardProps {
-  payers: PayerEntry[];
+  payers: { userId: string; amountCents: number }[];
   participants: UserProfile[];
 }
 
