@@ -32,9 +32,9 @@ import {
 import { formatBRL } from "@/lib/currency";
 import { useBillInvites } from "@/hooks/use-bill-invites";
 import { createClient } from "@/lib/supabase/client";
-import { deleteDraftFromSupabase } from "@/lib/supabase/delete-draft";
+import { deleteExpense } from "@/lib/supabase/expense-actions";
 import { useUser } from "@/hooks/use-auth";
-import type { BillStatus } from "@/types";
+import type { ExpenseStatus } from "@/types";
 
 interface RecentBill {
   id: string;
@@ -42,15 +42,14 @@ interface RecentBill {
   date: string;
   total: number;
   participants: number;
-  status: BillStatus;
+  status: ExpenseStatus;
   myBalance: number;
   creatorId: string;
 }
 
-const statusConfig: Record<BillStatus, { label: string; color: string }> = {
+const statusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
 
@@ -109,7 +108,7 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
     const removed = bills.find((b) => b.id === targetId);
     setBills((prev) => prev.filter((b) => b.id !== targetId));
     setDeleteTarget(null);
-    const result = await deleteDraftFromSupabase(targetId);
+    const result = await deleteExpense(targetId);
     if (result.error && removed) {
       setBills((prev) => [...prev, removed]);
     }
@@ -119,60 +118,65 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
     if (!user) return;
     const supabase = createClient();
 
-    const [billsResult, debtOwedResult, debtToMeResult] = await Promise.all([
+    const [expensesResult, balancesResult] = await Promise.all([
       supabase
-        .from("bills")
+        .from("expenses")
         .select("id, title, status, total_amount, created_at, creator_id")
         .order("created_at", { ascending: false })
         .limit(5),
       supabase
-        .from("ledger")
-        .select("amount_cents")
-        .eq("from_user_id", user.id)
-        .neq("status", "settled"),
-      supabase
-        .from("ledger")
-        .select("amount_cents")
-        .eq("to_user_id", user.id)
-        .neq("status", "settled"),
+        .from("balances")
+        .select("user_a, user_b, amount_cents")
+        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`),
     ]);
 
-    const myBills = billsResult.data ?? [];
+    const myExpenses = expensesResult.data ?? [];
 
-    if (myBills.length > 0) {
-      const billIds = myBills.map((b) => b.id);
-      const { data: participantRows } = await supabase
-        .from("bill_participants")
-        .select("bill_id")
-        .in("bill_id", billIds);
+    if (myExpenses.length > 0) {
+      const expenseIds = myExpenses.map((e) => e.id);
+      const { data: shareRows } = await supabase
+        .from("expense_shares")
+        .select("expense_id, user_id")
+        .in("expense_id", expenseIds);
 
-      const countMap = new Map<string, number>();
-      for (const row of participantRows ?? []) {
-        countMap.set(row.bill_id, (countMap.get(row.bill_id) ?? 0) + 1);
+      const countMap = new Map<string, Set<string>>();
+      for (const row of shareRows ?? []) {
+        if (!countMap.has(row.expense_id)) {
+          countMap.set(row.expense_id, new Set());
+        }
+        countMap.get(row.expense_id)!.add(row.user_id);
       }
 
       setBills(
-        myBills.map((bill) => ({
-          id: bill.id,
-          title: bill.title,
-          date: new Date(bill.created_at).toLocaleDateString("pt-BR", {
+        myExpenses.map((expense) => ({
+          id: expense.id,
+          title: expense.title,
+          date: new Date(expense.created_at).toLocaleDateString("pt-BR", {
             day: "2-digit",
             month: "short",
           }),
-          total: bill.total_amount,
-          participants: countMap.get(bill.id) ?? 0,
-          status: bill.status,
+          total: expense.total_amount,
+          participants: countMap.get(expense.id)?.size ?? 0,
+          status: expense.status,
           myBalance: 0,
-          creatorId: bill.creator_id,
+          creatorId: expense.creator_id,
         })),
       );
     } else {
       setBills([]);
     }
 
-    const iOwe = (debtOwedResult.data ?? []).reduce((s, d) => s + d.amount_cents, 0);
-    const theyOweMe = (debtToMeResult.data ?? []).reduce((s, d) => s + d.amount_cents, 0);
-    setNetBalance(theyOweMe - iOwe);
+    // Compute net balance from balances table
+    // Convention: positive amount_cents = user_a owes user_b
+    let net = 0;
+    for (const row of balancesResult.data ?? []) {
+      if (row.user_a === user.id) {
+        net -= row.amount_cents;
+      } else {
+        net += row.amount_cents;
+      }
+    }
+    setNetBalance(net);
   }, [user]);
 
   const handleTouchStart = (e: React.TouchEvent) => {

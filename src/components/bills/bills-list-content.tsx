@@ -20,9 +20,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
-import { deleteDraftFromSupabase } from "@/lib/supabase/delete-draft";
+import { deleteExpense } from "@/lib/supabase/expense-actions";
 import { useUser } from "@/hooks/use-auth";
-import type { BillStatus } from "@/types";
+import type { ExpenseStatus } from "@/types";
 
 interface BillEntry {
   id: string;
@@ -30,23 +30,21 @@ interface BillEntry {
   date: string;
   total: number;
   participants: number;
-  status: BillStatus;
+  status: ExpenseStatus;
   creatorId: string;
 }
 
-const statusConfig: Record<BillStatus, { label: string; color: string }> = {
+const statusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  partially_settled: { label: "Parcial", color: "bg-primary/15 text-primary" },
   settled: { label: "Liquidado", color: "bg-success/15 text-success" },
 };
 
-type FilterType = "all" | BillStatus;
+type FilterType = "all" | ExpenseStatus;
 
 const filters: { key: FilterType; label: string }[] = [
   { key: "all", label: "Todas" },
   { key: "active", label: "Pendentes" },
-  { key: "partially_settled", label: "Parciais" },
   { key: "settled", label: "Liquidadas" },
 ];
 
@@ -69,7 +67,7 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
     const removed = bills.find((b) => b.id === targetId);
     setBills((prev) => prev.filter((b) => b.id !== targetId));
     setDeleteTarget(null);
-    const result = await deleteDraftFromSupabase(targetId);
+    const result = await deleteExpense(targetId);
     if (result.error && removed) {
       setBills((prev) => [...prev, removed]);
     }
