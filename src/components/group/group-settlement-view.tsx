@@ -15,7 +15,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
-import { computeGroupNetEdges } from "@/lib/group-settlement";
+import { computeGroupNetEdges, ledgerToRawEdges } from "@/lib/group-settlement";
 import { simplifyDebts } from "@/lib/simplify";
 import {
   loadGroupBillsAndLedger,
@@ -66,10 +66,11 @@ export function GroupSettlementView({
       }
     }
 
+    const rawEdges = ledgerToRawEdges(ledger);
     const netEdges = computeGroupNetEdges(ledger, mergedParticipants);
 
-    if (netEdges.length >= 2 && mergedParticipants.length >= 3) {
-      const result = simplifyDebts(netEdges, mergedParticipants);
+    if (rawEdges.length >= 2) {
+      const result = simplifyDebts(rawEdges, mergedParticipants);
       setSimplificationResult(result);
     } else {
       setSimplificationResult(null);

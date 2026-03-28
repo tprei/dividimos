@@ -12,6 +12,8 @@ export interface SimplificationStep {
   description: string;
   removedEdges?: DebtEdge[];
   addedEdge?: DebtEdge;
+  /** For reverse-pair cancellations: the smaller edge treated as a "payment" */
+  paymentEdge?: DebtEdge;
 }
 
 export interface SimplificationResult {
@@ -171,8 +173,10 @@ export function simplifyDebts(
         const removed = [a, b];
         const next = currentEdges.filter((_, j) => j !== i && j !== reverseIdx);
 
-        const nameA = getUserName(a.fromUserId, participants);
-        const nameB = getUserName(a.toUserId, participants);
+        // The smaller edge represents the "payment"
+        const paymentEdge = a.amountCents <= b.amountCents ? a : b;
+        const paymentFrom = getUserName(paymentEdge.fromUserId, participants);
+        const paymentTo = getUserName(paymentEdge.toUserId, participants);
 
         if (Math.abs(net) > 1) {
           const newEdge: DebtEdge = net > 0
@@ -181,15 +185,17 @@ export function simplifyDebts(
           next.push(newEdge);
           steps.push({
             edges: consolidateEdges(next),
-            description: `${nameA} ↔ ${nameB}: compensado para ${formatBRL(Math.abs(net))}`,
+            description: `${paymentFrom} pagou ${formatBRL(paymentEdge.amountCents)} a ${paymentTo}`,
             removedEdges: removed,
             addedEdge: newEdge,
+            paymentEdge,
           });
         } else {
           steps.push({
             edges: consolidateEdges(next),
-            description: `${nameA} ↔ ${nameB}: dividas se cancelam`,
+            description: `${paymentFrom} pagou ${formatBRL(paymentEdge.amountCents)} a ${paymentTo}`,
             removedEdges: removed,
+            paymentEdge,
           });
         }
         currentEdges = consolidateEdges(next);

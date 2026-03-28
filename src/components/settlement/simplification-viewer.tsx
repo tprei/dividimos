@@ -133,7 +133,84 @@ export function SimplificationViewer({
                 </p>
               )}
 
-              {!isFirst && step.removedEdges && step.removedEdges.length > 0 && (
+              {!isFirst && step.paymentEdge && (() => {
+                const pe = step.paymentEdge;
+                const paymentFrom = getUserName(pe.fromUserId, participants);
+                const paymentTo = getUserName(pe.toUserId, participants);
+                return (
+                  <div className="space-y-3">
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
+                        Pagamento
+                      </p>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
+                          {paymentFrom.charAt(0)}
+                        </span>
+                        <span className="font-semibold text-primary">
+                          {paymentFrom}
+                        </span>
+                        <span className="text-xs text-muted-foreground">pagou</span>
+                        <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-sm font-bold text-primary tabular-nums">
+                          {formatBRL(pe.amountCents)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">a</span>
+                        <span className="font-semibold text-primary">
+                          {paymentTo}
+                        </span>
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
+                          {paymentTo.charAt(0)}
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex justify-center">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted">
+                        <ArrowRight className="h-3 w-3 text-muted-foreground rotate-90" />
+                      </div>
+                    </div>
+
+                    {step.addedEdge ? (() => {
+                      const ae = step.addedEdge!;
+                      const resultFrom = getUserName(ae.fromUserId, participants);
+                      const resultTo = getUserName(ae.toUserId, participants);
+                      const consolidated = step.edges.find(
+                        (e) => e.fromUserId === ae.fromUserId && e.toUserId === ae.toUserId,
+                      );
+                      const totalAmount = consolidated?.amountCents ?? ae.amountCents;
+                      return (
+                        <div className="flex flex-col items-center gap-2">
+                          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                            Resultado
+                          </p>
+                          <span className="inline-flex items-center gap-2 rounded-full bg-success/10 px-4 py-2 text-sm">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/20 text-[10px] font-bold text-success">
+                              {resultFrom.charAt(0)}
+                            </span>
+                            <span className="font-semibold text-success">{resultFrom}</span>
+                            <span className="text-success/60">→</span>
+                            <span className="font-semibold text-success">{resultTo}</span>
+                            <span className="rounded-md bg-success/15 px-1.5 py-0.5 text-xs font-bold text-success tabular-nums">
+                              {formatBRL(totalAmount)}
+                            </span>
+                          </span>
+                        </div>
+                      );
+                    })() : (
+                      <div className="flex flex-col items-center gap-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Resultado
+                        </p>
+                        <span className="text-xs font-medium text-success">
+                          Dividas se cancelam
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {!isFirst && !step.paymentEdge && step.removedEdges && step.removedEdges.length > 0 && (
                 <div className="space-y-3">
                   <div className="flex flex-col items-center gap-2">
                     <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -223,7 +300,7 @@ export function SimplificationViewer({
                 </div>
               )}
 
-              {!isFirst && (!step.removedEdges || step.removedEdges.length === 0) && (
+              {!isFirst && !step.paymentEdge && (!step.removedEdges || step.removedEdges.length === 0) && (
                 <p className="text-center text-sm font-medium">
                   {step.description}
                 </p>
