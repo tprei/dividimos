@@ -84,6 +84,12 @@ export function GroupSettlementView({
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const handleRefresh = () => loadData();
+    window.addEventListener("app-refresh", handleRefresh);
+    return () => window.removeEventListener("app-refresh", handleRefresh);
+  }, [loadData]);
+
   // Realtime: patch balances locally
   useRealtimeBalances(groupId, useCallback((updatedBalance: Balance) => {
     setBalances((prev) => {

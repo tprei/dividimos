@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Check, Plus, Users, X } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { staggerContainer, staggerItem } from "@/lib/animations";
@@ -40,6 +40,14 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
   const [showCreate, setShowCreate] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [creating, setCreating] = useState(false);
+
+  const refetchRef = useRef<(() => Promise<void>) | undefined>(undefined);
+
+  useEffect(() => {
+    const handleRefresh = () => refetchRef.current?.();
+    window.addEventListener("app-refresh", handleRefresh);
+    return () => window.removeEventListener("app-refresh", handleRefresh);
+  }, []);
 
   const refetch = async () => {
     if (!user) return;
@@ -143,6 +151,8 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
     setGroups(entries);
     setInvites(pendingInvites);
   };
+
+  refetchRef.current = refetch;
 
   const handleCreateGroup = async () => {
     if (!newGroupName.trim() || !user) return;

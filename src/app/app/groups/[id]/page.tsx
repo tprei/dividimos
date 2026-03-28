@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
@@ -262,20 +262,22 @@ export default function GroupDetailPage({
     await fetchGroup();
   };
 
-  // Convert MemberEntry[] to User[] for settlement view
-  const participantsAsUsers: User[] = members
-    .filter((m) => m.status === "accepted")
-    .map((m) => ({
-      id: m.userId,
-      email: "",
-      handle: m.profile.handle,
-      name: m.profile.name,
-      pixKeyType: "email" as const,
-      pixKeyHint: "",
-      avatarUrl: m.profile.avatarUrl,
-      onboarded: true,
-      createdAt: "",
-    }));
+  const participantsAsUsers: User[] = useMemo(() =>
+    members
+      .filter((m) => m.status === "accepted")
+      .map((m) => ({
+        id: m.userId,
+        email: "",
+        handle: m.profile.handle,
+        name: m.profile.name,
+        pixKeyType: "email" as const,
+        pixKeyHint: "",
+        avatarUrl: m.profile.avatarUrl,
+        onboarded: true,
+        createdAt: "",
+      })),
+    [members],
+  );
 
   if (loading) {
     return (
