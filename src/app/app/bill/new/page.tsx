@@ -318,12 +318,13 @@ function NewBillPageContent() {
   }, []);
 
   /** Build the saveExpenseDraft params from current store state. */
-  const buildDraftParams = useCallback((existingId?: string) => {
+  const buildDraftParams = useCallback((existingId?: string, groupIdOverride?: string) => {
     const state = useBillStore.getState();
-    if (!state.expense || !authUser || !selectedGroupId) return null;
+    const effectiveGroupId = groupIdOverride ?? selectedGroupId;
+    if (!state.expense || !authUser || !effectiveGroupId) return null;
 
     return {
-      groupId: selectedGroupId,
+      groupId: effectiveGroupId,
       creatorId: authUser.id,
       title: state.expense.title,
       merchantName: state.expense.merchantName,
@@ -362,14 +363,50 @@ function NewBillPageContent() {
         });
       }
     }
-    if (step === "participants" && authUser && selectedGroupId) {
-      const state = useBillStore.getState();
-      if (state.expense && state.participants.length >= 2) {
-        const params = buildDraftParams(remoteBillId ?? undefined);
-        if (params) {
-          const result = await saveExpenseDraft(params);
-          if ("expenseId" in result) {
-            setRemoteBillId(result.expenseId);
+    if (step === "participants" && authUser) {
+      let groupId = selectedGroupId;
+
+      if (!groupId) {
+        const supabase = createClient();
+        const participants = useBillStore.getState().participants;
+        const names = participants.map((p) => p.name.split(" ")[0]);
+        const groupName = names.length <= 3
+          ? names.join(" e ")
+          : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+
+        const { data: group } = await supabase
+          .from("groups")
+          .insert({ name: groupName, creator_id: authUser.id })
+          .select("id")
+          .single();
+
+        if (group) {
+          const otherParticipants = participants.filter((p) => p.id !== authUser.id);
+          if (otherParticipants.length > 0) {
+            await supabase.from("group_members").insert(
+              otherParticipants.map((p) => ({
+                group_id: group.id,
+                user_id: p.id,
+                invited_by: authUser.id,
+                status: "accepted" as const,
+              })),
+            );
+          }
+          groupId = group.id;
+          setSelectedGroupId(group.id);
+          setSelectedGroupName(groupName);
+        }
+      }
+
+      if (groupId) {
+        const state = useBillStore.getState();
+        if (state.expense && state.participants.length >= 2) {
+          const params = buildDraftParams(remoteBillId ?? undefined, groupId);
+          if (params) {
+            const result = await saveExpenseDraft(params);
+            if ("expenseId" in result) {
+              setRemoteBillId(result.expenseId);
+            }
           }
         }
       }
@@ -421,7 +458,7 @@ function NewBillPageContent() {
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
     if (step === "info") return !title.trim();
-    if (step === "participants") return store.participants.length < 2 || !selectedGroupId;
+    if (step === "participants") return store.participants.length < 2;
     if (step === "amount-split") {
       const total = store.totalAmountInput || 0;
       if (total <= 0) return true;
@@ -1078,9 +1115,7 @@ function NewBillPageContent() {
 
       {!isTypeStep && (() => {
         let errorMsg: string | null = null;
-        if (step === "participants" && !selectedGroupId && store.participants.length >= 2) {
-          errorMsg = "Selecione um grupo para continuar";
-        } else if (step === "amount-split") {
+        if (step === "amount-split") {
           const total = store.totalAmountInput || 0;
           const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
           if (total <= 0) {
