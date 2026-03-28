@@ -205,8 +205,39 @@ describe("getParticipantTotal", () => {
     splitItemEqually(itemId, ["user-alice", "user-bob"]);
     const grandTotal = getGrandTotal();
     const participantSum = ["user-alice", "user-bob"].reduce((sum, id) => sum + getParticipantTotal(id), 0);
-    // Allow 1-centavo rounding tolerance across fee distributions
-    expect(Math.abs(participantSum - grandTotal)).toBeLessThanOrEqual(1);
+    expect(participantSum).toBe(grandTotal);
+  });
+
+  it("participant totals sum exactly to grandTotal with 3-way split and service fee", () => {
+    const s = setup();
+    s.createBill("Test", "itemized");
+    const { addParticipant, addItem, splitItemEqually, getGrandTotal, getParticipantTotal } = useBillStore.getState();
+    addParticipant(userBob);
+    addParticipant(userCarlos);
+    addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
+    const grandTotal = getGrandTotal();
+    const participantSum = ["user-alice", "user-bob", "user-carlos"].reduce(
+      (sum, id) => sum + getParticipantTotal(id), 0,
+    );
+    expect(participantSum).toBe(grandTotal);
+  });
+
+  it("participant totals sum exactly with fixed fees", () => {
+    const s = setup();
+    s.createBill("Test", "itemized");
+    useBillStore.getState().updateBill({ fixedFees: 100 });
+    const { addParticipant, addItem, splitItemEqually, getGrandTotal, getParticipantTotal } = useBillStore.getState();
+    addParticipant(userBob);
+    addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    splitItemEqually(itemId, ["user-alice", "user-bob"]);
+    const grandTotal = getGrandTotal();
+    const participantSum = ["user-alice", "user-bob"].reduce(
+      (sum, id) => sum + getParticipantTotal(id), 0,
+    );
+    expect(participantSum).toBe(grandTotal);
   });
 });
 

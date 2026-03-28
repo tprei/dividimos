@@ -136,6 +136,46 @@ describe("computeRawEdges", () => {
     const edges = computeRawEdges(bill, twoParticipants, itemSplits, [], items);
     expect(edges).toHaveLength(0);
   });
+
+  it("edges sum exactly to total consumption across multiple payers (no rounding residue)", () => {
+    const bill = makeItemizedBill({
+      creatorId: "user-alice",
+      serviceFeePercent: 0,
+      payers: [
+        { userId: "user-alice", amountCents: 3000 },
+        { userId: "user-bob", amountCents: 3000 },
+        { userId: "user-carlos", amountCents: 3000 },
+      ],
+    });
+    const items = [{ totalPriceCents: 9000 }];
+    // Dave-equivalent: one participant consumed 1001 across 3 payers
+    // 1001 * 3000/9000 = 333.67 → independent Math.round would give 334+334+334=1002
+    const itemSplits = [makeItemSplit("user-alice", 1001, "item-1")];
+    // Need a 4th participant as consumer to avoid self-edge overlap
+    const consumerOnly = { id: "user-dave", email: "dave@example.com", handle: "dave", name: "Dave", pixKeyType: "email" as const, pixKeyHint: "d***e@example.com", onboarded: true, createdAt: "2024-01-01T00:00:00Z" };
+    const allParticipants = [userAlice, userBob, userCarlos, consumerOnly];
+    const splits = [makeItemSplit("user-dave", 1001, "item-1")];
+    const edges = computeRawEdges(bill, allParticipants, splits, [], items);
+    const totalOwed = edges.reduce((sum, e) => sum + e.amountCents, 0);
+    expect(totalOwed).toBe(1001);
+  });
+
+  it("edges sum exactly to total consumption with uneven multi-payer split", () => {
+    const bill = makeItemizedBill({
+      creatorId: "user-alice",
+      serviceFeePercent: 0,
+      payers: [
+        { userId: "user-alice", amountCents: 5000 },
+        { userId: "user-bob", amountCents: 5002 },
+      ],
+    });
+    const items = [{ totalPriceCents: 10002 }];
+    // Carlos consumed everything (not a payer)
+    const itemSplits = [makeItemSplit("user-carlos", 10002)];
+    const edges = computeRawEdges(bill, participants, itemSplits, [], items);
+    const totalOwed = edges.reduce((sum, e) => sum + e.amountCents, 0);
+    expect(totalOwed).toBe(10002);
+  });
 });
 
 describe("simplifyDebts", () => {
