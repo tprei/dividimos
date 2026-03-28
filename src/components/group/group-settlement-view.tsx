@@ -196,7 +196,7 @@ export function GroupSettlementView({
       )}
 
       {/* Simplification toggle */}
-      {simplificationResult && simplificationResult.originalCount > simplificationResult.simplifiedCount && (
+      {simplificationResult && simplificationResult.steps.length > 0 && (
         <SimplificationToggle
           originalCount={simplificationResult.originalCount}
           simplifiedCount={simplificationResult.simplifiedCount}

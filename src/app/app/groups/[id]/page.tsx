@@ -594,18 +594,9 @@ export default function GroupDetailPage({
                       {new Date(payment.createdAt).toLocaleDateString("pt-BR")}
                     </p>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className="font-semibold text-sm tabular-nums">
-                      {formatBRL(payment.amountCents)}
-                    </span>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      payment.status === "settled"
-                        ? "bg-success/15 text-success"
-                        : "bg-warning/15 text-warning-foreground"
-                    }`}>
-                      {payment.status === "settled" ? "Confirmado" : "Pendente"}
-                    </span>
-                  </div>
+                  <span className="font-semibold text-sm tabular-nums">
+                    {formatBRL(payment.amountCents)}
+                  </span>
                 </div>
               );
             })
