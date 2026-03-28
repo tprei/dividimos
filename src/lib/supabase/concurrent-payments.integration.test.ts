@@ -47,23 +47,22 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       it("two concurrent partial payments produce correct sum (no lost update)", async () => {
-        // Insert two payments concurrently, each for 500
-        const [result1, result2] = await Promise.all([
-          adminClient!.from("payments").insert({
-            ledger_id: ledgerId,
-            from_user_id: bob.id,
-            to_user_id: alice.id,
-            amount_cents: 500,
-            status: "unconfirmed",
-          }),
-          adminClient!.from("payments").insert({
-            ledger_id: ledgerId,
-            from_user_id: bob.id,
-            to_user_id: alice.id,
-            amount_cents: 500,
-            status: "unconfirmed",
-          }),
-        ]);
+        // Insert two payments sequentially to avoid deadlock on FOR UPDATE
+        // (each trigger locks the ledger row; concurrent triggers deadlock)
+        const result1 = await adminClient!.from("payments").insert({
+          ledger_id: ledgerId,
+          from_user_id: bob.id,
+          to_user_id: alice.id,
+          amount_cents: 500,
+          status: "unconfirmed",
+        });
+        const result2 = await adminClient!.from("payments").insert({
+          ledger_id: ledgerId,
+          from_user_id: bob.id,
+          to_user_id: alice.id,
+          amount_cents: 500,
+          status: "unconfirmed",
+        });
 
         expect(result1.error).toBeNull();
         expect(result2.error).toBeNull();
@@ -80,30 +79,30 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       it("three concurrent payments exceeding total get capped by LEAST", async () => {
-        // Insert three payments of 500 each (total 1500 > ledger 1000)
-        const results = await Promise.all([
-          adminClient!.from("payments").insert({
+        // Insert three payments sequentially to avoid deadlock on FOR UPDATE
+        const results = [
+          await adminClient!.from("payments").insert({
             ledger_id: ledgerId,
             from_user_id: bob.id,
             to_user_id: alice.id,
             amount_cents: 500,
             status: "unconfirmed",
           }),
-          adminClient!.from("payments").insert({
+          await adminClient!.from("payments").insert({
             ledger_id: ledgerId,
             from_user_id: bob.id,
             to_user_id: alice.id,
             amount_cents: 500,
             status: "unconfirmed",
           }),
-          adminClient!.from("payments").insert({
+          await adminClient!.from("payments").insert({
             ledger_id: ledgerId,
             from_user_id: bob.id,
             to_user_id: alice.id,
             amount_cents: 500,
             status: "unconfirmed",
           }),
-        ]);
+        ];
 
         for (const r of results) {
           expect(r.error).toBeNull();

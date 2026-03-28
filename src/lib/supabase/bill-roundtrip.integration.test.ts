@@ -336,7 +336,14 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
       .update({ description: "Hacked!" })
       .eq("bill_id", bill.id);
 
-    expect(itemUpdateErr).not.toBeNull();
+    // RLS UPDATE silently drops rows — verify item unchanged
+    expect(itemUpdateErr).toBeNull();
+    const { data: itemAfter } = await adminClient!
+      .from("bill_items")
+      .select("description")
+      .eq("bill_id", bill.id)
+      .single();
+    expect(itemAfter!.description).toBe("Item");
   });
 
   it("creator can delete draft bill with cascading child records", async () => {
@@ -399,7 +406,8 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
       .delete()
       .eq("id", bill.id);
 
-    expect(error).not.toBeNull();
+    // RLS DELETE silently drops rows — no error but bill persists
+    expect(error).toBeNull();
 
     // Bill should still exist
     const { data } = await adminClient!
