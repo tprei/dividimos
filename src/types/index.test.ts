@@ -13,6 +13,11 @@ import type {
   ExpenseStatus,
   ExpenseType,
   SettlementStatus,
+  ActivateExpenseRequest,
+  ActivateExpenseResult,
+  ActivateExpenseBalanceUpdate,
+  RecordSettlementRequest,
+  RecordSettlementResult,
   // Legacy aliases
   Bill,
   BillType,
@@ -201,6 +206,145 @@ describe("Expense types", () => {
     expect(summary.totalDebtCents).toBe(
       summary.debts.reduce((sum, d) => sum + d.amountCents, 0)
     );
+  });
+});
+
+describe("RPC request/result types", () => {
+  it("ActivateExpenseRequest has expense_id", () => {
+    const req: ActivateExpenseRequest = {
+      expense_id: "uuid-1",
+    };
+    expect(req.expense_id).toBe("uuid-1");
+  });
+
+  it("ActivateExpenseResult has expected shape", () => {
+    const result: ActivateExpenseResult = {
+      expenseId: "uuid-1",
+      status: "active",
+      updatedBalances: [
+        {
+          groupId: "group-1",
+          userA: "aaa-user",
+          userB: "bbb-user",
+          newAmountCents: 5000,
+          deltaCents: 5000,
+        },
+      ],
+    };
+    expect(result.status).toBe("active");
+    expect(result.updatedBalances).toHaveLength(1);
+    expect(result.updatedBalances[0].deltaCents).toBe(5000);
+  });
+
+  it("ActivateExpenseBalanceUpdate tracks delta and new amount", () => {
+    const update: ActivateExpenseBalanceUpdate = {
+      groupId: "group-1",
+      userA: "aaa-user",
+      userB: "bbb-user",
+      newAmountCents: 3000,
+      deltaCents: -2000,
+    };
+    // Negative delta means A's debt to B decreased (A was a payer)
+    expect(update.deltaCents).toBeLessThan(0);
+    expect(update.newAmountCents).toBe(3000);
+  });
+
+  it("ActivateExpenseResult with multiple balance updates", () => {
+    // Expense with 3 participants creates up to 3 balance pairs
+    const result: ActivateExpenseResult = {
+      expenseId: "uuid-1",
+      status: "active",
+      updatedBalances: [
+        {
+          groupId: "group-1",
+          userA: "aaa",
+          userB: "bbb",
+          newAmountCents: 3000,
+          deltaCents: 3000,
+        },
+        {
+          groupId: "group-1",
+          userA: "aaa",
+          userB: "ccc",
+          newAmountCents: 2000,
+          deltaCents: 2000,
+        },
+        {
+          groupId: "group-1",
+          userA: "bbb",
+          userB: "ccc",
+          newAmountCents: -1000,
+          deltaCents: -1000,
+        },
+      ],
+    };
+    expect(result.updatedBalances).toHaveLength(3);
+    // All balances should reference the same group
+    expect(
+      result.updatedBalances.every((b) => b.groupId === "group-1")
+    ).toBe(true);
+  });
+
+  it("RecordSettlementRequest has all required fields", () => {
+    const req: RecordSettlementRequest = {
+      group_id: "group-1",
+      from_user_id: "user-debtor",
+      to_user_id: "user-creditor",
+      amount_cents: 5000,
+    };
+    expect(req.group_id).toBe("group-1");
+    expect(req.from_user_id).toBe("user-debtor");
+    expect(req.to_user_id).toBe("user-creditor");
+    expect(req.amount_cents).toBe(5000);
+    expect(req.amount_cents).toBeGreaterThan(0);
+  });
+
+  it("RecordSettlementResult contains settlement and updated balance", () => {
+    const result: RecordSettlementResult = {
+      settlement: {
+        id: "settlement-1",
+        groupId: "group-1",
+        fromUserId: "user-debtor",
+        toUserId: "user-creditor",
+        amountCents: 5000,
+        status: "pending",
+        createdAt: "2026-03-28T00:00:00Z",
+      },
+      updatedBalance: {
+        groupId: "group-1",
+        userA: "user-creditor",
+        userB: "user-debtor",
+        newAmountCents: -2000,
+      },
+    };
+    expect(result.settlement.status).toBe("pending");
+    expect(result.settlement.amountCents).toBe(5000);
+    expect(result.updatedBalance.newAmountCents).toBe(-2000);
+  });
+
+  it("RecordSettlementResult settlement can be confirmed", () => {
+    const result: RecordSettlementResult = {
+      settlement: {
+        id: "settlement-1",
+        groupId: "group-1",
+        fromUserId: "user-1",
+        toUserId: "user-2",
+        amountCents: 10000,
+        status: "confirmed",
+        createdAt: "2026-03-28T00:00:00Z",
+        confirmedAt: "2026-03-28T01:00:00Z",
+      },
+      updatedBalance: {
+        groupId: "group-1",
+        userA: "user-1",
+        userB: "user-2",
+        newAmountCents: 0,
+      },
+    };
+    expect(result.settlement.status).toBe("confirmed");
+    expect(result.settlement.confirmedAt).toBeDefined();
+    // Balance of 0 = fully settled
+    expect(result.updatedBalance.newAmountCents).toBe(0);
   });
 });
 
