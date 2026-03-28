@@ -3,10 +3,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { DebtEdge } from "@/lib/simplify";
 import { formatBRL } from "@/lib/currency";
-import type { User } from "@/types";
+import type { UserProfile } from "@/types";
 
 interface DebtGraphProps {
-  participants: User[];
+  participants: UserProfile[];
   edges: DebtEdge[];
   highlightEdge?: { from: string; to: string };
   fadingEdges?: { from: string; to: string }[];
