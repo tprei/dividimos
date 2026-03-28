@@ -1,15 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
-  authenticateAs,
   createTestBill,
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
-import type { Database } from "@/types/database";
-
-type BillRow = Database["public"]["Tables"]["bills"]["Row"];
-type LedgerRow = Database["public"]["Tables"]["ledger"]["Row"];
 
 describe.skipIf(!isIntegrationTestReady)(
   "Bill status transition trigger (check_bill_settled)",

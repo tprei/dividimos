@@ -100,7 +100,7 @@ export function DashboardContent({ initialBills, initialNetBalance }: DashboardC
   const [refreshing, setRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting] = useState(false);
   const touchStartY = useRef(0);
 
   const handleDelete = async () => {

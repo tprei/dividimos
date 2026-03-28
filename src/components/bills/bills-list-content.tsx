@@ -61,7 +61,7 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
   const [filter, setFilter] = useState<FilterType>("all");
   const [bills, setBills] = useState<BillEntry[]>(initialBills);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting] = useState(false);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;

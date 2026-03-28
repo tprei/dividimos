@@ -1,13 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
-  authenticateAs,
   createTestBill,
   createTestGroup,
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
-import type { Database } from "@/types/database";
 
 describe.skipIf(!isIntegrationTestReady)(
   "Group settlement cascade trigger (cascade_group_settlement)",

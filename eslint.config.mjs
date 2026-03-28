@@ -15,6 +15,13 @@ const eslintConfig = defineConfig([
     // Playwright transform cache
     ".home/**",
   ]),
+  // Test files mock next/image with plain <img> — that's intentional.
+  {
+    files: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "@next/next/no-img-element": "off",
+    },
+  },
   // Project-level rule overrides — this codebase uses client-side data fetching
   // in effects (fetch → setState), which is a legitimate pattern that the strict
   // React 19 rule flags. Migrating to server components or a data-fetching library

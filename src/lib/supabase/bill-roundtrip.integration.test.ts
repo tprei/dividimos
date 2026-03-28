@@ -272,7 +272,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
   });
 
   it("participant can read bill and child data but not modify it", async () => {
-    const aliceClient = authenticateAs(alice);
+    authenticateAs(alice);
     const bobClient = authenticateAs(bob);
 
     const bill = await createTestBill(alice.id, {
@@ -322,7 +322,7 @@ describe.skipIf(!isIntegrationTestReady)("Bill round-trip lifecycle", () => {
     expect(items!.length).toBe(1);
 
     // Bob cannot update the bill
-    const { error: updateErr } = await bobClient
+    const { error: _updateErr } = await bobClient
       .from("bills")
       .update({ title: "Hacked!" })
       .eq("id", bill.id);
