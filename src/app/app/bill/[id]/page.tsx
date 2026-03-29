@@ -9,10 +9,12 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Copy,
   Loader2,
   Pencil,
   QrCode,
   Receipt,
+  UserCheck,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -548,7 +550,7 @@ export default function BillDetailPage({
             </span>
             <span className="flex items-center gap-1">
               <Users className="h-3.5 w-3.5" />
-              {allParticipants.length} pessoas
+              {allParticipants.length + (expense.guests?.length ?? 0)} pessoas
             </span>
             {debts.length > 0 && (
               <span className="flex items-center gap-1">
@@ -629,6 +631,62 @@ export default function BillDetailPage({
           className="mt-5"
         >
           <ExpenseSharesSummary expense={expense} allParticipants={allParticipants} />
+          {expense.guests && expense.guests.length > 0 && (
+            <div className="mt-4">
+              <h3 className="mb-2 text-sm font-semibold">Convidados</h3>
+              <div className="space-y-2">
+                {expense.guests.map((guest) => {
+                  const isClaimed = !!guest.claimedBy;
+                  return (
+                    <div
+                      key={guest.id}
+                      className="rounded-xl border border-dashed bg-card p-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                            {guest.displayName.charAt(0)}
+                          </span>
+                          <div>
+                            <p className="text-sm font-medium">{guest.displayName}</p>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${isClaimed ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+                              {isClaimed ? "Confirmado" : "Pendente"}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="font-semibold tabular-nums text-sm">
+                          {guest.share ? formatBRL(guest.share.shareAmountCents) : "—"}
+                        </span>
+                      </div>
+                      {!isClaimed && currentUser?.id === expense.creatorId && (
+                        <div className="mt-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full gap-1.5 text-xs"
+                            onClick={() => {
+                              const url = `${window.location.origin}/claim/${guest.claimToken}`;
+                              navigator.clipboard.writeText(url);
+                              toast.success("Link copiado!");
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            Copiar link de convite
+                          </Button>
+                        </div>
+                      )}
+                      {isClaimed && (
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <UserCheck className="h-3 w-3" />
+                          Confirmado
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
 
