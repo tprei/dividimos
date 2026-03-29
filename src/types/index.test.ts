@@ -166,10 +166,12 @@ describe("Expense types", () => {
           },
         },
       ],
+      guests: [],
     };
     expect(detailed.items).toHaveLength(1);
     expect(detailed.shares).toHaveLength(1);
     expect(detailed.payers).toHaveLength(1);
+    expect(detailed.guests).toHaveLength(0);
     expect(detailed.shares[0].user.handle).toBe("bob");
   });
 

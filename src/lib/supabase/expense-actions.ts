@@ -268,7 +268,7 @@ export async function loadExpense(
     user: profileMap.get(p.user_id) ?? fallbackProfile(p.user_id),
   }));
 
-  return { ...expense, items, shares, payers };
+  return { ...expense, items, shares, payers, guests: [] };
 }
 
 // ============================================================
