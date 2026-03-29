@@ -1,0 +1,83 @@
+name: Synthetic Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: supabase/setup-cli@v1
+
+      - run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Start Supabase
+        id: supabase
+        run: |
+          supabase start
+          ANON_KEY=$(supabase status --output json | jq -r '.ANON_KEY')
+          SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.SERVICE_ROLE_KEY')
+          echo "anon_key=${ANON_KEY}" >> $GITHUB_OUTPUT
+          echo "service_role_key=${SERVICE_ROLE_KEY}" >> $GITHUB_OUTPUT
+
+      - name: Build app
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
+          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          NEXT_PUBLIC_AUTH_PHONE_TEST_MODE: "true"
+
+      - name: Start dev server
+        run: npm run start &
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
+          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          NEXT_PUBLIC_AUTH_PHONE_TEST_MODE: "true"
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000 > /dev/null && exit 0
+            sleep 2
+          done
+          echo "Server did not start in time" && exit 1
+
+      - name: Run synthetic tests
+        run: npm run test:synthetic
+        env:
+          CI: "true"
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
+          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          NEXT_PUBLIC_AUTH_PHONE_TEST_MODE: "true"
+          E2E_BASE_URL: http://localhost:3000
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-test-results
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
