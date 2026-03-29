@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
+import type { PixKeyType } from "@/types";
 import { redirect } from "next/navigation";
 
 export async function completeOnboarding(formData: FormData) {
@@ -15,8 +16,8 @@ export async function completeOnboarding(formData: FormData) {
     return { error: "Dados incompletos" };
   }
 
-  if (!validatePixKey(pixKey)) {
-    return { error: "Chave Pix invalida" };
+  if (!validatePixKey(pixKey, pixKeyType as PixKeyType)) {
+    return { error: "Chave Pix invalida para o tipo selecionado" };
   }
 
   const supabase = await createClient();

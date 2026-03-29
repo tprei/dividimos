@@ -3,9 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
-import type { Database } from "@/types/database";
-
-type PixKeyType = Database["public"]["Enums"]["pix_key_type"];
+import type { PixKeyType } from "@/types";
 
 export async function updatePixKey(formData: FormData) {
   const pixKey = formData.get("pixKey") as string;
@@ -15,8 +13,8 @@ export async function updatePixKey(formData: FormData) {
     return { error: "Dados incompletos" };
   }
 
-  if (!validatePixKey(pixKey)) {
-    return { error: "Chave Pix invalida" };
+  if (!validatePixKey(pixKey, pixKeyType)) {
+    return { error: "Chave Pix invalida para o tipo selecionado" };
   }
 
   const supabase = await createClient();

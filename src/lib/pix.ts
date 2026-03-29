@@ -63,18 +63,19 @@ export function generatePixCopiaECola(payload: PixPayload): string {
   return pixString + checksum;
 }
 
-export function validatePixKey(key: string): boolean {
-  const phoneRegex = /^\+55\d{10,11}$/;
-  const cpfRegex = /^\d{11}$/;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const randomRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-  return (
-    phoneRegex.test(key) ||
-    cpfRegex.test(key) ||
-    emailRegex.test(key) ||
-    randomRegex.test(key)
-  );
+export function validatePixKey(key: string, type: PixKeyType): boolean {
+  switch (type) {
+    case "phone":
+      return /^\+55\d{10,11}$/.test(key);
+    case "cpf":
+      return /^\d{11}$/.test(key);
+    case "email":
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key);
+    case "random":
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key);
+    default:
+      return false;
+  }
 }
 
 export function maskPixKey(key: string): string {
