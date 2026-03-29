@@ -17,9 +17,7 @@ vi.mock("twilio", () => {
   };
 
   return {
-    default: {
-      default: vi.fn(() => mockClient),
-    },
+    default: vi.fn(() => mockClient),
     __mockClient: mockClient,
     __createMock: createMock,
     __verificationCheckCreateMock: verificationCheckCreateMock,

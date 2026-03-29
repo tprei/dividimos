@@ -16,7 +16,7 @@ function getClient(): Twilio.Twilio {
     );
   }
 
-  _client = Twilio.default(accountSid, authToken);
+  _client = Twilio(accountSid, authToken);
   return _client;
 }
 
