@@ -230,3 +230,237 @@ export async function createTestGroup(
 
   return group;
 }
+
+// ---------------------------------------------------------------------------
+// Expense helpers
+// ---------------------------------------------------------------------------
+
+export interface ExpenseShareInput {
+  userId: string;
+  amount: number;
+}
+
+export interface ExpensePayerInput {
+  userId: string;
+  amount: number;
+}
+
+export interface CreateAndActivateExpenseOptions {
+  creator: TestUser;
+  groupId: string;
+  shares: ExpenseShareInput[];
+  payers: ExpensePayerInput[];
+  title?: string;
+  expenseType?: "single_amount" | "itemized";
+  serviceFeePercent?: number;
+  fixedFees?: number;
+}
+
+/**
+ * Creates an expense with shares and payers, then activates it via RPC.
+ * The total is computed as the sum of payer amounts.
+ * Returns the expense id.
+ */
+export async function createAndActivateExpense(
+  options: CreateAndActivateExpenseOptions,
+): Promise<string> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  const {
+    creator,
+    groupId,
+    shares,
+    payers,
+    title,
+    expenseType = "single_amount",
+    serviceFeePercent = 0,
+    fixedFees = 0,
+  } = options;
+
+  const totalAmount = payers.reduce((sum, p) => sum + p.amount, 0);
+  const testId = Date.now().toString(36).slice(-4);
+
+  // Insert expense
+  const { data: expense, error: expError } = await adminClient
+    .from("expenses")
+    .insert({
+      group_id: groupId,
+      creator_id: creator.id,
+      title: title ?? `Test Expense ${testId}`,
+      expense_type: expenseType,
+      total_amount: totalAmount,
+      service_fee_percent: serviceFeePercent,
+      fixed_fees: fixedFees,
+      status: "draft",
+    })
+    .select("id")
+    .single();
+
+  if (expError || !expense) {
+    throw new Error(`Failed to create expense: ${expError?.message}`);
+  }
+
+  const expenseId = expense.id;
+
+  // Insert shares and payers in parallel
+  const [sharesResult, payersResult] = await Promise.all([
+    adminClient.from("expense_shares").insert(
+      shares.map((s) => ({
+        expense_id: expenseId,
+        user_id: s.userId,
+        share_amount_cents: s.amount,
+      })),
+    ),
+    adminClient.from("expense_payers").insert(
+      payers.map((p) => ({
+        expense_id: expenseId,
+        user_id: p.userId,
+        amount_cents: p.amount,
+      })),
+    ),
+  ]);
+
+  if (sharesResult.error) {
+    throw new Error(`Failed to insert shares: ${sharesResult.error.message}`);
+  }
+  if (payersResult.error) {
+    throw new Error(`Failed to insert payers: ${payersResult.error.message}`);
+  }
+
+  // Activate via RPC as the creator
+  const creatorClient = authenticateAs(creator);
+  const { error: rpcError } = await creatorClient.rpc("activate_expense", {
+    p_expense_id: expenseId,
+  });
+
+  if (rpcError) {
+    throw new Error(`Failed to activate expense: ${rpcError.message}`);
+  }
+
+  return expenseId;
+}
+
+// ---------------------------------------------------------------------------
+// Settlement helpers
+// ---------------------------------------------------------------------------
+
+export interface SettleDebtOptions {
+  caller: TestUser;
+  groupId: string;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
+}
+
+/**
+ * Calls the record_and_settle RPC to atomically create a confirmed settlement
+ * and update balances. Returns the settlement id.
+ */
+export async function settleDebt(options: SettleDebtOptions): Promise<string> {
+  if (!isIntegrationTestReady) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  const { caller, groupId, fromUserId, toUserId, amountCents } = options;
+  const callerClient = authenticateAs(caller);
+
+  const { data, error } = await callerClient.rpc("record_and_settle", {
+    p_group_id: groupId,
+    p_from_user_id: fromUserId,
+    p_to_user_id: toUserId,
+    p_amount_cents: amountCents,
+  });
+
+  if (error) {
+    throw new Error(`record_and_settle failed: ${error.message}`);
+  }
+
+  return data as string;
+}
+
+// ---------------------------------------------------------------------------
+// Balance helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Gets the balance between two users in a group.
+ * Returns a signed value: positive means userX owes userY,
+ * negative means userY owes userX.
+ * Returns 0 if no balance row exists.
+ */
+export async function getBalanceBetween(
+  groupId: string,
+  userX: string,
+  userY: string,
+): Promise<number> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  // Canonical ordering: user_a < user_b
+  const [userA, userB] = userX < userY ? [userX, userY] : [userY, userX];
+
+  const { data, error } = await adminClient
+    .from("balances")
+    .select("amount_cents")
+    .eq("group_id", groupId)
+    .eq("user_a", userA)
+    .eq("user_b", userB)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to query balance: ${error.message}`);
+  }
+
+  if (!data) return 0;
+
+  // If userX is the canonical user_a, return as-is (positive = userX owes userY).
+  // If userX is user_b, flip the sign (positive = userX owes userY).
+  return userX < userY ? data.amount_cents : -data.amount_cents;
+}
+
+// ---------------------------------------------------------------------------
+// Group membership helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Accepts a group invitation for the given user.
+ * Uses the user's authenticated client so RLS policies are respected.
+ */
+export async function acceptGroupInvite(
+  user: TestUser,
+  groupId: string,
+): Promise<void> {
+  const userClient = authenticateAs(user);
+
+  const { error } = await userClient
+    .from("group_members")
+    .update({ status: "accepted", accepted_at: new Date().toISOString() })
+    .eq("group_id", groupId)
+    .eq("user_id", user.id);
+
+  if (error) {
+    throw new Error(
+      `Failed to accept group invite for ${user.handle}: ${error.message}`,
+    );
+  }
+}
+
+/**
+ * Creates a group with accepted members in one step.
+ * Convenience wrapper that creates the group, invites members, and accepts all invites.
+ */
+export async function createTestGroupWithMembers(
+  creator: TestUser,
+  members: TestUser[],
+): Promise<Database["public"]["Tables"]["groups"]["Row"]> {
+  const memberIds = members.map((m) => m.id);
+  const group = await createTestGroup(creator.id, memberIds);
+
+  // Accept all invitations in parallel
+  await Promise.all(members.map((m) => acceptGroupInvite(m, group.id)));
+
+  return group;
+}
