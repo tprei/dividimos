@@ -26,11 +26,18 @@ export default defineConfig({
       name: "setup",
       testMatch: /auth\.setup\.ts/,
     },
-    // Chromium tests (main browser)
+    // Chromium tests (main browser) — flow tests using shared alice/bob/carol sessions
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
+      testDir: "./e2e/flows",
+    },
+    // Synthetic tests — self-contained, each test seeds its own data via SeedHelper
+    {
+      name: "synthetic",
+      use: { ...devices["Desktop Chrome"] },
+      testDir: "./e2e/synthetic",
     },
   ],
   // Run local dev server before tests
