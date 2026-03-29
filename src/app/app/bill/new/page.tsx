@@ -27,11 +27,19 @@ import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { ItemCard } from "@/components/bill/item-card";
 import { PayerStep } from "@/components/bill/payer-step";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
+import { ReceiptScanner } from "@/components/bill/receipt-scanner";
+import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
+import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { SingleAmountStep } from "@/components/bill/single-amount-step";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { useQrScannerPreload } from "@/hooks/use-qr-preload";
+import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
+import type { NfceQrResult } from "@/lib/nfce-qr";
+import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
+import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { useBillStore } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
@@ -76,6 +84,9 @@ function NewBillPageContent() {
   const store = useBillStore();
   const { user: authUser } = useAuth();
 
+  // Preload qr-scanner WASM in background so the QR tab opens fast
+  useQrScannerPreload();
+
   const [billType, setBillType] = useState<ExpenseType | null>(null);
   const [step, setStep] = useState<Step>("type");
   const [title, setTitle] = useState("");
@@ -92,6 +103,14 @@ function NewBillPageContent() {
   const [isEditing, setIsEditing] = useState(false);
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const editLoadedRef = useRef(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanProcessing, setScanProcessing] = useState(false);
+  const [scanProcessingPhoto, setScanProcessingPhoto] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<ReceiptOcrResult | null>(null);
+  const [sefazFallback, setSefazFallback] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const lastQrResultRef = useRef<NfceQrResult | null>(null);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -104,6 +123,128 @@ function NewBillPageContent() {
     setBillType(type);
     setStep("info");
   };
+
+  const handleScanProcess = useCallback(async (file: File) => {
+    setScanProcessing(true);
+    setScanProcessingPhoto(true);
+    setScanError(null);
+    try {
+      const result: ReceiptOcrResult = await processReceiptScan(file);
+      // Show review UI instead of populating store directly
+      setScanResult(result);
+      setShowScanner(false);
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Erro ao processar imagem");
+    } finally {
+      setScanProcessing(false);
+      setScanProcessingPhoto(false);
+    }
+  }, []);
+
+  const handleQrDetected = useCallback(async (result: NfceQrResult) => {
+    setScanError(null);
+    setDuplicateWarning(null);
+    setScanProcessing(true);
+    lastQrResultRef.current = result;
+
+    // Check for duplicate receipt
+    const previousScan = checkDuplicateReceipt(result.chaveAcesso);
+    if (previousScan) {
+      const date = new Date(previousScan);
+      const formatted = date.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setDuplicateWarning(
+        `Esta nota já foi escaneada em ${formatted}. Deseja continuar mesmo assim?`,
+      );
+      setScanProcessing(false);
+      return;
+    }
+
+    try {
+      const receipt = await fetchSefazReceipt(result.url);
+      setScanResult(receipt);
+      setShowScanner(false);
+    } catch (err) {
+      if (err instanceof SefazFallbackError) {
+        // SEFAZ blocked (captcha/timeout/unparseable) — nudge user to photo
+        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
+        setSefazFallback(true);
+        setShowScanner(true);
+      } else {
+        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
+      }
+    } finally {
+      setScanProcessing(false);
+    }
+  }, []);
+
+  const handleDuplicateContinue = useCallback(async () => {
+    const qrResult = lastQrResultRef.current;
+    if (!qrResult) return;
+    setDuplicateWarning(null);
+    setScanProcessing(true);
+    try {
+      const receipt = await fetchSefazReceipt(qrResult.url);
+      setScanResult(receipt);
+      setShowScanner(false);
+    } catch (err) {
+      if (err instanceof SefazFallbackError) {
+        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
+        setSefazFallback(true);
+        setShowScanner(true);
+      } else {
+        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
+      }
+    } finally {
+      setScanProcessing(false);
+    }
+  }, []);
+
+  const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
+    // Populate store with reviewed items
+    setBillType("itemized");
+    if (authUser) {
+      store.setCurrentUser(authUser);
+      store.createExpense(
+        result.merchant || "Nota escaneada",
+        "itemized",
+        result.merchant || undefined,
+      );
+      store.updateExpense({
+        serviceFeePercent: result.serviceFeePercent || 0,
+      });
+
+      for (const item of result.items) {
+        store.addItem({
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          totalPriceCents: item.totalCents,
+        });
+      }
+    }
+
+    // Mark receipt as scanned to detect future duplicates
+    if (lastQrResultRef.current) {
+      markReceiptScanned(lastQrResultRef.current.chaveAcesso);
+      lastQrResultRef.current = null;
+    }
+
+    setTitle(result.merchant || "Nota escaneada");
+    setMerchantName(result.merchant || "");
+    setServiceFee(String(result.serviceFeePercent || 0));
+    setScanResult(null);
+    setDuplicateWarning(null);
+    setStep("info");
+  }, [authUser, store]);
+
+  const handleScanCancel = useCallback(() => {
+    setScanResult(null);
+  }, []);
 
   // Load draft for editing when ?draft=<id> is present
   useEffect(() => {
@@ -473,7 +614,7 @@ function NewBillPageContent() {
       return gt <= 0 || Math.abs(gt - paid) > 1;
     }
     return false;
-  }, [navigating, isTypeStep, step, title, store, selectedGroupId]);
+  }, [navigating, isTypeStep, step, title, store]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -613,7 +754,65 @@ function NewBillPageContent() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <BillTypeSelector onSelect={handleTypeSelect} />
+              {scanResult ? (
+                <ScannedItemsReview
+                  result={scanResult}
+                  onConfirm={handleScanConfirm}
+                  onCancel={handleScanCancel}
+                />
+              ) : scanProcessingPhoto ? (
+                <ScanSkeletonLoader />
+              ) : showScanner ? (
+                <div className="space-y-3">
+                  <ReceiptScanner
+                    key={sefazFallback ? "fallback" : "default"}
+                    onProcess={handleScanProcess}
+                    onBack={() => { setShowScanner(false); setScanError(null); setSefazFallback(false); }}
+                    processing={scanProcessing}
+                    onQrDetected={handleQrDetected}
+                  />
+                  {scanError && (
+                    <motion.p
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-center text-sm text-destructive"
+                    >
+                      {scanError}
+                    </motion.p>
+                  )}
+                  {duplicateWarning && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-center dark:border-yellow-700 dark:bg-yellow-950"
+                    >
+                      <p className="mb-2 text-sm text-yellow-800 dark:text-yellow-200">
+                        {duplicateWarning}
+                      </p>
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { setDuplicateWarning(null); lastQrResultRef.current = null; }}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleDuplicateContinue}
+                        >
+                          Continuar mesmo assim
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              ) : (
+                <BillTypeSelector
+                  onSelect={handleTypeSelect}
+                  onScanReceipt={() => setShowScanner(true)}
+                />
+              )}
             </motion.div>
           )}
 

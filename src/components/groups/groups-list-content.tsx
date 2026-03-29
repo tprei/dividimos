@@ -154,7 +154,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
 
   useEffect(() => {
     refetchRef.current = refetch;
-  }, [refetch]);
+  });
 
   const handleCreateGroup = async () => {
     if (!newGroupName.trim() || !user) return;

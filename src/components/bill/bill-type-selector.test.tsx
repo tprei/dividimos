@@ -47,4 +47,48 @@ describe("BillTypeSelector", () => {
     await user.click(btn!);
     expect(onSelect).toHaveBeenCalledWith("itemized");
   });
+
+  describe("scan receipt option", () => {
+    it("does not render scan option when onScanReceipt is not provided", () => {
+      render(<BillTypeSelector onSelect={vi.fn()} />);
+
+      expect(screen.queryByText("Escanear nota")).not.toBeInTheDocument();
+    });
+
+    it("renders scan option when onScanReceipt is provided", () => {
+      render(
+        <BillTypeSelector onSelect={vi.fn()} onScanReceipt={vi.fn()} />,
+      );
+
+      expect(screen.getByText("Escanear nota")).toBeInTheDocument();
+      expect(
+        screen.getByText("Foto do cupom ou QR Code NFC-e"),
+      ).toBeInTheDocument();
+    });
+
+    it("calls onScanReceipt when scan option is clicked", async () => {
+      const onScanReceipt = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <BillTypeSelector onSelect={vi.fn()} onScanReceipt={onScanReceipt} />,
+      );
+
+      const btn = screen.getByText("Escanear nota").closest("button");
+      expect(btn).not.toBeNull();
+      await user.click(btn!);
+      expect(onScanReceipt).toHaveBeenCalledOnce();
+    });
+
+    it("does not call onSelect when scan option is clicked", async () => {
+      const onSelect = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <BillTypeSelector onSelect={onSelect} onScanReceipt={vi.fn()} />,
+      );
+
+      const btn = screen.getByText("Escanear nota").closest("button");
+      await user.click(btn!);
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+  });
 });

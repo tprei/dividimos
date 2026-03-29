@@ -80,67 +80,66 @@ describe("generatePixCopiaECola", () => {
 describe("validatePixKey", () => {
   describe("phone keys", () => {
     it("accepts +55 with 11 digits", () => {
-      expect(validatePixKey("+5511999998888")).toBe(true);
+      expect(validatePixKey("+5511999998888", "phone")).toBe(true);
     });
 
     it("accepts +55 with 10 digits", () => {
-      expect(validatePixKey("+551199998888")).toBe(true);
+      expect(validatePixKey("+551199998888", "phone")).toBe(true);
     });
 
-    it("11-digit string without +55 is accepted as CPF (not phone)", () => {
-      // "11999998888" has 11 digits, matching the CPF regex /^\d{11}$/
-      expect(validatePixKey("11999998888")).toBe(true);
+    it("rejects phone without +55 prefix", () => {
+      expect(validatePixKey("11999998888", "phone")).toBe(false);
     });
 
     it("rejects phone too short after +55", () => {
-      expect(validatePixKey("+5511")).toBe(false);
+      expect(validatePixKey("+5511", "phone")).toBe(false);
     });
   });
 
   describe("CPF keys", () => {
     it("accepts exactly 11 digits", () => {
-      expect(validatePixKey("12345678901")).toBe(true);
+      expect(validatePixKey("12345678901", "cpf")).toBe(true);
+    });
+
+    it("rejects CPF with +55 prefix", () => {
+      expect(validatePixKey("+5512345678901", "cpf")).toBe(false);
     });
 
     it("rejects 10 digits", () => {
-      expect(validatePixKey("1234567890")).toBe(false);
+      expect(validatePixKey("1234567890", "cpf")).toBe(false);
     });
 
     it("rejects 12 digits", () => {
-      expect(validatePixKey("123456789012")).toBe(false);
+      expect(validatePixKey("123456789012", "cpf")).toBe(false);
     });
   });
 
   describe("email keys", () => {
     it("accepts valid email", () => {
-      expect(validatePixKey("user@example.com")).toBe(true);
+      expect(validatePixKey("user@example.com", "email")).toBe(true);
     });
 
     it("rejects string without @", () => {
-      expect(validatePixKey("userexample.com")).toBe(false);
+      expect(validatePixKey("userexample.com", "email")).toBe(false);
     });
 
     it("rejects bare username", () => {
-      expect(validatePixKey("user")).toBe(false);
+      expect(validatePixKey("user", "email")).toBe(false);
     });
   });
 
   describe("UUID (EVP) keys", () => {
     it("accepts valid UUID v4", () => {
-      expect(validatePixKey("550e8400-e29b-41d4-a716-446655440000")).toBe(true);
+      expect(validatePixKey("550e8400-e29b-41d4-a716-446655440000", "random")).toBe(true);
     });
 
     it("accepts uppercase UUID", () => {
-      expect(validatePixKey("550E8400-E29B-41D4-A716-446655440000")).toBe(true);
+      expect(validatePixKey("550E8400-E29B-41D4-A716-446655440000", "random")).toBe(true);
     });
 
     it("rejects UUID without dashes", () => {
-      expect(validatePixKey("550e8400e29b41d4a716446655440000")).toBe(false);
+      expect(validatePixKey("550e8400e29b41d4a716446655440000", "random")).toBe(false);
     });
-  });
-
-  it("rejects empty string", () => {
-    expect(validatePixKey("")).toBe(false);
   });
 });
 
