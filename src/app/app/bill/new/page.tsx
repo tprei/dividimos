@@ -41,7 +41,7 @@ import type { NfceQrResult } from "@/lib/nfce-qr";
 import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, type Guest } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { ExpenseType, User, UserProfile } from "@/types";
@@ -96,6 +96,8 @@ function NewBillPageContent() {
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [showRecentContacts, setShowRecentContacts] = useState(false);
+  const [showAddGuest, setShowAddGuest] = useState(false);
+  const [guestNameInput, setGuestNameInput] = useState("");
   const [navigating, setNavigating] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
@@ -601,7 +603,7 @@ function NewBillPageContent() {
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
     if (step === "info") return !title.trim();
-    if (step === "participants") return store.participants.length < 2;
+    if (step === "participants") return (store.participants.length + store.guests.length) < 2;
     if (step === "amount-split") {
       const total = store.totalAmountInput || 0;
       if (total <= 0) return true;
@@ -661,14 +663,15 @@ function NewBillPageContent() {
   };
 
   const handleAssignAll = (itemId: string) => {
+    const allPersonIds = [...store.participants.map((p) => p.id), ...store.guests.map((g) => g.id)];
     const currentSplits = store.splits.filter((s) => s.itemId === itemId);
-    const allAssigned = currentSplits.length === store.participants.length;
+    const allAssigned = currentSplits.length === allPersonIds.length;
     if (allAssigned) {
-      for (const p of store.participants) {
-        store.unassignItem(itemId, p.id);
+      for (const id of allPersonIds) {
+        store.unassignItem(itemId, id);
       }
     } else {
-      store.splitItemEqually(itemId, store.participants.map((p) => p.id));
+      store.splitItemEqually(itemId, allPersonIds);
     }
   };
 
@@ -1040,6 +1043,69 @@ function NewBillPageContent() {
                 )}
               </div>
 
+              {store.guests.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Convidados (sem conta no Pixwise)</p>
+                  {store.guests.map((g) => (
+                    <div key={g.id} className="flex items-center gap-3 rounded-xl border border-dashed bg-card p-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                        {g.name.charAt(0)}
+                      </span>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{g.name}</p>
+                      </div>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Convidado</span>
+                      <button onClick={() => store.removeGuest(g.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <AnimatePresence>
+                {showAddGuest && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden rounded-2xl border border-dashed bg-card p-4"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold">Adicionar convidado</span>
+                      <button
+                        onClick={() => { setShowAddGuest(false); setGuestNameInput(""); }}
+                        className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const name = guestNameInput.trim();
+                      if (!name) return;
+                      store.addGuest(name);
+                      setGuestNameInput("");
+                    }} className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="Nome do convidado"
+                        value={guestNameInput}
+                        onChange={(e) => setGuestNameInput(e.target.value)}
+                        autoFocus
+                        className="flex-1"
+                      />
+                      <Button type="submit" size="sm" disabled={!guestNameInput.trim()}>
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </form>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Convidados recebem um link para confirmar a participacao depois.
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Individual add options — only when no group is selected */}
               {!selectedGroupId && (
                 <>
@@ -1104,7 +1170,7 @@ function NewBillPageContent() {
                       </motion.div>
                     )}
                   </AnimatePresence>
-                  {!showAddParticipant && !showRecentContacts && (
+                  {!showAddParticipant && !showRecentContacts && !showAddGuest && (
                     <div className="flex flex-col gap-2">
                       <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
                         <UserPlus className="h-4 w-4" />
@@ -1114,9 +1180,20 @@ function NewBillPageContent() {
                         <Clock className="h-4 w-4" />
                         De contas anteriores
                       </Button>
+                      <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
+                        <Users className="h-4 w-4" />
+                        Adicionar convidado
+                      </Button>
                     </div>
                   )}
                 </>
+              )}
+
+              {selectedGroupId && !showAddGuest && (
+                <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
+                  <Users className="h-4 w-4" />
+                  Adicionar convidado
+                </Button>
               )}
             </motion.div>
           )}
@@ -1206,17 +1283,22 @@ function NewBillPageContent() {
                 {store.items.map((item) => {
                   const itemSplits = store.splits
                     .filter((s) => s.itemId === item.id)
-                    .map((s) => ({ ...s, user: store.participants.find((p) => p.id === s.userId) }));
+                    .map((s) => {
+                      const user = store.participants.find((p) => p.id === s.userId);
+                      const guest = !user ? store.guests.find((g) => g.id === s.userId) : null;
+                      return { ...s, user: user ?? (guest ? { id: guest.id, name: guest.name, handle: "" } as UserProfile : undefined) };
+                    });
                   return (
-                    <ItemCard key={item.id} item={item} splits={itemSplits} participants={store.participants} onAssign={handleAssign} onUnassign={handleUnassign} onAssignAll={handleAssignAll} onRemove={(id) => store.removeItem(id)} />
+                    <ItemCard key={item.id} item={item} splits={itemSplits} participants={store.participants} guests={store.guests} onAssign={handleAssign} onUnassign={handleUnassign} onAssignAll={handleAssignAll} onRemove={(id) => store.removeItem(id)} />
                   );
                 })}
               </AnimatePresence>
               {store.items.length > 0 && (() => {
                 const unassignedItems = store.items.filter((item) => store.splits.filter((s) => s.itemId === item.id).length === 0);
                 if (unassignedItems.length === 0) return null;
+                const allPersonIds = [...store.participants.map((p) => p.id), ...store.guests.map((g) => g.id)];
                 return (
-                  <Button variant="outline" className="w-full gap-2 border-dashed border-primary/40 text-primary" onClick={() => { const allUserIds = store.participants.map((p) => p.id); for (const item of unassignedItems) { store.splitItemEqually(item.id, allUserIds); } }}>
+                  <Button variant="outline" className="w-full gap-2 border-dashed border-primary/40 text-primary" onClick={() => { for (const item of unassignedItems) { store.splitItemEqually(item.id, allPersonIds); } }}>
                     <Users className="h-4 w-4" />
                     Dividir {unassignedItems.length} restante{unassignedItems.length > 1 ? "s" : ""} igualmente
                   </Button>
@@ -1241,6 +1323,7 @@ function NewBillPageContent() {
             >
               <SingleAmountStep
                 participants={store.participants}
+                guests={store.guests}
                 totalAmountInput={store.totalAmountInput || 0}
                 onSetTotal={(cents) => store.updateExpense({ totalAmountInput: cents, totalAmount: cents })}
                 onSplitEqually={(ids) => store.splitBillEqually(ids)}
@@ -1300,6 +1383,7 @@ function NewBillPageContent() {
                           : undefined,
                     }))}
                     participants={store.participants}
+                    guests={store.guests}
                   />
                   {store.payers.length > 0 && (
                     <PayerSummaryCard

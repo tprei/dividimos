@@ -121,4 +121,64 @@ describe("ItemCard", () => {
 
     expect(screen.getByText("Nao atribuido")).toBeInTheDocument();
   });
+
+  describe("with guests", () => {
+    const guests = [
+      { id: "guest_local_1", name: "Maria" },
+      { id: "guest_local_2", name: "Joao" },
+    ];
+
+    it("renders guest toggle buttons", () => {
+      render(<ItemCard {...defaultProps} guests={guests} />);
+
+      expect(screen.getByText("Maria")).toBeInTheDocument();
+      expect(screen.getByText("Joao")).toBeInTheDocument();
+    });
+
+    it("shows correct split count with guests", () => {
+      const splits = [
+        { id: "s1", userId: "alice", computedAmountCents: 3000, user: alice },
+        { id: "s2", userId: "guest_local_1", computedAmountCents: 3000, user: { id: "guest_local_1", name: "Maria", handle: "" } as UserProfile },
+      ];
+      render(<ItemCard {...defaultProps} guests={guests} splits={splits} />);
+
+      expect(screen.getByText(/2\/4/)).toBeInTheDocument();
+    });
+
+    it("calls onAssign when guest button is clicked", async () => {
+      const onAssign = vi.fn();
+      const user = userEvent.setup();
+      render(<ItemCard {...defaultProps} guests={guests} onAssign={onAssign} />);
+
+      const mariaBtn = screen.getByText("Maria").closest("button")!;
+      await user.click(mariaBtn);
+      expect(onAssign).toHaveBeenCalledWith("item-1", "guest_local_1");
+    });
+
+    it("calls onUnassign when assigned guest is clicked", async () => {
+      const onUnassign = vi.fn();
+      const user = userEvent.setup();
+      const splits = [
+        { id: "s1", userId: "guest_local_1", computedAmountCents: 9000, user: { id: "guest_local_1", name: "Maria", handle: "" } as UserProfile },
+      ];
+      render(<ItemCard {...defaultProps} guests={guests} splits={splits} onUnassign={onUnassign} />);
+
+      const mariaElements = screen.getAllByText("Maria");
+      const mariaBtn = mariaElements.map((el) => el.closest("button")).find(Boolean);
+      await user.click(mariaBtn!);
+      expect(onUnassign).toHaveBeenCalledWith("item-1", "guest_local_1");
+    });
+
+    it("considers all persons for allAssigned state", () => {
+      const splits = [
+        { id: "s1", userId: "alice", computedAmountCents: 2250, user: alice },
+        { id: "s2", userId: "bob", computedAmountCents: 2250, user: bob },
+        { id: "s3", userId: "guest_local_1", computedAmountCents: 2250, user: { id: "guest_local_1", name: "Maria", handle: "" } as UserProfile },
+        { id: "s4", userId: "guest_local_2", computedAmountCents: 2250, user: { id: "guest_local_2", name: "Joao", handle: "" } as UserProfile },
+      ];
+      render(<ItemCard {...defaultProps} guests={guests} splits={splits} />);
+
+      expect(screen.getByText(/4\/4/)).toBeInTheDocument();
+    });
+  });
 });

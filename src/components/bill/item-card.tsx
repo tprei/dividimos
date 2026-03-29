@@ -22,10 +22,16 @@ interface WizardItemSplit {
   user?: UserProfile;
 }
 
+interface GuestEntry {
+  id: string;
+  name: string;
+}
+
 interface ItemCardProps {
   item: WizardItem;
   splits: WizardItemSplit[];
   participants: UserProfile[];
+  guests?: GuestEntry[];
   onAssign: (itemId: string, userId: string) => void;
   onUnassign: (itemId: string, userId: string) => void;
   onAssignAll: (itemId: string) => void;
@@ -36,18 +42,20 @@ export function ItemCard({
   item,
   splits,
   participants,
+  guests = [],
   onAssign,
   onUnassign,
   onAssignAll,
   onRemove,
 }: ItemCardProps) {
+  const totalPersons = participants.length + guests.length;
   const assignedUserIds = new Set(splits.map((s) => s.userId));
   const totalAssigned = splits.reduce((sum, s) => sum + s.computedAmountCents, 0);
   const assignedPercent =
     item.totalPriceCents > 0
       ? Math.min(100, Math.round((totalAssigned / item.totalPriceCents) * 100))
       : 0;
-  const allAssigned = assignedUserIds.size === participants.length;
+  const allAssigned = assignedUserIds.size === totalPersons;
   const unassigned = item.totalPriceCents - totalAssigned;
 
   const handleToggle = (userId: string, isAssigned: boolean) => {
@@ -78,7 +86,7 @@ export function ItemCard({
             </span>
             {splits.length > 0 && (
               <span className="text-primary">
-                · {splits.length}/{participants.length}
+                · {splits.length}/{totalPersons}
               </span>
             )}
           </div>
@@ -140,6 +148,39 @@ export function ItemCard({
                   </span>
                 )}
                 {user.name.split(" ")[0]}
+              </motion.button>
+            );
+          })}
+          {guests.map((guest) => {
+            const isAssigned = assignedUserIds.has(guest.id);
+            return (
+              <motion.button
+                key={guest.id}
+                whileTap={{ scale: 0.93 }}
+                transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                onClick={() => handleToggle(guest.id, isAssigned)}
+                className={`flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-xs font-medium transition-all ${
+                  isAssigned
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-muted-foreground/30 text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {isAssigned ? (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </motion.span>
+                ) : (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-foreground/10 text-[9px] font-bold">
+                    {guest.name.charAt(0)}
+                  </span>
+                )}
+                {guest.name.split(" ")[0]}
               </motion.button>
             );
           })}
