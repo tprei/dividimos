@@ -540,6 +540,39 @@ export interface Database {
         };
         Relationships: [];
       };
+      expense_guests: {
+        Row: {
+          id: string;
+          expense_id: string;
+          display_name: string;
+          share_amount_cents: number;
+          claim_token: string;
+          claimed_by: string | null;
+          claimed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          display_name: string;
+          share_amount_cents: number;
+          claim_token?: string;
+          claimed_by?: string | null;
+          claimed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          display_name?: string;
+          share_amount_cents?: number;
+          claim_token?: string;
+          claimed_by?: string | null;
+          claimed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       group_members: {
         Row: {
           group_id: string;
@@ -605,6 +638,10 @@ export interface Database {
           p_amount_cents: number;
         };
         Returns: string;
+      };
+      claim_guest_spot: {
+        Args: { p_claim_token: string };
+        Returns: Json;
       };
     };
     Enums: {
