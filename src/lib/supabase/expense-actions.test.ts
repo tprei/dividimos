@@ -38,10 +38,13 @@ describe("saveExpenseDraft", () => {
   it("creates a new draft expense", async () => {
     // expenses.insert
     mock.onTable("expenses", { data: { id: "expense-1" } });
-    // expense_items.delete, expense_shares.delete, expense_payers.delete (parallel)
+    // expense_guest_shares.delete (runs first)
+    mock.onTable("expense_guest_shares", { error: null });
+    // expense_items.delete, expense_shares.delete, expense_payers.delete, expense_guests.delete (parallel)
     mock.onTable("expense_items", { error: null });
     mock.onTable("expense_shares", { error: null });
     mock.onTable("expense_payers", { error: null });
+    mock.onTable("expense_guests", { error: null });
 
     const result = await saveExpenseDraft(baseDraftParams);
 
@@ -59,10 +62,13 @@ describe("saveExpenseDraft", () => {
   it("updates an existing draft expense", async () => {
     // expenses.update
     mock.onTable("expenses", { error: null });
+    // guest shares delete first
+    mock.onTable("expense_guest_shares", { error: null });
     // child data deletes
     mock.onTable("expense_items", { error: null });
     mock.onTable("expense_shares", { error: null });
     mock.onTable("expense_payers", { error: null });
+    mock.onTable("expense_guests", { error: null });
 
     const result = await saveExpenseDraft({
       ...baseDraftParams,
@@ -76,10 +82,13 @@ describe("saveExpenseDraft", () => {
 
   it("persists child data (items, shares, payers)", async () => {
     mock.onTable("expenses", { data: { id: "expense-1" } });
+    // guest shares delete first
+    mock.onTable("expense_guest_shares", { error: null });
     // deletes
     mock.onTable("expense_items", { error: null });
     mock.onTable("expense_shares", { error: null });
     mock.onTable("expense_payers", { error: null });
+    mock.onTable("expense_guests", { error: null });
     // inserts
     mock.onTable("expense_items", { error: null });
     mock.onTable("expense_shares", { error: null });
@@ -100,6 +109,42 @@ describe("saveExpenseDraft", () => {
     expect(mock.findCalls("expense_items", "insert")).toHaveLength(1);
     expect(mock.findCalls("expense_shares", "insert")).toHaveLength(1);
     expect(mock.findCalls("expense_payers", "insert")).toHaveLength(1);
+  });
+
+  it("persists guest data alongside regular child data", async () => {
+    mock.onTable("expenses", { data: { id: "expense-1" } });
+    // guest shares delete
+    mock.onTable("expense_guest_shares", { error: null });
+    // deletes
+    mock.onTable("expense_items", { error: null });
+    mock.onTable("expense_shares", { error: null });
+    mock.onTable("expense_payers", { error: null });
+    mock.onTable("expense_guests", { error: null });
+    // share insert
+    mock.onTable("expense_shares", { error: null });
+    // payer insert
+    mock.onTable("expense_payers", { error: null });
+    // guest insert returns server IDs
+    mock.onTable("expense_guests", { data: [{ id: "server-guest-1" }, { id: "server-guest-2" }] });
+    // guest share insert
+    mock.onTable("expense_guest_shares", { error: null });
+
+    await saveExpenseDraft({
+      ...baseDraftParams,
+      shares: [{ userId: "user-alice", shareAmountCents: 5000 }],
+      payers: [{ userId: "user-alice", amountCents: 10000 }],
+      guests: [
+        { localId: "guest_local_1", displayName: "Maria" },
+        { localId: "guest_local_2", displayName: "Joao" },
+      ],
+      guestShares: [
+        { guestLocalId: "guest_local_1", shareAmountCents: 3000 },
+        { guestLocalId: "guest_local_2", shareAmountCents: 2000 },
+      ],
+    });
+
+    expect(mock.findCalls("expense_guests", "insert")).toHaveLength(1);
+    expect(mock.findCalls("expense_guest_shares", "insert")).toHaveLength(1);
   });
 
   it("returns error when expense insert fails", async () => {
@@ -126,10 +171,13 @@ describe("saveExpenseDraft", () => {
 
   it("returns error when child data insert fails", async () => {
     mock.onTable("expenses", { data: { id: "expense-1" } });
+    // guest shares delete
+    mock.onTable("expense_guest_shares", { error: null });
     // deletes succeed
     mock.onTable("expense_items", { error: null });
     mock.onTable("expense_shares", { error: null });
     mock.onTable("expense_payers", { error: null });
+    mock.onTable("expense_guests", { error: null });
     // shares insert fails
     mock.onTable("expense_shares", { error: { message: "Share insert failed" } });
 
@@ -182,6 +230,8 @@ describe("loadExpense", () => {
 
   it("loads an expense with all details and user profiles", async () => {
     mock.onTable("expenses", { data: mockExpenseRow });
+    mock.onTable("expense_guests", { data: [] });
+    mock.onTable("expense_guest_shares", { data: [] });
     mock.onTable("user_profiles", {
       data: [
         { id: "user-alice", handle: "alice", name: "Alice Silva", avatar_url: null },
@@ -201,10 +251,13 @@ describe("loadExpense", () => {
     expect(result!.shares[0].user.handle).toBe("alice");
     expect(result!.payers).toHaveLength(1);
     expect(result!.payers[0].user.handle).toBe("alice");
+    expect(result!.guests).toHaveLength(0);
   });
 
   it("returns null when expense not found", async () => {
     mock.onTable("expenses", { data: null });
+    mock.onTable("expense_guests", { data: [] });
+    mock.onTable("expense_guest_shares", { data: [] });
 
     const result = await loadExpense("nonexistent");
 
@@ -213,7 +266,8 @@ describe("loadExpense", () => {
 
   it("uses fallback profile for unknown users", async () => {
     mock.onTable("expenses", { data: mockExpenseRow });
-    // Only return alice's profile, not bob's
+    mock.onTable("expense_guests", { data: [] });
+    mock.onTable("expense_guest_shares", { data: [] });
     mock.onTable("user_profiles", {
       data: [
         { id: "user-alice", handle: "alice", name: "Alice Silva", avatar_url: null },
@@ -224,6 +278,54 @@ describe("loadExpense", () => {
 
     const bobShare = result!.shares.find((s) => s.userId === "user-bob");
     expect(bobShare!.user.name).toBe("Desconhecido");
+  });
+
+  it("loads guests with their shares", async () => {
+    mock.onTable("expenses", { data: mockExpenseRow });
+    mock.onTable("expense_guests", {
+      data: [
+        {
+          id: "guest-1",
+          expense_id: "expense-1",
+          display_name: "Maria",
+          claim_token: "token-abc",
+          claimed_by: null,
+          claimed_at: null,
+          created_at: "2024-01-01T00:00:00Z",
+        },
+        {
+          id: "guest-2",
+          expense_id: "expense-1",
+          display_name: "Joao",
+          claim_token: "token-def",
+          claimed_by: "user-carlos",
+          claimed_at: "2024-01-02T00:00:00Z",
+          created_at: "2024-01-01T00:00:00Z",
+        },
+      ],
+    });
+    mock.onTable("expense_guest_shares", {
+      data: [
+        { id: "gs-1", expense_id: "expense-1", guest_id: "guest-1", share_amount_cents: 3000 },
+        { id: "gs-2", expense_id: "expense-1", guest_id: "guest-2", share_amount_cents: 2000 },
+      ],
+    });
+    mock.onTable("user_profiles", {
+      data: [
+        { id: "user-alice", handle: "alice", name: "Alice Silva", avatar_url: null },
+        { id: "user-bob", handle: "bob", name: "Bob Santos", avatar_url: null },
+      ],
+    });
+
+    const result = await loadExpense("expense-1");
+
+    expect(result!.guests).toHaveLength(2);
+    expect(result!.guests[0].displayName).toBe("Maria");
+    expect(result!.guests[0].claimedBy).toBeUndefined();
+    expect(result!.guests[0].share?.shareAmountCents).toBe(3000);
+    expect(result!.guests[1].displayName).toBe("Joao");
+    expect(result!.guests[1].claimedBy).toBe("user-carlos");
+    expect(result!.guests[1].share?.shareAmountCents).toBe(2000);
   });
 });
 

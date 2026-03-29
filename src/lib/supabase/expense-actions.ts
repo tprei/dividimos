@@ -4,6 +4,8 @@ import {
   expenseItemRowToExpenseItem,
   expenseShareRowToExpenseShare,
   expensePayerRowToExpensePayer,
+  expenseGuestRowToExpenseGuest,
+  expenseGuestShareRowToExpenseGuestShare,
   userProfileRowToUserProfile,
 } from "@/lib/supabase/expense-mappers";
 import type {
@@ -21,6 +23,8 @@ type ExpenseRow = Database["public"]["Tables"]["expenses"]["Row"];
 type ExpenseItemRow = Database["public"]["Tables"]["expense_items"]["Row"];
 type ExpenseShareRow = Database["public"]["Tables"]["expense_shares"]["Row"];
 type ExpensePayerRow = Database["public"]["Tables"]["expense_payers"]["Row"];
+type ExpenseGuestRow = Database["public"]["Tables"]["expense_guests"]["Row"];
+type ExpenseGuestShareRow = Database["public"]["Tables"]["expense_guest_shares"]["Row"];
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 // ============================================================
@@ -51,6 +55,14 @@ export interface SaveExpenseDraftParams {
   payers?: Array<{
     userId: string;
     amountCents: number;
+  }>;
+  guests?: Array<{
+    localId: string;
+    displayName: string;
+  }>;
+  guestShares?: Array<{
+    guestLocalId: string;
+    shareAmountCents: number;
   }>;
 }
 
@@ -134,14 +146,16 @@ async function saveExpenseChildData(
   expenseId: string,
   params: SaveExpenseDraftParams,
 ): Promise<string | null> {
-  const { items, shares, payers } = params;
+  const { items, shares, payers, guests, guestShares } = params;
 
   // Delete-and-reinsert for simplicity (draft only, no concurrent access concerns)
-  // Run deletes in parallel since they're independent
+  // Guest shares must be deleted before guests due to FK constraint
+  await supabase.from("expense_guest_shares").delete().eq("expense_id", expenseId);
   await Promise.all([
     supabase.from("expense_items").delete().eq("expense_id", expenseId),
     supabase.from("expense_shares").delete().eq("expense_id", expenseId),
     supabase.from("expense_payers").delete().eq("expense_id", expenseId),
+    supabase.from("expense_guests").delete().eq("expense_id", expenseId),
   ]);
 
   const inserts: PromiseLike<{ error: { message: string } | null }>[] = [];
@@ -158,7 +172,7 @@ async function saveExpenseChildData(
     inserts.push(supabase.from("expense_items").insert(itemRows).then(({ error }) => ({ error })));
   }
 
-  // Insert shares
+  // Insert shares (real users only)
   if (shares && shares.length > 0) {
     const shareRows = shares.map((s) => ({
       expense_id: expenseId,
@@ -176,6 +190,53 @@ async function saveExpenseChildData(
       amount_cents: p.amountCents,
     }));
     inserts.push(supabase.from("expense_payers").insert(payerRows).then(({ error }) => ({ error })));
+  }
+
+  // Insert guests and their shares
+  if (guests && guests.length > 0) {
+    const guestInsertRows = guests.map((g) => ({
+      expense_id: expenseId,
+      display_name: g.displayName,
+    }));
+
+    const guestInsertPromise = (async (): Promise<{ error: { message: string } | null }> => {
+      const { data: insertedGuests, error: guestError } = await supabase
+        .from("expense_guests")
+        .insert(guestInsertRows)
+        .select("id");
+
+      if (guestError) return { error: guestError };
+
+      if (insertedGuests && guestShares && guestShares.length > 0) {
+        const localToServer = new Map<string, string>();
+        guests.forEach((g, i) => {
+          if (insertedGuests[i]) localToServer.set(g.localId, insertedGuests[i].id);
+        });
+
+        const guestShareRows = guestShares
+          .map((gs) => {
+            const serverId = localToServer.get(gs.guestLocalId);
+            if (!serverId) return null;
+            return {
+              expense_id: expenseId,
+              guest_id: serverId,
+              share_amount_cents: gs.shareAmountCents,
+            };
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null);
+
+        if (guestShareRows.length > 0) {
+          const { error: shareError } = await supabase
+            .from("expense_guest_shares")
+            .insert(guestShareRows);
+          if (shareError) return { error: shareError };
+        }
+      }
+
+      return { error: null };
+    })();
+
+    inserts.push(guestInsertPromise);
   }
 
   // Run all inserts in parallel
@@ -217,13 +278,21 @@ export async function loadExpense(
 ): Promise<ExpenseWithDetails | null> {
   const supabase = createClient();
 
-  const { data } = await supabase
-    .from("expenses")
-    .select(
-      "*, expense_items(*), expense_shares(*), expense_payers(*)",
-    )
-    .eq("id", expenseId)
-    .single();
+  const [{ data }, { data: guestRows }, { data: guestShareRows }] = await Promise.all([
+    supabase
+      .from("expenses")
+      .select("*, expense_items(*), expense_shares(*), expense_payers(*)")
+      .eq("id", expenseId)
+      .single(),
+    supabase
+      .from("expense_guests")
+      .select("*")
+      .eq("expense_id", expenseId),
+    supabase
+      .from("expense_guest_shares")
+      .select("*")
+      .eq("expense_id", expenseId),
+  ]);
 
   if (!data) return null;
 
@@ -268,7 +337,21 @@ export async function loadExpense(
     user: profileMap.get(p.user_id) ?? fallbackProfile(p.user_id),
   }));
 
-  return { ...expense, items, shares, payers, guests: [] };
+  const guestShareMap = new Map<string, ExpenseGuestShareRow>();
+  for (const gs of (guestShareRows ?? []) as ExpenseGuestShareRow[]) {
+    guestShareMap.set(gs.guest_id, gs);
+  }
+
+  const guests = ((guestRows ?? []) as ExpenseGuestRow[]).map((g) => {
+    const guest = expenseGuestRowToExpenseGuest(g);
+    const guestShareRow = guestShareMap.get(g.id);
+    return {
+      ...guest,
+      share: guestShareRow ? expenseGuestShareRowToExpenseGuestShare(guestShareRow) : undefined,
+    };
+  });
+
+  return { ...expense, items, shares, payers, guests };
 }
 
 // ============================================================
