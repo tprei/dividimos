@@ -15,6 +15,7 @@
  */
 import * as cheerio from "cheerio";
 import type { ReceiptItem, ReceiptOcrResult } from "./receipt-ocr";
+import { sanitizeReceiptResult } from "./receipt-sanitize";
 
 /** Result of a SEFAZ page fetch attempt. */
 export interface SefazFetchResult {
@@ -531,12 +532,12 @@ export function parseSefazPage(html: string): ReceiptOcrResult | null {
   const itemsTotal = items.reduce((sum, item) => sum + item.totalCents, 0);
   const serviceFeePercent = extractServiceFeePercent($);
 
-  return {
+  return sanitizeReceiptResult({
     merchant,
     items,
     serviceFeePercent,
     totalCents: extractedTotal > 0 ? extractedTotal : itemsTotal,
-  };
+  });
 }
 
 /**

@@ -105,11 +105,12 @@ describe("parseReceiptImage", () => {
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
     expect(result.totalCents).toBe(1376);
-    expect(result.items[0].unitPriceCents).toBe(1251);
+    // qty=1: sanitizer normalizes unitPriceCents = totalCents = round(1250.3)
+    expect(result.items[0].unitPriceCents).toBe(1250);
     expect(result.items[0].totalCents).toBe(1250);
   });
 
-  it("ensures quantity is at least 1", async () => {
+  it("clamps negative/zero quantity to 0.001", async () => {
     const resultWithZeroQty = {
       merchant: "Test",
       items: [
@@ -129,7 +130,7 @@ describe("parseReceiptImage", () => {
 
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
-    expect(result.items[0].quantity).toBe(1);
+    expect(result.items[0].quantity).toBe(0.001);
   });
 
   it("throws when Gemini returns empty response", async () => {

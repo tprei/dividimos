@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Pencil, Plus, Store, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Pencil, Plus, Store, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,7 @@ interface EditingState {
 }
 
 interface ScannedItemsReviewProps {
-  result: ReceiptOcrResult;
+  result: ReceiptOcrResult & { totalMismatch?: boolean };
   onConfirm: (result: ReceiptOcrResult) => void;
   onCancel: () => void;
 }
@@ -60,7 +60,7 @@ export function ScannedItemsReview({
 
   const saveEdit = useCallback(() => {
     if (!editing) return;
-    const qty = Math.max(1, parseInt(editing.quantity) || 1);
+    const qty = Math.max(0.001, parseFloat(editing.quantity) || 1);
     const unitPriceCents = decimalToCents(
       parseFloat(editing.unitPrice.replace(",", ".")) || 0,
     );
@@ -93,7 +93,7 @@ export function ScannedItemsReview({
   const addItem = useCallback(() => {
     const desc = newDescription.trim();
     if (!desc || !newPrice) return;
-    const qty = Math.max(1, parseInt(newQuantity) || 1);
+    const qty = Math.max(0.001, parseFloat(newQuantity) || 1);
     const unitPriceCents = decimalToCents(
       parseFloat(newPrice.replace(",", ".")) || 0,
     );
@@ -184,8 +184,8 @@ export function ScannedItemsReview({
                       </label>
                       <Input
                         type="number"
-                        min="1"
-                        step="1"
+                        min="0.001"
+                        step="any"
                         value={editing.quantity}
                         onChange={(e) =>
                           setEditing({ ...editing, quantity: e.target.value })
@@ -382,6 +382,17 @@ export function ScannedItemsReview({
           </span>
         </div>
       </div>
+
+      {/* Mismatch warning */}
+      {result.totalMismatch && result.totalCents > 0 && computedTotal !== result.totalCents && (
+        <div className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Total da nota: {formatBRL(result.totalCents)} — itens somam{" "}
+            {formatBRL(computedTotal)}. Confira os valores.
+          </span>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3">

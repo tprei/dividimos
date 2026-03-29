@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { sanitizeReceiptResult } from "./receipt-sanitize";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -129,14 +130,9 @@ export async function parseReceiptImage(
   }
 
   const parsed = JSON.parse(text) as ReceiptOcrResult;
+  parsed.totalCents = Math.round(parsed.totalCents ?? 0);
+  parsed.serviceFeePercent = Math.max(0, parsed.serviceFeePercent ?? 0);
+  parsed.items = Array.isArray(parsed.items) ? parsed.items : [];
 
-  // Sanitize: ensure all cents values are integers
-  parsed.totalCents = Math.round(parsed.totalCents);
-  for (const item of parsed.items) {
-    item.unitPriceCents = Math.round(item.unitPriceCents);
-    item.totalCents = Math.round(item.totalCents);
-    item.quantity = Math.max(1, item.quantity);
-  }
-
-  return parsed;
+  return sanitizeReceiptResult(parsed);
 }
