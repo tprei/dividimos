@@ -16,7 +16,7 @@ vi.mock("@/lib/nfce", () => ({
   parseSefazPage: (...args: unknown[]) => mockParseSefazPage(...args),
 }));
 
-const { POST } = await import("./route");
+const { POST, runtime, preferredRegion, maxDuration } = await import("./route");
 
 function jsonRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/receipt/sefaz", {
@@ -208,5 +208,19 @@ describe("POST /api/receipt/sefaz", () => {
     const res = await POST(req);
 
     expect(res.status).toBe(400);
+  });
+});
+
+describe("route segment config", () => {
+  it("exports nodejs runtime", () => {
+    expect(runtime).toBe("nodejs");
+  });
+
+  it("exports gru1 preferred region", () => {
+    expect(preferredRegion).toBe("gru1");
+  });
+
+  it("exports maxDuration of 15 seconds", () => {
+    expect(maxDuration).toBe(15);
   });
 });

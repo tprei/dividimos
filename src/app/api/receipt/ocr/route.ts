@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
 
+export const runtime = "nodejs";
+export const preferredRegion = "gru1";
+export const maxDuration = 15;
+
 /** Max request body size: 4 MB (compressed JPEG should be well under this). */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
@@ -70,8 +74,17 @@ export async function POST(request: Request) {
     const result = await parseReceiptImage(imageBase64, mimeType, apiKey);
     return NextResponse.json(result);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Erro ao processar imagem";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const isTimeout =
+      error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError");
+    const message = isTimeout
+      ? "Não foi possível processar. Tente novamente ou adicione manualmente."
+      : error instanceof Error
+        ? error.message
+        : "Erro ao processar imagem";
+    return NextResponse.json(
+      { error: message, timeout: isTimeout },
+      { status: isTimeout ? 504 : 500 },
+    );
   }
 }

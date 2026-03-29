@@ -15,6 +15,20 @@ export class SefazFallbackError extends Error {
 }
 
 /**
+ * Error thrown when an API call times out or fails in a retryable way.
+ * Callers should offer "Tente novamente" and "Adicionar manualmente" options.
+ */
+export class ReceiptTimeoutError extends Error {
+  readonly timeout = true as const;
+  constructor(
+    message = "Não foi possível processar. Tente novamente ou adicione manualmente.",
+  ) {
+    super(message);
+    this.name = "ReceiptTimeoutError";
+  }
+}
+
+/**
  * Fetch and parse an NFC-e receipt via the SEFAZ HTML scraper route.
  * Throws `SefazFallbackError` when the server indicates a fallback is appropriate
  * (captcha, timeout, unparseable page). Other errors throw a generic `Error`.
@@ -59,6 +73,9 @@ export async function processReceiptScan(file: File): Promise<ReceiptOcrResult> 
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (body.timeout) {
+      throw new ReceiptTimeoutError(body.error);
+    }
     throw new Error(body.error || `Erro ${res.status}`);
   }
 

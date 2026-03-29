@@ -14,7 +14,7 @@ vi.mock("@/lib/receipt-ocr", () => ({
   parseReceiptImage: (...args: unknown[]) => mockParseReceiptImage(...args),
 }));
 
-const { POST } = await import("./route");
+const { POST, runtime, preferredRegion, maxDuration } = await import("./route");
 
 function jsonRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/receipt/ocr", {
@@ -193,5 +193,47 @@ describe("POST /api/receipt/ocr", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("Erro ao processar imagem");
+    expect(body.timeout).toBe(false);
+  });
+
+  it("returns 504 with timeout flag when Gemini times out", async () => {
+    const timeoutError = new Error("Request timed out");
+    timeoutError.name = "TimeoutError";
+    mockParseReceiptImage.mockRejectedValue(timeoutError);
+
+    const base64 = Buffer.from("fake").toString("base64");
+    const res = await POST(jsonRequest({ image: base64 }));
+
+    expect(res.status).toBe(504);
+    const body = await res.json();
+    expect(body.timeout).toBe(true);
+    expect(body.error).toContain("Tente novamente");
+  });
+
+  it("returns 504 with timeout flag when Gemini aborts", async () => {
+    const abortError = new Error("Aborted");
+    abortError.name = "AbortError";
+    mockParseReceiptImage.mockRejectedValue(abortError);
+
+    const base64 = Buffer.from("fake").toString("base64");
+    const res = await POST(jsonRequest({ image: base64 }));
+
+    expect(res.status).toBe(504);
+    const body = await res.json();
+    expect(body.timeout).toBe(true);
+  });
+});
+
+describe("route segment config", () => {
+  it("exports nodejs runtime", () => {
+    expect(runtime).toBe("nodejs");
+  });
+
+  it("exports gru1 preferred region", () => {
+    expect(preferredRegion).toBe("gru1");
+  });
+
+  it("exports maxDuration of 15 seconds", () => {
+    expect(maxDuration).toBe(15);
   });
 });
