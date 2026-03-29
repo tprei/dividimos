@@ -78,12 +78,14 @@ export function validatePixKey(key: string): boolean {
 }
 
 export function maskPixKey(key: string): string {
+  // CPF: exactly 11 digits, no + prefix - check BEFORE phone
+  if (/^\d{11}$/.test(key)) {
+    return `***.***.*${key.slice(7, 9)}*-${key.slice(9)}`;
+  }
+  // Phone: +55 prefix or 11-13 digits with optional +
   if (/^\+?\d{11,13}$/.test(key.replace(/\D/g, ""))) {
     const digits = key.replace(/\D/g, "");
     return `(**) *****-${digits.slice(-4)}`;
-  }
-  if (/^\d{11}$/.test(key)) {
-    return `***.***.*${key.slice(7, 9)}*-${key.slice(9)}`;
   }
   if (key.includes("@")) {
     const [local, domain] = key.split("@");

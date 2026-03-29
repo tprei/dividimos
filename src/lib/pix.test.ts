@@ -149,11 +149,8 @@ describe("maskPixKey", () => {
     expect(maskPixKey("+5511999998888")).toBe("(**) *****-8888");
   });
 
-  // CPF keys (11 digits) hit the phone branch because the regex /^\+?\d{11,13}$/
-  // matches 11-digit strings after stripping non-digits. The CPF-specific branch
-  // at line 85 is unreachable for bare 11-digit strings.
-  it("masks 11-digit CPF as phone pattern (ordering precedence)", () => {
-    expect(maskPixKey("12345678901")).toBe("(**) *****-8901");
+  it("masks 11-digit CPF correctly", () => {
+    expect(maskPixKey("12345678901")).toBe("***.***.*89*-01");
   });
 
   it("masks email key", () => {
