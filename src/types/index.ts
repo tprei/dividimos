@@ -110,6 +110,29 @@ export interface ExpensePayer {
 }
 
 // ============================================================
+// Guest types (placeholder participants without accounts)
+// ============================================================
+
+/** A guest placeholder on an expense. Has a claim token for later account linking. */
+export interface ExpenseGuest {
+  id: string;
+  expenseId: string;
+  displayName: string;
+  claimToken: string;
+  claimedBy?: string;
+  claimedAt?: string;
+  createdAt: string;
+}
+
+/** A guest's computed share of an expense (parallel to ExpenseShare). */
+export interface ExpenseGuestShare {
+  id: string;
+  expenseId: string;
+  guestId: string;
+  shareAmountCents: number;
+}
+
+// ============================================================
 // Balance types (running net balances per group pair)
 // ============================================================
 
@@ -178,6 +201,13 @@ export interface ActivateExpenseBalanceUpdate {
   deltaCents: number;
 }
 
+/** Result returned by the claim_guest_spot RPC function. */
+export interface ClaimGuestSpotResult {
+  guestId: string;
+  expenseId: string;
+  alreadyClaimed: boolean;
+}
+
 /** Request payload for the record_settlement RPC function. */
 export interface RecordSettlementRequest {
   /** The group this settlement belongs to. */
@@ -216,6 +246,7 @@ export interface ExpenseWithDetails extends Expense {
   items: ExpenseItem[];
   shares: (ExpenseShare & { user: UserProfile })[];
   payers: (ExpensePayer & { user: UserProfile })[];
+  guests: (ExpenseGuest & { share?: ExpenseGuestShare })[];
 }
 
 /** Summary of what a participant owes/is owed for a single expense. */
