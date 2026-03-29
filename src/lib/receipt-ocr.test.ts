@@ -62,7 +62,7 @@ describe("parseReceiptImage", () => {
 
     expect(mockGenerateContent).toHaveBeenCalledOnce();
     const callArgs = mockGenerateContent.mock.calls[0][0];
-    expect(callArgs.model).toBe("gemini-2.5-flash-lite-preview-06-17");
+    expect(callArgs.model).toBe("gemini-2.5-flash-lite");
     const parts = callArgs.contents[0].parts;
     expect(parts[0].inlineData).toEqual({
       mimeType: fakeMimeType,
