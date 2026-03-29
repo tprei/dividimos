@@ -28,10 +28,6 @@ function getVerifyServiceSid(): string {
   return sid;
 }
 
-/**
- * Send a verification code to the given phone number via SMS.
- * In test mode, no SMS is sent — any 6-digit code will be accepted by checkVerificationCode.
- */
 export async function sendVerificationCode(phone: string): Promise<{ success: boolean }> {
   if (isTestMode) {
     return { success: true };
@@ -47,10 +43,6 @@ export async function sendVerificationCode(phone: string): Promise<{ success: bo
   return { success: verification.status === "pending" };
 }
 
-/**
- * Check a verification code for the given phone number.
- * In test mode, any 6-digit code is accepted.
- */
 export async function checkVerificationCode(
   phone: string,
   code: string
