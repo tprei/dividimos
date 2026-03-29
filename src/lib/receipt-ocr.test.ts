@@ -105,9 +105,10 @@ describe("parseReceiptImage", () => {
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
     expect(result.totalCents).toBe(1376);
-    // qty=1: sanitizer normalizes unitPriceCents = totalCents = round(1250.3)
-    expect(result.items[0].unitPriceCents).toBe(1250);
-    expect(result.items[0].totalCents).toBe(1250);
+    // qty=1: sanitizer rounds to 1250, then absorb adds 1 centavo
+    // to close the gap (receipt 1376 vs items 1250 + fee 125 = 1375)
+    expect(result.items[0].unitPriceCents).toBe(1251);
+    expect(result.items[0].totalCents).toBe(1251);
   });
 
   it("clamps negative/zero quantity to 0.001", async () => {
