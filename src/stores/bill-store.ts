@@ -16,12 +16,22 @@ import type {
   User,
 } from "@/types";
 
+/** A guest participant who doesn't have a Pixwise account yet. */
+export interface Guest {
+  /** Local ID with "guest_" prefix to distinguish from user IDs. */
+  id: string;
+  /** Display name entered by the expense creator. */
+  name: string;
+}
+
 interface ExpenseState {
   currentUser: User | null;
   expense: Expense | null;
   /** User-entered total for single_amount expenses (before computing shares). */
   totalAmountInput: number;
   participants: User[];
+  /** Guest participants who don't have Pixwise accounts yet. */
+  guests: Guest[];
   items: ExpenseItem[];
   payers: ExpensePayer[];
   /** Per-item split assignments (itemized wizard). */
@@ -39,6 +49,13 @@ interface ExpenseState {
 
   addParticipant: (user: User) => void;
   removeParticipant: (userId: string) => void;
+
+  /** Adds a guest by name. Returns the generated guest ID. */
+  addGuest: (name: string) => string;
+  /** Removes a guest and cascades removal to splits and billSplits. */
+  removeGuest: (guestId: string) => void;
+  /** Updates a guest's display name. */
+  updateGuest: (guestId: string, name: string) => void;
 
   addItem: (item: Omit<ExpenseItem, "id" | "expenseId" | "createdAt">) => void;
   updateItem: (itemId: string, updates: Partial<ExpenseItem>) => void;
@@ -83,6 +100,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   expense: null,
   totalAmountInput: 0,
   participants: [],
+  guests: [],
   items: [],
   payers: [],
   splits: [],
@@ -112,6 +130,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       expense,
       totalAmountInput: 0,
       participants: currentUser ? [currentUser] : [],
+      guests: [],
       items: [],
       payers: [],
       splits: [],
@@ -162,6 +181,27 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       participants: get().participants.filter((p) => p.id !== userId),
       splits: get().splits.filter((s) => s.userId !== userId),
       billSplits: get().billSplits.filter((s) => s.userId !== userId),
+    });
+  },
+
+  addGuest: (name) => {
+    const id = `guest_${generateId()}`;
+    const guest: Guest = { id, name };
+    set({ guests: [...get().guests, guest] });
+    return id;
+  },
+
+  removeGuest: (guestId) => {
+    set({
+      guests: get().guests.filter((g) => g.id !== guestId),
+      splits: get().splits.filter((s) => s.userId !== guestId),
+      billSplits: get().billSplits.filter((s) => s.userId !== guestId),
+    });
+  },
+
+  updateGuest: (guestId, name) => {
+    set({
+      guests: get().guests.map((g) => (g.id === guestId ? { ...g, name } : g)),
     });
   },
 
@@ -354,15 +394,16 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   computeLedger: () => {
-    const { expense, participants, items, splits, billSplits, payers } = get();
-    if (!expense || participants.length === 0) return;
+    const { expense, participants, guests, items, splits, billSplits, payers } = get();
+    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
+    if (!expense || allPersonIds.length === 0) return;
 
     const consumption = new Map<string, number>();
     const payment = new Map<string, number>();
 
-    for (const p of participants) {
-      consumption.set(p.id, 0);
-      payment.set(p.id, 0);
+    for (const id of allPersonIds) {
+      consumption.set(id, 0);
+      payment.set(id, 0);
     }
 
     if (expense.expenseType === "single_amount") {
@@ -376,16 +417,16 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       }
       if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
         const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
-        const weights = participants.map((p) => consumption.get(p.id) || 0);
+        const weights = allPersonIds.map((id) => consumption.get(id) || 0);
         const fees = distributeProportionally(totalServiceFee, weights);
-        participants.forEach((p, i) => {
-          consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+        allPersonIds.forEach((id, i) => {
+          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
         });
       }
       if (expense.fixedFees > 0) {
-        const fees = distributeEvenly(expense.fixedFees, participants.length);
-        participants.forEach((p, i) => {
-          consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+        const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
+        allPersonIds.forEach((id, i) => {
+          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
         });
       }
     }
@@ -399,10 +440,10 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     }
 
     const netBalance = new Map<string, number>();
-    for (const p of participants) {
-      const paid = payment.get(p.id) || 0;
-      const consumed = consumption.get(p.id) || 0;
-      netBalance.set(p.id, paid - consumed);
+    for (const id of allPersonIds) {
+      const paid = payment.get(id) || 0;
+      const consumed = consumption.get(id) || 0;
+      netBalance.set(id, paid - consumed);
     }
 
     const debtors: { id: string; amount: number }[] = [];
@@ -446,8 +487,10 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   getExpenseShares: () => {
-    const { expense, participants, items, splits, billSplits } = get();
+    const { expense, participants, guests, items, splits, billSplits } = get();
     if (!expense) return [];
+
+    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
 
     if (expense.expenseType === "single_amount") {
       return billSplits.map((bs) => ({
@@ -458,12 +501,12 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       }));
     }
 
-    // Itemized: compute each participant's total share including fees
+    // Itemized: compute each person's total share including fees
     const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
     const consumption = new Map<string, number>();
 
-    for (const p of participants) {
-      consumption.set(p.id, 0);
+    for (const id of allPersonIds) {
+      consumption.set(id, 0);
     }
 
     for (const split of splits) {
@@ -472,32 +515,32 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
 
     if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
       const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
-      const weights = participants.map((p) => consumption.get(p.id) || 0);
+      const weights = allPersonIds.map((id) => consumption.get(id) || 0);
       const fees = distributeProportionally(totalServiceFee, weights);
-      participants.forEach((p, i) => {
-        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      allPersonIds.forEach((id, i) => {
+        consumption.set(id, (consumption.get(id) || 0) + fees[i]);
       });
     }
 
     if (expense.fixedFees > 0) {
-      const fees = distributeEvenly(expense.fixedFees, participants.length);
-      participants.forEach((p, i) => {
-        consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
+      const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
+      allPersonIds.forEach((id, i) => {
+        consumption.set(id, (consumption.get(id) || 0) + fees[i]);
       });
     }
 
-    return participants
-      .filter((p) => (consumption.get(p.id) || 0) > 0)
-      .map((p) => ({
+    return allPersonIds
+      .filter((id) => (consumption.get(id) || 0) > 0)
+      .map((id) => ({
         id: generateId(),
         expenseId: expense.id,
-        userId: p.id,
-        shareAmountCents: consumption.get(p.id) || 0,
+        userId: id,
+        shareAmountCents: consumption.get(id) || 0,
       }));
   },
 
   getParticipantTotal: (userId) => {
-    const { expense, items, splits, billSplits, participants } = get();
+    const { expense, items, splits, billSplits, participants, guests } = get();
     if (!expense) return 0;
 
     if (expense.expenseType === "single_amount") {
@@ -505,25 +548,26 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       return bs?.computedAmountCents || 0;
     }
 
+    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
     const itemsGrandTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-    const userIndex = participants.findIndex((p) => p.id === userId);
+    const userIndex = allPersonIds.indexOf(userId);
     if (userIndex === -1) return 0;
 
-    const participantItemTotals = participants.map((p) =>
-      splits.filter((s) => s.userId === p.id).reduce((sum, s) => sum + s.computedAmountCents, 0),
+    const personItemTotals = allPersonIds.map((id) =>
+      splits.filter((s) => s.userId === id).reduce((sum, s) => sum + s.computedAmountCents, 0),
     );
 
-    const itemTotal = participantItemTotals[userIndex];
+    const itemTotal = personItemTotals[userIndex];
 
     let serviceFee = 0;
     if (expense.serviceFeePercent > 0 && itemsGrandTotal > 0) {
       const totalServiceFee = Math.round((itemsGrandTotal * expense.serviceFeePercent) / 100);
-      serviceFee = distributeProportionally(totalServiceFee, participantItemTotals)[userIndex];
+      serviceFee = distributeProportionally(totalServiceFee, personItemTotals)[userIndex];
     }
 
     const fixedFeeShare =
-      participants.length > 0
-        ? distributeEvenly(expense.fixedFees, participants.length)[userIndex]
+      allPersonIds.length > 0
+        ? distributeEvenly(expense.fixedFees, allPersonIds.length)[userIndex]
         : 0;
 
     return itemTotal + serviceFee + fixedFeeShare;
@@ -534,6 +578,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       expense: null,
       totalAmountInput: 0,
       participants: [],
+      guests: [],
       items: [],
       payers: [],
       splits: [],
