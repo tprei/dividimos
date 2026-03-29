@@ -5,7 +5,7 @@ vi.mock("@/lib/image-utils", () => ({
   compressImage: vi.fn((file: File) => Promise.resolve(file)),
 }));
 
-import { processReceiptScan } from "./process-receipt-scan";
+import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "./process-receipt-scan";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 const mockOcrResult: ReceiptOcrResult = {
@@ -108,5 +108,97 @@ describe("processReceiptScan", () => {
     expect(body.mimeType).toBe("image/png");
 
     fetchSpy.mockRestore();
+  });
+});
+
+describe("fetchSefazReceipt", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sends URL to SEFAZ API and returns parsed result", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(mockOcrResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const sefazUrl = "https://nfce.sefaz.sp.gov.br/consulta?chNFe=12345678901234567890123456789012345678901234";
+    const result = await fetchSefazReceipt(sefazUrl);
+
+    expect(result).toEqual(mockOcrResult);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("/api/receipt/sefaz");
+    expect(init?.method).toBe("POST");
+    const body = JSON.parse(init?.body as string);
+    expect(body.url).toBe(sefazUrl);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("throws SefazFallbackError when response has fallback flag", async () => {
+    const sefazUrl = "https://nfce.sefaz.sp.gov.br/consulta";
+    const makeResponse = () =>
+      new Response(
+        JSON.stringify({ error: "CAPTCHA detectado", fallback: true }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(makeResponse());
+
+    const err = await fetchSefazReceipt(sefazUrl).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SefazFallbackError);
+    expect((err as SefazFallbackError).message).toBe("CAPTCHA detectado");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("throws SefazFallbackError with default message when error field is empty", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ fallback: true }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(fetchSefazReceipt("https://example.com")).rejects.toThrow(
+      "Falha ao consultar SEFAZ",
+    );
+
+    fetchSpy.mockRestore();
+  });
+
+  it("throws generic Error when response fails without fallback flag", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: "Nao autenticado" }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const promise = fetchSefazReceipt("https://example.com");
+    await expect(promise).rejects.toThrow("Nao autenticado");
+    await expect(fetchSefazReceipt("https://example.com")).rejects.not.toThrow(SefazFallbackError);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("throws generic error when response body is not JSON", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Gateway Timeout", { status: 504 }),
+    );
+
+    await expect(fetchSefazReceipt("https://example.com")).rejects.toThrow("Erro 504");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("SefazFallbackError has fallback property set to true", () => {
+    const err = new SefazFallbackError("test");
+    expect(err.fallback).toBe(true);
+    expect(err.name).toBe("SefazFallbackError");
+    expect(err).toBeInstanceOf(Error);
   });
 });

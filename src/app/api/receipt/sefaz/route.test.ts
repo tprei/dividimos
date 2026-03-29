@@ -76,6 +76,7 @@ describe("POST /api/receipt/sefaz", () => {
     expect(body.error).toBe("URL invalida");
   });
 
+<<<<<<< HEAD
   it("returns 400 for non-SEFAZ domain (SSRF protection)", async () => {
     const res = await POST(jsonRequest({ url: "http://localhost:54321" }));
 

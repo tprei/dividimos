@@ -34,7 +34,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
-import { processReceiptScan } from "@/lib/process-receipt-scan";
+import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
 import type { NfceQrResult } from "@/lib/nfce-qr";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
@@ -101,6 +101,7 @@ function NewBillPageContent() {
   const [scanProcessing, setScanProcessing] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ReceiptOcrResult | null>(null);
+  const [sefazFallback, setSefazFallback] = useState(false);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -129,13 +130,25 @@ function NewBillPageContent() {
     }
   }, []);
 
-  const handleQrDetected = useCallback((result: NfceQrResult) => {
-    // For now, store the chave de acesso and show a success message.
-    // Future: fetch receipt data from SEFAZ using the access key.
+  const handleQrDetected = useCallback(async (result: NfceQrResult) => {
     setScanError(null);
-    setShowScanner(false);
-    // TODO: integrate with SEFAZ receipt lookup API
-    console.info("[QR] NFC-e detected:", result.chaveAcesso);
+    setScanProcessing(true);
+    try {
+      const receipt = await fetchSefazReceipt(result.url);
+      setScanResult(receipt);
+      setShowScanner(false);
+    } catch (err) {
+      if (err instanceof SefazFallbackError) {
+        // SEFAZ blocked (captcha/timeout/unparseable) — nudge user to photo
+        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
+        setSefazFallback(true);
+        setShowScanner(true);
+      } else {
+        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
+      }
+    } finally {
+      setScanProcessing(false);
+    }
   }, []);
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
@@ -690,8 +703,9 @@ function NewBillPageContent() {
               ) : showScanner ? (
                 <div className="space-y-3">
                   <ReceiptScanner
+                    key={sefazFallback ? "fallback" : "default"}
                     onProcess={handleScanProcess}
-                    onBack={() => { setShowScanner(false); setScanError(null); }}
+                    onBack={() => { setShowScanner(false); setScanError(null); setSefazFallback(false); }}
                     processing={scanProcessing}
                     onQrDetected={handleQrDetected}
                   />

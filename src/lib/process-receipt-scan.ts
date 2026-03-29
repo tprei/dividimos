@@ -2,6 +2,42 @@ import { compressImage } from "@/lib/image-utils";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 /**
+ * Error thrown when SEFAZ fetch fails but a photo fallback is appropriate.
+ * The `fallback` flag lets callers distinguish recoverable SEFAZ errors
+ * (captcha, timeout, unparseable HTML) from hard failures (auth, bad URL).
+ */
+export class SefazFallbackError extends Error {
+  readonly fallback = true as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "SefazFallbackError";
+  }
+}
+
+/**
+ * Fetch and parse an NFC-e receipt via the SEFAZ HTML scraper route.
+ * Throws `SefazFallbackError` when the server indicates a fallback is appropriate
+ * (captcha, timeout, unparseable page). Other errors throw a generic `Error`.
+ */
+export async function fetchSefazReceipt(url: string): Promise<ReceiptOcrResult> {
+  const res = await fetch("/api/receipt/sefaz", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (body.fallback) {
+      throw new SefazFallbackError(body.error || "Falha ao consultar SEFAZ");
+    }
+    throw new Error(body.error || `Erro ${res.status}`);
+  }
+
+  return res.json();
+}
+
+/**
  * Compress an image file and send it to the OCR API route.
  * Returns the parsed receipt result on success.
  */
