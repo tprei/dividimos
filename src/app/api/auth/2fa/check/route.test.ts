@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { NextRequest } from "next/server";
 import { createMockSupabase, type MockSupabase } from "@/test/mock-supabase";
 
-// Mock next/headers cookies
 const mockCookieSet = vi.fn();
 vi.mock("next/headers", () => ({
   cookies: vi.fn().mockResolvedValue({
@@ -13,9 +13,8 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
 
-// Mock twilio module (used in production mode only)
 vi.mock("@/lib/twilio", () => ({
-  verifyCode: vi.fn(),
+  checkVerificationCode: vi.fn(),
 }));
 
 vi.mock("@/lib/crypto", () => ({
@@ -27,8 +26,8 @@ import { POST } from "./route";
 
 let mock: MockSupabase;
 
-function makeRequest(body: unknown): Request {
-  return new Request("http://localhost/api/auth/2fa/check", {
+function makeRequest(body: unknown): NextRequest {
+  return new NextRequest("http://localhost/api/auth/2fa/check", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -79,7 +78,7 @@ describe("POST /api/auth/2fa/check", () => {
 
   it("returns 400 when invalid JSON body", async () => {
     mock.setUser({ id: "user-1" });
-    const request = new Request("http://localhost/api/auth/2fa/check", {
+    const request = new NextRequest("http://localhost/api/auth/2fa/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "not json",
@@ -154,8 +153,8 @@ describe("POST /api/auth/2fa/check", () => {
     });
 
     it("verifies code via Twilio and sets cookie on success", async () => {
-      const { verifyCode } = await import("@/lib/twilio");
-      vi.mocked(verifyCode).mockResolvedValue({ valid: true });
+      const { checkVerificationCode } = await import("@/lib/twilio");
+      vi.mocked(checkVerificationCode).mockResolvedValue({ success: true });
 
       mock.setUser({ id: "user-1" });
       mock.onTable("users", {
@@ -167,7 +166,7 @@ describe("POST /api/auth/2fa/check", () => {
 
       const response = await POST(makeRequest({ code: "123456" }));
       expect(response.status).toBe(200);
-      expect(vi.mocked(verifyCode)).toHaveBeenCalledWith(
+      expect(vi.mocked(checkVerificationCode)).toHaveBeenCalledWith(
         "decrypted:encrypted-phone",
         "123456",
       );
@@ -175,8 +174,8 @@ describe("POST /api/auth/2fa/check", () => {
     });
 
     it("returns 401 when Twilio rejects code", async () => {
-      const { verifyCode } = await import("@/lib/twilio");
-      vi.mocked(verifyCode).mockResolvedValue({ valid: false });
+      const { checkVerificationCode } = await import("@/lib/twilio");
+      vi.mocked(checkVerificationCode).mockResolvedValue({ success: false });
 
       mock.setUser({ id: "user-1" });
       mock.onTable("users", {

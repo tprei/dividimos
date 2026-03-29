@@ -95,13 +95,13 @@ export async function POST(request: NextRequest) {
     // In test mode, accept any valid 6-digit code
   } else {
     // Production: verify via Twilio
-    const { verifyCode } = await import("@/lib/twilio");
+    const { checkVerificationCode } = await import("@/lib/twilio");
     const { decryptPixKey } = await import("@/lib/crypto");
 
     const phone = decryptPixKey(userData.two_factor_phone);
-    const result = await verifyCode(phone, code);
+    const result = await checkVerificationCode(phone, code);
 
-    if (!result.valid) {
+    if (!result.success) {
       return NextResponse.json(
         { error: "Código inválido ou expirado" },
         { status: 401 },
