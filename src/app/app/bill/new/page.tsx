@@ -451,7 +451,7 @@ function NewBillPageContent() {
     })();
   }, [step, searchParams, selectedGroupId, authUser, store]);
 
-  /** Compute expense shares from store state. Returns one entry per participant. */
+  /** Compute expense shares from store state. Returns one entry per registered participant (excludes guests). */
   const computeShares = useCallback(() => {
     const state = useBillStore.getState();
     return state.participants.map((p) => ({
@@ -465,6 +465,18 @@ function NewBillPageContent() {
     const state = useBillStore.getState();
     const effectiveGroupId = groupIdOverride ?? selectedGroupId;
     if (!state.expense || !authUser || !effectiveGroupId) return null;
+
+    const guestData = state.guests.length > 0
+      ? {
+          guests: state.guests.map((g) => ({ localId: g.id, displayName: g.name })),
+          guestShares: state.guests
+            .map((g) => ({
+              guestLocalId: g.id,
+              shareAmountCents: state.getParticipantTotal(g.id),
+            }))
+            .filter((gs) => gs.shareAmountCents > 0),
+        }
+      : {};
 
     return {
       groupId: effectiveGroupId,
@@ -490,6 +502,7 @@ function NewBillPageContent() {
       payers: state.payers.length > 0
         ? state.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))
         : undefined,
+      ...guestData,
     };
   }, [authUser, selectedGroupId, computeShares]);
 
