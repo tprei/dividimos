@@ -31,6 +31,11 @@ interface SummaryItemSplit {
   computedAmountCents: number;
 }
 
+interface GuestEntry {
+  id: string;
+  name: string;
+}
+
 interface BillSummaryProps {
   expense: ExpenseConfig;
   items: SummaryItem[];
@@ -39,9 +44,10 @@ interface BillSummaryProps {
   /** Pre-computed shares per user (used for single_amount expenses). */
   shares?: ShareEntry[];
   participants: UserProfile[];
+  guests?: GuestEntry[];
 }
 
-export function BillSummary({ expense, items, itemSplits = [], shares = [], participants }: BillSummaryProps) {
+export function BillSummary({ expense, items, itemSplits = [], shares = [], participants, guests = [] }: BillSummaryProps) {
   const isSingleAmount = expense.expenseType === "single_amount";
 
   const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
@@ -50,12 +56,17 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
     ? expense.totalAmount
     : itemsTotal + serviceFee + expense.fixedFees;
 
+  const allPersons: { id: string; name: string; isGuest: boolean }[] = [
+    ...participants.map((p) => ({ id: p.id, name: p.name, isGuest: false })),
+    ...guests.map((g) => ({ id: g.id, name: g.name, isGuest: true })),
+  ];
+
   const perPerson = (() => {
     if (isSingleAmount) {
-      return participants.map((user) => {
-        const share = shares.find((s) => s.userId === user.id);
+      return allPersons.map((person) => {
+        const share = shares.find((s) => s.userId === person.id);
         return {
-          user,
+          person,
           itemTotal: share?.shareAmountCents || 0,
           serviceFee: 0,
           fixedFee: 0,
@@ -65,16 +76,16 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
       });
     }
 
-    const itemTotals = participants.map((user) => {
-      const userSplits = itemSplits.filter((s) => s.userId === user.id);
+    const itemTotals = allPersons.map((person) => {
+      const userSplits = itemSplits.filter((s) => s.userId === person.id);
       return userSplits.reduce((sum, s) => sum + s.computedAmountCents, 0);
     });
 
     const serviceFees = distributeProportionally(serviceFee, itemTotals);
-    const fixedFees = distributeEvenly(expense.fixedFees, participants.length);
+    const fixedFees = distributeEvenly(expense.fixedFees, allPersons.length);
 
-    return participants.map((user, i) => ({
-      user,
+    return allPersons.map((person, i) => ({
+      person,
       itemTotal: itemTotals[i],
       serviceFee: serviceFees[i],
       fixedFee: fixedFees[i],
@@ -148,7 +159,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
           <div className="mt-3 space-y-3">
             {perPerson.map((entry, idx) => (
               <motion.div
-                key={entry.user.id}
+                key={entry.person.id}
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: idx * 0.05 }}
@@ -156,12 +167,15 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-                      {entry.user.name.charAt(0)}
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${entry.person.isGuest ? "bg-muted text-muted-foreground border border-dashed border-muted-foreground/40" : "bg-primary/15 text-primary"}`}>
+                      {entry.person.name.charAt(0)}
                     </span>
                     <span className="font-medium">
-                      {entry.user.name.split(" ")[0]}
+                      {entry.person.name.split(" ")[0]}
                     </span>
+                    {entry.person.isGuest && (
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">Convidado</span>
+                    )}
                     {entry.splitLabel && (
                       <span className="text-[10px] text-muted-foreground">
                         ({entry.splitLabel})

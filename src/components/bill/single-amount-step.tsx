@@ -2,14 +2,20 @@
 
 import { motion } from "framer-motion";
 import { Equal, Hash, Percent, Users } from "lucide-react";
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
 import type { SplitType, UserProfile } from "@/types";
 
+interface GuestEntry {
+  id: string;
+  name: string;
+}
+
 interface SingleAmountStepProps {
   participants: UserProfile[];
+  guests?: GuestEntry[];
   totalAmountInput: number;
   onSetTotal: (cents: number) => void;
   onSplitEqually: (userIds: string[]) => void;
@@ -25,12 +31,17 @@ const methods: { key: SplitType; icon: React.ElementType; label: string }[] = [
 
 export function SingleAmountStep({
   participants,
+  guests = [],
   totalAmountInput,
   onSetTotal,
   onSplitEqually,
   onSplitByPercentage,
   onSplitByFixed,
 }: SingleAmountStepProps) {
+  const allPersons: { id: string; name: string }[] = useMemo(
+    () => [...participants.map((p) => ({ id: p.id, name: p.name })), ...guests],
+    [participants, guests],
+  );
   const [method, setMethod] = useState<SplitType>("equal");
   const [totalInput, setTotalInput] = useState(
     totalAmountInput > 0 ? (totalAmountInput / 100).toFixed(2).replace(".", ",") : "",
@@ -58,18 +69,18 @@ export function SingleAmountStep({
   }, [totalCents, totalAmountInput]);
 
   useEffect(() => {
-    if (totalCents <= 0 || participants.length === 0) return;
+    if (totalCents <= 0 || allPersons.length === 0) return;
 
     if (method === "equal") {
-      onSplitEquallyRef.current(participants.map((p) => p.id));
+      onSplitEquallyRef.current(allPersons.map((p) => p.id));
     } else if (method === "percentage") {
-      const assignments = participants.map((p) => ({
+      const assignments = allPersons.map((p) => ({
         userId: p.id,
         percentage: parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
       }));
       onSplitByPercentageRef.current(assignments);
     } else if (method === "fixed") {
-      const assignments = participants.map((p) => ({
+      const assignments = allPersons.map((p) => ({
         userId: p.id,
         amountCents: Math.round(
           parseFloat(fixedAmounts.get(p.id)?.replace(",", ".") || "0") * 100,
@@ -77,9 +88,9 @@ export function SingleAmountStep({
       }));
       onSplitByFixedRef.current(assignments);
     }
-  }, [method, totalCents, participants, percentages, fixedAmounts]);
+  }, [method, totalCents, allPersons, percentages, fixedAmounts]);
 
-  const perPerson = participants.length > 0 ? totalCents / participants.length : 0;
+  const perPerson = allPersons.length > 0 ? totalCents / allPersons.length : 0;
 
   const handlePercentageChange = (userId: string, val: string) => {
     const next = new Map(percentages);
@@ -94,7 +105,7 @@ export function SingleAmountStep({
   };
 
   const applyFixed = () => {
-    const assignments = participants.map((p) => ({
+    const assignments = allPersons.map((p) => ({
       userId: p.id,
       amountCents: Math.round(
         parseFloat(fixedAmounts.get(p.id)?.replace(",", ".") || "0") * 100,
@@ -164,42 +175,52 @@ export function SingleAmountStep({
           {method === "equal" && (
             <div className="rounded-2xl border bg-card p-4">
               <p className="text-sm text-muted-foreground">
-                {participants.length} pessoas × {formatBRL(Math.floor(perPerson))}
+                {allPersons.length} pessoas × {formatBRL(Math.floor(perPerson))}
               </p>
               <div className="mt-3 space-y-2">
-                {participants.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                        {user.name.charAt(0)}
+                {allPersons.map((person) => {
+                  const isGuest = person.id.startsWith("guest_");
+                  return (
+                    <div key={person.id} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${isGuest ? "bg-muted text-muted-foreground border border-dashed border-muted-foreground/40" : "bg-primary/10 text-primary"}`}>
+                          {person.name.charAt(0)}
+                        </span>
+                        <span>{person.name.split(" ")[0]}</span>
+                        {isGuest && (
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">Convidado</span>
+                        )}
+                      </div>
+                      <span className="font-medium tabular-nums">
+                        {formatBRL(Math.floor(perPerson))}
                       </span>
-                      <span>{user.name.split(" ")[0]}</span>
                     </div>
-                    <span className="font-medium tabular-nums">
-                      {formatBRL(Math.floor(perPerson))}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
 
           {method === "percentage" && (
             <div className="space-y-4">
-              {participants.map((user) => {
-                const pct = parseFloat(percentages.get(user.id)?.replace(",", ".") || "0");
+              {allPersons.map((person) => {
+                const pct = parseFloat(percentages.get(person.id)?.replace(",", ".") || "0");
                 const amountForUser = Math.round((totalCents * pct) / 100);
                 const remainingPct = 100 - percentTotal;
                 const showFillRemaining = pct === 0 && remainingPct > 0 && percentTotal > 0;
+                const isGuest = person.id.startsWith("guest_");
 
                 return (
-                  <div key={user.id} className="rounded-xl border bg-card p-3">
+                  <div key={person.id} className="rounded-xl border bg-card p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                          {user.name.charAt(0)}
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isGuest ? "bg-muted text-muted-foreground border border-dashed border-muted-foreground/40" : "bg-primary/10 text-primary"}`}>
+                          {person.name.charAt(0)}
                         </span>
-                        <span className="text-sm font-medium">{user.name.split(" ")[0]}</span>
+                        <span className="text-sm font-medium">{person.name.split(" ")[0]}</span>
+                        {isGuest && (
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">Convidado</span>
+                        )}
                       </div>
                       <div className="text-right">
                         <span className="text-sm font-bold tabular-nums text-primary">{pct.toFixed(0)}%</span>
@@ -213,10 +234,10 @@ export function SingleAmountStep({
                       step="1"
                       value={pct}
                       onChange={(e) => {
-                        handlePercentageChange(user.id, e.target.value);
-                        const assignments = participants.map((p) => ({
+                        handlePercentageChange(person.id, e.target.value);
+                        const assignments = allPersons.map((p) => ({
                           userId: p.id,
-                          percentage: p.id === user.id
+                          percentage: p.id === person.id
                             ? parseFloat(e.target.value)
                             : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
                         }));
@@ -230,10 +251,10 @@ export function SingleAmountStep({
                       <button
                         onClick={() => {
                           const val = remainingPct.toFixed(1);
-                          handlePercentageChange(user.id, val);
-                          const assignments = participants.map((p) => ({
+                          handlePercentageChange(person.id, val);
+                          const assignments = allPersons.map((p) => ({
                             userId: p.id,
-                            percentage: p.id === user.id
+                            percentage: p.id === person.id
                               ? remainingPct
                               : parseFloat(percentages.get(p.id)?.replace(",", ".") || "0"),
                           }));
@@ -252,12 +273,12 @@ export function SingleAmountStep({
                 size="sm"
                 className="w-full gap-2"
                 onClick={() => {
-                  const eq = (100 / participants.length).toFixed(1);
+                  const eq = (100 / allPersons.length).toFixed(1);
                   const next = new Map<string, string>();
-                  participants.forEach((p) => next.set(p.id, eq));
+                  allPersons.forEach((p) => next.set(p.id, eq));
                   setPercentages(next);
                   onSplitByPercentage(
-                    participants.map((p) => ({
+                    allPersons.map((p) => ({
                       userId: p.id,
                       percentage: parseFloat(eq),
                     })),
@@ -277,21 +298,25 @@ export function SingleAmountStep({
 
           {method === "fixed" && (
             <div className="space-y-3">
-              {participants.map((user) => {
-                const userVal = fixedAmounts.get(user.id) || "";
+              {allPersons.map((person) => {
+                const isGuest = person.id.startsWith("guest_");
+                const userVal = fixedAmounts.get(person.id) || "";
                 const othersTotal = Array.from(fixedAmounts.entries())
-                  .filter(([id]) => id !== user.id)
+                  .filter(([id]) => id !== person.id)
                   .reduce((s, [, v]) => s + Math.round(parseFloat(v.replace(",", ".") || "0") * 100), 0);
                 const userRemaining = totalCents - othersTotal;
                 const showFillRemaining = !userVal && othersTotal > 0 && userRemaining > 0;
 
                 return (
-                  <div key={user.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      {user.name.charAt(0)}
+                  <div key={person.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isGuest ? "bg-muted text-muted-foreground border border-dashed border-muted-foreground/40" : "bg-primary/10 text-primary"}`}>
+                      {person.name.charAt(0)}
                     </span>
                     <span className="flex-1 text-sm font-medium">
-                      {user.name.split(" ")[0]}
+                      {person.name.split(" ")[0]}
+                      {isGuest && (
+                        <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">Convidado</span>
+                      )}
                     </span>
                     {showFillRemaining ? (
                       <Button
@@ -300,7 +325,7 @@ export function SingleAmountStep({
                         className="h-8 text-xs gap-1 text-primary border-primary/30"
                         onClick={() => {
                           const formatted = (userRemaining / 100).toFixed(2).replace(".", ",");
-                          handleFixedChange(user.id, formatted);
+                          handleFixedChange(person.id, formatted);
                           setTimeout(applyFixed, 0);
                         }}
                       >
@@ -315,7 +340,7 @@ export function SingleAmountStep({
                           placeholder="0,00"
                           className="h-8 text-right text-sm"
                           value={userVal}
-                          onChange={(e) => handleFixedChange(user.id, e.target.value)}
+                          onChange={(e) => handleFixedChange(person.id, e.target.value)}
                           onBlur={applyFixed}
                         />
                       </div>
@@ -328,12 +353,12 @@ export function SingleAmountStep({
                 size="sm"
                 className="w-full gap-2"
                 onClick={() => {
-                  const eq = (totalCents / 100 / participants.length).toFixed(2);
+                  const eq = (totalCents / 100 / allPersons.length).toFixed(2);
                   const next = new Map<string, string>();
-                  participants.forEach((p) => next.set(p.id, eq));
+                  allPersons.forEach((p) => next.set(p.id, eq));
                   setFixedAmounts(next);
                   onSplitByFixed(
-                    participants.map((p) => ({
+                    allPersons.map((p) => ({
                       userId: p.id,
                       amountCents: Math.round(parseFloat(eq) * 100),
                     })),

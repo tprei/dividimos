@@ -101,4 +101,71 @@ describe("BillSummary", () => {
     expect(screen.getByText("(60.0%)")).toBeInTheDocument();
     expect(screen.getByText("(40.0%)")).toBeInTheDocument();
   });
+
+  describe("with guests", () => {
+    const guests = [
+      { id: "guest_local_1", name: "Maria" },
+    ];
+
+    it("renders guest in per-person breakdown for single amount", () => {
+      render(
+        <BillSummary
+          expense={{ expenseType: "single_amount", totalAmount: 15000, serviceFeePercent: 0, fixedFees: 0 }}
+          items={[]}
+          shares={[
+            { userId: "alice", shareAmountCents: 5000 },
+            { userId: "bob", shareAmountCents: 5000 },
+            { userId: "guest_local_1", shareAmountCents: 5000 },
+          ]}
+          participants={[alice, bob]}
+          guests={guests}
+        />,
+      );
+
+      expect(screen.getByText("Alice")).toBeInTheDocument();
+      expect(screen.getByText("Bob")).toBeInTheDocument();
+      expect(screen.getByText("Maria")).toBeInTheDocument();
+      expect(screen.getByText("Convidado")).toBeInTheDocument();
+    });
+
+    it("renders guest in itemized breakdown with fees", () => {
+      const items = [{ totalPriceCents: 6000 }];
+      const itemSplits = [
+        { userId: "alice", computedAmountCents: 2000 },
+        { userId: "bob", computedAmountCents: 2000 },
+        { userId: "guest_local_1", computedAmountCents: 2000 },
+      ];
+
+      render(
+        <BillSummary
+          expense={{ expenseType: "itemized", totalAmount: 6000, serviceFeePercent: 10, fixedFees: 300 }}
+          items={items}
+          itemSplits={itemSplits}
+          participants={[alice, bob]}
+          guests={guests}
+        />,
+      );
+
+      expect(screen.getByText("Maria")).toBeInTheDocument();
+      expect(screen.getByText("Convidado")).toBeInTheDocument();
+    });
+
+    it("works with no guests (backward compatible)", () => {
+      render(
+        <BillSummary
+          expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeePercent: 0, fixedFees: 0 }}
+          items={[]}
+          shares={[
+            { userId: "alice", shareAmountCents: 5000 },
+            { userId: "bob", shareAmountCents: 5000 },
+          ]}
+          participants={[alice, bob]}
+        />,
+      );
+
+      expect(screen.getByText("Alice")).toBeInTheDocument();
+      expect(screen.getByText("Bob")).toBeInTheDocument();
+      expect(screen.queryByText("Convidado")).not.toBeInTheDocument();
+    });
+  });
 });
