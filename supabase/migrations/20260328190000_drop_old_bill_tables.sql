@@ -77,7 +77,7 @@ DROP FUNCTION IF EXISTS update_group_settlement_on_payment() CASCADE;
 DROP FUNCTION IF EXISTS cascade_group_settlement() CASCADE;
 DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
 DROP FUNCTION IF EXISTS my_bill_ids CASCADE;
-DROP FUNCTION IF EXISTS sync_group_settlements(uuid) CASCADE;
+DROP FUNCTION IF EXISTS sync_group_settlements(uuid, jsonb) CASCADE;
 
 -- ============================================================
 -- 5. Drop old enums

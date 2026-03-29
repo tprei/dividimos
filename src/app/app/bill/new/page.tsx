@@ -473,7 +473,7 @@ function NewBillPageContent() {
       return gt <= 0 || Math.abs(gt - paid) > 1;
     }
     return false;
-  }, [navigating, isTypeStep, step, title, store, selectedGroupId]);
+  }, [navigating, isTypeStep, step, title, store]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

@@ -68,7 +68,9 @@ describe.skipIf(!isIntegrationTestReady)(
     async function functionExists(funcName: string): Promise<boolean> {
       const { error } = await adminClient!.rpc(funcName as never);
       if (!error) return true;
-      return error.code !== "42883";
+      // 42883 = PostgreSQL "undefined_function"
+      // PGRST202 = PostgREST "not found in schema cache" (after DDL changes)
+      return error.code !== "42883" && error.code !== "PGRST202";
     }
 
     it("old tables should not exist", async () => {
