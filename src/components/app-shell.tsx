@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Home, Loader2, Plus, Receipt, RefreshCw, User, Users } from "lucide-react";
+import { Home, Loader2, Plus, Receipt, RefreshCw, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
@@ -139,17 +139,25 @@ export function AppShell({
         <header className="sticky top-0 z-40 glass border-b border-border/50">
           <div className="flex h-14 items-center justify-between px-4">
             <Logo size="sm" />
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-            >
-              {refreshing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </button>
+            <div className="flex items-center gap-1">
+              <Link
+                href="/app/settings"
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Settings className="h-4 w-4" />
+              </Link>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                {refreshing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
         </header>
 
