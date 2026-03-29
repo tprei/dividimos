@@ -14,7 +14,7 @@ vi.mock("@/lib/receipt-ocr", () => ({
   parseReceiptImage: (...args: unknown[]) => mockParseReceiptImage(...args),
 }));
 
-const { POST, runtime, preferredRegion, maxDuration } = await import("./route");
+const { POST, runtime, maxDuration } = await import("./route");
 
 function jsonRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/receipt/ocr", {
@@ -227,10 +227,6 @@ describe("POST /api/receipt/ocr", () => {
 describe("route segment config", () => {
   it("exports nodejs runtime", () => {
     expect(runtime).toBe("nodejs");
-  });
-
-  it("exports gru1 preferred region", () => {
-    expect(preferredRegion).toBe("gru1");
   });
 
   it("exports maxDuration of 15 seconds", () => {

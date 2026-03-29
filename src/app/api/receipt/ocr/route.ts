@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
 
 export const runtime = "nodejs";
-export const preferredRegion = "gru1";
 export const maxDuration = 15;
 
 /** Max request body size: 4 MB (compressed JPEG should be well under this). */
