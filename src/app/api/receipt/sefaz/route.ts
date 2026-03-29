@@ -22,12 +22,19 @@ export async function POST(request: Request) {
 
   const url = body.url.trim();
 
-  // Basic URL validation
+  // Validate URL points to a known SEFAZ domain
+  const SEFAZ_DOMAIN_PATTERN = /\.(fazenda|sefaz|sef)\.[a-z]{2}\.gov\.br$/i;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return NextResponse.json(
         { error: "URL deve ser HTTP ou HTTPS" },
+        { status: 400 },
+      );
+    }
+    if (!SEFAZ_DOMAIN_PATTERN.test(parsed.hostname)) {
+      return NextResponse.json(
+        { error: "URL deve ser de um portal SEFAZ" },
         { status: 400 },
       );
     }
