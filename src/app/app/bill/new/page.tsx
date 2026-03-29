@@ -27,11 +27,14 @@ import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { ItemCard } from "@/components/bill/item-card";
 import { PayerStep } from "@/components/bill/payer-step";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
+import { ReceiptScanner } from "@/components/bill/receipt-scanner";
 import { SingleAmountStep } from "@/components/bill/single-amount-step";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { processReceiptScan } from "@/lib/process-receipt-scan";
+import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { useBillStore } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
@@ -92,6 +95,9 @@ function NewBillPageContent() {
   const [isEditing, setIsEditing] = useState(false);
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const editLoadedRef = useRef(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanProcessing, setScanProcessing] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -104,6 +110,47 @@ function NewBillPageContent() {
     setBillType(type);
     setStep("info");
   };
+
+  const handleScanProcess = useCallback(async (file: File) => {
+    setScanProcessing(true);
+    setScanError(null);
+    try {
+      const result: ReceiptOcrResult = await processReceiptScan(file);
+
+      // Set type to itemized and populate store
+      setBillType("itemized");
+      if (authUser) {
+        store.setCurrentUser(authUser);
+        store.createExpense(
+          result.merchant || "Nota escaneada",
+          "itemized",
+          result.merchant || undefined,
+        );
+        store.updateExpense({
+          serviceFeePercent: result.serviceFeePercent || 0,
+        });
+
+        for (const item of result.items) {
+          store.addItem({
+            description: item.description,
+            quantity: item.quantity,
+            unitPriceCents: item.unitPriceCents,
+            totalPriceCents: item.totalCents,
+          });
+        }
+      }
+
+      setTitle(result.merchant || "Nota escaneada");
+      setMerchantName(result.merchant || "");
+      setServiceFee(String(result.serviceFeePercent || 0));
+      setShowScanner(false);
+      setStep("participants");
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "Erro ao processar imagem");
+    } finally {
+      setScanProcessing(false);
+    }
+  }, [authUser, store]);
 
   // Load draft for editing when ?draft=<id> is present
   useEffect(() => {
@@ -613,7 +660,29 @@ function NewBillPageContent() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              <BillTypeSelector onSelect={handleTypeSelect} />
+              {showScanner ? (
+                <div className="space-y-3">
+                  <ReceiptScanner
+                    onProcess={handleScanProcess}
+                    onBack={() => { setShowScanner(false); setScanError(null); }}
+                    processing={scanProcessing}
+                  />
+                  {scanError && (
+                    <motion.p
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-center text-sm text-destructive"
+                    >
+                      {scanError}
+                    </motion.p>
+                  )}
+                </div>
+              ) : (
+                <BillTypeSelector
+                  onSelect={handleTypeSelect}
+                  onScanReceipt={() => setShowScanner(true)}
+                />
+              )}
             </motion.div>
           )}
 
