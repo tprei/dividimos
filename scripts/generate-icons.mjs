@@ -1,44 +1,49 @@
 #!/usr/bin/env node
 /**
- * Generate PWA icons from an SVG template.
+ * Generate PWA icons (regular + maskable) and a placeholder screenshot.
  * Run: node scripts/generate-icons.mjs
  */
-import { writeFileSync } from "fs";
-import { execSync } from "child_process";
+import { readFileSync, mkdirSync } from "fs";
+import sharp from "sharp";
 
-// Teal receipt icon matching Pixwise brand color
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#0d9488"/>
-  <!-- Receipt body -->
-  <rect x="136" y="96" width="240" height="296" rx="16" fill="#fff" opacity="0.95"/>
-  <!-- Receipt lines -->
-  <rect x="176" y="152" width="120" height="12" rx="6" fill="#0d9488" opacity="0.5"/>
-  <rect x="176" y="188" width="160" height="12" rx="6" fill="#0d9488" opacity="0.3"/>
-  <rect x="176" y="224" width="140" height="12" rx="6" fill="#0d9488" opacity="0.3"/>
-  <rect x="176" y="260" width="100" height="12" rx="6" fill="#0d9488" opacity="0.3"/>
-  <!-- Divider -->
-  <line x1="176" y1="296" x2="336" y2="296" stroke="#0d9488" stroke-width="3" stroke-dasharray="8 4" opacity="0.4"/>
-  <!-- Total -->
-  <rect x="176" y="316" width="80" height="14" rx="7" fill="#0d9488" opacity="0.7"/>
-  <rect x="280" y="316" width="56" height="14" rx="7" fill="#0d9488" opacity="0.7"/>
-  <!-- Receipt tear -->
-  <path d="M136 392 l16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12" fill="#fff" opacity="0.95"/>
-  <!-- Pix symbol (diamond) -->
-  <g transform="translate(256, 440)">
-    <rect x="-24" y="-24" width="48" height="48" rx="4" transform="rotate(45)" fill="#fff" opacity="0.9"/>
-    <text x="0" y="8" text-anchor="middle" font-size="28" font-weight="bold" fill="#0d9488" font-family="sans-serif">₱</text>
-  </g>
-</svg>`;
+const regularSvg = readFileSync("public/icon.svg");
+const maskableSvg = readFileSync("public/icon-maskable.svg");
 
-writeFileSync("public/icon.svg", svg);
-console.log("✓ wrote public/icon.svg");
-
+// Regular icons
 for (const size of [192, 512]) {
-  execSync(
-    `npx --yes sharp-cli -i public/icon.svg -o public/icon-${size}.png resize ${size} ${size}`,
-    { stdio: "inherit" }
-  );
+  await sharp(regularSvg)
+    .resize(size, size)
+    .png()
+    .toFile(`public/icon-${size}.png`);
   console.log(`✓ generated public/icon-${size}.png`);
 }
+
+// Maskable icons (extra padding baked into the SVG)
+for (const size of [192, 512]) {
+  await sharp(maskableSvg)
+    .resize(size, size)
+    .png()
+    .toFile(`public/icon-maskable-${size}.png`);
+  console.log(`✓ generated public/icon-maskable-${size}.png`);
+}
+
+// Placeholder screenshot for richer Android install UI (540x960)
+mkdirSync("public/screenshots", { recursive: true });
+const screenshotSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 960">
+  <rect width="540" height="960" fill="#f5fdfc"/>
+  <rect y="0" width="540" height="64" fill="#0d9488"/>
+  <text x="270" y="40" text-anchor="middle" font-size="22" font-weight="bold" fill="#fff" font-family="sans-serif">Pixwise</text>
+  <g transform="translate(270, 400)">
+    <rect x="-80" y="-80" width="160" height="160" rx="32" fill="#0d9488" opacity="0.1"/>
+    <text x="0" y="8" text-anchor="middle" font-size="48" font-weight="bold" fill="#0d9488" font-family="sans-serif">₱W</text>
+  </g>
+  <text x="270" y="560" text-anchor="middle" font-size="20" fill="#0d9488" font-family="sans-serif">Divida a conta sem estresse</text>
+  <text x="270" y="600" text-anchor="middle" font-size="14" fill="#64748b" font-family="sans-serif">Escaneie, divida e pague via Pix</text>
+</svg>`);
+await sharp(screenshotSvg)
+  .resize(540, 960)
+  .png()
+  .toFile("public/screenshots/narrow.png");
+console.log("✓ generated public/screenshots/narrow.png");
 
 console.log("Done!");
