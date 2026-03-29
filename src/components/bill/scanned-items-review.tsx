@@ -5,6 +5,7 @@ import { Check, Pencil, Plus, Store, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { staggerContainer, staggerItem } from "@/lib/animations";
 import {
   formatBRL,
   decimalToCents,
@@ -151,13 +152,17 @@ export function ScannedItemsReview({
       </div>
 
       {/* Items list */}
-      <div className="space-y-2">
+      <motion.div
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        className="space-y-2"
+      >
         <AnimatePresence mode="popLayout">
           {items.map((item, index) => (
             <motion.div
               key={`${item.description}-${index}`}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
+              variants={staggerItem}
               exit={{ opacity: 0, x: -40 }}
               layout
               className="rounded-2xl border bg-card p-4"
@@ -273,7 +278,7 @@ export function ScannedItemsReview({
             Nenhum item. Adicione pelo menos um item para continuar.
           </p>
         )}
-      </div>
+      </motion.div>
 
       {/* Add item */}
       <AnimatePresence>
