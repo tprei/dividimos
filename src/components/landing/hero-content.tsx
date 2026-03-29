@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Split, Zap } from "lucide-react";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 import Link from "next/link";
 import { PhoneMockup } from "@/components/shared/phone-mockup";
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,7 @@ export function HeroContent() {
               Experimentar demo
             </Button>
           </Link>
+          <InstallPrompt />
         </motion.div>
       </div>
 

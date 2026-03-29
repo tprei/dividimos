@@ -7,7 +7,6 @@ import {
   CheckCheck,
   Eye,
   EyeOff,
-  Loader2,
   Plus,
   RefreshCw,
   ScanLine,
@@ -19,7 +18,6 @@ import dynamic from "next/dynamic";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { DebtCard } from "@/components/dashboard/debt-card";
 import { staggerContainer, staggerItem } from "@/lib/animations";
-import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { useUser } from "@/hooks/use-auth";
 import { recordSettlement } from "@/lib/supabase/settlement-actions";

@@ -1,0 +1,44 @@
+#!/usr/bin/env node
+/**
+ * Generate PWA icons from an SVG template.
+ * Run: node scripts/generate-icons.mjs
+ */
+import { writeFileSync } from "fs";
+import { execSync } from "child_process";
+
+// Teal receipt icon matching Pixwise brand color
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0d9488"/>
+  <!-- Receipt body -->
+  <rect x="136" y="96" width="240" height="296" rx="16" fill="#fff" opacity="0.95"/>
+  <!-- Receipt lines -->
+  <rect x="176" y="152" width="120" height="12" rx="6" fill="#0d9488" opacity="0.5"/>
+  <rect x="176" y="188" width="160" height="12" rx="6" fill="#0d9488" opacity="0.3"/>
+  <rect x="176" y="224" width="140" height="12" rx="6" fill="#0d9488" opacity="0.3"/>
+  <rect x="176" y="260" width="100" height="12" rx="6" fill="#0d9488" opacity="0.3"/>
+  <!-- Divider -->
+  <line x1="176" y1="296" x2="336" y2="296" stroke="#0d9488" stroke-width="3" stroke-dasharray="8 4" opacity="0.4"/>
+  <!-- Total -->
+  <rect x="176" y="316" width="80" height="14" rx="7" fill="#0d9488" opacity="0.7"/>
+  <rect x="280" y="316" width="56" height="14" rx="7" fill="#0d9488" opacity="0.7"/>
+  <!-- Receipt tear -->
+  <path d="M136 392 l16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12 16 12 16-12" fill="#fff" opacity="0.95"/>
+  <!-- Pix symbol (diamond) -->
+  <g transform="translate(256, 440)">
+    <rect x="-24" y="-24" width="48" height="48" rx="4" transform="rotate(45)" fill="#fff" opacity="0.9"/>
+    <text x="0" y="8" text-anchor="middle" font-size="28" font-weight="bold" fill="#0d9488" font-family="sans-serif">₱</text>
+  </g>
+</svg>`;
+
+writeFileSync("public/icon.svg", svg);
+console.log("✓ wrote public/icon.svg");
+
+for (const size of [192, 512]) {
+  execSync(
+    `npx --yes sharp-cli -i public/icon.svg -o public/icon-${size}.png resize ${size} ${size}`,
+    { stdio: "inherit" }
+  );
+  console.log(`✓ generated public/icon-${size}.png`);
+}
+
+console.log("Done!");
