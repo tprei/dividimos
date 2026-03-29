@@ -282,6 +282,7 @@ function NewBillPageContent() {
         pixKeyHint: "",
         avatarUrl: s.user.avatarUrl,
         onboarded: true,
+        twoFactorEnabled: false,
         createdAt: new Date().toISOString(),
       }));
 
@@ -297,6 +298,7 @@ function NewBillPageContent() {
             pixKeyHint: "",
             avatarUrl: p.user.avatarUrl,
             onboarded: true,
+            twoFactorEnabled: false,
             createdAt: new Date().toISOString(),
           });
         }
@@ -443,6 +445,7 @@ function NewBillPageContent() {
           pixKeyHint: "",
           avatarUrl: profile.avatar_url ?? undefined,
           onboarded: true,
+          twoFactorEnabled: false,
           createdAt: new Date().toISOString(),
         });
       }
@@ -955,6 +958,7 @@ function NewBillPageContent() {
                       pixKeyHint: "",
                       avatarUrl: profile.avatarUrl,
                       onboarded: true,
+                      twoFactorEnabled: false,
                       createdAt: new Date().toISOString(),
                     });
                   }
@@ -1004,6 +1008,7 @@ function NewBillPageContent() {
                                 pixKeyHint: "",
                                 avatarUrl: m.avatarUrl,
                                 onboarded: true,
+                                twoFactorEnabled: false,
                                 createdAt: new Date().toISOString(),
                               });
                             }
@@ -1056,6 +1061,7 @@ function NewBillPageContent() {
                             pixKeyHint: "",
                             avatarUrl: profile.avatarUrl,
                             onboarded: true,
+                            twoFactorEnabled: false,
                             createdAt: new Date().toISOString(),
                           };
                           store.addParticipant(newUser);
@@ -1094,6 +1100,7 @@ function NewBillPageContent() {
                               pixKeyHint: "",
                               avatarUrl: profile.avatarUrl,
                               onboarded: true,
+                              twoFactorEnabled: false,
                               createdAt: new Date().toISOString(),
                             };
                             store.addParticipant(newUser);

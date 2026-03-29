@@ -28,6 +28,8 @@ export interface User {
   pixKeyHint: string;
   avatarUrl?: string;
   onboarded: boolean;
+  twoFactorEnabled: boolean;
+  twoFactorPhone?: string;
   createdAt: string;
 }
 

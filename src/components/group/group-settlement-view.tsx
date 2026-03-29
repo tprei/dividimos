@@ -127,6 +127,7 @@ export function GroupSettlementView({
       pixKeyType: "email" as const,
       pixKeyHint: "",
       onboarded: false,
+      twoFactorEnabled: false,
       createdAt: "",
     };
 
