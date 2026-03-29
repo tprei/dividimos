@@ -23,7 +23,7 @@ describe("nfce-dedup", () => {
     });
 
     it("returns the stored timestamp when a previous scan exists", () => {
-      const timestamp = "2024-06-15T14:30:00.000Z";
+      const timestamp = new Date(Date.now() - 1000).toISOString();
       localStorage.setItem(`nfce:${CHAVE}`, timestamp);
       expect(checkDuplicateReceipt(CHAVE)).toBe(timestamp);
     });
