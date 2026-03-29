@@ -16,7 +16,7 @@ vi.mock("@/lib/nfce", () => ({
   parseSefazPage: (...args: unknown[]) => mockParseSefazPage(...args),
 }));
 
-const { POST, runtime, preferredRegion, maxDuration } = await import("./route");
+const { POST, runtime, maxDuration } = await import("./route");
 
 function jsonRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/receipt/sefaz", {
@@ -76,7 +76,6 @@ describe("POST /api/receipt/sefaz", () => {
     expect(body.error).toBe("URL invalida");
   });
 
-<<<<<<< HEAD
   it("returns 400 for non-SEFAZ domain (SSRF protection)", async () => {
     const res = await POST(jsonRequest({ url: "http://localhost:54321" }));
 
@@ -214,10 +213,6 @@ describe("POST /api/receipt/sefaz", () => {
 describe("route segment config", () => {
   it("exports nodejs runtime", () => {
     expect(runtime).toBe("nodejs");
-  });
-
-  it("exports gru1 preferred region", () => {
-    expect(preferredRegion).toBe("gru1");
   });
 
   it("exports maxDuration of 15 seconds", () => {

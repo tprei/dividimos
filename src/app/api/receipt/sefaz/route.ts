@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { fetchSefazPage, parseSefazPage } from "@/lib/nfce";
 
 export const runtime = "nodejs";
-export const preferredRegion = "gru1";
 export const maxDuration = 15;
 
 export async function POST(request: Request) {
