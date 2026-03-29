@@ -217,7 +217,7 @@ describe("parseSefazPage", () => {
     expect(result!.items[0].description).toBe("Coca Cola 2L");
   });
 
-  it("serviceFeePercent is always 0 for NFC-e", () => {
+  it("serviceFeePercent is 0 when no service fee present", () => {
     const html = `
       <html><body>
         <table class="toggable">
@@ -234,5 +234,74 @@ describe("parseSefazPage", () => {
     const result = parseSefazPage(html);
     expect(result).not.toBeNull();
     expect(result!.serviceFeePercent).toBe(0);
+  });
+
+  it("extracts service fee percentage from explicit text", () => {
+    const html = `
+      <html><body>
+        <table class="toggable">
+          <tr>
+            <td>Cerveja Brahma 600ml</td>
+            <td>2,000</td>
+            <td>12,90</td>
+            <td>25,80</td>
+          </tr>
+        </table>
+        <div>Taxa de Serviço (10%): R$ 2,58</div>
+        <div>VALOR TOTAL R$ 28,38</div>
+      </body></html>
+    `;
+
+    const result = parseSefazPage(html);
+    expect(result).not.toBeNull();
+    expect(result!.serviceFeePercent).toBe(10);
+  });
+
+  it("extracts service fee percentage from lowercase text", () => {
+    const html = `
+      <html><body>
+        <table class="toggable">
+          <tr>
+            <td>Picanha</td>
+            <td>1,000</td>
+            <td>89,90</td>
+            <td>89,90</td>
+          </tr>
+        </table>
+        <div>taxa de servico: 12%</div>
+      </body></html>
+    `;
+
+    const result = parseSefazPage(html);
+    expect(result).not.toBeNull();
+    expect(result!.serviceFeePercent).toBe(12);
+  });
+
+  it("derives service fee percentage from monetary value and subtotal", () => {
+    const html = `
+      <html><body>
+        <table class="toggable">
+          <tr>
+            <td>Cerveja</td>
+            <td>2,000</td>
+            <td>15,00</td>
+            <td>30,00</td>
+          </tr>
+          <tr>
+            <td>Porção Batata</td>
+            <td>1,000</td>
+            <td>20,00</td>
+            <td>20,00</td>
+          </tr>
+        </table>
+        <div>Subtotal: R$ 50,00</div>
+        <div>Taxa de Serviço: R$ 5,00</div>
+        <div>VALOR TOTAL R$ 55,00</div>
+      </body></html>
+    `;
+
+    const result = parseSefazPage(html);
+    expect(result).not.toBeNull();
+    expect(result!.serviceFeePercent).toBe(10);
   });
 });
