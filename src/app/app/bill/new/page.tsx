@@ -28,12 +28,14 @@ import { ItemCard } from "@/components/bill/item-card";
 import { PayerStep } from "@/components/bill/payer-step";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { ReceiptScanner } from "@/components/bill/receipt-scanner";
+import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { SingleAmountStep } from "@/components/bill/single-amount-step";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { useQrScannerPreload } from "@/hooks/use-qr-preload";
 import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
 import type { NfceQrResult } from "@/lib/nfce-qr";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
@@ -81,6 +83,9 @@ function NewBillPageContent() {
   const store = useBillStore();
   const { user: authUser } = useAuth();
 
+  // Preload qr-scanner WASM in background so the QR tab opens fast
+  useQrScannerPreload();
+
   const [billType, setBillType] = useState<ExpenseType | null>(null);
   const [step, setStep] = useState<Step>("type");
   const [title, setTitle] = useState("");
@@ -99,6 +104,7 @@ function NewBillPageContent() {
   const editLoadedRef = useRef(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scanProcessing, setScanProcessing] = useState(false);
+  const [scanProcessingPhoto, setScanProcessingPhoto] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ReceiptOcrResult | null>(null);
   const [sefazFallback, setSefazFallback] = useState(false);
@@ -117,6 +123,7 @@ function NewBillPageContent() {
 
   const handleScanProcess = useCallback(async (file: File) => {
     setScanProcessing(true);
+    setScanProcessingPhoto(true);
     setScanError(null);
     try {
       const result: ReceiptOcrResult = await processReceiptScan(file);
@@ -127,6 +134,7 @@ function NewBillPageContent() {
       setScanError(err instanceof Error ? err.message : "Erro ao processar imagem");
     } finally {
       setScanProcessing(false);
+      setScanProcessingPhoto(false);
     }
   }, []);
 
@@ -700,6 +708,8 @@ function NewBillPageContent() {
                   onConfirm={handleScanConfirm}
                   onCancel={handleScanCancel}
                 />
+              ) : scanProcessingPhoto ? (
+                <ScanSkeletonLoader />
               ) : showScanner ? (
                 <div className="space-y-3">
                   <ReceiptScanner
