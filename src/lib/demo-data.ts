@@ -11,6 +11,7 @@ export const DEMO_USERS: User[] = [
     pixKeyHint: "(**) *****-4321",
     avatarUrl: undefined,
     onboarded: true,
+    twoFactorEnabled: false,
     createdAt: new Date().toISOString(),
   },
   {
@@ -23,6 +24,7 @@ export const DEMO_USERS: User[] = [
     pixKeyHint: "(**) *****-7766",
     avatarUrl: undefined,
     onboarded: true,
+    twoFactorEnabled: false,
     createdAt: new Date().toISOString(),
   },
   {
@@ -35,6 +37,7 @@ export const DEMO_USERS: User[] = [
     pixKeyHint: "(**) *****-6655",
     avatarUrl: undefined,
     onboarded: true,
+    twoFactorEnabled: false,
     createdAt: new Date().toISOString(),
   },
   {
@@ -47,6 +50,7 @@ export const DEMO_USERS: User[] = [
     pixKeyHint: "j****s@email.com",
     avatarUrl: undefined,
     onboarded: true,
+    twoFactorEnabled: false,
     createdAt: new Date().toISOString(),
   },
 ];

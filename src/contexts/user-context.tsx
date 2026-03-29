@@ -61,6 +61,8 @@ export function UserProvider({
           pixKeyHint: p.pix_key_hint,
           avatarUrl: p.avatar_url ?? undefined,
           onboarded: p.onboarded,
+          twoFactorEnabled: p.two_factor_enabled,
+          twoFactorPhone: p.two_factor_phone ?? undefined,
           createdAt: p.created_at,
         });
       }
