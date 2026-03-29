@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim"];
+const TWO_FA_EXEMPT_PATHS = ["/auth/verify-2fa", "/api/auth/2fa"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -67,8 +68,27 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Prevent CDN/edge caching of responses that may contain refreshed auth cookies.
-  // See: https://supabase.com/docs/guides/auth/server-side/advanced-guide
+  const is2faExempt = TWO_FA_EXEMPT_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+
+  if (user && !is2faExempt) {
+    const verified = request.cookies.get("2fa-verified");
+    if (!verified) {
+      const { data: userRow } = await supabase
+        .from("users")
+        .select("two_factor_enabled")
+        .eq("id", user.id)
+        .single();
+
+      if (userRow?.two_factor_enabled) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/auth/verify-2fa";
+        return NextResponse.redirect(url);
+      }
+    }
+  }
+
   supabaseResponse.headers.set("Cache-Control", "private, no-store");
 
   return supabaseResponse;
