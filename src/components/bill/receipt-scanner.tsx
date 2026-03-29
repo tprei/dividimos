@@ -18,6 +18,8 @@ export interface ReceiptScannerProps {
   processing?: boolean;
   /** Called when a valid NFC-e QR code is detected */
   onQrDetected?: (result: NfceQrResult) => void;
+  /** Which tab to show initially (defaults to "photo") */
+  defaultTab?: Tab;
 }
 
 export function ReceiptScanner({
@@ -25,8 +27,9 @@ export function ReceiptScanner({
   onBack,
   processing = false,
   onQrDetected,
+  defaultTab = "photo",
 }: ReceiptScannerProps) {
-  const [tab, setTab] = useState<Tab>("photo");
+  const [tab, setTab] = useState<Tab>(defaultTab);
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [qrPaused, setQrPaused] = useState(false);
@@ -147,9 +150,16 @@ export function ReceiptScanner({
             className="space-y-2"
           >
             <QrScannerView onDetected={handleQrDetected} paused={qrPaused} />
-            <p className="text-center text-xs text-muted-foreground">
-              Posicione o QR code da nota dentro do quadrado
-            </p>
+            {processing && qrPaused ? (
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <ScanLine className="h-4 w-4 animate-pulse" />
+                <span>Consultando nota fiscal...</span>
+              </div>
+            ) : (
+              <p className="text-center text-xs text-muted-foreground">
+                Posicione o QR code da nota dentro do quadrado
+              </p>
+            )}
           </motion.div>
         ) : !preview ? (
           <motion.div
