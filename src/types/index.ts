@@ -254,6 +254,86 @@ export interface DebtSummary {
 }
 
 // ============================================================
+// Guest participant types (for expenses with non-registered users)
+// ============================================================
+
+/** Status of a guest spot on an expense. */
+export type GuestStatus = "pending" | "claimed";
+
+/**
+ * A guest participant in an expense — someone not yet registered on Pixwise.
+ * Stored in the `expense_guests` table. The `claimToken` is used to generate
+ * an invite link; when the guest signs up and claims their spot, `claimedByUserId`
+ * is set and status transitions to "claimed".
+ */
+export interface ExpenseGuest {
+  id: string;
+  expenseId: string;
+  guestLabel: string;
+  claimToken: string;
+  status: GuestStatus;
+  claimedByUserId?: string;
+  createdAt: string;
+  claimedAt?: string;
+}
+
+/**
+ * Discriminated union member for a registered user participant.
+ * `kind: "user"` distinguishes from guest participants.
+ */
+export interface UserParticipant {
+  kind: "user";
+  id: string;
+  user: UserProfile;
+}
+
+/**
+ * Discriminated union member for a guest (non-registered) participant.
+ * `kind: "guest"` distinguishes from registered user participants.
+ * The `tempId` is a client-side identifier used before persistence.
+ */
+export interface GuestParticipant {
+  kind: "guest";
+  tempId: string;
+  guestLabel: string;
+  /** Set after the guest record is persisted to the database. */
+  guestId?: string;
+}
+
+/**
+ * A participant in an expense — either a registered user or a guest.
+ * Use `isUserParticipant` / `isGuestParticipant` type guards for narrowing.
+ */
+export type Participant = UserParticipant | GuestParticipant;
+
+/** Type guard: narrows a Participant to UserParticipant. */
+export function isUserParticipant(p: Participant): p is UserParticipant {
+  return p.kind === "user";
+}
+
+/** Type guard: narrows a Participant to GuestParticipant. */
+export function isGuestParticipant(p: Participant): p is GuestParticipant {
+  return p.kind === "guest";
+}
+
+/**
+ * Returns a stable identifier for any participant.
+ * For users this is their user ID; for guests it's the guestId (if persisted)
+ * or the client-side tempId.
+ */
+export function getParticipantId(p: Participant): string {
+  return p.kind === "user" ? p.id : (p.guestId ?? p.tempId);
+}
+
+/**
+ * Returns a display label for any participant.
+ * For users this is their profile name; for guests it's their label.
+ */
+export function getParticipantLabel(p: Participant): string {
+  return p.kind === "user" ? p.user.name : p.guestLabel;
+}
+
+// ============================================================
 // Legacy type aliases (for gradual migration of components)
 // ============================================================
 

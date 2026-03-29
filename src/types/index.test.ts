@@ -18,12 +18,23 @@ import type {
   ActivateExpenseBalanceUpdate,
   RecordSettlementRequest,
   RecordSettlementResult,
+  ExpenseGuest,
+  GuestStatus,
+  UserParticipant,
+  GuestParticipant,
+  Participant,
   // Legacy aliases
   Bill,
   BillType,
   BillStatus,
   BillPayer,
   BillItem,
+} from "./index";
+import {
+  isUserParticipant,
+  isGuestParticipant,
+  getParticipantId,
+  getParticipantLabel,
 } from "./index";
 
 describe("Expense types", () => {
@@ -395,5 +406,173 @@ describe("Legacy type aliases", () => {
       createdAt: "2026-03-28T00:00:00Z",
     };
     expect(item.totalPriceCents).toBe(1000);
+  });
+});
+
+describe("Guest participant types", () => {
+  it("GuestStatus covers all valid statuses", () => {
+    const statuses: GuestStatus[] = ["pending", "claimed"];
+    expect(statuses).toHaveLength(2);
+  });
+
+  it("ExpenseGuest interface matches database schema shape", () => {
+    const guest: ExpenseGuest = {
+      id: "guest-1",
+      expenseId: "uuid-1",
+      guestLabel: "João",
+      claimToken: "abc123def456",
+      status: "pending",
+      createdAt: "2026-03-29T00:00:00Z",
+    };
+    expect(guest.id).toBe("guest-1");
+    expect(guest.status).toBe("pending");
+    expect(guest.claimedByUserId).toBeUndefined();
+    expect(guest.claimedAt).toBeUndefined();
+  });
+
+  it("ExpenseGuest can be claimed", () => {
+    const guest: ExpenseGuest = {
+      id: "guest-1",
+      expenseId: "uuid-1",
+      guestLabel: "João",
+      claimToken: "abc123def456",
+      status: "claimed",
+      claimedByUserId: "user-99",
+      createdAt: "2026-03-29T00:00:00Z",
+      claimedAt: "2026-03-29T01:00:00Z",
+    };
+    expect(guest.status).toBe("claimed");
+    expect(guest.claimedByUserId).toBe("user-99");
+    expect(guest.claimedAt).toBeDefined();
+  });
+
+  it("UserParticipant has kind discriminator", () => {
+    const p: UserParticipant = {
+      kind: "user",
+      id: "user-1",
+      user: { id: "user-1", handle: "alice", name: "Alice" },
+    };
+    expect(p.kind).toBe("user");
+    expect(p.user.handle).toBe("alice");
+  });
+
+  it("GuestParticipant has kind discriminator and tempId", () => {
+    const p: GuestParticipant = {
+      kind: "guest",
+      tempId: "temp-1",
+      guestLabel: "Convidado 1",
+    };
+    expect(p.kind).toBe("guest");
+    expect(p.guestId).toBeUndefined();
+  });
+
+  it("GuestParticipant can have a persisted guestId", () => {
+    const p: GuestParticipant = {
+      kind: "guest",
+      tempId: "temp-1",
+      guestLabel: "Convidado 1",
+      guestId: "guest-db-1",
+    };
+    expect(p.guestId).toBe("guest-db-1");
+  });
+
+  it("Participant union accepts both user and guest", () => {
+    const participants: Participant[] = [
+      {
+        kind: "user",
+        id: "user-1",
+        user: { id: "user-1", handle: "alice", name: "Alice" },
+      },
+      {
+        kind: "guest",
+        tempId: "temp-1",
+        guestLabel: "Convidado 1",
+      },
+    ];
+    expect(participants).toHaveLength(2);
+    expect(participants[0].kind).toBe("user");
+    expect(participants[1].kind).toBe("guest");
+  });
+});
+
+describe("Participant type guards", () => {
+  const userP: Participant = {
+    kind: "user",
+    id: "user-1",
+    user: { id: "user-1", handle: "alice", name: "Alice" },
+  };
+  const guestP: Participant = {
+    kind: "guest",
+    tempId: "temp-1",
+    guestLabel: "Convidado 1",
+  };
+
+  it("isUserParticipant returns true for user participants", () => {
+    expect(isUserParticipant(userP)).toBe(true);
+    expect(isUserParticipant(guestP)).toBe(false);
+  });
+
+  it("isGuestParticipant returns true for guest participants", () => {
+    expect(isGuestParticipant(guestP)).toBe(true);
+    expect(isGuestParticipant(userP)).toBe(false);
+  });
+
+  it("type guards enable narrowing in conditionals", () => {
+    if (isUserParticipant(userP)) {
+      // TypeScript narrows to UserParticipant
+      expect(userP.user.handle).toBe("alice");
+    }
+    if (isGuestParticipant(guestP)) {
+      // TypeScript narrows to GuestParticipant
+      expect(guestP.guestLabel).toBe("Convidado 1");
+    }
+  });
+});
+
+describe("Participant utility functions", () => {
+  it("getParticipantId returns user id for UserParticipant", () => {
+    const p: Participant = {
+      kind: "user",
+      id: "user-1",
+      user: { id: "user-1", handle: "alice", name: "Alice" },
+    };
+    expect(getParticipantId(p)).toBe("user-1");
+  });
+
+  it("getParticipantId returns guestId when available for GuestParticipant", () => {
+    const p: Participant = {
+      kind: "guest",
+      tempId: "temp-1",
+      guestLabel: "João",
+      guestId: "guest-db-1",
+    };
+    expect(getParticipantId(p)).toBe("guest-db-1");
+  });
+
+  it("getParticipantId falls back to tempId for unsaved GuestParticipant", () => {
+    const p: Participant = {
+      kind: "guest",
+      tempId: "temp-1",
+      guestLabel: "João",
+    };
+    expect(getParticipantId(p)).toBe("temp-1");
+  });
+
+  it("getParticipantLabel returns user name for UserParticipant", () => {
+    const p: Participant = {
+      kind: "user",
+      id: "user-1",
+      user: { id: "user-1", handle: "alice", name: "Alice" },
+    };
+    expect(getParticipantLabel(p)).toBe("Alice");
+  });
+
+  it("getParticipantLabel returns guest label for GuestParticipant", () => {
+    const p: Participant = {
+      kind: "guest",
+      tempId: "temp-1",
+      guestLabel: "Convidado 1",
+    };
+    expect(getParticipantLabel(p)).toBe("Convidado 1");
   });
 });
