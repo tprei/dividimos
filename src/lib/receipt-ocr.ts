@@ -1,5 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
+/** Timeout for the Gemini API call in milliseconds. */
+const GEMINI_TIMEOUT_MS = 10_000;
+
 /**
  * A single line item parsed from a receipt.
  * All monetary values are in integer centavos.
@@ -116,6 +119,7 @@ export async function parseReceiptImage(
       responseSchema: RECEIPT_SCHEMA,
       thinkingConfig: { thinkingBudget: 0 },
       temperature: 0,
+      httpOptions: { timeout: GEMINI_TIMEOUT_MS },
     },
   });
 

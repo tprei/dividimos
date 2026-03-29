@@ -5,7 +5,7 @@ vi.mock("@/lib/image-utils", () => ({
   compressImage: vi.fn((file: File) => Promise.resolve(file)),
 }));
 
-import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "./process-receipt-scan";
+import { processReceiptScan, fetchSefazReceipt, SefazFallbackError, ReceiptTimeoutError } from "./process-receipt-scan";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 const mockOcrResult: ReceiptOcrResult = {
@@ -89,6 +89,26 @@ describe("processReceiptScan", () => {
 
     const file = createMockFile();
     await expect(processReceiptScan(file)).rejects.toThrow("Erro 500");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("throws ReceiptTimeoutError when response has timeout flag", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "Não foi possível processar. Tente novamente ou adicione manualmente.",
+          timeout: true,
+        }),
+        { status: 504, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const file = createMockFile();
+    const err = await processReceiptScan(file).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ReceiptTimeoutError);
+    expect((err as ReceiptTimeoutError).timeout).toBe(true);
+    expect((err as ReceiptTimeoutError).message).toContain("Tente novamente");
 
     fetchSpy.mockRestore();
   });
@@ -200,5 +220,26 @@ describe("fetchSefazReceipt", () => {
     expect(err.fallback).toBe(true);
     expect(err.name).toBe("SefazFallbackError");
     expect(err).toBeInstanceOf(Error);
+  });
+});
+
+describe("ReceiptTimeoutError", () => {
+  it("has timeout property set to true", () => {
+    const err = new ReceiptTimeoutError();
+    expect(err.timeout).toBe(true);
+    expect(err.name).toBe("ReceiptTimeoutError");
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("uses default message when none provided", () => {
+    const err = new ReceiptTimeoutError();
+    expect(err.message).toBe(
+      "Não foi possível processar. Tente novamente ou adicione manualmente.",
+    );
+  });
+
+  it("accepts custom message", () => {
+    const err = new ReceiptTimeoutError("Custom timeout");
+    expect(err.message).toBe("Custom timeout");
   });
 });
