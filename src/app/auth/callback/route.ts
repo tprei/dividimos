@@ -16,7 +16,7 @@ export async function GET(request: Request) {
       if (user) {
         const { data: profile } = await supabase
           .from("users")
-          .select("onboarded")
+          .select("onboarded, two_factor_enabled")
           .eq("id", user.id)
           .single();
 
@@ -24,6 +24,10 @@ export async function GET(request: Request) {
           const onboardUrl = new URL(`${origin}/auth/onboard`);
           if (next !== "/app") onboardUrl.searchParams.set("next", next);
           return NextResponse.redirect(onboardUrl.toString());
+        }
+
+        if (profile?.two_factor_enabled) {
+          return NextResponse.redirect(`${origin}/auth/verify-2fa`);
         }
       }
       return NextResponse.redirect(`${origin}${next}`);
