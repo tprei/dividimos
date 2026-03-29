@@ -28,6 +28,7 @@ import { ItemCard } from "@/components/bill/item-card";
 import { PayerStep } from "@/components/bill/payer-step";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { ReceiptScanner } from "@/components/bill/receipt-scanner";
+import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { SingleAmountStep } from "@/components/bill/single-amount-step";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,7 @@ function NewBillPageContent() {
   const [showScanner, setShowScanner] = useState(false);
   const [scanProcessing, setScanProcessing] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<ReceiptOcrResult | null>(null);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -116,41 +118,50 @@ function NewBillPageContent() {
     setScanError(null);
     try {
       const result: ReceiptOcrResult = await processReceiptScan(file);
-
-      // Set type to itemized and populate store
-      setBillType("itemized");
-      if (authUser) {
-        store.setCurrentUser(authUser);
-        store.createExpense(
-          result.merchant || "Nota escaneada",
-          "itemized",
-          result.merchant || undefined,
-        );
-        store.updateExpense({
-          serviceFeePercent: result.serviceFeePercent || 0,
-        });
-
-        for (const item of result.items) {
-          store.addItem({
-            description: item.description,
-            quantity: item.quantity,
-            unitPriceCents: item.unitPriceCents,
-            totalPriceCents: item.totalCents,
-          });
-        }
-      }
-
-      setTitle(result.merchant || "Nota escaneada");
-      setMerchantName(result.merchant || "");
-      setServiceFee(String(result.serviceFeePercent || 0));
+      // Show review UI instead of populating store directly
+      setScanResult(result);
       setShowScanner(false);
-      setStep("participants");
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Erro ao processar imagem");
     } finally {
       setScanProcessing(false);
     }
+  }, []);
+
+  const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
+    // Populate store with reviewed items
+    setBillType("itemized");
+    if (authUser) {
+      store.setCurrentUser(authUser);
+      store.createExpense(
+        result.merchant || "Nota escaneada",
+        "itemized",
+        result.merchant || undefined,
+      );
+      store.updateExpense({
+        serviceFeePercent: result.serviceFeePercent || 0,
+      });
+
+      for (const item of result.items) {
+        store.addItem({
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          totalPriceCents: item.totalCents,
+        });
+      }
+    }
+
+    setTitle(result.merchant || "Nota escaneada");
+    setMerchantName(result.merchant || "");
+    setServiceFee(String(result.serviceFeePercent || 0));
+    setScanResult(null);
+    setStep("info");
   }, [authUser, store]);
+
+  const handleScanCancel = useCallback(() => {
+    setScanResult(null);
+  }, []);
 
   // Load draft for editing when ?draft=<id> is present
   useEffect(() => {
@@ -660,7 +671,13 @@ function NewBillPageContent() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              {showScanner ? (
+              {scanResult ? (
+                <ScannedItemsReview
+                  result={scanResult}
+                  onConfirm={handleScanConfirm}
+                  onCancel={handleScanCancel}
+                />
+              ) : showScanner ? (
                 <div className="space-y-3">
                   <ReceiptScanner
                     onProcess={handleScanProcess}
