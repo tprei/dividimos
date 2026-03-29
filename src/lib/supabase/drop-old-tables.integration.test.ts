@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import { describe, it, expect } from "vitest";
 import {
   adminClient,
@@ -32,11 +33,8 @@ describe.skipIf(!isIntegrationTestReady)(
       "settlements",
     ];
 
-    // my_bill_ids is excluded: the DROP is correct but PostgREST returns
-    // PGRST202 (not in schema cache) instead of PostgreSQL 42883 after a
-    // cache reload, which the rpc-based functionExists helper can't distinguish
-    // from an argument mismatch. The DROP is verified by the unit test.
     const oldFunctions = [
+      "my_bill_ids",
       "update_ledger_on_payment",
       "update_group_settlement_on_payment",
       "cascade_group_settlement",
@@ -65,25 +63,19 @@ describe.skipIf(!isIntegrationTestReady)(
       return !error || error.code !== "42P01"; // 42P01 = undefined_table
     }
 
-    async function functionExists(funcName: string): Promise<boolean> {
-      // Use POST to the RPC endpoint directly — avoids supabase-js
-      // argument-matching issues. PostgREST returns 404 for unknown
-      // functions (both 42883 and PGRST202), and non-404 for known
-      // functions even when called with wrong arguments.
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-      const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-      const res = await fetch(`${url}/rest/v1/rpc/${funcName}`, {
-        method: "POST",
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-        },
-        body: "{}",
-      });
-      // 404 = function not found (dropped or never existed)
-      // Non-404 = function exists (may fail with 400 for missing args, etc.)
-      return res.status !== 404;
+    function functionExists(funcName: string): boolean {
+      // Query pg_catalog directly via psql to avoid PostgREST issues:
+      // - PGRST202 vs 42883 inconsistency after schema cache reloads
+      // - Functions granted only to 'authenticated' are invisible to
+      //   service_role via the PostgREST RPC endpoint
+      const dbUrl =
+        process.env.SUPABASE_DB_URL ??
+        "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+      const result = execSync(
+        `psql "${dbUrl}" -Atc "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = '${funcName}')"`,
+        { encoding: "utf-8" },
+      ).trim();
+      return result === "t";
     }
 
     it("old tables should not exist", async () => {
@@ -109,9 +101,9 @@ describe.skipIf(!isIntegrationTestReady)(
       }
     });
 
-    it("old functions should not exist", async () => {
+    it("old functions should not exist", () => {
       for (const func of oldFunctions) {
-        const exists = await functionExists(func);
+        const exists = functionExists(func);
         expect(
           exists,
           `function '${func}' should have been dropped`,
@@ -119,9 +111,9 @@ describe.skipIf(!isIntegrationTestReady)(
       }
     });
 
-    it("preserved functions should still exist", async () => {
+    it("preserved functions should still exist", () => {
       for (const func of preservedFunctions) {
-        const exists = await functionExists(func);
+        const exists = functionExists(func);
         expect(exists, `function '${func}' should still exist`).toBe(
           true,
         );
