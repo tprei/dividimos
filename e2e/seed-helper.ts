@@ -65,9 +65,7 @@ export interface CreateExpenseOptions {
 // ---------------------------------------------------------------------------
 
 function generateTestId(): string {
-  const ts = Date.now().toString(36).slice(-4);
-  const rand = Math.random().toString(36).slice(2, 6);
-  return `${ts}_${rand}`;
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 }
 
 function toE164(phone: string): string {
@@ -109,7 +107,7 @@ export class SeedHelper {
     const testId = generateTestId();
     const handle = options.handle ?? `synth_${testId}`;
     const name = options.name ?? `Synth ${testId.slice(0, 8)}`;
-    const phone = options.phone ?? `119${testId.replace(/_/g, "").slice(0, 8)}`;
+    const phone = options.phone ?? `1199${testId.slice(0, 7)}`;
     const pixKeyType = options.pixKeyType ?? "phone";
     const onboarded = options.onboarded ?? true;
 

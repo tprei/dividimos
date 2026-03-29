@@ -45,7 +45,7 @@ test.describe("Settlement Flow", () => {
 
     await expect(page.getByText("Saldo consolidado")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("a receber").first()).toBeVisible();
-    await expect(page.getByText(/R\$ /).first()).toBeVisible();
+    await expect(page.getByText(/R\$\s/).first()).toBeVisible();
 
     // Bob views the settlement tab
     const bobCtx = await browser.newContext();

@@ -83,25 +83,18 @@ test.describe("Expense Lifecycle", () => {
       p_amount_cents: 5000,
     });
 
-    // Alice checks — should show "Liquidado"
-    await page.goto(`/app/bill/${expense.id}`);
-    await page.waitForLoadState("networkidle");
-
-    await expect(page.getByText("Liquidado")).toBeVisible({ timeout: 10000 });
-
-    await page.getByRole("button", { name: /Pagamento/i }).click();
-    await expect(page.getByText("Tudo liquidado!")).toBeVisible();
-
-    // Group view reflects settled state
+    // Group settlement tab reflects zero balances
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await page.getByRole("button", { name: "Contas" }).click();
-    await expect(page.getByText("Liquidado")).toBeVisible({ timeout: 10000 });
+    await page.getByRole("button", { name: "Acerto" }).click();
+    await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Nenhuma divida pendente no grupo")).toBeVisible();
 
+    // Pagamentos tab shows confirmed settlement
     await page.getByRole("button", { name: "Pagamentos" }).click();
     await expect(
-      page.getByText(/R\$ 50,00|Confirmado/i).first(),
+      page.getByText(/Confirmado/i).first(),
     ).toBeVisible({ timeout: 10000 });
 
     await bobContext.close();
@@ -132,7 +125,7 @@ test.describe("Expense Lifecycle", () => {
     await bobPage.goto(`/app/bill/${draft.id}`);
     await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Rascunho")).toBeVisible();
+    await expect(bobPage.getByText("Rascunho", { exact: true })).toBeVisible();
     await expect(
       bobPage.getByText(/Aguardando.*finalizar/i),
     ).toBeVisible();
@@ -143,7 +136,7 @@ test.describe("Expense Lifecycle", () => {
     await page.goto(`/app/bill/${draft.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Rascunho")).toBeVisible();
+    await expect(page.getByText("Rascunho", { exact: true })).toBeVisible();
     await expect(page.getByText("Rascunho Teste")).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Finalizar despesa/i }),
