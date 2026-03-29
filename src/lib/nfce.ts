@@ -122,6 +122,52 @@ function extractMerchant($: cheerio.CheerioAPI): string | null {
 }
 
 /**
+ * Try to extract a service fee percentage from the SEFAZ page.
+ * Brazilian restaurants often add a 10% "taxa de serviço" which may
+ * appear as a line item, a summary row, or in the page text.
+ * Returns 0 if no service fee is found.
+ */
+function extractServiceFeePercent($: cheerio.CheerioAPI): number {
+  const bodyText = $("body").text();
+
+  // Pattern 1: Explicit percentage mention — "Taxa de Serviço (10%)" or "Serviço: 10%"
+  const percentMatch = bodyText.match(
+    /(?:taxa\s*(?:de\s*)?servi[çc]o|servi[çc]o)\s*[:(]?\s*(\d{1,2})[,.]?(\d{0,2})\s*%/i,
+  );
+  if (percentMatch) {
+    const whole = parseInt(percentMatch[1], 10);
+    const frac = percentMatch[2] ? parseInt(percentMatch[2], 10) : 0;
+    const pct = frac > 0 ? whole + frac / Math.pow(10, percentMatch[2].length) : whole;
+    if (pct > 0 && pct <= 30) return pct;
+  }
+
+  // Pattern 2: Service fee as a monetary value — derive percentage from items total
+  // Look for "Taxa de Serviço" followed by a currency value
+  const feeValueMatch = bodyText.match(
+    /(?:taxa\s*(?:de\s*)?servi[çc]o|gorjeta\s*sugerida)\s*[:]?\s*R?\$?\s*([\d.,]+)/i,
+  );
+  if (feeValueMatch) {
+    const feeCents = parseBrlToCents(feeValueMatch[1]);
+    if (feeCents > 0) {
+      // We need the subtotal (items total) to derive the percentage.
+      // Try to find a subtotal value in the page.
+      const subtotalMatch = bodyText.match(
+        /(?:subtotal|sub[\s-]?total|total\s*(?:dos\s*)?(?:itens|produtos))\s*[:]?\s*R?\$?\s*([\d.,]+)/i,
+      );
+      if (subtotalMatch) {
+        const subtotalCents = parseBrlToCents(subtotalMatch[1]);
+        if (subtotalCents > 0) {
+          const pct = Math.round((feeCents / subtotalCents) * 100);
+          if (pct > 0 && pct <= 30) return pct;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+/**
  * Try to extract the total value from the SEFAZ page.
  */
 function extractTotal($: cheerio.CheerioAPI): number {
@@ -483,11 +529,12 @@ export function parseSefazPage(html: string): ReceiptOcrResult | null {
   const merchant = extractMerchant($);
   const extractedTotal = extractTotal($);
   const itemsTotal = items.reduce((sum, item) => sum + item.totalCents, 0);
+  const serviceFeePercent = extractServiceFeePercent($);
 
   return {
     merchant,
     items,
-    serviceFeePercent: 0, // NFC-e doesn't include service fees
+    serviceFeePercent,
     totalCents: extractedTotal > 0 ? extractedTotal : itemsTotal,
   };
 }

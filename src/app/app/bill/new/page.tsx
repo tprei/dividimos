@@ -38,6 +38,7 @@ import { formatBRL } from "@/lib/currency";
 import { useQrScannerPreload } from "@/hooks/use-qr-preload";
 import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
 import type { NfceQrResult } from "@/lib/nfce-qr";
+import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { useBillStore } from "@/stores/bill-store";
@@ -108,6 +109,8 @@ function NewBillPageContent() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ReceiptOcrResult | null>(null);
   const [sefazFallback, setSefazFallback] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const lastQrResultRef = useRef<NfceQrResult | null>(null);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -140,7 +143,27 @@ function NewBillPageContent() {
 
   const handleQrDetected = useCallback(async (result: NfceQrResult) => {
     setScanError(null);
+    setDuplicateWarning(null);
     setScanProcessing(true);
+    lastQrResultRef.current = result;
+
+    // Check for duplicate receipt
+    const previousScan = checkDuplicateReceipt(result.chaveAcesso);
+    if (previousScan) {
+      const date = new Date(previousScan);
+      const formatted = date.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      setDuplicateWarning(
+        `Esta nota já foi escaneada em ${formatted}. Deseja continuar mesmo assim?`,
+      );
+      setScanProcessing(false);
+      return;
+    }
+
     try {
       const receipt = await fetchSefazReceipt(result.url);
       setScanResult(receipt);
@@ -148,6 +171,28 @@ function NewBillPageContent() {
     } catch (err) {
       if (err instanceof SefazFallbackError) {
         // SEFAZ blocked (captcha/timeout/unparseable) — nudge user to photo
+        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
+        setSefazFallback(true);
+        setShowScanner(true);
+      } else {
+        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
+      }
+    } finally {
+      setScanProcessing(false);
+    }
+  }, []);
+
+  const handleDuplicateContinue = useCallback(async () => {
+    const qrResult = lastQrResultRef.current;
+    if (!qrResult) return;
+    setDuplicateWarning(null);
+    setScanProcessing(true);
+    try {
+      const receipt = await fetchSefazReceipt(qrResult.url);
+      setScanResult(receipt);
+      setShowScanner(false);
+    } catch (err) {
+      if (err instanceof SefazFallbackError) {
         setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
         setSefazFallback(true);
         setShowScanner(true);
@@ -183,10 +228,17 @@ function NewBillPageContent() {
       }
     }
 
+    // Mark receipt as scanned to detect future duplicates
+    if (lastQrResultRef.current) {
+      markReceiptScanned(lastQrResultRef.current.chaveAcesso);
+      lastQrResultRef.current = null;
+    }
+
     setTitle(result.merchant || "Nota escaneada");
     setMerchantName(result.merchant || "");
     setServiceFee(String(result.serviceFeePercent || 0));
     setScanResult(null);
+    setDuplicateWarning(null);
     setStep("info");
   }, [authUser, store]);
 
@@ -727,6 +779,32 @@ function NewBillPageContent() {
                     >
                       {scanError}
                     </motion.p>
+                  )}
+                  {duplicateWarning && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-center dark:border-yellow-700 dark:bg-yellow-950"
+                    >
+                      <p className="mb-2 text-sm text-yellow-800 dark:text-yellow-200">
+                        {duplicateWarning}
+                      </p>
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { setDuplicateWarning(null); lastQrResultRef.current = null; }}
+                        >
+                          Cancelar
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleDuplicateContinue}
+                        >
+                          Continuar mesmo assim
+                        </Button>
+                      </div>
+                    </motion.div>
                   )}
                 </div>
               ) : (
