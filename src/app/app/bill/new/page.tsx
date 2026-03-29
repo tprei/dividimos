@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import { processReceiptScan } from "@/lib/process-receipt-scan";
+import type { NfceQrResult } from "@/lib/nfce-qr";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { useBillStore } from "@/stores/bill-store";
@@ -126,6 +127,15 @@ function NewBillPageContent() {
     } finally {
       setScanProcessing(false);
     }
+  }, []);
+
+  const handleQrDetected = useCallback((result: NfceQrResult) => {
+    // For now, store the chave de acesso and show a success message.
+    // Future: fetch receipt data from SEFAZ using the access key.
+    setScanError(null);
+    setShowScanner(false);
+    // TODO: integrate with SEFAZ receipt lookup API
+    console.info("[QR] NFC-e detected:", result.chaveAcesso);
   }, []);
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
@@ -683,6 +693,7 @@ function NewBillPageContent() {
                     onProcess={handleScanProcess}
                     onBack={() => { setShowScanner(false); setScanError(null); }}
                     processing={scanProcessing}
+                    onQrDetected={handleQrDetected}
                   />
                   {scanError && (
                     <motion.p
