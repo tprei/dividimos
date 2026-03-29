@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Check, Plus, Users, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { staggerContainer, staggerItem } from "@/lib/animations";
@@ -49,7 +49,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
     return () => window.removeEventListener("app-refresh", handleRefresh);
   }, []);
 
-  const refetch = async () => {
+  const refetch = useCallback(async () => {
     if (!user) return;
     const supabase = createClient();
 
@@ -150,7 +150,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
 
     setGroups(entries);
     setInvites(pendingInvites);
-  };
+  }, [user]);
 
   useEffect(() => {
     refetchRef.current = refetch;
