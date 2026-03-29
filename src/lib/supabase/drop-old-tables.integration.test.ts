@@ -65,8 +65,13 @@ describe.skipIf(!isIntegrationTestReady)(
       return !error || error.code !== "42P01"; // 42P01 = undefined_table
     }
 
+    const functionArgs: Record<string, Record<string, unknown>> = {
+      lookup_user_by_handle: { p_handle: "__nonexistent__" },
+    };
+
     async function functionExists(funcName: string): Promise<boolean> {
-      const { error } = await adminClient!.rpc(funcName as never);
+      const args = functionArgs[funcName] ?? {};
+      const { error } = await adminClient!.rpc(funcName as never, args as never);
       if (!error) return true;
       return error.code !== "42883" && error.code !== "PGRST202";
     }

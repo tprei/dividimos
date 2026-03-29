@@ -404,8 +404,8 @@ describe.skipIf(!isIntegrationTestReady)(
           amountCents: 1000,
         });
 
-        // Alice now owes Bob 1000 (or equivalently Bob is owed 1000 from Alice)
-        expect(await getBalanceBetween(groupId, alice.id, bob.id)).toBe(1000);
+        // Bob now owes Alice 1000 (Alice overpaid from zero balance)
+        expect(await getBalanceBetween(groupId, alice.id, bob.id)).toBe(-1000);
       });
     });
 

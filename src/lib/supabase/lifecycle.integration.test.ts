@@ -102,10 +102,9 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         .eq("id", secondId)
         .eq("status", "draft");
 
-      // Carol's cumulative debt to Alice includes both expenses
+      // Carol's cumulative debt to Alice from these two expenses
       const balance = await getBalanceBetween(groupId, carol.id, alice.id);
-      expect(balance).toBe(7000 + 3000); // 5000 + 2000 + 3000 from test above
-      // (3000 from the 2.1 test with bob shares — carol's balance is 5000+2000 here)
+      expect(balance).toBe(7000); // 5000 + 2000
     });
   });
 
