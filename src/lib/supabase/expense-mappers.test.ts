@@ -7,6 +7,8 @@ import {
   balanceRowToBalance,
   settlementRowToSettlement,
   userProfileRowToUserProfile,
+  expenseGuestRowToExpenseGuest,
+  expenseGuestShareRowToExpenseGuestShare,
 } from "./expense-mappers";
 
 describe("expenseRowToExpense", () => {
@@ -209,5 +211,62 @@ describe("userProfileRowToUserProfile", () => {
     });
 
     expect(result.avatarUrl).toBeUndefined();
+  });
+});
+
+describe("expenseGuestRowToExpenseGuest", () => {
+  it("maps all fields from an unclaimed guest row", () => {
+    const result = expenseGuestRowToExpenseGuest({
+      id: "guest-1",
+      expense_id: "exp-1",
+      display_name: "João",
+      claim_token: "token-abc",
+      claimed_by: null,
+      claimed_at: null,
+      created_at: "2026-03-29T00:00:00Z",
+    });
+
+    expect(result).toEqual({
+      id: "guest-1",
+      expenseId: "exp-1",
+      displayName: "João",
+      claimToken: "token-abc",
+      claimedBy: undefined,
+      claimedAt: undefined,
+      createdAt: "2026-03-29T00:00:00Z",
+    });
+  });
+
+  it("maps claimed fields when present", () => {
+    const result = expenseGuestRowToExpenseGuest({
+      id: "guest-2",
+      expense_id: "exp-1",
+      display_name: "Maria",
+      claim_token: "token-def",
+      claimed_by: "user-123",
+      claimed_at: "2026-03-29T12:00:00Z",
+      created_at: "2026-03-29T00:00:00Z",
+    });
+
+    expect(result.claimedBy).toBe("user-123");
+    expect(result.claimedAt).toBe("2026-03-29T12:00:00Z");
+  });
+});
+
+describe("expenseGuestShareRowToExpenseGuestShare", () => {
+  it("maps all fields", () => {
+    const result = expenseGuestShareRowToExpenseGuestShare({
+      id: "share-1",
+      expense_id: "exp-1",
+      guest_id: "guest-1",
+      share_amount_cents: 2500,
+    });
+
+    expect(result).toEqual({
+      id: "share-1",
+      expenseId: "exp-1",
+      guestId: "guest-1",
+      shareAmountCents: 2500,
+    });
   });
 });

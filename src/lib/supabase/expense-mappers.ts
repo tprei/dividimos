@@ -1,6 +1,8 @@
 import type {
   Balance,
   Expense,
+  ExpenseGuest,
+  ExpenseGuestShare,
   ExpenseItem,
   ExpensePayer,
   ExpenseShare,
@@ -9,6 +11,8 @@ import type {
 } from "@/types";
 import type { Database } from "@/types/database";
 
+type ExpenseGuestRow = Database["public"]["Tables"]["expense_guests"]["Row"];
+type ExpenseGuestShareRow = Database["public"]["Tables"]["expense_guest_shares"]["Row"];
 type ExpenseRow = Database["public"]["Tables"]["expenses"]["Row"];
 type ExpenseItemRow = Database["public"]["Tables"]["expense_items"]["Row"];
 type ExpenseShareRow = Database["public"]["Tables"]["expense_shares"]["Row"];
@@ -92,5 +96,28 @@ export function userProfileRowToUserProfile(row: UserProfileRow): UserProfile {
     handle: row.handle,
     name: row.name,
     avatarUrl: row.avatar_url ?? undefined,
+  };
+}
+
+export function expenseGuestRowToExpenseGuest(row: ExpenseGuestRow): ExpenseGuest {
+  return {
+    id: row.id,
+    expenseId: row.expense_id,
+    displayName: row.display_name,
+    claimToken: row.claim_token,
+    claimedBy: row.claimed_by ?? undefined,
+    claimedAt: row.claimed_at ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+export function expenseGuestShareRowToExpenseGuestShare(
+  row: ExpenseGuestShareRow,
+): ExpenseGuestShare {
+  return {
+    id: row.id,
+    expenseId: row.expense_id,
+    guestId: row.guest_id,
+    shareAmountCents: row.share_amount_cents,
   };
 }

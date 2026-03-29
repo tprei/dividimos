@@ -540,6 +540,57 @@ export interface Database {
         };
         Relationships: [];
       };
+      expense_guests: {
+        Row: {
+          id: string;
+          expense_id: string;
+          display_name: string;
+          claim_token: string;
+          claimed_by: string | null;
+          claimed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          display_name: string;
+          claim_token?: string;
+          claimed_by?: string | null;
+          claimed_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          display_name?: string;
+          claim_token?: string;
+          claimed_by?: string | null;
+          claimed_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      expense_guest_shares: {
+        Row: {
+          id: string;
+          expense_id: string;
+          guest_id: string;
+          share_amount_cents: number;
+        };
+        Insert: {
+          id?: string;
+          expense_id: string;
+          guest_id: string;
+          share_amount_cents: number;
+        };
+        Update: {
+          id?: string;
+          expense_id?: string;
+          guest_id?: string;
+          share_amount_cents?: number;
+        };
+        Relationships: [];
+      };
       group_members: {
         Row: {
           group_id: string;
@@ -588,6 +639,14 @@ export interface Database {
           name: string;
           avatar_url: string | null;
         }[];
+      };
+      claim_guest_spot: {
+        Args: { p_claim_token: string };
+        Returns: {
+          guest_id: string;
+          expense_id: string;
+          already_claimed: boolean;
+        };
       };
       activate_expense: {
         Args: { p_expense_id: string };
