@@ -418,7 +418,9 @@ export async function getBalanceBetween(
 
   // If userX is the canonical user_a, return as-is (positive = userX owes userY).
   // If userX is user_b, flip the sign (positive = userX owes userY).
-  return userX < userY ? data.amount_cents : -data.amount_cents;
+  const raw = userX < userY ? data.amount_cents : -data.amount_cents;
+  // Normalise -0 → 0 so callers can use Object.is / toBe(0)
+  return raw === 0 ? 0 : raw;
 }
 
 // ---------------------------------------------------------------------------
