@@ -21,7 +21,9 @@ export async function GET(request: Request) {
           .single();
 
         if (!profile?.onboarded) {
-          return NextResponse.redirect(`${origin}/auth/onboard`);
+          const onboardUrl = new URL(`${origin}/auth/onboard`);
+          if (next !== "/app") onboardUrl.searchParams.set("next", next);
+          return NextResponse.redirect(onboardUrl.toString());
         }
       }
       return NextResponse.redirect(`${origin}${next}`);
