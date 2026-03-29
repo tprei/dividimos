@@ -1,3 +1,5 @@
+import type { PixKeyType } from "@/types";
+
 function crc16CCITT(payload: string): string {
   const polynomial = 0x1021;
   let crc = 0xffff;

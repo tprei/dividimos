@@ -66,11 +66,24 @@ describe.skipIf(!isIntegrationTestReady)(
     }
 
     async function functionExists(funcName: string): Promise<boolean> {
-      const { error } = await adminClient!.rpc(funcName as never);
-      if (!error) return true;
-      // 42883 = PostgreSQL "undefined_function"
-      // PGRST202 = PostgREST "not found in schema cache" (after DDL changes)
-      return error.code !== "42883" && error.code !== "PGRST202";
+      // Use POST to the RPC endpoint directly — avoids supabase-js
+      // argument-matching issues. PostgREST returns 404 for unknown
+      // functions (both 42883 and PGRST202), and non-404 for known
+      // functions even when called with wrong arguments.
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+      const res = await fetch(`${url}/rest/v1/rpc/${funcName}`, {
+        method: "POST",
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      });
+      // 404 = function not found (dropped or never existed)
+      // Non-404 = function exists (may fail with 400 for missing args, etc.)
+      return res.status !== 404;
     }
 
     it("old tables should not exist", async () => {
