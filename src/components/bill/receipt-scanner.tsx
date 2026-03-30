@@ -6,6 +6,7 @@ import { Camera, ImagePlus, QrCode, RotateCcw, ScanLine, X } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { QrScannerView } from "./qr-scanner-view";
 import type { NfceQrResult } from "@/lib/nfce-qr";
+import { parseNfceQrCode } from "@/lib/nfce-qr";
 
 type Tab = "photo" | "qr";
 
@@ -63,10 +64,13 @@ export function ReceiptScanner({
     if (file) onProcess(file);
   }, [file, onProcess]);
 
-  const handleQrDetected = useCallback(
-    (result: NfceQrResult) => {
-      setQrPaused(true);
-      onQrDetected?.(result);
+  const handleQrDecode = useCallback(
+    (data: string) => {
+      const parsed = parseNfceQrCode(data);
+      if (parsed) {
+        setQrPaused(true);
+        onQrDetected?.(parsed);
+      }
     },
     [onQrDetected],
   );
@@ -149,7 +153,7 @@ export function ReceiptScanner({
             transition={{ duration: 0.2 }}
             className="space-y-2"
           >
-            <QrScannerView onDetected={handleQrDetected} paused={qrPaused} />
+            <QrScannerView onDecode={handleQrDecode} paused={qrPaused} />
             {processing && qrPaused ? (
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <ScanLine className="h-4 w-4 animate-pulse" />

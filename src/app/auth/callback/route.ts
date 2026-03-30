@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/app";
+  const next = safeRedirect(searchParams.get("next"));
 
   if (code) {
     const supabase = await createClient();
@@ -27,7 +28,9 @@ export async function GET(request: Request) {
         }
 
         if (profile?.two_factor_enabled) {
-          return NextResponse.redirect(`${origin}/auth/verify-2fa`);
+          const twoFaUrl = new URL(`${origin}/auth/verify-2fa`);
+          twoFaUrl.searchParams.set("next", next);
+          return NextResponse.redirect(twoFaUrl.toString());
         }
       }
       return NextResponse.redirect(`${origin}${next}`);

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim"];
 const TWO_FA_EXEMPT_PATHS = ["/auth/verify-2fa", "/api/auth/2fa"];
@@ -59,12 +60,16 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth";
+    url.search = `?next=${encodeURIComponent(pathname)}`;
     return NextResponse.redirect(url);
   }
 
   if (user && pathname === "/auth") {
+    const nextParam = request.nextUrl.searchParams.get("next");
+    const redirectTo = safeRedirect(nextParam);
     const url = request.nextUrl.clone();
-    url.pathname = "/app";
+    url.pathname = redirectTo;
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
@@ -84,6 +89,7 @@ export async function updateSession(request: NextRequest) {
       if (userRow?.two_factor_enabled) {
         const url = request.nextUrl.clone();
         url.pathname = "/auth/verify-2fa";
+        url.search = `?next=${encodeURIComponent(pathname)}`;
         return NextResponse.redirect(url);
       }
     }

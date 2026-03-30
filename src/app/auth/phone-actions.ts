@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -33,8 +34,9 @@ export async function sendTestOtp(phone: string) {
   return { success: true, phone: normalized };
 }
 
-export async function verifyPhoneOtp(phone: string, code: string) {
+export async function verifyPhoneOtp(phone: string, code: string, next?: string) {
   const normalized = normalizePhone(phone);
+  const safePath = safeRedirect(next);
   const isTestMode = process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE === "true";
 
   if (isTestMode) {
@@ -102,14 +104,22 @@ export async function verifyPhoneOtp(phone: string, code: string) {
 
     const { data: profile } = await supabase
       .from("users")
-      .select("onboarded")
+      .select("onboarded, two_factor_enabled")
       .eq("id", userId)
       .single();
 
-    return {
-      success: true,
-      redirect: profile?.onboarded ? "/app" : "/auth/onboard",
-    };
+    if (!profile?.onboarded) {
+      const onboardPath = safePath !== "/app"
+        ? `/auth/onboard?next=${encodeURIComponent(safePath)}`
+        : "/auth/onboard";
+      return { success: true, redirect: onboardPath };
+    }
+
+    if (profile?.two_factor_enabled) {
+      return { success: true, redirect: `/auth/verify-2fa?next=${encodeURIComponent(safePath)}` };
+    }
+
+    return { success: true, redirect: safePath };
   }
 
   const supabase = await createClient();
@@ -126,14 +136,22 @@ export async function verifyPhoneOtp(phone: string, code: string) {
   if (data.user) {
     const { data: profile } = await supabase
       .from("users")
-      .select("onboarded")
+      .select("onboarded, two_factor_enabled")
       .eq("id", data.user.id)
       .single();
 
-    return {
-      success: true,
-      redirect: profile?.onboarded ? "/app" : "/auth/onboard",
-    };
+    if (!profile?.onboarded) {
+      const onboardPath = safePath !== "/app"
+        ? `/auth/onboard?next=${encodeURIComponent(safePath)}`
+        : "/auth/onboard";
+      return { success: true, redirect: onboardPath };
+    }
+
+    if (profile?.two_factor_enabled) {
+      return { success: true, redirect: `/auth/verify-2fa?next=${encodeURIComponent(safePath)}` };
+    }
+
+    return { success: true, redirect: safePath };
   }
 
   return { error: "Erro inesperado" };

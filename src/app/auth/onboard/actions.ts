@@ -5,12 +5,14 @@ import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
 import type { PixKeyType } from "@/types";
 import { redirect } from "next/navigation";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 export async function completeOnboarding(formData: FormData) {
   const handle = formData.get("handle") as string;
   const pixKey = formData.get("pixKey") as string;
   const pixKeyType = formData.get("pixKeyType") as string;
   const name = formData.get("name") as string | null;
+  const next = safeRedirect(formData.get("next") as string | null);
 
   if (!handle || !pixKey || !pixKeyType) {
     return { error: "Dados incompletos" };
@@ -55,5 +57,5 @@ export async function completeOnboarding(formData: FormData) {
     return { error: `Erro ao salvar: ${error.message}` };
   }
 
-  redirect("/app");
+  redirect(next);
 }

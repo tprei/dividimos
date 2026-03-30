@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Camera, ScanLine } from "lucide-react";
-import type { NfceQrResult } from "@/lib/nfce-qr";
-import { parseNfceQrCode } from "@/lib/nfce-qr";
 
 export interface QrScannerViewProps {
-  /** Called when a valid NFC-e QR code is detected */
-  onDetected: (result: NfceQrResult) => void;
+  /** Called with the raw decoded string from any QR code */
+  onDecode: (data: string) => void;
   /** Whether scanning is paused (e.g. while processing a result) */
   paused?: boolean;
 }
@@ -18,21 +16,18 @@ export interface QrScannerViewProps {
  * Uses BarcodeDetector API on supported browsers (Chrome Android),
  * falls back to WASM-based decoding otherwise.
  */
-export function QrScannerView({ onDetected, paused = false }: QrScannerViewProps) {
+export function QrScannerView({ onDecode, paused = false }: QrScannerViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<import("qr-scanner").default | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
 
   // Stable callback ref to avoid re-creating scanner on every render
-  const onDetectedRef = useRef(onDetected);
-  onDetectedRef.current = onDetected;
+  const onDecodeRef = useRef(onDecode);
+  onDecodeRef.current = onDecode;
 
   const handleDecode = useCallback((result: { data: string }) => {
-    const parsed = parseNfceQrCode(result.data);
-    if (parsed) {
-      onDetectedRef.current(parsed);
-    }
+    onDecodeRef.current(result.data);
   }, []);
 
   useEffect(() => {

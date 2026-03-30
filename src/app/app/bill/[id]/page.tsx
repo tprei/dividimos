@@ -427,6 +427,25 @@ export default function BillDetailPage({
     [expense],
   );
 
+  // Auto-close the guest share modal when the open guest's token is claimed
+  const prevUnclaimedTokensRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const currentTokens = new Set(unclaimedGuests.map((g) => g.claimToken));
+
+    if (guestShareModal.open && guestShareModal.claimToken) {
+      if (
+        prevUnclaimedTokensRef.current.has(guestShareModal.claimToken) &&
+        !currentTokens.has(guestShareModal.claimToken)
+      ) {
+        toast.success("Convidado entrou na conta!");
+        setGuestShareModal((prev) => ({ ...prev, open: false }));
+      }
+    }
+
+    prevUnclaimedTokensRef.current = currentTokens;
+  }, [unclaimedGuests, guestShareModal.open, guestShareModal.claimToken]);
+
   if (loadingFromDb) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6 space-y-4">

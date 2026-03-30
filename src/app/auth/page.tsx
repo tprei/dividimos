@@ -2,12 +2,13 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Phone } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useRef, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { safeRedirect } from "@/lib/safe-redirect";
 import { sendTestOtp, verifyPhoneOtp } from "./phone-actions";
 
 type AuthMode = "choose" | "phone" | "otp";
@@ -21,8 +22,10 @@ function formatPhone(value: string): string {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
-export default function AuthPage() {
+function AuthPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = safeRedirect(searchParams.get("next"));
   const supabase = createClient();
   const [mode, setMode] = useState<AuthMode>("choose");
   const [phone, setPhone] = useState("");
@@ -36,7 +39,7 @@ export default function AuthPage() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     });
   };
@@ -78,7 +81,7 @@ export default function AuthPage() {
   const handleVerifyOtp = (code: string) => {
     setError("");
     startTransition(async () => {
-      const result = await verifyPhoneOtp(normalizedPhone || phone, code);
+      const result = await verifyPhoneOtp(normalizedPhone || phone, code, next);
       if (result.error) {
         setError(result.error);
         setOtp(["", "", "", "", "", ""]);
@@ -336,5 +339,13 @@ export default function AuthPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense>
+      <AuthPageContent />
+    </Suspense>
   );
 }

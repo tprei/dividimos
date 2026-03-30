@@ -2,12 +2,14 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Clipboard, Shield } from "lucide-react";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { Suspense, useEffect, useMemo, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
+import { safeRedirect } from "@/lib/safe-redirect";
 import { completeOnboarding } from "./actions";
 
 type OnboardStep = "profile" | "pix";
@@ -64,8 +66,10 @@ const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
   { type: "random", label: "Chave aleatoria" },
 ];
 
-export default function OnboardPage() {
+function OnboardPageContent() {
   const supabase = useMemo(() => createClient(), []);
+  const searchParams = useSearchParams();
+  const next = safeRedirect(searchParams.get("next"));
   const [step, setStep] = useState<OnboardStep>("profile");
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
@@ -218,6 +222,7 @@ export default function OnboardPage() {
     formData.set("pixKey", pixKeyValue);
     formData.set("pixKeyType", pixKeyType);
     formData.set("name", name.trim());
+    formData.set("next", next);
 
     startTransition(async () => {
       const result = await completeOnboarding(formData);
@@ -466,5 +471,13 @@ export default function OnboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function OnboardPage() {
+  return (
+    <Suspense>
+      <OnboardPageContent />
+    </Suspense>
   );
 }

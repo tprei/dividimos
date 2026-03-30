@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   ScanLine,
+  UserPlus,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -243,11 +244,12 @@ export function DashboardContent({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.14, duration: 0.4 }}
-        className="mt-4 grid grid-cols-3 gap-3"
+        className="mt-4 grid grid-cols-2 gap-3"
       >
         <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
-        <QuickAction icon={ScanLine} label="Escanear" href="/app/bill/new" />
+        <QuickAction icon={ScanLine} label="Escanear NFC" href="/app/bill/new" />
         <QuickAction icon={Users} label="Grupos" href="/app/groups" />
+        <QuickAction icon={UserPlus} label="Entrar em conta" href="/app/scan-invite" />
       </motion.div>
 
       <motion.div

@@ -1,17 +1,20 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
+import { safeRedirect } from "@/lib/safe-redirect";
 
 const IS_TEST_MODE = process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE === "true";
 const RESEND_COOLDOWN = 30;
 
-export default function Verify2FAPage() {
+function Verify2FAPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = safeRedirect(searchParams.get("next"));
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -77,7 +80,7 @@ export default function Verify2FAPage() {
       });
 
       if (res.ok) {
-        router.push("/app");
+        router.push(next);
         return;
       }
 
@@ -189,5 +192,13 @@ export default function Verify2FAPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function Verify2FAPage() {
+  return (
+    <Suspense>
+      <Verify2FAPageContent />
+    </Suspense>
   );
 }
