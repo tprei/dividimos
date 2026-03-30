@@ -80,3 +80,50 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(request))
   );
 });
+
+// ── Push ──────────────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: "Pixwise", body: event.data.text() };
+  }
+
+  const { title = "Pixwise", body = "", url, icon = "/icon-192.png", tag } = payload;
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon,
+      badge: "/icon-192.png",
+      tag: tag || undefined,
+      data: { url: url || "/" },
+    })
+  );
+});
+
+// ── Notification Click ────────────────────────────────────────────────
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const targetUrl = event.notification.data?.url || "/";
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        // Focus an existing window if one is open on the same origin
+        for (const client of clientList) {
+          if (client.url.startsWith(self.location.origin) && "focus" in client) {
+            client.navigate(targetUrl);
+            return client.focus();
+          }
+        }
+        // Otherwise open a new window
+        return self.clients.openWindow(targetUrl);
+      })
+  );
+});
