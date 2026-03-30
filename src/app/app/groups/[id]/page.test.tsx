@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({
 // Build a chainable Supabase mock
 function chainable(resolveValue: unknown) {
   const chain: Record<string, unknown> = {};
-  const methods = ["from", "select", "eq", "neq", "in", "order", "single", "maybeSingle", "insert", "delete", "rpc"];
+  const methods = ["from", "select", "eq", "neq", "in", "is", "order", "single", "maybeSingle", "insert", "delete", "rpc"];
   for (const m of methods) {
     chain[m] = vi.fn(() => chain);
   }
@@ -109,6 +109,7 @@ describe("GroupDetailPage", () => {
         created_at: "2026-03-28T12:00:00Z",
       },
     ];
+    mockSupabaseData.expense_guests = [];
     mockSupabaseData.settlements = [
       {
         id: "stl-1",
