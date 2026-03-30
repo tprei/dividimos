@@ -38,6 +38,8 @@ export function GroupSelector({
   const excludeKey = useMemo(() => excludeIds.join(","), [excludeIds]);
 
   useEffect(() => {
+    const excludeList = excludeKey ? excludeKey.split(",") : [];
+
     async function fetchGroups() {
       setLoading(true);
       const supabase = createClient();
@@ -88,7 +90,7 @@ export function GroupSelector({
         const hasPendingInvites = members.some((m) => m.status === "invited");
         const allMemberIds = [...new Set([...acceptedIds, group.creator_id])];
         const addableMemberIds = allMemberIds.filter(
-          (id) => id !== currentUserId && !excludeIds.includes(id),
+          (id) => id !== currentUserId && !excludeList.includes(id),
         );
         groupMeta.set(group.id, { addableMemberIds, hasPendingInvites });
         for (const id of addableMemberIds) allAddableIds.add(id);
@@ -129,7 +131,7 @@ export function GroupSelector({
     }
 
     fetchGroups();
-  }, [currentUserId, excludeIds, excludeKey]);
+  }, [currentUserId, excludeKey]);
 
   if (selectedGroupId) {
     return (
