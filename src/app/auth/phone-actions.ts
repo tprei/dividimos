@@ -118,10 +118,19 @@ export async function sendTestOtp(phone: string) {
     return { success: true, phone: normalized };
   }
 
-  const { sendVerificationCode } = await import("@/lib/twilio");
-  const result = await sendVerificationCode(normalized);
-  if (!result.success) {
-    return { error: "Erro ao enviar codigo de verificacao" };
+  try {
+    const { sendVerificationCode } = await import("@/lib/twilio");
+    const result = await sendVerificationCode(normalized);
+    if (!result.success) {
+      return { error: "Erro ao enviar codigo de verificacao" };
+    }
+  } catch (err) {
+    console.error("Twilio send failed:", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("unverified")) {
+      return { error: "Numero nao verificado. Verifique o numero no painel Twilio (conta trial)." };
+    }
+    return { error: "Erro ao enviar SMS. Tente novamente." };
   }
   return { success: true, phone: normalized };
 }
@@ -137,10 +146,15 @@ export async function verifyPhoneOtp(phone: string, code: string, next?: string)
   const isTestMode = process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE === "true";
 
   if (!isTestMode) {
-    const { checkVerificationCode } = await import("@/lib/twilio");
-    const result = await checkVerificationCode(normalized, code);
-    if (!result.success) {
-      return { error: "Codigo invalido ou expirado" };
+    try {
+      const { checkVerificationCode } = await import("@/lib/twilio");
+      const result = await checkVerificationCode(normalized, code);
+      if (!result.success) {
+        return { error: "Codigo invalido ou expirado" };
+      }
+    } catch (err) {
+      console.error("Twilio check failed:", err);
+      return { error: "Erro ao verificar codigo. Tente novamente." };
     }
   }
 
