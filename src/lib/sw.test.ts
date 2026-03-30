@@ -117,7 +117,6 @@ function loadSW(env: Record<string, unknown>) {
   // Wrap in a function that receives the SW globals
   const keys = Object.keys(env);
   const values = keys.map((k) => env[k]);
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
   const factory = new Function(...keys, src);
   factory(...values);
 }
