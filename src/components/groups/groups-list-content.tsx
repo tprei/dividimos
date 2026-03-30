@@ -276,6 +276,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
                     variant="ghost"
                     className="h-8 w-8 p-0 text-muted-foreground"
                     onClick={() => handleDeclineInvite(invite.groupId)}
+                    aria-label="Recusar"
                   >
                     <X className="h-4 w-4" />
                   </Button>

@@ -97,9 +97,9 @@ test.describe("Group Invite & Accept", () => {
 
     // Bob declines the invite
     const inviteCard = bobPage.locator("div", { hasText: "Decline Test Group" })
-      .filter({ has: bobPage.getByRole("button", { name: /Aceitar/i }) });
-    const declineButton = inviteCard.locator("button").first();
-    await declineButton.click();
+      .filter({ has: bobPage.getByRole("button", { name: /Aceitar/i }) })
+      .last();
+    await inviteCard.getByRole("button", { name: /Recusar/i }).click();
 
     // Invite disappears
     await expect(bobPage.getByText("Decline Test Group")).not.toBeVisible({ timeout: 10000 });

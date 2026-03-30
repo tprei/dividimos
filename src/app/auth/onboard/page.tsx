@@ -96,10 +96,13 @@ function OnboardPageContent() {
 
       if (isPhoneAuth) {
         setUserPhone(phone);
-        setPixKeyType("phone");
-        if (phone) {
+        const isBrazilian = phone.startsWith("+55");
+        if (isBrazilian) {
+          setPixKeyType("phone");
           const digits = phone.replace(/\D/g, "").replace(/^55/, "");
           setCustomPixInput(formatPhoneInput(digits));
+        } else {
+          setPixKeyType("email");
         }
       } else {
         setUserEmail(email);

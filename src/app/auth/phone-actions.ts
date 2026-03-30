@@ -4,8 +4,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { safeRedirect } from "@/lib/safe-redirect";
 
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
+function normalizePhone(rawInput: string): string {
+  if (rawInput.trim().startsWith("+")) {
+    return `+${rawInput.replace(/\D/g, "")}`;
+  }
+  const digits = rawInput.replace(/\D/g, "");
   if (digits.startsWith("55") && digits.length >= 12) return `+${digits}`;
   return `+55${digits}`;
 }

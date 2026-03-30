@@ -18,6 +18,14 @@ type AuthMode = "choose" | "phone" | "otp" | "scan";
 const IS_TEST_MODE = process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE === "true";
 
 function formatPhone(value: string): string {
+  if (value.startsWith("+")) {
+    const digits = value.slice(1).replace(/\D/g, "");
+    if (!digits.startsWith("55")) return `+${digits}`;
+    const br = digits.slice(2).slice(0, 11);
+    if (br.length <= 2) return `+55 ${br}`;
+    if (br.length <= 7) return `+55 (${br.slice(0, 2)}) ${br.slice(2)}`;
+    return `+55 (${br.slice(0, 2)}) ${br.slice(2, 7)}-${br.slice(7)}`;
+  }
   const digits = value.replace(/\D/g, "").slice(0, 11);
   if (digits.length <= 2) return digits;
   if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
@@ -258,20 +266,14 @@ function AuthPageContent() {
                     <label className="mb-2 block text-sm font-medium">
                       Celular
                     </label>
-                    <div className="flex gap-2">
-                      <div className="flex h-10 items-center rounded-lg border bg-muted px-3 text-sm font-medium text-muted-foreground">
-                        +55
-                      </div>
-                      <Input
-                        type="tel"
-                        placeholder="(11) 98765-4321"
-                        value={phone}
-                        onChange={(e) => setPhone(formatPhone(e.target.value))}
-                        autoFocus
-                        className="flex-1"
-                        onKeyDown={(e) => e.key === "Enter" && phoneDigits.length >= 10 && handleSendOtp()}
-                      />
-                    </div>
+                    <Input
+                      type="tel"
+                      placeholder="+55 (11) 98765-4321"
+                      value={phone}
+                      onChange={(e) => setPhone(formatPhone(e.target.value))}
+                      autoFocus
+                      onKeyDown={(e) => e.key === "Enter" && phoneDigits.length >= 10 && handleSendOtp()}
+                    />
                   </div>
 
                   {error && (
