@@ -105,13 +105,21 @@ function CreatorDraftView({
   participants,
   items,
   shares,
+  guests,
 }: {
   expense: Expense;
   participants: UserProfile[];
   items: ExpenseItem[];
   shares: { userId: string; shareAmountCents: number }[];
+  guests: { id: string; displayName: string; claimToken: string; share?: { shareAmountCents: number } }[];
 }) {
   const [finalizing, setFinalizing] = useState(false);
+  const [guestShareModal, setGuestShareModal] = useState<{
+    open: boolean;
+    guestName: string;
+    shareAmountCents?: number;
+    claimToken: string;
+  }>({ open: false, guestName: "", claimToken: "" });
 
   const hasContent = shares.length > 0 || items.length > 0;
 
@@ -213,6 +221,48 @@ function CreatorDraftView({
         </motion.div>
       )}
 
+      {guests.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25, duration: 0.4 }}
+          className="mt-5"
+        >
+          <h2 className="mb-3 text-sm font-semibold">Convidados</h2>
+          <div className="space-y-2">
+            {guests.map((guest) => (
+              <div
+                key={guest.id}
+                className="flex items-center justify-between rounded-xl border border-dashed bg-card px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                    {guest.displayName.charAt(0)}
+                  </span>
+                  <span className="text-sm font-medium">{guest.displayName}</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs"
+                  onClick={() =>
+                    setGuestShareModal({
+                      open: true,
+                      guestName: guest.displayName,
+                      shareAmountCents: guest.share?.shareAmountCents,
+                      claimToken: guest.claimToken,
+                    })
+                  }
+                >
+                  <QrCode className="h-3.5 w-3.5" />
+                  Convidar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -240,6 +290,15 @@ function CreatorDraftView({
           </Button>
         </Link>
       </motion.div>
+
+      <GuestClaimShareModal
+        open={guestShareModal.open}
+        onClose={() => setGuestShareModal({ ...guestShareModal, open: false })}
+        guestName={guestShareModal.guestName}
+        shareAmountCents={guestShareModal.shareAmountCents}
+        claimToken={guestShareModal.claimToken}
+        expenseTitle={expense.title}
+      />
     </div>
   );
 }
@@ -501,6 +560,7 @@ export default function BillDetailPage({
         participants={allParticipants}
         items={expense.items}
         shares={expense.shares}
+        guests={expense.guests ?? []}
       />
     );
   }
