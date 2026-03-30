@@ -30,6 +30,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
 import toast from "react-hot-toast";
+import { notifyGroupInvite } from "@/lib/push/push-notify";
 import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } from "@/types";
 import type { Database } from "@/types/database";
 
@@ -296,6 +297,7 @@ export default function GroupDetailPage({
     }
 
     toast.success(`Convite enviado para @${lookupResult.handle}`);
+    notifyGroupInvite(id, lookupResult.id).catch(() => {});
     setLookupResult(null);
     setHandleInput("");
     setShowInvite(false);
