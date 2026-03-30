@@ -94,15 +94,13 @@ function AuthPageContent() {
     setError("");
     startTransition(async () => {
       const result = await verifyPhoneOtp(normalizedPhone || phone, code, next);
-      if (result.error) {
+      if ("error" in result) {
         setError(result.error);
         setOtp(["", "", "", "", "", ""]);
         otpRefs.current[0]?.focus();
         return;
       }
-      if (result.redirect) {
-        router.push(result.redirect);
-      }
+      router.push(result.redirect);
     });
   };
 
