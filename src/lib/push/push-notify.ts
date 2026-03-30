@@ -1,10 +1,19 @@
 "use server";
 
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatBRL } from "@/lib/currency";
 import { isWebPushConfigured } from "./web-push";
 import { notifyUser } from "./notify-user";
 import type { PushPayload } from "./web-push";
+
+async function getCallerId(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
 
 /**
  * Fire-and-forget wrapper that swallows all errors.
@@ -47,7 +56,18 @@ export async function notifyGroupInvite(
 ): Promise<void> {
   if (!isWebPushConfigured()) return;
 
+  const callerId = await getCallerId();
+  if (!callerId) return;
+
   const admin = createAdminClient();
+
+  const { count } = await admin
+    .from("group_members")
+    .select("*", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .eq("user_id", callerId)
+    .eq("status", "accepted");
+  if (!count || count === 0) return;
 
   const [groupResult, inviterResult] = await Promise.all([
     admin.from("groups").select("name").eq("id", groupId).single(),
@@ -95,6 +115,9 @@ export async function notifyGroupAccepted(
 ): Promise<void> {
   if (!isWebPushConfigured()) return;
 
+  const callerId = await getCallerId();
+  if (!callerId || callerId !== accepterId) return;
+
   const admin = createAdminClient();
 
   const [groupResult, memberResult, accepterResult] = await Promise.all([
@@ -139,9 +162,11 @@ export async function notifyExpenseActivated(
 ): Promise<void> {
   if (!isWebPushConfigured()) return;
 
+  const callerId = await getCallerId();
+  if (!callerId) return;
+
   const admin = createAdminClient();
 
-  // Fetch expense details and shares in parallel
   const [expenseResult, sharesResult] = await Promise.all([
     admin
       .from("expenses")
@@ -155,6 +180,7 @@ export async function notifyExpenseActivated(
   ]);
 
   if (!expenseResult.data) return;
+  if (expenseResult.data.creator_id !== callerId) return;
 
   const { group_id, creator_id, title, total_amount } = expenseResult.data;
   const affectedUserIds = (sharesResult.data ?? []).map((s) => s.user_id);
@@ -196,6 +222,9 @@ export async function notifySettlementRecorded(
   amountCents: number,
 ): Promise<void> {
   if (!isWebPushConfigured()) return;
+
+  const callerId = await getCallerId();
+  if (!callerId || callerId !== fromUserId) return;
 
   const admin = createAdminClient();
 

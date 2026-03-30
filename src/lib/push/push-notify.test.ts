@@ -5,6 +5,10 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(),
 }));
 
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: vi.fn(),
+}));
+
 vi.mock("./web-push", () => ({
   isWebPushConfigured: vi.fn(),
   sendPushNotification: vi.fn(),
@@ -15,6 +19,7 @@ vi.mock("./notify-user", () => ({
 }));
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { isWebPushConfigured } from "./web-push";
 import { notifyUser } from "./notify-user";
 import {
@@ -23,6 +28,18 @@ import {
   notifyExpenseActivated,
   notifySettlementRecorded,
 } from "./push-notify";
+
+function mockCaller(userId: string | null) {
+  vi.mocked(createClient).mockResolvedValue({
+    auth: {
+      getUser: () =>
+        Promise.resolve({
+          data: { user: userId ? { id: userId } : null },
+          error: null,
+        }),
+    },
+  } as never);
+}
 
 // Helper to build a chainable Supabase mock
 function mockSupabaseChain(resolvedValue: { data: unknown; error: unknown }) {
@@ -39,6 +56,7 @@ describe("push-notify", () => {
     vi.clearAllMocks();
     vi.mocked(isWebPushConfigured).mockReturnValue(true);
     vi.mocked(notifyUser).mockResolvedValue({ sent: 1, cleaned: 0 });
+    mockCaller("caller-1");
   });
 
   describe("notifyGroupInvite", () => {
@@ -50,12 +68,48 @@ describe("push-notify", () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifyGroupInvite("group-1", "invitee-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not a group member", async () => {
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "group_members") {
+          return {
+            select: (_col: string, opts?: { count?: string }) => {
+              if (opts?.count) {
+                return {
+                  eq: () => ({ eq: () => ({ eq: () => Promise.resolve({ count: 0 }) }) }),
+                };
+              }
+              return {
+                eq: () => ({
+                  eq: () => ({
+                    single: () =>
+                      Promise.resolve({ data: null, error: null }),
+                  }),
+                }),
+              };
+            },
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyGroupInvite("group-1", "invitee-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
     it("sends notification to invitee with group name and inviter name", async () => {
       const chain = mockSupabaseChain({ data: null, error: null });
-      // Override per-query responses
-      let fromCallCount = 0;
       chain.from.mockImplementation((table: string) => {
-        fromCallCount++;
         if (table === "groups") {
           return {
             select: () => ({
@@ -68,17 +122,24 @@ describe("push-notify", () => {
         }
         if (table === "group_members") {
           return {
-            select: () => ({
-              eq: () => ({
+            select: (_col: string, opts?: { count?: string }) => {
+              if (opts?.count) {
+                return {
+                  eq: () => ({ eq: () => ({ eq: () => Promise.resolve({ count: 1 }) }) }),
+                };
+              }
+              return {
                 eq: () => ({
-                  single: () =>
-                    Promise.resolve({
-                      data: { invited_by: "inviter-1" },
-                      error: null,
-                    }),
+                  eq: () => ({
+                    single: () =>
+                      Promise.resolve({
+                        data: { invited_by: "inviter-1" },
+                        error: null,
+                      }),
+                  }),
                 }),
-              }),
-            }),
+              };
+            },
           };
         }
         if (table === "user_profiles") {
@@ -110,16 +171,36 @@ describe("push-notify", () => {
 
     it("uses fallback names when DB returns null", async () => {
       const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation(() => ({
-        select: () => ({
-          eq: () => ({
-            single: () => Promise.resolve({ data: null, error: null }),
+      chain.from.mockImplementation((table: string) => {
+        if (table === "group_members") {
+          return {
+            select: (_col: string, opts?: { count?: string }) => {
+              if (opts?.count) {
+                return {
+                  eq: () => ({ eq: () => ({ eq: () => Promise.resolve({ count: 1 }) }) }),
+                };
+              }
+              return {
+                eq: () => ({
+                  eq: () => ({
+                    single: () => Promise.resolve({ data: null, error: null }),
+                  }),
+                }),
+              };
+            },
+          };
+        }
+        return {
+          select: () => ({
             eq: () => ({
               single: () => Promise.resolve({ data: null, error: null }),
+              eq: () => ({
+                single: () => Promise.resolve({ data: null, error: null }),
+              }),
             }),
           }),
-        }),
-      }));
+        };
+      });
       vi.mocked(createAdminClient).mockReturnValue(chain as never);
 
       await notifyGroupInvite("group-1", "invitee-1");
@@ -142,7 +223,17 @@ describe("push-notify", () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
+    it("skips when caller does not match accepterId", async () => {
+      mockCaller("different-user");
+
+      await notifyGroupAccepted("group-1", "accepter-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
     it("notifies the inviter when invite is accepted", async () => {
+      mockCaller("accepter-1");
+
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "groups") {
@@ -198,6 +289,8 @@ describe("push-notify", () => {
     });
 
     it("skips notification when accepter is also the inviter", async () => {
+      mockCaller("same-user");
+
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "groups") {
@@ -254,7 +347,52 @@ describe("push-notify", () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
+    it("skips when caller is not the expense creator", async () => {
+      mockCaller("not-the-creator");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "expenses") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: {
+                      group_id: "group-1",
+                      creator_id: "creator-1",
+                      title: "Pizza",
+                      total_amount: 5000,
+                    },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "expense_shares") {
+          return {
+            select: () => ({
+              eq: () =>
+                Promise.resolve({
+                  data: [{ user_id: "creator-1" }, { user_id: "user-2" }],
+                  error: null,
+                }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyExpenseActivated("expense-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
     it("notifies affected users excluding creator", async () => {
+      mockCaller("creator-1");
+
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "expenses") {
@@ -322,7 +460,6 @@ describe("push-notify", () => {
 
       await notifyExpenseActivated("expense-1");
 
-      // Should notify user-2 and user-3, but not creator-1
       expect(notifyUser).toHaveBeenCalledTimes(2);
       expect(notifyUser).toHaveBeenCalledWith("user-2", {
         title: 'Nova despesa em "Amigos"',
@@ -336,6 +473,8 @@ describe("push-notify", () => {
     });
 
     it("skips when expense is not found", async () => {
+      mockCaller("creator-1");
+
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "expenses") {
@@ -374,7 +513,17 @@ describe("push-notify", () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
+    it("skips when caller does not match fromUserId", async () => {
+      mockCaller("different-user");
+
+      await notifySettlementRecorded("group-1", "from-1", "to-1", 2500);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
     it("notifies the creditor with settlement details", async () => {
+      mockCaller("from-1");
+
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "groups") {
@@ -418,6 +567,8 @@ describe("push-notify", () => {
     });
 
     it("swallows errors from notifyUser", async () => {
+      mockCaller("from-1");
+
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "groups") {
@@ -445,7 +596,6 @@ describe("push-notify", () => {
       vi.mocked(createAdminClient).mockReturnValue(chain as never);
       vi.mocked(notifyUser).mockRejectedValue(new Error("push failed"));
 
-      // Should not throw
       await expect(
         notifySettlementRecorded("group-1", "from-1", "to-1", 1000),
       ).resolves.toBeUndefined();
