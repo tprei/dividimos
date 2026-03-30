@@ -65,7 +65,6 @@ describe("usePushNotifications", () => {
 
   it("returns unsupported when PushManager is not available", () => {
     // Remove PushManager
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
     delete (globalThis as Record<string, unknown>)["PushManager"];
 
     const { result } = renderHook(() => usePushNotifications());
