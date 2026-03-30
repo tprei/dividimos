@@ -1,9 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, CheckCircle2, ShieldCheck, ShieldOff } from "lucide-react";
+import { ArrowLeft, Bell, BellOff, CheckCircle2, ShieldCheck, ShieldOff } from "lucide-react";
 import { useRef, useState, useTransition } from "react";
 import { useUser } from "@/contexts/user-context";
+import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -135,6 +136,8 @@ export default function SettingsPage() {
       setTimeout(() => window.location.reload(), 1500);
     });
   };
+
+  const { permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
 
   const twoFactorEnabled = user?.twoFactorEnabled ?? false;
   const twoFactorPhone = user?.twoFactorPhone;
@@ -464,6 +467,68 @@ export default function SettingsPage() {
           </AnimatePresence>
         </div>
       </motion.div>
+
+      {permission !== "unsupported" && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+          className="mt-6"
+        >
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Notificações
+          </h2>
+
+          <div className="rounded-2xl border bg-card p-4">
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isSubscribed ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                {isSubscribed ? (
+                  <Bell className="h-5 w-5" />
+                ) : (
+                  <BellOff className="h-5 w-5" />
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">
+                  {isSubscribed ? "Notificações ativadas" : "Notificações desativadas"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {permission === "denied"
+                    ? "Bloqueado pelo navegador — altere nas configurações do site"
+                    : isSubscribed
+                      ? "Você receberá alertas de contas e pagamentos"
+                      : "Receba alertas quando adicionarem contas ou confirmarem pagamentos"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {permission === "denied" ? (
+                <p className="text-xs text-muted-foreground">
+                  Para reativar, abra as configurações do navegador e permita notificações para este site.
+                </p>
+              ) : isSubscribed ? (
+                <Button
+                  variant="outline"
+                  className="w-full text-destructive hover:text-destructive"
+                  onClick={unsubscribe}
+                  disabled={pushLoading}
+                >
+                  {pushLoading ? "Desativando..." : "Desativar notificações"}
+                </Button>
+              ) : (
+                <Button
+                  className="w-full"
+                  onClick={subscribe}
+                  disabled={pushLoading}
+                >
+                  {pushLoading ? "Ativando..." : "Ativar notificações"}
+                </Button>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }

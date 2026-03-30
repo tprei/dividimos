@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
+import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
@@ -477,6 +478,11 @@ export default function GroupDetailPage({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Notification opt-in prompt */}
+      <div className="mt-4">
+        <NotificationPrompt />
+      </div>
 
       {/* Tab bar */}
       <div className="mt-5 flex gap-1 rounded-xl bg-muted p-1">
