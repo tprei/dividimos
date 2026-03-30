@@ -71,12 +71,10 @@ describe("InstallPrompt", () => {
   });
 
   describe("iOS Safari manual instructions", () => {
-    it("does not render on iOS Safari due to visible gate (known issue: isIosSafari is set but visible stays false)", () => {
+    it("renders install button on iOS Safari", () => {
       setUserAgent(IOS_SAFARI_UA);
-      const { container } = render(<InstallPrompt />);
-      // The useEffect sets isIosSafari=true but returns before setVisible(true),
-      // so the visible gate at line 76 prevents the iOS Safari banner from rendering.
-      expect(container.innerHTML).toBe("");
+      render(<InstallPrompt />);
+      expect(screen.getByText("Instalar no celular")).toBeInTheDocument();
     });
 
     it("shows install button on iOS Chrome (not detected as Safari)", () => {
@@ -152,7 +150,7 @@ describe("InstallPrompt", () => {
   });
 
   describe("install button behavior", () => {
-    it("sets dismissed state when prompt outcome is not accepted", async () => {
+    it("keeps prompt visible when outcome is dismissed", async () => {
       setUserAgent(ANDROID_UA);
 
       const mockPrompt = vi.fn().mockResolvedValue(undefined);
@@ -173,11 +171,10 @@ describe("InstallPrompt", () => {
         await mockChoice;
       });
 
-      // Dismissed hides the component
-      expect(screen.queryByText("Instalar no celular")).not.toBeInTheDocument();
+      expect(screen.queryByText("Instalar no celular")).toBeInTheDocument();
     });
 
-    it("sets dismissed when no deferred prompt is available", async () => {
+    it("opens install guide when no native prompt available", async () => {
       setUserAgent(ANDROID_UA);
       render(<InstallPrompt />);
 
@@ -185,8 +182,8 @@ describe("InstallPrompt", () => {
         fireEvent.click(screen.getByText("Instalar no celular"));
       });
 
-      // No prompt available, so dismissed
-      expect(screen.queryByText("Instalar no celular")).not.toBeInTheDocument();
+      expect(screen.queryByText("Instalar no celular")).toBeInTheDocument();
+      expect(screen.getByText("Instalar o app")).toBeInTheDocument();
     });
   });
 
