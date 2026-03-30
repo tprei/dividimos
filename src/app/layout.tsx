@@ -50,6 +50,13 @@ export default function RootLayout({
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.__pwaInstallPrompt=null;window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__pwaInstallPrompt=e});`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
         <RegisterSW />
         {children}

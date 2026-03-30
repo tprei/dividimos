@@ -28,6 +28,13 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
       return;
     }
 
+    const captured = (window as unknown as Record<string, unknown>).__pwaInstallPrompt as BeforeInstallPromptEvent | null;
+    if (captured) {
+      deferredPrompt.current = captured;
+      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = null;
+      setInstallable(true);
+    }
+
     const onBeforeInstall = (e: Event) => {
       e.preventDefault();
       deferredPrompt.current = e as BeforeInstallPromptEvent;
