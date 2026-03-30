@@ -11,11 +11,11 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => adminMock.client),
 }));
 
-const mockEncrypt = vi.fn(() => "encrypted-blob");
-const mockDecrypt = vi.fn();
+const mockEncrypt = vi.fn((_val: string) => "encrypted-blob");
+const mockDecrypt = vi.fn((_val: string) => "decrypted");
 vi.mock("@/lib/crypto", () => ({
-  encryptPixKey: (...args: unknown[]) => mockEncrypt(...args),
-  decryptPixKey: (...args: unknown[]) => mockDecrypt(...args),
+  encryptPixKey: (val: string) => mockEncrypt(val),
+  decryptPixKey: (val: string) => mockDecrypt(val),
 }));
 
 import { POST } from "./route";
