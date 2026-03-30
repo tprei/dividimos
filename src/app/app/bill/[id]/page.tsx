@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  Copy,
   Loader2,
   Pencil,
   QrCode,
@@ -25,6 +24,7 @@ import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import dynamic from "next/dynamic";
 const PixQrModal = dynamic(
   () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
@@ -267,6 +267,13 @@ export default function BillDetailPage({
     mode: "pay",
   });
 
+  const [guestShareModal, setGuestShareModal] = useState<{
+    open: boolean;
+    guestName: string;
+    shareAmountCents?: number;
+    claimToken: string;
+  }>({ open: false, guestName: "", claimToken: "" });
+
   const [expenseData, setExpenseData] = useState<ExpenseWithDetails | null>(null);
   const [loadingFromDb, setLoadingFromDb] = useState(false);
   const loadedKeyRef = useRef<string | null>(null);
@@ -355,6 +362,11 @@ export default function BillDetailPage({
     if (!expense || expense.status === "draft") return [];
     return computeDebtsFromExpense(expense.shares, expense.payers);
   }, [expense]);
+
+  const unclaimedGuests = useMemo(
+    () => (expense?.guests ?? []).filter((g) => !g.claimedBy),
+    [expense],
+  );
 
   if (loadingFromDb) {
     return (
@@ -562,6 +574,38 @@ export default function BillDetailPage({
         </div>
       </motion.div>
 
+      {currentUser?.id === expense.creatorId && unclaimedGuests.length > 0 && (
+        <div className="mt-4 rounded-2xl border-2 border-dashed border-warning/30 bg-warning/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-warning">
+            <Users className="h-4 w-4" />
+            {unclaimedGuests.length} convidado{unclaimedGuests.length > 1 ? "s" : ""} pendente{unclaimedGuests.length > 1 ? "s" : ""}
+          </div>
+          <div className="mt-3 space-y-2">
+            {unclaimedGuests.map((guest) => (
+              <div key={guest.id} className="flex items-center justify-between">
+                <span className="text-sm">{guest.displayName}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs"
+                  onClick={() =>
+                    setGuestShareModal({
+                      open: true,
+                      guestName: guest.displayName,
+                      shareAmountCents: guest.share?.shareAmountCents,
+                      claimToken: guest.claimToken,
+                    })
+                  }
+                >
+                  <QrCode className="h-3.5 w-3.5" />
+                  Compartilhar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-5 flex rounded-xl bg-muted/50 p-1">
         {(
           [
@@ -664,14 +708,17 @@ export default function BillDetailPage({
                             size="sm"
                             variant="outline"
                             className="w-full gap-1.5 text-xs"
-                            onClick={() => {
-                              const url = `${window.location.origin}/claim/${guest.claimToken}`;
-                              navigator.clipboard.writeText(url);
-                              toast.success("Link copiado!");
-                            }}
+                            onClick={() =>
+                              setGuestShareModal({
+                                open: true,
+                                guestName: guest.displayName,
+                                shareAmountCents: guest.share?.shareAmountCents,
+                                claimToken: guest.claimToken,
+                              })
+                            }
                           >
-                            <Copy className="h-3.5 w-3.5" />
-                            Copiar link de convite
+                            <QrCode className="h-3.5 w-3.5" />
+                            Compartilhar convite
                           </Button>
                         </div>
                       )}
@@ -927,6 +974,15 @@ export default function BillDetailPage({
           setPixModal({ ...pixModal, open: false });
           toast.success("Pagamento registrado!");
         }}
+      />
+
+      <GuestClaimShareModal
+        open={guestShareModal.open}
+        onClose={() => setGuestShareModal({ ...guestShareModal, open: false })}
+        guestName={guestShareModal.guestName}
+        shareAmountCents={guestShareModal.shareAmountCents}
+        claimToken={guestShareModal.claimToken}
+        expenseTitle={expense.title}
       />
     </div>
   );

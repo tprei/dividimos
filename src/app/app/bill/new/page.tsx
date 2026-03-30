@@ -529,8 +529,11 @@ function NewBillPageContent() {
 
       if (!groupId) {
         const supabase = createClient();
-        const participants = useBillStore.getState().participants;
-        const names = participants.map((p) => p.name.split(" ")[0]);
+        const state = useBillStore.getState();
+        const names = [
+          ...state.participants.map((p) => p.name.split(" ")[0]),
+          ...state.guests.map((g) => g.name.split(" ")[0]),
+        ];
         const groupName = names.length <= 3
           ? names.join(" e ")
           : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
@@ -542,7 +545,7 @@ function NewBillPageContent() {
           .single();
 
         if (group) {
-          const otherParticipants = participants.filter((p) => p.id !== authUser.id);
+          const otherParticipants = state.participants.filter((p) => p.id !== authUser.id);
           if (otherParticipants.length > 0) {
             await supabase.from("group_members").insert(
               otherParticipants.map((p) => ({

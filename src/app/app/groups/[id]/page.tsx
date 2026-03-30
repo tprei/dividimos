@@ -9,6 +9,7 @@ import {
   Clock,
   Pencil,
   Plus,
+  QrCode,
   Receipt,
   Search,
   Trash2,
@@ -18,6 +19,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
@@ -82,6 +84,15 @@ export default function GroupDetailPage({
   const [searching, setSearching] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [unclaimedGuests, setUnclaimedGuests] = useState<
+    { id: string; expenseId: string; displayName: string; claimToken: string; expenseTitle: string }[]
+  >([]);
+  const [guestShareModal, setGuestShareModal] = useState<{
+    open: boolean;
+    guestName: string;
+    claimToken: string;
+    expenseTitle: string;
+  }>({ open: false, guestName: "", claimToken: "", expenseTitle: "" });
 
   const fetchGroup = useCallback(async () => {
     const supabase = createClient();
@@ -182,6 +193,29 @@ export default function GroupDetailPage({
         confirmedAt: s.confirmed_at ?? undefined,
       }))
     );
+
+    const expenseList = expenseRows ?? [];
+    const expenseIds = expenseList.map((e) => e.id);
+    if (expenseIds.length > 0) {
+      const { data: guestRows } = await supabase
+        .from("expense_guests")
+        .select("id, expense_id, display_name, claim_token, claimed_by")
+        .in("expense_id", expenseIds)
+        .is("claimed_by", null);
+
+      const expenseTitleMap = new Map(expenseList.map((e) => [e.id, e.title]));
+      setUnclaimedGuests(
+        (guestRows ?? []).map((g) => ({
+          id: g.id,
+          expenseId: g.expense_id,
+          displayName: g.display_name,
+          claimToken: g.claim_token,
+          expenseTitle: expenseTitleMap.get(g.expense_id) ?? "Despesa",
+        })),
+      );
+    } else {
+      setUnclaimedGuests([]);
+    }
 
     setLoading(false);
   }, [id]);
@@ -519,6 +553,50 @@ export default function GroupDetailPage({
               )}
             </motion.div>
           ))}
+
+          {unclaimedGuests.length > 0 && (
+            <div className="mt-6">
+              <h3 className="mb-2 text-sm font-semibold text-muted-foreground">
+                Convidados pendentes
+              </h3>
+              <div className="space-y-2">
+                {unclaimedGuests.map((guest) => (
+                  <div
+                    key={guest.id}
+                    className="flex items-center justify-between rounded-xl border border-dashed bg-card p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold">
+                        {guest.displayName.charAt(0)}
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium">{guest.displayName}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {guest.expenseTitle}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 text-xs"
+                      onClick={() =>
+                        setGuestShareModal({
+                          open: true,
+                          guestName: guest.displayName,
+                          claimToken: guest.claimToken,
+                          expenseTitle: guest.expenseTitle,
+                        })
+                      }
+                    >
+                      <QrCode className="h-3.5 w-3.5" />
+                      Convidar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -641,6 +719,14 @@ export default function GroupDetailPage({
           )}
         </div>
       )}
+
+      <GuestClaimShareModal
+        open={guestShareModal.open}
+        onClose={() => setGuestShareModal({ ...guestShareModal, open: false })}
+        guestName={guestShareModal.guestName}
+        claimToken={guestShareModal.claimToken}
+        expenseTitle={guestShareModal.expenseTitle}
+      />
     </div>
   );
 }
