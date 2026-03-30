@@ -5,6 +5,7 @@ import { Home, Loader2, Plus, Receipt, RefreshCw, Settings, User, Users } from "
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { UserProvider } from "@/contexts/user-context";
 import type { User as UserType } from "@/types";
@@ -160,6 +161,8 @@ export function AppShell({
             </div>
           </div>
         </header>
+
+        <InstallPrompt className="px-4 pt-2" />
 
         {(pulling || pullDistance > 0) && (
           <div className="flex justify-center py-2">
