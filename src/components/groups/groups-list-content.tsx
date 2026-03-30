@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/use-auth";
+import { notifyGroupAccepted } from "@/lib/push/push-notify";
 import type { GroupMemberStatus, UserProfile } from "@/types";
 
 interface GroupEntry {
@@ -178,6 +179,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
       .update({ status: "accepted" as GroupMemberStatus, accepted_at: new Date().toISOString() })
       .eq("group_id", groupId)
       .eq("user_id", user.id);
+    notifyGroupAccepted(groupId, user.id).catch(() => {});
     await refetch();
   };
 

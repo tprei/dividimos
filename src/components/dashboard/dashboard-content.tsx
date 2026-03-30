@@ -22,6 +22,7 @@ import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { useUser } from "@/hooks/use-auth";
 import { recordSettlement } from "@/lib/supabase/settlement-actions";
+import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { fetchUserDebts } from "@/lib/supabase/debt-actions";
 import type { DebtSummary } from "@/types";
 
@@ -115,6 +116,7 @@ export function DashboardContent({
 
     setActing(debt.groupId + debt.counterpartyId);
     await recordSettlement(debt.groupId, fromUserId, toUserId, amountCents);
+    notifySettlementRecorded(debt.groupId, fromUserId, toUserId, amountCents).catch(() => {});
     setPixModal(null);
     setActing(null);
     fetchDashboard();

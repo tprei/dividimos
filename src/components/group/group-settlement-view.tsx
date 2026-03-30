@@ -20,6 +20,7 @@ import {
   queryBalances,
   recordSettlement,
 } from "@/lib/supabase/settlement-actions";
+import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import type { Balance, User } from "@/types";
 import type { SimplificationResult } from "@/lib/simplify";
@@ -145,6 +146,7 @@ export function GroupSettlementView({
   ) {
     setActing(`${fromUserId}-${toUserId}`);
     await recordSettlement(groupId, fromUserId, toUserId, amountCents);
+    notifySettlementRecorded(groupId, fromUserId, toUserId, amountCents).catch(() => {});
     setPixModal(null);
     setActing(null);
   }

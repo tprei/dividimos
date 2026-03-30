@@ -39,6 +39,7 @@ import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import toast from "react-hot-toast";
+import { notifyExpenseActivated } from "@/lib/push/push-notify";
 import type {
   DebtEdge,
   Expense,
@@ -131,6 +132,7 @@ function CreatorDraftView({
       setFinalizing(false);
       return;
     }
+    notifyExpenseActivated(expense.id).catch(() => {});
     // Reload from DB to get authoritative state
     const fresh = await loadExpense(expense.id);
     if (fresh) {
