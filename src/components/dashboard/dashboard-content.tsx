@@ -8,9 +8,9 @@ import {
   Eye,
   EyeOff,
   Plus,
+  QrCode,
   RefreshCw,
   ScanLine,
-  UserPlus,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -247,9 +247,9 @@ export function DashboardContent({
         className="mt-4 grid grid-cols-2 gap-3"
       >
         <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
-        <QuickAction icon={ScanLine} label="Escanear NFC" href="/app/bill/new" />
+        <QuickAction icon={ScanLine} label="Escanear NFe" href="/app/bill/new" />
         <QuickAction icon={Users} label="Grupos" href="/app/groups" />
-        <QuickAction icon={UserPlus} label="Entrar em conta" href="/app/scan-invite" />
+        <QuickAction icon={QrCode} label="Ler convite" href="/app/scan-invite" />
       </motion.div>
 
       <motion.div

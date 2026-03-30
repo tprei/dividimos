@@ -183,12 +183,12 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
 
   const handleDeclineInvite = async (groupId: string) => {
     if (!user) return;
+    setInvites((prev) => prev.filter((i) => i.groupId !== groupId));
     await createClient()
       .from("group_members")
       .delete()
       .eq("group_id", groupId)
       .eq("user_id", user.id);
-    await refetch();
   };
 
   return (

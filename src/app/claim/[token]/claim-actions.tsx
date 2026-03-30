@@ -64,7 +64,16 @@ export function ClaimActions({
     });
 
     if (rpcError) {
-      setError(rpcError.message);
+      const msg = rpcError.message;
+      if (msg.includes("duplicate_participant")) {
+        setError("Você já está incluso nessa despesa!");
+      } else if (msg.includes("already_claimed")) {
+        setError("Este convite já foi aceito por outra pessoa.");
+      } else if (msg.includes("invalid_token")) {
+        setError("Convite inválido ou expirado.");
+      } else {
+        setError("Erro ao confirmar participação. Tente novamente.");
+      }
       setClaiming(false);
       return;
     }

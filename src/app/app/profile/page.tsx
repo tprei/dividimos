@@ -81,7 +81,7 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/auth");
+    window.location.href = "/auth";
   };
 
   const startEditPix = () => {

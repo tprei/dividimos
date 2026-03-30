@@ -1,17 +1,19 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Phone } from "lucide-react";
+import { ArrowLeft, ArrowRight, Phone, QrCode } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useRef, useState, useTransition } from "react";
+import { Suspense, useCallback, useRef, useState, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { safeRedirect } from "@/lib/safe-redirect";
+import { QrScannerView } from "@/components/bill/qr-scanner-view";
+import { parseClaimQrCode } from "@/lib/claim-qr";
 import { sendTestOtp, verifyPhoneOtp } from "./phone-actions";
 
-type AuthMode = "choose" | "phone" | "otp";
+type AuthMode = "choose" | "phone" | "otp" | "scan";
 
 const IS_TEST_MODE = process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE === "true";
 
@@ -34,6 +36,16 @@ function AuthPageContent() {
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleScanDecode = useCallback(
+    (data: string) => {
+      const claim = parseClaimQrCode(data);
+      if (claim) {
+        router.push(`/claim/${claim.token}`);
+      }
+    },
+    [router],
+  );
 
   const handleGoogleSignIn = async () => {
     await supabase.auth.signInWithOAuth({
@@ -168,6 +180,51 @@ function AuthPageContent() {
                       <Phone className="h-4 w-4" />
                       Entrar com celular
                     </Button>
+
+                    <div className="flex items-center gap-3">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-xs text-muted-foreground">ou</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setMode("scan")}
+                      className="flex w-full items-center justify-center gap-2 text-sm text-primary hover:underline"
+                    >
+                      <QrCode className="h-4 w-4" />
+                      Clique aqui para ler um convite
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {mode === "scan" && (
+                <motion.div
+                  key="scan"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <button
+                    onClick={() => setMode("choose")}
+                    className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Voltar
+                  </button>
+
+                  <h1 className="text-xl font-semibold">Ler convite</h1>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Aponte para o QR code do convite.
+                  </p>
+
+                  <div className="mt-6">
+                    <QrScannerView onDecode={handleScanDecode} />
+                    <p className="mt-3 text-center text-xs text-muted-foreground">
+                      Posicione o QR code do convite dentro do quadrado
+                    </p>
                   </div>
                 </motion.div>
               )}
@@ -322,7 +379,7 @@ function AuthPageContent() {
         </motion.div>
 
         <div className="mt-6 flex justify-center gap-2">
-          {(["choose", "phone", "otp"] as AuthMode[]).map((s) => (
+          {(["choose", "phone", "otp", "scan"] as AuthMode[]).map((s) => (
             <motion.div
               key={s}
               animate={{
