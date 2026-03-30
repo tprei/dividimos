@@ -53,7 +53,7 @@ test.describe("Expense Lifecycle", () => {
     await bobPaymentTab.click();
 
     await expect(
-      bobPage.getByText(/Voce deve|Ir para acerto do grupo/i).first(),
+      bobPage.getByText(/Você deve|Ir para acerto do grupo/i).first(),
     ).toBeVisible();
 
     // Bob navigates to the group settlement tab

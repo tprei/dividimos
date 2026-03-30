@@ -58,7 +58,7 @@ test.describe("Settlement Flow", () => {
     await bobPage.getByRole("button", { name: "Acerto" }).click();
 
     await expect(
-      bobPage.getByText(/Voce deve|Voce recebe|a pagar|a receber/i).first(),
+      bobPage.getByText(/Você deve|Você recebe|a pagar|a receber/i).first(),
     ).toBeVisible({ timeout: 10000 });
 
     // Settle Bob's debt to Alice via RPC
@@ -170,7 +170,7 @@ test.describe("Settlement Flow", () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("R$ 100,00").first()).toBeVisible();
-    await expect(page.getByText("Voce deve")).toBeVisible();
+    await expect(page.getByText("Você deve")).toBeVisible();
   });
 
   test("creditor sees 'Gerar cobranca' button on settlement tab", async ({
@@ -203,7 +203,7 @@ test.describe("Settlement Flow", () => {
       page.getByRole("button", { name: /Gerar cobranca/i }),
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("Voce recebe")).toBeVisible();
+    await expect(page.getByText("Você recebe")).toBeVisible();
     await expect(page.getByText("R$ 50,00").first()).toBeVisible();
   });
 });

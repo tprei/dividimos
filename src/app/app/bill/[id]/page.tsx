@@ -643,7 +643,7 @@ export default function BillDetailPage({
             </span>
             <span className="flex items-center gap-1">
               <Users className="h-3.5 w-3.5" />
-              {allParticipants.length + (expense.guests?.length ?? 0)} pessoas
+              {allParticipants.length + unclaimedGuests.length} pessoas
             </span>
             {debts.length > 0 && (
               <span className="flex items-center gap-1">

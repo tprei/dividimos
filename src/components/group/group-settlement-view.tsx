@@ -238,7 +238,7 @@ export function GroupSettlementView({
                       {from.name.split(" ")[0]} → {to.name.split(" ")[0]}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {isDebtor ? "Voce deve" : isCreditor ? "Voce recebe" : "Pendente"}
+                      {isDebtor ? "Você deve" : isCreditor ? "Você recebe" : "Pendente"}
                     </p>
                   </div>
                   <div className="text-right">
