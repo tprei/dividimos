@@ -42,7 +42,7 @@ describe("InstallPrompt", () => {
     vi.clearAllMocks();
     setStandaloneMode(false);
     // Clear any captured prompt from previous tests
-    (window as Record<string, unknown>).__pwaInstallPrompt = null;
+    (window as unknown as Record<string, unknown>).__pwaInstallPrompt = null;
   });
 
   afterEach(() => {
@@ -96,7 +96,7 @@ describe("InstallPrompt", () => {
         outcome: "accepted" as const,
       });
 
-      (window as Record<string, unknown>).__pwaInstallPrompt = {
+      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
         prompt: mockPrompt,
         userChoice: mockChoice,
         preventDefault: vi.fn(),
@@ -160,7 +160,7 @@ describe("InstallPrompt", () => {
         outcome: "dismissed" as const,
       });
 
-      (window as Record<string, unknown>).__pwaInstallPrompt = {
+      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
         prompt: mockPrompt,
         userChoice: mockChoice,
         preventDefault: vi.fn(),
