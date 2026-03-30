@@ -3,14 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { notifyUser } from "@/lib/push/notify-user";
 import type { PushPayload } from "@/lib/push/web-push";
 
-/**
- * POST /api/push/send
- *
- * Send a push notification to a target user. Only authenticated users
- * can trigger this (the caller must be a member of the same group, etc).
- *
- * Body: { userId: string; title: string; body: string; url?: string; tag?: string }
- */
 export async function POST(request: Request) {
   const supabase = await createClient();
 
@@ -40,6 +32,29 @@ export async function POST(request: Request) {
       { error: "userId, title e body são obrigatórios" },
       { status: 400 },
     );
+  }
+
+  const { data: callerGroups } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("user_id", user.id)
+    .eq("status", "accepted");
+
+  const callerGroupIds = (callerGroups ?? []).map((g) => g.group_id);
+
+  if (callerGroupIds.length === 0) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
+  }
+
+  const { count } = await supabase
+    .from("group_members")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "accepted")
+    .in("group_id", callerGroupIds);
+
+  if (!count || count === 0) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
   const payload: PushPayload = {

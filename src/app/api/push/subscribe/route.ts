@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { encryptPixKey as encrypt } from "@/lib/crypto";
+import {
+  encryptPixKey as encrypt,
+  decryptPixKey as decrypt,
+} from "@/lib/crypto";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -28,9 +31,33 @@ export async function POST(request: Request) {
     );
   }
 
+  const admin = createAdminClient();
+
+  const { data: existing } = await admin
+    .from("push_subscriptions")
+    .select("id, subscription")
+    .eq("user_id", user.id);
+
+  const duplicateIds: string[] = [];
+  for (const row of existing ?? []) {
+    try {
+      const sub = JSON.parse(decrypt(row.subscription)) as {
+        endpoint: string;
+      };
+      if (sub.endpoint === subscription.endpoint) {
+        duplicateIds.push(row.id);
+      }
+    } catch {
+      // Skip rows that can't be decrypted — stale data
+    }
+  }
+
+  if (duplicateIds.length > 0) {
+    await admin.from("push_subscriptions").delete().in("id", duplicateIds);
+  }
+
   const encrypted = encrypt(JSON.stringify(subscription));
 
-  const admin = createAdminClient();
   const { error } = await admin.from("push_subscriptions").insert({
     user_id: user.id,
     subscription: encrypted,
