@@ -17,7 +17,7 @@ function isMobileBrowser(): boolean {
 
 export function InstallPrompt({ className }: { className?: string } = {}) {
   const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [hasPrompt, setHasPrompt] = useState(false);
   const [isIosSafari, setIsIosSafari] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -32,22 +32,22 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
       return;
     }
 
-    setVisible(true);
-
     const captured = (window as unknown as Record<string, unknown>).__pwaInstallPrompt as BeforeInstallPromptEvent | null;
     if (captured) {
       deferredPrompt.current = captured;
       (window as unknown as Record<string, unknown>).__pwaInstallPrompt = null;
+      setHasPrompt(true);
     }
 
     const onBeforeInstall = (e: Event) => {
       e.preventDefault();
       deferredPrompt.current = e as BeforeInstallPromptEvent;
+      setHasPrompt(true);
     };
 
     const onAppInstalled = () => {
       deferredPrompt.current = null;
-      setVisible(false);
+      setHasPrompt(false);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
@@ -60,20 +60,16 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
 
   async function handleInstall() {
     const prompt = deferredPrompt.current;
-    if (prompt) {
-      await prompt.prompt();
-      const { outcome } = await prompt.userChoice;
-      if (outcome === "accepted") {
-        deferredPrompt.current = null;
-        setVisible(false);
-        return;
-      }
+    if (!prompt) return;
+    await prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === "accepted") {
+      deferredPrompt.current = null;
+      setHasPrompt(false);
     }
-
-    setDismissed(true);
   }
 
-  if (dismissed || !visible) return null;
+  if (dismissed || (!hasPrompt && !isIosSafari)) return null;
 
   if (isIosSafari) {
     return (
