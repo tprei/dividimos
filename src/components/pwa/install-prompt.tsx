@@ -9,17 +9,21 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+function isMobileBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia("(display-mode: standalone)").matches) return false;
+  return /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
 export function InstallPrompt({ className }: { className?: string } = {}) {
   const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
-  const [installable, setInstallable] = useState(false);
+  const [visible, setVisible] = useState(false);
   const [isIosSafari, setIsIosSafari] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    // Already running as installed PWA — hide everything
-    if (window.matchMedia("(display-mode: standalone)").matches) return;
+    if (!isMobileBrowser()) return;
 
-    // Detect iOS Safari (no beforeinstallprompt support)
     const ua = navigator.userAgent;
     const isIos = /iPad|iPhone|iPod/.test(ua);
     const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS/.test(ua);
@@ -28,22 +32,22 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
       return;
     }
 
+    setVisible(true);
+
     const captured = (window as unknown as Record<string, unknown>).__pwaInstallPrompt as BeforeInstallPromptEvent | null;
     if (captured) {
       deferredPrompt.current = captured;
       (window as unknown as Record<string, unknown>).__pwaInstallPrompt = null;
-      setInstallable(true);
     }
 
     const onBeforeInstall = (e: Event) => {
       e.preventDefault();
       deferredPrompt.current = e as BeforeInstallPromptEvent;
-      setInstallable(true);
     };
 
     const onAppInstalled = () => {
       deferredPrompt.current = null;
-      setInstallable(false);
+      setVisible(false);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
@@ -56,16 +60,20 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
 
   async function handleInstall() {
     const prompt = deferredPrompt.current;
-    if (!prompt) return;
-    await prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === "accepted") {
-      deferredPrompt.current = null;
-      setInstallable(false);
+    if (prompt) {
+      await prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      if (outcome === "accepted") {
+        deferredPrompt.current = null;
+        setVisible(false);
+        return;
+      }
     }
+
+    setDismissed(true);
   }
 
-  if (dismissed) return null;
+  if (dismissed || !visible) return null;
 
   if (isIosSafari) {
     return (
@@ -90,8 +98,6 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
       </div>
     );
   }
-
-  if (!installable) return null;
 
   return (
     <div className={className}>
