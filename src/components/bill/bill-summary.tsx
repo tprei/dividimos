@@ -121,7 +121,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
               {expense.serviceFeePercent > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
-                    Servico ({expense.serviceFeePercent}%)
+                    Garçom ({expense.serviceFeePercent}%)
                   </span>
                   <span className="tabular-nums">{formatBRL(serviceFee)}</span>
                 </div>
@@ -140,7 +140,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
           )}
           {unassigned > 0 && (
             <div className="flex justify-between text-warning-foreground">
-              <span className="text-xs">Valor nao atribuido</span>
+              <span className="text-xs">Valor não atribuído</span>
               <span className="text-xs font-medium tabular-nums">
                 {formatBRL(unassigned)}
               </span>
@@ -190,7 +190,7 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
                   <div className="mt-1.5 flex gap-3 text-[11px] text-muted-foreground">
                     <span>Itens: {formatBRL(entry.itemTotal)}</span>
                     {entry.serviceFee > 0 && (
-                      <span>Servico: {formatBRL(entry.serviceFee)}</span>
+                      <span>Garçom: {formatBRL(entry.serviceFee)}</span>
                     )}
                     {entry.fixedFee > 0 && (
                       <span>Couvert: {formatBRL(entry.fixedFee)}</span>

@@ -66,7 +66,7 @@ describe("BillSummary", () => {
     );
 
     expect(screen.getByText("Subtotal dos itens")).toBeInTheDocument();
-    expect(screen.getAllByText(/Servico/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Garçom/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/Couvert/).length).toBeGreaterThanOrEqual(1);
   });
 
@@ -82,7 +82,7 @@ describe("BillSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Valor nao atribuido")).toBeInTheDocument();
+    expect(screen.getByText("Valor não atribuído")).toBeInTheDocument();
   });
 
   it("shows split label for percentage splits", () => {

@@ -15,7 +15,7 @@ describe("web-push", () => {
     vi.resetModules();
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "BFakePublicKeyForTesting123456789012345678901234567890123456789012345";
     process.env.VAPID_PRIVATE_KEY = "fakePrivateKeyForTesting1234567890123456";
-    process.env.VAPID_SUBJECT = "mailto:test@pixwise.app";
+    process.env.VAPID_SUBJECT = "mailto:test@pagajaja.app";
   });
 
   afterEach(() => {

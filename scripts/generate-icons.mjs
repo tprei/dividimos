@@ -30,15 +30,16 @@ for (const size of [192, 512]) {
 // Placeholder screenshot for richer Android install UI (540x960)
 mkdirSync("public/screenshots", { recursive: true });
 const screenshotSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 960">
-  <rect width="540" height="960" fill="#f5fdfc"/>
-  <rect y="0" width="540" height="64" fill="#0d9488"/>
-  <text x="270" y="40" text-anchor="middle" font-size="22" font-weight="bold" fill="#fff" font-family="sans-serif">Pixwise</text>
-  <g transform="translate(270, 400)">
-    <rect x="-80" y="-80" width="160" height="160" rx="32" fill="#0d9488" opacity="0.1"/>
-    <text x="0" y="8" text-anchor="middle" font-size="48" font-weight="bold" fill="#0d9488" font-family="sans-serif">₱W</text>
+  <rect width="540" height="960" fill="#F9F9FB"/>
+  <rect y="0" width="540" height="64" fill="#FEA101"/>
+  <text x="270" y="40" text-anchor="middle" font-size="22" font-weight="bold" fill="#fff" font-family="sans-serif">Pagajaja</text>
+  <g transform="translate(270, 380)">
+    <circle cx="0" cy="0" r="80" fill="#FEA101" opacity="0.1"/>
+    <circle cx="0" cy="0" r="60" fill="none" stroke="#FEA101" stroke-width="6" opacity="0.5"/>
+    <text x="0" y="12" text-anchor="middle" font-size="44" font-weight="bold" fill="#FEA101" font-family="sans-serif">R$</text>
   </g>
-  <text x="270" y="560" text-anchor="middle" font-size="20" fill="#0d9488" font-family="sans-serif">Divida a conta sem estresse</text>
-  <text x="270" y="600" text-anchor="middle" font-size="14" fill="#64748b" font-family="sans-serif">Escaneie, divida e pague via Pix</text>
+  <text x="270" y="520" text-anchor="middle" font-size="22" font-weight="bold" fill="#1a1d2e" font-family="sans-serif">Ja te pago</text>
+  <text x="270" y="560" text-anchor="middle" font-size="14" fill="#64748b" font-family="sans-serif">Racha a conta e paga via Pix na hora</text>
 </svg>`);
 await sharp(screenshotSvg)
   .resize(540, 960)

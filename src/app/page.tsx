@@ -52,7 +52,7 @@ export default function LandingPage() {
       <footer className="border-t py-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 text-sm text-muted-foreground sm:px-6">
           <Logo size="sm" />
-          <p>2026 Pixwise</p>
+          <p>2026 Pagajaja</p>
         </div>
       </footer>
     </div>

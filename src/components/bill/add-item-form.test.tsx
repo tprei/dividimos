@@ -8,7 +8,7 @@ describe("AddItemForm", () => {
     render(<AddItemForm onAdd={vi.fn()} onCancel={vi.fn()} />);
 
     expect(screen.getByText("Adicionar item")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Descricao/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Descrição/)).toBeInTheDocument();
     expect(screen.getByPlaceholderText("0,00")).toBeInTheDocument();
   });
 
@@ -45,7 +45,7 @@ describe("AddItemForm", () => {
     const onAdd = vi.fn();
     render(<AddItemForm onAdd={onAdd} onCancel={vi.fn()} />);
 
-    const form = screen.getByPlaceholderText(/Descricao/).closest("form")!;
+    const form = screen.getByPlaceholderText(/Descrição/).closest("form")!;
     fireEvent.submit(form);
 
     expect(onAdd).not.toHaveBeenCalled();

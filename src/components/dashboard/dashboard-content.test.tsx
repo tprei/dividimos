@@ -67,12 +67,12 @@ describe("DashboardContent", () => {
       makeDebt({ direction: "owes", amountCents: 2000 }),
     ];
     render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
-    expect(screen.getByText("2 dividas pendentes")).toBeInTheDocument();
+    expect(screen.getByText("2 contas pendentes")).toBeInTheDocument();
   });
 
   it("shows empty state when no debts on active tab", () => {
     render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
-    expect(screen.getByText("Tudo em dia!")).toBeInTheDocument();
+    expect(screen.getByText("Tô liso! Tudo certo por aqui.")).toBeInTheDocument();
   });
 
   it("renders debt cards for owes tab by default", () => {

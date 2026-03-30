@@ -15,15 +15,15 @@ describe("SimplificationToggle", () => {
   it("renders toggle label", () => {
     render(<SimplificationToggle {...defaultProps} />);
 
-    expect(screen.getByText("Simplificar dividas")).toBeInTheDocument();
-    expect(screen.getByText("Menos transferencias para todos")).toBeInTheDocument();
+    expect(screen.getByText("Simplificar dívidas")).toBeInTheDocument();
+    expect(screen.getByText("Menos Pix pra todo mundo")).toBeInTheDocument();
   });
 
   it("renders switch with correct aria label", () => {
     render(<SimplificationToggle {...defaultProps} />);
 
     // base-ui Switch renders as a button with role="switch"
-    const toggle = screen.getByLabelText("Ativar simplificacao de dividas");
+    const toggle = screen.getByLabelText("Ativar simplificação de dívidas");
     expect(toggle).toBeInTheDocument();
   });
 
@@ -33,13 +33,13 @@ describe("SimplificationToggle", () => {
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("-3")).toBeInTheDocument();
-    expect(screen.getByText("transacoes")).toBeInTheDocument();
+    expect(screen.getByText("Pix")).toBeInTheDocument();
   });
 
-  it("shows 'Ver passo a passo' button when enabled", () => {
+  it("shows 'Ver como simplificou' button when enabled", () => {
     render(<SimplificationToggle {...defaultProps} enabled={true} />);
 
-    expect(screen.getByText("Ver passo a passo")).toBeInTheDocument();
+    expect(screen.getByText("Ver como simplificou")).toBeInTheDocument();
   });
 
   it("calls onViewSteps when button clicked", async () => {
@@ -49,7 +49,7 @@ describe("SimplificationToggle", () => {
       <SimplificationToggle {...defaultProps} enabled={true} onViewSteps={onViewSteps} />,
     );
 
-    const btn = screen.getByText("Ver passo a passo").closest("button")!;
+    const btn = screen.getByText("Ver como simplificou").closest("button")!;
     await user.click(btn);
     expect(onViewSteps).toHaveBeenCalledOnce();
   });
@@ -57,7 +57,7 @@ describe("SimplificationToggle", () => {
   it("does not show detail panel when disabled", () => {
     render(<SimplificationToggle {...defaultProps} enabled={false} />);
 
-    expect(screen.queryByText("transacoes")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ver passo a passo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pix")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ver como simplificou")).not.toBeInTheDocument();
   });
 });

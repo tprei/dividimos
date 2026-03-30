@@ -7,15 +7,15 @@ describe("BillTypeSelector", () => {
   it("renders both bill type options", () => {
     render(<BillTypeSelector onSelect={vi.fn()} />);
 
-    expect(screen.getByText("Valor unico")).toBeInTheDocument();
-    expect(screen.getByText("Varios itens")).toBeInTheDocument();
+    expect(screen.getByText("Valor único")).toBeInTheDocument();
+    expect(screen.getByText("Vários itens")).toBeInTheDocument();
   });
 
   it("shows heading and description", () => {
     render(<BillTypeSelector onSelect={vi.fn()} />);
 
     expect(screen.getByText("Que tipo de conta?")).toBeInTheDocument();
-    expect(screen.getByText("Escolha como voce quer dividir.")).toBeInTheDocument();
+    expect(screen.getByText("Escolha como você quer rachar.")).toBeInTheDocument();
   });
 
   it("shows examples for each option", () => {
@@ -31,7 +31,7 @@ describe("BillTypeSelector", () => {
     render(<BillTypeSelector onSelect={onSelect} />);
 
     // motion.button renders as <button>, find by text content
-    const btn = screen.getByText("Valor unico").closest("button");
+    const btn = screen.getByText("Valor único").closest("button");
     expect(btn).not.toBeNull();
     await user.click(btn!);
     expect(onSelect).toHaveBeenCalledWith("single_amount");
@@ -42,7 +42,7 @@ describe("BillTypeSelector", () => {
     const user = userEvent.setup();
     render(<BillTypeSelector onSelect={onSelect} />);
 
-    const btn = screen.getByText("Varios itens").closest("button");
+    const btn = screen.getByText("Vários itens").closest("button");
     expect(btn).not.toBeNull();
     await user.click(btn!);
     expect(onSelect).toHaveBeenCalledWith("itemized");

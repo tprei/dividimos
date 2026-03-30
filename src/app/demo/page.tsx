@@ -269,7 +269,7 @@ export default function DemoPage() {
             {(
               [
                 { key: "items", label: "Itens" },
-                { key: "split", label: "Divisao" },
+                { key: "split", label: "Divisão" },
                 { key: "payment", label: "Pagamento" },
               ] as const
             ).map((tab) => (
@@ -364,7 +364,7 @@ export default function DemoPage() {
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/15">
                     <CheckCheck className="h-8 w-8 text-success" />
                   </div>
-                  <h3 className="mt-4 text-lg font-bold">Tudo liquidado!</h3>
+                  <h3 className="mt-4 text-lg font-bold">Tudo quitado!</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Todos os pagamentos foram confirmados.
                   </p>
@@ -383,7 +383,7 @@ export default function DemoPage() {
 
                   <div>
                     <h2 className="mb-3 text-sm font-semibold">
-                      Cobrancas
+                      Cobranças
                       {simplificationResult && (
                         <span className="ml-2 text-xs font-normal text-muted-foreground">
                           {simplifyEnabled
@@ -440,7 +440,7 @@ export default function DemoPage() {
                                         {entry.status === "settled" && (
                                           <>
                                             <CheckCheck className="h-3 w-3" />
-                                            Liquidado
+                                            Quitada
                                           </>
                                         )}
                                       </motion.span>
@@ -494,7 +494,7 @@ export default function DemoPage() {
                                       className="mt-3 flex items-center gap-2 rounded-lg bg-success/5 px-3 py-2"
                                     >
                                       <CheckCheck className="h-4 w-4 shrink-0 text-success" />
-                                      <span className="text-xs text-success">Liquidado</span>
+                                      <span className="text-xs text-success">Quitado</span>
                                     </motion.div>
                                   )}
                                 </AnimatePresence>
@@ -517,9 +517,9 @@ export default function DemoPage() {
           transition={{ delay: 0.3, duration: 0.4 }}
           className="rounded-3xl gradient-primary p-8 text-white text-center shadow-xl shadow-primary/20"
         >
-          <h2 className="text-xl font-bold">Pronto para dividir com seus amigos?</h2>
+          <h2 className="text-xl font-bold">Bora rachar com a galera?</h2>
           <p className="mt-2 text-sm text-white/80">
-            Crie sua conta e comece a dividir contas sem estresse.
+            Entra aí e comece a rachar as contas sem drama.
           </p>
           <Link href="/auth">
             <Button
@@ -551,7 +551,7 @@ export default function DemoPage() {
         <Sheet open={showSimplifySteps} onOpenChange={setShowSimplifySteps}>
           <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-3xl">
             <SheetHeader>
-              <SheetTitle>Simplificacao passo a passo</SheetTitle>
+              <SheetTitle>Simplificação passo a passo</SheetTitle>
             </SheetHeader>
             <div className="mt-4 pb-8">
               <SimplificationViewer

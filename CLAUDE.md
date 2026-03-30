@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# Pixwise
+# Pagajaja
 
 Expense-splitting web app targeting the Brazilian market with Pix integration and Google OAuth. Uses a Splitwise-inspired architecture: every expense belongs to a group, and activating an expense atomically updates running net balances between user pairs.
 
@@ -35,7 +35,7 @@ Expense-splitting web app targeting the Brazilian market with Pix integration an
 npm run dev                  # start dev server
 ```
 
-**With Docker** (full local Supabase): the script runs `supabase start`, writes `.env.local`, and seeds test users (alice/bob/carol@test.pixwise.local, password: password123).
+**With Docker** (full local Supabase): the script runs `supabase start`, writes `.env.local`, and seeds test users (alice/bob/carol@test.pagajaja.local, password: password123).
 
 **Without Docker** (remote Supabase): set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` env vars before running the script, or it writes placeholder values (public pages only).
 
@@ -71,7 +71,7 @@ curl -X POST http://localhost:3000/api/dev/login \
 # Email-based (for seed users with local Supabase):
 curl -X POST http://localhost:3000/api/dev/login \
   -H 'Content-Type: application/json' \
-  -d '{"email": "alice@test.pixwise.local"}'
+  -d '{"email": "alice@test.pagajaja.local"}'
 ```
 
 The response sets session cookies. Or use the UI: navigate to `/auth` → "Entrar com celular" → any phone number → any 6-digit OTP.

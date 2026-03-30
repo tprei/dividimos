@@ -235,7 +235,7 @@ export function DashboardContent({
             {balanceVisible ? formatBRL(Math.abs(netBalance)) : "R$ ••••••"}
           </motion.p>
           <p className="mt-1 text-sm text-white/60">
-            {owesCount} divida
+            {owesCount} conta
             {owesCount !== 1 ? "s" : ""} pendente
             {owesCount !== 1 ? "s" : ""}
           </p>
@@ -249,7 +249,7 @@ export function DashboardContent({
         className="mt-4 grid grid-cols-2 gap-3"
       >
         <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
-        <QuickAction icon={ScanLine} label="Escanear NFe" href="/app/bill/new" />
+        <QuickAction icon={ScanLine} label="Ler cupom" href="/app/bill/new" />
         <QuickAction icon={Users} label="Grupos" href="/app/groups" />
         <QuickAction icon={QrCode} label="Ler convite" href="/app/scan-invite" />
       </motion.div>
@@ -261,12 +261,12 @@ export function DashboardContent({
         className="mt-8"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Suas dividas</h2>
+          <h2 className="text-lg font-semibold">Quem deve o quê</h2>
           <Link
             href="/app/groups"
             className="flex items-center gap-1 text-sm font-medium text-primary"
           >
-            Ver todas
+            Ver tudo
           </Link>
         </div>
 
@@ -279,7 +279,7 @@ export function DashboardContent({
                 : "bg-muted text-muted-foreground"
             }`}
           >
-            Voce deve{" "}
+            Você deve{" "}
             <span
               className={`ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold ${
                 activeTab === "owes"
@@ -298,7 +298,7 @@ export function DashboardContent({
                 : "bg-muted text-muted-foreground"
             }`}
           >
-            Voce recebe{" "}
+            Você recebe{" "}
             <span
               className={`ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold ${
                 activeTab === "owed"
@@ -315,12 +315,12 @@ export function DashboardContent({
           <div className="mt-6 rounded-2xl border border-dashed p-8 text-center">
             <CheckCheck className="mx-auto h-8 w-8 text-success opacity-50" />
             <p className="mt-2 text-sm font-medium text-foreground">
-              {activeTab === "owes" ? "Tudo em dia!" : "Nada a receber"}
+              {activeTab === "owes" ? "Tô liso! Tudo certo por aqui." : "Ninguém te deve nada"}
             </p>
             <p className="text-sm text-muted-foreground">
               {activeTab === "owes"
-                ? "Nenhuma divida pendente"
-                : "Nenhum pagamento pendente"}
+                ? "Nenhuma conta pendente"
+                : "Nenhum Pix a caminho"}
             </p>
           </div>
         )}

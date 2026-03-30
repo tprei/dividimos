@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright E2E configuration for Pixwise user story validation.
+ * Playwright E2E configuration for Pagajaja user story validation.
  *
  * Run locally with: npx playwright test --ui
  * Run headed: npx playwright test --headed

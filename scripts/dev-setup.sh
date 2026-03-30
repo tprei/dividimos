@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command local development setup for Pixwise.
+# One-command local development setup for Pagajaja.
 # Detects Docker → runs local Supabase. No Docker → uses remote project.
 #
 # Usage:
@@ -101,7 +101,7 @@ NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true
 EOF
 
   info "Local Supabase is running. .env.local written."
-  info "Seed users: alice / bob / carol @test.pixwise.local (password123)"
+  info "Seed users: alice / bob / carol @test.pagajaja.local (password123)"
   info "Run 'npm run dev' to start the app."
 
 # -------------------------------------------------------------------

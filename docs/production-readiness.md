@@ -1,4 +1,4 @@
-# Pixwise Production Readiness Research
+# Pagajaja Production Readiness Research
 
 > Research compiled March 2026. Prices and feature availability may change.
 
@@ -30,7 +30,7 @@
 | **Weaknesses** | Bandwidth overages expensive ($40/100GB), US-East default (latency for Brazil) |
 | **Brazil latency** | ~150-200ms from São Paulo (nearest edge: GRU via CDN, but serverless runs US-East) |
 
-**Why it's best for launch:** Pixwise uses `proxy.ts` (Next.js 16 convention), which only Vercel supports natively. Zero config means shipping faster.
+**Why it's best for launch:** Pagajaja uses `proxy.ts` (Next.js 16 convention), which only Vercel supports natively. Zero config means shipping faster.
 
 ### Cloudflare Workers + OpenNext
 
@@ -106,7 +106,7 @@ See [Section 2](#2-cloudflare--opennext-deep-dive) for detailed analysis.
 
 ### What OpenNext Does NOT Support
 
-❌ **Node Middleware / `proxy.ts`** — Pixwise uses `proxy.ts` for Supabase auth session management. Must be renamed to `middleware.ts` and rewritten as Edge middleware until OpenNext adds support. 
+❌ **Node Middleware / `proxy.ts`** — Pagajaja uses `proxy.ts` for Supabase auth session management. Must be renamed to `middleware.ts` and rewritten as Edge middleware until OpenNext adds support. 
 ❌ **`'use cache'` (Composable Caching)** — Planned but not yet implemented. 
 
 ### Hard Constraints
@@ -118,11 +118,11 @@ See [Section 2](#2-cloudflare--opennext-deep-dive) for detailed analysis.
 | Free | 3 MiB |
 | Paid ($5/mo) | 10 MiB |
 
-Pixwise dependencies (`framer-motion`, `qrcode`, `@supabase/supabase-js`, `shadcn`, `zustand`, `lucide-react`) plus Next.js itself will likely exceed 3 MiB. A real-world Next.js 16 migration found their initial bundle was **49.6 MB uncompressed**. Aggressive optimization (tree-shaking, Webpack forced over Turbopack, `optimizePackageImports`) is required.
+Pagajaja dependencies (`framer-motion`, `qrcode`, `@supabase/supabase-js`, `shadcn`, `zustand`, `lucide-react`) plus Next.js itself will likely exceed 3 MiB. A real-world Next.js 16 migration found their initial bundle was **49.6 MB uncompressed**. Aggressive optimization (tree-shaking, Webpack forced over Turbopack, `optimizePackageImports`) is required.
 
 #### I/O Isolation
 
-Cloudflare Workers cannot share I/O objects (streams, DB connections) across requests. Pixwise creates Supabase clients per-request in middleware — this is fine. But a global Supabase client would fail with "Cannot perform I/O on behalf of a different request."
+Cloudflare Workers cannot share I/O objects (streams, DB connections) across requests. Pagajaja creates Supabase clients per-request in middleware — this is fine. But a global Supabase client would fail with "Cannot perform I/O on behalf of a different request."
 
 ### Image Optimization on Cloudflare
 
@@ -136,7 +136,7 @@ Not zero-config like Vercel. Requires:
 
 ### `node:crypto` Compatibility
 
-Pixwise's `src/lib/crypto.ts` uses `createCipheriv`/`createDecipheriv` with AES-256-GCM. This **works** on Cloudflare Workers since April 2025 with:
+Pagajaja's `src/lib/crypto.ts` uses `createCipheriv`/`createDecipheriv` with AES-256-GCM. This **works** on Cloudflare Workers since April 2025 with:
 - `nodejs_compat` compatibility flag enabled
 - `compatibility_date >= 2024-09-23`
 
@@ -473,7 +473,7 @@ experimental: {
 
 ### Why PWA?
 
-Pixwise is a mobile-first bill splitting app. A PWA provides:
+Pagajaja is a mobile-first bill splitting app. A PWA provides:
 - Add to home screen (looks like native app)
 - Offline capability (view recent bills without network)
 - Push notifications (future: payment reminders)
@@ -495,8 +495,8 @@ Key files:
 
 ```json
 {
-  "name": "Pixwise",
-  "short_name": "Pixwise",
+  "name": "Pagajaja",
+  "short_name": "Pagajaja",
   "description": "Divida contas com Pix",
   "start_url": "/app",
   "display": "standalone",
@@ -517,7 +517,7 @@ Key files:
 
 Brazil's General Data Protection Law (Lei Geral de Proteção de Dados). Applies to any app processing data of Brazilian residents. Penalties: up to 2% of revenue or BRL 50 million per infraction.
 
-### What Pixwise Must Do
+### What Pagajaja Must Do
 
 1. **Privacy Policy (Política de Privacidade)** — Required, in Portuguese. Must explain:
    - What data is collected (email, name, Google profile, Pix key)

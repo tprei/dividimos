@@ -133,7 +133,7 @@ function AuthPageContent() {
           transition={{ duration: 0.4, delay: 0.15 }}
           className="mt-4 text-center text-muted-foreground"
         >
-          Divida contas com amigos via Pix
+          Racha a conta com a galera via Pix
         </motion.p>
 
         <motion.div
@@ -154,7 +154,7 @@ function AuthPageContent() {
                 >
                   <h1 className="text-center text-xl font-semibold">Entrar</h1>
                   <p className="mt-1 text-center text-sm text-muted-foreground">
-                    Escolha como deseja continuar
+                    Como quer entrar?
                   </p>
 
                   <div className="mt-8 space-y-3">
@@ -199,7 +199,7 @@ function AuthPageContent() {
                       className="flex w-full items-center justify-center gap-2 text-sm text-primary hover:underline"
                     >
                       <QrCode className="h-4 w-4" />
-                      Clique aqui para ler um convite
+                      Ler um convite
                     </button>
                   </div>
                 </motion.div>
@@ -251,14 +251,14 @@ function AuthPageContent() {
                     Voltar
                   </button>
 
-                  <h1 className="text-xl font-semibold">Numero de celular</h1>
+                  <h1 className="text-xl font-semibold">Seu celular</h1>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Informe seu celular para receber o codigo.
+                    Coloca teu número pra gente mandar o código.
                   </p>
 
                   {IS_TEST_MODE && (
                     <div className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                      Modo teste — qualquer codigo de 6 digitos sera aceito
+                      Modo teste — qualquer código de 6 dígitos será aceito
                     </div>
                   )}
 
@@ -286,7 +286,7 @@ function AuthPageContent() {
                     onClick={handleSendOtp}
                     disabled={phoneDigits.length < 10 || isPending}
                   >
-                    {isPending ? "Enviando..." : "Enviar codigo"}
+                    {isPending ? "Enviando..." : "Enviar código"}
                     {!isPending && <ArrowRight className="h-4 w-4" />}
                   </Button>
                 </motion.div>
@@ -305,18 +305,18 @@ function AuthPageContent() {
                     className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                   >
                     <ArrowLeft className="h-4 w-4" />
-                    Alterar numero
+                    Alterar número
                   </button>
 
-                  <h1 className="text-xl font-semibold">Verificacao</h1>
+                  <h1 className="text-xl font-semibold">Verificação</h1>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Digite o codigo enviado para{" "}
+                    Digite o código enviado para{" "}
                     <span className="font-medium text-foreground">+55 {phone}</span>
                   </p>
 
                   {IS_TEST_MODE && (
                     <div className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                      Modo teste — digite qualquer codigo de 6 digitos
+                      Modo teste — digita qualquer código de 6 dígitos
                     </div>
                   )}
 
@@ -355,13 +355,13 @@ function AuthPageContent() {
                   )}
 
                   <p className="mt-6 text-center text-sm text-muted-foreground">
-                    Nao recebeu?{" "}
+                    Não chegou?{" "}
                     <button
                       className="font-medium text-primary"
                       onClick={handleSendOtp}
                       disabled={isPending}
                     >
-                      Reenviar codigo
+                      Mandar de novo
                     </button>
                   </p>
                 </motion.div>
@@ -370,8 +370,8 @@ function AuthPageContent() {
 
             {mode === "choose" && (
               <p className="mt-6 text-center text-[11px] leading-relaxed text-muted-foreground">
-                Em conformidade com a LGPD (Lei 13.709/2018). Seus dados sao
-                protegidos e nunca compartilhados sem consentimento. Voce pode
+                Em conformidade com a LGPD (Lei 13.709/2018). Seus dados são
+                protegidos e nunca compartilhados sem consentimento. Você pode
                 excluir sua conta a qualquer momento.
               </p>
             )}
@@ -386,8 +386,8 @@ function AuthPageContent() {
                 width: s === mode ? 24 : 8,
                 backgroundColor:
                   s === mode
-                    ? "oklch(0.55 0.15 175)"
-                    : "oklch(0.91 0.005 260)",
+                    ? "oklch(0.78 0.16 75)"
+                    : "oklch(0.91 0.005 250)",
               }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
               className="h-2 rounded-full"

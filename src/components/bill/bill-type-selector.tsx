@@ -19,15 +19,15 @@ const options: {
   {
     type: "single_amount",
     icon: CreditCard,
-    title: "Valor unico",
-    subtitle: "Um valor total para dividir",
+    title: "Valor único",
+    subtitle: "Um total pra dividir",
     examples: "Airbnb, Uber, assinatura, voo, presente",
   },
   {
     type: "itemized",
     icon: ScanLine,
-    title: "Varios itens",
-    subtitle: "Conta detalhada com itens",
+    title: "Vários itens",
+    subtitle: "Conta com itens, cada um no que comeu",
     examples: "Restaurante, bar, mercado, delivery",
   },
 ];
@@ -41,7 +41,7 @@ export function BillTypeSelector({
       <div>
         <h2 className="text-lg font-semibold">Que tipo de conta?</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Escolha como voce quer dividir.
+          Escolha como você quer rachar.
         </p>
       </div>
 

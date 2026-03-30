@@ -64,7 +64,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
 
       <div className="mt-3 space-y-3">
         <Input
-          placeholder="Descricao (ex: Picanha 400g)"
+          placeholder="Descrição (ex: Picanha 400g)"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           autoFocus
@@ -84,7 +84,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Preco unitario (R$)
+              Preço unitário (R$)
             </label>
             <Input
               type="text"

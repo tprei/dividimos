@@ -35,7 +35,7 @@ export function HeroContent() {
         <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
             <Zap className="h-3 w-3" />
-            Pagamento instantaneo via Pix
+            Pix na hora, sem enrolação
           </span>
         </motion.div>
 
@@ -46,8 +46,8 @@ export function HeroContent() {
           animate="visible"
           className="mt-6 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl"
         >
-          Divida a conta{" "}
-          <span className="text-primary">sem estresse</span>
+          Racha a conta{" "}
+          <span className="text-primary">sem drama</span>
         </motion.h1>
 
         <motion.p
@@ -57,8 +57,7 @@ export function HeroContent() {
           animate="visible"
           className="mt-5 text-lg text-muted-foreground"
         >
-          Escaneie a nota fiscal, escolha o que cada um consumiu e liquide via Pix em
-          segundos. Sem cadastro em banco, sem conta digital.
+          Lê a nota, cada um marca o que comeu, e a galera paga no Pix na hora. Sem banco, sem enrolação.
         </motion.p>
 
         <motion.div
@@ -71,12 +70,12 @@ export function HeroContent() {
           <Link href="/app">
             <Button size="lg" className="gap-2 text-base">
               <Split className="h-5 w-5" />
-              Dividir uma conta
+              Rachar uma conta
             </Button>
           </Link>
           <Link href="/demo">
             <Button size="lg" variant="outline" className="text-base">
-              Experimentar demo
+              Ver como funciona
             </Button>
           </Link>
           <InstallPrompt />
@@ -89,7 +88,7 @@ export function HeroContent() {
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold">Churrascaria</span>
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                3 pessoas
+                3 na mesa
               </span>
             </div>
             <div className="space-y-2">
@@ -127,7 +126,7 @@ export function HeroContent() {
               className="flex items-center justify-between border-t border-border pt-2"
             >
               <span className="text-xs text-muted-foreground">
-                Total + 10% servico
+                Total + 10% do garçom
               </span>
               <span className="text-sm font-bold">{formatBRL(16280)}</span>
             </motion.div>

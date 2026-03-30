@@ -262,7 +262,7 @@ export function PayerStep({
                   }}
                 >
                   <Users className="h-4 w-4" />
-                  Dividiu igualmente
+                  Dividir igualmente
                 </Button>
                 {Math.abs(totalPct - 100) > 0.1 && totalPct > 0 && (
                   <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
@@ -359,7 +359,7 @@ export function PayerStep({
               }}
             >
               <Users className="h-4 w-4" />
-              Dividiu igualmente
+              Dividir igualmente
             </Button>
 
             <AnimatePresence>

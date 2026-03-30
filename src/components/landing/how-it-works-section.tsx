@@ -7,19 +7,19 @@ const steps = [
   {
     icon: ScanLine,
     title: "Escaneie",
-    desc: "Aponte para o QR code da nota fiscal ou tire uma foto. Os itens aparecem automaticamente.",
+    desc: "Aponta pro QR code da nota ou tira uma foto. Os itens aparecem na hora.",
     color: "text-primary bg-primary/10",
   },
   {
     icon: Users,
     title: "Atribua",
-    desc: "Cada pessoa toca nos itens que consumiu. Divida itens compartilhados por porcentagem ou valor.",
+    desc: "Cada um toca no que comeu. Divide o que foi de todo mundo por porcentagem ou valor.",
     color: "text-chart-2 bg-chart-2/10",
   },
   {
     icon: QrCode,
     title: "Pague",
-    desc: "QR codes Pix gerados automaticamente com o valor exato. Copie, cole, liquidou.",
+    desc: "QR codes Pix gerados com o valor certinho. Copia, cola, tá pago.",
     color: "text-chart-3 bg-chart-3/10",
   },
 ];
@@ -38,7 +38,7 @@ export function HowItWorksSection() {
           Como funciona
         </h2>
         <p className="mx-auto mt-3 max-w-md text-muted-foreground">
-          Tres passos, zero complicacao
+          Três passos, zero enrolação
         </p>
       </motion.div>
 

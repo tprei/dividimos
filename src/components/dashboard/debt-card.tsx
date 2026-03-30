@@ -41,7 +41,7 @@ export function DebtCard({ debt, onPay, onCollect, isActing }: DebtCardProps) {
             {formatBRL(debt.amountCents)}
           </p>
           <p className={`text-xs ${isOwes ? "text-destructive" : "text-success"}`}>
-            {isOwes ? "Voce deve" : "Voce recebe"}
+            {isOwes ? "Você deve" : "Você recebe"}
           </p>
         </div>
       </div>
@@ -64,7 +64,7 @@ export function DebtCard({ debt, onPay, onCollect, isActing }: DebtCardProps) {
             onClick={() => onCollect(debt)}
             disabled={isActing}
           >
-            Gerar cobranca
+            Cobrar via Pix
           </Button>
         )}
       </div>

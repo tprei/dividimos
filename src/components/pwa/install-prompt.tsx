@@ -81,7 +81,7 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
         <div className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-secondary/50 px-4 py-2.5 text-sm text-muted-foreground">
           <Smartphone className="h-4 w-4 shrink-0 text-primary" />
           <span>
-            Para instalar, toque em{" "}
+            Pra instalar, toca em{" "}
             <span className="font-medium text-foreground">Compartilhar</span> →{" "}
             <span className="font-medium text-foreground">
               Tela de Início

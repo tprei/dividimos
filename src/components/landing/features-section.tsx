@@ -6,23 +6,23 @@ import { Camera, Check, Receipt, Split } from "lucide-react";
 const features = [
   {
     icon: Receipt,
-    title: "Nota fiscal inteligente",
-    desc: "Extrai itens direto da NFC-e ou da foto do cupom. Sem digitar nada.",
+    title: "Nota na mão, itens no app",
+    desc: "Extrai os itens direto da NFC-e ou da foto do cupom. Sem digitar nada.",
   },
   {
     icon: Camera,
-    title: "OCR brasileiro",
-    desc: "Motor treinado para papel termico, abreviacoes de PDV e formatacao em Real.",
+    title: "Leitura de cupom",
+    desc: "Entende papel térmico, abreviação de PDV e formatação em Real. É brasileiro.",
   },
   {
     icon: Split,
-    title: "Divisao justa",
-    desc: "Taxa de servico proporcional, couvert por pessoa. Matematica exata ate o centavo.",
+    title: "Conta certinha",
+    desc: "Os 10% do garçom proporcionais, couvert por pessoa. Matemática exata até o centavo.",
   },
   {
     icon: Check,
-    title: "Liquidacao instantanea",
-    desc: "Pix Copia e Cola gerado no device. Sem intermediario, sem custodia, sem taxa.",
+    title: "Pix na hora",
+    desc: "Código Pix gerado ali na hora. Sem intermediário, sem custódia, sem taxa.",
   },
 ];
 
@@ -37,7 +37,7 @@ export function FeaturesSection() {
         className="text-center"
       >
         <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-          Por que Pixwise?
+          Por que Pagajaja?
         </h2>
       </motion.div>
 

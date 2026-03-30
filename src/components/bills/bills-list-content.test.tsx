@@ -71,7 +71,7 @@ describe("BillsListContent", () => {
 
     expect(screen.getByText("Rascunho")).toBeInTheDocument();
     expect(screen.getByText("Pendente")).toBeInTheDocument();
-    expect(screen.getByText("Liquidado")).toBeInTheDocument();
+    expect(screen.getByText("Quitada")).toBeInTheDocument();
   });
 
   it("filters by status", async () => {
@@ -83,7 +83,7 @@ describe("BillsListContent", () => {
     render(<BillsListContent initialBills={bills} />);
 
     // Filter to settled only
-    await user.click(screen.getByRole("button", { name: "Liquidadas" }));
+    await user.click(screen.getByRole("button", { name: "Quitadas" }));
 
     expect(screen.queryByText("Active bill")).not.toBeInTheDocument();
     expect(screen.getByText("Settled bill")).toBeInTheDocument();
@@ -95,7 +95,7 @@ describe("BillsListContent", () => {
     // Should have: Todas, Pendentes, Liquidadas
     expect(screen.getByRole("button", { name: "Todas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pendentes" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Liquidadas" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Quitadas" })).toBeInTheDocument();
 
     // Should NOT have Parciais
     expect(screen.queryByRole("button", { name: "Parciais" })).not.toBeInTheDocument();
@@ -109,7 +109,7 @@ describe("BillsListContent", () => {
     ];
     render(<BillsListContent initialBills={bills} />);
 
-    await user.type(screen.getByPlaceholderText("Buscar conta..."), "bar");
+    await user.type(screen.getByPlaceholderText("Buscar..."), "bar");
 
     expect(screen.getByText("Jantar no bar")).toBeInTheDocument();
     expect(screen.queryByText("Almoço")).not.toBeInTheDocument();
@@ -119,8 +119,8 @@ describe("BillsListContent", () => {
     const user = userEvent.setup();
     render(<BillsListContent initialBills={[makeBill({ title: "Jantar" })]} />);
 
-    await user.type(screen.getByPlaceholderText("Buscar conta..."), "xyz");
+    await user.type(screen.getByPlaceholderText("Buscar..."), "xyz");
 
-    expect(screen.getByText("Nenhuma conta encontrada")).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma conta por aqui")).toBeInTheDocument();
   });
 });

@@ -54,7 +54,7 @@ interface ExpenseSummaryEntry {
 const expenseStatusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  settled: { label: "Liquidado", color: "bg-success/15 text-success" },
+  settled: { label: "Quitada", color: "bg-success/15 text-success" },
 };
 
 const settlementStatusConfig: Record<string, { label: string; color: string }> = {
@@ -267,9 +267,9 @@ export default function GroupDetailPage({
     const typedProfile = profile as UserProfileRow | null;
 
     if (!typedProfile) {
-      setLookupError(`Nenhum usuario encontrado com @${handle}`);
+      setLookupError(`Nenhum usuário encontrado com @${handle}`);
     } else if (members.some((m) => m.userId === typedProfile.id)) {
-      setLookupError("Ja esta no grupo");
+      setLookupError("Já tá no grupo");
     } else {
       setLookupResult({
         id: typedProfile.id,
@@ -530,7 +530,7 @@ export default function GroupDetailPage({
                   )}
                   {member.userId === user?.id && member.userId !== creatorId && (
                     <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                      Voce
+                      Você
                     </span>
                   )}
                 </div>
@@ -624,7 +624,7 @@ export default function GroupDetailPage({
             <div className="py-12 text-center text-muted-foreground">
               <Receipt className="mx-auto h-8 w-8 opacity-50" />
               <p className="mt-2 text-sm">Nenhuma conta ainda</p>
-              <p className="text-xs">Crie uma conta para comecar</p>
+              <p className="text-xs">Cria uma conta pra começar</p>
             </div>
           ) : (
             expenses.map((expense) => {

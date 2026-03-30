@@ -344,7 +344,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
           <EmptyState
             icon={Users}
             title="Nenhum grupo"
-            description="Crie um grupo para adicionar amigos e dividir contas mais rapido."
+            description="Cria um grupo pra chamar a galera e rachar as contas."
             actionLabel="Criar grupo"
             onAction={() => setShowCreate(true)}
           />

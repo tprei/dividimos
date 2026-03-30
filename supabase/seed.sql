@@ -11,7 +11,7 @@ INSERT INTO auth.users (
   '00000000-0000-0000-0000-000000000000',
   'a1111111-1111-1111-1111-111111111111',
   'authenticated', 'authenticated',
-  'alice@test.pixwise.local',
+  'alice@test.pagajaja.local',
   '$2b$10$Zqg7YqulB1zYL80MCW43TO.6T6Y1NikGDfeIfHGhSDacoQC4uJ0Xa',
   now(), '{"full_name": "Alice Teste"}'::jsonb,
   now(), now(), '', '', '', ''
@@ -19,7 +19,7 @@ INSERT INTO auth.users (
   '00000000-0000-0000-0000-000000000000',
   'b2222222-2222-2222-2222-222222222222',
   'authenticated', 'authenticated',
-  'bob@test.pixwise.local',
+  'bob@test.pagajaja.local',
   '$2b$10$Zqg7YqulB1zYL80MCW43TO.6T6Y1NikGDfeIfHGhSDacoQC4uJ0Xa',
   now(), '{"full_name": "Bob Teste"}'::jsonb,
   now(), now(), '', '', '', ''
@@ -27,7 +27,7 @@ INSERT INTO auth.users (
   '00000000-0000-0000-0000-000000000000',
   'c3333333-3333-3333-3333-333333333333',
   'authenticated', 'authenticated',
-  'carol@test.pixwise.local',
+  'carol@test.pagajaja.local',
   '$2b$10$Zqg7YqulB1zYL80MCW43TO.6T6Y1NikGDfeIfHGhSDacoQC4uJ0Xa',
   now(), '{"full_name": "Carol Teste"}'::jsonb,
   now(), now(), '', '', '', ''
@@ -39,19 +39,19 @@ INSERT INTO auth.identities (
 ) VALUES (
   'a1111111-1111-1111-1111-111111111111',
   'a1111111-1111-1111-1111-111111111111',
-  '{"sub": "a1111111-1111-1111-1111-111111111111", "email": "alice@test.pixwise.local"}'::jsonb,
+  '{"sub": "a1111111-1111-1111-1111-111111111111", "email": "alice@test.pagajaja.local"}'::jsonb,
   'email', 'a1111111-1111-1111-1111-111111111111',
   now(), now(), now()
 ), (
   'b2222222-2222-2222-2222-222222222222',
   'b2222222-2222-2222-2222-222222222222',
-  '{"sub": "b2222222-2222-2222-2222-222222222222", "email": "bob@test.pixwise.local"}'::jsonb,
+  '{"sub": "b2222222-2222-2222-2222-222222222222", "email": "bob@test.pagajaja.local"}'::jsonb,
   'email', 'b2222222-2222-2222-2222-222222222222',
   now(), now(), now()
 ), (
   'c3333333-3333-3333-3333-333333333333',
   'c3333333-3333-3333-3333-333333333333',
-  '{"sub": "c3333333-3333-3333-3333-333333333333", "email": "carol@test.pixwise.local"}'::jsonb,
+  '{"sub": "c3333333-3333-3333-3333-333333333333", "email": "carol@test.pagajaja.local"}'::jsonb,
   'email', 'c3333333-3333-3333-3333-333333333333',
   now(), now(), now()
 );
@@ -62,4 +62,4 @@ UPDATE public.users SET
   pix_key_encrypted = '',
   pix_key_hint = '***@teste',
   pix_key_type = 'email'
-WHERE email LIKE '%@test.pixwise.local';
+WHERE email LIKE '%@test.pagajaja.local';

@@ -14,7 +14,7 @@ function normalizePhone(rawInput: string): string {
 }
 
 function phoneToTestEmail(phone: string): string {
-  return `${phone.replace("+", "")}@phone.pixwise.local`;
+  return `${phone.replace("+", "")}@phone.pagajaja.local`;
 }
 
 function redirectForProfile(

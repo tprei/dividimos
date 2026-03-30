@@ -1,6 +1,6 @@
 # Testing Guide
 
-Pixwise has three layers of automated tests: **unit**, **integration**, and **synthetic (E2E)**. Each layer has a specific purpose — avoid duplicating coverage across layers.
+Pagajaja has three layers of automated tests: **unit**, **integration**, and **synthetic (E2E)**. Each layer has a specific purpose — avoid duplicating coverage across layers.
 
 ## Unit Tests
 

@@ -57,7 +57,7 @@ const ITEMIZED_STEPS: StepDef[] = [
   { key: "info", label: "Dados" },
   { key: "participants", label: "Pessoas" },
   { key: "items", label: "Itens" },
-  { key: "split", label: "Divisao" },
+  { key: "split", label: "Divisão" },
   { key: "payer", label: "Pagamento" },
   { key: "summary", label: "Resumo" },
 ];
@@ -65,7 +65,7 @@ const ITEMIZED_STEPS: StepDef[] = [
 const SINGLE_STEPS: StepDef[] = [
   { key: "info", label: "Dados" },
   { key: "participants", label: "Pessoas" },
-  { key: "amount-split", label: "Divisao" },
+  { key: "amount-split", label: "Divisão" },
   { key: "payer", label: "Pagamento" },
   { key: "summary", label: "Resumo" },
 ];
@@ -893,7 +893,7 @@ function NewBillPageContent() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="mb-1.5 block text-sm font-medium">
-                        Taxa de servico (%)
+                        Taxa de serviço (%)
                       </label>
                       <Input
                         type="number"
@@ -950,7 +950,7 @@ function NewBillPageContent() {
               <p className="text-sm text-muted-foreground">
                 {selectedGroupId
                   ? "Participantes do grupo selecionado."
-                  : "Adicione participantes pelo @handle ou selecione um grupo."}
+                  : "Adiciona a galera pelo @handle ou escolhe um grupo."}
               </p>
 
               {/* Group selector — shown when no group is linked yet or one is linked */}
@@ -1006,7 +1006,7 @@ function NewBillPageContent() {
                         <p className="text-sm font-medium">{authUser?.name}</p>
                         <p className="text-xs text-muted-foreground">@{authUser?.handle}</p>
                       </div>
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Voce</span>
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
                     </div>
                     {groupMembers.map((m) => {
                       const isChecked = store.participants.some((p) => p.id === m.id);
@@ -1053,7 +1053,7 @@ function NewBillPageContent() {
                         <p className="text-xs text-muted-foreground">@{p.handle}</p>
                       </div>
                       {p.id === authUser?.id ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Voce</span>
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
                       ) : (
                         <button onClick={() => store.removeParticipant(p.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                           <X className="h-4 w-4" />
@@ -1066,7 +1066,7 @@ function NewBillPageContent() {
 
               {store.guests.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Convidados (sem conta no Pixwise)</p>
+                  <p className="text-xs text-muted-foreground">Convidados (sem conta no Pagajaja)</p>
                   {store.guests.map((g) => (
                     <div key={g.id} className="flex items-center gap-3 rounded-xl border border-dashed bg-card p-3">
                       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
@@ -1121,7 +1121,7 @@ function NewBillPageContent() {
                       </Button>
                     </form>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Convidados recebem um link para confirmar a participacao depois.
+                      Convidados recebem um link pra confirmar a participação depois.
                     </p>
                   </motion.div>
                 )}
@@ -1272,7 +1272,7 @@ function NewBillPageContent() {
                     <span className="tabular-nums">{formatBRL(store.expense.totalAmount)}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
-                    <span>Servico ({store.expense.serviceFeePercent}%)</span>
+                    <span>Garçom ({store.expense.serviceFeePercent}%)</span>
                     <span className="tabular-nums">{formatBRL(Math.round(store.expense.totalAmount * store.expense.serviceFeePercent / 100))}</span>
                   </div>
                   {store.expense.fixedFees > 0 && (
@@ -1282,7 +1282,7 @@ function NewBillPageContent() {
                     </div>
                   )}
                   <div className="flex justify-between font-semibold border-t border-border pt-1">
-                    <span>Total com servico</span>
+                    <span>Total com garçom</span>
                     <span className="tabular-nums text-primary">{formatBRL(store.getGrandTotal())}</span>
                   </div>
                 </div>
@@ -1300,7 +1300,7 @@ function NewBillPageContent() {
               className="space-y-4"
             >
               <p className="text-sm text-muted-foreground">
-                Toque nos nomes para atribuir itens. Compartilhados sao divididos igualmente.
+                Toca nos nomes pra atribuir itens. Compartilhados são divididos igualmente.
               </p>
               <AnimatePresence>
                 {store.items.map((item) => {
@@ -1429,13 +1429,13 @@ function NewBillPageContent() {
           if (total <= 0) {
             errorMsg = "Informe o valor total da conta";
           } else if (Math.abs(total - assigned) > 1) {
-            errorMsg = `A divisao (${formatBRL(assigned)}) nao corresponde ao total (${formatBRL(total)})`;
+            errorMsg = `A divisão (${formatBRL(assigned)}) não bate com o total (${formatBRL(total)})`;
           }
         } else if (step === "payer") {
           const gt = store.getGrandTotal();
           const paid = store.payers.reduce((s, p) => s + p.amountCents, 0);
           if (paid > 0 && gt > 0 && Math.abs(gt - paid) > 1) {
-            errorMsg = `O pagamento (${formatBRL(paid)}) nao corresponde ao total (${formatBRL(gt)})`;
+            errorMsg = `O pagamento (${formatBRL(paid)}) não bate com o total (${formatBRL(gt)})`;
           }
         }
         return (
@@ -1465,11 +1465,11 @@ function NewBillPageContent() {
                 ) : step === "summary" ? (
                   <>
                     <QrCode className="h-4 w-4" />
-                    Gerar cobrancas Pix
+                    Gerar cobranças Pix
                   </>
                 ) : (
                   <>
-                    Proximo
+                    Próximo
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}

@@ -46,13 +46,13 @@ export function GuestClaimShareModal({
   }, [open, claimUrl]);
 
   const shareText = shareAmountCents
-    ? `Participe da conta "${expenseTitle}" no Pixwise! Sua parte: ${formatBRL(shareAmountCents)}`
-    : `Participe da conta "${expenseTitle}" no Pixwise!`;
+    ? `Participe da conta "${expenseTitle}" no Pagajaja! Sua parte: ${formatBRL(shareAmountCents)}`
+    : `Participe da conta "${expenseTitle}" no Pagajaja!`;
 
   const handleShare = async () => {
     if (navigator.share) {
       try {
-        await navigator.share({ title: "Pixwise", text: shareText, url: claimUrl });
+        await navigator.share({ title: "Pagajaja", text: shareText, url: claimUrl });
       } catch (e) {
         if ((e as DOMException).name !== "AbortError") {
           toast.error("Erro ao compartilhar");

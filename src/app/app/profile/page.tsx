@@ -33,14 +33,14 @@ const pixKeyTypeLabels: Record<string, string> = {
   phone: "Telefone",
   cpf: "CPF",
   email: "E-mail",
-  random: "Chave aleatoria",
+  random: "Chave aleatória",
 };
 
 const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
   { type: "email", label: "E-mail" },
   { type: "phone", label: "Telefone" },
   { type: "cpf", label: "CPF" },
-  { type: "random", label: "Chave aleatoria" },
+  { type: "random", label: "Chave aleatória" },
 ];
 
 function formatPhoneInput(digits: string): string {
@@ -121,7 +121,7 @@ export default function ProfilePage() {
         setPixError(result.error);
         return;
       }
-      toast.success("Chave Pix atualizada");
+      toast.success("Chave Pix salva");
       setEditingPix(false);
       window.location.reload();
     });
@@ -195,7 +195,7 @@ export default function ProfilePage() {
                 {pixKeyTypeLabels[user?.pixKeyType ?? "email"]}
               </p>
               <p className="text-xs text-muted-foreground font-mono">
-                {user?.pixKeyHint || "Nao configurada"}
+                {user?.pixKeyHint || "Não cadastrada"}
               </p>
             </div>
             {!editingPix && (
@@ -285,8 +285,7 @@ export default function ProfilePage() {
             <>
               <Separator className="my-3" />
               <p className="text-xs text-muted-foreground">
-                Usamos sua chave Pix apenas para gerar QR codes de cobranca.
-                Seus dados sao protegidos com criptografia de alto nivel.
+                Sua chave Pix fica guardada a sete chaves. Só usamos pra gerar o QR code na hora de cobrar.
               </p>
             </>
           )}
@@ -310,7 +309,7 @@ export default function ProfilePage() {
             <div className="flex-1">
               <p className="text-sm font-medium">@{user?.handle}</p>
               <p className="text-xs text-muted-foreground">
-                Compartilhe para amigos te adicionarem em contas
+                Manda pra galera te achar aqui
               </p>
             </div>
           </div>
@@ -324,7 +323,7 @@ export default function ProfilePage() {
         className="mt-8"
       >
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Preferencias
+          Preferências
         </h2>
         <div className="space-y-1 rounded-2xl border bg-card">
           <div className="flex items-center justify-between p-4">
@@ -344,7 +343,7 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
               <Smartphone className="h-5 w-5 text-muted-foreground" />
-              <span className="font-medium">Notificacoes</span>
+              <span className="font-medium">Notificações</span>
             </div>
             <Switch defaultChecked />
           </div>
@@ -358,7 +357,7 @@ export default function ProfilePage() {
         className="mt-8"
       >
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Seguranca
+          Segurança
         </h2>
         <div className="space-y-1 rounded-2xl border bg-card">
           <button className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-muted/50">

@@ -13,7 +13,7 @@ import { createServerClient } from "@supabase/ssr";
  *
  * Body: { phone?: string, email?: string, name?: string, handle?: string }
  *   - phone: creates/finds user by phone (e.g. "5511999990001")
- *   - email: signs in with email+password for seed users (e.g. "alice@test.pixwise.local")
+ *   - email: signs in with email+password for seed users (e.g. "alice@test.pagajaja.local")
  *   - name: optional display name to set on the user profile
  *   - handle: optional @handle to set on the user profile
  *
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     let testEmail: string;
 
     if (email) {
-      // Email login path — for seed users (alice/bob/carol@test.pixwise.local)
+      // Email login path — for seed users (alice/bob/carol@test.pagajaja.local)
       testEmail = email;
       const { data: existing } = await admin.auth.admin.listUsers();
       const user = existing?.users.find((u) => u.email === email);
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       const normalized = digits.startsWith("55")
         ? `+${digits}`
         : `+55${digits}`;
-      testEmail = `${normalized.replace("+", "")}@phone.pixwise.local`;
+      testEmail = `${normalized.replace("+", "")}@phone.pagajaja.local`;
 
       const { data: existing } = await admin.auth.admin.listUsers();
       const existingUser = existing?.users.find(

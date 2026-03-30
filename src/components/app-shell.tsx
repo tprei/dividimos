@@ -11,7 +11,7 @@ import { UserProvider } from "@/contexts/user-context";
 import type { User as UserType } from "@/types";
 
 const navItems = [
-  { href: "/app", icon: Home, label: "Inicio" },
+  { href: "/app", icon: Home, label: "Início" },
   { href: "/app/bills", icon: Receipt, label: "Contas" },
   { href: "/app/bill/new", icon: Plus, label: "Nova", primary: true },
   { href: "/app/groups", icon: Users, label: "Grupos" },

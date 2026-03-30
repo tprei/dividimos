@@ -28,11 +28,11 @@ export function ClaimActions({
       <div className="flex flex-col items-center rounded-2xl border border-dashed bg-muted/30 p-6 text-center">
         <Clock className="h-6 w-6 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">
-          Aguardando ativacao da despesa
+          Aguardando a conta ser ativada
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          O criador ainda nao finalizou esta conta. Voce podera confirmar assim
-          que a despesa estiver ativa.
+          O criador ainda não finalizou esta conta. Você poderá confirmar assim
+          que a conta estiver ativa.
         </p>
       </div>
     );

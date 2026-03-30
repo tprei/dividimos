@@ -32,10 +32,10 @@ export function SimplificationToggle({
           </div>
           <div>
             <p className="text-sm font-semibold leading-tight">
-              Simplificar dividas
+              Simplificar dívidas
             </p>
             <p className="text-xs text-muted-foreground">
-              Menos transferencias para todos
+              Menos Pix pra todo mundo
             </p>
           </div>
         </div>
@@ -43,7 +43,7 @@ export function SimplificationToggle({
         <Switch
           checked={enabled}
           onCheckedChange={(checked) => onToggle(checked)}
-          aria-label="Ativar simplificacao de dividas"
+          aria-label="Ativar simplificação de dívidas"
         />
       </div>
 
@@ -79,7 +79,7 @@ export function SimplificationToggle({
                   >
                     {simplifiedCount}
                   </motion.span>
-                  <span className="text-muted-foreground">transacoes</span>
+                  <span className="text-muted-foreground">Pix</span>
                 </div>
                 {saved > 0 && (
                   <motion.span
@@ -99,7 +99,7 @@ export function SimplificationToggle({
                 onClick={onViewSteps}
                 className="shrink-0 text-primary h-7 px-2 text-xs"
               >
-                Ver passo a passo
+                Ver como simplificou
               </Button>
             </div>
           </motion.div>

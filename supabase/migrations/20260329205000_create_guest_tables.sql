@@ -1,6 +1,6 @@
 -- Guest support for expenses.
 --
--- Guests are placeholder participants who don't have a Pixwise account yet.
+-- Guests are placeholder participants who don't have a Pagajaja account yet.
 -- The expense creator adds them by display name. Each guest gets a unique
 -- claim_token (UUID) that can be shared via link/QR code. When a real user
 -- "claims" a guest spot, their account replaces the guest in the expense.

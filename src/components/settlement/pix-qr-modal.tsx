@@ -114,11 +114,11 @@ export function PixQrModal({
           if (data.copiaECola) {
             setCopiaECola(data.copiaECola);
           } else {
-            setError(data.error || "Erro ao gerar Pix");
+            setError(data.error || "Eita, deu ruim no Pix");
           }
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") return;
-          setError("Erro de conexao. Tente novamente.");
+          setError("Sem conexão. Tenta de novo.");
         } finally {
           setLoading(false);
         }
@@ -140,7 +140,7 @@ export function PixQrModal({
   const handleCopy = async () => {
     await navigator.clipboard.writeText(copiaECola);
     setCopied(true);
-    toast.success("Pix Copia e Cola copiado!");
+    toast.success("Código Pix copiado!");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -199,7 +199,7 @@ export function PixQrModal({
             <div className="mt-3">
               {paidAmountCents > 0 && (
                 <p className="mb-1 text-xs text-muted-foreground">
-                  Ja pago: {formatBRL(paidAmountCents)} de {formatBRL(amountCents)}
+                  Já pago: {formatBRL(paidAmountCents)} de {formatBRL(amountCents)}
                 </p>
               )}
               <div className="flex items-center justify-center gap-2">
@@ -215,12 +215,12 @@ export function PixQrModal({
               </div>
               {!isFullPayment && isValidAmount && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Restante apos pagamento: {formatBRL(remainingCents - paymentCents)}
+                  Resta depois do Pix: {formatBRL(remainingCents - paymentCents)}
                 </p>
               )}
               {paymentCents > remainingCents && (
                 <p className="mt-1 text-xs text-destructive">
-                  Valor excede o restante ({formatBRL(remainingCents)})
+                  Valor maior que o restante ({formatBRL(remainingCents)})
                 </p>
               )}
             </div>
@@ -268,7 +268,7 @@ export function PixQrModal({
               ) : (
                 <>
                   <Copy className="h-4 w-4" />
-                  Copiar Pix Copia e Cola
+                  Copiar código Pix
                 </>
               )}
             </Button>
@@ -280,15 +280,15 @@ export function PixQrModal({
             >
               <Check className="h-4 w-4" />
               {mode === "collect"
-                ? isFullPayment ? "Ja recebi" : `Recebi ${formatBRL(paymentCents)}`
-                : isFullPayment ? "Ja paguei" : `Paguei ${formatBRL(paymentCents)}`}
+                ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(paymentCents)}`
+                : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(paymentCents)}`}
             </Button>
           </div>
 
           <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
             <Shield className="h-3 w-3" />
             <span>
-              Escaneie o QR code ou copie o codigo e cole no app do seu banco.
+              Lê o QR code ou copia o código e cola no app do banco.
             </span>
           </div>
         </motion.div>

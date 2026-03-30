@@ -14,9 +14,9 @@ export function CTASection() {
       transition={{ duration: 0.5 }}
       className="rounded-3xl gradient-primary p-10 text-white shadow-xl shadow-primary/20"
     >
-      <h2 className="text-2xl font-bold sm:text-3xl">Pronto para dividir?</h2>
+      <h2 className="text-2xl font-bold sm:text-3xl">Bora rachar?</h2>
       <p className="mx-auto mt-3 max-w-sm text-white/80">
-        Crie uma conta agora ou comece sem cadastro.
+        Entra aí, é de graça.
       </p>
       <Link href="/app">
         <Button
@@ -24,7 +24,7 @@ export function CTASection() {
           variant="secondary"
           className="mt-6 gap-2 text-base font-semibold"
         >
-          Comecar agora
+          Bora lá
           <ArrowRight className="h-5 w-5" />
         </Button>
       </Link>

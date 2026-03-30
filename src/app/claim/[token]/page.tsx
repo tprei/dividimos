@@ -50,7 +50,7 @@ export default async function ClaimPage({
 
   const alreadyClaimed = !!guest.claimed_by;
   const shareAmount = guestShare?.share_amount_cents ?? 0;
-  const creatorName = creator?.name ?? "Alguem";
+  const creatorName = creator?.name ?? "Alguém";
 
   if (alreadyClaimed) {
     return (
@@ -59,9 +59,9 @@ export default async function ClaimPage({
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success/15">
             <Check className="h-6 w-6 text-success" />
           </div>
-          <h1 className="mt-4 text-lg font-bold">Lugar ja confirmado</h1>
+          <h1 className="mt-4 text-lg font-bold">Já tá confirmado</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Este convite ja foi aceito.
+            Este convite já foi aceito.
           </p>
           <Link
             href={`/app/bill/${expense.id}`}
@@ -83,7 +83,7 @@ export default async function ClaimPage({
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <h1 className="font-semibold">Confirmar participacao</h1>
+        <h1 className="font-semibold">Confirmar participação</h1>
       </div>
 
       <div className="mt-6 rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
@@ -113,17 +113,17 @@ export default async function ClaimPage({
           <div>
             <p className="text-sm font-medium">{creatorName}</p>
             <p className="text-xs text-muted-foreground">
-              {creator?.handle ? `@${creator.handle}` : ""} criou esta despesa
+              {creator?.handle ? `@${creator.handle}` : ""} criou esta conta
             </p>
           </div>
         </div>
         <div className="mt-4 rounded-xl bg-muted/50 p-3">
           <p className="text-sm">
-            <span className="font-medium">{guest.display_name}</span>, voce foi
-            convidado(a) para participar desta conta.
+            <span className="font-medium">{guest.display_name}</span>, você foi
+            convidado(a) pra participar desta conta.
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Ao confirmar, voce entra no grupo e sua parte sera registrada.
+            Ao confirmar, você entra no grupo e sua parte fica registrada.
           </p>
         </div>
       </div>

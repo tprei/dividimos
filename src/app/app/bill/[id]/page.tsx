@@ -52,7 +52,7 @@ import type {
 const expenseStatusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Ativo", color: "bg-warning/15 text-warning-foreground" },
-  settled: { label: "Liquidado", color: "bg-success/15 text-success" },
+  settled: { label: "Quitada", color: "bg-success/15 text-success" },
 };
 
 /** Compute debt edges from shares and payers (net-balance algorithm). */
@@ -474,9 +474,9 @@ export default function BillDetailPage({
         </div>
         <EmptyState
           icon={Receipt}
-          title="Despesa nao encontrada"
-          description="Crie uma nova despesa para dividir com amigos."
-          actionLabel="Nova despesa"
+          title="Conta não encontrada"
+          description="Cria uma conta pra rachar com a galera."
+          actionLabel="Nova conta"
           onAction={() => router.push("/app/bill/new")}
         />
       </div>
@@ -648,7 +648,7 @@ export default function BillDetailPage({
             {debts.length > 0 && (
               <span className="flex items-center gap-1">
                 <Check className="h-3.5 w-3.5" />
-                {debts.length} cobranca{debts.length !== 1 ? "s" : ""}
+                {debts.length} cobrança{debts.length !== 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -691,7 +691,7 @@ export default function BillDetailPage({
         {(
           [
             { key: "items", label: "Itens" },
-            { key: "split", label: "Divisao" },
+            { key: "split", label: "Divisão" },
             { key: "payment", label: "Pagamento" },
           ] as const
         ).map((tab) => (
@@ -826,9 +826,9 @@ export default function BillDetailPage({
           className="mt-5 flex flex-col items-center rounded-2xl border-2 border-dashed border-success/30 bg-success/5 p-8"
         >
           <AnimatedCheckmark size={64} />
-          <h3 className="mt-4 text-lg font-bold">Tudo liquidado!</h3>
+          <h3 className="mt-4 text-lg font-bold">Tudo quitado!</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Todos os pagamentos foram liquidados.
+            Todos os pagamentos foram confirmados.
           </p>
           {expense.groupId && (
             <Link
@@ -857,13 +857,13 @@ export default function BillDetailPage({
             <div className="flex-1">
               <p className="font-medium text-sm">Ir para acerto do grupo</p>
               <p className="text-xs text-muted-foreground">
-                Liquidar dividas consolidadas de todas as despesas do grupo
+                Quitar dívidas consolidadas de todas as contas do grupo
               </p>
             </div>
           </Link>
 
           <div>
-            <h2 className="mb-3 text-sm font-semibold">Cobrancas desta despesa</h2>
+            <h2 className="mb-3 text-sm font-semibold">Cobranças desta conta</h2>
             <div className="space-y-3">
               {debts.map((debt, idx) => {
                 const debtor = allParticipants.find((p) => p.id === debt.fromUserId);
@@ -872,7 +872,7 @@ export default function BillDetailPage({
                 const isCreditor = currentUser?.id === debt.toUserId;
 
                 const entryLabel = isDebtor
-                  ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
+                  ? `Você deve para ${creditor?.name.split(" ")[0] || "?"}`
                   : isCreditor
                     ? `${debtor?.name.split(" ")[0] || "?"} te deve`
                     : `${debtor?.name.split(" ")[0] || "?"} \u2192 ${creditor?.name.split(" ")[0] || "?"}`;
@@ -933,7 +933,7 @@ export default function BillDetailPage({
             </div>
           )}
 
-          <h2 className="mb-3 text-sm font-semibold">Cobrancas</h2>
+          <h2 className="mb-3 text-sm font-semibold">Cobranças</h2>
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
               {debts.map((debt, idx) => {
@@ -943,7 +943,7 @@ export default function BillDetailPage({
                 const isCreditor = currentUser?.id === debt.toUserId;
 
                 const entryLabel = isDebtor
-                  ? `Voce deve para ${creditor?.name.split(" ")[0] || "?"}`
+                  ? `Você deve para ${creditor?.name.split(" ")[0] || "?"}`
                   : isCreditor
                     ? `${debtor?.name.split(" ")[0] || "?"} te deve`
                     : `${debtor?.name.split(" ")[0] || "?"} \u2192 ${creditor?.name.split(" ")[0] || "?"}`;
@@ -1010,7 +1010,7 @@ export default function BillDetailPage({
                             }
                           >
                             <QrCode className="h-4 w-4" />
-                            Gerar cobranca
+                            Cobrar via Pix
                           </Button>
                           <Button
                             size="sm"
@@ -1038,7 +1038,7 @@ export default function BillDetailPage({
           className="mt-5"
         >
           <p className="py-8 text-center text-sm text-muted-foreground">
-            Nenhuma cobranca nesta despesa.
+            Nenhuma cobrança nesta conta.
           </p>
         </motion.div>
       )}
@@ -1069,7 +1069,7 @@ export default function BillDetailPage({
   );
 }
 
-/** Shows per-person share breakdown for the "Divisao" tab. */
+/** Shows per-person share breakdown for the "Divisão" tab. */
 function ExpenseSharesSummary({
   expense,
   allParticipants,
@@ -1157,7 +1157,7 @@ function ExpenseChargeExplanation({
       >
         <div className="flex items-center gap-2">
           <Calculator className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold">Como chegamos nesse valor</span>
+          <span className="text-sm font-semibold">De onde veio esse valor</span>
         </div>
         {expanded ? (
           <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -1179,7 +1179,7 @@ function ExpenseChargeExplanation({
               {debts.length > 0 && allParticipants.length >= 2 && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-2">
-                    Fluxo de pagamentos
+                    Quem paga quem
                   </p>
                   <DebtGraph participants={allParticipants} edges={debts} />
                 </div>
@@ -1187,7 +1187,7 @@ function ExpenseChargeExplanation({
 
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-2">
-                  Consumo por pessoa
+                  Quanto cada um consumiu
                 </p>
                 <div className="space-y-1.5">
                   {expense.shares.map((share) => {
@@ -1204,7 +1204,7 @@ function ExpenseChargeExplanation({
                           <UserAvatar name={share.user.name} avatarUrl={share.user.avatarUrl} size="xs" />
                           <span className={isMe ? "font-medium" : ""}>
                             {share.user.name.split(" ")[0]}
-                            {isMe && " (voce)"}
+                            {isMe && " (você)"}
                           </span>
                         </div>
                         <div className="text-right">
@@ -1225,7 +1225,7 @@ function ExpenseChargeExplanation({
 
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-2">
-                  Saldo liquido
+                  Saldo líquido
                 </p>
                 <div className="space-y-1">
                   {expense.shares.map((share) => {
@@ -1259,11 +1259,11 @@ function ExpenseChargeExplanation({
 
               <div className="rounded-lg bg-muted/30 p-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total da despesa</span>
+                  <span className="text-muted-foreground">Total da conta</span>
                   <span className="font-bold tabular-nums">{formatBRL(expense.totalAmount)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                  <span>Pagadores</span>
+                  <span>Quem pagou</span>
                   <span>
                     {expense.payers.map((py) => {
                       const name = py.user.name.split(" ")[0];

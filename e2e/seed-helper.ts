@@ -111,7 +111,7 @@ export class SeedHelper {
     const pixKeyType = options.pixKeyType ?? "phone";
     const onboarded = options.onboarded ?? true;
 
-    const email = `synth_${testId}@test.pixwise.local`;
+    const email = `synth_${testId}@test.pagajaja.local`;
     const password = `synth_${testId}_pass!`;
 
     const { data: authData, error: authError } =

@@ -37,7 +37,7 @@ interface BillEntry {
 const statusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
   active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  settled: { label: "Liquidado", color: "bg-success/15 text-success" },
+  settled: { label: "Quitada", color: "bg-success/15 text-success" },
 };
 
 type FilterType = "all" | ExpenseStatus;
@@ -45,7 +45,7 @@ type FilterType = "all" | ExpenseStatus;
 const filters: { key: FilterType; label: string }[] = [
   { key: "all", label: "Todas" },
   { key: "active", label: "Pendentes" },
-  { key: "settled", label: "Liquidadas" },
+  { key: "settled", label: "Quitadas" },
 ];
 
 interface BillsListContentProps {
@@ -103,7 +103,7 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar conta..."
+            placeholder="Buscar..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -179,11 +179,11 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
         {filtered.length === 0 && (
           <EmptyState
             icon={Receipt}
-            title="Nenhuma conta encontrada"
+            title="Nenhuma conta por aqui"
             description={
               search
                 ? `Sem resultados para "${search}".`
-                : "Crie sua primeira conta para dividir com amigos."
+                : "Cria uma conta pra rachar com a galera."
             }
             actionLabel={!search ? "Nova conta" : undefined}
             onAction={!search ? () => {} : undefined}
@@ -199,9 +199,9 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Excluir rascunho?</DialogTitle>
+            <DialogTitle>Apagar rascunho?</DialogTitle>
             <DialogDescription>
-              Esta ação não pode ser desfeita.
+              Essa ação não tem volta.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -91,7 +91,7 @@ export function ChargeExplanation({
       >
         <div className="flex items-center gap-2">
           <Calculator className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold">Como chegamos nesse valor</span>
+          <span className="text-sm font-semibold">De onde veio esse valor</span>
         </div>
         {expanded ? (
           <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -113,7 +113,7 @@ export function ChargeExplanation({
               {finalEdges.length > 0 && participants.length >= 2 && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-2">
-                    Fluxo de pagamentos
+                    Quem paga quem
                   </p>
                   <DebtGraph participants={participants} edges={finalEdges} />
                 </div>
@@ -121,7 +121,7 @@ export function ChargeExplanation({
 
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-2">
-                  Consumo por pessoa
+                  Quanto cada um consumiu
                 </p>
                 <div className="space-y-1.5">
                   {participants.map((p) => {
@@ -141,7 +141,7 @@ export function ChargeExplanation({
                           </span>
                           <span className={isMe ? "font-medium" : ""}>
                             {p.name.split(" ")[0]}
-                            {isMe && " (voce)"}
+                            {isMe && " (você)"}
                           </span>
                         </div>
                         <div className="text-right">
@@ -162,7 +162,7 @@ export function ChargeExplanation({
 
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-2">
-                  Saldo liquido
+                  Saldo líquido
                 </p>
                 <div className="space-y-1">
                   {participants.map((p) => {
@@ -198,11 +198,11 @@ export function ChargeExplanation({
               {simplificationResult && simplificationResult.steps.length > 2 && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-2">
-                    Simplificacao
+                    Simplificação
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {simplificationResult.originalCount} cobranca{simplificationResult.originalCount !== 1 ? "s" : ""}{" "}
-                    reduzida{simplificationResult.originalCount !== 1 ? "s" : ""} para{" "}
+                    {simplificationResult.originalCount} cobrança{simplificationResult.originalCount !== 1 ? "s" : ""}{" "}
+                    virou{" "}
                     {simplificationResult.simplifiedCount}
                   </p>
                 </div>
@@ -215,7 +215,7 @@ export function ChargeExplanation({
                 </div>
                 {!isSingleAmount && bill.serviceFeePercent > 0 && (
                   <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>Inclui {bill.serviceFeePercent}% servico</span>
+                    <span>Inclui {bill.serviceFeePercent}% do garçom</span>
                     <span className="tabular-nums">{formatBRL(serviceFee)}</span>
                   </div>
                 )}
@@ -226,7 +226,7 @@ export function ChargeExplanation({
                   </div>
                 )}
                 <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                  <span>Pagadores</span>
+                  <span>Quem pagou</span>
                   <span>
                     {payers.map((py) => {
                       const name = participants.find((p) => p.id === py.userId)?.name.split(" ")[0] ?? "?";

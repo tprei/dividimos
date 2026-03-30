@@ -1,4 +1,4 @@
-# Pixwise
+# Pagajaja
 
 Bill-splitting web app for the Brazilian market with instant Pix settlement.
 
@@ -38,8 +38,8 @@ Scan a receipt or enter a total, assign items to people, and settle via Pix QR c
 ### Setup
 
 ```bash
-git clone https://github.com/tprei/pixwise.git
-cd pixwise
+git clone https://github.com/tprei/pagajaja.git
+cd pagajaja
 npm install
 ```
 

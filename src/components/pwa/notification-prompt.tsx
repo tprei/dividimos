@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 
-const SESSION_KEY = "pixwise:notification-prompt-dismissed";
+const SESSION_KEY = "pagajaja:notification-prompt-dismissed";
 
 /**
  * Contextual notification opt-in banner shown once per session on group pages.
@@ -50,7 +50,7 @@ export function NotificationPrompt() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">Ativar notificações</p>
           <p className="text-xs text-muted-foreground">
-            Saiba quando alguém adicionar uma conta ou confirmar um pagamento
+            Fica sabendo quando rolar conta nova ou pagamento
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">

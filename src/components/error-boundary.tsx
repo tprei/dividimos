@@ -72,14 +72,14 @@ export function ErrorFallback({
   onReset?: () => void;
 }) {
   return (
-    <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-lg border border-red-200 bg-red-50 p-6">
+    <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 rounded-lg border border-destructive/20 bg-destructive/5 p-6">
       <div className="text-center">
-        <div className="mb-2 text-2xl font-semibold text-red-600">{title}</div>
-        <div className="text-sm text-red-500">{message}</div>
+        <div className="mb-2 text-2xl font-semibold text-destructive">{title}</div>
+        <div className="text-sm text-destructive/80">{message}</div>
         {onReset && (
           <button
             onClick={onReset}
-            className="mt-4 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            className="mt-4 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90"
             type="button"
             aria-label="Tentar novamente"
             onKeyDown={(e) => {

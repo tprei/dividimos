@@ -11,7 +11,7 @@ Phone login uses two independent SMS paths:
 1. **Primary login** (`phone-actions.ts`, production path) calls `supabase.auth.signInWithOtp({ phone })`, which relies on an SMS provider configured in the Supabase Dashboard (Twilio, via Supabase's built-in integration).
 2. **2FA** (`/api/auth/2fa/*`) calls `sendVerificationCode`/`checkVerificationCode` from `src/lib/twilio.ts`, hitting the Twilio Verify API directly.
 
-Both paths ultimately use Twilio, but through different integration points. The Supabase-managed SMS path adds configuration surface area, a separate billing dimension, and rate limits that Pixwise doesn't control.
+Both paths ultimately use Twilio, but through different integration points. The Supabase-managed SMS path adds configuration surface area, a separate billing dimension, and rate limits that Pagajaja doesn't control.
 
 ## Current vs target architecture
 
@@ -123,7 +123,7 @@ Update the Twilio env var comment from "used for phone-based 2FA" to "used for a
 | **Magic-link token expiry** | Supabase magic-link tokens expire after 1 hour by default. The gap between `generateLink` and `verifyOtp` is milliseconds (same server action), so this is not a practical concern. |
 | **User creation race condition** | Two concurrent signups for the same phone could create duplicate users. The test-mode path has this same window today. The `phoneToTestEmail` mapping ensures email uniqueness in Supabase Auth, which rejects duplicates. The second `createUser` call would fail, and the next retry would find the existing user. |
 | **No fallback if Twilio is down** | Same risk as the existing 2FA flow. Twilio Verify has 99.95% SLA. If it's down, phone login is unavailable. Google OAuth remains as an alternative login method. |
-| **`listUsers` at scale** | Pre-existing concern in the test-mode path. For production, this scans all auth users. See the note above -- file a follow-up to replace with a bounded query. Not a launch blocker since Pixwise is pre-launch with a small user base. |
+| **`listUsers` at scale** | Pre-existing concern in the test-mode path. For production, this scans all auth users. See the note above -- file a follow-up to replace with a bounded query. Not a launch blocker since Pagajaja is pre-launch with a small user base. |
 | **Removing Supabase SMS config prematurely** | Remove the Supabase Dashboard SMS provider config only after confirming the new path works in production. The old `signInWithOtp` code will be deleted, so no code path would use it, but leaving the config is harmless. |
 
 ## Verification steps

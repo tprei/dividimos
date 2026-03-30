@@ -63,7 +63,7 @@ const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
   { type: "email", label: "E-mail" },
   { type: "phone", label: "Telefone" },
   { type: "cpf", label: "CPF" },
-  { type: "random", label: "Chave aleatoria" },
+  { type: "random", label: "Chave aleatória" },
 ];
 
 function OnboardPageContent() {
@@ -90,7 +90,7 @@ function OnboardPageContent() {
       const email = user.email ?? "";
       const phone = user.phone ?? "";
       const fullName = user.user_metadata?.full_name ?? "";
-      const isPhoneAuth = email.endsWith("@phone.pixwise.local") || (!email && phone);
+      const isPhoneAuth = email.endsWith("@phone.pagajaja.local") || (!email && phone);
 
       setAuthMethod(isPhoneAuth ? "phone" : "google");
 
@@ -206,7 +206,7 @@ function OnboardPageContent() {
     if (!name.trim()) return;
     if (!isValidHandle(handle)) {
       setHandleError(
-        "Handle deve ter entre 3 e 20 caracteres, comecar e terminar com letra ou numero.",
+        "Handle deve ter entre 3 e 20 caracteres, começar e terminar com letra ou número.",
       );
       return;
     }
@@ -242,9 +242,9 @@ function OnboardPageContent() {
 
   const inferredKeyLabel =
     authMethod === "google" && userEmail
-      ? "Detectamos seu e-mail como chave Pix"
+      ? "Identificamos seu e-mail como chave Pix"
       : authMethod === "phone" && userPhone
-        ? "Detectamos seu telefone como chave Pix"
+        ? "Identificamos seu telefone como chave Pix"
         : null;
 
   const showInferredBanner =
@@ -279,7 +279,7 @@ function OnboardPageContent() {
               >
                 <h1 className="text-2xl font-bold">Seu perfil</h1>
                 <p className="mt-2 text-muted-foreground">
-                  Como seus amigos vao te encontrar.
+                  Como a galera vai te encontrar.
                 </p>
 
                 <div className="mt-8 space-y-4">
@@ -329,8 +329,8 @@ function OnboardPageContent() {
                         }`}
                       >
                         {isValidHandle(handle)
-                          ? `Seus amigos vao te adicionar como @${handle}`
-                          : "3-20 caracteres, letras minusculas, numeros, pontos e sublinhados"}
+                          ? `A galera vai te adicionar como @${handle}`
+                          : "3-20 caracteres, letras minúsculas, números, pontos e sublinhados"}
                       </p>
                     )}
                   </div>
@@ -358,7 +358,7 @@ function OnboardPageContent() {
               >
                 <h1 className="text-2xl font-bold">Chave Pix</h1>
                 <p className="mt-2 text-muted-foreground">
-                  Informe sua chave Pix para receber pagamentos dos amigos.
+                  Coloca sua chave Pix pra receber dos amigos.
                 </p>
 
                 {showInferredBanner && (
@@ -422,12 +422,12 @@ function OnboardPageContent() {
                   <div className="flex items-start gap-2 rounded-xl bg-muted/50 p-3">
                     <Shield className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     <p className="text-xs text-muted-foreground">
-                      Sua chave Pix e criptografada e nunca compartilhada com
+                      Sua chave Pix é criptografada e nunca compartilhada com
                       terceiros.
                     </p>
                   </div>
                   <p className="text-center text-[10px] text-muted-foreground">
-                    Em conformidade com a LGPD (Lei 13.709/2018). Voce pode
+                    Em conformidade com a LGPD (Lei 13.709/2018). Você pode
                     excluir seus dados a qualquer momento.
                   </p>
                 </div>
@@ -447,7 +447,7 @@ function OnboardPageContent() {
                     onClick={handleSubmit}
                     disabled={!pixKeyDisplay || isPending}
                   >
-                    {isPending ? "Salvando..." : "Comecar a usar"}
+                    {isPending ? "Salvando..." : "Começar a usar"}
                     {!isPending && <ArrowRight className="h-4 w-4" />}
                   </Button>
                 </div>
@@ -464,8 +464,8 @@ function OnboardPageContent() {
                 width: i === currentIndex ? 24 : 8,
                 backgroundColor:
                   i === currentIndex
-                    ? "oklch(0.55 0.15 175)"
-                    : "oklch(0.91 0.005 260)",
+                    ? "oklch(0.78 0.16 75)"
+                    : "oklch(0.91 0.005 250)",
               }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
               className="h-2 rounded-full"

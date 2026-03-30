@@ -30,7 +30,7 @@ describe("ClaimActions", () => {
       />,
     );
 
-    expect(screen.getByText("Aguardando ativacao da despesa")).toBeInTheDocument();
+    expect(screen.getByText("Aguardando a conta ser ativada")).toBeInTheDocument();
   });
 
   it("shows login button when not authenticated", () => {

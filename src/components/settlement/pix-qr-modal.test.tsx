@@ -70,7 +70,7 @@ describe("PixQrModal", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Erro de conexao. Tente novamente.")).toBeInTheDocument();
+      expect(screen.getByText("Sem conexão. Tenta de novo.")).toBeInTheDocument();
     });
   });
 
@@ -91,7 +91,7 @@ describe("PixQrModal", () => {
       expect(screen.getByText("Erro ao processar chave Pix do destinatario")).toBeInTheDocument();
     });
 
-    const copyButton = screen.getByRole("button", { name: /Copiar Pix Copia e Cola/i });
+    const copyButton = screen.getByRole("button", { name: /Copiar código Pix/i });
     expect(copyButton).toBeDisabled();
   });
 
@@ -109,7 +109,7 @@ describe("PixQrModal", () => {
     );
 
     await waitFor(() => {
-      const copyButton = screen.getByRole("button", { name: /Copiar Pix Copia e Cola/i });
+      const copyButton = screen.getByRole("button", { name: /Copiar código Pix/i });
       expect(copyButton).not.toBeDisabled();
     });
 
