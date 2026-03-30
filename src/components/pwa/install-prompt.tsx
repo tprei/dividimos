@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -15,39 +21,41 @@ function isMobileBrowser(): boolean {
   return /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
 }
 
+function detectPlatform(): "ios" | "android" | null {
+  if (typeof window === "undefined") return null;
+  const ua = navigator.userAgent;
+  if (/iPad|iPhone|iPod/.test(ua)) return "ios";
+  if (/Android/.test(ua)) return "android";
+  return null;
+}
+
 export function InstallPrompt({ className }: { className?: string } = {}) {
   const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
-  const [hasPrompt, setHasPrompt] = useState(false);
-  const [isIosSafari, setIsIosSafari] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [platform, setPlatform] = useState<"ios" | "android" | null>(null);
 
   useEffect(() => {
     if (!isMobileBrowser()) return;
 
-    const ua = navigator.userAgent;
-    const isIos = /iPad|iPhone|iPod/.test(ua);
-    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS/.test(ua);
-    if (isIos && isSafari) {
-      setIsIosSafari(true);
-      return;
-    }
+    setPlatform(detectPlatform());
+    setVisible(true);
 
-    const captured = (window as unknown as Record<string, unknown>).__pwaInstallPrompt as BeforeInstallPromptEvent | null;
+    const captured = (window as unknown as Record<string, unknown>)
+      .__pwaInstallPrompt as BeforeInstallPromptEvent | null;
     if (captured) {
       deferredPrompt.current = captured;
       (window as unknown as Record<string, unknown>).__pwaInstallPrompt = null;
-      setHasPrompt(true);
     }
 
     const onBeforeInstall = (e: Event) => {
       e.preventDefault();
       deferredPrompt.current = e as BeforeInstallPromptEvent;
-      setHasPrompt(true);
     };
 
     const onAppInstalled = () => {
       deferredPrompt.current = null;
-      setHasPrompt(false);
+      setVisible(false);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
@@ -58,42 +66,21 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
     };
   }, []);
 
-  async function handleInstall() {
+  async function handleClick() {
     const prompt = deferredPrompt.current;
-    if (!prompt) return;
-    await prompt.prompt();
-    const { outcome } = await prompt.userChoice;
-    if (outcome === "accepted") {
-      deferredPrompt.current = null;
-      setHasPrompt(false);
+    if (prompt) {
+      await prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      if (outcome === "accepted") {
+        deferredPrompt.current = null;
+        setVisible(false);
+      }
+      return;
     }
+    setShowGuide(true);
   }
 
-  if (dismissed || (!hasPrompt && !isIosSafari)) return null;
-
-  if (isIosSafari) {
-    return (
-      <div className={className}>
-        <div className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-secondary/50 px-4 py-2.5 text-sm text-muted-foreground">
-          <Smartphone className="h-4 w-4 shrink-0 text-primary" />
-          <span>
-            Pra instalar, toca em{" "}
-            <span className="font-medium text-foreground">Compartilhar</span> →{" "}
-            <span className="font-medium text-foreground">
-              Tela de Início
-            </span>
-          </span>
-          <button
-            onClick={() => setDismissed(true)}
-            className="ml-auto shrink-0 text-xs text-muted-foreground hover:text-foreground"
-            aria-label="Fechar"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!visible) return null;
 
   return (
     <div className={className}>
@@ -101,11 +88,94 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
         size="lg"
         variant="outline"
         className="w-full gap-2 text-base sm:w-auto"
-        onClick={handleInstall}
+        onClick={handleClick}
       >
         <Smartphone className="h-5 w-5" />
         Instalar no celular
       </Button>
+
+      <Dialog open={showGuide} onOpenChange={setShowGuide}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Instalar o app</DialogTitle>
+          </DialogHeader>
+          {platform === "ios" ? (
+            <ol className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  1
+                </span>
+                <span>
+                  Toca no botão{" "}
+                  <span className="font-medium text-foreground">
+                    Compartilhar
+                  </span>{" "}
+                  (o quadradinho com a seta pra cima)
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  2
+                </span>
+                <span>
+                  Rola pra baixo e toca em{" "}
+                  <span className="font-medium text-foreground">
+                    Adicionar à Tela de Início
+                  </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  3
+                </span>
+                <span>
+                  Toca em{" "}
+                  <span className="font-medium text-foreground">
+                    Adicionar
+                  </span>{" "}
+                  e pronto
+                </span>
+              </li>
+            </ol>
+          ) : (
+            <ol className="space-y-3 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  1
+                </span>
+                <span>
+                  Toca no menu{" "}
+                  <span className="font-medium text-foreground">⋮</span> (três
+                  pontinhos no canto superior)
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  2
+                </span>
+                <span>
+                  Toca em{" "}
+                  <span className="font-medium text-foreground">
+                    Instalar aplicativo
+                  </span>{" "}
+                  ou{" "}
+                  <span className="font-medium text-foreground">
+                    Adicionar à tela inicial
+                  </span>
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  3
+                </span>
+                <span>
+                  Confirma e pronto
+                </span>
+              </li>
+            </ol>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
