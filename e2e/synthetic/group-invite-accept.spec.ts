@@ -60,7 +60,7 @@ test.describe("Group Invite & Accept", () => {
 
     await expect(bobPage.getByText("Alice Invite")).toBeVisible({ timeout: 10000 });
     await expect(bobPage.getByText("Bob Invite")).toBeVisible();
-    await expect(bobPage.getByText("Voce")).toBeVisible();
+    await expect(bobPage.getByText("Você")).toBeVisible();
     await expect(bobPage.getByText("Criador")).toBeVisible();
     await expect(bobPage.getByText("Pendente")).not.toBeVisible();
 
