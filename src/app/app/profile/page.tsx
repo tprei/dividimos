@@ -14,7 +14,6 @@ import {
   Smartphone,
   X,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -65,7 +64,6 @@ function toPixKeyValue(type: PixKeyType, display: string): string {
 
 export default function ProfilePage() {
   const { user, loading } = useAuth();
-  const router = useRouter();
   const [darkMode, setDarkMode] = useState(false);
   const [editingPix, setEditingPix] = useState(false);
   const [pixType, setPixType] = useState<PixKeyType>("email");
