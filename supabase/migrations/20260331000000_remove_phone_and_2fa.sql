@@ -19,9 +19,12 @@ ALTER TABLE users DROP COLUMN IF EXISTS phone;
 
 -- Step 5: Recreate pix_key_type enum without 'phone'
 -- PostgreSQL requires dropping and recreating the type.
--- We temporarily change the column to text, drop the enum, recreate, cast back.
+-- Drop the default first (it holds a reference to the enum type), convert
+-- the column to text, drop the enum with CASCADE to release any remaining
+-- dependents (e.g. function signatures), then recreate and cast back.
+ALTER TABLE users ALTER COLUMN pix_key_type DROP DEFAULT;
 ALTER TABLE users ALTER COLUMN pix_key_type TYPE TEXT;
-DROP TYPE IF EXISTS pix_key_type;
+DROP TYPE IF EXISTS pix_key_type CASCADE;
 CREATE TYPE pix_key_type AS ENUM ('cpf', 'email', 'random');
 ALTER TABLE users ALTER COLUMN pix_key_type TYPE pix_key_type
   USING pix_key_type::pix_key_type;
