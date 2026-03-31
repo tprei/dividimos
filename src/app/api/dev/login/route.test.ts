@@ -52,7 +52,7 @@ function makeRequest(body: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE = "true";
+  process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED = "true";
   ssrMock = createMockSupabase();
   mockSsrClient.from = (table: string) => ssrMock.client.from(table);
   adminMock.reset();
@@ -76,39 +76,46 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE;
+  delete process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED;
 });
 
 describe("POST /api/dev/login", () => {
-  it("returns 403 when phone test mode is not enabled", async () => {
-    delete process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE;
+  it("returns 403 when dev login is not enabled", async () => {
+    delete process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED;
 
-    const response = await POST(makeRequest({ phone: "11999990001" }));
+    const response = await POST(makeRequest({ email: "alice@test.pagajaja.local" }));
 
     expect(response.status).toBe(403);
     const body = await response.json();
-    expect(body.error).toBe("Dev login is only available in test mode");
+    expect(body.error).toContain("NEXT_PUBLIC_DEV_LOGIN_ENABLED");
   });
 
-  it("returns 400 when neither phone nor email is provided", async () => {
+  it("returns 400 when email is not provided", async () => {
     const response = await POST(makeRequest({}));
 
     expect(response.status).toBe(400);
     const body = await response.json();
-    expect(body.error).toBe("Provide either 'phone' or 'email'");
+    expect(body.error).toBe("Provide 'email'");
   });
 
-  it("returns 404 when email user is not found in listUsers", async () => {
+  it("returns 404-equivalent: creates user when email not found", async () => {
     adminAuthMethods.listUsers.mockResolvedValue({
       data: { users: [] },
       error: null,
     });
+    ssrMock.onTable("users", { data: { onboarded: false } });
 
-    const response = await POST(makeRequest({ email: "alice@test.pagajaja.local" }));
+    const response = await POST(makeRequest({ email: "new@test.pagajaja.local" }));
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    expect(adminAuthMethods.createUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "new@test.pagajaja.local",
+        email_confirm: true,
+      }),
+    );
     const body = await response.json();
-    expect(body.error).toContain("alice@test.pagajaja.local");
+    expect(body.userId).toBe("new-user-id");
   });
 
   it("returns success with userId when email user is found", async () => {
@@ -126,49 +133,16 @@ describe("POST /api/dev/login", () => {
     expect(body.userId).toBe("user-alice");
   });
 
-  it("creates new user when phone is not found in listUsers", async () => {
+  it("does not call createUser when email user already exists", async () => {
     adminAuthMethods.listUsers.mockResolvedValue({
-      data: { users: [] },
-      error: null,
-    });
-    ssrMock.onTable("users", { data: { onboarded: false } });
-
-    const response = await POST(makeRequest({ phone: "11999990001" }));
-
-    expect(response.status).toBe(200);
-    expect(adminAuthMethods.createUser).toHaveBeenCalledWith(
-      expect.objectContaining({
-        phone: "+5511999990001",
-        phone_confirm: true,
-        email: "5511999990001@phone.pagajaja.local",
-        email_confirm: true,
-      }),
-    );
-    const body = await response.json();
-    expect(body.userId).toBe("new-user-id");
-  });
-
-  it("finds existing user by phone or email match without creating", async () => {
-    adminAuthMethods.listUsers.mockResolvedValue({
-      data: {
-        users: [
-          {
-            id: "existing-phone-user",
-            phone: "+5511999990001",
-            email: "5511999990001@phone.pagajaja.local",
-          },
-        ],
-      },
+      data: { users: [{ id: "user-alice", email: "alice@test.pagajaja.local" }] },
       error: null,
     });
     ssrMock.onTable("users", { data: { onboarded: true } });
 
-    const response = await POST(makeRequest({ phone: "11999990001" }));
+    await POST(makeRequest({ email: "alice@test.pagajaja.local" }));
 
-    expect(response.status).toBe(200);
     expect(adminAuthMethods.createUser).not.toHaveBeenCalled();
-    const body = await response.json();
-    expect(body.userId).toBe("existing-phone-user");
   });
 
   it("returns 500 when generateLink fails", async () => {
@@ -214,5 +188,22 @@ describe("POST /api/dev/login", () => {
     expect(newUserResponse.status).toBe(200);
     const newUserBody = await newUserResponse.json();
     expect(newUserBody.redirect).toBe("/auth/onboard");
+  });
+
+  it("returns 500 when createUser fails", async () => {
+    adminAuthMethods.listUsers.mockResolvedValue({
+      data: { users: [] },
+      error: null,
+    });
+    adminAuthMethods.createUser.mockResolvedValue({
+      data: { user: null },
+      error: { message: "creation failed" },
+    });
+
+    const response = await POST(makeRequest({ email: "fail@test.pagajaja.local" }));
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toContain("Failed to create user");
   });
 });

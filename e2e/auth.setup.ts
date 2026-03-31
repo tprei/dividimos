@@ -9,14 +9,14 @@ const authFile = (name: string) => `e2e/.auth/${name}.json`;
  * Stores session cookies in e2e/.auth/ directory for reuse across tests.
  *
  * Prerequisites:
- * - Dev server running with NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true
+ * - Dev server running with NEXT_PUBLIC_DEV_LOGIN_ENABLED=true
  * - Remote Supabase or local Supabase with test users available
  */
 
 const testUsers = [
-  { name: "alice", phone: "11999990001", displayName: "Alice Test", handle: "alice_test" },
-  { name: "bob", phone: "11999990002", displayName: "Bob Test", handle: "bob_test" },
-  { name: "carol", phone: "11999990003", displayName: "Carol Test", handle: "carol_test" },
+  { name: "alice", email: "alice@test.pagajaja.local", displayName: "Alice Test", handle: "alice_test" },
+  { name: "bob", email: "bob@test.pagajaja.local", displayName: "Bob Test", handle: "bob_test" },
+  { name: "carol", email: "carol@test.pagajaja.local", displayName: "Carol Test", handle: "carol_test" },
 ];
 
 for (const user of testUsers) {
@@ -24,7 +24,7 @@ for (const user of testUsers) {
     // Call dev login API to get authenticated session (with profile setup)
     const response = await request.post("/api/dev/login", {
       data: {
-        phone: user.phone,
+        email: user.email,
         name: user.displayName,
         handle: user.handle,
       },
@@ -48,7 +48,7 @@ for (const user of testUsers) {
 setup("setup alice browser session", async ({ page }) => {
   // Use dev login API via fetch, then navigate to set cookies
   const response = await page.request.post("/api/dev/login", {
-    data: { phone: "11999990001", name: "Alice Test", handle: "alice_test" },
+    data: { email: "alice@test.pagajaja.local", name: "Alice Test", handle: "alice_test" },
   });
 
   const body = await response.json();
@@ -92,7 +92,7 @@ setup("setup alice browser session", async ({ page }) => {
 
 setup("setup bob browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
-    data: { phone: "11999990002", name: "Bob Test", handle: "bob_test" },
+    data: { email: "bob@test.pagajaja.local", name: "Bob Test", handle: "bob_test" },
   });
 
   const body = await response.json();
@@ -127,7 +127,7 @@ setup("setup bob browser session", async ({ page }) => {
 
 setup("setup carol browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
-    data: { phone: "11999990003", name: "Carol Test", handle: "carol_test" },
+    data: { email: "carol@test.pagajaja.local", name: "Carol Test", handle: "carol_test" },
   });
 
   const body = await response.json();

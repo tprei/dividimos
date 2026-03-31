@@ -272,12 +272,12 @@ const cspHeader = `
 
 ### Dev Login Route Hardening
 
-Current guard uses `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE` which is baked into client bundles. Double-gate:
+Current guard uses `NEXT_PUBLIC_DEV_LOGIN_ENABLED` which is baked into client bundles. Double-gate:
 
 ```typescript
 if (
   process.env.NODE_ENV === "production" ||
-  process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE !== "true"
+  process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED !== "true"
 ) {
   return NextResponse.json({ error: "Not available" }, { status: 403 });
 }
@@ -411,7 +411,7 @@ e2e:
         NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
         SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SERVICE_ROLE_KEY }}
-        NEXT_PUBLIC_AUTH_PHONE_TEST_MODE: "true"
+        NEXT_PUBLIC_DEV_LOGIN_ENABLED: "true"
         CI: true
     - uses: actions/upload-artifact@v4
       if: failure()
