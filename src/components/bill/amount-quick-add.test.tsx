@@ -66,4 +66,57 @@ describe("AmountQuickAdd", () => {
       expect(btn).toHaveAttribute("type", "button");
     }
   });
+
+  it("does not show undo button initially", () => {
+    render(<AmountQuickAdd currentValue="" onChange={vi.fn()} />);
+    expect(screen.queryByLabelText("Desfazer")).not.toBeInTheDocument();
+  });
+
+  it("shows undo button after a quick-add click", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AmountQuickAdd currentValue="" onChange={onChange} />,
+    );
+
+    await user.click(screen.getByText("+R$10"));
+    rerender(<AmountQuickAdd currentValue="10,00" onChange={onChange} />);
+
+    expect(screen.getByLabelText("Desfazer")).toBeInTheDocument();
+  });
+
+  it("restores previous value on undo", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AmountQuickAdd currentValue="5,00" onChange={onChange} />,
+    );
+
+    await user.click(screen.getByText("+R$10"));
+    rerender(<AmountQuickAdd currentValue="15,00" onChange={onChange} />);
+
+    await user.click(screen.getByLabelText("Desfazer"));
+    expect(onChange).toHaveBeenLastCalledWith("5,00");
+  });
+
+  it("supports multiple undos in sequence", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AmountQuickAdd currentValue="" onChange={onChange} />,
+    );
+
+    await user.click(screen.getByText("+R$10"));
+    rerender(<AmountQuickAdd currentValue="10,00" onChange={onChange} />);
+
+    await user.click(screen.getByText("+R$50"));
+    rerender(<AmountQuickAdd currentValue="60,00" onChange={onChange} />);
+
+    await user.click(screen.getByLabelText("Desfazer"));
+    expect(onChange).toHaveBeenLastCalledWith("10,00");
+    rerender(<AmountQuickAdd currentValue="10,00" onChange={onChange} />);
+
+    await user.click(screen.getByLabelText("Desfazer"));
+    expect(onChange).toHaveBeenLastCalledWith("");
+  });
 });

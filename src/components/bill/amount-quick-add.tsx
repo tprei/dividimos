@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useRef } from "react";
+import { Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface AmountQuickAddProps {
@@ -21,14 +23,29 @@ export function AmountQuickAdd({
   currentValue,
   onChange,
 }: AmountQuickAddProps) {
-  const handleAdd = (increment: number) => {
-    const current = parseCurrentValue(currentValue);
-    const next = current + increment;
-    onChange(formatBrazilian(next));
-  };
+  const historyRef = useRef<string[]>([]);
+
+  const handleAdd = useCallback(
+    (increment: number) => {
+      historyRef.current.push(currentValue);
+      const current = parseCurrentValue(currentValue);
+      const next = current + increment;
+      onChange(formatBrazilian(next));
+    },
+    [currentValue, onChange],
+  );
+
+  const handleUndo = useCallback(() => {
+    const prev = historyRef.current.pop();
+    if (prev !== undefined) {
+      onChange(prev);
+    }
+  }, [onChange]);
+
+  const canUndo = historyRef.current.length > 0;
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
       {increments.map((inc) => (
         <Button
           key={inc}
@@ -42,6 +59,18 @@ export function AmountQuickAdd({
           +R${inc}
         </Button>
       ))}
+      {canUndo && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-1.5 text-xs text-muted-foreground"
+          onClick={handleUndo}
+          aria-label="Desfazer"
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+        </Button>
+      )}
     </div>
   );
 }
