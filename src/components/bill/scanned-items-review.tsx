@@ -3,6 +3,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Check, Pencil, Plus, Store, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
+import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { QuantityStepper } from "@/components/bill/quantity-stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { staggerContainer, staggerItem } from "@/lib/animations";
@@ -177,19 +179,18 @@ export function ScannedItemsReview({
                     placeholder="Descricao"
                     autoFocus
                   />
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-3">
                     <div>
                       <label className="mb-1 block text-xs font-medium text-muted-foreground">
                         Qtd
                       </label>
-                      <Input
-                        type="number"
-                        min="0.001"
-                        step="any"
+                      <QuantityStepper
                         value={editing.quantity}
-                        onChange={(e) =>
-                          setEditing({ ...editing, quantity: e.target.value })
+                        onChange={(v) =>
+                          setEditing({ ...editing, quantity: v })
                         }
+                        min={0.001}
+                        allowDecimal
                       />
                     </div>
                     <div>
@@ -208,6 +209,15 @@ export function ScannedItemsReview({
                           })
                         }
                       />
+                      <div className="mt-1.5">
+                        <AmountQuickAdd
+                          increments={[1, 2, 5, 10, 20]}
+                          currentValue={editing.unitPrice}
+                          onChange={(v) =>
+                            setEditing({ ...editing, unitPrice: v })
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -305,17 +315,15 @@ export function ScannedItemsReview({
                 onChange={(e) => setNewDescription(e.target.value)}
                 autoFocus
               />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">
                     Qtd
                   </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    step="1"
+                  <QuantityStepper
                     value={newQuantity}
-                    onChange={(e) => setNewQuantity(e.target.value)}
+                    onChange={setNewQuantity}
+                    min={1}
                   />
                 </div>
                 <div>
@@ -331,6 +339,13 @@ export function ScannedItemsReview({
                       setNewPrice(sanitizeDecimalInput(e.target.value))
                     }
                   />
+                  <div className="mt-1.5">
+                    <AmountQuickAdd
+                      increments={[1, 2, 5, 10, 20]}
+                      currentValue={newPrice}
+                      onChange={setNewPrice}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
