@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
 import { startTransition, useState } from "react";
+import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
@@ -322,6 +323,21 @@ export function PayerStep({
                     </div>
                   )}
                 </div>
+                {!showFillRemaining && (
+                  <div className="mt-2">
+                    <AmountQuickAdd
+                      increments={[5, 10, 50, 100]}
+                      currentValue={localVal}
+                      onChange={(newVal) => {
+                        handleLocalChange(user.id, newVal);
+                        const cents = Math.round(parseFloat(newVal.replace(",", ".")) * 100);
+                        startTransition(() => {
+                          onSetPayerAmount(user.id, cents);
+                        });
+                      }}
+                    />
+                  </div>
+                )}
                 {!showFillRemaining && (
                   <input
                     type="range"
