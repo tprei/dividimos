@@ -1,6 +1,7 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { CTASection } from "@/components/landing/cta-section";
+import { EmojiGrid } from "@/components/landing/emoji-grid";
 import { FeaturesSection } from "@/components/landing/features-section";
 import { HeroContent } from "@/components/landing/hero-content";
 import { HowItWorksSection } from "@/components/landing/how-it-works-section";
@@ -25,7 +26,8 @@ export default function LandingPage() {
       <main className="flex-1">
         <section className="relative overflow-hidden">
           <div className="gradient-mesh absolute inset-0 -z-10" />
-          <div className="mx-auto max-w-6xl px-4 pb-20 pt-16 sm:px-6 sm:pb-32 sm:pt-24">
+          <EmojiGrid />
+          <div className="relative z-10 mx-auto max-w-6xl px-4 pb-20 pt-16 sm:px-6 sm:pb-32 sm:pt-24">
             <HeroContent />
           </div>
         </section>
