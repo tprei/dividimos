@@ -66,7 +66,7 @@ describe("InstallPrompt", () => {
     it("renders install button on Android", () => {
       setUserAgent(ANDROID_UA);
       render(<InstallPrompt />);
-      expect(screen.getByText("Instalar no celular")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instalar no celular")).toBeInTheDocument();
     });
   });
 
@@ -74,13 +74,13 @@ describe("InstallPrompt", () => {
     it("renders install button on iOS Safari", () => {
       setUserAgent(IOS_SAFARI_UA);
       render(<InstallPrompt />);
-      expect(screen.getByText("Instalar no celular")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instalar no celular")).toBeInTheDocument();
     });
 
     it("shows install button on iOS Chrome (not detected as Safari)", () => {
       setUserAgent(IOS_CHROME_UA);
       render(<InstallPrompt />);
-      expect(screen.getByText("Instalar no celular")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instalar no celular")).toBeInTheDocument();
       expect(screen.queryByText("Compartilhar")).not.toBeInTheDocument();
     });
   });
@@ -103,14 +103,14 @@ describe("InstallPrompt", () => {
       render(<InstallPrompt />);
 
       // Click install to trigger prompt usage
-      fireEvent.click(screen.getByText("Instalar no celular"));
+      fireEvent.click(screen.getByLabelText("Instalar no celular"));
       await act(async () => {
         await mockChoice;
       });
 
       expect(mockPrompt).toHaveBeenCalledOnce();
       // After accepted, should hide
-      expect(screen.queryByText("Instalar no celular")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Instalar no celular")).not.toBeInTheDocument();
     });
 
     it("captures late beforeinstallprompt events", async () => {
@@ -128,7 +128,7 @@ describe("InstallPrompt", () => {
       Object.assign(event, { prompt: mockPrompt, userChoice: mockChoice });
       window.dispatchEvent(event);
 
-      fireEvent.click(screen.getByText("Instalar no celular"));
+      fireEvent.click(screen.getByLabelText("Instalar no celular"));
       await act(async () => {
         await mockChoice;
       });
@@ -139,13 +139,13 @@ describe("InstallPrompt", () => {
     it("hides prompt when appinstalled event fires", () => {
       setUserAgent(ANDROID_UA);
       render(<InstallPrompt />);
-      expect(screen.getByText("Instalar no celular")).toBeInTheDocument();
+      expect(screen.getByLabelText("Instalar no celular")).toBeInTheDocument();
 
       act(() => {
         window.dispatchEvent(new Event("appinstalled"));
       });
 
-      expect(screen.queryByText("Instalar no celular")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Instalar no celular")).not.toBeInTheDocument();
     });
   });
 
@@ -166,12 +166,12 @@ describe("InstallPrompt", () => {
 
       render(<InstallPrompt />);
 
-      fireEvent.click(screen.getByText("Instalar no celular"));
+      fireEvent.click(screen.getByLabelText("Instalar no celular"));
       await act(async () => {
         await mockChoice;
       });
 
-      expect(screen.queryByText("Instalar no celular")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Instalar no celular")).toBeInTheDocument();
     });
 
     it("opens install guide when no native prompt available", async () => {
@@ -179,19 +179,12 @@ describe("InstallPrompt", () => {
       render(<InstallPrompt />);
 
       await act(async () => {
-        fireEvent.click(screen.getByText("Instalar no celular"));
+        fireEvent.click(screen.getByLabelText("Instalar no celular"));
       });
 
-      expect(screen.queryByText("Instalar no celular")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Instalar no celular")).toBeInTheDocument();
       expect(screen.getByText("Instalar o app")).toBeInTheDocument();
     });
   });
 
-  describe("className prop", () => {
-    it("passes className to wrapper div", () => {
-      setUserAgent(ANDROID_UA);
-      const { container } = render(<InstallPrompt className="my-class" />);
-      expect(container.firstElementChild).toHaveClass("my-class");
-    });
-  });
 });

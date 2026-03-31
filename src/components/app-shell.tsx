@@ -141,6 +141,7 @@ export function AppShell({
           <div className="flex h-14 items-center justify-between px-4">
             <Logo size="sm" />
             <div className="flex items-center gap-1">
+              <InstallPrompt />
               <Link
                 href="/app/settings"
                 className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -161,8 +162,6 @@ export function AppShell({
             </div>
           </div>
         </header>
-
-        <InstallPrompt className="px-4 pt-2" />
 
         {(pulling || pullDistance > 0) && (
           <div className="flex justify-center py-2">
