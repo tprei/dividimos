@@ -3,6 +3,8 @@
 import { motion } from "framer-motion";
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
+import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { QuantityStepper } from "@/components/bill/quantity-stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { decimalToCents, sanitizeDecimalInput } from "@/lib/currency";
@@ -69,18 +71,12 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
           onChange={(e) => setDescription(e.target.value)}
           autoFocus
         />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               Qtd
             </label>
-            <Input
-              type="number"
-              min="1"
-              step="1"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
+            <QuantityStepper value={quantity} onChange={setQuantity} />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -93,6 +89,13 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
               value={price}
               onChange={(e) => setPrice(sanitizeDecimalInput(e.target.value))}
             />
+            <div className="mt-1.5">
+              <AmountQuickAdd
+                increments={[1, 2, 5, 10, 20]}
+                currentValue={price}
+                onChange={setPrice}
+              />
+            </div>
           </div>
         </div>
       </div>
