@@ -70,7 +70,7 @@ async function createSessionForPhone(
 
   const { data: profile } = await supabase
     .from("users")
-    .select("onboarded, two_factor_enabled")
+    .select("onboarded")
     .eq("id", userId)
     .single();
 

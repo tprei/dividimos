@@ -11,9 +11,8 @@ import { createServerClient } from "@supabase/ssr";
  *
  * Only available when NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true.
  *
- * Body: { phone?: string, email?: string, name?: string, handle?: string }
- *   - phone: creates/finds user by phone (e.g. "5511999990001")
- *   - email: signs in with email+password for seed users (e.g. "alice@test.pagajaja.local")
+ * Body: { email: string, name?: string, handle?: string }
+ *   - email: signs in with email for seed users (e.g. "alice@test.pagajaja.local")
  *   - name: optional display name to set on the user profile
  *   - handle: optional @handle to set on the user profile
  *
@@ -28,16 +27,15 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const { phone, email, name: profileName, handle: profileHandle } = body as {
-    phone?: string;
+  const { email, name: profileName, handle: profileHandle } = body as {
     email?: string;
     name?: string;
     handle?: string;
   };
 
-  if (!phone && !email) {
+  if (!email) {
     return NextResponse.json(
-      { error: "Provide either 'phone' or 'email'" },
+      { error: "Provide 'email'" },
       { status: 400 },
     );
   }
@@ -45,61 +43,21 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   try {
-    let userId: string;
-    let testEmail: string;
-
-    if (email) {
-      // Email login path — for seed users (alice/bob/carol@test.pagajaja.local)
-      testEmail = email;
-      const { data: existing } = await admin.auth.admin.listUsers();
-      const user = existing?.users.find((u) => u.email === email);
-      if (!user) {
-        return NextResponse.json(
-          { error: `User not found: ${email}` },
-          { status: 404 },
-        );
-      }
-      userId = user.id;
-    } else {
-      // Phone login path — create user on the fly
-      const digits = phone!.replace(/\D/g, "");
-      const normalized = digits.startsWith("55")
-        ? `+${digits}`
-        : `+55${digits}`;
-      testEmail = `${normalized.replace("+", "")}@phone.pagajaja.local`;
-
-      const { data: existing } = await admin.auth.admin.listUsers();
-      const existingUser = existing?.users.find(
-        (u) => u.phone === normalized || u.email === testEmail,
+    const { data: existing } = await admin.auth.admin.listUsers();
+    const user = existing?.users.find((u) => u.email === email);
+    if (!user) {
+      return NextResponse.json(
+        { error: `User not found: ${email}` },
+        { status: 404 },
       );
-
-      if (existingUser) {
-        userId = existingUser.id;
-      } else {
-        const { data: created, error: createError } =
-          await admin.auth.admin.createUser({
-            phone: normalized,
-            phone_confirm: true,
-            email: testEmail,
-            email_confirm: true,
-            user_metadata: { full_name: "", phone: normalized },
-          });
-
-        if (createError || !created.user) {
-          return NextResponse.json(
-            { error: `Failed to create user: ${createError?.message}` },
-            { status: 500 },
-          );
-        }
-        userId = created.user.id;
-      }
     }
+    const userId = user.id;
 
     // Generate a magic link and verify it to create a session
     const { data: linkData, error: linkError } =
       await admin.auth.admin.generateLink({
         type: "magiclink",
-        email: testEmail,
+        email,
       });
 
     if (linkError || !linkData) {
@@ -199,14 +157,6 @@ export async function POST(request: Request) {
       .single();
 
     const redirect = profile?.onboarded ? "/app" : "/auth/onboard";
-
-    cookieStore.set("2fa-verified", `${userId}:${Math.floor(Date.now() / 1000)}:dev-bypass`, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 86400,
-    });
 
     return NextResponse.json({
       success: true,

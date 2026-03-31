@@ -27,8 +27,8 @@ import type {
   BillItem,
 } from "./index";
 
-describe("User type with 2FA fields", () => {
-  it("User interface includes twoFactorEnabled as required boolean", () => {
+describe("User type", () => {
+  it("User interface has required fields", () => {
     const user: User = {
       id: "user-1",
       email: "alice@example.com",
@@ -37,28 +37,10 @@ describe("User type with 2FA fields", () => {
       pixKeyType: "email",
       pixKeyHint: "a***e@example.com",
       onboarded: true,
-      twoFactorEnabled: false,
       createdAt: "2026-03-28T00:00:00Z",
     };
-    expect(user.twoFactorEnabled).toBe(false);
-    expect(user.twoFactorPhone).toBeUndefined();
-  });
-
-  it("User with 2FA enabled has phone set", () => {
-    const user: User = {
-      id: "user-1",
-      email: "alice@example.com",
-      handle: "alice",
-      name: "Alice",
-      pixKeyType: "email",
-      pixKeyHint: "a***e@example.com",
-      onboarded: true,
-      twoFactorEnabled: true,
-      twoFactorPhone: "+5511999990001",
-      createdAt: "2026-03-28T00:00:00Z",
-    };
-    expect(user.twoFactorEnabled).toBe(true);
-    expect(user.twoFactorPhone).toBe("+5511999990001");
+    expect(user.id).toBe("user-1");
+    expect(user.pixKeyType).toBe("email");
   });
 });
 

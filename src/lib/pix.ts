@@ -67,8 +67,6 @@ export function generatePixCopiaECola(payload: PixPayload): string {
 
 export function validatePixKey(key: string, type: PixKeyType): boolean {
   switch (type) {
-    case "phone":
-      return /^\+55\d{10,11}$/.test(key);
     case "cpf":
       return /^\d{11}$/.test(key);
     case "email":

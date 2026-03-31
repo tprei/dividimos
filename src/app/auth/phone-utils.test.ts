@@ -54,26 +54,12 @@ describe("redirectForProfile", () => {
   });
 
   it("redirects to onboard when profile is not onboarded", () => {
-    const profile = { onboarded: false, two_factor_enabled: false };
+    const profile = { onboarded: false };
     expect(redirectForProfile(profile, "/app")).toBe("/auth/onboard");
   });
 
-  it("redirects to 2FA verification when two_factor_enabled", () => {
-    const profile = { onboarded: true, two_factor_enabled: true };
-    expect(redirectForProfile(profile, "/app")).toBe(
-      "/auth/verify-2fa?next=%2Fapp",
-    );
-  });
-
-  it("redirects to 2FA with custom path", () => {
-    const profile = { onboarded: true, two_factor_enabled: true };
-    expect(redirectForProfile(profile, "/app/groups/456")).toBe(
-      "/auth/verify-2fa?next=%2Fapp%2Fgroups%2F456",
-    );
-  });
-
-  it("returns safePath directly for onboarded user without 2FA", () => {
-    const profile = { onboarded: true, two_factor_enabled: false };
+  it("returns safePath directly for onboarded user", () => {
+    const profile = { onboarded: true };
     expect(redirectForProfile(profile, "/app")).toBe("/app");
     expect(redirectForProfile(profile, "/app/groups/789")).toBe("/app/groups/789");
   });

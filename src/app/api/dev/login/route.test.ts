@@ -90,12 +90,12 @@ describe("POST /api/dev/login", () => {
     expect(body.error).toBe("Dev login is only available in test mode");
   });
 
-  it("returns 400 when neither phone nor email is provided", async () => {
+  it("returns 400 when email is not provided", async () => {
     const response = await POST(makeRequest({}));
 
     expect(response.status).toBe(400);
     const body = await response.json();
-    expect(body.error).toBe("Provide either 'phone' or 'email'");
+    expect(body.error).toBe("Provide 'email'");
   });
 
   it("returns 404 when email user is not found in listUsers", async () => {
@@ -124,51 +124,6 @@ describe("POST /api/dev/login", () => {
     const body = await response.json();
     expect(body.success).toBe(true);
     expect(body.userId).toBe("user-alice");
-  });
-
-  it("creates new user when phone is not found in listUsers", async () => {
-    adminAuthMethods.listUsers.mockResolvedValue({
-      data: { users: [] },
-      error: null,
-    });
-    ssrMock.onTable("users", { data: { onboarded: false } });
-
-    const response = await POST(makeRequest({ phone: "11999990001" }));
-
-    expect(response.status).toBe(200);
-    expect(adminAuthMethods.createUser).toHaveBeenCalledWith(
-      expect.objectContaining({
-        phone: "+5511999990001",
-        phone_confirm: true,
-        email: "5511999990001@phone.pagajaja.local",
-        email_confirm: true,
-      }),
-    );
-    const body = await response.json();
-    expect(body.userId).toBe("new-user-id");
-  });
-
-  it("finds existing user by phone or email match without creating", async () => {
-    adminAuthMethods.listUsers.mockResolvedValue({
-      data: {
-        users: [
-          {
-            id: "existing-phone-user",
-            phone: "+5511999990001",
-            email: "5511999990001@phone.pagajaja.local",
-          },
-        ],
-      },
-      error: null,
-    });
-    ssrMock.onTable("users", { data: { onboarded: true } });
-
-    const response = await POST(makeRequest({ phone: "11999990001" }));
-
-    expect(response.status).toBe(200);
-    expect(adminAuthMethods.createUser).not.toHaveBeenCalled();
-    const body = await response.json();
-    expect(body.userId).toBe("existing-phone-user");
   });
 
   it("returns 500 when generateLink fails", async () => {

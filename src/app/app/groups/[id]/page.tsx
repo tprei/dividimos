@@ -325,7 +325,6 @@ export default function GroupDetailPage({
         pixKeyHint: "",
         avatarUrl: m.profile.avatarUrl,
         onboarded: true,
-        twoFactorEnabled: false,
         createdAt: "",
       })),
     [members],
