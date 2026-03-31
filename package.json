@@ -17,7 +17,8 @@
     "test:e2e:debug": "playwright test --debug",
     "test:synthetic": "playwright test --project=synthetic",
     "test:synthetic:ui": "playwright test --project=synthetic --ui",
-    "test:synthetic:headed": "playwright test --project=synthetic --headed"
+    "test:synthetic:headed": "playwright test --project=synthetic --headed",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

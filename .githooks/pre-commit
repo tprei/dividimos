@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "🔍 Running pre-commit checks..."
+
+# Lint
+echo "→ ESLint"
+npm run lint
+
+# Type-check
+echo "→ TypeScript"
+npx tsc --noEmit
+
+echo "✅ Pre-commit checks passed"
