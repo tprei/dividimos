@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Smartphone } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +28,7 @@ function detectPlatform(): "ios" | "android" | null {
   return null;
 }
 
-export function InstallPrompt({ className }: { className?: string } = {}) {
+export function InstallPrompt() {
   const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
@@ -83,16 +82,14 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
   if (!visible) return null;
 
   return (
-    <div className={className}>
-      <Button
-        size="lg"
-        variant="outline"
-        className="w-full gap-2 text-base sm:w-auto"
+    <>
+      <button
         onClick={handleClick}
+        className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        aria-label="Instalar no celular"
       >
-        <Smartphone className="h-5 w-5" />
-        Instalar no celular
-      </Button>
+        <Smartphone className="h-4 w-4" />
+      </button>
 
       <Dialog open={showGuide} onOpenChange={setShowGuide}>
         <DialogContent className="max-w-sm">
@@ -176,6 +173,6 @@ export function InstallPrompt({ className }: { className?: string } = {}) {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
