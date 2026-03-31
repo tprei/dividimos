@@ -12,10 +12,10 @@ describe("AddItemForm", () => {
     expect(screen.getByPlaceholderText("0,00")).toBeInTheDocument();
   });
 
-  it("renders quantity input with default value of 1", () => {
+  it("renders quantity with default value of 1", () => {
     render(<AddItemForm onAdd={vi.fn()} onCancel={vi.fn()} />);
 
-    expect(screen.getByDisplayValue("1")).toBeInTheDocument();
+    expect(screen.getByText("1x")).toBeInTheDocument();
   });
 
   it("submit button is disabled when fields are empty", () => {
