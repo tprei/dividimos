@@ -16,8 +16,8 @@ export const userBob: User = {
   email: "bob@example.com",
   handle: "bob",
   name: "Bob Santos",
-  pixKeyType: "phone",
-  pixKeyHint: "(**) *****-1234",
+  pixKeyType: "email",
+  pixKeyHint: "b*b@example.com",
   onboarded: true,
   createdAt: "2024-01-01T00:00:00Z",
 };

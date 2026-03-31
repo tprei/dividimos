@@ -67,8 +67,6 @@ export function generatePixCopiaECola(payload: PixPayload): string {
 
 export function validatePixKey(key: string, type: PixKeyType): boolean {
   switch (type) {
-    case "phone":
-      return /^\+55\d{10,11}$/.test(key);
     case "cpf":
       return /^\d{11}$/.test(key);
     case "email":
@@ -81,14 +79,9 @@ export function validatePixKey(key: string, type: PixKeyType): boolean {
 }
 
 export function maskPixKey(key: string): string {
-  // CPF: exactly 11 digits, no + prefix - check BEFORE phone
+  // CPF: exactly 11 digits
   if (/^\d{11}$/.test(key)) {
     return `***.***.*${key.slice(7, 9)}*-${key.slice(9)}`;
-  }
-  // Phone: +55 prefix or 11-13 digits with optional +
-  if (/^\+?\d{11,13}$/.test(key.replace(/\D/g, ""))) {
-    const digits = key.replace(/\D/g, "");
-    return `(**) *****-${digits.slice(-4)}`;
   }
   if (key.includes("@")) {
     const [local, domain] = key.split("@");

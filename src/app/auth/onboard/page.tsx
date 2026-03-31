@@ -34,12 +34,6 @@ function nameToHandle(name: string): string {
     .slice(0, 20);
 }
 
-function formatPhoneInput(digits: string): string {
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-}
-
 function formatCPF(digits: string): string {
   if (digits.length <= 3) return digits;
   if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
@@ -49,10 +43,6 @@ function formatCPF(digits: string): string {
 }
 
 function toPixKeyValue(type: PixKeyType, displayValue: string): string {
-  if (type === "phone") {
-    const digits = displayValue.replace(/\D/g, "");
-    return `+55${digits}`;
-  }
   if (type === "cpf") {
     return displayValue.replace(/\D/g, "");
   }
@@ -61,7 +51,6 @@ function toPixKeyValue(type: PixKeyType, displayValue: string): string {
 
 const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
   { type: "email", label: "E-mail" },
-  { type: "phone", label: "Telefone" },
   { type: "cpf", label: "CPF" },
   { type: "random", label: "Chave aleatória" },
 ];
@@ -75,9 +64,7 @@ function OnboardPageContent() {
   const [handle, setHandle] = useState("");
   const [handleTouched, setHandleTouched] = useState(false);
   const [handleError, setHandleError] = useState("");
-  const [authMethod, setAuthMethod] = useState<"google" | "phone">("google");
   const [userEmail, setUserEmail] = useState("");
-  const [userPhone, setUserPhone] = useState("");
   const [pixKeyType, setPixKeyType] = useState<PixKeyType>("email");
   const [customPixInput, setCustomPixInput] = useState("");
   const [pixError, setPixError] = useState("");
@@ -88,26 +75,10 @@ function OnboardPageContent() {
       if (!user) return;
 
       const email = user.email ?? "";
-      const phone = user.phone ?? "";
       const fullName = user.user_metadata?.full_name ?? "";
-      const isPhoneAuth = email.endsWith("@phone.pagajaja.local") || (!email && phone);
 
-      setAuthMethod(isPhoneAuth ? "phone" : "google");
-
-      if (isPhoneAuth) {
-        setUserPhone(phone);
-        const isBrazilian = phone.startsWith("+55");
-        if (isBrazilian) {
-          setPixKeyType("phone");
-          const digits = phone.replace(/\D/g, "").replace(/^55/, "");
-          setCustomPixInput(formatPhoneInput(digits));
-        } else {
-          setPixKeyType("email");
-        }
-      } else {
-        setUserEmail(email);
-        setPixKeyType("email");
-      }
+      setUserEmail(email);
+      setPixKeyType("email");
 
       if (fullName) {
         setName(fullName);
@@ -148,24 +119,10 @@ function OnboardPageContent() {
     setPixKeyType(type);
     setCustomPixInput("");
     setPixError("");
-
-    if (type === "email" && userEmail) {
-      setCustomPixInput("");
-    }
-    if (type === "phone" && userPhone) {
-      const digits = userPhone.replace(/\D/g, "").replace(/^55/, "");
-      setCustomPixInput(formatPhoneInput(digits));
-    }
   };
 
   const pixKeyDisplay =
     pixKeyType === "email" && !customPixInput ? userEmail : customPixInput;
-
-  const handlePhonePixInput = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    setCustomPixInput(formatPhoneInput(digits));
-    setPixError("");
-  };
 
   const handleCPFInput = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 11);
@@ -186,7 +143,6 @@ function OnboardPageContent() {
 
   const getInputHandler = () => {
     switch (pixKeyType) {
-      case "phone": return handlePhonePixInput;
       case "cpf": return handleCPFInput;
       case "random": return handleRandomInput;
       default: return handleEmailInput;
@@ -195,7 +151,6 @@ function OnboardPageContent() {
 
   const getInputPlaceholder = () => {
     switch (pixKeyType) {
-      case "phone": return "(11) 99999-9999";
       case "cpf": return "000.000.000-00";
       case "random": return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
       default: return "seu@email.com";
@@ -240,17 +195,11 @@ function OnboardPageContent() {
     });
   };
 
-  const inferredKeyLabel =
-    authMethod === "google" && userEmail
-      ? "Identificamos seu e-mail como chave Pix"
-      : authMethod === "phone" && userPhone
-        ? "Identificamos seu telefone como chave Pix"
-        : null;
+  const inferredKeyLabel = userEmail
+    ? "Identificamos seu e-mail como chave Pix"
+    : null;
 
-  const showInferredBanner =
-    inferredKeyLabel &&
-    ((pixKeyType === "email" && authMethod === "google") ||
-      (pixKeyType === "phone" && authMethod === "phone"));
+  const showInferredBanner = inferredKeyLabel && pixKeyType === "email";
 
   const steps: OnboardStep[] = ["profile", "pix"];
   const currentIndex = steps.indexOf(step);
@@ -398,7 +347,7 @@ function OnboardPageContent() {
                       autoCorrect="off"
                       spellCheck={false}
                       inputMode={
-                        pixKeyType === "phone" || pixKeyType === "cpf"
+                        pixKeyType === "cpf"
                           ? "numeric"
                           : "text"
                       }

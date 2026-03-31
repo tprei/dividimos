@@ -1,4 +1,4 @@
-export type PixKeyType = "phone" | "cpf" | "email" | "random";
+export type PixKeyType = "cpf" | "email" | "random";
 
 export type SplitType = "equal" | "percentage" | "fixed";
 
