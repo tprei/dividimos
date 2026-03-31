@@ -56,25 +56,19 @@ npm run dev
 
 These can also be provided as Fly secrets if running on Fly.io — the script reads them automatically.
 
-Phone test mode is enabled by default in dev. It creates users on the fly — no seed data required for remote.
+Dev login mode is enabled by default in dev. It allows authenticating with any email — no seed data required for remote.
 
 ### Programmatic login (dev only)
 
-When `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true`, you can authenticate via API:
+When dev login is enabled, you can authenticate via API:
 
 ```bash
-# Phone-based (creates user on the fly):
-curl -X POST http://localhost:3000/api/dev/login \
-  -H 'Content-Type: application/json' \
-  -d '{"phone": "11999990001"}'
-
-# Email-based (for seed users with local Supabase):
 curl -X POST http://localhost:3000/api/dev/login \
   -H 'Content-Type: application/json' \
   -d '{"email": "alice@test.pagajaja.local"}'
 ```
 
-The response sets session cookies. Or use the UI: navigate to `/auth` → "Entrar com celular" → any phone number → any 6-digit OTP.
+The response sets session cookies.
 
 ## Commands
 
@@ -116,7 +110,7 @@ npm run test:integration
 
 ## Key concepts
 
-**Authentication**: Google OAuth via Supabase Auth. On first login, a trigger auto-creates a user profile with handle derived from email. Users complete onboarding by confirming handle and setting their Pix key.
+**Authentication**: Google OAuth via Supabase Auth (phone/2FA auth removed). On first login, a trigger auto-creates a user profile with handle derived from email. Users complete onboarding by confirming handle and setting their Pix key.
 
 **Pix key security**: Keys are encrypted with AES-256-GCM (`src/lib/crypto.ts`) before storage. Raw keys never reach the client. QR codes are generated server-side via `POST /api/pix/generate`. The `pix_key_hint` column stores a masked display version.
 
