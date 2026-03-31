@@ -12,8 +12,7 @@ export interface TestUser {
   email: string;
   handle: string;
   name: string;
-  phone?: string;
-  pixKeyType: "phone" | "cpf" | "email" | "random";
+  pixKeyType: "cpf" | "email" | "random";
   pixKeyHint: string;
   onboarded: boolean;
   accessToken?: string;
@@ -24,8 +23,7 @@ export interface CreateTestUserOptions {
   handle?: string;
   name?: string;
   email?: string;
-  phone?: string;
-  pixKeyType?: "phone" | "cpf" | "email" | "random";
+  pixKeyType?: "cpf" | "email" | "random";
   onboarded?: boolean;
 }
 
@@ -49,16 +47,13 @@ export async function createTestUser(
   const handle = options.handle ?? `test_${testId}`;
   const name = options.name ?? `Test User ${testId.slice(0, 8)}`;
   const email = options.email ?? `test_${testId}@test.pagajaja.local`;
-  const phone = options.phone;
   const pixKeyType = options.pixKeyType ?? "email";
   const onboarded = options.onboarded ?? true;
 
   const { data: authData, error: authError } =
     await adminClient.auth.admin.createUser({
       email,
-      phone,
       email_confirm: true,
-      phone_confirm: phone ? true : false,
       user_metadata: { full_name: name },
     });
 
@@ -106,7 +101,6 @@ export async function createTestUser(
     email,
     handle,
     name,
-    phone,
     pixKeyType,
     pixKeyHint: `${pixKeyType === "email" ? "test" : "***"}@hint.local`,
     onboarded,

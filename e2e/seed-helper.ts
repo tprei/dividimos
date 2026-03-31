@@ -9,8 +9,7 @@ export interface SeededUser {
   email: string;
   handle: string;
   name: string;
-  phone: string;
-  pixKeyType: "phone" | "cpf" | "email" | "random";
+  pixKeyType: "cpf" | "email" | "random";
   pixKeyHint: string;
   onboarded: boolean;
   accessToken: string;
@@ -45,8 +44,7 @@ export interface SeededSettlement {
 export interface CreateUserOptions {
   handle?: string;
   name?: string;
-  phone?: string;
-  pixKeyType?: "phone" | "cpf" | "email" | "random";
+  pixKeyType?: "cpf" | "email" | "random";
   onboarded?: boolean;
 }
 
@@ -66,11 +64,6 @@ export interface CreateExpenseOptions {
 
 function generateTestId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 12);
-}
-
-function toE164(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return `+55${digits}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,8 +100,7 @@ export class SeedHelper {
     const testId = generateTestId();
     const handle = options.handle ?? `synth_${testId}`;
     const name = options.name ?? `Synth ${testId.slice(0, 8)}`;
-    const phone = options.phone ?? `1199${testId.slice(0, 7)}`;
-    const pixKeyType = options.pixKeyType ?? "phone";
+    const pixKeyType = options.pixKeyType ?? "email";
     const onboarded = options.onboarded ?? true;
 
     const email = `synth_${testId}@test.pagajaja.local`;
@@ -117,9 +109,7 @@ export class SeedHelper {
     const { data: authData, error: authError } =
       await this.admin.auth.admin.createUser({
         email,
-        phone: toE164(phone),
         email_confirm: true,
-        phone_confirm: true,
         user_metadata: { full_name: name },
       });
 
@@ -130,14 +120,13 @@ export class SeedHelper {
     const userId = authData.user.id;
     this.userIds.push(userId);
 
-    const pixKeyHint = pixKeyType === "phone" ? `(**) *****-${phone.slice(-4)}` : `***@hint`;
+    const pixKeyHint = pixKeyType === "email" ? `synth_${testId.slice(0, 4)}***@test.pagajaja.local` : `***@hint`;
 
     const { error: profileError } = await this.admin
       .from("users")
       .update({
         handle,
         name,
-        phone,
         pix_key_type: pixKeyType,
         pix_key_hint: pixKeyHint,
         onboarded,
@@ -170,7 +159,6 @@ export class SeedHelper {
       email,
       handle,
       name,
-      phone,
       pixKeyType,
       pixKeyHint,
       onboarded,

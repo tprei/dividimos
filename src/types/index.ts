@@ -1,4 +1,4 @@
-export type PixKeyType = "phone" | "cpf" | "email" | "random";
+export type PixKeyType = "cpf" | "email" | "random";
 
 export type SplitType = "equal" | "percentage" | "fixed";
 
@@ -23,13 +23,10 @@ export interface User {
   email: string;
   handle: string;
   name: string;
-  phone?: string;
   pixKeyType: PixKeyType;
   pixKeyHint: string;
   avatarUrl?: string;
   onboarded: boolean;
-  twoFactorEnabled: boolean;
-  twoFactorPhone?: string;
   createdAt: string;
 }
 
