@@ -8,7 +8,6 @@ export const userAlice: User = {
   pixKeyType: "email",
   pixKeyHint: "a***e@example.com",
   onboarded: true,
-  twoFactorEnabled: false,
   createdAt: "2024-01-01T00:00:00Z",
 };
 
@@ -20,7 +19,6 @@ export const userBob: User = {
   pixKeyType: "phone",
   pixKeyHint: "(**) *****-1234",
   onboarded: true,
-  twoFactorEnabled: false,
   createdAt: "2024-01-01T00:00:00Z",
 };
 
@@ -32,7 +30,6 @@ export const userCarlos: User = {
   pixKeyType: "cpf",
   pixKeyHint: "***.***.*89*-01",
   onboarded: true,
-  twoFactorEnabled: false,
   createdAt: "2024-01-01T00:00:00Z",
 };
 

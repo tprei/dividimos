@@ -7,10 +7,10 @@ import { useBillStore } from "@/stores/bill-store";
 import type { User } from "@/types";
 
 const TEST_USERS: User[] = [
-  { id: "test_ana", email: "ana@test.com", handle: "ana.silva", name: "Ana Silva", pixKeyType: "phone", pixKeyHint: "(**) *****-1001", onboarded: true, twoFactorEnabled: false, createdAt: new Date().toISOString() },
-  { id: "test_marcos", email: "marcos@test.com", handle: "marcos.oliveira", name: "Marcos Oliveira", pixKeyType: "phone", pixKeyHint: "(**) *****-2002", onboarded: true, twoFactorEnabled: false, createdAt: new Date().toISOString() },
-  { id: "test_julia", email: "julia@test.com", handle: "julia.santos", name: "Julia Santos", pixKeyType: "email", pixKeyHint: "j****a@email.com", onboarded: true, twoFactorEnabled: false, createdAt: new Date().toISOString() },
-  { id: "test_lucas", email: "lucas@test.com", handle: "lucas.costa", name: "Lucas Costa", pixKeyType: "phone", pixKeyHint: "(**) *****-4004", onboarded: true, twoFactorEnabled: false, createdAt: new Date().toISOString() },
+  { id: "test_ana", email: "ana@test.com", handle: "ana.silva", name: "Ana Silva", pixKeyType: "phone", pixKeyHint: "(**) *****-1001", onboarded: true, createdAt: new Date().toISOString() },
+  { id: "test_marcos", email: "marcos@test.com", handle: "marcos.oliveira", name: "Marcos Oliveira", pixKeyType: "phone", pixKeyHint: "(**) *****-2002", onboarded: true, createdAt: new Date().toISOString() },
+  { id: "test_julia", email: "julia@test.com", handle: "julia.santos", name: "Julia Santos", pixKeyType: "email", pixKeyHint: "j****a@email.com", onboarded: true, createdAt: new Date().toISOString() },
+  { id: "test_lucas", email: "lucas@test.com", handle: "lucas.costa", name: "Lucas Costa", pixKeyType: "phone", pixKeyHint: "(**) *****-4004", onboarded: true, createdAt: new Date().toISOString() },
 ];
 
 const RESTAURANT_ITEMS = [
@@ -54,7 +54,7 @@ export function DevTestButtons() {
   const fillComplexScenario = () => {
     store.setCurrentUser({
       id: "test_self", email: "pedro@test.com", handle: "pedro.reis", name: "Pedro Reis",
-      pixKeyType: "phone", pixKeyHint: "(**) *****-4321", onboarded: true, twoFactorEnabled: false, createdAt: new Date().toISOString(),
+      pixKeyType: "phone", pixKeyHint: "(**) *****-4321", onboarded: true, createdAt: new Date().toISOString(),
     });
     store.createExpense("Churrascaria Teste", "itemized", "Fogo de Chao");
     store.updateExpense({ serviceFeePercent: 10, fixedFees: 0 });

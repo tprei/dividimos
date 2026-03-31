@@ -21,10 +21,6 @@ export interface Database {
           pix_key_hint: string;
           avatar_url: string | null;
           onboarded: boolean;
-          two_factor_enabled: boolean;
-          two_factor_phone: string | null;
-          two_factor_code_hash: string | null;
-          two_factor_code_created_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -38,10 +34,6 @@ export interface Database {
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
-          two_factor_enabled?: boolean;
-          two_factor_phone?: string | null;
-          two_factor_code_hash?: string | null;
-          two_factor_code_created_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -55,10 +47,6 @@ export interface Database {
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
-          two_factor_enabled?: boolean;
-          two_factor_phone?: string | null;
-          two_factor_code_hash?: string | null;
-          two_factor_code_created_at?: string | null;
           created_at?: string;
         };
         Relationships: [];

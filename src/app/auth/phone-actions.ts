@@ -70,7 +70,7 @@ async function createSessionForPhone(
 
   const { data: profile } = await supabase
     .from("users")
-    .select("onboarded, two_factor_enabled")
+    .select("onboarded")
     .eq("id", userId)
     .single();
 
@@ -89,21 +89,7 @@ export async function sendTestOtp(phone: string) {
     return { success: true, phone: normalized };
   }
 
-  try {
-    const { sendVerificationCode } = await import("@/lib/twilio");
-    const result = await sendVerificationCode(normalized);
-    if (!result.success) {
-      return { error: "Erro ao enviar codigo de verificacao" };
-    }
-  } catch (err) {
-    console.error("Twilio send failed:", err);
-    const msg = err instanceof Error ? err.message : "";
-    if (msg.includes("unverified")) {
-      return { error: "Numero nao verificado. Verifique o numero no painel Twilio (conta trial)." };
-    }
-    return { error: "Erro ao enviar SMS. Tente novamente." };
-  }
-  return { success: true, phone: normalized };
+  return { error: "Verificacao por SMS foi removida. Use o modo teste." };
 }
 
 export async function verifyPhoneOtp(phone: string, code: string, next?: string) {
@@ -117,16 +103,7 @@ export async function verifyPhoneOtp(phone: string, code: string, next?: string)
   const isTestMode = process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE === "true";
 
   if (!isTestMode) {
-    try {
-      const { checkVerificationCode } = await import("@/lib/twilio");
-      const result = await checkVerificationCode(normalized, code);
-      if (!result.success) {
-        return { error: "Codigo invalido ou expirado" };
-      }
-    } catch (err) {
-      console.error("Twilio check failed:", err);
-      return { error: "Erro ao verificar codigo. Tente novamente." };
-    }
+    return { error: "Verificacao por SMS foi removida. Use o modo teste." };
   }
 
   return createSessionForPhone(normalized, safePath);

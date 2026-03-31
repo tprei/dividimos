@@ -12,7 +12,7 @@ function makeUser(id: string, name: string): User {
     pixKeyType: "email",
     pixKeyHint: `${id}@test.com`,
     onboarded: true,
-    twoFactorEnabled: false,
+
     createdAt: new Date().toISOString(),
   };
 }

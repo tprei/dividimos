@@ -200,14 +200,6 @@ export async function POST(request: Request) {
 
     const redirect = profile?.onboarded ? "/app" : "/auth/onboard";
 
-    cookieStore.set("2fa-verified", `${userId}:${Math.floor(Date.now() / 1000)}:dev-bypass`, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 86400,
-    });
-
     return NextResponse.json({
       success: true,
       userId,

@@ -12,17 +12,13 @@ export function phoneToTestEmail(phone: string): string {
 }
 
 export function redirectForProfile(
-  profile: { onboarded: boolean; two_factor_enabled: boolean } | null,
+  profile: { onboarded: boolean } | null,
   safePath: string,
 ): string {
   if (!profile?.onboarded) {
     return safePath !== "/app"
       ? `/auth/onboard?next=${encodeURIComponent(safePath)}`
       : "/auth/onboard";
-  }
-
-  if (profile.two_factor_enabled) {
-    return `/auth/verify-2fa?next=${encodeURIComponent(safePath)}`;
   }
 
   return safePath;
