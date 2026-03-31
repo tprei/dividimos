@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeItemizedBill, makeSingleAmountBill, userAlice, userBob, userCarlos } from "@/test/fixtures";
 import type { BillSplit, ItemSplit } from "@/types";
 import type { DebtEdge } from "./simplify";
-import { computeRawEdges, simplifyDebts } from "./simplify";
+import { computeRawEdges, consolidateEdges, simplifyDebts } from "./simplify";
 
 const participants = [userAlice, userBob, userCarlos];
 const twoParticipants = [userAlice, userBob];
@@ -250,7 +250,6 @@ function makeUser(id: string, name: string): User {
     pixKeyType: "email" as const,
     pixKeyHint: `${id}@example.com`,
     onboarded: true,
-    twoFactorEnabled: false,
     createdAt: "2024-01-01T00:00:00Z",
   };
 }
