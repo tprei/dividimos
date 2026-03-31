@@ -5,6 +5,7 @@ import { Equal, Hash, Percent, Users } from "lucide-react";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
 import type { SplitType, UserProfile } from "@/types";
 
@@ -138,6 +139,13 @@ export function SingleAmountStep({
           className="text-2xl font-bold h-14 text-center"
           autoFocus
         />
+        <div className="mt-2">
+          <AmountQuickAdd
+            increments={[1, 5, 10, 50, 100]}
+            currentValue={totalInput}
+            onChange={setTotalInput}
+          />
+        </div>
       </div>
 
       <div>
@@ -332,16 +340,26 @@ export function SingleAmountStep({
                         Restante ({formatBRL(userRemaining)})
                       </Button>
                     ) : (
-                      <div className="flex items-center gap-1 w-28">
-                        <span className="text-sm text-muted-foreground">R$</span>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="0,00"
-                          className="h-8 text-right text-sm"
-                          value={userVal}
-                          onChange={(e) => handleFixedChange(person.id, e.target.value)}
-                          onBlur={applyFixed}
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex items-center gap-1 w-28">
+                          <span className="text-sm text-muted-foreground">R$</span>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0,00"
+                            className="h-8 text-right text-sm"
+                            value={userVal}
+                            onChange={(e) => handleFixedChange(person.id, e.target.value)}
+                            onBlur={applyFixed}
+                          />
+                        </div>
+                        <AmountQuickAdd
+                          increments={[1, 5, 10, 50]}
+                          currentValue={userVal}
+                          onChange={(newVal) => {
+                            handleFixedChange(person.id, newVal);
+                            setTimeout(applyFixed, 0);
+                          }}
                         />
                       </div>
                     )}
