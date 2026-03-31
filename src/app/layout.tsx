@@ -19,13 +19,13 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Pagajaja",
-    template: "%s | Pagajaja",
+    default: "Dividimos",
+    template: "%s | Dividimos",
   },
   description:
     "Split bills instantly. Scan your receipt, assign items, and settle via Pix in seconds.",
   keywords: ["pix", "split bill", "dividir conta", "nota fiscal", "NFC-e"],
-  authors: [{ name: "Pagajaja" }],
+  authors: [{ name: "Dividimos" }],
 };
 
 export const viewport: Viewport = {

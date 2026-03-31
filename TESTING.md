@@ -1,6 +1,6 @@
 # Testing Guide
 
-Pagajaja has three layers of automated tests: **unit**, **integration**, and **synthetic (E2E)**. Each layer has a specific purpose — avoid duplicating coverage across layers.
+Dividimos has three layers of automated tests: **unit**, **integration**, and **synthetic (E2E)**. Each layer has a specific purpose — avoid duplicating coverage across layers.
 
 ## Unit Tests
 

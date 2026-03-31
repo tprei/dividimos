@@ -83,7 +83,7 @@ describe("POST /api/dev/login", () => {
   it("returns 403 when dev login is not enabled", async () => {
     delete process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED;
 
-    const response = await POST(makeRequest({ email: "alice@test.pagajaja.local" }));
+    const response = await POST(makeRequest({ email: "alice@test.dividimos.local" }));
 
     expect(response.status).toBe(403);
     const body = await response.json();
@@ -105,12 +105,12 @@ describe("POST /api/dev/login", () => {
     });
     ssrMock.onTable("users", { data: { onboarded: false } });
 
-    const response = await POST(makeRequest({ email: "new@test.pagajaja.local" }));
+    const response = await POST(makeRequest({ email: "new@test.dividimos.local" }));
 
     expect(response.status).toBe(200);
     expect(adminAuthMethods.createUser).toHaveBeenCalledWith(
       expect.objectContaining({
-        email: "new@test.pagajaja.local",
+        email: "new@test.dividimos.local",
         email_confirm: true,
       }),
     );
@@ -121,12 +121,12 @@ describe("POST /api/dev/login", () => {
 
   it("returns success with userId when email user is found", async () => {
     adminAuthMethods.listUsers.mockResolvedValue({
-      data: { users: [{ id: "user-alice", email: "alice@test.pagajaja.local" }] },
+      data: { users: [{ id: "user-alice", email: "alice@test.dividimos.local" }] },
       error: null,
     });
     ssrMock.onTable("users", { data: { onboarded: true } });
 
-    const response = await POST(makeRequest({ email: "alice@test.pagajaja.local" }));
+    const response = await POST(makeRequest({ email: "alice@test.dividimos.local" }));
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -137,7 +137,7 @@ describe("POST /api/dev/login", () => {
 
   it("returns 500 when generateLink fails", async () => {
     adminAuthMethods.listUsers.mockResolvedValue({
-      data: { users: [{ id: "user-alice", email: "alice@test.pagajaja.local" }] },
+      data: { users: [{ id: "user-alice", email: "alice@test.dividimos.local" }] },
       error: null,
     });
     adminAuthMethods.generateLink.mockResolvedValue({
@@ -145,7 +145,7 @@ describe("POST /api/dev/login", () => {
       error: { message: "link generation failed" },
     });
 
-    const response = await POST(makeRequest({ email: "alice@test.pagajaja.local" }));
+    const response = await POST(makeRequest({ email: "alice@test.dividimos.local" }));
 
     expect(response.status).toBe(500);
     const body = await response.json();
@@ -154,26 +154,26 @@ describe("POST /api/dev/login", () => {
 
   it("returns redirect /app for onboarded user and /auth/onboard for new user", async () => {
     adminAuthMethods.listUsers.mockResolvedValue({
-      data: { users: [{ id: "user-alice", email: "alice@test.pagajaja.local" }] },
+      data: { users: [{ id: "user-alice", email: "alice@test.dividimos.local" }] },
       error: null,
     });
     ssrMock.onTable("users", { data: { onboarded: true } });
 
     const onboardedResponse = await POST(
-      makeRequest({ email: "alice@test.pagajaja.local" }),
+      makeRequest({ email: "alice@test.dividimos.local" }),
     );
     expect(onboardedResponse.status).toBe(200);
     const onboardedBody = await onboardedResponse.json();
     expect(onboardedBody.redirect).toBe("/app");
 
     adminAuthMethods.listUsers.mockResolvedValue({
-      data: { users: [{ id: "user-new", email: "new@test.pagajaja.local" }] },
+      data: { users: [{ id: "user-new", email: "new@test.dividimos.local" }] },
       error: null,
     });
     ssrMock.onTable("users", { data: { onboarded: false } });
 
     const newUserResponse = await POST(
-      makeRequest({ email: "new@test.pagajaja.local" }),
+      makeRequest({ email: "new@test.dividimos.local" }),
     );
     expect(newUserResponse.status).toBe(200);
     const newUserBody = await newUserResponse.json();

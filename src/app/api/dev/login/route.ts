@@ -12,7 +12,7 @@ import { createServerClient } from "@supabase/ssr";
  * Only available when NEXT_PUBLIC_DEV_LOGIN_ENABLED=true.
  *
  * Body: { email: string, name?: string, handle?: string }
- *   - email: creates user if not found, then signs in (e.g. "alice@test.pagajaja.local")
+ *   - email: creates user if not found, then signs in (e.g. "alice@test.dividimos.local")
  *   - name: optional display name to set on the user profile
  *   - handle: optional @handle to set on the user profile
  *

@@ -14,9 +14,9 @@ const authFile = (name: string) => `e2e/.auth/${name}.json`;
  */
 
 const testUsers = [
-  { name: "alice", email: "alice_test@test.pagajaja.local", displayName: "Alice Test", handle: "alice_test" },
-  { name: "bob", email: "bob_test@test.pagajaja.local", displayName: "Bob Test", handle: "bob_test" },
-  { name: "carol", email: "carol_test@test.pagajaja.local", displayName: "Carol Test", handle: "carol_test" },
+  { name: "alice", email: "alice_test@test.dividimos.local", displayName: "Alice Test", handle: "alice_test" },
+  { name: "bob", email: "bob_test@test.dividimos.local", displayName: "Bob Test", handle: "bob_test" },
+  { name: "carol", email: "carol_test@test.dividimos.local", displayName: "Carol Test", handle: "carol_test" },
 ];
 
 for (const user of testUsers) {
@@ -48,7 +48,7 @@ for (const user of testUsers) {
 setup("setup alice browser session", async ({ page }) => {
   // Use dev login API via fetch, then navigate to set cookies
   const response = await page.request.post("/api/dev/login", {
-    data: { email: "alice_test@test.pagajaja.local", name: "Alice Test", handle: "alice_test" },
+    data: { email: "alice_test@test.dividimos.local", name: "Alice Test", handle: "alice_test" },
   });
 
   const body = await response.json();
@@ -92,7 +92,7 @@ setup("setup alice browser session", async ({ page }) => {
 
 setup("setup bob browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
-    data: { email: "bob_test@test.pagajaja.local", name: "Bob Test", handle: "bob_test" },
+    data: { email: "bob_test@test.dividimos.local", name: "Bob Test", handle: "bob_test" },
   });
 
   const body = await response.json();
@@ -127,7 +127,7 @@ setup("setup bob browser session", async ({ page }) => {
 
 setup("setup carol browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
-    data: { email: "carol_test@test.pagajaja.local", name: "Carol Test", handle: "carol_test" },
+    data: { email: "carol_test@test.dividimos.local", name: "Carol Test", handle: "carol_test" },
   });
 
   const body = await response.json();

@@ -1,6 +1,6 @@
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-project_id = "pagajaja-local"
+project_id = "dividimos-local"
 
 [api]
 enabled = true
@@ -29,4 +29,6 @@ double_confirm_changes = false
 enable_confirmations = false
 
 [auth.external.google]
-enabled = false
+enabled = true
+client_id = "env(GOOGLE_CLIENT_ID)"
+secret = "env(GOOGLE_CLIENT_SECRET)"

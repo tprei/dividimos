@@ -16,7 +16,7 @@ import type {
   User,
 } from "@/types";
 
-/** A guest participant who doesn't have a Pagajaja account yet. */
+/** A guest participant who doesn't have a Dividimos account yet. */
 export interface Guest {
   /** Local ID with "guest_" prefix to distinguish from user IDs. */
   id: string;
@@ -30,7 +30,7 @@ interface ExpenseState {
   /** User-entered total for single_amount expenses (before computing shares). */
   totalAmountInput: number;
   participants: User[];
-  /** Guest participants who don't have Pagajaja accounts yet. */
+  /** Guest participants who don't have Dividimos accounts yet. */
   guests: Guest[];
   items: ExpenseItem[];
   payers: ExpensePayer[];

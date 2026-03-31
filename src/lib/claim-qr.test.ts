@@ -5,8 +5,8 @@ const UUID = "550e8400-e29b-41d4-a716-446655440000";
 
 describe("parseClaimQrCode", () => {
   it("parses a full HTTPS claim URL", () => {
-    const result = parseClaimQrCode(`https://pagajaja.app/claim/${UUID}`);
-    expect(result).toEqual({ token: UUID, url: `https://pagajaja.app/claim/${UUID}` });
+    const result = parseClaimQrCode(`https://dividimos.ai/claim/${UUID}`);
+    expect(result).toEqual({ token: UUID, url: `https://dividimos.ai/claim/${UUID}` });
   });
 
   it("parses a localhost claim URL", () => {
@@ -21,23 +21,23 @@ describe("parseClaimQrCode", () => {
 
   it("returns null for non-claim URLs", () => {
     expect(parseClaimQrCode("https://nfce.fazenda.sp.gov.br/consulta")).toBeNull();
-    expect(parseClaimQrCode("https://pagajaja.app/app")).toBeNull();
+    expect(parseClaimQrCode("https://dividimos.ai/app")).toBeNull();
     expect(parseClaimQrCode("not a url")).toBeNull();
   });
 
   it("returns null for invalid UUID format", () => {
-    expect(parseClaimQrCode("https://pagajaja.app/claim/not-a-uuid")).toBeNull();
-    expect(parseClaimQrCode("https://pagajaja.app/claim/12345")).toBeNull();
+    expect(parseClaimQrCode("https://dividimos.ai/claim/not-a-uuid")).toBeNull();
+    expect(parseClaimQrCode("https://dividimos.ai/claim/12345")).toBeNull();
   });
 
   it("is case-insensitive for hex digits", () => {
     const upper = UUID.toUpperCase();
-    const result = parseClaimQrCode(`https://pagajaja.app/claim/${upper}`);
+    const result = parseClaimQrCode(`https://dividimos.ai/claim/${upper}`);
     expect(result?.token).toBe(upper);
   });
 
   it("trims whitespace", () => {
-    const result = parseClaimQrCode(`  https://pagajaja.app/claim/${UUID}  `);
+    const result = parseClaimQrCode(`  https://dividimos.ai/claim/${UUID}  `);
     expect(result?.token).toBe(UUID);
   });
 });

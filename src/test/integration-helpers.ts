@@ -46,7 +46,7 @@ export async function createTestUser(
   const testId = generateTestId();
   const handle = options.handle ?? `test_${testId}`;
   const name = options.name ?? `Test User ${testId.slice(0, 8)}`;
-  const email = options.email ?? `test_${testId}@test.pagajaja.local`;
+  const email = options.email ?? `test_${testId}@test.dividimos.local`;
   const pixKeyType = options.pixKeyType ?? "email";
   const onboarded = options.onboarded ?? true;
 

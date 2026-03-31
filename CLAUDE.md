@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# Pagajaja
+# Dividimos
 
 Expense-splitting web app targeting the Brazilian market with Pix integration and Google OAuth. Uses a Splitwise-inspired architecture: every expense belongs to a group, and activating an expense atomically updates running net balances between user pairs.
 
@@ -63,7 +63,7 @@ When `NEXT_PUBLIC_DEV_LOGIN_ENABLED=true`, you can authenticate via API:
 ```bash
 curl -X POST http://localhost:3000/api/dev/login \
   -H 'Content-Type: application/json' \
-  -d '{"email": "alice@test.pagajaja.local"}'
+  -d '{"email": "alice@test.dividimos.local"}'
 ```
 
 The endpoint auto-creates the user if not found. The response sets session cookies.

@@ -5,8 +5,8 @@ describe("manifest", () => {
   it("returns a valid PWA manifest with required fields", () => {
     const m = manifest();
 
-    expect(m.name).toBe("Pagajaja — Já te pago");
-    expect(m.short_name).toBe("Pagajaja");
+    expect(m.name).toBe("Dividimos — Vamos dividir");
+    expect(m.short_name).toBe("Dividimos");
     expect(m.start_url).toBe("/app");
     expect(m.display).toBe("standalone");
   });
@@ -14,7 +14,7 @@ describe("manifest", () => {
   it("includes id field for Android installability", () => {
     const m = manifest();
 
-    expect(m.id).toBe("com.pagajaja.app");
+    expect(m.id).toBe("ai.dividimos.app");
   });
 
   it("includes maskable icons for adaptive icon support", () => {

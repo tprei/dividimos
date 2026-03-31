@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    id: "com.pagajaja.app",
-    name: "Pagajaja — Já te pago",
-    short_name: "Pagajaja",
+    id: "ai.dividimos.app",
+    name: "Dividimos — Vamos dividir",
+    short_name: "Dividimos",
     description:
       "Divida a conta do restaurante e liquide via Pix em segundos.",
     start_url: "/app",

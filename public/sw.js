@@ -1,8 +1,8 @@
 // Service worker — offline cache + fallback for PWA installability.
 
 const CACHE_VERSION = "v1";
-const STATIC_CACHE = `pagajaja-static-${CACHE_VERSION}`;
-const RUNTIME_CACHE = `pagajaja-runtime-${CACHE_VERSION}`;
+const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
+const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
 // Assets to precache on install — keep this list small and static.
@@ -89,10 +89,10 @@ self.addEventListener("push", (event) => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: "Pagajaja", body: event.data.text() };
+    payload = { title: "Dividimos", body: event.data.text() };
   }
 
-  const { title = "Pagajaja", body = "", url, icon = "/icon-192.png", tag } = payload;
+  const { title = "Dividimos", body = "", url, icon = "/icon-192.png", tag } = payload;
 
   event.waitUntil(
     self.registration.showNotification(title, {

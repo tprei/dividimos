@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command local development setup for Pagajaja.
+# One-command local development setup for Dividimos.
 # Detects Docker → runs local Supabase. No Docker → uses remote project.
 #
 # Usage:

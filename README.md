@@ -1,4 +1,4 @@
-# Pagajaja
+# Dividimos
 
 Bill-splitting web app for the Brazilian market with instant Pix settlement.
 
@@ -38,8 +38,8 @@ Scan a receipt or enter a total, assign items to people, and settle via Pix QR c
 ### Setup
 
 ```bash
-git clone https://github.com/tprei/pagajaja.git
-cd pagajaja
+git clone https://github.com/tprei/dividimos.git
+cd dividimos
 npm install
 ```
 

@@ -8,7 +8,7 @@ import { resolve } from "path";
 
 type EventHandler = (event: Record<string, unknown>) => void;
 
-function createSWEnv(origin = "https://pagajaja.app") {
+function createSWEnv(origin = "https://dividimos.app") {
   const listeners: Record<string, EventHandler[]> = {};
 
   const registration = {
@@ -127,7 +127,7 @@ describe("Service Worker — push events", () => {
       sw.listeners["push"]![0]!(event);
       await Promise.all(event._promises);
 
-      expect(sw.registration.showNotification).toHaveBeenCalledWith("Pagajaja", {
+      expect(sw.registration.showNotification).toHaveBeenCalledWith("Dividimos", {
         body: "Plain text message",
         icon: "/icon-192.png",
         badge: "/icon-192.png",
@@ -151,7 +151,7 @@ describe("Service Worker — push events", () => {
   describe("notificationclick event", () => {
     it("focuses existing window and navigates to URL", async () => {
       const mockClient = {
-        url: "https://pagajaja.app/app",
+        url: "https://dividimos.app/app",
         focus: vi.fn(async () => mockClient),
         navigate: vi.fn(async () => mockClient),
       };

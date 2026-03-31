@@ -1061,7 +1061,7 @@ function NewBillPageContent() {
 
               {store.guests.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Convidados (sem conta no Pagajaja)</p>
+                  <p className="text-xs text-muted-foreground">Convidados (sem conta no Dividimos)</p>
                   {store.guests.map((g) => (
                     <div key={g.id} className="flex items-center gap-3 rounded-xl border border-dashed bg-card p-3">
                       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">

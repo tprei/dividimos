@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 
-const SESSION_KEY = "pagajaja:notification-prompt-dismissed";
+const SESSION_KEY = "dividimos:notification-prompt-dismissed";
 
 /**
  * Contextual notification opt-in banner shown once per session on group pages.

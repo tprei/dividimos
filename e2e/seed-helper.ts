@@ -103,7 +103,7 @@ export class SeedHelper {
     const pixKeyType = options.pixKeyType ?? "email";
     const onboarded = options.onboarded ?? true;
 
-    const email = `synth_${testId}@test.pagajaja.local`;
+    const email = `synth_${testId}@test.dividimos.local`;
     const password = `synth_${testId}_pass!`;
 
     const { data: authData, error: authError } =
@@ -120,7 +120,7 @@ export class SeedHelper {
     const userId = authData.user.id;
     this.userIds.push(userId);
 
-    const pixKeyHint = pixKeyType === "email" ? `synth_${testId.slice(0, 4)}***@test.pagajaja.local` : `***@hint`;
+    const pixKeyHint = pixKeyType === "email" ? `synth_${testId.slice(0, 4)}***@test.dividimos.local` : `***@hint`;
 
     const { error: profileError } = await this.admin
       .from("users")

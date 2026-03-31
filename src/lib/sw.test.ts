@@ -83,7 +83,7 @@ function createCacheStorageMock() {
 
 type EventHandler = (event: Record<string, unknown>) => void;
 
-function createSWEnv(origin = "https://pagajaja.app") {
+function createSWEnv(origin = "https://dividimos.app") {
   const listeners: Record<string, EventHandler[]> = {};
   const cacheStorage = createCacheStorageMock();
   const clientsClaimed = { value: false };
@@ -145,7 +145,7 @@ describe("Service Worker", () => {
       env.listeners["install"]![0]!(event);
       await Promise.all(event._promises);
 
-      const staticCache = await env.cacheStorage.open("pagajaja-static-v1");
+      const staticCache = await env.cacheStorage.open("dividimos-static-v1");
       expect(staticCache.addAll).toHaveBeenCalledWith([
         "/offline.html",
         "/icon-192.png",
@@ -157,21 +157,21 @@ describe("Service Worker", () => {
   describe("activate event", () => {
     it("deletes old caches", async () => {
       // Pre-populate an old cache
-      await env.cacheStorage.open("pagajaja-static-v0");
-      await env.cacheStorage.open("pagajaja-runtime-v0");
+      await env.cacheStorage.open("dividimos-static-v0");
+      await env.cacheStorage.open("dividimos-runtime-v0");
       // Also create current caches so they exist
-      await env.cacheStorage.open("pagajaja-static-v1");
-      await env.cacheStorage.open("pagajaja-runtime-v1");
+      await env.cacheStorage.open("dividimos-static-v1");
+      await env.cacheStorage.open("dividimos-runtime-v1");
 
       const event = makeExtendableEvent();
       env.listeners["activate"]![0]!(event);
       await Promise.all(event._promises);
 
       const remaining = await env.cacheStorage.keys();
-      expect(remaining).toContain("pagajaja-static-v1");
-      expect(remaining).toContain("pagajaja-runtime-v1");
-      expect(remaining).not.toContain("pagajaja-static-v0");
-      expect(remaining).not.toContain("pagajaja-runtime-v0");
+      expect(remaining).toContain("dividimos-static-v1");
+      expect(remaining).toContain("dividimos-runtime-v1");
+      expect(remaining).not.toContain("dividimos-static-v0");
+      expect(remaining).not.toContain("dividimos-runtime-v0");
     });
 
     it("claims clients", async () => {
@@ -198,7 +198,7 @@ describe("Service Worker", () => {
     }
 
     it("ignores non-GET requests", () => {
-      const event = makeFetchEvent("https://pagajaja.app/api/test", { method: "POST" });
+      const event = makeFetchEvent("https://dividimos.app/api/test", { method: "POST" });
       env.listeners["fetch"]![0]!(event);
       expect(event._response).toBeUndefined();
     });
@@ -210,13 +210,13 @@ describe("Service Worker", () => {
     });
 
     it("ignores /api/ routes", () => {
-      const event = makeFetchEvent("https://pagajaja.app/api/pix/generate");
+      const event = makeFetchEvent("https://dividimos.app/api/pix/generate");
       env.listeners["fetch"]![0]!(event);
       expect(event._response).toBeUndefined();
     });
 
     it("ignores /auth/ routes", () => {
-      const event = makeFetchEvent("https://pagajaja.app/auth/callback");
+      const event = makeFetchEvent("https://dividimos.app/auth/callback");
       env.listeners["fetch"]![0]!(event);
       expect(event._response).toBeUndefined();
     });
@@ -230,7 +230,7 @@ describe("Service Worker", () => {
       // Make fetch throw (simulate offline)
       (env.env.fetch as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
 
-      const event = makeFetchEvent("https://pagajaja.app/app", { mode: "navigate" });
+      const event = makeFetchEvent("https://dividimos.app/app", { mode: "navigate" });
       env.listeners["fetch"]![0]!(event);
 
       const response = await event._response;
@@ -241,7 +241,7 @@ describe("Service Worker", () => {
       const mockRes = new MockResponse("body", { status: 200 });
       (env.env.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(mockRes);
 
-      const event = makeFetchEvent("https://pagajaja.app/_next/static/chunk.js");
+      const event = makeFetchEvent("https://dividimos.app/_next/static/chunk.js");
       env.listeners["fetch"]![0]!(event);
       const response = await event._response;
 
@@ -249,15 +249,15 @@ describe("Service Worker", () => {
 
       // Give the cache.put a tick to complete
       await new Promise((r) => setTimeout(r, 10));
-      const runtimeCache = await env.cacheStorage.open("pagajaja-runtime-v1");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v1");
       expect(runtimeCache.put).toHaveBeenCalled();
     });
 
     it("falls back to cache when asset fetch fails", async () => {
       // Pre-populate runtime cache
-      const runtimeCache = await env.cacheStorage.open("pagajaja-runtime-v1");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v1");
       const cachedRes = new MockResponse("cached", { status: 200 });
-      const assetUrl = "https://pagajaja.app/_next/static/chunk.js";
+      const assetUrl = "https://dividimos.app/_next/static/chunk.js";
       await runtimeCache.put(new MockRequest(assetUrl) as unknown as string, cachedRes);
 
       // Make fetch fail

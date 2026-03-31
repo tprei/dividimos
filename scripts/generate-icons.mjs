@@ -32,7 +32,7 @@ mkdirSync("public/screenshots", { recursive: true });
 const screenshotSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 960">
   <rect width="540" height="960" fill="#F9F9FB"/>
   <rect y="0" width="540" height="64" fill="#FEA101"/>
-  <text x="270" y="40" text-anchor="middle" font-size="22" font-weight="bold" fill="#fff" font-family="sans-serif">Pagajaja</text>
+  <text x="270" y="40" text-anchor="middle" font-size="22" font-weight="bold" fill="#fff" font-family="sans-serif">Dividimos</text>
   <g transform="translate(270, 380)">
     <circle cx="0" cy="0" r="80" fill="#FEA101" opacity="0.1"/>
     <circle cx="0" cy="0" r="60" fill="none" stroke="#FEA101" stroke-width="6" opacity="0.5"/>

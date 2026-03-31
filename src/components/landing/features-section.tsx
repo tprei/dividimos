@@ -37,7 +37,7 @@ export function FeaturesSection() {
         className="text-center"
       >
         <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-          Por que Pagajaja?
+          Por que Dividimos?
         </h2>
       </motion.div>
 

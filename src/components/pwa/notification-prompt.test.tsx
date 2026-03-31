@@ -91,11 +91,11 @@ describe("NotificationPrompt", () => {
 
     fireEvent.click(screen.getByLabelText("Fechar"));
 
-    expect(sessionStorage.getItem("pagajaja:notification-prompt-dismissed")).toBe("1");
+    expect(sessionStorage.getItem("dividimos:notification-prompt-dismissed")).toBe("1");
   });
 
   it("does not render when sessionStorage flag is set", () => {
-    sessionStorage.setItem("pagajaja:notification-prompt-dismissed", "1");
+    sessionStorage.setItem("dividimos:notification-prompt-dismissed", "1");
 
     const { container } = render(<NotificationPrompt />);
     expect(container.innerHTML).toBe("");
