@@ -41,7 +41,7 @@ export function Logo({ size = "md", showText = true }: LogoProps) {
       {showText && (
         <span className={`${s.text} font-bold tracking-tight`}>
           {foregroundWords.map((word, i) => (
-            <span key={i}>{word}{" "}</span>
+            <span key={i}>{word}{"."}</span>
           ))}
           <span className="text-primary">{accentWord}</span>
         </span>
