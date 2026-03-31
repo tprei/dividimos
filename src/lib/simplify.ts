@@ -31,7 +31,7 @@ function edgeKey(e: DebtEdge): string {
   return `${e.fromUserId}->${e.toUserId}`;
 }
 
-function consolidateEdges(edges: DebtEdge[]): DebtEdge[] {
+export function consolidateEdges(edges: DebtEdge[]): DebtEdge[] {
   const map = new Map<string, DebtEdge>();
   for (const e of edges) {
     const key = edgeKey(e);
