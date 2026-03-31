@@ -4,7 +4,6 @@ export const BRAND = {
   logoWords: ["Já", "te", "pago"] as const,
   domain: "pagajaja.app",
   localDomain: "pagajaja.local",
-  phoneDomain: "phone.pagajaja.local",
   testDomain: "test.pagajaja.local",
   contact: "contato@pagajaja.app",
   pwaId: "com.pagajaja.app",

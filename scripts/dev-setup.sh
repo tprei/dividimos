@@ -97,11 +97,10 @@ NEXT_PUBLIC_SUPABASE_URL=${API_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON_KEY}
 SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 PIX_ENCRYPTION_KEY=${PIX_KEY}
-NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true
+NEXT_PUBLIC_DEV_LOGIN_ENABLED=true
 EOF
 
   info "Local Supabase is running. .env.local written."
-  info "Seed users: alice / bob / carol @test.pagajaja.local (password123)"
   info "Run 'npm run dev' to start the app."
 
 # -------------------------------------------------------------------
@@ -139,7 +138,7 @@ elif [ "$MODE" = "remote" ]; then
 NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MjAwMDAwMDAwMH0.placeholder
 PIX_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
-NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true
+NEXT_PUBLIC_DEV_LOGIN_ENABLED=true
 EOF
 
     warn "Only / and /demo will work. Auth and app pages require real credentials."
@@ -153,7 +152,7 @@ NEXT_PUBLIC_SUPABASE_URL=${SB_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=${SB_ANON}
 SUPABASE_SERVICE_ROLE_KEY=${SB_SERVICE}
 PIX_ENCRYPTION_KEY=${PIX_KEY}
-NEXT_PUBLIC_AUTH_PHONE_TEST_MODE=true
+NEXT_PUBLIC_DEV_LOGIN_ENABLED=true
 EOF
 
   info "Remote Supabase credentials written to .env.local"
