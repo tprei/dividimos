@@ -1,36 +1,17 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Phone, QrCode } from "lucide-react";
+import { ArrowLeft, QrCode } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useRef, useState, useTransition } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import { parseClaimQrCode } from "@/lib/claim-qr";
-import { sendTestOtp, verifyPhoneOtp } from "./phone-actions";
 
-type AuthMode = "choose" | "phone" | "otp" | "scan";
-
-const IS_TEST_MODE = process.env.NEXT_PUBLIC_AUTH_PHONE_TEST_MODE === "true";
-
-function formatPhone(value: string): string {
-  if (value.startsWith("+")) {
-    const digits = value.slice(1).replace(/\D/g, "");
-    if (!digits.startsWith("55")) return `+${digits}`;
-    const br = digits.slice(2).slice(0, 11);
-    if (br.length <= 2) return `+55 ${br}`;
-    if (br.length <= 7) return `+55 (${br.slice(0, 2)}) ${br.slice(2)}`;
-    return `+55 (${br.slice(0, 2)}) ${br.slice(2, 7)}-${br.slice(7)}`;
-  }
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-}
+type AuthMode = "choose" | "scan";
 
 function AuthPageContent() {
   const router = useRouter();
@@ -38,12 +19,6 @@ function AuthPageContent() {
   const next = safeRedirect(searchParams.get("next"));
   const supabase = createClient();
   const [mode, setMode] = useState<AuthMode>("choose");
-  const [phone, setPhone] = useState("");
-  const [normalizedPhone, setNormalizedPhone] = useState("");
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [error, setError] = useState("");
-  const [isPending, startTransition] = useTransition();
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const handleScanDecode = useCallback(
     (data: string) => {
@@ -63,56 +38,6 @@ function AuthPageContent() {
       },
     });
   };
-
-  const handleSendOtp = () => {
-    setError("");
-    startTransition(async () => {
-      const result = await sendTestOtp(phone);
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-      if (result.phone) setNormalizedPhone(result.phone);
-      setMode("otp");
-    });
-  };
-
-  const handleOtpChange = (index: number, value: string) => {
-    if (!/^\d*$/.test(value)) return;
-    const newOtp = [...otp];
-    newOtp[index] = value.slice(-1);
-    setOtp(newOtp);
-
-    if (value && index < 5) {
-      otpRefs.current[index + 1]?.focus();
-    }
-
-    if (newOtp.every((d) => d !== "")) {
-      handleVerifyOtp(newOtp.join(""));
-    }
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !otp[index] && index > 0) {
-      otpRefs.current[index - 1]?.focus();
-    }
-  };
-
-  const handleVerifyOtp = (code: string) => {
-    setError("");
-    startTransition(async () => {
-      const result = await verifyPhoneOtp(normalizedPhone || phone, code, next);
-      if ("error" in result) {
-        setError(result.error);
-        setOtp(["", "", "", "", "", ""]);
-        otpRefs.current[0]?.focus();
-        return;
-      }
-      router.push(result.redirect);
-    });
-  };
-
-  const phoneDigits = phone.replace(/\D/g, "");
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -178,21 +103,6 @@ function AuthPageContent() {
                       <div className="h-px flex-1 bg-border" />
                     </div>
 
-                    <Button
-                      onClick={() => setMode("phone")}
-                      variant="outline"
-                      className="flex h-11 w-full items-center justify-center gap-3 rounded-xl text-sm font-medium"
-                    >
-                      <Phone className="h-4 w-4" />
-                      Entrar com celular
-                    </Button>
-
-                    <div className="flex items-center gap-3">
-                      <div className="h-px flex-1 bg-border" />
-                      <span className="text-xs text-muted-foreground">ou</span>
-                      <div className="h-px flex-1 bg-border" />
-                    </div>
-
                     <button
                       type="button"
                       onClick={() => setMode("scan")}
@@ -234,138 +144,6 @@ function AuthPageContent() {
                   </div>
                 </motion.div>
               )}
-
-              {mode === "phone" && (
-                <motion.div
-                  key="phone"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.25 }}
-                >
-                  <button
-                    onClick={() => { setMode("choose"); setError(""); }}
-                    className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Voltar
-                  </button>
-
-                  <h1 className="text-xl font-semibold">Seu celular</h1>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Coloca teu número pra gente mandar o código.
-                  </p>
-
-                  {IS_TEST_MODE && (
-                    <div className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                      Modo teste — qualquer código de 6 dígitos será aceito
-                    </div>
-                  )}
-
-                  <div className="mt-6">
-                    <label className="mb-2 block text-sm font-medium">
-                      Celular
-                    </label>
-                    <Input
-                      type="tel"
-                      placeholder="+55 (11) 98765-4321"
-                      value={phone}
-                      onChange={(e) => setPhone(formatPhone(e.target.value))}
-                      autoFocus
-                      onKeyDown={(e) => e.key === "Enter" && phoneDigits.length >= 10 && handleSendOtp()}
-                    />
-                  </div>
-
-                  {error && (
-                    <p className="mt-2 text-xs text-destructive">{error}</p>
-                  )}
-
-                  <Button
-                    className="mt-6 w-full gap-2"
-                    size="lg"
-                    onClick={handleSendOtp}
-                    disabled={phoneDigits.length < 10 || isPending}
-                  >
-                    {isPending ? "Enviando..." : "Enviar código"}
-                    {!isPending && <ArrowRight className="h-4 w-4" />}
-                  </Button>
-                </motion.div>
-              )}
-
-              {mode === "otp" && (
-                <motion.div
-                  key="otp"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.25 }}
-                >
-                  <button
-                    onClick={() => { setMode("phone"); setOtp(["", "", "", "", "", ""]); setError(""); }}
-                    className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Alterar número
-                  </button>
-
-                  <h1 className="text-xl font-semibold">Verificação</h1>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Digite o código enviado para{" "}
-                    <span className="font-medium text-foreground">+55 {phone}</span>
-                  </p>
-
-                  {IS_TEST_MODE && (
-                    <div className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                      Modo teste — digita qualquer código de 6 dígitos
-                    </div>
-                  )}
-
-                  <div className="mt-6 flex justify-center gap-2.5">
-                    {otp.map((digit, idx) => (
-                      <motion.div
-                        key={idx}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: idx * 0.05 }}
-                      >
-                        <input
-                          ref={(el) => { otpRefs.current[idx] = el; }}
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={1}
-                          value={digit}
-                          onChange={(e) => handleOtpChange(idx, e.target.value)}
-                          onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                          className="h-14 w-11 rounded-xl border bg-card text-center text-xl font-bold transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                          autoFocus={idx === 0}
-                          disabled={isPending}
-                        />
-                      </motion.div>
-                    ))}
-                  </div>
-
-                  {error && (
-                    <p className="mt-3 text-center text-xs text-destructive">{error}</p>
-                  )}
-
-                  {isPending && (
-                    <p className="mt-3 text-center text-sm text-muted-foreground">
-                      Verificando...
-                    </p>
-                  )}
-
-                  <p className="mt-6 text-center text-sm text-muted-foreground">
-                    Não chegou?{" "}
-                    <button
-                      className="font-medium text-primary"
-                      onClick={handleSendOtp}
-                      disabled={isPending}
-                    >
-                      Mandar de novo
-                    </button>
-                  </p>
-                </motion.div>
-              )}
             </AnimatePresence>
 
             {mode === "choose" && (
@@ -379,7 +157,7 @@ function AuthPageContent() {
         </motion.div>
 
         <div className="mt-6 flex justify-center gap-2">
-          {(["choose", "phone", "otp", "scan"] as AuthMode[]).map((s) => (
+          {(["choose", "scan"] as AuthMode[]).map((s) => (
             <motion.div
               key={s}
               animate={{
