@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { makeItemizedBill, makeSingleAmountBill, userAlice, userBob, userCarlos } from "@/test/fixtures";
 import type { BillSplit, ItemSplit } from "@/types";
 import type { DebtEdge } from "./simplify";
-import { computeRawEdges, simplifyDebts } from "./simplify";
+import { computeRawEdges, consolidateEdges, netAndMinimize, simplifyDebts } from "./simplify";
 
 const participants = [userAlice, userBob, userCarlos];
 const twoParticipants = [userAlice, userBob];
@@ -285,5 +285,286 @@ describe("simplifyDebts", () => {
       toUserId: "user-bob",
       amountCents: 1,
     });
+  });
+});
+
+function computeNetBalances(edges: DebtEdge[]): Map<string, number> {
+  const balances = new Map<string, number>();
+  for (const e of edges) {
+    balances.set(e.fromUserId, (balances.get(e.fromUserId) || 0) - e.amountCents);
+    balances.set(e.toUserId, (balances.get(e.toUserId) || 0) + e.amountCents);
+  }
+  return balances;
+}
+
+function assertBalanceConservation(original: DebtEdge[], simplified: DebtEdge[]) {
+  const origBal = computeNetBalances(original);
+  const simpBal = computeNetBalances(simplified);
+  const allUsers = new Set([...origBal.keys(), ...simpBal.keys()]);
+  for (const user of allUsers) {
+    expect(simpBal.get(user) || 0).toBe(origBal.get(user) || 0);
+  }
+}
+
+describe("consolidateEdges", () => {
+  it("returns empty array for empty input", () => {
+    expect(consolidateEdges([])).toEqual([]);
+  });
+
+  it("passes through a single edge unchanged", () => {
+    const edges: DebtEdge[] = [{ fromUserId: "a", toUserId: "b", amountCents: 100 }];
+    const result = consolidateEdges(edges);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ fromUserId: "a", toUserId: "b", amountCents: 100 });
+  });
+
+  it("sums duplicate directed edges (same from→to)", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 300 },
+      { fromUserId: "a", toUserId: "b", amountCents: 200 },
+      { fromUserId: "a", toUserId: "b", amountCents: 500 },
+    ];
+    const result = consolidateEdges(edges);
+    expect(result).toHaveLength(1);
+    expect(result[0].amountCents).toBe(1000);
+  });
+
+  it("keeps reverse edges separate (a→b and b→a are different keys)", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 300 },
+      { fromUserId: "b", toUserId: "a", amountCents: 200 },
+    ];
+    const result = consolidateEdges(edges);
+    expect(result).toHaveLength(2);
+    const ab = result.find((e) => e.fromUserId === "a");
+    const ba = result.find((e) => e.fromUserId === "b");
+    expect(ab?.amountCents).toBe(300);
+    expect(ba?.amountCents).toBe(200);
+  });
+
+  it("filters out edges that sum to zero", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 500 },
+      { fromUserId: "a", toUserId: "b", amountCents: -500 },
+    ];
+    const result = consolidateEdges(edges);
+    expect(result).toHaveLength(0);
+  });
+
+  it("filters out edges that sum to negative", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 100 },
+      { fromUserId: "a", toUserId: "b", amountCents: -300 },
+    ];
+    const result = consolidateEdges(edges);
+    expect(result).toHaveLength(0);
+  });
+
+  it("handles many distinct pairs without merging them", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 100 },
+      { fromUserId: "b", toUserId: "c", amountCents: 200 },
+      { fromUserId: "c", toUserId: "d", amountCents: 300 },
+      { fromUserId: "d", toUserId: "a", amountCents: 400 },
+    ];
+    const result = consolidateEdges(edges);
+    expect(result).toHaveLength(4);
+  });
+
+  it("does not mutate the input array", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 100 },
+      { fromUserId: "a", toUserId: "b", amountCents: 200 },
+    ];
+    const original = JSON.parse(JSON.stringify(edges));
+    consolidateEdges(edges);
+    expect(edges).toEqual(original);
+  });
+
+  it("sums 1-centavo edges correctly (no floating point drift)", () => {
+    const edges: DebtEdge[] = Array.from({ length: 100 }, () => ({
+      fromUserId: "a",
+      toUserId: "b",
+      amountCents: 1,
+    }));
+    const result = consolidateEdges(edges);
+    expect(result).toHaveLength(1);
+    expect(result[0].amountCents).toBe(100);
+  });
+});
+
+describe("netAndMinimize", () => {
+  it("returns empty array for empty input", () => {
+    expect(netAndMinimize([])).toEqual([]);
+  });
+
+  it("passes through a single edge unchanged", () => {
+    const edges: DebtEdge[] = [{ fromUserId: "a", toUserId: "b", amountCents: 5000 }];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(1);
+    expect(result[0].amountCents).toBe(5000);
+  });
+
+  it("cancels perfectly equal reverse pair to zero edges", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 1000 },
+      { fromUserId: "b", toUserId: "a", amountCents: 1000 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(0);
+  });
+
+  it("nets unequal reverse pair to one edge", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 7000 },
+      { fromUserId: "b", toUserId: "a", amountCents: 3000 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(1);
+    expect(result[0].amountCents).toBe(4000);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("resolves a 3-user triangle cycle to at most 2 edges", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 3000 },
+      { fromUserId: "b", toUserId: "c", amountCents: 2000 },
+      { fromUserId: "c", toUserId: "a", amountCents: 1000 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result.length).toBeLessThanOrEqual(2);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("resolves a balanced 3-user cycle (all same amount) to zero edges", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 1000 },
+      { fromUserId: "b", toUserId: "c", amountCents: 1000 },
+      { fromUserId: "c", toUserId: "a", amountCents: 1000 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(0);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("produces at most N-1 edges for N participants", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 1000 },
+      { fromUserId: "b", toUserId: "c", amountCents: 2000 },
+      { fromUserId: "c", toUserId: "d", amountCents: 3000 },
+      { fromUserId: "d", toUserId: "e", amountCents: 4000 },
+      { fromUserId: "e", toUserId: "a", amountCents: 500 },
+      { fromUserId: "a", toUserId: "c", amountCents: 1500 },
+      { fromUserId: "b", toUserId: "d", amountCents: 800 },
+    ];
+    const allUsers = new Set(edges.flatMap((e) => [e.fromUserId, e.toUserId]));
+    const result = netAndMinimize(edges);
+    expect(result.length).toBeLessThanOrEqual(allUsers.size - 1);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("preserves conservation invariant: net balances match original", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 5000 },
+      { fromUserId: "b", toUserId: "c", amountCents: 3000 },
+      { fromUserId: "c", toUserId: "a", amountCents: 1000 },
+      { fromUserId: "a", toUserId: "c", amountCents: 2000 },
+    ];
+    const result = netAndMinimize(edges);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("handles multiple edges between the same pair by summing them", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 1000 },
+      { fromUserId: "a", toUserId: "b", amountCents: 2000 },
+      { fromUserId: "a", toUserId: "b", amountCents: 3000 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(1);
+    expect(result[0].amountCents).toBe(6000);
+  });
+
+  it("produces only positive amountCents in output", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 5000 },
+      { fromUserId: "b", toUserId: "c", amountCents: 3000 },
+      { fromUserId: "c", toUserId: "a", amountCents: 7000 },
+    ];
+    const result = netAndMinimize(edges);
+    for (const e of result) {
+      expect(e.amountCents).toBeGreaterThan(0);
+    }
+  });
+
+  it("handles 1-centavo edge without dropping it", () => {
+    const edges: DebtEdge[] = [{ fromUserId: "a", toUserId: "b", amountCents: 1 }];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(1);
+    expect(result[0].amountCents).toBe(1);
+  });
+
+  it("handles a star topology: one person owes everyone", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "center", toUserId: "a", amountCents: 1000 },
+      { fromUserId: "center", toUserId: "b", amountCents: 2000 },
+      { fromUserId: "center", toUserId: "c", amountCents: 3000 },
+      { fromUserId: "center", toUserId: "d", amountCents: 4000 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(4);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("handles a star topology: everyone owes one person", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "center", amountCents: 1000 },
+      { fromUserId: "b", toUserId: "center", amountCents: 2000 },
+      { fromUserId: "c", toUserId: "center", amountCents: 3000 },
+      { fromUserId: "d", toUserId: "center", amountCents: 4000 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result).toHaveLength(4);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("reduces a fully connected 4-user graph", () => {
+    const users = ["a", "b", "c", "d"];
+    const edges: DebtEdge[] = [];
+    for (let i = 0; i < users.length; i++) {
+      for (let j = i + 1; j < users.length; j++) {
+        edges.push({ fromUserId: users[i], toUserId: users[j], amountCents: (i + 1) * 1000 + (j + 1) * 100 });
+      }
+    }
+    const result = netAndMinimize(edges);
+    expect(result.length).toBeLessThanOrEqual(users.length - 1);
+    assertBalanceConservation(edges, result);
+  });
+
+  it("handles large amounts without overflow (MAX_SAFE_INTEGER range)", () => {
+    const large = 900_000_000_000;
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: large },
+      { fromUserId: "b", toUserId: "c", amountCents: large },
+    ];
+    const result = netAndMinimize(edges);
+    assertBalanceConservation(edges, result);
+    for (const e of result) {
+      expect(Number.isSafeInteger(e.amountCents)).toBe(true);
+    }
+  });
+
+  it("produces fewer or equal edges than input for a dense graph", () => {
+    const edges: DebtEdge[] = [
+      { fromUserId: "a", toUserId: "b", amountCents: 100 },
+      { fromUserId: "b", toUserId: "c", amountCents: 200 },
+      { fromUserId: "c", toUserId: "d", amountCents: 300 },
+      { fromUserId: "d", toUserId: "a", amountCents: 150 },
+      { fromUserId: "a", toUserId: "c", amountCents: 250 },
+      { fromUserId: "b", toUserId: "d", amountCents: 175 },
+    ];
+    const result = netAndMinimize(edges);
+    expect(result.length).toBeLessThanOrEqual(edges.length);
+    assertBalanceConservation(edges, result);
   });
 });
