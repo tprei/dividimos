@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Clock, Receipt, Users } from "lucide-react";
+import { ArrowLeft, Check, Receipt } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/admin";
