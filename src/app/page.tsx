@@ -27,6 +27,10 @@ export default function LandingPage() {
         <section className="relative overflow-hidden">
           <div className="gradient-mesh absolute inset-0 -z-10" />
           <EmojiGrid />
+          <div aria-hidden className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-between px-4 sm:px-8 lg:px-16">
+            <span className="text-7xl opacity-20 sm:text-8xl lg:text-9xl">🍻</span>
+            <span className="text-7xl opacity-20 sm:text-8xl lg:text-9xl">🤝</span>
+          </div>
           <div className="relative z-10 mx-auto max-w-6xl px-4 pb-20 pt-16 sm:px-6 sm:pb-32 sm:pt-24">
             <HeroContent />
           </div>
