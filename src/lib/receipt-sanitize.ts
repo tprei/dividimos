@@ -67,6 +67,30 @@ export function sanitizeReceiptResult(
     return { ...result, items: corrected, totalCents: receiptTotal };
   }
 
+  // Heuristic: OCR may have multiplied qty × unitPrice into totalCents when the
+  // receipt already showed the line total. If dividing totalCents by qty for
+  // multi-quantity items brings the sum close to the receipt total, apply the fix.
+  if (gap < 0) {
+    const deflated = items.map((item) => {
+      if (item.quantity > 1) {
+        const correctedTotal = Math.round(item.totalCents / item.quantity);
+        return {
+          ...item,
+          totalCents: correctedTotal,
+          unitPriceCents: Math.round(correctedTotal / item.quantity),
+        };
+      }
+      return item;
+    });
+    const deflatedSum = deflated.reduce((s, i) => s + i.totalCents, 0);
+    const deflatedFee = Math.round((deflatedSum * feePercent) / 100);
+    const deflatedGap = receiptTotal - (deflatedSum + deflatedFee);
+    if (Math.abs(deflatedGap) <= tolerance) {
+      const corrected = absorb(deflated, deflatedGap);
+      return { ...result, items: corrected, totalCents: receiptTotal };
+    }
+  }
+
   // Gap too large to auto-correct
   return { ...result, items, totalCents: receiptTotal, totalMismatch: true };
 }
