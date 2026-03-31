@@ -75,7 +75,8 @@ Extraia os dados estruturados da imagem. Regras:
 - Todos os valores monetários devem ser em centavos (inteiro). R$ 12,50 = 1250.
 - quantity deve refletir a quantidade real do item.
 - unitPriceCents é o preço de UMA unidade em centavos.
-- totalCents de cada item = quantity × unitPriceCents.
+- totalCents de cada item é o valor total da linha como impresso na nota (última coluna de valor). NÃO multiplique quantity × unitPriceCents — o valor já está multiplicado na nota.
+- unitPriceCents é o preço de UMA unidade. Se a nota mostra apenas qty e total, calcule unitPriceCents = totalCents / quantity.
 - serviceFeePercent: se houver "taxa de serviço" ou "serviço" na nota, informe o percentual. Caso contrário, 0.
 - totalCents (raiz): valor total da nota fiscal, incluindo taxas.
 - Se o texto estiver parcialmente ilegível, faça o melhor esforço.

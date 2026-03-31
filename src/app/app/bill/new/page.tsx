@@ -241,7 +241,7 @@ function NewBillPageContent() {
     setServiceFee(String(result.serviceFeePercent || 0));
     setScanResult(null);
     setDuplicateWarning(null);
-    setStep("info");
+    setStep("participants");
   }, [authUser, store]);
 
   const handleScanCancel = useCallback(() => {
