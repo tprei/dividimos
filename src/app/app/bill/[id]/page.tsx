@@ -904,6 +904,9 @@ export default function BillDetailPage({
                 );
               })}
             </div>
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              Cada membro pode ver e quitar suas dívidas na página do grupo
+            </p>
           </div>
         </motion.div>
       )}

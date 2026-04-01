@@ -201,7 +201,7 @@ export function GroupSelector({
                       <p className="font-medium text-sm">{group.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {group.hasPendingInvites
-                          ? "Membros com convite pendente"
+                          ? "Aguardando membros aceitarem o convite"
                           : group.addableCount === 0
                             ? "Todos ja adicionados"
                             : `${group.addableCount} ${group.addableCount === 1 ? "pessoa" : "pessoas"} para adicionar`}

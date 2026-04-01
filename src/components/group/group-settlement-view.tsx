@@ -205,6 +205,7 @@ export function GroupSettlementView({
     notifySettlementRecorded(groupId, fromUserId, toUserId, amountCents).catch(() => {});
     setPixModal(null);
     setActing(null);
+    window.dispatchEvent(new CustomEvent("app-refresh"));
   }
 
   if (loading) {
