@@ -727,6 +727,26 @@ export interface Database {
           already_member: boolean;
         };
       };
+      has_outstanding_balance: {
+        Args: {
+          p_group_id: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
+      remove_group_member: {
+        Args: {
+          p_group_id: string;
+          p_user_id: string;
+        };
+        Returns: void;
+      };
+      leave_group: {
+        Args: {
+          p_group_id: string;
+        };
+        Returns: void;
+      };
     };
     Enums: {
       pix_key_type: "cpf" | "email" | "random";
