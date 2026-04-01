@@ -215,7 +215,7 @@ describe("GroupDetailPage", () => {
     });
   });
 
-  it("calls remove_group_member RPC when removing a member", async () => {
+  it("shows confirmation dialog when clicking remove member", async () => {
     const user = userEvent.setup();
     await renderPage();
 
@@ -230,6 +230,37 @@ describe("GroupDetailPage", () => {
 
     await user.click(removeButtons[0]);
 
+    // Confirmation dialog should appear
+    await waitFor(() => {
+      expect(screen.getByText("Remover membro")).toBeTruthy();
+    });
+    expect(screen.getByText("Cancelar")).toBeTruthy();
+    expect(screen.getByText("Remover")).toBeTruthy();
+
+    // RPC should NOT have been called yet
+    expect(mockRpcFn).not.toHaveBeenCalled();
+  });
+
+  it("calls remove_group_member RPC after confirming removal", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Bob Test")).toBeTruthy();
+    });
+
+    const removeButtons = screen.getAllByRole("button").filter(
+      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
+    );
+    await user.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Remover membro")).toBeTruthy();
+    });
+
+    // Click confirm
+    await user.click(screen.getByText("Remover"));
+
     await waitFor(() => {
       expect(mockRpcFn).toHaveBeenCalledWith("remove_group_member", {
         p_group_id: "group-1",
@@ -238,9 +269,32 @@ describe("GroupDetailPage", () => {
     });
   });
 
-  it("shows alert when removing member with outstanding balance", async () => {
-    window.alert = vi.fn();
-    const alertSpy = vi.spyOn(window, "alert");
+  it("does not call RPC when cancelling removal", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Bob Test")).toBeTruthy();
+    });
+
+    const removeButtons = screen.getAllByRole("button").filter(
+      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
+    );
+    await user.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Remover membro")).toBeTruthy();
+    });
+
+    // Click cancel
+    await user.click(screen.getByText("Cancelar"));
+
+    // RPC should NOT have been called
+    expect(mockRpcFn).not.toHaveBeenCalled();
+  });
+
+  it("shows toast error when removing member with outstanding balance", async () => {
+    const toast = await import("react-hot-toast");
     mockRpcResult = {
       data: null,
       error: { message: "has_outstanding_balance: member has unsettled debts" },
@@ -257,14 +311,17 @@ describe("GroupDetailPage", () => {
       (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
     );
 
+    // Click remove then confirm
     await user.click(removeButtons[0]);
+    await waitFor(() => {
+      expect(screen.getByText("Remover membro")).toBeTruthy();
+    });
+    await user.click(screen.getByText("Remover"));
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledWith(
+      expect(toast.default.error).toHaveBeenCalledWith(
         "Não é possível remover: este membro possui débitos pendentes no grupo.",
       );
     });
-
-    alertSpy.mockRestore();
   });
 });

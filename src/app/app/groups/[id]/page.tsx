@@ -26,6 +26,14 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -90,6 +98,15 @@ export default function GroupDetailPage({
   const [unclaimedGuests, setUnclaimedGuests] = useState<
     { id: string; expenseId: string; displayName: string; claimToken: string; expenseTitle: string }[]
   >([]);
+
+  const [confirmRemove, setConfirmRemove] = useState<{
+    open: boolean;
+    userId: string;
+    name: string;
+  }>({ open: false, userId: "", name: "" });
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [guestShareModal, setGuestShareModal] = useState<{
     open: boolean;
     guestName: string;
@@ -305,30 +322,41 @@ export default function GroupDetailPage({
     await fetchGroup();
   };
 
-  const handleRemoveMember = async (userId: string) => {
+  const handleRemoveMember = async () => {
+    const { userId } = confirmRemove;
+    if (!userId) return;
+
+    setRemoving(true);
     const { error } = await createClient().rpc("remove_group_member", {
       p_group_id: id,
       p_user_id: userId,
     });
+    setRemoving(false);
 
     if (error) {
+      setConfirmRemove({ open: false, userId: "", name: "" });
       if (error.message.includes("has_outstanding_balance")) {
-        alert("Não é possível remover: este membro possui débitos pendentes no grupo.");
+        toast.error("Não é possível remover: este membro possui débitos pendentes no grupo.");
         return;
       }
-      alert("Erro ao remover membro.");
+      toast.error("Erro ao remover membro.");
       return;
     }
 
+    setConfirmRemove({ open: false, userId: "", name: "" });
+    toast.success("Membro removido do grupo.");
     await fetchGroup();
   };
 
   const handleLeaveGroup = async () => {
+    setLeaving(true);
     const { error } = await createClient().rpc("leave_group", {
       p_group_id: id,
     });
+    setLeaving(false);
 
     if (error) {
+      setConfirmLeave(false);
       if (error.message.includes("has_outstanding_balance")) {
         toast.error("Você possui débitos pendentes neste grupo. Quite antes de sair.");
         return;
@@ -337,6 +365,7 @@ export default function GroupDetailPage({
       return;
     }
 
+    setConfirmLeave(false);
     toast.success("Você saiu do grupo.");
     router.push("/app");
   };
@@ -580,7 +609,13 @@ export default function GroupDetailPage({
               </div>
               {isCreator && member.userId !== creatorId && (
                 <button
-                  onClick={() => handleRemoveMember(member.userId)}
+                  onClick={() =>
+                    setConfirmRemove({
+                      open: true,
+                      userId: member.userId,
+                      name: member.profile.name,
+                    })
+                  }
                   className="rounded-lg p-1 text-muted-foreground hover:text-destructive"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -591,7 +626,7 @@ export default function GroupDetailPage({
 
           {!isCreator && isAcceptedMember && (
             <button
-              onClick={handleLeaveGroup}
+              onClick={() => setConfirmLeave(true)}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
             >
               <LogOut className="h-4 w-4" />
@@ -772,6 +807,72 @@ export default function GroupDetailPage({
         claimToken={guestShareModal.claimToken}
         expenseTitle={guestShareModal.expenseTitle}
       />
+
+      {/* Confirm member removal dialog */}
+      <Dialog
+        open={confirmRemove.open}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRemove({ open: false, userId: "", name: "" });
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remover membro</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja remover <strong>{confirmRemove.name}</strong> do grupo?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmRemove({ open: false, userId: "", name: "" })}
+              disabled={removing}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRemoveMember}
+              disabled={removing}
+            >
+              {removing ? "Removendo…" : "Remover"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm leave group dialog */}
+      <Dialog
+        open={confirmLeave}
+        onOpenChange={(open) => {
+          if (!open) setConfirmLeave(false);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Sair do grupo</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja sair de <strong>{groupName}</strong>? Você precisará de um novo convite para voltar.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmLeave(false)}
+              disabled={leaving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleLeaveGroup}
+              disabled={leaving}
+            >
+              {leaving ? "Saindo…" : "Sair"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
