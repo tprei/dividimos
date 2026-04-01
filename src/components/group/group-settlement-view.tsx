@@ -317,7 +317,7 @@ export function GroupSettlementView({
           onClose={() => setPixModal(null)}
           recipientName={pixModal.recipientName}
           amountCents={pixModal.amountCents}
-          recipientUserId={pixModal.recipientId}
+          recipientUserId={pixModal.mode === "collect" ? currentUserId : pixModal.recipientId}
           groupId={groupId}
           mode={pixModal.mode}
           onMarkPaid={async (amountCents: number) => {
