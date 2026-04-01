@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({
 // Build a chainable Supabase mock
 function chainable(resolveValue: unknown) {
   const chain: Record<string, unknown> = {};
-  const methods = ["from", "select", "eq", "neq", "in", "is", "order", "single", "maybeSingle", "insert", "delete", "rpc"];
+  const methods = ["from", "select", "eq", "neq", "in", "is", "order", "limit", "single", "maybeSingle", "insert", "delete", "rpc"];
   for (const m of methods) {
     chain[m] = vi.fn(() => chain);
   }
@@ -110,6 +110,9 @@ describe("GroupDetailPage", () => {
       },
     ];
     mockSupabaseData.expense_guests = [];
+    mockSupabaseData.group_invite_links = [
+      { token: "invite-token-123" },
+    ];
     mockSupabaseData.settlements = [
       {
         id: "stl-1",
@@ -194,6 +197,14 @@ describe("GroupDetailPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Convidar")).toBeTruthy();
+    });
+  });
+
+  it("shows invite link button for group creator", async () => {
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Link de convite")).toBeTruthy();
     });
   });
 
