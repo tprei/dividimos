@@ -1416,7 +1416,9 @@ function NewBillPageContent() {
 
       {!isTypeStep && (() => {
         let errorMsg: string | null = null;
-        if (step === "amount-split") {
+        if (step === "participants" && (store.participants.length + store.guests.length) < 2) {
+          errorMsg = "Adicione pelo menos uma pessoa para dividir a conta";
+        } else if (step === "amount-split") {
           const total = store.totalAmountInput || 0;
           const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
           if (total <= 0) {
