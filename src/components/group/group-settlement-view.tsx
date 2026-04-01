@@ -231,7 +231,7 @@ export function GroupSettlementView({
       <div className="rounded-2xl border bg-card p-4">
         <h3 className="text-sm font-semibold mb-3">Saldo consolidado</h3>
         <div className="space-y-2">
-          {participants.map((p) => {
+          {resolvedParticipants.map((p) => {
             const net = userNetBalances.get(p.id) ?? 0;
             if (Math.abs(net) < 2) return null;
             return (

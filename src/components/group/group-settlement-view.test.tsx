@@ -206,7 +206,7 @@ describe("GroupSettlementView", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/Carlos/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Carlos/).length).toBeGreaterThan(0);
     });
 
     // Should have fetched the missing profile
@@ -273,12 +273,48 @@ describe("GroupSettlementView", () => {
 
     // The component renders name.split(" ")[0] — so "Membro" appears
     await waitFor(() => {
-      expect(screen.getByText(/Membro/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Membro/).length).toBeGreaterThan(0);
     });
 
     // Verify the full name was set on the resolved participant via DebtGraph
     const graphParticipants = capturedDebtGraphProps!.participants as User[];
     const ghost = graphParticipants.find((p) => p.id === GHOST_ID);
     expect(ghost?.name).toBe("Membro removido");
+  });
+
+  it("shows balance-only users in the net balance summary (Saldo consolidado)", async () => {
+    const OUTSIDER_ID = "user-outsider";
+
+    // Balance where outsider owes creditor
+    const [userA, userB] = [OUTSIDER_ID, CREDITOR_ID].sort();
+    const sign = userA === OUTSIDER_ID ? 1 : -1;
+    mockQueryBalances.mockResolvedValue([{
+      groupId: "group-1",
+      userA,
+      userB,
+      amountCents: sign * 8000,
+    }]);
+
+    mockIn.mockResolvedValue({
+      data: [{ id: OUTSIDER_ID, handle: "outsider", name: "Carlos Externo", avatar_url: null }],
+    });
+
+    render(
+      <GroupSettlementView
+        groupId="group-1"
+        participants={participants}
+        currentUserId={CREDITOR_ID}
+      />,
+    );
+
+    // The "Saldo consolidado" section should show Carlos (balance-only user)
+    await waitFor(() => {
+      expect(screen.getByText("Saldo consolidado")).toBeInTheDocument();
+    });
+
+    // Carlos should appear in the net balance summary with "a pagar"
+    await waitFor(() => {
+      expect(screen.getByText("Carlos")).toBeInTheDocument();
+    });
   });
 });
