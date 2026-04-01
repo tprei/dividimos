@@ -282,6 +282,41 @@ describe("GroupSettlementView", () => {
     expect(ghost?.name).toBe("Membro removido");
   });
 
+  it("resolves invited (not-yet-accepted) member's name in adhoc bill scenario", async () => {
+    // Scenario: adhoc bill created → member invited via handle (status=invited)
+    // → bill activated → member has balances but is NOT in accepted participants
+    // The component should fetch their profile and render their real name.
+    const INVITED_ID = "user-invited-handle";
+
+    const [userA, userB] = [INVITED_ID, CREDITOR_ID].sort();
+    const sign = userA === INVITED_ID ? 1 : -1;
+    mockQueryBalances.mockResolvedValue([{
+      groupId: "group-1",
+      userA,
+      userB,
+      amountCents: sign * 7000,
+    }]);
+
+    mockIn.mockResolvedValue({
+      data: [{ id: INVITED_ID, handle: "invited_user", name: "Diana Convidada", avatar_url: null }],
+    });
+
+    render(
+      <GroupSettlementView
+        groupId="group-1"
+        participants={participants}
+        currentUserId={CREDITOR_ID}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Diana/).length).toBeGreaterThan(0);
+    });
+
+    expect(mockFrom).toHaveBeenCalledWith("user_profiles");
+    expect(mockIn).toHaveBeenCalledWith("id", [INVITED_ID]);
+  });
+
   it("shows balance-only users in the net balance summary (Saldo consolidado)", async () => {
     const OUTSIDER_ID = "user-outsider";
 
