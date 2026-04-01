@@ -697,6 +697,12 @@ export interface Database {
         };
         Returns: void;
       };
+      leave_group: {
+        Args: {
+          p_group_id: string;
+        };
+        Returns: void;
+      };
     };
     Enums: {
       pix_key_type: "cpf" | "email" | "random";

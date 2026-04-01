@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  LogOut,
   Pencil,
   Plus,
   QrCode,
@@ -322,6 +323,24 @@ export default function GroupDetailPage({
     await fetchGroup();
   };
 
+  const handleLeaveGroup = async () => {
+    const { error } = await createClient().rpc("leave_group", {
+      p_group_id: id,
+    });
+
+    if (error) {
+      if (error.message.includes("has_outstanding_balance")) {
+        toast.error("Você possui débitos pendentes neste grupo. Quite antes de sair.");
+        return;
+      }
+      toast.error("Erro ao sair do grupo.");
+      return;
+    }
+
+    toast.success("Você saiu do grupo.");
+    router.push("/app");
+  };
+
   const participantsAsUsers: User[] = useMemo(() =>
     members
       .filter((m) => m.status === "accepted")
@@ -569,6 +588,16 @@ export default function GroupDetailPage({
               )}
             </motion.div>
           ))}
+
+          {!isCreator && isAcceptedMember && (
+            <button
+              onClick={handleLeaveGroup}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <LogOut className="h-4 w-4" />
+              Sair do grupo
+            </button>
+          )}
 
           {unclaimedGuests.length > 0 && (
             <div className="mt-6">
