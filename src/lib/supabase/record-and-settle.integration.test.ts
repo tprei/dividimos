@@ -281,7 +281,7 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(error!.message).toContain("permission_denied");
       });
 
-      it("allows settlement from an invited-but-not-accepted member", async () => {
+      it("rejects settlement from an invited-but-not-accepted member", async () => {
         const [dave] = await createTestUsers(1);
         const group2 = await createTestGroup(alice.id, [dave.id]);
 
@@ -293,7 +293,8 @@ describe.skipIf(!isIntegrationTestReady)(
           p_amount_cents: 500,
         });
 
-        expect(error).toBeNull();
+        expect(error).not.toBeNull();
+        expect(error!.message).toContain("permission_denied");
       });
     });
 
