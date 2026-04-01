@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Link2,
   Pencil,
   Plus,
   QrCode,
@@ -20,6 +21,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
+import { InviteLinkShareModal } from "@/components/group/invite-link-share-modal";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -95,6 +97,9 @@ export default function GroupDetailPage({
     claimToken: string;
     expenseTitle: string;
   }>({ open: false, guestName: "", claimToken: "", expenseTitle: "" });
+  const [inviteLinkToken, setInviteLinkToken] = useState<string | null>(null);
+  const [showInviteLinkModal, setShowInviteLinkModal] = useState(false);
+  const [creatingInviteLink, setCreatingInviteLink] = useState(false);
 
   const fetchGroup = useCallback(async () => {
     const supabase = createClient();
@@ -158,8 +163,8 @@ export default function GroupDetailPage({
 
     setMembers(entries);
 
-    // Fetch group expenses + settlements in parallel
-    const [{ data: expenseRows }, { data: settlementRows }] = await Promise.all([
+    // Fetch group expenses, settlements, and invite link in parallel
+    const [{ data: expenseRows }, { data: settlementRows }, { data: inviteLinkRows }] = await Promise.all([
       supabase
         .from("expenses")
         .select("id, title, total_amount, status, created_at")
@@ -171,7 +176,16 @@ export default function GroupDetailPage({
         .select("id, group_id, from_user_id, to_user_id, amount_cents, status, created_at, confirmed_at")
         .eq("group_id", id)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("group_invite_links")
+        .select("token")
+        .eq("group_id", id)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1),
     ]);
+
+    setInviteLinkToken(inviteLinkRows?.[0]?.token ?? null);
 
     setExpenses(
       (expenseRows ?? []).map((e: { id: string; title: string; total_amount: number; status: string; created_at: string }) => ({
@@ -313,6 +327,33 @@ export default function GroupDetailPage({
     await fetchGroup();
   };
 
+  const handleShareInviteLink = async () => {
+    if (inviteLinkToken) {
+      setShowInviteLinkModal(true);
+      return;
+    }
+
+    if (!user) return;
+    setCreatingInviteLink(true);
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("group_invite_links")
+      .insert({ group_id: id, created_by: user.id })
+      .select("token")
+      .single();
+
+    setCreatingInviteLink(false);
+
+    if (error || !data) {
+      toast.error("Erro ao criar link de convite");
+      return;
+    }
+
+    setInviteLinkToken(data.token);
+    setShowInviteLinkModal(true);
+  };
+
   const participantsAsUsers: User[] = useMemo(() =>
     members
       .filter((m) => m.status === "accepted")
@@ -385,15 +426,27 @@ export default function GroupDetailPage({
           </p>
         </div>
         {canInvite && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => setShowInvite(!showInvite)}
-          >
-            <UserPlus className="h-4 w-4" />
-            Convidar
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 w-8 p-0"
+              onClick={handleShareInviteLink}
+              disabled={creatingInviteLink}
+              aria-label="Link de convite"
+            >
+              <Link2 className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setShowInvite(!showInvite)}
+            >
+              <UserPlus className="h-4 w-4" />
+              Convidar
+            </Button>
+          </div>
         )}
       </div>
 
@@ -733,6 +786,13 @@ export default function GroupDetailPage({
         guestName={guestShareModal.guestName}
         claimToken={guestShareModal.claimToken}
         expenseTitle={guestShareModal.expenseTitle}
+      />
+
+      <InviteLinkShareModal
+        open={showInviteLinkModal}
+        onClose={() => setShowInviteLinkModal(false)}
+        groupName={groupName}
+        token={inviteLinkToken ?? ""}
       />
     </div>
   );
