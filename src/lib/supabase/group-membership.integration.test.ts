@@ -876,15 +876,12 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("creator can remove a member", async () => {
         const client = authenticateAs(alice);
-        const { data, error } = await client
-          .from("group_members")
-          .delete()
-          .eq("group_id", groupId)
-          .eq("user_id", carol.id)
-          .select();
+        const { error } = await client.rpc("remove_group_member", {
+          p_group_id: groupId,
+          p_user_id: carol.id,
+        });
 
         expect(error).toBeNull();
-        expect(data).toHaveLength(1);
 
         // Verify carol is gone
         const { data: check } = await adminClient!
