@@ -636,6 +636,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      group_invite_links: {
+        Row: {
+          id: string;
+          group_id: string;
+          token: string;
+          created_by: string;
+          is_active: boolean;
+          max_uses: number | null;
+          use_count: number;
+          expires_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          token?: string;
+          created_by: string;
+          is_active?: boolean;
+          max_uses?: number | null;
+          use_count?: number;
+          expires_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          group_id?: string;
+          token?: string;
+          created_by?: string;
+          is_active?: boolean;
+          max_uses?: number | null;
+          use_count?: number;
+          expires_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       user_profiles: {
@@ -682,6 +718,14 @@ export interface Database {
           p_amount_cents: number;
         };
         Returns: string;
+      };
+      join_group_via_link: {
+        Args: { p_token: string };
+        Returns: {
+          group_id: string;
+          group_name: string;
+          already_member: boolean;
+        };
       };
     };
     Enums: {
