@@ -18,6 +18,8 @@ import type {
   ActivateExpenseBalanceUpdate,
   RecordSettlementRequest,
   RecordSettlementResult,
+  GroupInviteLink,
+  JoinGroupViaLinkResult,
   // Legacy aliases
   Bill,
   BillType,
@@ -347,6 +349,82 @@ describe("RPC request/result types", () => {
     expect(result.settlement.confirmedAt).toBeDefined();
     // Balance of 0 = fully settled
     expect(result.updatedBalance.newAmountCents).toBe(0);
+  });
+});
+
+describe("Group invite link types", () => {
+  it("GroupInviteLink interface matches database schema shape", () => {
+    const link: GroupInviteLink = {
+      id: "link-1",
+      groupId: "group-1",
+      token: "abc123token",
+      createdBy: "user-1",
+      isActive: true,
+      maxUses: null,
+      useCount: 0,
+      expiresAt: null,
+      createdAt: "2026-04-01T00:00:00Z",
+    };
+    expect(link.id).toBe("link-1");
+    expect(link.groupId).toBe("group-1");
+    expect(link.token).toBe("abc123token");
+    expect(link.isActive).toBe(true);
+    expect(link.maxUses).toBeNull();
+    expect(link.useCount).toBe(0);
+    expect(link.expiresAt).toBeNull();
+  });
+
+  it("GroupInviteLink supports max_uses and expires_at", () => {
+    const link: GroupInviteLink = {
+      id: "link-2",
+      groupId: "group-1",
+      token: "xyz789token",
+      createdBy: "user-1",
+      isActive: true,
+      maxUses: 10,
+      useCount: 3,
+      expiresAt: "2026-05-01T00:00:00Z",
+      createdAt: "2026-04-01T00:00:00Z",
+    };
+    expect(link.maxUses).toBe(10);
+    expect(link.useCount).toBeLessThan(link.maxUses!);
+    expect(link.expiresAt).toBeDefined();
+  });
+
+  it("GroupInviteLink can be deactivated", () => {
+    const link: GroupInviteLink = {
+      id: "link-3",
+      groupId: "group-1",
+      token: "deactivated-token",
+      createdBy: "user-1",
+      isActive: false,
+      maxUses: null,
+      useCount: 5,
+      expiresAt: null,
+      createdAt: "2026-04-01T00:00:00Z",
+    };
+    expect(link.isActive).toBe(false);
+    expect(link.useCount).toBe(5);
+  });
+
+  it("JoinGroupViaLinkResult has expected shape", () => {
+    const result: JoinGroupViaLinkResult = {
+      groupId: "group-1",
+      groupName: "Apartamento",
+      alreadyMember: false,
+    };
+    expect(result.groupId).toBe("group-1");
+    expect(result.groupName).toBe("Apartamento");
+    expect(result.alreadyMember).toBe(false);
+  });
+
+  it("JoinGroupViaLinkResult indicates already_member", () => {
+    const result: JoinGroupViaLinkResult = {
+      groupId: "group-1",
+      groupName: "Apartamento",
+      alreadyMember: true,
+    };
+    expect(result.alreadyMember).toBe(true);
   });
 });
 
