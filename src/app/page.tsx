@@ -12,7 +12,7 @@ export default function LandingPage() {
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 glass border-b border-border/50">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <Logo size="sm" />
+          <Logo size="sm" animated />
           <Link href="/app">
             <Button size="sm">
               Abrir app
@@ -35,7 +35,7 @@ export default function LandingPage() {
           <HowItWorksSection />
         </section>
 
-        <section className="border-t bg-card py-20 sm:py-28">
+        <section className="py-20 sm:py-28" style={{ background: "linear-gradient(to bottom, transparent, oklch(0.78 0.16 75 / 8%) 40%, oklch(0.78 0.16 75 / 15%))" }}>
           <div className="mx-auto max-w-2xl px-4 text-center sm:px-6">
             <CTASection />
           </div>
@@ -44,7 +44,7 @@ export default function LandingPage() {
 
       <footer className="border-t py-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 text-sm text-muted-foreground sm:px-6">
-          <Logo size="sm" />
+          <Logo size="sm" animated />
           <p>2026 Dividimos</p>
         </div>
       </footer>

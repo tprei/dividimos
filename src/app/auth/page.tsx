@@ -78,7 +78,7 @@ function AuthPageContent() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <Logo size="lg" />
+          <Logo size="lg" animated />
         </motion.div>
 
         <motion.p

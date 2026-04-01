@@ -38,7 +38,7 @@ const screenshotSvg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewB
     <circle cx="0" cy="0" r="60" fill="none" stroke="#FEA101" stroke-width="6" opacity="0.5"/>
     <text x="0" y="12" text-anchor="middle" font-size="44" font-weight="bold" fill="#FEA101" font-family="sans-serif">R$</text>
   </g>
-  <text x="270" y="520" text-anchor="middle" font-size="22" font-weight="bold" fill="#1a1d2e" font-family="sans-serif">Ja te pago</text>
+  <text x="270" y="520" text-anchor="middle" font-size="22" font-weight="bold" fill="#1a1d2e" font-family="sans-serif">Vamos dividir</text>
   <text x="270" y="560" text-anchor="middle" font-size="14" fill="#64748b" font-family="sans-serif">Racha a conta e paga via Pix na hora</text>
 </svg>`);
 await sharp(screenshotSvg)

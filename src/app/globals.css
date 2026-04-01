@@ -222,6 +222,26 @@
       radial-gradient(at 80% 80%, oklch(0.70 0.19 155 / 10%) 0px, transparent 50%),
       radial-gradient(at 50% 50%, oklch(0.75 0.15 75 / 8%) 0px, transparent 50%);
   }
+  .logo-split-left {
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .logo-split-right {
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @media (hover: hover) {
+    .logo-animated:hover .logo-split-left {
+      transform: translateX(-0.12em);
+    }
+    .logo-animated:hover .logo-split-right {
+      transform: translateX(0.12em);
+    }
+  }
+  .logo-animated.logo-split-active .logo-split-left {
+    transform: translateX(-0.12em);
+  }
+  .logo-animated.logo-split-active .logo-split-right {
+    transform: translateX(0.12em);
+  }
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }

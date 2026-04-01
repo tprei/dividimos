@@ -214,7 +214,7 @@ function OnboardPageContent() {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <Logo size="md" />
+          <Logo size="md" animated />
         </motion.div>
 
         <div className="mt-12 flex-1">

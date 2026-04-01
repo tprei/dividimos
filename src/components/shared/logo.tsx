@@ -1,8 +1,11 @@
-import { BRAND } from "@/lib/brand";
+"use client";
+
+import { useRef, useCallback } from "react";
 
 interface LogoProps {
   size?: "sm" | "md" | "lg";
   showText?: boolean;
+  animated?: boolean;
 }
 
 const sizes = {
@@ -11,39 +14,47 @@ const sizes = {
   lg: { icon: 40, text: "text-4xl" },
 };
 
-export function Logo({ size = "md", showText = true }: LogoProps) {
+export function Logo({ size = "md", showText = true, animated = false }: LogoProps) {
   const s = sizes[size];
-  const words = BRAND.logoWords;
-  const foregroundWords = words.slice(0, words.length - 1);
-  const accentWord = words[words.length - 1];
+  const ref = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
+  const handleTap = useCallback(() => {
+    if (!animated || !ref.current) return;
+    ref.current.classList.add("logo-split-active");
+    if (timerRef.current !== undefined) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      ref.current?.classList.remove("logo-split-active");
+    }, 400);
+  }, [animated]);
 
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="gradient-primary rounded-xl p-2 shadow-md shadow-primary/20">
-        <svg
-          width={s.icon}
-          height={s.icon}
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" stroke="white" strokeWidth="2" />
-          <circle cx="12" cy="12" r="6.5" stroke="white" strokeWidth="1.5" />
-          <path
-            d="M12 7v1.5M12 15.5V17M9.5 10.5c0-.83.67-1.5 1.5-1.5h2a1.5 1.5 0 0 1 0 3h-2a1.5 1.5 0 0 0 0 3h2c.83 0 1.5-.67 1.5-1.5"
-            stroke="white"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
+    <div
+      ref={ref}
+      className={`flex items-center gap-2.5 ${animated ? "logo-animated cursor-pointer" : ""}`}
+      onClick={handleTap}
+    >
+      <svg
+        width={s.icon + 8}
+        height={s.icon + 14}
+        viewBox="0 0 36 44"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+        className="shrink-0"
+      >
+        <rect x="2" y="2" width="32" height="32" rx="9" className="fill-primary" />
+        <circle cx="10" cy="18" r="3" fill="white" />
+        <rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="white" />
+        <circle cx="26" cy="18" r="3" fill="white" />
+        <rect x="11" y="34" width="14" height="3" rx="1" className="fill-primary/70" />
+        <rect x="12.5" y="37" width="11" height="2.5" rx="1" className="fill-primary/50" />
+        <rect x="14" y="39.5" width="8" height="2.5" rx="1.25" className="fill-primary/30" />
+      </svg>
       {showText && (
         <span className={`${s.text} font-bold tracking-tight`}>
-          {foregroundWords.map((word, i) => (
-            <span key={i}>{word}{"."}</span>
-          ))}
-          <span className="text-primary">{accentWord}</span>
+          <span className={`inline-block ${animated ? "logo-split-left" : ""}`}>divid</span><span className={`inline-block ${animated ? "logo-split-right" : ""}`}>imos</span><span className="text-primary">.ai</span>
         </span>
       )}
     </div>

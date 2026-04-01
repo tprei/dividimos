@@ -1,14 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" rx="96" fill="#FEA101"/>
-  <!-- Coin outer ring -->
-  <circle cx="256" cy="232" r="140" fill="none" stroke="#fff" stroke-width="16" opacity="0.95"/>
-  <!-- Coin inner ring -->
-  <circle cx="256" cy="232" r="95" fill="none" stroke="#fff" stroke-width="10" opacity="0.7"/>
-  <!-- Dollar/Real sign -->
-  <path
-    d="M256 152v16M256 296v16M228 200c0-15.5 12.5-28 28-28h16a28 28 0 0 1 0 56h-16a28 28 0 0 0 0 56h16c15.5 0 28-12.5 28-28"
-    fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round"/>
-  <!-- Bottom text badge -->
-  <rect x="156" y="400" width="200" height="56" rx="28" fill="#fff" opacity="0.2"/>
-  <text x="256" y="436" text-anchor="middle" font-size="28" font-weight="bold" fill="#fff" font-family="sans-serif">Pix</text>
+  <g transform="translate(256,230) scale(8) translate(-18,-18)">
+    <circle cx="10" cy="18" r="3" fill="white"/>
+    <rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="white"/>
+    <circle cx="26" cy="18" r="3" fill="white"/>
+  </g>
+  <g transform="translate(256,0)">
+    <rect x="-60" y="410" width="120" height="26" rx="8" fill="#E08E00"/>
+    <rect x="-48" y="436" width="96" height="22" rx="8" fill="#C87E00"/>
+    <rect x="-36" y="458" width="72" height="22" rx="11" fill="#B07000"/>
+  </g>
 </svg>
