@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
+  createTestGroup,
   createTestGroupWithMembers,
   authenticateAs,
+  getBalanceBetween,
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
@@ -742,5 +744,212 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
 
     expect(error).not.toBeNull();
     expect(error!.message).toContain("duplicate_participant");
+  });
+
+  it("upgrades invited member to accepted when claiming guest spot", async () => {
+    // Carol is invited to the group via handle (status = 'invited')
+    await adminClient!.from("group_members").insert({
+      group_id: groupId,
+      user_id: carol.id,
+      status: "invited",
+      invited_by: alice.id,
+    });
+
+    // Verify Carol is invited, not accepted
+    const { data: before } = await adminClient!
+      .from("group_members")
+      .select("status")
+      .eq("group_id", groupId)
+      .eq("user_id", carol.id)
+      .single();
+
+    expect(before!.status).toBe("invited");
+
+    // Create expense with a guest spot
+    const { data: expense } = await adminClient!
+      .from("expenses")
+      .insert({
+        group_id: groupId,
+        creator_id: alice.id,
+        title: "Invite upgrade test",
+        total_amount: 10000,
+      })
+      .select("id")
+      .single();
+
+    const { data: guest } = await adminClient!
+      .from("expense_guests")
+      .insert({ expense_id: expense!.id, display_name: "Carol's spot" })
+      .select()
+      .single();
+
+    await Promise.all([
+      adminClient!.from("expense_shares").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        share_amount_cents: 5000,
+      }),
+      adminClient!.from("expense_guest_shares").insert({
+        expense_id: expense!.id,
+        guest_id: guest!.id,
+        share_amount_cents: 5000,
+      }),
+      adminClient!.from("expense_payers").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        amount_cents: 10000,
+      }),
+    ]);
+
+    // Activate the expense first
+    const aliceClient = authenticateAs(alice);
+    await aliceClient.rpc("activate_expense", { p_expense_id: expense!.id });
+
+    // Carol claims the guest spot while still 'invited'
+    const carolClient = authenticateAs(carol);
+    const { error } = await carolClient.rpc("claim_guest_spot", {
+      p_claim_token: guest!.claim_token,
+    });
+
+    expect(error).toBeNull();
+
+    // Carol's status should now be 'accepted'
+    const { data: after } = await adminClient!
+      .from("group_members")
+      .select("status, accepted_at")
+      .eq("group_id", groupId)
+      .eq("user_id", carol.id)
+      .single();
+
+    expect(after!.status).toBe("accepted");
+    expect(after!.accepted_at).not.toBeNull();
+  });
+
+  it("invited member can see balances after claiming guest spot", async () => {
+    // Carol is invited via handle
+    await adminClient!.from("group_members").insert({
+      group_id: groupId,
+      user_id: carol.id,
+      status: "invited",
+      invited_by: alice.id,
+    });
+
+    // Create and activate expense with guest spot for Carol
+    const { data: expense } = await adminClient!
+      .from("expenses")
+      .insert({
+        group_id: groupId,
+        creator_id: alice.id,
+        title: "Balance visibility test",
+        total_amount: 10000,
+      })
+      .select("id")
+      .single();
+
+    const { data: guest } = await adminClient!
+      .from("expense_guests")
+      .insert({ expense_id: expense!.id, display_name: "Carol" })
+      .select()
+      .single();
+
+    await Promise.all([
+      adminClient!.from("expense_shares").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        share_amount_cents: 5000,
+      }),
+      adminClient!.from("expense_guest_shares").insert({
+        expense_id: expense!.id,
+        guest_id: guest!.id,
+        share_amount_cents: 5000,
+      }),
+      adminClient!.from("expense_payers").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        amount_cents: 10000,
+      }),
+    ]);
+
+    const aliceClient = authenticateAs(alice);
+    await aliceClient.rpc("activate_expense", { p_expense_id: expense!.id });
+
+    // Carol claims the guest spot
+    const carolClient = authenticateAs(carol);
+    await carolClient.rpc("claim_guest_spot", {
+      p_claim_token: guest!.claim_token,
+    });
+
+    // Carol should be able to read balances (upgraded to accepted)
+    const { data: balances, error } = await carolClient
+      .from("balances")
+      .select("*")
+      .eq("group_id", groupId);
+
+    expect(error).toBeNull();
+    expect(balances!.length).toBeGreaterThan(0);
+
+    // Verify the balance amount is correct
+    const balance = await getBalanceBetween(groupId, carol.id, alice.id);
+    // Carol owes Alice 5000 (positive = carol owes alice)
+    expect(balance).toBe(5000);
+  });
+
+  it("does not downgrade already-accepted member when claiming guest spot", async () => {
+    // Bob is already an accepted member (from beforeEach)
+    // Create expense where Bob has no share but there's a guest spot
+    const { data: expense } = await adminClient!
+      .from("expenses")
+      .insert({
+        group_id: groupId,
+        creator_id: alice.id,
+        title: "No downgrade test",
+        total_amount: 5000,
+      })
+      .select("id")
+      .single();
+
+    const { data: guest } = await adminClient!
+      .from("expense_guests")
+      .insert({ expense_id: expense!.id, display_name: "Bob's extra spot" })
+      .select()
+      .single();
+
+    await Promise.all([
+      adminClient!.from("expense_shares").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        share_amount_cents: 2500,
+      }),
+      adminClient!.from("expense_guest_shares").insert({
+        expense_id: expense!.id,
+        guest_id: guest!.id,
+        share_amount_cents: 2500,
+      }),
+      adminClient!.from("expense_payers").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        amount_cents: 5000,
+      }),
+    ]);
+
+    // Bob claims the guest spot (already accepted in the group)
+    // This should fail because Bob already has... wait, Bob doesn't have a share
+    // Actually Bob IS accepted and has no share on this expense, so claim should work
+    const bobClient = authenticateAs(bob);
+    const { error } = await bobClient.rpc("claim_guest_spot", {
+      p_claim_token: guest!.claim_token,
+    });
+
+    expect(error).toBeNull();
+
+    // Verify Bob is still accepted (not downgraded)
+    const { data: membership } = await adminClient!
+      .from("group_members")
+      .select("status")
+      .eq("group_id", groupId)
+      .eq("user_id", bob.id)
+      .single();
+
+    expect(membership!.status).toBe("accepted");
   });
 });
