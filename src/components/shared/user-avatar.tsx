@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
@@ -26,12 +27,13 @@ function getInitials(name: string): string {
 }
 
 export function UserAvatar({ name, avatarUrl, size = "md", className }: UserAvatarProps) {
+  const [imgError, setImgError] = useState(false);
   const sizeClass = sizeClasses[size];
 
-  if (avatarUrl) {
+  if (avatarUrl && !imgError) {
     return (
       <div className={cn("relative overflow-hidden rounded-full", sizeClass, className)}>
-        <Image src={avatarUrl} alt={name} fill className="object-cover" />
+        <Image src={avatarUrl} alt={name} fill className="object-cover" onError={() => setImgError(true)} />
       </div>
     );
   }
