@@ -305,11 +305,20 @@ export default function GroupDetailPage({
   };
 
   const handleRemoveMember = async (userId: string) => {
-    await createClient()
-      .from("group_members")
-      .delete()
-      .eq("group_id", id)
-      .eq("user_id", userId);
+    const { error } = await createClient().rpc("remove_group_member", {
+      p_group_id: id,
+      p_user_id: userId,
+    });
+
+    if (error) {
+      if (error.message.includes("has_outstanding_balance")) {
+        alert("Não é possível remover: este membro possui débitos pendentes no grupo.");
+        return;
+      }
+      alert("Erro ao remover membro.");
+      return;
+    }
+
     await fetchGroup();
   };
 

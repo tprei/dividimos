@@ -23,6 +23,8 @@ function chainable(resolveValue: unknown) {
 
 // Supabase mock that returns different data per table
 const mockSupabaseData: Record<string, unknown> = {};
+let mockRpcResult: { data: unknown; error: unknown } = { data: null, error: null };
+const mockRpcFn = vi.fn(() => chainable(mockRpcResult));
 
 function createMockSupabase() {
   const fromMock = vi.fn((table: string) => {
@@ -32,7 +34,7 @@ function createMockSupabase() {
 
   return {
     from: fromMock,
-    rpc: vi.fn(() => chainable({ data: null, error: null })),
+    rpc: mockRpcFn,
     channel: () => ({
       on: () => ({ subscribe: () => ({}) }),
     }),
@@ -90,6 +92,7 @@ async function renderPage(groupId = "group-1") {
 describe("GroupDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRpcResult = { data: null, error: null };
     // Default data: group with 2 members, 1 expense, 1 settlement
     mockSupabaseData.groups = { name: "Test Group", creator_id: "user-1" };
     mockSupabaseData.group_members = [
@@ -210,5 +213,58 @@ describe("GroupDetailPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Nova conta do grupo")).toBeTruthy();
     });
+  });
+
+  it("calls remove_group_member RPC when removing a member", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Bob Test")).toBeTruthy();
+    });
+
+    const removeButtons = screen.getAllByRole("button").filter(
+      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
+    );
+    expect(removeButtons.length).toBeGreaterThan(0);
+
+    await user.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(mockRpcFn).toHaveBeenCalledWith("remove_group_member", {
+        p_group_id: "group-1",
+        p_user_id: "user-2",
+      });
+    });
+  });
+
+  it("shows alert when removing member with outstanding balance", async () => {
+    window.alert = vi.fn();
+    const alertSpy = vi.spyOn(window, "alert");
+    mockRpcResult = {
+      data: null,
+      error: { message: "has_outstanding_balance: member has unsettled debts" },
+    };
+
+    const user = userEvent.setup();
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Bob Test")).toBeTruthy();
+    });
+
+    const removeButtons = screen.getAllByRole("button").filter(
+      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
+    );
+
+    await user.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Não é possível remover: este membro possui débitos pendentes no grupo.",
+      );
+    });
+
+    alertSpy.mockRestore();
   });
 });

@@ -683,6 +683,20 @@ export interface Database {
         };
         Returns: string;
       };
+      has_outstanding_balance: {
+        Args: {
+          p_group_id: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
+      remove_group_member: {
+        Args: {
+          p_group_id: string;
+          p_user_id: string;
+        };
+        Returns: void;
+      };
     };
     Enums: {
       pix_key_type: "cpf" | "email" | "random";
