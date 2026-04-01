@@ -63,6 +63,30 @@ export interface GroupWithMembers extends Group {
 }
 
 // ============================================================
+// Group invite link types
+// ============================================================
+
+/** A shareable invite link for a group. One active link per group at a time. */
+export interface GroupInviteLink {
+  id: string;
+  groupId: string;
+  token: string;
+  createdBy: string;
+  isActive: boolean;
+  maxUses: number | null;
+  useCount: number;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+/** Result returned by the join_group_via_link RPC function. */
+export interface JoinGroupViaLinkResult {
+  groupId: string;
+  groupName: string;
+  alreadyMember: boolean;
+}
+
+// ============================================================
 // Expense types (replace Bill)
 // ============================================================
 
