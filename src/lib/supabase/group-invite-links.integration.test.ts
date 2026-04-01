@@ -87,10 +87,6 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       it("any authenticated user can read invite links", async () => {
-        await untypedAdmin()
-          .from("group_invite_links")
-          .insert({ group_id: groupId, created_by: alice.id });
-
         const client = untypedAs(carol);
         const { data, error } = await client
           .from("group_invite_links")
@@ -98,7 +94,8 @@ describe.skipIf(!isIntegrationTestReady)(
           .eq("group_id", groupId);
 
         expect(error).toBeNull();
-        expect(data).toHaveLength(1);
+        // At least the auto-generated link exists
+        expect(data!.length).toBeGreaterThanOrEqual(1);
       });
 
       it("link creator can deactivate their link", async () => {
@@ -131,6 +128,46 @@ describe.skipIf(!isIntegrationTestReady)(
           .eq("id", link!.id);
 
         expect(error).toBeNull();
+      });
+    });
+
+    // ── Auto-generation trigger ─────────────────────────────────
+
+    describe("auto-generate invite link on group creation", () => {
+      it("creates an invite link when a group is created", async () => {
+        const { data: links, error } = await untypedAdmin()
+          .from("group_invite_links")
+          .select()
+          .eq("group_id", groupId);
+
+        expect(error).toBeNull();
+        expect(links).toHaveLength(1);
+        expect(links![0].created_by).toBe(alice.id);
+        expect(links![0].is_active).toBe(true);
+        expect(links![0].use_count).toBe(0);
+        expect(links![0].expires_at).toBeNull();
+        expect(links![0].max_uses).toBeNull();
+        expect(links![0].token).toBeTruthy();
+      });
+
+      it("auto-generated link is usable for joining", async () => {
+        const { data: links } = await untypedAdmin()
+          .from("group_invite_links")
+          .select("token")
+          .eq("group_id", groupId);
+
+        const autoToken = links![0].token;
+        const client = untypedAs(carol);
+        const { data, error } = await client.rpc("join_group_via_link", {
+          p_token: autoToken,
+        });
+
+        expect(error).toBeNull();
+        expect(data).toMatchObject({
+          group_id: groupId,
+          already_member: false,
+          status: "accepted",
+        });
       });
     });
 
@@ -178,7 +215,7 @@ describe.skipIf(!isIntegrationTestReady)(
         const { data: link } = await untypedAdmin()
           .from("group_invite_links")
           .select("use_count")
-          .eq("group_id", groupId)
+          .eq("token", token)
           .single();
 
         expect(link!.use_count).toBe(1);
@@ -228,7 +265,7 @@ describe.skipIf(!isIntegrationTestReady)(
         const { data: link } = await untypedAdmin()
           .from("group_invite_links")
           .select("use_count")
-          .eq("group_id", groupId)
+          .eq("token", token)
           .single();
 
         expect(link!.use_count).toBe(0);
