@@ -137,7 +137,6 @@ export function SingleAmountStep({
           value={totalInput}
           onChange={(e) => setTotalInput(sanitizeDecimalInput(e.target.value))}
           className="text-2xl font-bold h-14 text-center"
-          autoFocus
         />
         <div className="mt-2">
           <AmountQuickAdd
