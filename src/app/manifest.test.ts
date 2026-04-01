@@ -8,7 +8,7 @@ describe("manifest", () => {
     expect(m.name).toBe("Dividimos — Vamos dividir");
     expect(m.short_name).toBe("Dividimos");
     expect(m.start_url).toBe("/app");
-    expect(m.display).toBe("standalone");
+    expect(m.display).toBe("fullscreen");
   });
 
   it("includes id field for Android installability", () => {
