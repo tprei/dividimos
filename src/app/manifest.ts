@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description:
       "Divida a conta do restaurante e liquide via Pix em segundos.",
     start_url: "/app",
-    display: "standalone",
+    display: "fullscreen",
     background_color: "#F9F9FB",
     theme_color: "#FEA101",
     orientation: "portrait",
