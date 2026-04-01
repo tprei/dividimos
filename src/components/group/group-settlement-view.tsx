@@ -22,6 +22,7 @@ import {
 } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
+import { createClient } from "@/lib/supabase/client";
 import type { Balance, User } from "@/types";
 import type { SimplificationResult } from "@/lib/simplify";
 
@@ -55,6 +56,7 @@ export function GroupSettlementView({
 }: GroupSettlementViewProps) {
   const [loading, setLoading] = useState(true);
   const [balances, setBalances] = useState<Balance[]>([]);
+  const [resolvedParticipants, setResolvedParticipants] = useState<User[]>(participants);
   const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
   const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
   const [pixModal, setPixModal] = useState<{
@@ -69,11 +71,66 @@ export function GroupSettlementView({
     setLoading(true);
     const loadedBalances = await queryBalances(groupId);
 
+    const balanceUserIds = new Set<string>();
+    for (const b of loadedBalances) {
+      balanceUserIds.add(b.userA);
+      balanceUserIds.add(b.userB);
+    }
+
+    const knownIds = new Set(participants.map((p) => p.id));
+    const missingIds = [...balanceUserIds].filter((id) => !knownIds.has(id));
+
+    let allParticipants = participants;
+
+    if (missingIds.length > 0) {
+      const supabase = createClient();
+      const { data: profiles } = await supabase
+        .from("user_profiles")
+        .select("id, handle, name, avatar_url")
+        .in("id", missingIds);
+
+      const extra: User[] = [];
+      const fetched = new Set<string>();
+
+      for (const p of profiles ?? []) {
+        fetched.add(p.id);
+        extra.push({
+          id: p.id,
+          name: p.name,
+          handle: p.handle,
+          email: "",
+          pixKeyType: "email" as const,
+          pixKeyHint: "",
+          avatarUrl: p.avatar_url ?? undefined,
+          onboarded: true,
+          createdAt: "",
+        });
+      }
+
+      for (const id of missingIds) {
+        if (!fetched.has(id)) {
+          extra.push({
+            id,
+            name: "Membro removido",
+            handle: "",
+            email: "",
+            pixKeyType: "email" as const,
+            pixKeyHint: "",
+            onboarded: false,
+            createdAt: "",
+          });
+        }
+      }
+
+      allParticipants = [...participants, ...extra];
+    }
+
+    setResolvedParticipants(allParticipants);
     setBalances(loadedBalances);
 
     const rawEdges = balancesToEdges(loadedBalances);
-    if (rawEdges.length >= 2 && participants.length >= 3) {
-      setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), participants));
+    if (rawEdges.length >= 2 && allParticipants.length >= 3) {
+      setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), allParticipants));
     } else {
       setSimplificationResult(null);
     }
@@ -106,21 +163,21 @@ export function GroupSettlementView({
 
       // Recompute simplification
       const rawEdges = balancesToEdges(filtered);
-      if (rawEdges.length >= 2 && participants.length >= 3) {
-        setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), participants));
+      if (rawEdges.length >= 2 && resolvedParticipants.length >= 3) {
+        setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), resolvedParticipants));
       } else {
         setSimplificationResult(null);
       }
 
       return filtered;
     });
-  }, [participants]));
+  }, [resolvedParticipants]));
 
   const debtEdges = balancesToEdges(balances);
   const displayEdges = simplificationResult?.simplifiedEdges ?? debtEdges;
 
   const getParticipant = (id: string) =>
-    participants.find((p) => p.id === id) ?? {
+    resolvedParticipants.find((p) => p.id === id) ?? {
       id,
       name: "?",
       handle: "",
@@ -196,7 +253,7 @@ export function GroupSettlementView({
       {/* Debt graph */}
       {displayEdges.length > 0 && (
         <div className="rounded-2xl border bg-card overflow-hidden">
-          <DebtGraph participants={participants} edges={displayEdges} />
+          <DebtGraph participants={resolvedParticipants} edges={displayEdges} />
         </div>
       )}
 
@@ -304,7 +361,7 @@ export function GroupSettlementView({
             </DialogHeader>
             <SimplificationViewer
               result={simplificationResult}
-              participants={participants}
+              participants={resolvedParticipants}
             />
           </DialogContent>
         </Dialog>

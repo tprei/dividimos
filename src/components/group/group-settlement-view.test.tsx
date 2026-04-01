@@ -36,6 +36,17 @@ vi.mock("@/lib/supabase/settlement-actions", () => ({
   recordSettlement: vi.fn(),
 }));
 
+// Mock Supabase client for profile fetching
+const mockSelect = vi.fn();
+const mockIn = vi.fn();
+const mockFrom = vi.fn();
+
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: () => ({
+    from: (...args: unknown[]) => mockFrom(...args),
+  }),
+}));
+
 // Mock push notifications
 vi.mock("@/lib/push/push-notify", () => ({
   notifySettlementRecorded: vi.fn().mockResolvedValue(undefined),
@@ -46,9 +57,13 @@ vi.mock("@/hooks/use-realtime-balances", () => ({
   useRealtimeBalances: vi.fn(),
 }));
 
-// Mock DebtGraph (SVG rendering not needed)
+// Mock DebtGraph (SVG rendering not needed) — capture props
+let capturedDebtGraphProps: Record<string, unknown> | null = null;
 vi.mock("@/components/settlement/debt-graph", () => ({
-  DebtGraph: () => React.createElement("div", { "data-testid": "debt-graph" }),
+  DebtGraph: (props: Record<string, unknown>) => {
+    capturedDebtGraphProps = props;
+    return React.createElement("div", { "data-testid": "debt-graph" });
+  },
 }));
 
 // Mock SimplificationViewer
@@ -102,7 +117,11 @@ const balanceDebtorOwesCreditor = (() => {
 beforeEach(() => {
   vi.restoreAllMocks();
   capturedPixModalProps = null;
+  capturedDebtGraphProps = null;
   mockQueryBalances.mockResolvedValue([balanceDebtorOwesCreditor]);
+  mockSelect.mockReturnValue({ in: mockIn });
+  mockIn.mockResolvedValue({ data: [] });
+  mockFrom.mockReturnValue({ select: mockSelect });
 });
 
 describe("GroupSettlementView", () => {
@@ -158,5 +177,108 @@ describe("GroupSettlementView", () => {
     // In pay mode, recipientUserId should be the creditor (the person being paid)
     expect(capturedPixModalProps!.recipientUserId).toBe(CREDITOR_ID);
     expect(capturedPixModalProps!.mode).toBe("pay");
+  });
+
+  it("resolves names for balance users not in participants", async () => {
+    const OUTSIDER_ID = "user-outsider";
+
+    // Balance referencing an outsider not in participants
+    const [userA, userB] = [OUTSIDER_ID, CREDITOR_ID].sort();
+    const sign = userA === OUTSIDER_ID ? 1 : -1;
+    mockQueryBalances.mockResolvedValue([{
+      groupId: "group-1",
+      userA,
+      userB,
+      amountCents: sign * 3000,
+    }]);
+
+    // Mock profile fetch for the missing user
+    mockIn.mockResolvedValue({
+      data: [{ id: OUTSIDER_ID, handle: "outsider", name: "Carlos Externo", avatar_url: null }],
+    });
+
+    render(
+      <GroupSettlementView
+        groupId="group-1"
+        participants={participants}
+        currentUserId={CREDITOR_ID}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Carlos/)).toBeInTheDocument();
+    });
+
+    // Should have fetched the missing profile
+    expect(mockFrom).toHaveBeenCalledWith("user_profiles");
+    expect(mockIn).toHaveBeenCalledWith("id", [OUTSIDER_ID]);
+  });
+
+  it("passes resolved participants (including balance-only users) to DebtGraph", async () => {
+    const OUTSIDER_ID = "user-outsider";
+
+    const [userA, userB] = [OUTSIDER_ID, CREDITOR_ID].sort();
+    const sign = userA === OUTSIDER_ID ? 1 : -1;
+    mockQueryBalances.mockResolvedValue([{
+      groupId: "group-1",
+      userA,
+      userB,
+      amountCents: sign * 3000,
+    }]);
+
+    mockIn.mockResolvedValue({
+      data: [{ id: OUTSIDER_ID, handle: "outsider", name: "Carlos Externo", avatar_url: null }],
+    });
+
+    render(
+      <GroupSettlementView
+        groupId="group-1"
+        participants={participants}
+        currentUserId={CREDITOR_ID}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(capturedDebtGraphProps).not.toBeNull();
+    });
+
+    const graphParticipants = capturedDebtGraphProps!.participants as User[];
+    const ids = graphParticipants.map((p) => p.id);
+    expect(ids).toContain(OUTSIDER_ID);
+    expect(graphParticipants.find((p) => p.id === OUTSIDER_ID)?.name).toBe("Carlos Externo");
+  });
+
+  it("falls back to 'Membro removido' when profile cannot be fetched", async () => {
+    const GHOST_ID = "user-ghost";
+
+    const [userA, userB] = [GHOST_ID, CREDITOR_ID].sort();
+    const sign = userA === GHOST_ID ? 1 : -1;
+    mockQueryBalances.mockResolvedValue([{
+      groupId: "group-1",
+      userA,
+      userB,
+      amountCents: sign * 2000,
+    }]);
+
+    // Profile fetch returns empty — user no longer exists
+    mockIn.mockResolvedValue({ data: [] });
+
+    render(
+      <GroupSettlementView
+        groupId="group-1"
+        participants={participants}
+        currentUserId={CREDITOR_ID}
+      />,
+    );
+
+    // The component renders name.split(" ")[0] — so "Membro" appears
+    await waitFor(() => {
+      expect(screen.getByText(/Membro/)).toBeInTheDocument();
+    });
+
+    // Verify the full name was set on the resolved participant via DebtGraph
+    const graphParticipants = capturedDebtGraphProps!.participants as User[];
+    const ghost = graphParticipants.find((p) => p.id === GHOST_ID);
+    expect(ghost?.name).toBe("Membro removido");
   });
 });
