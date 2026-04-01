@@ -47,7 +47,7 @@ export function consolidateEdges(edges: DebtEdge[]): DebtEdge[] {
   return Array.from(map.values()).filter((e) => e.amountCents > 0);
 }
 
-function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
+export function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
   const balances = new Map<string, number>();
   for (const e of edges) {
     balances.set(e.fromUserId, (balances.get(e.fromUserId) || 0) - e.amountCents);
