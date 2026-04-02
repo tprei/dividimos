@@ -635,3 +635,154 @@ describe("guests in splits and ledger", () => {
     expect(sum).toBe(grandTotal);
   });
 });
+
+describe("participant and guest removal flows", () => {
+  it("guest removal after itemized split shrinks splits to remaining participants", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    const guestId = useBillStore.getState().addGuest("Diana");
+    useBillStore.getState().splitItemEqually(itemId, ["user-alice", guestId]);
+    expect(useBillStore.getState().splits).toHaveLength(2);
+
+    useBillStore.getState().removeGuest(guestId);
+
+    const { splits } = useBillStore.getState();
+    expect(splits).toHaveLength(1);
+    expect(splits[0].userId).toBe("user-alice");
+  });
+
+  it("guest removal after single_amount billSplit shrinks billSplits to remaining participants", () => {
+    setup().createExpense("Test", "single_amount");
+    useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
+    const guestId = useBillStore.getState().addGuest("Diana");
+    useBillStore.getState().splitBillEqually(["user-alice", guestId]);
+    expect(useBillStore.getState().billSplits).toHaveLength(2);
+
+    useBillStore.getState().removeGuest(guestId);
+
+    const { billSplits } = useBillStore.getState();
+    expect(billSplits).toHaveLength(1);
+    expect(billSplits[0].userId).toBe("user-alice");
+  });
+
+  it("does not cascade guest removal to payers (documents current behavior)", () => {
+    setup().createExpense("Test", "single_amount");
+    useBillStore.getState().updateExpense({ totalAmountInput: 6000 });
+    const guestId = useBillStore.getState().addGuest("Diana");
+    useBillStore.getState().setPayerAmount(guestId, 3000);
+    expect(useBillStore.getState().payers).toHaveLength(1);
+
+    useBillStore.getState().removeGuest(guestId);
+
+    const { payers } = useBillStore.getState();
+    expect(payers.find((p) => p.userId === guestId)).toBeDefined();
+  });
+
+  it("participant removal after itemized split removes that participant's splits", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob"]);
+    expect(useBillStore.getState().splits).toHaveLength(2);
+
+    useBillStore.getState().removeParticipant("user-bob");
+
+    const { splits } = useBillStore.getState();
+    expect(splits).toHaveLength(1);
+    expect(splits[0].userId).toBe("user-alice");
+  });
+
+  it("does not cascade participant removal to payers (documents current behavior)", () => {
+    setup().createExpense("Test", "single_amount");
+    useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().setPayerAmount("user-bob", 10000);
+    expect(useBillStore.getState().payers).toHaveLength(1);
+
+    useBillStore.getState().removeParticipant("user-bob");
+
+    const { payers } = useBillStore.getState();
+    expect(payers.find((p) => p.userId === "user-bob")).toBeDefined();
+  });
+
+  it("participant removal preserves other participants' splits with correct amounts", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().addParticipant(userCarlos);
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 9000, totalPriceCents: 9000 });
+    const itemId = useBillStore.getState().items[0].id;
+    useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
+    expect(useBillStore.getState().splits).toHaveLength(3);
+
+    useBillStore.getState().removeParticipant("user-bob");
+
+    const { splits } = useBillStore.getState();
+    expect(splits).toHaveLength(2);
+    expect(splits.find((s) => s.userId === "user-bob")).toBeUndefined();
+    const aliceSplit = splits.find((s) => s.userId === "user-alice");
+    const carlosSplit = splits.find((s) => s.userId === "user-carlos");
+    expect(aliceSplit).toBeDefined();
+    expect(carlosSplit).toBeDefined();
+    expect(aliceSplit!.computedAmountCents).toBe(3000);
+    expect(carlosSplit!.computedAmountCents).toBe(3000);
+  });
+
+  it("computeLedger after participant removal reflects the remaining participant set", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().addParticipant(userCarlos);
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 9000, totalPriceCents: 9000 });
+    const itemId = useBillStore.getState().items[0].id;
+    useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
+    useBillStore.getState().setPayerFull("user-alice");
+
+    useBillStore.getState().removeParticipant("user-carlos");
+    useBillStore.getState().computeLedger();
+
+    const { previewDebts, participants } = useBillStore.getState();
+    expect(participants.find((p) => p.id === "user-carlos")).toBeUndefined();
+    expect(previewDebts.find((d) => d.fromUserId === "user-carlos")).toBeUndefined();
+    expect(previewDebts.find((d) => d.toUserId === "user-carlos")).toBeUndefined();
+    expect(previewDebts).toHaveLength(1);
+    expect(previewDebts[0]).toMatchObject({ fromUserId: "user-bob", toUserId: "user-alice" });
+  });
+
+  it("removing all non-creator participants leaves only the creator", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().addParticipant(userCarlos);
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 9000, totalPriceCents: 9000 });
+    const itemId = useBillStore.getState().items[0].id;
+    useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
+
+    useBillStore.getState().removeParticipant("user-bob");
+    useBillStore.getState().removeParticipant("user-carlos");
+
+    const { participants, splits } = useBillStore.getState();
+    expect(participants).toHaveLength(1);
+    expect(participants[0].id).toBe("user-alice");
+    expect(splits.find((s) => s.userId === "user-bob")).toBeUndefined();
+    expect(splits.find((s) => s.userId === "user-carlos")).toBeUndefined();
+  });
+
+  it("guest removal then re-add produces clean state with no stale references", () => {
+    setup().createExpense("Test", "single_amount");
+    useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
+    const guestId = useBillStore.getState().addGuest("Diana");
+    useBillStore.getState().splitBillEqually(["user-alice", guestId]);
+    expect(useBillStore.getState().billSplits).toHaveLength(2);
+
+    useBillStore.getState().removeGuest(guestId);
+    const newGuestId = useBillStore.getState().addGuest("Eduardo");
+    useBillStore.getState().splitBillEqually(["user-alice", newGuestId]);
+
+    const { guests, billSplits } = useBillStore.getState();
+    expect(guests).toHaveLength(1);
+    expect(guests[0].name).toBe("Eduardo");
+    expect(billSplits).toHaveLength(2);
+    expect(billSplits.find((s) => s.userId === guestId)).toBeUndefined();
+    expect(billSplits.find((s) => s.userId === newGuestId)).toBeDefined();
+  });
+});
