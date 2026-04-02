@@ -4,13 +4,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AtSign,
   Check,
-  ChevronRight,
   Clipboard,
   CreditCard,
   LogOut,
   Moon,
   Pencil,
-  Shield,
   Smartphone,
   X,
 } from "lucide-react";
@@ -333,26 +331,6 @@ export default function ProfilePage() {
             </div>
             <Switch defaultChecked />
           </div>
-        </div>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.4 }}
-        className="mt-8"
-      >
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Segurança
-        </h2>
-        <div className="space-y-1 rounded-2xl border bg-card">
-          <button className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-muted/50">
-            <div className="flex items-center gap-3">
-              <Shield className="h-5 w-5 text-muted-foreground" />
-              <span className="font-medium">Privacidade</span>
-            </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </button>
         </div>
       </motion.div>
 
