@@ -5,7 +5,7 @@
 import type {
   BillStatus,
   BillType,
-  BillParticipantStatus,
+
   DebtStatus,
   GroupMemberStatus,
   PixKeyType,
@@ -15,7 +15,7 @@ import type {
 // Define const arrays for runtime checking
 const BILL_STATUSES = ["draft", "active", "partially_settled", "settled"] as const;
 const BILL_TYPES = ["single_amount", "itemized"] as const;
-const BILL_PARTICIPANT_STATUSES = ["invited", "accepted", "declined"] as const;
+
 const DEBT_STATUSES = ["pending", "partially_paid", "settled"] as const;
 const GROUP_MEMBER_STATUSES = ["invited", "accepted"] as const;
 const PIX_KEY_TYPES = ["cpf", "email", "random"] as const;
@@ -37,20 +37,6 @@ export function isBillStatus(value: unknown): value is BillStatus {
  */
 export function isBillType(value: unknown): value is BillType {
   return typeof value === "string" && BILL_TYPES.includes(value as BillType);
-}
-
-/**
- * Type guard for BillParticipantStatus enum.
- * @param value - The value to check
- * @returns true if value is a valid BillParticipantStatus
- */
-export function isBillParticipantStatus(
-  value: unknown,
-): value is BillParticipantStatus {
-  return (
-    typeof value === "string" &&
-    BILL_PARTICIPANT_STATUSES.includes(value as BillParticipantStatus)
-  );
 }
 
 /**
