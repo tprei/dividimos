@@ -414,13 +414,16 @@ describe("client distributeProportionally vs server per-pair ROUND", () => {
   const carol = "cccc";
 
   it("diverges on 3-way split of 100 cents with 2 payers", () => {
-    // Total: 100 cents. Shares: equal 3-way via distributeProportionally
-    // Payers: alice=60, bob=40
+    // Total: 100 cents. Equal 3-way split: distributeProportionally -> [34, 33, 33]
+    // Payers: alice=50, bob=50 (also consumers). Carol is a pure consumer.
+    //
+    // Client says carol owes 33 cents total.
+    // Server computes per-pair: ROUND(33*50/100) + ROUND(33*50/100) = 17 + 17 = 34.
+    // The two rounding modes diverge by 1 cent for carol.
     const total = 100;
     const clientShares = distributeProportionally(total, [1, 1, 1]);
-    // clientShares = [34, 33, 33] (largest remainder gives first person extra cent)
+    // [34, 33, 33] — alice gets the extra cent from largest-remainder
 
-    // Server uses per-pair ROUND: debt = round(share * payment / total)
     const serverDeltas = computeBalanceDeltasPg(
       total,
       [
@@ -429,34 +432,40 @@ describe("client distributeProportionally vs server per-pair ROUND", () => {
         { userId: carol, amount: clientShares[2] },
       ],
       [
-        { userId: alice, amount: 60 },
-        { userId: bob, amount: 40 },
+        { userId: alice, amount: 50 },
+        { userId: bob, amount: 50 },
       ],
     );
 
-    // Just verify the server computation produces valid results
-    // The point is that per-pair rounding and distributeProportionally
-    // use fundamentally different strategies
-    for (const d of serverDeltas) {
-      expect(Number.isInteger(d.delta)).toBe(true);
+    // Compute what the server says each consumer owes in total
+    // (sum of their per-pair ROUND debts across all payers they're paired with)
+    const serverOwed = new Map<string, number>();
+    for (const { userA, userB, delta } of serverDeltas) {
+      // positive delta = userA owes userB; negative = userB owes userA
+      serverOwed.set(userA, (serverOwed.get(userA) ?? 0) + Math.max(0, delta));
+      serverOwed.set(userB, (serverOwed.get(userB) ?? 0) + Math.max(0, -delta));
     }
 
-    // Sum of absolute deltas should be bounded
-    const sumAbs = serverDeltas.reduce((s, d) => s + Math.abs(d.delta), 0);
-    expect(sumAbs).toBeGreaterThan(0);
-    expect(sumAbs).toBeLessThanOrEqual(total);
+    // carol is the only pure consumer; server rounds her debt up to 34, client says 33
+    expect(serverOwed.get(carol) ?? 0).toBe(34);
+    expect(clientShares[2]).toBe(33);
+    expect(serverOwed.get(carol)).not.toBe(clientShares[2]);
   });
 
   it("largest-remainder preserves sum exactly while per-pair ROUND may not", () => {
-    // 1000 cents, 3 consumers, 1 payer
-    // distributeProportionally guarantees sum = 1000
-    const total = 1000;
-    const weights = [3, 3, 4]; // asymmetric
-    const clientShares = distributeProportionally(total, weights);
+    // 98 cents, 3 equal-weight consumers → distributeProportionally gives [33, 33, 32].
+    // That always sums to exactly 98.
+    //
+    // With two payers each contributing 49 cents, the server computes per-pair ROUND:
+    //   consumer with share 33: ROUND(33*49/98) + ROUND(33*49/98) = 17 + 17 = 34  (overcount by 1)
+    //   consumer with share 32: ROUND(32*49/98) + ROUND(32*49/98) = 16 + 16 = 32  (exact)
+    // Total server debt = 34 + 34 + 32 = 100, but distributeProportionally sum = 98.
+    const total = 98;
+    const clientShares = distributeProportionally(total, [1, 1, 1]);
+    // [33, 33, 32]
     expect(clientShares.reduce((a, b) => a + b, 0)).toBe(total);
 
-    // Server per-pair rounding for single payer: each debt = round(share * total / total) = share
-    // With single payer, the debt exactly equals the share, so no drift here
+    // Two separate payers (not among the consumers) split equally
     const serverDeltas = computeBalanceDeltasPg(
       total,
       [
@@ -464,44 +473,67 @@ describe("client distributeProportionally vs server per-pair ROUND", () => {
         { userId: "cccc", amount: clientShares[1] },
         { userId: "dddd", amount: clientShares[2] },
       ],
-      [{ userId: "aaaa", amount: total }],
+      [
+        { userId: "aaaa", amount: 49 },
+        { userId: "eeee", amount: 49 },
+      ],
     );
 
+    // distributeProportionally guarantees the client share sum equals total exactly
+    const clientSum = clientShares.reduce((a, b) => a + b, 0);
+    expect(clientSum).toBe(total);
+
+    // Per-pair ROUND across two payers overcounts: server debt sum exceeds total
     const serverDebtSum = serverDeltas.reduce(
       (s, d) => s + Math.abs(d.delta),
       0,
     );
-    expect(serverDebtSum).toBe(total);
+    expect(serverDebtSum).toBeGreaterThan(total);
   });
 
   it("multi-payer scenario shows rounding drift between approaches", () => {
-    // 10007 cents, 5 consumers equal split, 3 payers [4000, 3500, 2507]
+    // 10007 cents, 5 equal consumers → shares [2002, 2002, 2001, 2001, 2001].
+    // Payers: u1=3337, u2=3337, u3=3333 (sum=10007).
+    // u4 and u5 are pure consumers.
+    //
+    // For u4 (share=2001): ROUND(2001*3337/10007) + ROUND(2001*3337/10007) + ROUND(2001*3333/10007)
+    //   = ROUND(667.1) + ROUND(667.1) + ROUND(666.3) = 667 + 667 + 666 = 2000
+    // Client says u4 owes 2001; server says 2000. Drift = -1.
     const total = 10007;
     const shares = distributeProportionally(total, new Array(5).fill(1));
+    // [2002, 2002, 2001, 2001, 2001]
     const users = ["u1", "u2", "u3", "u4", "u5"].sort();
 
     const serverDeltas = computeBalanceDeltasPg(
       total,
       users.map((u, i) => ({ userId: u, amount: shares[i] })),
       [
-        { userId: users[0], amount: 4000 },
-        { userId: users[1], amount: 3500 },
-        { userId: users[2], amount: 2507 },
+        { userId: users[0], amount: 3337 },
+        { userId: users[1], amount: 3337 },
+        { userId: users[2], amount: 3333 },
       ],
     );
 
-    // Verify all deltas are integers (no floating-point leakage)
-    for (const d of serverDeltas) {
-      expect(d.delta).toBe(Math.floor(d.delta));
+    // Build a map of how much each consumer owes in total server-side
+    const serverOwed = new Map<string, number>();
+    for (const { userA, userB, delta } of serverDeltas) {
+      serverOwed.set(userA, (serverOwed.get(userA) ?? 0) + Math.max(0, delta));
+      serverOwed.set(userB, (serverOwed.get(userB) ?? 0) + Math.max(0, -delta));
     }
 
-    // The net flow from all non-self pairs should be bounded by total
-    const netAbsSum = serverDeltas.reduce(
-      (s, d) => s + Math.abs(d.delta),
-      0,
-    );
-    expect(netAbsSum).toBeLessThanOrEqual(total * 2);
-    expect(netAbsSum).toBeGreaterThan(0);
+    // For each non-payer consumer (u4, u5), compare server total to client share.
+    // Drift must be bounded (within number of payer pairs = 3 cents max),
+    // and in this case is exactly -1 cent for each.
+    for (const idx of [3, 4]) {
+      const clientShare = shares[idx];
+      const serverTotal = serverOwed.get(users[idx]) ?? 0;
+      const drift = serverTotal - clientShare;
+      expect(Math.abs(drift)).toBeLessThanOrEqual(3);
+    }
+
+    // The specific drift value confirms per-pair ROUND undercounts by 1 cent here
+    expect(serverOwed.get(users[3])).toBe(shares[3] - 1);
+    expect(serverOwed.get(users[4])).toBe(shares[4] - 1);
   });
 });
 
