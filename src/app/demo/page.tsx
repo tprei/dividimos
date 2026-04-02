@@ -54,14 +54,18 @@ function buildDemoData() {
   }));
 
   const splitAssignments: [number, string[]][] = [
-    [0, ["user_self", "user_ana"]],
+    [0, ["user_self", "user_rafael"]],
     [1, ["user_marcos", "user_julia"]],
-    [2, ["user_self"]],
-    [3, ["user_ana", "user_marcos", "user_julia"]],
-    [4, ["user_self", "user_ana", "user_marcos", "user_julia"]],
+    [2, ["user_self", "user_carla"]],
+    [3, ["user_ana", "user_marcos", "user_rafael"]],
+    [4, ["user_self", "user_ana", "user_marcos", "user_julia", "user_carla", "user_rafael"]],
     [5, ["user_self", "user_marcos"]],
-    [6, ["user_self", "user_ana", "user_marcos", "user_julia"]],
-    [7, ["user_julia"]],
+    [6, ["user_self", "user_ana", "user_marcos", "user_julia", "user_carla", "user_rafael"]],
+    [7, ["user_julia", "user_carla"]],
+    [8, ["user_ana", "user_julia"]],
+    [9, ["user_carla", "user_rafael", "user_julia"]],
+    [10, ["user_ana", "user_carla", "user_rafael"]],
+    [11, ["user_julia", "user_rafael"]],
   ];
 
   let splitIdCounter = 0;
@@ -90,7 +94,11 @@ function buildDemoData() {
     ...bill,
     totalAmount: grandTotal,
     totalAmountInput: grandTotal,
-    payers: [{ userId: "user_self", amountCents: grandTotal }],
+    payers: [
+      { userId: "user_self", amountCents: Math.round(grandTotal * 0.40) },
+      { userId: "user_ana", amountCents: Math.round(grandTotal * 0.35) },
+      { userId: "user_marcos", amountCents: grandTotal - Math.round(grandTotal * 0.40) - Math.round(grandTotal * 0.35) },
+    ],
   };
 
   const consumption = new Map<string, number>();
@@ -103,9 +111,15 @@ function buildDemoData() {
     consumption.set(userId, (consumption.get(userId) || 0) + fee);
   }
 
+  const payerAmounts = [
+    { userId: "user_self", amountCents: Math.round(grandTotal * 0.40) },
+    { userId: "user_ana", amountCents: Math.round(grandTotal * 0.35) },
+    { userId: "user_marcos", amountCents: grandTotal - Math.round(grandTotal * 0.40) - Math.round(grandTotal * 0.35) },
+  ];
+
   const payment = new Map<string, number>();
   for (const p of DEMO_USERS) payment.set(p.id, 0);
-  payment.set("user_self", grandTotal);
+  for (const pa of payerAmounts) payment.set(pa.userId, pa.amountCents);
 
   const netBalance = new Map<string, number>();
   for (const p of DEMO_USERS) {
