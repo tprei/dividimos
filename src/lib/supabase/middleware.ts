@@ -48,20 +48,13 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  if (isPublicPath(pathname) && pathname !== "/auth" && pathname !== "/") {
+  if (isPublicPath(pathname) && pathname !== "/auth") {
     return supabaseResponse;
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  if (user && pathname === "/") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/app";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
 
   if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone();
