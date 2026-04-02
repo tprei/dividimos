@@ -70,3 +70,8 @@ session-log.json
 
 # HAR captures
 *.har
+
+# Capacitor native build artifacts
+android/app/build/
+android/.gradle/
+android/build/
