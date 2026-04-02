@@ -45,6 +45,28 @@ export const DEMO_USERS: User[] = [
     onboarded: true,
     createdAt: new Date().toISOString(),
   },
+  {
+    id: "user_carla",
+    email: "carla.mendes@gmail.com",
+    handle: "carla.mendes",
+    name: "Carla Mendes",
+    pixKeyType: "email",
+    pixKeyHint: "c****s@gmail.com",
+    avatarUrl: undefined,
+    onboarded: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: "user_rafael",
+    email: "rafael.costa@gmail.com",
+    handle: "rafael.costa",
+    name: "Rafael Costa",
+    pixKeyType: "email",
+    pixKeyHint: "r****a@gmail.com",
+    avatarUrl: undefined,
+    onboarded: true,
+    createdAt: new Date().toISOString(),
+  },
 ];
 
 export const DEMO_PIX_KEYS: Record<string, string> = {
@@ -52,6 +74,8 @@ export const DEMO_PIX_KEYS: Record<string, string> = {
   user_ana: "ana.silva@gmail.com",
   user_marcos: "marcos.oliveira@gmail.com",
   user_julia: "julia.santos@email.com",
+  user_carla: "carla.mendes@gmail.com",
+  user_rafael: "rafael.costa@gmail.com",
 };
 
 export const DEMO_ITEMS: Omit<BillItem, "id" | "billId" | "createdAt">[] = [
@@ -102,5 +126,29 @@ export const DEMO_ITEMS: Omit<BillItem, "id" | "billId" | "createdAt">[] = [
     quantity: 2,
     unitPriceCents: 600,
     totalPriceCents: 1200,
+  },
+  {
+    description: "Caipirinha",
+    quantity: 2,
+    unitPriceCents: 2800,
+    totalPriceCents: 5600,
+  },
+  {
+    description: "Pudim",
+    quantity: 3,
+    unitPriceCents: 933,
+    totalPriceCents: 2800,
+  },
+  {
+    description: "Salmao grelhado",
+    quantity: 1,
+    unitPriceCents: 7500,
+    totalPriceCents: 7500,
+  },
+  {
+    description: "Acai 500ml",
+    quantity: 2,
+    unitPriceCents: 1100,
+    totalPriceCents: 2200,
   },
 ];
