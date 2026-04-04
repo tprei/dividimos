@@ -22,22 +22,21 @@ export async function initCapacitor(): Promise<void> {
     }
   });
 
-  App.addListener("appUrlOpen", async ({ url }) => {
-    if (!url.includes("/auth/native-complete")) return;
-    const hashParams = new URLSearchParams(url.split("#")[1] ?? "");
-    const accessToken = hashParams.get("access_token");
-    const refreshToken = hashParams.get("refresh_token");
-    if (accessToken && refreshToken) {
-      await Browser.close();
-      const supabase = createClient();
-      await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-      });
-      await supabase.auth.refreshSession();
-      window.location.href = "/app";
-    }
-  });
+  async function claimNativeSession() {
+    const state = localStorage.getItem("__cap_oauth_state");
+    if (!state) return;
+    const res = await fetch(`/api/auth/native-session?state=${state}`);
+    if (!res.ok) return;
+    localStorage.removeItem("__cap_oauth_state");
+    const { access_token, refresh_token } = await res.json();
+    const supabase = createClient();
+    await supabase.auth.setSession({ access_token, refresh_token });
+    await supabase.auth.refreshSession();
+    window.location.href = "/app";
+  }
+
+  Browser.addListener("browserFinished", claimNativeSession);
+  App.addListener("resume", claimNativeSession);
 }
 
 export async function hideSplash(): Promise<void> {

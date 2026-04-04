@@ -63,10 +63,12 @@ function AuthPageContent() {
   const handleGoogleSignIn = async () => {
     const native = isNativePlatform();
     if (native) {
+      const state = crypto.randomUUID();
+      localStorage.setItem("__cap_oauth_state", state);
       const { data } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/native-complete`,
+          redirectTo: `${window.location.origin}/auth/native-complete?state=${state}`,
           skipBrowserRedirect: true,
           queryParams: { prompt: "consent" },
         },
