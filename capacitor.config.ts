@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   webDir: "out",
 
   server: {
-    url: devMode ? `http://${process.env.LAN_IP ?? "localhost"}:3000` : "https://dividimos.ai",
+    url: devMode ? `http://${process.env.LAN_IP ?? "10.0.2.2"}:3000` : "https://dividimos.ai",
     cleartext: devMode,
   },
 
@@ -22,7 +22,7 @@ const config: CapacitorConfig = {
 
   plugins: {
     SplashScreen: {
-      launchAutoHide: false,
+      launchAutoHide: true,
       backgroundColor: "#F9F9FB",
       androidSplashResourceName: "splash",
       showSpinner: false,
