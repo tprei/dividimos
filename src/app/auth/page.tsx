@@ -61,20 +61,12 @@ function AuthPageContent() {
   };
 
   const handleGoogleSignIn = async () => {
-    const native = isNativePlatform();
-    const redirectTo = native
-      ? `${window.location.origin}/auth/callback-native`
-      : `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-    const { data } = await supabase.auth.signInWithOAuth({
+    await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo,
-        skipBrowserRedirect: native,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     });
-    if (native && data?.url) {
-      await openOAuthInSystemBrowser(data.url);
-    }
   };
 
   return (
