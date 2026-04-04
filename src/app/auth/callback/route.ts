@@ -27,6 +27,7 @@ export async function GET(request: Request) {
           return NextResponse.redirect(onboardUrl.toString());
         }
       }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
