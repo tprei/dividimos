@@ -12,6 +12,7 @@ import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import { parseClaimQrCode } from "@/lib/claim-qr";
 import { isNativePlatform, openOAuthInSystemBrowser } from "@/lib/capacitor/auth";
+import { createNativeAuthClient } from "@/lib/supabase/native-client";
 
 const IS_DEV_LOGIN = process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED === "true";
 
@@ -65,7 +66,8 @@ function AuthPageContent() {
     if (native) {
       const state = crypto.randomUUID();
       localStorage.setItem("__cap_oauth_state", state);
-      const { data } = await supabase.auth.signInWithOAuth({
+      const nativeClient = createNativeAuthClient();
+      const { data } = await nativeClient.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/native-complete?state=${state}`,
