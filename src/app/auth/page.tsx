@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import { parseClaimQrCode } from "@/lib/claim-qr";
+import { isNativePlatform, openOAuthInSystemBrowser } from "@/lib/capacitor/auth";
+import { createNativeAuthClient } from "@/lib/supabase/native-client";
 
 const IS_DEV_LOGIN = process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED === "true";
 
@@ -60,12 +62,29 @@ function AuthPageContent() {
   };
 
   const handleGoogleSignIn = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
+    const native = isNativePlatform();
+    if (native) {
+      const state = crypto.randomUUID();
+      localStorage.setItem("__cap_oauth_state", state);
+      const nativeClient = createNativeAuthClient();
+      const { data } = await nativeClient.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/native-complete?state=${state}`,
+          skipBrowserRedirect: true,
+        },
+      });
+      if (data?.url) {
+        await openOAuthInSystemBrowser(data.url);
+      }
+    } else {
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        },
+      });
+    }
   };
 
   return (
