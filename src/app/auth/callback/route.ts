@@ -15,29 +15,33 @@ export async function GET(request: Request) {
     if (!error && sessionData.session) {
       const { session } = sessionData;
 
-      if (isNative) {
-        const params = new URLSearchParams({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        });
-        return NextResponse.redirect(`dividimos://auth/complete?${params}`);
-      }
-
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
+      let needsOnboarding = false;
       if (user) {
         const { data: profile } = await supabase
           .from("users")
           .select("onboarded")
           .eq("id", user.id)
           .single();
+        needsOnboarding = !profile?.onboarded;
+      }
 
-        if (!profile?.onboarded) {
-          const onboardUrl = new URL(`${origin}/auth/onboard`);
-          if (next !== "/app") onboardUrl.searchParams.set("next", next);
-          return NextResponse.redirect(onboardUrl.toString());
-        }
+      if (isNative) {
+        const params = new URLSearchParams({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        });
+        if (needsOnboarding) params.set("onboard", "1");
+        return NextResponse.redirect(`dividimos://auth/complete?${params}`);
+      }
+
+      if (needsOnboarding) {
+        const onboardUrl = new URL(`${origin}/auth/onboard`);
+        if (next !== "/app") onboardUrl.searchParams.set("next", next);
+        return NextResponse.redirect(onboardUrl.toString());
       }
       return NextResponse.redirect(`${origin}${next}`);
     }

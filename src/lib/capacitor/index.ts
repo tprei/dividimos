@@ -27,6 +27,7 @@ export async function initCapacitor(): Promise<void> {
     if (parsed.pathname === "/auth/complete" || parsed.host === "auth") {
       const accessToken = parsed.searchParams.get("access_token");
       const refreshToken = parsed.searchParams.get("refresh_token");
+      const needsOnboarding = parsed.searchParams.get("onboard") === "1";
       if (accessToken && refreshToken) {
         await Browser.close();
         const supabase = createClient();
@@ -34,7 +35,7 @@ export async function initCapacitor(): Promise<void> {
           access_token: accessToken,
           refresh_token: refreshToken,
         });
-        window.location.href = "/app";
+        window.location.href = needsOnboarding ? "/auth/onboard" : "/app";
       }
     }
   });
