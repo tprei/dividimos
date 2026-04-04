@@ -77,7 +77,11 @@ function AuthPageContent() {
         return;
       }
       if (native && data?.url) {
-        await openOAuthInSystemBrowser(data.url);
+        try {
+          await openOAuthInSystemBrowser(data.url);
+        } catch {
+          window.location.href = data.url;
+        }
       }
     } catch (err) {
       console.error("Sign-in failed:", err);
