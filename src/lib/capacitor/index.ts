@@ -9,6 +9,18 @@ export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+async function consumeAuthTokens(): Promise<void> {
+  const raw = localStorage.getItem("__cap_auth");
+  if (!raw) return;
+  localStorage.removeItem("__cap_auth");
+  const { access_token, refresh_token, onboard } = JSON.parse(raw);
+  if (access_token && refresh_token) {
+    const supabase = createClient();
+    await supabase.auth.setSession({ access_token, refresh_token });
+    window.location.href = onboard ? "/auth/onboard" : "/app";
+  }
+}
+
 export async function initCapacitor(): Promise<void> {
   if (!isNativePlatform()) return;
 
@@ -22,22 +34,12 @@ export async function initCapacitor(): Promise<void> {
     }
   });
 
-  App.addListener("appUrlOpen", async ({ url }) => {
-    const parsed = new URL(url);
-    if (parsed.pathname === "/auth/complete" || parsed.host === "auth") {
-      const accessToken = parsed.searchParams.get("access_token");
-      const refreshToken = parsed.searchParams.get("refresh_token");
-      const needsOnboarding = parsed.searchParams.get("onboard") === "1";
-      if (accessToken && refreshToken) {
-        await Browser.close();
-        const supabase = createClient();
-        await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-        window.location.href = needsOnboarding ? "/auth/onboard" : "/app";
-      }
-    }
+  Browser.addListener("browserFinished", () => {
+    consumeAuthTokens();
+  });
+
+  App.addListener("resume", () => {
+    consumeAuthTokens();
   });
 }
 
