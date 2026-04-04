@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   webDir: "out",
 
   server: {
-    url: devMode ? `http://${process.env.LAN_IP ?? "10.0.2.2"}:3000` : "https://dividimos.ai",
+    url: devMode ? `http://${process.env.LAN_IP ?? "10.0.2.2"}:3000/app` : "https://dividimos.ai/app",
     cleartext: devMode,
   },
 

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import { parseClaimQrCode } from "@/lib/claim-qr";
+import { isNativePlatform, openOAuthInSystemBrowser } from "@/lib/capacitor/auth";
 
 const IS_DEV_LOGIN = process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED === "true";
 
@@ -60,12 +61,19 @@ function AuthPageContent() {
   };
 
   const handleGoogleSignIn = async () => {
-    await supabase.auth.signInWithOAuth({
+    const native = isNativePlatform();
+    const callbackParams = new URLSearchParams({ next });
+    if (native) callbackParams.set("native", "1");
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        redirectTo: `${window.location.origin}/auth/callback?${callbackParams}`,
+        skipBrowserRedirect: native,
       },
     });
+    if (native && data?.url && !error) {
+      await openOAuthInSystemBrowser(data.url);
+    }
   };
 
   return (
