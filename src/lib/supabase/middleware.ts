@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeRedirect } from "@/lib/safe-redirect";
 
-const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/auth/callback-native", "/api/dev/login", "/claim", "/join"];
+const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/auth/callback-native", "/auth/native-complete", "/api/dev/login", "/claim", "/join"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(

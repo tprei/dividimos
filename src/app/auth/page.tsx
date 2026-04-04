@@ -61,12 +61,27 @@ function AuthPageContent() {
   };
 
   const handleGoogleSignIn = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
+    const native = isNativePlatform();
+    if (native) {
+      const { data } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/native-complete`,
+          skipBrowserRedirect: true,
+          queryParams: { prompt: "consent" },
+        },
+      });
+      if (data?.url) {
+        await openOAuthInSystemBrowser(data.url);
+      }
+    } else {
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        },
+      });
+    }
   };
 
   return (
