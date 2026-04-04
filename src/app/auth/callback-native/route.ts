@@ -30,9 +30,9 @@ export async function GET(request: Request) {
         refresh_token: session.refresh_token,
       });
       if (needsOnboarding) params.set("onboard", "1");
-      const deepLink = `dividimos://auth/complete?${params}`;
+      const intentUri = `intent://auth/complete?${params}#Intent;scheme=dividimos;package=ai.dividimos.app;end`;
       return new Response(
-        `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>window.location.href=${JSON.stringify(deepLink)};</script></body></html>`,
+        `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>window.location.href=${JSON.stringify(intentUri)};</script></body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     }
