@@ -35,7 +35,11 @@ export async function GET(request: Request) {
           refresh_token: session.refresh_token,
         });
         if (needsOnboarding) params.set("onboard", "1");
-        return NextResponse.redirect(`dividimos://auth/complete?${params}`);
+        const deepLink = `dividimos://auth/complete?${params}`;
+        return new Response(
+          `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>window.location.href=${JSON.stringify(deepLink)};</script></body></html>`,
+          { headers: { "Content-Type": "text/html" } },
+        );
       }
 
       if (needsOnboarding) {
