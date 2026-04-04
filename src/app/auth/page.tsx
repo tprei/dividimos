@@ -61,26 +61,18 @@ function AuthPageContent() {
   };
 
   const handleGoogleSignIn = async () => {
-    try {
-      const native = isNativePlatform();
-      const callbackParams = new URLSearchParams({ next });
-      if (native) callbackParams.set("native", "1");
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback?${callbackParams}`,
-          skipBrowserRedirect: native,
-        },
-      });
-      if (error) {
-        console.error("OAuth error:", error);
-        return;
-      }
-      if (native && data?.url) {
-        await openOAuthInSystemBrowser(data.url);
-      }
-    } catch (err) {
-      console.error("Sign-in failed:", err);
+    const native = isNativePlatform();
+    const callbackParams = new URLSearchParams({ next });
+    if (native) callbackParams.set("native", "1");
+    const { data } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?${callbackParams}`,
+        skipBrowserRedirect: native,
+      },
+    });
+    if (native && data?.url) {
+      await openOAuthInSystemBrowser(data.url);
     }
   };
 
