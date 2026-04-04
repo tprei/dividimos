@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Smartphone } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +17,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 function isMobileBrowser(): boolean {
   if (typeof window === "undefined") return false;
+  if (Capacitor.isNativePlatform()) return false;
   if (window.matchMedia("(display-mode: standalone)").matches) return false;
   return /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
 }
