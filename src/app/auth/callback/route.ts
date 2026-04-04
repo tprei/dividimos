@@ -6,46 +6,26 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = safeRedirect(searchParams.get("next"));
-  const isNative = searchParams.get("native") === "1";
 
   if (code) {
     const supabase = await createClient();
-    const { data: sessionData, error } =
-      await supabase.auth.exchangeCodeForSession(code);
-    if (!error && sessionData.session) {
-      const { session } = sessionData;
-
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error) {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
-      let needsOnboarding = false;
       if (user) {
         const { data: profile } = await supabase
           .from("users")
           .select("onboarded")
           .eq("id", user.id)
           .single();
-        needsOnboarding = !profile?.onboarded;
-      }
 
-      if (isNative) {
-        const params = new URLSearchParams({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        });
-        if (needsOnboarding) params.set("onboard", "1");
-        const deepLink = `dividimos://auth/complete?${params}`;
-        return new Response(
-          `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>window.location.href=${JSON.stringify(deepLink)};</script></body></html>`,
-          { headers: { "Content-Type": "text/html" } },
-        );
-      }
-
-      if (needsOnboarding) {
-        const onboardUrl = new URL(`${origin}/auth/onboard`);
-        if (next !== "/app") onboardUrl.searchParams.set("next", next);
-        return NextResponse.redirect(onboardUrl.toString());
+        if (!profile?.onboarded) {
+          const onboardUrl = new URL(`${origin}/auth/onboard`);
+          if (next !== "/app") onboardUrl.searchParams.set("next", next);
+          return NextResponse.redirect(onboardUrl.toString());
+        }
       }
       return NextResponse.redirect(`${origin}${next}`);
     }

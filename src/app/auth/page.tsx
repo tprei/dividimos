@@ -62,12 +62,11 @@ function AuthPageContent() {
 
   const handleGoogleSignIn = async () => {
     const native = isNativePlatform();
-    const callbackParams = new URLSearchParams({ next });
-    if (native) callbackParams.set("native", "1");
+    const callbackPath = native ? "/auth/callback-native" : "/auth/callback";
     const { data } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?${callbackParams}`,
+        redirectTo: `${window.location.origin}${callbackPath}?next=${encodeURIComponent(next)}`,
         skipBrowserRedirect: native,
       },
     });
