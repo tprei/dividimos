@@ -134,22 +134,31 @@ supabase/
 
 ### Liquidação e simplificação de dívidas
 
-O app computa um grafo direcionado de dívidas e o simplifica para minimizar o número de transferências Pix.
+O app computa um grafo direcionado de dívidas e o simplifica para minimizar o número de transferências Pix. O pipeline tem quatro etapas, aplicadas em sequência.
 
-#### 1. Arestas brutas (`computeRawEdges`)
+#### Etapa 1 &mdash; Arestas brutas
 
-A partir dos dados de consumo e pagamento, gera uma aresta para cada par (consumidor, pagador). Se a conta teve taxa de serviço percentual, distribui proporcionalmente ao consumo. Taxa fixa é dividida igualmente.
+`computeRawEdges` gera uma aresta direcionada para cada par (consumidor &rarr; pagador), proporcional ao quanto cada pessoa consumiu e ao quanto cada pagador cobriu. Se houve taxa de serviço percentual, distribui proporcionalmente ao consumo de cada pessoa. Taxa fixa é dividida igualmente.
 
-**Exemplo simples** &mdash; 3 pessoas, 1 pagador:
+#### Etapa 2 &mdash; Cancelamento de pares reversos
 
-```mermaid
-graph LR
-    A[Ana] -->|R$ 30| C[Carlos]
-    B[Bia] -->|R$ 20| C
-    A -->|R$ 15| B
-```
+Se A deve R$ 30 pra B e B deve R$ 10 pra A, as duas arestas se cancelam parcialmente. Resultado: A deve R$ 20 pra B. Uma transferência a menos.
 
-**Exemplo com 5 pessoas e 2 pagadores** &mdash; jantar de R$ 300, Carlos pagou R$ 200 e Bia pagou R$ 100:
+#### Etapa 3 &mdash; Colapso de cadeias
+
+Se A deve pra B e B deve pra C, o intermediário B é removido. A passa a dever direto pra C pelo valor da cadeia. O algoritmo percorre todas as cadeias transitivas até não haver mais intermediários.
+
+#### Etapa 4 &mdash; Minimização por saldo líquido
+
+`netAndMinimize` calcula o saldo final de cada participante (total recebido &minus; total devido) e pareia devedores com credores usando um algoritmo guloso ordenado por valor decrescente. Isso garante o menor número possível de transferências.
+
+---
+
+#### Exemplo completo
+
+Jantar de R$ 300. Carlos pagou R$ 200, Bia pagou R$ 100. Cinco pessoas consumiram valores diferentes.
+
+**Após etapa 1** &mdash; arestas brutas (7 arestas):
 
 ```mermaid
 graph LR
@@ -162,43 +171,47 @@ graph LR
     B -->|R$ 27| C
 ```
 
-7 arestas. Vários intermediários. Vamos simplificar.
+Bia é pagadora (recebe dos outros) mas também deve R$ 27 pro Carlos. Isso cria pares reversos.
 
-#### 2. Cancelamento de pares reversos
+**Após etapa 2** &mdash; cancelamento de pares reversos (6 arestas):
 
-Quando A deve pra B e B deve pra A, compensa automaticamente. Sobra apenas o saldo líquido.
-
-No exemplo acima, Bia recebe de Ana (R$ 20), Dan (R$ 25) e Eva (R$ 15), mas deve R$ 27 pra Carlos.
+Ana deve R$ 20 pra Bia, mas parte disso compensa o que Bia deve pro Carlos. O par Bia &harr; Carlos (R$ 27 vs R$ 0) é eliminado. Os R$ 27 que Bia devia são absorvidos pelo que ela recebe.
 
 ```mermaid
 graph LR
     A[Ana] -->|R$ 40| C[Carlos]
-    D[Dan] -->|R$ 50| C
-    E[Eva] -->|R$ 30| C
     A -->|R$ 20| B[Bia]
+    D[Dan] -->|R$ 50| C
     D -->|R$ 25| B
+    E[Eva] -->|R$ 30| C
     E -->|R$ 15| B
 ```
 
-Bia não deve mais nada a Carlos depois da compensação (R$ 27 absorvido pelo que ela recebe).
+**Após etapa 3** &mdash; colapso de cadeias (6 &rarr; 5 arestas):
 
-#### 3. Colapso de cadeias
+Ana &rarr; Bia &rarr; Carlos: Ana deve R$ 20 pra Bia, e Bia deve saldo pro Carlos. Parte do fluxo é redirecionado: Ana paga direto pro Carlos.
 
-Se A deve pra B e B deve pra C, remove o intermediário: A paga direto pra C.
-
-*Ana &rarr; Bia &rarr; Carlos vira Ana &rarr; Carlos*
-
-Bia vira passthrough &mdash; o que ela recebe dos outros cobre o que ela deve pro Carlos.
-
-#### 4. Minimização por saldo líquido (`netAndMinimize`)
-
-Calcula o saldo final de cada participante e pareia devedores com credores usando um algoritmo guloso ordenado por valor decrescente.
-
-```
-Saldos:  Ana = -60   Dan = -75   Eva = -45   Bia = +33   Carlos = +147
+```mermaid
+graph LR
+    A[Ana] -->|R$ 60| C[Carlos]
+    D[Dan] -->|R$ 50| C
+    D -->|R$ 25| B[Bia]
+    E[Eva] -->|R$ 30| C
+    E -->|R$ 15| B
 ```
 
-Resultado otimizado &mdash; de 7 arestas pra 4:
+**Após etapa 4** &mdash; minimização por saldo líquido (4 arestas):
+
+```
+Saldos finais:
+  Dan  = -75  (deve)
+  Ana  = -60  (deve)
+  Eva  = -45  (deve)
+  Bia  = +33  (recebe)
+  Carlos = +147  (recebe)
+```
+
+Pareamento guloso &mdash; maior devedor com maior credor:
 
 ```mermaid
 graph LR
@@ -208,9 +221,9 @@ graph LR
     E -->|R$ 33| B[Bia]
 ```
 
-O resultado final é o conjunto mínimo de transferências Pix necessárias. Cada passo é registrado em `SimplificationStep` para a visualização paginada no app.
+**Resultado: 7 arestas &rarr; 4 transferências Pix.** Cada passo é registrado em `SimplificationStep` para a visualização paginada no app, mostrando exatamente quais arestas foram removidas e adicionadas.
 
-Cada participante pode gerar um QR Code Pix para pagar sua parte direto.
+Cada participante gera um QR Code Pix para pagar sua parte direto.
 
 ### Segurança
 
