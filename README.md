@@ -13,7 +13,9 @@
 
 ---
 
-Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pessoas e liquide via QR Code Pix. Sem ficar calculando no grupo do WhatsApp.
+O Splitwise virou pago. E mesmo quando era grátis, nunca entendeu o Brasil: não gera Pix, não lê NFC-e, não sabe o que é couvert, e cobra em dólar. A gente queria algo que funcionasse do jeito que a galera realmente racha conta aqui &mdash; escaneia o cupom, distribui os itens, gera o QR Code Pix e pronto.
+
+Dividimos é open source, feito por quem racha conta pra quem racha conta. Sem assinatura, sem paywall, sem monetização em cima do seu Pix.
 
 ## Funcionalidades
 
