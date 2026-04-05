@@ -90,7 +90,7 @@ supabase/
 
 ### Liquidação e simplificação de dívidas
 
-O app modela as dívidas como um [grafo dirigido](https://pt.wikipedia.org/wiki/Grafo_dirigido) ponderado, onde cada aresta representa uma transferência pendente. O pipeline de simplificação reduz o número de arestas (transferências Pix) em quatro etapas.
+O app modela as dívidas como um [grafo dirigido](https://en.wikipedia.org/wiki/Directed_graph) ponderado, onde cada aresta representa uma transferência pendente. O pipeline de simplificação reduz o número de arestas (transferências Pix) em quatro etapas.
 
 #### Etapa 1 &mdash; Arestas brutas
 
@@ -100,13 +100,13 @@ O app modela as dívidas como um [grafo dirigido](https://pt.wikipedia.org/wiki/
 
 Procura pares de arestas antiparalelas (A &rarr; B e B &rarr; A) e as substitui por uma única aresta com o saldo líquido. Isso só se aplica quando duas pessoas devem uma à outra simultaneamente &mdash; por exemplo, quando ambas são pagadoras parciais e consumidoras ao mesmo tempo.
 
-#### Etapa 3 &mdash; [Redução transitiva](https://pt.wikipedia.org/wiki/Redu%C3%A7%C3%A3o_transitiva)
+#### Etapa 3 &mdash; [Redução transitiva](https://en.wikipedia.org/wiki/Transitive_reduction)
 
-Se existe uma cadeia A &rarr; B &rarr; C, o intermediário B é eliminado: A passa a dever direto pra C pelo valor mínimo da cadeia. Equivale a resolver o [problema de fluxo](https://pt.wikipedia.org/wiki/Fluxo_em_redes) no caminho, removendo nós de passagem. O algoritmo itera até não restar nenhuma cadeia colapsável.
+Se existe uma cadeia A &rarr; B &rarr; C, o intermediário B é eliminado: A passa a dever direto pra C pelo valor mínimo da cadeia. Equivale a resolver o [problema de fluxo](https://en.wikipedia.org/wiki/Network_flow_problem) no caminho, removendo nós de passagem. O algoritmo itera até não restar nenhuma cadeia colapsável.
 
 #### Etapa 4 &mdash; Minimização por saldo líquido
 
-`netAndMinimize` descarta o grafo intermediário e recalcula do zero: soma todas as entradas e saídas de cada participante para obter o saldo líquido. Depois, pareia devedores com credores usando um [algoritmo guloso](https://pt.wikipedia.org/wiki/Algoritmo_guloso) ordenado por valor decrescente &mdash; o maior devedor paga o maior credor, e assim por diante. Isso produz o número mínimo de transferências.
+`netAndMinimize` descarta o grafo intermediário e recalcula do zero: soma todas as entradas e saídas de cada participante para obter o saldo líquido. Depois, pareia devedores com credores usando um [algoritmo guloso](https://en.wikipedia.org/wiki/Greedy_algorithm) ordenado por valor decrescente &mdash; o maior devedor paga o maior credor, e assim por diante. Isso produz o número mínimo de transferências.
 
 ---
 
