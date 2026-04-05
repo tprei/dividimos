@@ -1,16 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
   <rect width="800" height="200" rx="16" fill="#FEA101"/>
-  <svg x="350" y="10" width="100" height="100" viewBox="0 0 512 512">
-    <g transform="translate(256,230) scale(8) translate(-18,-18)">
-      <circle cx="10" cy="18" r="3" fill="white"/>
-      <rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="white"/>
-      <circle cx="26" cy="18" r="3" fill="white"/>
-    </g>
-    <g transform="translate(256,0)">
-      <rect x="-60" y="410" width="120" height="26" rx="8" fill="#E08E00"/>
-      <rect x="-48" y="436" width="96" height="22" rx="8" fill="#C87E00"/>
-      <rect x="-36" y="458" width="72" height="22" rx="11" fill="#B07000"/>
-    </g>
-  </svg>
-  <text x="400" y="150" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="28" letter-spacing="-0.5" fill="white">dividimos<tspan opacity="0.8">.ai</tspan></text>
+  <g transform="translate(400,52)">
+    <circle cx="-15" cy="0" r="6" fill="white"/>
+    <rect x="-4" y="-16" width="9" height="32" rx="4.5" fill="white"/>
+    <circle cx="16" cy="0" r="6" fill="white"/>
+    <rect x="-12" y="36" width="24" height="5" rx="2" fill="#E08E00"/>
+    <rect x="-9" y="41" width="19" height="4.5" rx="2" fill="#C87E00"/>
+    <rect x="-7" y="45.5" width="14" height="4.5" rx="2.25" fill="#B07000"/>
+  </g>
+  <text x="400" y="150" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-weight="700" font-size="28" letter-spacing="-0.5" fill="white">dividimos<tspan opacity="0.8">.ai</tspan></text>
 </svg>
