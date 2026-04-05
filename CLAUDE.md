@@ -82,6 +82,23 @@ npm run test:all             # Run unit + integration tests
 supabase db push --linked    # Apply migrations to remote
 ```
 
+## CI
+
+### Android build (`.github/workflows/android.yml`)
+
+Triggers on push to `main`. Builds a signed release AAB using Capacitor's native Android project.
+
+**Required GitHub secrets**:
+- `ANDROID_KEYSTORE_BASE64` — Base64-encoded release keystore (`.jks`)
+- `KEYSTORE_STORE_PASSWORD` — Keystore password
+- `KEYSTORE_KEY_ALIAS` — Key alias name
+- `KEYSTORE_KEY_PASSWORD` — Key alias password
+- `GOOGLE_SERVICES_JSON` — *(optional)* Base64-encoded `google-services.json` for FCM/Google Sign-In
+
+**versionCode strategy**: Uses `github.run_number` (auto-incrementing). For Play Store releases, consider switching to tag-based versioning.
+
+**Build output**: Signed AAB uploaded as artifact (`app-release-<run_number>`), retained for 90 days.
+
 ## Testing
 
 Unit tests use Vitest with React Testing Library. Tests are colocated with source files using `.test.ts`/`.test.tsx` suffix.
