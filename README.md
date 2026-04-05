@@ -17,15 +17,54 @@ Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pe
 
 ## Funcionalidades
 
-- **Dois modos de conta** &mdash; Itemizada (nota de restaurante com itens por pessoa) ou valor único (Uber, Airbnb, etc.)
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│   📷 Escaneia    ──►   🧾 Distribui    ──►   💸 Liquida        │
+│   cupom / NFC-e       itens por pessoa       via Pix QR Code   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Entrada de dados
+
+- **Leitura de NFC-e** &mdash; Escaneia o QR da nota fiscal eletrônica e extrai itens, valores e estabelecimento automaticamente
+- **OCR de cupom** &mdash; Tira foto do cupom térmico e interpreta abreviações de PDV, formatação brasileira e itens agrupados
+- **Dois modos de conta** &mdash; Itemizada (restaurante com itens por pessoa) ou valor único (Uber, Airbnb, etc.)
+
+### Divisão
+
 - **Divisão flexível** &mdash; Igual, por porcentagem (com sliders visuais) ou valor fixo por pessoa
 - **Multi-pagador** &mdash; Registre quem pagou quanto quando mais de uma pessoa cobriu a conta
-- **Taxa de serviço** &mdash; Percentual ou valor fixo aplicado automaticamente
+- **Taxa de serviço** &mdash; Percentual ou valor fixo, distribuído proporcionalmente ao consumo
+
+### Liquidação
+
 - **QR Code Pix** &mdash; Geração de BR Code EMV com Copia e Cola para liquidação instantânea
-- **Simplificação de dívidas** &mdash; Minimiza transferências com visualização passo a passo
+- **Simplificação de dívidas** &mdash; Minimiza o número de transferências com visualização passo a passo
+- **Liquidação com confirmação** &mdash; Devedor registra pagamento, credor confirma. Saldo atualiza atomicamente
+
+### Social
+
+```
+┌──────────────┐     link / QR Code     ┌──────────────┐
+│              │ ─────────────────────►  │              │
+│  Criador do  │                         │  Convidado   │
+│    grupo     │  ◄─────────────────────  │              │
+│              │     aceita convite      │              │
+└──────────────┘                         └──────────────┘
+```
+
+- **Grupos com confirmação mútua** &mdash; Convide por @handle ou link de convite. O membro precisa aceitar
+- **Links de convite** &mdash; Gere um link ou QR Code pra compartilhar no WhatsApp, Telegram, etc. Deep link abre direto no app
+- **Claim links** &mdash; Adicione convidados sem conta no app. Eles recebem um link pra reivindicar sua parte e pagar via Pix
 - **Sync em tempo real** &mdash; Supabase Realtime mantém todos os participantes atualizados
-- **Grupos** &mdash; Crie grupos, convide por @handle, divida contas entre membros aceitos
-- **Seguro** &mdash; Chaves Pix com encryption at rest (AES-256-GCM), decriptadas apenas no servidor
+
+### Segurança
+
+- **Encryption at rest** &mdash; Chaves Pix criptografadas com AES-256-GCM, decriptadas apenas no servidor
+- **Row-Level Security** &mdash; Todas as tabelas do Supabase com RLS. Dados isolados por grupo/usuário
+- **Sem enumeração** &mdash; Descoberta de usuários apenas por @handle exato. Sem busca ou listagem
 
 ## Stack
 
@@ -217,13 +256,6 @@ graph LR
 **Resultado: 8 arestas &rarr; 4 transferências Pix.**
 
 Cada passo intermediário é registrado com as arestas removidas e adicionadas, alimentando a visualização paginada no app. Cada participante gera um QR Code Pix para pagar sua parte direto.
-
-### Segurança
-
-- Chaves Pix com **encryption at rest** (AES-256-GCM), decriptadas apenas no servidor
-- Row-Level Security em todas as tabelas do Supabase
-- Descoberta de usuários apenas por **@handle exato** &mdash; sem busca ou enumeração
-- Geração de QR exige co-participação autenticada na conta
 
 ## Licença
 
