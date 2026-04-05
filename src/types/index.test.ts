@@ -7,24 +7,17 @@ import type {
   Balance,
   Settlement,
   ExpenseWithDetails,
-  ExpenseParticipantSummary,
   DebtEdge,
-  GroupBalanceSummary,
   ExpenseStatus,
   ExpenseType,
   SettlementStatus,
   ActivateExpenseRequest,
   ActivateExpenseResult,
   ActivateExpenseBalanceUpdate,
-  RecordSettlementRequest,
-  RecordSettlementResult,
-  GroupInviteLink,
-  JoinGroupViaLinkResult,
   // Legacy aliases
   Bill,
   BillType,
   BillStatus,
-  BillPayer,
   BillItem,
 } from "./index";
 
@@ -177,17 +170,6 @@ describe("Expense types", () => {
     expect(detailed.shares[0].user.handle).toBe("bob");
   });
 
-  it("ExpenseParticipantSummary computes net correctly", () => {
-    const summary: ExpenseParticipantSummary = {
-      userId: "user-1",
-      user: { id: "user-1", handle: "alice", name: "Alice" },
-      shareAmountCents: 5000,
-      paidAmountCents: 10000,
-      netCents: 5000, // paid 100, owes 50 → is owed 50
-    };
-    expect(summary.netCents).toBe(summary.paidAmountCents - summary.shareAmountCents);
-  });
-
   it("DebtEdge represents a directed debt", () => {
     const edge: DebtEdge = {
       fromUserId: "user-1",
@@ -197,20 +179,6 @@ describe("Expense types", () => {
     expect(edge.amountCents).toBeGreaterThan(0);
   });
 
-  it("GroupBalanceSummary aggregates debts", () => {
-    const summary: GroupBalanceSummary = {
-      groupId: "group-1",
-      debts: [
-        { fromUserId: "user-1", toUserId: "user-2", amountCents: 3000 },
-        { fromUserId: "user-3", toUserId: "user-2", amountCents: 2000 },
-      ],
-      totalDebtCents: 5000,
-    };
-    expect(summary.debts).toHaveLength(2);
-    expect(summary.totalDebtCents).toBe(
-      summary.debts.reduce((sum, d) => sum + d.amountCents, 0)
-    );
-  });
 });
 
 describe("RPC request/result types", () => {
@@ -289,143 +257,6 @@ describe("RPC request/result types", () => {
     ).toBe(true);
   });
 
-  it("RecordSettlementRequest has all required fields", () => {
-    const req: RecordSettlementRequest = {
-      group_id: "group-1",
-      from_user_id: "user-debtor",
-      to_user_id: "user-creditor",
-      amount_cents: 5000,
-    };
-    expect(req.group_id).toBe("group-1");
-    expect(req.from_user_id).toBe("user-debtor");
-    expect(req.to_user_id).toBe("user-creditor");
-    expect(req.amount_cents).toBe(5000);
-    expect(req.amount_cents).toBeGreaterThan(0);
-  });
-
-  it("RecordSettlementResult contains settlement and updated balance", () => {
-    const result: RecordSettlementResult = {
-      settlement: {
-        id: "settlement-1",
-        groupId: "group-1",
-        fromUserId: "user-debtor",
-        toUserId: "user-creditor",
-        amountCents: 5000,
-        status: "pending",
-        createdAt: "2026-03-28T00:00:00Z",
-      },
-      updatedBalance: {
-        groupId: "group-1",
-        userA: "user-creditor",
-        userB: "user-debtor",
-        newAmountCents: -2000,
-      },
-    };
-    expect(result.settlement.status).toBe("pending");
-    expect(result.settlement.amountCents).toBe(5000);
-    expect(result.updatedBalance.newAmountCents).toBe(-2000);
-  });
-
-  it("RecordSettlementResult settlement can be confirmed", () => {
-    const result: RecordSettlementResult = {
-      settlement: {
-        id: "settlement-1",
-        groupId: "group-1",
-        fromUserId: "user-1",
-        toUserId: "user-2",
-        amountCents: 10000,
-        status: "confirmed",
-        createdAt: "2026-03-28T00:00:00Z",
-        confirmedAt: "2026-03-28T01:00:00Z",
-      },
-      updatedBalance: {
-        groupId: "group-1",
-        userA: "user-1",
-        userB: "user-2",
-        newAmountCents: 0,
-      },
-    };
-    expect(result.settlement.status).toBe("confirmed");
-    expect(result.settlement.confirmedAt).toBeDefined();
-    // Balance of 0 = fully settled
-    expect(result.updatedBalance.newAmountCents).toBe(0);
-  });
-});
-
-describe("Group invite link types", () => {
-  it("GroupInviteLink interface matches database schema shape", () => {
-    const link: GroupInviteLink = {
-      id: "link-1",
-      groupId: "group-1",
-      token: "abc123token",
-      createdBy: "user-1",
-      isActive: true,
-      maxUses: null,
-      useCount: 0,
-      expiresAt: null,
-      createdAt: "2026-04-01T00:00:00Z",
-    };
-    expect(link.id).toBe("link-1");
-    expect(link.groupId).toBe("group-1");
-    expect(link.token).toBe("abc123token");
-    expect(link.isActive).toBe(true);
-    expect(link.maxUses).toBeNull();
-    expect(link.useCount).toBe(0);
-    expect(link.expiresAt).toBeNull();
-  });
-
-  it("GroupInviteLink supports max_uses and expires_at", () => {
-    const link: GroupInviteLink = {
-      id: "link-2",
-      groupId: "group-1",
-      token: "xyz789token",
-      createdBy: "user-1",
-      isActive: true,
-      maxUses: 10,
-      useCount: 3,
-      expiresAt: "2026-05-01T00:00:00Z",
-      createdAt: "2026-04-01T00:00:00Z",
-    };
-    expect(link.maxUses).toBe(10);
-    expect(link.useCount).toBeLessThan(link.maxUses!);
-    expect(link.expiresAt).toBeDefined();
-  });
-
-  it("GroupInviteLink can be deactivated", () => {
-    const link: GroupInviteLink = {
-      id: "link-3",
-      groupId: "group-1",
-      token: "deactivated-token",
-      createdBy: "user-1",
-      isActive: false,
-      maxUses: null,
-      useCount: 5,
-      expiresAt: null,
-      createdAt: "2026-04-01T00:00:00Z",
-    };
-    expect(link.isActive).toBe(false);
-    expect(link.useCount).toBe(5);
-  });
-
-  it("JoinGroupViaLinkResult has expected shape", () => {
-    const result: JoinGroupViaLinkResult = {
-      groupId: "group-1",
-      groupName: "Apartamento",
-      alreadyMember: false,
-    };
-    expect(result.groupId).toBe("group-1");
-    expect(result.groupName).toBe("Apartamento");
-    expect(result.alreadyMember).toBe(false);
-  });
-
-  it("JoinGroupViaLinkResult indicates already_member", () => {
-    const result: JoinGroupViaLinkResult = {
-      groupId: "group-1",
-      groupName: "Apartamento",
-      alreadyMember: true,
-    };
-    expect(result.alreadyMember).toBe(true);
-  });
 });
 
 describe("Legacy type aliases", () => {
@@ -457,11 +288,6 @@ describe("Legacy type aliases", () => {
       updatedAt: "2026-03-28T00:00:00Z",
     };
     expect(bill.payers).toHaveLength(1);
-  });
-
-  it("BillPayer still works for gradual migration", () => {
-    const payer: BillPayer = { userId: "user-1", amountCents: 5000 };
-    expect(payer.amountCents).toBe(5000);
   });
 
   it("BillItem still works for gradual migration", () => {

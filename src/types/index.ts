@@ -63,30 +63,6 @@ export interface GroupWithMembers extends Group {
 }
 
 // ============================================================
-// Group invite link types
-// ============================================================
-
-/** A shareable invite link for a group. One active link per group at a time. */
-export interface GroupInviteLink {
-  id: string;
-  groupId: string;
-  token: string;
-  createdBy: string;
-  isActive: boolean;
-  maxUses: number | null;
-  useCount: number;
-  expiresAt: string | null;
-  createdAt: string;
-}
-
-/** Result returned by the join_group_via_link RPC function. */
-export interface JoinGroupViaLinkResult {
-  groupId: string;
-  groupName: string;
-  alreadyMember: boolean;
-}
-
-// ============================================================
 // Expense types (replace Bill)
 // ============================================================
 
@@ -224,42 +200,6 @@ export interface ActivateExpenseBalanceUpdate {
   deltaCents: number;
 }
 
-/** Result returned by the claim_guest_spot RPC function. */
-export interface ClaimGuestSpotResult {
-  guestId: string;
-  expenseId: string;
-  alreadyClaimed: boolean;
-}
-
-/** Request payload for the record_settlement RPC function. */
-export interface RecordSettlementRequest {
-  /** The group this settlement belongs to. */
-  group_id: string;
-  /** The user making the payment. */
-  from_user_id: string;
-  /** The user receiving the payment. */
-  to_user_id: string;
-  /** Amount in centavos. Must be positive. */
-  amount_cents: number;
-}
-
-/**
- * Result returned by the record_settlement RPC function.
- * The RPC creates a settlement record and atomically updates
- * the balances table.
- */
-export interface RecordSettlementResult {
-  /** The created settlement record. */
-  settlement: Settlement;
-  /** The updated balance between the two users after the settlement. */
-  updatedBalance: {
-    groupId: string;
-    userA: string;
-    userB: string;
-    newAmountCents: number;
-  };
-}
-
 // ============================================================
 // Composite types for UI consumption
 // ============================================================
@@ -272,29 +212,11 @@ export interface ExpenseWithDetails extends Expense {
   guests: (ExpenseGuest & { share?: ExpenseGuestShare })[];
 }
 
-/** Summary of what a participant owes/is owed for a single expense. */
-export interface ExpenseParticipantSummary {
-  userId: string;
-  user: UserProfile;
-  shareAmountCents: number;
-  paidAmountCents: number;
-  /** Positive = this user is owed money. Negative = this user owes money. */
-  netCents: number;
-}
-
 /** A directed debt edge between two users (for settlement display). */
 export interface DebtEdge {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
-}
-
-/** Group balance summary with all debts between members. */
-export interface GroupBalanceSummary {
-  groupId: string;
-  debts: DebtEdge[];
-  /** Total amount owed across all pairs. */
-  totalDebtCents: number;
 }
 
 export interface DebtSummary {
@@ -317,12 +239,6 @@ export type BillType = ExpenseType;
 /** @deprecated Use ExpenseStatus instead */
 export type BillStatus = ExpenseStatus | "partially_settled";
 
-/** @deprecated Use ExpensePayer instead */
-export interface BillPayer {
-  userId: string;
-  amountCents: number;
-}
-
 /** @deprecated Use Expense instead */
 export interface Bill {
   id: string;
@@ -335,7 +251,7 @@ export interface Bill {
   fixedFees: number;
   totalAmount: number;
   totalAmountInput: number;
-  payers: BillPayer[];
+  payers: { userId: string; amountCents: number }[];
   groupId?: string;
   createdAt: string;
   updatedAt: string;
@@ -374,12 +290,6 @@ export interface ItemSplit {
 export type DebtStatus = "pending" | "partially_paid" | "settled";
 
 /** @deprecated */
-export type LedgerEntryType = "debt" | "payment";
-
-/** @deprecated */
-export type BillParticipantStatus = "invited" | "accepted" | "declined";
-
-/** @deprecated */
 export interface GroupSettlement {
   id: string;
   groupId: string;
@@ -393,21 +303,10 @@ export interface GroupSettlement {
 }
 
 /** @deprecated */
-export interface BillParticipant {
-  billId: string;
-  userId: string;
-  status: BillParticipantStatus;
-  invitedBy?: string;
-  respondedAt?: string;
-  user?: User;
-  joinedAt: string;
-}
-
-/** @deprecated */
 export interface LedgerEntry {
   id: string;
   billId?: string;
-  entryType: LedgerEntryType;
+  entryType: "debt" | "payment";
   groupId?: string;
   fromUserId: string;
   toUserId: string;
@@ -416,13 +315,4 @@ export interface LedgerEntry {
   status: DebtStatus;
   paidAt?: string;
   createdAt: string;
-}
-
-
-/** @deprecated Use ExpenseWithDetails instead */
-export interface BillWithDetails extends Bill {
-  participants: (BillParticipant & { user: User })[];
-  items: (BillItem & { splits: (ItemSplit & { user: User })[] })[];
-  ledger: LedgerEntry[];
-  billSplits: BillSplit[];
 }
