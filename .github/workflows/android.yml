@@ -64,4 +64,5 @@ jobs:
         with:
           name: app-release-${{ github.run_number }}
           path: android/app/build/outputs/bundle/release/app-release.aab
-          retention-days: 90
+          retention-days: 7
+          overwrite: true
