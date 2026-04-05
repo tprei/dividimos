@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://www.dividimos.ai">Web</a> &middot;
-  <a href="https://play.google.com/store/apps/details?id=ai.dividimos.app">Android</a>
+  <a href="https://play.google.com/store/apps/details?id=ai.dividimos.app">Android (WIP)</a>
 </p>
 
 ---
