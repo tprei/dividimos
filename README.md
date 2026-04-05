@@ -25,7 +25,7 @@ Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pe
 - **Simplificação de dívidas** &mdash; Minimiza transferências com visualização passo a passo
 - **Sync em tempo real** &mdash; Supabase Realtime mantém todos os participantes atualizados
 - **Grupos** &mdash; Crie grupos, convide por @handle, divida contas entre membros aceitos
-- **Seguro** &mdash; Chaves Pix criptografadas com AES-256-GCM em repouso, descriptografadas apenas no servidor
+- **Seguro** &mdash; Chaves Pix com encryption at rest (AES-256-GCM), decriptadas apenas no servidor
 
 ## Stack
 
@@ -220,7 +220,7 @@ Cada passo intermediário é registrado com as arestas removidas e adicionadas, 
 
 ### Segurança
 
-- Chaves Pix **criptografadas em repouso** (AES-256-GCM) e **descriptografadas apenas no servidor**
+- Chaves Pix com **encryption at rest** (AES-256-GCM), decriptadas apenas no servidor
 - Row-Level Security em todas as tabelas do Supabase
 - Descoberta de usuários apenas por **@handle exato** &mdash; sem busca ou enumeração
 - Geração de QR exige co-participação autenticada na conta
