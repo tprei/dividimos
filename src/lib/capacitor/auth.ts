@@ -3,7 +3,7 @@ import { SocialLogin } from "@capgo/capacitor-social-login";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const GOOGLE_WEB_CLIENT_ID =
-  "325313268568-ou1thfu0qssdi2bb1amk4f23p7qlln74.apps.googleusercontent.com";
+  "483045443985-tgldqmpqpg1467da1een2svcprvclmib.apps.googleusercontent.com";
 
 let initialized = false;
 
