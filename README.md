@@ -17,13 +17,9 @@ Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pe
 
 ## Funcionalidades
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                                                                 │
-│   📷 Escaneia    ──►   🧾 Distribui    ──►   💸 Liquida        │
-│   cupom / NFC-e       itens por pessoa       via Pix QR Code   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    A[Escaneia cupom / NFC-e] --> B[Distribui itens por pessoa] --> C[Liquida via Pix QR Code]
 ```
 
 ### Entrada de dados
@@ -46,13 +42,10 @@ Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pe
 
 ### Social
 
-```
-┌──────────────┐     link / QR Code     ┌──────────────┐
-│              │ ─────────────────────►  │              │
-│  Criador do  │                         │  Convidado   │
-│    grupo     │  ◄─────────────────────  │              │
-│              │     aceita convite      │              │
-└──────────────┘                         └──────────────┘
+```mermaid
+flowchart LR
+    A[Criador do grupo] -->|link / QR Code| B[Convidado]
+    B -->|aceita convite| A
 ```
 
 - **Grupos com confirmação mútua** &mdash; Convide por @handle ou link de convite. O membro precisa aceitar
