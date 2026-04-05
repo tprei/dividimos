@@ -40,50 +40,6 @@ Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pe
 | Mobile | Capacitor 8 (Android) |
 | Linguagem | TypeScript 5 |
 
-## Começando
-
-### Requisitos
-
-- Node.js 22+
-- Um projeto [Supabase](https://supabase.com) (região São Paulo recomendada)
-
-### Setup
-
-```bash
-git clone https://github.com/tprei/dividimos.git
-cd dividimos
-npm install
-```
-
-Crie `.env.local`:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-anon-key
-SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
-PIX_ENCRYPTION_KEY=<string hex de 64 caracteres>
-```
-
-Gere a chave de criptografia:
-
-```bash
-openssl rand -hex 32
-```
-
-Aplique as migrações:
-
-```bash
-supabase db push --linked
-```
-
-Inicie o servidor de desenvolvimento:
-
-```bash
-npm run dev
-```
-
-Acesse [http://localhost:3000](http://localhost:3000).
-
 ## Estrutura
 
 ```
@@ -134,94 +90,107 @@ supabase/
 
 ### Liquidação e simplificação de dívidas
 
-O app computa um grafo direcionado de dívidas e o simplifica para minimizar o número de transferências Pix. O pipeline tem quatro etapas, aplicadas em sequência.
+O app modela as dívidas como um [grafo dirigido](https://pt.wikipedia.org/wiki/Grafo_dirigido) ponderado, onde cada aresta representa uma transferência pendente. O pipeline de simplificação reduz o número de arestas (transferências Pix) em quatro etapas.
 
 #### Etapa 1 &mdash; Arestas brutas
 
-`computeRawEdges` gera uma aresta direcionada para cada par (consumidor &rarr; pagador), proporcional ao quanto cada pessoa consumiu e ao quanto cada pagador cobriu. Se houve taxa de serviço percentual, distribui proporcionalmente ao consumo de cada pessoa. Taxa fixa é dividida igualmente.
+`computeRawEdges` gera uma aresta para cada par (consumidor &rarr; pagador), proporcional ao consumo e à contribuição de cada pagador. Taxas de serviço percentuais são distribuídas proporcionalmente ao consumo individual; taxas fixas são divididas igualmente.
 
 #### Etapa 2 &mdash; Cancelamento de pares reversos
 
-Se A deve R$ 30 pra B e B deve R$ 10 pra A, as duas arestas se cancelam parcialmente. Resultado: A deve R$ 20 pra B. Uma transferência a menos.
+Procura pares de arestas antiparalelas (A &rarr; B e B &rarr; A) e as substitui por uma única aresta com o saldo líquido. Isso só se aplica quando duas pessoas devem uma à outra simultaneamente &mdash; por exemplo, quando ambas são pagadoras parciais e consumidoras ao mesmo tempo.
 
-#### Etapa 3 &mdash; Colapso de cadeias
+#### Etapa 3 &mdash; [Redução transitiva](https://pt.wikipedia.org/wiki/Redu%C3%A7%C3%A3o_transitiva)
 
-Se A deve pra B e B deve pra C, o intermediário B é removido. A passa a dever direto pra C pelo valor da cadeia. O algoritmo percorre todas as cadeias transitivas até não haver mais intermediários.
+Se existe uma cadeia A &rarr; B &rarr; C, o intermediário B é eliminado: A passa a dever direto pra C pelo valor mínimo da cadeia. Equivale a resolver o [problema de fluxo](https://pt.wikipedia.org/wiki/Fluxo_em_redes) no caminho, removendo nós de passagem. O algoritmo itera até não restar nenhuma cadeia colapsável.
 
 #### Etapa 4 &mdash; Minimização por saldo líquido
 
-`netAndMinimize` calcula o saldo final de cada participante (total recebido &minus; total devido) e pareia devedores com credores usando um algoritmo guloso ordenado por valor decrescente. Isso garante o menor número possível de transferências.
+`netAndMinimize` descarta o grafo intermediário e recalcula do zero: soma todas as entradas e saídas de cada participante para obter o saldo líquido. Depois, pareia devedores com credores usando um [algoritmo guloso](https://pt.wikipedia.org/wiki/Algoritmo_guloso) ordenado por valor decrescente &mdash; o maior devedor paga o maior credor, e assim por diante. Isso produz o número mínimo de transferências.
 
 ---
 
 #### Exemplo completo
 
-Jantar de R$ 300. Carlos pagou R$ 200, Bia pagou R$ 100. Cinco pessoas consumiram valores diferentes.
+Jantar de R$ 350. Carlos pagou R$ 200, Bia pagou R$ 150. Cinco pessoas consumiram:
 
-**Após etapa 1** &mdash; arestas brutas (7 arestas):
+| Pessoa | Consumo | Deve pra Carlos (57%) | Deve pra Bia (43%) |
+|--------|---------|----------------------|-------------------|
+| Ana | R$ 80 | R$ 46 | R$ 34 |
+| Dan | R$ 90 | R$ 51 | R$ 39 |
+| Eva | R$ 60 | R$ 34 | R$ 26 |
+| Bia | R$ 70 | R$ 40 | &mdash; |
+| Carlos | R$ 50 | &mdash; | R$ 21 |
 
-```mermaid
-graph LR
-    A[Ana] -->|R$ 40| C[Carlos]
-    A -->|R$ 20| B[Bia]
-    D[Dan] -->|R$ 50| C
-    D -->|R$ 25| B
-    E[Eva] -->|R$ 30| C
-    E -->|R$ 15| B
-    B -->|R$ 27| C
-```
-
-Bia é pagadora (recebe dos outros) mas também deve R$ 27 pro Carlos. Isso cria pares reversos.
-
-**Após etapa 2** &mdash; cancelamento de pares reversos (6 arestas):
-
-Ana deve R$ 20 pra Bia, mas parte disso compensa o que Bia deve pro Carlos. O par Bia &harr; Carlos (R$ 27 vs R$ 0) é eliminado. Os R$ 27 que Bia devia são absorvidos pelo que ela recebe.
+**Após etapa 1** &mdash; arestas brutas (8 arestas):
 
 ```mermaid
 graph LR
-    A[Ana] -->|R$ 40| C[Carlos]
-    A -->|R$ 20| B[Bia]
-    D[Dan] -->|R$ 50| C
-    D -->|R$ 25| B
-    E[Eva] -->|R$ 30| C
-    E -->|R$ 15| B
+    A[Ana] -->|R$ 46| C[Carlos]
+    A -->|R$ 34| B[Bia]
+    D[Dan] -->|R$ 51| C
+    D -->|R$ 39| B
+    E[Eva] -->|R$ 34| C
+    E -->|R$ 26| B
+    B -->|R$ 40| C
+    C -->|R$ 21| B
 ```
 
-**Após etapa 3** &mdash; colapso de cadeias (6 &rarr; 5 arestas):
+Carlos e Bia são pagadores mas também consumiram &mdash; Carlos deve R$ 21 pra Bia (por parte do que ela pagou) e Bia deve R$ 40 pro Carlos (por parte do que ele pagou). Esse é um par reverso legítimo.
 
-Ana &rarr; Bia &rarr; Carlos: Ana deve R$ 20 pra Bia, e Bia deve saldo pro Carlos. Parte do fluxo é redirecionado: Ana paga direto pro Carlos.
+**Após etapa 2** &mdash; cancelamento do par reverso B &harr; C (7 arestas):
+
+Bia deve R$ 40 pro Carlos, Carlos deve R$ 21 pra Bia. Saldo: Bia deve R$ 19 pro Carlos. Duas arestas viram uma.
 
 ```mermaid
 graph LR
-    A[Ana] -->|R$ 60| C[Carlos]
-    D[Dan] -->|R$ 50| C
-    D -->|R$ 25| B[Bia]
-    E[Eva] -->|R$ 30| C
-    E -->|R$ 15| B
+    A[Ana] -->|R$ 46| C[Carlos]
+    A -->|R$ 34| B[Bia]
+    D[Dan] -->|R$ 51| C
+    D -->|R$ 39| B
+    E[Eva] -->|R$ 34| C
+    E -->|R$ 26| B
+    B -->|R$ 19| C
 ```
+
+**Após etapa 3** &mdash; colapso de cadeias (7 &rarr; 5 arestas):
+
+Três cadeias passam pela Bia: Ana &rarr; Bia &rarr; Carlos, Dan &rarr; Bia &rarr; Carlos, Eva &rarr; Bia &rarr; Carlos. O fluxo de R$ 19 que Bia deve pro Carlos é absorvido pelo que ela recebe. Parte do pagamento de Ana, Dan e Eva é redirecionado direto pro Carlos.
+
+```mermaid
+graph LR
+    A[Ana] -->|R$ 52| C[Carlos]
+    A -->|R$ 28| B[Bia]
+    D[Dan] -->|R$ 58| C
+    D -->|R$ 32| B
+    E[Eva] -->|R$ 39| C
+    E -->|R$ 21| B
+```
+
+Bia agora é credora pura (só recebe), Carlos é credor puro (só recebe). Sem mais cadeias.
 
 **Após etapa 4** &mdash; minimização por saldo líquido (4 arestas):
 
 ```
 Saldos finais:
-  Dan  = -75  (deve)
-  Ana  = -60  (deve)
-  Eva  = -45  (deve)
-  Bia  = +33  (recebe)
-  Carlos = +147  (recebe)
+  Dan    = -90  (deve)
+  Ana    = -80  (deve)
+  Eva    = -60  (deve)
+  Bia    = +81  (recebe)
+  Carlos = +149 (recebe)
 ```
 
 Pareamento guloso &mdash; maior devedor com maior credor:
 
 ```mermaid
 graph LR
-    D[Dan] -->|R$ 75| C[Carlos]
-    A[Ana] -->|R$ 60| C
-    E[Eva] -->|R$ 12| C
-    E -->|R$ 33| B[Bia]
+    D[Dan] -->|R$ 90| C[Carlos]
+    A[Ana] -->|R$ 59| C
+    A -->|R$ 21| B[Bia]
+    E[Eva] -->|R$ 60| B
 ```
 
-**Resultado: 7 arestas &rarr; 4 transferências Pix.** Cada passo é registrado em `SimplificationStep` para a visualização paginada no app, mostrando exatamente quais arestas foram removidas e adicionadas.
+**Resultado: 8 arestas &rarr; 4 transferências Pix.** Cada passo intermediário é registrado com as arestas removidas e adicionadas, alimentando a visualização paginada no app.
 
 Cada participante gera um QR Code Pix para pagar sua parte direto.
 
@@ -231,30 +200,6 @@ Cada participante gera um QR Code Pix para pagar sua parte direto.
 - Row-Level Security em todas as tabelas do Supabase
 - Descoberta de usuários apenas por **@handle exato** &mdash; sem busca ou enumeração
 - Geração de QR exige co-participação autenticada na conta
-
-## Comandos
-
-```bash
-npm run dev              # Servidor de desenvolvimento
-npm run build            # Build de produção
-npm run lint             # ESLint
-npm run test             # Testes unitários
-npm run test:integration # Testes de integração
-```
-
-### Android
-
-```bash
-npx cap sync android                  # Sincronizar projeto Android
-npm run cap:assets                    # Gerar ícones e splash screens
-cd android && ./gradlew assembleDebug # Build debug APK
-```
-
-## Convenções
-
-- Todo dinheiro é **centavos inteiros** &mdash; nunca ponto flutuante
-- Todo texto visível ao usuário é **português (pt-BR)**
-- Supabase usa `gen_random_uuid()`, não `uuid_generate_v4()`
 
 ## Licença
 
