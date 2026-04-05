@@ -1,6 +1,13 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const devMode = process.env.CAPACITOR_DEV === "true";
+const isIosSimulator = process.env.CAPACITOR_IOS_SIMULATOR === "true";
+
+function getDevServerUrl(): string {
+  if (!devMode) return "https://www.dividimos.ai";
+  if (isIosSimulator) return "http://localhost:3000";
+  return `http://${process.env.LAN_IP ?? "10.0.2.2"}:3000`;
+}
 
 const config: CapacitorConfig = {
   appId: "ai.dividimos.app",
@@ -8,7 +15,7 @@ const config: CapacitorConfig = {
   webDir: "out",
 
   server: {
-    url: devMode ? `http://${process.env.LAN_IP ?? "10.0.2.2"}:3000` : "https://www.dividimos.ai",
+    url: getDevServerUrl(),
     cleartext: devMode,
     allowNavigation: ["www.dividimos.ai"],
   },
@@ -21,11 +28,19 @@ const config: CapacitorConfig = {
     },
   },
 
+  ios: {
+    backgroundColor: "#F9F9FB",
+    contentInset: "automatic",
+    preferredContentMode: "mobile",
+    scheme: "Dividimos",
+  },
+
   plugins: {
     SplashScreen: {
       launchAutoHide: true,
       backgroundColor: "#F9F9FB",
       androidSplashResourceName: "splash",
+      iosSpinnerStyle: "small",
       showSpinner: false,
       launchFadeOutDuration: 300,
     },
