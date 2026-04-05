@@ -1,0 +1,71 @@
+name: Android Build
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      - name: Create placeholder web assets
+        run: |
+          mkdir -p out
+          cat > out/index.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="pt-BR">
+          <head><meta charset="UTF-8"><title>Dividimos</title></head>
+          <body><p>Carregando...</p></body>
+          </html>
+          HTML
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Decode google-services.json
+        if: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
+        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > android/app/google-services.json
+
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Decode keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
+
+      - name: Set versionCode
+        run: sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+
+      - name: Build signed AAB
+        run: |
+          cd android && ./gradlew bundleRelease \
+            -Pandroid.injected.signing.store.file=$PWD/app/release.jks \
+            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_STORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.KEYSTORE_KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.KEYSTORE_KEY_PASSWORD }}"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ github.run_number }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90
