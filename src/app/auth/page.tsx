@@ -60,12 +60,21 @@ function AuthPageContent() {
   };
 
   const handleGoogleSignIn = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
+    const { isNativePlatform, nativeGoogleSignIn } = await import("@/lib/capacitor/auth");
+    if (isNativePlatform()) {
+      const session = await nativeGoogleSignIn(supabase);
+      if (session) {
+        router.push(next);
+        router.refresh();
+      }
+    } else {
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        },
+      });
+    }
   };
 
   return (

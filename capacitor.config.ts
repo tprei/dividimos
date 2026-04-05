@@ -10,13 +10,12 @@ const config: CapacitorConfig = {
   server: {
     url: devMode ? `http://${process.env.LAN_IP ?? "10.0.2.2"}:3000` : "https://www.dividimos.ai",
     cleartext: devMode,
-    allowNavigation: ["www.dividimos.ai", "*.google.com", "*.supabase.co"],
+    allowNavigation: ["www.dividimos.ai"],
   },
 
   android: {
     allowMixedContent: false,
     backgroundColor: "#F9F9FB",
-    overrideUserAgent: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
     buildOptions: {
       releaseType: "AAB",
     },
