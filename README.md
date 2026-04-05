@@ -132,14 +132,60 @@ supabase/
 6. Selecione quem pagou e quanto
 7. Revise e crie
 
-### Liquidacao
+### Liquidacao e simplificacao de dividas
 
-O app computa um ledger de quem deve pra quem. O algoritmo de simplificacao reduz o numero de transferencias:
+O app computa um grafo direcionado de dividas e o simplifica para minimizar o numero de transferencias Pix.
 
-1. Calcula arestas brutas a partir dos dados de consumo e pagamento
-2. Saldo liquido por participante
-3. Pareamento guloso de devedores com credores
-4. Colapso de cadeias e compensacao de pares reversos
+#### 1. Arestas brutas (`computeRawEdges`)
+
+A partir dos dados de consumo e pagamento, gera uma aresta para cada par (consumidor, pagador). Se a conta teve taxa de servico percentual, distribui proporcionalmente ao consumo. Taxa fixa e dividida igualmente.
+
+```mermaid
+graph LR
+    A[Ana] -->|R$ 30| C[Carlos]
+    B[Bia] -->|R$ 20| C
+    A -->|R$ 15| B
+```
+
+#### 2. Cancelamento de pares reversos
+
+Quando A deve pra B e B deve pra A, compensa automaticamente. Sobra apenas o saldo liquido.
+
+```mermaid
+graph LR
+    A[Ana] -->|R$ 30| C[Carlos]
+    B[Bia] -->|R$ 20| C
+    A -.->|"R$ 15 - R$ 0 = R$ 15"| B
+```
+
+#### 3. Colapso de cadeias
+
+Se A deve pra B e B deve pra C, remove o intermediario: A paga direto pra C.
+
+```mermaid
+graph LR
+    A[Ana] -->|R$ 30| C[Carlos]
+    B[Bia] -->|R$ 20| C
+```
+
+*A &rarr; B &rarr; C vira A &rarr; C*
+
+#### 4. Minimizacao por saldo liquido (`netAndMinimize`)
+
+Calcula o saldo final de cada participante e pareia devedores com credores usando um algoritmo guloso ordenado por valor decrescente.
+
+```
+Saldos:   Ana = -45   Bia = -20   Carlos = +65
+Resultado: Ana paga R$ 45 a Carlos, Bia paga R$ 20 a Carlos
+```
+
+```mermaid
+graph LR
+    A[Ana] -->|R$ 45| C[Carlos]
+    B[Bia] -->|R$ 20| C
+```
+
+O resultado final e o conjunto minimo de transferencias Pix necessarias. Cada passo e registrado em `SimplificationStep` para a visualizacao paginada no app.
 
 Cada participante pode gerar um QR Code Pix para pagar sua parte direto.
 
