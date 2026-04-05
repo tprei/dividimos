@@ -136,11 +136,20 @@ graph LR
     C -->|R$ 21| B
 ```
 
-Carlos e Bia são pagadores mas também consumiram &mdash; Carlos deve R$ 21 pra Bia (por parte do que ela pagou) e Bia deve R$ 40 pro Carlos (por parte do que ele pagou). Esse é um par reverso legítimo.
+Carlos e Bia são pagadores mas também consumiram:
+
+- Carlos deve R$ 21 pra Bia (pela parte que ela pagou)
+- Bia deve R$ 40 pro Carlos (pela parte que ele pagou)
+
+Esse é um par reverso legítimo: duas arestas em direções opostas entre os mesmos nós.
 
 **Após etapa 2** &mdash; cancelamento do par reverso B &harr; C (7 arestas):
 
-Bia deve R$ 40 pro Carlos, Carlos deve R$ 21 pra Bia. Saldo: Bia deve R$ 19 pro Carlos. Duas arestas viram uma.
+- Bia &rarr; Carlos = R$ 40
+- Carlos &rarr; Bia = R$ 21
+- Saldo líquido: Bia &rarr; Carlos = R$ 19
+
+Duas arestas viram uma:
 
 ```mermaid
 graph LR
@@ -153,9 +162,16 @@ graph LR
     B -->|R$ 19| C
 ```
 
-**Após etapa 3** &mdash; colapso de cadeias (7 &rarr; 5 arestas):
+**Após etapa 3** &mdash; colapso de cadeias (7 &rarr; 6 arestas):
 
-Três cadeias passam pela Bia: Ana &rarr; Bia &rarr; Carlos, Dan &rarr; Bia &rarr; Carlos, Eva &rarr; Bia &rarr; Carlos. O fluxo de R$ 19 que Bia deve pro Carlos é absorvido pelo que ela recebe. Parte do pagamento de Ana, Dan e Eva é redirecionado direto pro Carlos.
+Três cadeias transitivas passam pela Bia:
+
+- Ana &rarr; Bia &rarr; Carlos
+- Dan &rarr; Bia &rarr; Carlos
+- Eva &rarr; Bia &rarr; Carlos
+
+O fluxo de R$ 19 que Bia deve pro Carlos é absorvido pelo que ela recebe dos outros.
+Parte do pagamento de Ana, Dan e Eva é redirecionado direto pro Carlos, eliminando Bia como intermediária:
 
 ```mermaid
 graph LR
@@ -167,20 +183,28 @@ graph LR
     E -->|R$ 21| B
 ```
 
-Bia agora é credora pura (só recebe), Carlos é credor puro (só recebe). Sem mais cadeias.
+Bia agora é credora pura (só recebe).
+Carlos é credor puro (só recebe).
+Sem mais cadeias colapsáveis.
 
 **Após etapa 4** &mdash; minimização por saldo líquido (4 arestas):
 
-```
-Saldos finais:
-  Dan    = -90  (deve)
-  Ana    = -80  (deve)
-  Eva    = -60  (deve)
-  Bia    = +81  (recebe)
-  Carlos = +149 (recebe)
-```
+Saldos finais de cada participante:
+
+| Pessoa | Saldo |
+|--------|-------|
+| Dan | -90 (deve) |
+| Ana | -80 (deve) |
+| Eva | -60 (deve) |
+| Bia | +81 (recebe) |
+| Carlos | +149 (recebe) |
 
 Pareamento guloso &mdash; maior devedor com maior credor:
+
+1. Dan (-90) paga R$ 90 a Carlos (+149) &rarr; Carlos fica +59
+2. Ana (-80) paga R$ 59 a Carlos (+59) &rarr; Carlos zerado. Ana fica -21
+3. Ana (-21) paga R$ 21 a Bia (+81) &rarr; Ana zerada. Bia fica +60
+4. Eva (-60) paga R$ 60 a Bia (+60) &rarr; ambos zerados
 
 ```mermaid
 graph LR
@@ -190,9 +214,9 @@ graph LR
     E[Eva] -->|R$ 60| B
 ```
 
-**Resultado: 8 arestas &rarr; 4 transferências Pix.** Cada passo intermediário é registrado com as arestas removidas e adicionadas, alimentando a visualização paginada no app.
+**Resultado: 8 arestas &rarr; 4 transferências Pix.**
 
-Cada participante gera um QR Code Pix para pagar sua parte direto.
+Cada passo intermediário é registrado com as arestas removidas e adicionadas, alimentando a visualização paginada no app. Cada participante gera um QR Code Pix para pagar sua parte direto.
 
 ### Segurança
 
