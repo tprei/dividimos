@@ -29,7 +29,13 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="www.dividimos.ai" android:pathPrefix="/auth/native-complete" />
+                <data android:scheme="https" android:host="www.dividimos.ai" android:pathPrefix="/join/" />
+            </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.dividimos.ai" android:pathPrefix="/claim/" />
             </intent-filter>
         </activity>
 

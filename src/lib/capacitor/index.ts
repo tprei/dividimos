@@ -19,6 +19,11 @@ export async function initCapacitor(): Promise<void> {
       App.exitApp();
     }
   });
+
+  App.addListener("appUrlOpen", ({ url }) => {
+    const parsed = new URL(url);
+    window.location.href = parsed.pathname + parsed.search + parsed.hash;
+  });
 }
 
 export async function hideSplash(): Promise<void> {
