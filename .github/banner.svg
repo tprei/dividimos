@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
   <rect width="800" height="200" rx="16" fill="#FEA101"/>
   <g transform="translate(400,52)">
+    <circle cx="0" cy="4" r="30" fill="none" stroke="white" stroke-width="2.5" opacity="0.35"/>
     <circle cx="-15" cy="0" r="6" fill="white"/>
     <rect x="-4" y="-16" width="9" height="32" rx="4.5" fill="white"/>
     <circle cx="16" cy="0" r="6" fill="white"/>
