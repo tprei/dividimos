@@ -11,6 +11,11 @@
   <a href="https://play.google.com/store/apps/details?id=ai.dividimos.app">Android (WIP)</a>
 </p>
 
+<p align="center">
+  <img src="https://github.com/tprei/dividimos/actions/workflows/android.yml/badge.svg" alt="Android Build" />
+  <a href="https://vercel.com/tprei/dividimos"><img src="https://vercelbadge.vercel.app/api/tprei/dividimos" alt="Vercel" /></a>
+</p>
+
 ---
 
 O Splitwise virou pago. E mesmo quando era grátis, nunca entendeu o Brasil: não gera Pix, não lê NFC-e, não sabe o que é couvert, e cobra em dólar. A gente queria algo que funcionasse do jeito que a galera realmente racha conta aqui &mdash; escaneia o cupom, distribui os itens, gera o QR Code Pix e pronto.
