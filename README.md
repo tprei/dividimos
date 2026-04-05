@@ -1,39 +1,51 @@
-# Dividimos
+<p align="center">
+  <img src=".github/banner.svg" alt="dividimos.ai" width="600" />
+</p>
 
-Bill-splitting web app for the Brazilian market with instant Pix settlement.
+<p align="center">
+  Racha a conta com a galera e liquida via Pix em segundos.
+</p>
 
-Scan a receipt or enter a total, assign items to people, and settle via Pix QR codes — no bank app juggling required.
+<p align="center">
+  <a href="https://www.dividimos.ai">Web</a> &middot;
+  <a href="https://play.google.com/store/apps/details?id=ai.dividimos.app">Android</a>
+</p>
 
-## Features
+---
 
-- **Two bill modes** — Itemized (restaurant receipts with per-item assignment) or single amount (Uber, Airbnb, etc.)
-- **Flexible splits** — Equal, percentage-based (visual sliders), or fixed amounts per person
-- **Multi-payer support** — Track who paid what when the bill was covered by more than one person
-- **Service fees** — Configurable percentage or fixed fee applied automatically
-- **Pix QR codes** — EMV BR Code generation with Copia e Cola for instant settlement
-- **Debt simplification** — Minimizes transactions with step-by-step visualization
-- **Real-time sync** — Supabase Realtime keeps all participants updated instantly
-- **Groups** — Create groups, invite by @handle, split bills among accepted members
-- **Secure** — Pix keys encrypted with AES-256-GCM at rest, decrypted server-side only
+Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pessoas e liquide via QR Code Pix. Sem ficar calculando no grupo do WhatsApp.
 
-## Tech Stack
+## Funcionalidades
 
-| Layer | Technology |
-|-------|------------|
+- **Dois modos de conta** &mdash; Itemizada (nota de restaurante com itens por pessoa) ou valor unico (Uber, Airbnb, etc.)
+- **Divisao flexivel** &mdash; Igual, por porcentagem (com sliders visuais) ou valor fixo por pessoa
+- **Multi-pagador** &mdash; Registre quem pagou quanto quando mais de uma pessoa cobriu a conta
+- **Taxa de servico** &mdash; Percentual ou valor fixo aplicado automaticamente
+- **QR Code Pix** &mdash; Geracao de BR Code EMV com Copia e Cola para liquidacao instantanea
+- **Simplificacao de dividas** &mdash; Minimiza transferencias com visualizacao passo a passo
+- **Sync em tempo real** &mdash; Supabase Realtime mantem todos os participantes atualizados
+- **Grupos** &mdash; Crie grupos, convide por @handle, divida contas entre membros aceitos
+- **Seguro** &mdash; Chaves Pix criptografadas com AES-256-GCM em repouso, descriptografadas apenas no servidor
+
+## Stack
+
+| Camada | Tecnologia |
+|--------|------------|
 | Framework | Next.js 16 (App Router) |
 | UI | React 19, Tailwind CSS v4, shadcn/ui, Framer Motion |
-| State | Zustand (local-first, syncs to Supabase) |
+| Estado | Zustand |
 | Backend | Supabase (PostgreSQL + Auth + Realtime) |
-| Auth | Google OAuth, Phone OTP |
-| Deploy | Vercel (frontend), Supabase (database) |
-| Language | TypeScript 5 |
+| Auth | Google OAuth (web), Google Credential Manager (Android nativo) |
+| Deploy | Vercel (frontend), Supabase (banco de dados) |
+| Mobile | Capacitor 8 (Android) |
+| Linguagem | TypeScript 5 |
 
-## Getting Started
+## Comecando
 
-### Prerequisites
+### Requisitos
 
-- Node.js 18+
-- A [Supabase](https://supabase.com) project (São Paulo region recommended)
+- Node.js 22+
+- Um projeto [Supabase](https://supabase.com) (regiao Sao Paulo recomendada)
 
 ### Setup
 
@@ -43,131 +55,125 @@ cd dividimos
 npm install
 ```
 
-Create `.env.local`:
+Crie `.env.local`:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-PIX_ENCRYPTION_KEY=<64-char hex string>
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-anon-key
+SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
+PIX_ENCRYPTION_KEY=<string hex de 64 caracteres>
 ```
 
-Generate the encryption key:
+Gere a chave de criptografia:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Apply database migrations:
+Aplique as migracoes:
 
 ```bash
 supabase db push --linked
 ```
 
-Run the dev server:
+Inicie o servidor de desenvolvimento:
 
 ```bash
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000).
+Acesse [http://localhost:3000](http://localhost:3000).
 
-## Project Structure
+## Estrutura
 
 ```
 src/
-├── app/                    # Next.js App Router pages
+├── app/                    # Paginas (Next.js App Router)
 │   ├── page.tsx            # Landing page
-│   ├── demo/               # Public demo (no auth)
-│   ├── auth/               # Google OAuth + phone OTP + onboarding
-│   ├── app/                # Protected app shell
-│   │   ├── bill/new/       # Bill creation wizard
-│   │   ├── bill/[id]/      # Bill detail + settlement
-│   │   ├── bills/          # Bill list with search/filters
-│   │   ├── groups/         # Group management
-│   │   └── profile/        # User settings + Pix key
+│   ├── demo/               # Demo publica (sem auth)
+│   ├── auth/               # Google OAuth + onboarding
+│   ├── app/                # Shell autenticado
+│   │   ├── bill/new/       # Wizard de criacao de conta
+│   │   ├── bill/[id]/      # Detalhe + liquidacao
+│   │   ├── groups/         # Gestao de grupos
+│   │   └── profile/        # Configuracoes + chave Pix
 │   └── api/
-│       ├── pix/generate/   # Pix QR code generation (server-side)
-│       └── users/lookup/   # Exact @handle lookup
+│       ├── pix/generate/   # Geracao de QR Pix (server-side)
+│       └── users/lookup/   # Busca exata por @handle
 ├── components/
-│   ├── bill/               # Wizard steps + summary
-│   ├── settlement/         # QR modal, debt graph, simplification
-│   ├── shared/             # Reusable components (avatar, logo)
-│   └── ui/                 # shadcn/ui primitives
+│   ├── bill/               # Steps do wizard + resumo
+│   ├── settlement/         # Modal QR, grafo de dividas
+│   └── ui/                 # Primitivos shadcn/ui
 ├── stores/
-│   └── bill-store.ts       # Zustand store (all bill logic)
+│   └── bill-store.ts       # Zustand store
 ├── lib/
-│   ├── crypto.ts           # AES-256-GCM encryption (server-only)
+│   ├── crypto.ts           # AES-256-GCM (server-only)
 │   ├── pix.ts              # EMV BR Code + CRC16-CCITT
-│   ├── simplify.ts         # Debt simplification algorithm
-│   ├── currency.ts         # BRL formatting (integer centavos)
-│   └── supabase/           # Client configuration + sync
-├── hooks/                  # React hooks (auth, realtime, invites)
-└── types/                  # Domain + database types
+│   ├── simplify.ts         # Algoritmo de simplificacao de dividas
+│   ├── currency.ts         # Formatacao BRL (centavos inteiros)
+│   ├── capacitor/          # Bridge nativo (Android/iOS)
+│   └── supabase/           # Clientes + sync
+├── hooks/                  # React hooks
+└── types/                  # Tipos do dominio + banco
+android/                    # Projeto nativo Android (Capacitor)
 supabase/
-└── migrations/             # PostgreSQL schema + RLS policies
+└── migrations/             # Schema PostgreSQL + RLS
 ```
 
-## Routes
+## Como funciona
 
-| Path | Description |
-|------|-------------|
-| `/` | Landing page |
-| `/demo` | Interactive demo (no auth required) |
-| `/auth` | Sign in (Google OAuth or phone OTP) |
-| `/auth/onboard` | Set @handle and Pix key |
-| `/app` | Dashboard — balance, quick actions, recent bills |
-| `/app/bill/new` | Bill creation wizard |
-| `/app/bill/[id]` | Bill detail with settlement |
-| `/app/bills` | Searchable bill list |
-| `/app/groups` | Group list and management |
-| `/app/groups/[id]` | Group detail |
-| `/app/profile` | Profile and settings |
+### Criacao de conta
 
-## How It Works
+1. Escolha o tipo &mdash; itemizada ou valor unico
+2. Adicione titulo, estabelecimento, data
+3. Adicione participantes por @handle
+4. Entre os itens ou o valor total
+5. Distribua o consumo ou escolha um metodo de divisao
+6. Selecione quem pagou e quanto
+7. Revise e crie
 
-### Bill Creation
+### Liquidacao
 
-1. Choose bill type — itemized or single amount
-2. Add title, merchant, date
-3. Add participants by @handle
-4. Enter items (itemized) or total amount
-5. Assign consumption per item, or choose a split method
-6. Select who paid and how much
-7. Review and create
+O app computa um ledger de quem deve pra quem. O algoritmo de simplificacao reduz o numero de transferencias:
 
-### Settlement
+1. Calcula arestas brutas a partir dos dados de consumo e pagamento
+2. Saldo liquido por participante
+3. Pareamento guloso de devedores com credores
+4. Colapso de cadeias e compensacao de pares reversos
 
-The app computes a ledger of who owes whom. The simplification algorithm reduces the number of transactions:
+Cada participante pode gerar um QR Code Pix para pagar sua parte direto.
 
-1. Compute raw edges from consumption and payment data
-2. Net balances per participant
-3. Greedy pairing of debtors with creditors
-4. Chain collapse and reverse-pair netting
+### Seguranca
 
-Each participant can generate a Pix QR code to pay their share directly.
+- Chaves Pix **criptografadas em repouso** (AES-256-GCM) e **descriptografadas apenas no servidor**
+- Row-Level Security em todas as tabelas do Supabase
+- Descoberta de usuarios apenas por **@handle exato** &mdash; sem busca ou enumeracao
+- Geracao de QR exige co-participacao autenticada na conta
 
-### Security
-
-- Pix keys are **encrypted at rest** (AES-256-GCM) and **decrypted server-side only**
-- Row-Level Security on all Supabase tables
-- User discovery by **exact @handle only** — no search or enumeration
-- QR generation requires authenticated co-participation in the bill
-
-## Commands
+## Comandos
 
 ```bash
-npm run dev        # Dev server
-npm run build      # Production build (includes type-checking)
-npm run lint       # ESLint
+npm run dev              # Servidor de desenvolvimento
+npm run build            # Build de producao
+npm run lint             # ESLint
+npm run test             # Testes unitarios
+npm run test:integration # Testes de integracao
 ```
 
-## Dev Tools
+### Android
 
-In development mode, a red bug icon appears in the bottom-right corner with quick-fill buttons to populate test data (participants, items, splits, multi-payer scenarios) without manual entry.
+```bash
+npx cap sync android                  # Sincronizar projeto Android
+npm run cap:assets                    # Gerar icones e splash screens
+cd android && ./gradlew assembleDebug # Build debug APK
+```
 
-## Key Conventions
+## Convencoes
 
-- All money is **integer centavos** — never floating point
-- All user-facing text is **Portuguese (pt-BR)**
-- Supabase uses `gen_random_uuid()`, not `uuid_generate_v4()`
+- Todo dinheiro e **centavos inteiros** &mdash; nunca ponto flutuante
+- Todo texto visivel ao usuario e **portugues (pt-BR)**
+- Supabase usa `gen_random_uuid()`, nao `uuid_generate_v4()`
+
+## Licenca
+
+Privado. Todos os direitos reservados.

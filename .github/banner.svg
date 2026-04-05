@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+  <rect width="800" height="200" rx="16" fill="#FEA101"/>
+  <g transform="translate(310,36) scale(3.2) translate(-18,-18)">
+    <circle cx="10" cy="18" r="3" fill="white"/>
+    <rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="white"/>
+    <circle cx="26" cy="18" r="3" fill="white"/>
+  </g>
+  <g transform="translate(400,20)">
+    <rect x="-30" y="110" width="60" height="12" rx="4" fill="#E08E00"/>
+    <rect x="-24" y="122" width="48" height="10" rx="4" fill="#C87E00"/>
+    <rect x="-18" y="132" width="36" height="10" rx="5" fill="#B07000"/>
+  </g>
+  <text x="400" y="185" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="28" letter-spacing="-0.5" fill="white">dividimos<tspan opacity="0.8">.ai</tspan></text>
+</svg>
