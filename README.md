@@ -17,13 +17,13 @@ Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pe
 
 ## Funcionalidades
 
-- **Dois modos de conta** &mdash; Itemizada (nota de restaurante com itens por pessoa) ou valor unico (Uber, Airbnb, etc.)
-- **Divisao flexivel** &mdash; Igual, por porcentagem (com sliders visuais) ou valor fixo por pessoa
+- **Dois modos de conta** &mdash; Itemizada (nota de restaurante com itens por pessoa) ou valor único (Uber, Airbnb, etc.)
+- **Divisão flexível** &mdash; Igual, por porcentagem (com sliders visuais) ou valor fixo por pessoa
 - **Multi-pagador** &mdash; Registre quem pagou quanto quando mais de uma pessoa cobriu a conta
-- **Taxa de servico** &mdash; Percentual ou valor fixo aplicado automaticamente
-- **QR Code Pix** &mdash; Geracao de BR Code EMV com Copia e Cola para liquidacao instantanea
-- **Simplificacao de dividas** &mdash; Minimiza transferencias com visualizacao passo a passo
-- **Sync em tempo real** &mdash; Supabase Realtime mantem todos os participantes atualizados
+- **Taxa de serviço** &mdash; Percentual ou valor fixo aplicado automaticamente
+- **QR Code Pix** &mdash; Geração de BR Code EMV com Copia e Cola para liquidação instantânea
+- **Simplificação de dívidas** &mdash; Minimiza transferências com visualização passo a passo
+- **Sync em tempo real** &mdash; Supabase Realtime mantém todos os participantes atualizados
 - **Grupos** &mdash; Crie grupos, convide por @handle, divida contas entre membros aceitos
 - **Seguro** &mdash; Chaves Pix criptografadas com AES-256-GCM em repouso, descriptografadas apenas no servidor
 
@@ -40,12 +40,12 @@ Escaneie uma nota fiscal ou digite o valor total, distribua os itens entre as pe
 | Mobile | Capacitor 8 (Android) |
 | Linguagem | TypeScript 5 |
 
-## Comecando
+## Começando
 
 ### Requisitos
 
 - Node.js 22+
-- Um projeto [Supabase](https://supabase.com) (regiao Sao Paulo recomendada)
+- Um projeto [Supabase](https://supabase.com) (região São Paulo recomendada)
 
 ### Setup
 
@@ -70,7 +70,7 @@ Gere a chave de criptografia:
 openssl rand -hex 32
 ```
 
-Aplique as migracoes:
+Aplique as migrações:
 
 ```bash
 supabase db push --linked
@@ -88,33 +88,33 @@ Acesse [http://localhost:3000](http://localhost:3000).
 
 ```
 src/
-├── app/                    # Paginas (Next.js App Router)
+├── app/                    # Páginas (Next.js App Router)
 │   ├── page.tsx            # Landing page
-│   ├── demo/               # Demo publica (sem auth)
+│   ├── demo/               # Demo pública (sem auth)
 │   ├── auth/               # Google OAuth + onboarding
 │   ├── app/                # Shell autenticado
-│   │   ├── bill/new/       # Wizard de criacao de conta
-│   │   ├── bill/[id]/      # Detalhe + liquidacao
-│   │   ├── groups/         # Gestao de grupos
-│   │   └── profile/        # Configuracoes + chave Pix
+│   │   ├── bill/new/       # Wizard de criação de conta
+│   │   ├── bill/[id]/      # Detalhe + liquidação
+│   │   ├── groups/         # Gestão de grupos
+│   │   └── profile/        # Configurações + chave Pix
 │   └── api/
-│       ├── pix/generate/   # Geracao de QR Pix (server-side)
+│       ├── pix/generate/   # Geração de QR Pix (server-side)
 │       └── users/lookup/   # Busca exata por @handle
 ├── components/
 │   ├── bill/               # Steps do wizard + resumo
-│   ├── settlement/         # Modal QR, grafo de dividas
+│   ├── settlement/         # Modal QR, grafo de dívidas
 │   └── ui/                 # Primitivos shadcn/ui
 ├── stores/
 │   └── bill-store.ts       # Zustand store
 ├── lib/
 │   ├── crypto.ts           # AES-256-GCM (server-only)
 │   ├── pix.ts              # EMV BR Code + CRC16-CCITT
-│   ├── simplify.ts         # Algoritmo de simplificacao de dividas
-│   ├── currency.ts         # Formatacao BRL (centavos inteiros)
+│   ├── simplify.ts         # Algoritmo de simplificação de dívidas
+│   ├── currency.ts         # Formatação BRL (centavos inteiros)
 │   ├── capacitor/          # Bridge nativo (Android/iOS)
 │   └── supabase/           # Clientes + sync
 ├── hooks/                  # React hooks
-└── types/                  # Tipos do dominio + banco
+└── types/                  # Tipos do domínio + banco
 android/                    # Projeto nativo Android (Capacitor)
 supabase/
 └── migrations/             # Schema PostgreSQL + RLS
@@ -122,23 +122,25 @@ supabase/
 
 ## Como funciona
 
-### Criacao de conta
+### Criação de conta
 
-1. Escolha o tipo &mdash; itemizada ou valor unico
-2. Adicione titulo, estabelecimento, data
+1. Escolha o tipo &mdash; itemizada ou valor único
+2. Adicione título, estabelecimento, data
 3. Adicione participantes por @handle
 4. Entre os itens ou o valor total
-5. Distribua o consumo ou escolha um metodo de divisao
+5. Distribua o consumo ou escolha um método de divisão
 6. Selecione quem pagou e quanto
 7. Revise e crie
 
-### Liquidacao e simplificacao de dividas
+### Liquidação e simplificação de dívidas
 
-O app computa um grafo direcionado de dividas e o simplifica para minimizar o numero de transferencias Pix.
+O app computa um grafo direcionado de dívidas e o simplifica para minimizar o número de transferências Pix.
 
 #### 1. Arestas brutas (`computeRawEdges`)
 
-A partir dos dados de consumo e pagamento, gera uma aresta para cada par (consumidor, pagador). Se a conta teve taxa de servico percentual, distribui proporcionalmente ao consumo. Taxa fixa e dividida igualmente.
+A partir dos dados de consumo e pagamento, gera uma aresta para cada par (consumidor, pagador). Se a conta teve taxa de serviço percentual, distribui proporcionalmente ao consumo. Taxa fixa é dividida igualmente.
+
+**Exemplo simples** &mdash; 3 pessoas, 1 pagador:
 
 ```mermaid
 graph LR
@@ -147,79 +149,100 @@ graph LR
     A -->|R$ 15| B
 ```
 
-#### 2. Cancelamento de pares reversos
-
-Quando A deve pra B e B deve pra A, compensa automaticamente. Sobra apenas o saldo liquido.
+**Exemplo com 5 pessoas e 2 pagadores** &mdash; jantar de R$ 300, Carlos pagou R$ 200 e Bia pagou R$ 100:
 
 ```mermaid
 graph LR
-    A[Ana] -->|R$ 30| C[Carlos]
-    B[Bia] -->|R$ 20| C
-    A -.->|"R$ 15 - R$ 0 = R$ 15"| B
+    A[Ana] -->|R$ 40| C[Carlos]
+    A -->|R$ 20| B[Bia]
+    D[Dan] -->|R$ 50| C
+    D -->|R$ 25| B
+    E[Eva] -->|R$ 30| C
+    E -->|R$ 15| B
+    B -->|R$ 27| C
 ```
+
+7 arestas. Vários intermediários. Vamos simplificar.
+
+#### 2. Cancelamento de pares reversos
+
+Quando A deve pra B e B deve pra A, compensa automaticamente. Sobra apenas o saldo líquido.
+
+No exemplo acima, Bia recebe de Ana (R$ 20), Dan (R$ 25) e Eva (R$ 15), mas deve R$ 27 pra Carlos.
+
+```mermaid
+graph LR
+    A[Ana] -->|R$ 40| C[Carlos]
+    D[Dan] -->|R$ 50| C
+    E[Eva] -->|R$ 30| C
+    A -->|R$ 20| B[Bia]
+    D -->|R$ 25| B
+    E -->|R$ 15| B
+```
+
+Bia não deve mais nada a Carlos depois da compensação (R$ 27 absorvido pelo que ela recebe).
 
 #### 3. Colapso de cadeias
 
-Se A deve pra B e B deve pra C, remove o intermediario: A paga direto pra C.
+Se A deve pra B e B deve pra C, remove o intermediário: A paga direto pra C.
 
-```mermaid
-graph LR
-    A[Ana] -->|R$ 30| C[Carlos]
-    B[Bia] -->|R$ 20| C
-```
+*Ana &rarr; Bia &rarr; Carlos vira Ana &rarr; Carlos*
 
-*A &rarr; B &rarr; C vira A &rarr; C*
+Bia vira passthrough &mdash; o que ela recebe dos outros cobre o que ela deve pro Carlos.
 
-#### 4. Minimizacao por saldo liquido (`netAndMinimize`)
+#### 4. Minimização por saldo líquido (`netAndMinimize`)
 
 Calcula o saldo final de cada participante e pareia devedores com credores usando um algoritmo guloso ordenado por valor decrescente.
 
 ```
-Saldos:   Ana = -45   Bia = -20   Carlos = +65
-Resultado: Ana paga R$ 45 a Carlos, Bia paga R$ 20 a Carlos
+Saldos:  Ana = -60   Dan = -75   Eva = -45   Bia = +33   Carlos = +147
 ```
+
+Resultado otimizado &mdash; de 7 arestas pra 4:
 
 ```mermaid
 graph LR
-    A[Ana] -->|R$ 45| C[Carlos]
-    B[Bia] -->|R$ 20| C
+    D[Dan] -->|R$ 75| C[Carlos]
+    A[Ana] -->|R$ 60| C
+    E[Eva] -->|R$ 12| C
+    E -->|R$ 33| B[Bia]
 ```
 
-O resultado final e o conjunto minimo de transferencias Pix necessarias. Cada passo e registrado em `SimplificationStep` para a visualizacao paginada no app.
+O resultado final é o conjunto mínimo de transferências Pix necessárias. Cada passo é registrado em `SimplificationStep` para a visualização paginada no app.
 
 Cada participante pode gerar um QR Code Pix para pagar sua parte direto.
 
-### Seguranca
+### Segurança
 
 - Chaves Pix **criptografadas em repouso** (AES-256-GCM) e **descriptografadas apenas no servidor**
 - Row-Level Security em todas as tabelas do Supabase
-- Descoberta de usuarios apenas por **@handle exato** &mdash; sem busca ou enumeracao
-- Geracao de QR exige co-participacao autenticada na conta
+- Descoberta de usuários apenas por **@handle exato** &mdash; sem busca ou enumeração
+- Geração de QR exige co-participação autenticada na conta
 
 ## Comandos
 
 ```bash
 npm run dev              # Servidor de desenvolvimento
-npm run build            # Build de producao
+npm run build            # Build de produção
 npm run lint             # ESLint
-npm run test             # Testes unitarios
-npm run test:integration # Testes de integracao
+npm run test             # Testes unitários
+npm run test:integration # Testes de integração
 ```
 
 ### Android
 
 ```bash
 npx cap sync android                  # Sincronizar projeto Android
-npm run cap:assets                    # Gerar icones e splash screens
+npm run cap:assets                    # Gerar ícones e splash screens
 cd android && ./gradlew assembleDebug # Build debug APK
 ```
 
-## Convencoes
+## Convenções
 
-- Todo dinheiro e **centavos inteiros** &mdash; nunca ponto flutuante
-- Todo texto visivel ao usuario e **portugues (pt-BR)**
-- Supabase usa `gen_random_uuid()`, nao `uuid_generate_v4()`
+- Todo dinheiro é **centavos inteiros** &mdash; nunca ponto flutuante
+- Todo texto visível ao usuário é **português (pt-BR)**
+- Supabase usa `gen_random_uuid()`, não `uuid_generate_v4()`
 
-## Licenca
+## Licença
 
 Privado. Todos os direitos reservados.
