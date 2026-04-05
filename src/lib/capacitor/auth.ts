@@ -25,7 +25,7 @@ export async function nativeGoogleSignIn(
   await ensureInitialized();
   const result = await SocialLogin.login({
     provider: "google",
-    options: { scopes: ["email", "profile"] },
+    options: {},
   });
   const loginResult = result.result as { idToken?: string } | undefined;
   const idToken = loginResult?.idToken;
