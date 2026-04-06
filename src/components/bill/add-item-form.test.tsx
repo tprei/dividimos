@@ -1,7 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AddItemForm } from "./add-item-form";
+import { haptics } from "@/hooks/use-haptics";
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("AddItemForm", () => {
   it("renders form fields", () => {
@@ -49,5 +64,25 @@ describe("AddItemForm", () => {
     fireEvent.submit(form);
 
     expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  describe("haptics", () => {
+    it("triggers haptics.selectionChanged on increment", async () => {
+      const user = userEvent.setup();
+      render(<AddItemForm onAdd={vi.fn()} onCancel={vi.fn()} />);
+
+      await user.click(screen.getByLabelText("Aumentar quantidade"));
+      expect(haptics.selectionChanged).toHaveBeenCalledOnce();
+    });
+
+    it("triggers haptics.selectionChanged on decrement when above min", async () => {
+      const user = userEvent.setup();
+      render(<AddItemForm onAdd={vi.fn()} onCancel={vi.fn()} />);
+
+      await user.click(screen.getByLabelText("Aumentar quantidade"));
+      vi.clearAllMocks();
+      await user.click(screen.getByLabelText("Diminuir quantidade"));
+      expect(haptics.selectionChanged).toHaveBeenCalledOnce();
+    });
   });
 });

@@ -1,7 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BillTypeSelector } from "./bill-type-selector";
+import { haptics } from "@/hooks/use-haptics";
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("BillTypeSelector", () => {
   it("renders both bill type options", () => {
@@ -89,6 +104,26 @@ describe("BillTypeSelector", () => {
       const btn = screen.getByText("Escanear nota").closest("button");
       await user.click(btn!);
       expect(onSelect).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("haptics", () => {
+    it("triggers haptics.tap on type selection", async () => {
+      const user = userEvent.setup();
+      render(<BillTypeSelector onSelect={vi.fn()} />);
+
+      const btn = screen.getByText("Valor único").closest("button")!;
+      await user.click(btn);
+      expect(haptics.tap).toHaveBeenCalledOnce();
+    });
+
+    it("triggers haptics.tap on scan receipt click", async () => {
+      const user = userEvent.setup();
+      render(<BillTypeSelector onSelect={vi.fn()} onScanReceipt={vi.fn()} />);
+
+      const btn = screen.getByText("Escanear nota").closest("button")!;
+      await user.click(btn);
+      expect(haptics.tap).toHaveBeenCalledOnce();
     });
   });
 });

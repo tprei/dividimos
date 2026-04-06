@@ -6,6 +6,7 @@ import { useCallback, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { haptics } from "@/hooks/use-haptics";
 import { decimalToCents, sanitizeDecimalInput } from "@/lib/currency";
 
 interface AddItemFormProps {
@@ -24,10 +25,15 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
   const [price, setPrice] = useState("");
 
   const decrement = useCallback(() => {
-    setQuantity((q) => Math.max(1, q - 1));
+    setQuantity((q) => {
+      if (q <= 1) return q;
+      haptics.selectionChanged();
+      return q - 1;
+    });
   }, []);
 
   const increment = useCallback(() => {
+    haptics.selectionChanged();
     setQuantity((q) => q + 1);
   }, []);
 
