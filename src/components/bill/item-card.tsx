@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Trash2, Users, UsersRound } from "lucide-react";
 import { formatBRL } from "@/lib/currency";
+import { haptics } from "@/hooks/use-haptics";
 import type { UserProfile } from "@/types";
 
 /** Fields the card actually reads from an item — compatible with both BillItem and ExpenseItem. */
@@ -59,9 +60,7 @@ export function ItemCard({
   const unassigned = item.totalPriceCents - totalAssigned;
 
   const handleToggle = (userId: string, isAssigned: boolean) => {
-    if (typeof navigator !== "undefined" && navigator.vibrate) {
-      navigator.vibrate(10);
-    }
+    haptics.tap();
     if (isAssigned) {
       onUnassign(item.id, userId);
     } else {
