@@ -33,7 +33,9 @@ export default function PrivacyPage() {
             <li>
               <strong className="text-foreground">Handle e chave Pix:</strong> escolhidos por você
               durante o cadastro. A chave Pix é criptografada (AES-256-GCM) antes do
-              armazenamento e nunca exposta a outros usuários.
+              armazenamento. Ela só é compartilhada com membros do grupo mediante seu
+              consentimento (ao aceitar um convite), e você é notificado antes de qualquer
+              exposição.
             </li>
             <li>
               <strong className="text-foreground">Despesas e grupos:</strong> títulos, valores,
