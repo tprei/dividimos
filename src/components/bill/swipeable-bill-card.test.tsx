@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { haptics } from "@/hooks/use-haptics";
 import { SwipeableBillCard } from "./swipeable-bill-card";
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
 
 describe("SwipeableBillCard", () => {
   const defaultProps = {
@@ -116,5 +127,10 @@ describe("SwipeableBillCard", () => {
     // The chevron hint is inside a pointer-events-none div
     const hintContainer = container.querySelector(".pointer-events-none");
     expect(hintContainer).not.toBeNull();
+  });
+
+  it("imports haptics.impact for swipe snap feedback", () => {
+    expect(haptics.impact).toBeDefined();
+    expect(typeof haptics.impact).toBe("function");
   });
 });

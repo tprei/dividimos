@@ -8,6 +8,7 @@ import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { formatBRL, centsToDecimal, sanitizeDecimalInput, decimalToCents } from "@/lib/currency";
 import { generatePixCopiaECola } from "@/lib/pix";
+import { haptics } from "@/hooks/use-haptics";
 
 interface PixQrModalProps {
   open: boolean;
@@ -115,10 +116,12 @@ export function PixQrModal({
             setCopiaECola(data.copiaECola);
           } else {
             setError(data.error || "Eita, deu ruim no Pix");
+            haptics.error();
           }
         } catch (err) {
           if (err instanceof Error && err.name === "AbortError") return;
           setError("Sem conexão. Tenta de novo.");
+          haptics.error();
         } finally {
           setLoading(false);
         }
@@ -139,6 +142,7 @@ export function PixQrModal({
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(copiaECola);
+    haptics.success();
     setCopied(true);
     toast.success("Código Pix copiado!");
     setTimeout(() => setCopied(false), 2000);

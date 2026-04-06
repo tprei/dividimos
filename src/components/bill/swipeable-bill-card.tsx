@@ -9,6 +9,7 @@ import {
 } from "framer-motion";
 import { ChevronLeft, Pencil, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
+import { haptics } from "@/hooks/use-haptics";
 
 const ACTION_WIDTH = 120; // total width of the action panel
 const SNAP_THRESHOLD = 40; // how far user must drag to snap open
@@ -53,9 +54,11 @@ export function SwipeableBillCard({
     const shouldClose = info.offset.x > SNAP_THRESHOLD || info.velocity.x > 200;
 
     if (isOpen && shouldClose) {
+      haptics.impact();
       controls.start({ x: 0, transition: { type: "spring", stiffness: 400, damping: 30 } });
       setIsOpen(false);
     } else if (!isOpen && shouldOpen) {
+      haptics.impact();
       controls.start({
         x: -ACTION_WIDTH,
         transition: { type: "spring", stiffness: 400, damping: 30 },
