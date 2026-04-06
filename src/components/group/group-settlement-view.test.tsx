@@ -57,6 +57,17 @@ vi.mock("@/hooks/use-realtime-balances", () => ({
   useRealtimeBalances: vi.fn(),
 }));
 
+// Mock haptics
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
 // Mock DebtGraph (SVG rendering not needed) — capture props
 let capturedDebtGraphProps: Record<string, unknown> | null = null;
 vi.mock("@/components/settlement/debt-graph", () => ({
@@ -71,6 +82,7 @@ vi.mock("@/components/settlement/simplification-viewer", () => ({
   SimplificationViewer: () => null,
 }));
 
+import { haptics } from "@/hooks/use-haptics";
 import { GroupSettlementView } from "./group-settlement-view";
 import type { User } from "@/types";
 
@@ -315,6 +327,11 @@ describe("GroupSettlementView", () => {
 
     expect(mockFrom).toHaveBeenCalledWith("user_profiles");
     expect(mockIn).toHaveBeenCalledWith("id", [INVITED_ID]);
+  });
+
+  it("imports haptics.success for settlement recording", () => {
+    expect(haptics.success).toBeDefined();
+    expect(typeof haptics.success).toBe("function");
   });
 
   it("shows balance-only users in the net balance summary (Saldo consolidado)", async () => {

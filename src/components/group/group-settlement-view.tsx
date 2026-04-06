@@ -23,6 +23,7 @@ import {
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import { createClient } from "@/lib/supabase/client";
+import { haptics } from "@/hooks/use-haptics";
 import type { Balance, User } from "@/types";
 import type { SimplificationResult } from "@/lib/simplify";
 
@@ -202,6 +203,7 @@ export function GroupSettlementView({
   ) {
     setActing(`${fromUserId}-${toUserId}`);
     await recordSettlement(groupId, fromUserId, toUserId, amountCents);
+    haptics.success();
     notifySettlementRecorded(groupId, fromUserId, toUserId, amountCents).catch(() => {});
     setPixModal(null);
     setActing(null);
