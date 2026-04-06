@@ -126,4 +126,42 @@ describe("BillTypeSelector", () => {
       expect(haptics.tap).toHaveBeenCalledOnce();
     });
   });
+
+  describe("voice expense option", () => {
+    it("does not render voice option when onVoiceExpense is not provided", () => {
+      render(<BillTypeSelector onSelect={vi.fn()} />);
+      expect(screen.queryByText("Falar despesa")).not.toBeInTheDocument();
+    });
+
+    it("renders voice option when onVoiceExpense is provided", () => {
+      render(
+        <BillTypeSelector onSelect={vi.fn()} onVoiceExpense={vi.fn()} />,
+      );
+      expect(screen.getByText("Falar despesa")).toBeInTheDocument();
+      expect(screen.getByText("Diga o que gastou e com quem")).toBeInTheDocument();
+    });
+
+    it("calls onVoiceExpense when voice option is clicked", async () => {
+      const onVoiceExpense = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <BillTypeSelector onSelect={vi.fn()} onVoiceExpense={onVoiceExpense} />,
+      );
+      const btn = screen.getByText("Falar despesa").closest("button");
+      expect(btn).not.toBeNull();
+      await user.click(btn!);
+      expect(onVoiceExpense).toHaveBeenCalledOnce();
+    });
+
+    it("does not call onSelect when voice option is clicked", async () => {
+      const onSelect = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <BillTypeSelector onSelect={onSelect} onVoiceExpense={vi.fn()} />,
+      );
+      const btn = screen.getByText("Falar despesa").closest("button");
+      await user.click(btn!);
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+  });
 });

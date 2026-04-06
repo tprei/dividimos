@@ -222,7 +222,7 @@ describe("GroupDetailPage", () => {
     await user.click(screen.getByText("Contas"));
 
     await waitFor(() => {
-      expect(screen.getByText("Nova conta do grupo")).toBeTruthy();
+      expect(screen.getByText("Nova conta")).toBeTruthy();
     });
   });
 
