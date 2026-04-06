@@ -471,6 +471,138 @@ describe("reset", () => {
   });
 });
 
+describe("hydrateFromVoice", () => {
+  it("creates a single_amount expense from voice result", () => {
+    setup();
+    useBillStore.getState().hydrateFromVoice(
+      {
+        title: "Uber",
+        amountCents: 2500,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      },
+      "group-1",
+    );
+
+    const { expense, totalAmountInput, items, participants } = useBillStore.getState();
+    expect(expense?.title).toBe("Uber");
+    expect(expense?.expenseType).toBe("single_amount");
+    expect(expense?.groupId).toBe("group-1");
+    expect(expense?.status).toBe("draft");
+    expect(expense?.serviceFeePercent).toBe(0);
+    expect(totalAmountInput).toBe(2500);
+    expect(items).toHaveLength(0);
+    expect(participants).toHaveLength(1);
+    expect(participants[0].id).toBe("user-alice");
+  });
+
+  it("creates an itemized expense with items from voice result", () => {
+    setup();
+    useBillStore.getState().hydrateFromVoice(
+      {
+        title: "Bar do Zé",
+        amountCents: 5500,
+        expenseType: "itemized",
+        items: [
+          { description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
+          { description: "Pizza", quantity: 1, unitPriceCents: 2500, totalCents: 2500 },
+        ],
+        participants: [],
+        merchantName: "Bar do Zé",
+      },
+      "group-1",
+    );
+
+    const { expense, items, totalAmountInput } = useBillStore.getState();
+    expect(expense?.expenseType).toBe("itemized");
+    expect(expense?.merchantName).toBe("Bar do Zé");
+    expect(expense?.serviceFeePercent).toBe(10);
+    expect(expense?.totalAmount).toBe(5500);
+    expect(items).toHaveLength(2);
+    expect(items[0].description).toBe("Cerveja");
+    expect(items[0].totalPriceCents).toBe(3000);
+    expect(items[1].description).toBe("Pizza");
+    expect(items[1].totalPriceCents).toBe(2500);
+    expect(totalAmountInput).toBe(0);
+  });
+
+  it("resets previous state before hydrating", () => {
+    setup();
+    useBillStore.getState().createExpense("Old", "itemized");
+    useBillStore.getState().addItem({
+      description: "Old item",
+      quantity: 1,
+      unitPriceCents: 1000,
+      totalPriceCents: 1000,
+    });
+
+    useBillStore.getState().hydrateFromVoice(
+      {
+        title: "New",
+        amountCents: 500,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      },
+    );
+
+    const { expense, items } = useBillStore.getState();
+    expect(expense?.title).toBe("New");
+    expect(items).toHaveLength(0);
+  });
+
+  it("does nothing when currentUser is not set", () => {
+    useBillStore.getState().reset();
+    useBillStore.setState({ currentUser: null });
+
+    useBillStore.getState().hydrateFromVoice(
+      {
+        title: "Test",
+        amountCents: 1000,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      },
+    );
+
+    expect(useBillStore.getState().expense).toBeNull();
+  });
+
+  it("uses fallback title when voice result title is empty", () => {
+    setup();
+    useBillStore.getState().hydrateFromVoice(
+      {
+        title: "",
+        amountCents: 1000,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      },
+    );
+
+    expect(useBillStore.getState().expense?.title).toBe("Despesa por voz");
+  });
+
+  it("defaults groupId to empty string when not provided", () => {
+    setup();
+    useBillStore.getState().hydrateFromVoice({
+      title: "Test",
+      amountCents: 1000,
+      expenseType: "single_amount",
+      items: [],
+      participants: [],
+      merchantName: null,
+    });
+
+    expect(useBillStore.getState().expense?.groupId).toBe("");
+  });
+});
+
 describe("guest management", () => {
   it("addGuest creates a guest with guest_ prefix ID", () => {
     setup().createExpense("Test", "itemized");

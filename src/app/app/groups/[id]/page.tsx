@@ -9,6 +9,7 @@ import {
   Clock,
   Link2,
   LogOut,
+  Mic,
   Pencil,
   Plus,
   QrCode,
@@ -21,6 +22,8 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
+import { VoiceExpenseModal } from "@/components/bill/voice-expense-modal";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import { InviteLinkShareModal } from "@/components/group/invite-link-share-modal";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
@@ -43,6 +46,8 @@ import { formatBRL } from "@/lib/currency";
 import toast from "react-hot-toast";
 import { notifyGroupInvite } from "@/lib/push/push-notify";
 import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } from "@/types";
+import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
+import { useBillStore } from "@/stores/bill-store";
 import type { Database } from "@/types/database";
 
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
@@ -118,6 +123,10 @@ export default function GroupDetailPage({
   const [inviteLinkToken, setInviteLinkToken] = useState<string | null>(null);
   const [showInviteLinkModal, setShowInviteLinkModal] = useState(false);
   const [creatingInviteLink, setCreatingInviteLink] = useState(false);
+  const [showVoiceInput, setShowVoiceInput] = useState(false);
+  const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const store = useBillStore();
 
   const fetchGroup = useCallback(async () => {
     const supabase = createClient();
@@ -428,6 +437,47 @@ export default function GroupDetailPage({
     [members],
   );
 
+  const voiceMembers = useMemo(() =>
+    members
+      .filter((m) => m.status === "accepted")
+      .map((m) => ({ handle: m.profile.handle, name: m.profile.name })),
+    [members],
+  );
+
+  const handleVoiceResult = useCallback((result: VoiceExpenseResult) => {
+    setVoiceResult(result);
+    setShowVoiceInput(false);
+    setVoiceError(null);
+  }, []);
+
+  const handleVoiceError = useCallback((message: string) => {
+    setVoiceError(message);
+  }, []);
+
+  const handleVoiceConfirm = useCallback((result: VoiceExpenseResult) => {
+    if (!user) return;
+    const authUser: User = {
+      id: user.id,
+      email: user.email ?? "",
+      handle: user.handle,
+      name: user.name,
+      pixKeyType: "email",
+      pixKeyHint: "",
+      avatarUrl: user.avatarUrl,
+      onboarded: true,
+      createdAt: "",
+    };
+    store.setCurrentUser(authUser);
+    store.hydrateFromVoice(result, id);
+    setVoiceResult(null);
+    setShowVoiceInput(false);
+    router.push(`/app/bill/new?groupId=${id}&step=payer`);
+  }, [user, store, id, router]);
+
+  const handleVoiceCancel = useCallback(() => {
+    setVoiceResult(null);
+  }, []);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6 space-y-4">
@@ -736,14 +786,45 @@ export default function GroupDetailPage({
       {/* Expenses tab */}
       {activeTab === "contas" && (
         <div className="mt-4 space-y-3">
-          <Button
-            variant="outline"
-            className="w-full gap-2"
-            onClick={() => router.push(`/app/bill/new?groupId=${id}`)}
-          >
-            <Plus className="h-4 w-4" />
-            Nova conta do grupo
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={() => router.push(`/app/bill/new?groupId=${id}`)}
+            >
+              <Plus className="h-4 w-4" />
+              Nova conta
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => setShowVoiceInput(!showVoiceInput)}
+            >
+              <Mic className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {voiceResult && (
+            <VoiceExpenseModal
+              open={!!voiceResult}
+              result={voiceResult}
+              onConfirm={handleVoiceConfirm}
+              onCancel={handleVoiceCancel}
+            />
+          )}
+
+          {showVoiceInput && (
+            <div className="space-y-2">
+              <VoiceExpenseButton
+                members={voiceMembers}
+                onResult={handleVoiceResult}
+                onError={handleVoiceError}
+              />
+              {voiceError && (
+                <p className="text-center text-sm text-destructive">{voiceError}</p>
+              )}
+            </div>
+          )}
 
           {expenses.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">

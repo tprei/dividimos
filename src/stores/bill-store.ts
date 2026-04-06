@@ -15,6 +15,7 @@ import type {
   SplitType,
   User,
 } from "@/types";
+import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 
 /** A guest participant who doesn't have a Dividimos account yet. */
 export interface Guest {
@@ -87,6 +88,7 @@ interface ExpenseState {
    */
   getExpenseShares: () => ExpenseShare[];
   getParticipantTotal: (userId: string) => number;
+  hydrateFromVoice: (result: VoiceExpenseResult, groupId?: string) => void;
   reset: () => void;
 }
 
@@ -571,6 +573,50 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
         : 0;
 
     return itemTotal + serviceFee + fixedFeeShare;
+  },
+
+  hydrateFromVoice: (result, groupId) => {
+    get().reset();
+    const currentUser = get().currentUser;
+    if (!currentUser) return;
+
+    const now = new Date().toISOString();
+    const expense: Expense = {
+      id: generateId(),
+      groupId: groupId || "",
+      creatorId: currentUser.id,
+      expenseType: result.expenseType,
+      title: result.title || "Despesa por voz",
+      merchantName: result.merchantName ?? undefined,
+      totalAmount: result.amountCents,
+      serviceFeePercent: result.expenseType === "itemized" ? 10 : 0,
+      fixedFees: 0,
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const items: ExpenseItem[] = result.items.map((item) => ({
+      id: generateId(),
+      expenseId: expense.id,
+      description: item.description,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents,
+      totalPriceCents: item.totalCents,
+      createdAt: now,
+    }));
+
+    set({
+      expense,
+      totalAmountInput: result.expenseType === "single_amount" ? result.amountCents : 0,
+      participants: [currentUser],
+      guests: [],
+      items,
+      payers: [],
+      splits: [],
+      billSplits: [],
+      previewDebts: [],
+    });
   },
 
   reset: () =>
