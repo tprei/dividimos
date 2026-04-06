@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Camera, CreditCard, ScanLine } from "lucide-react";
+import { haptics } from "@/hooks/use-haptics";
 import type { ExpenseType } from "@/types";
 
 interface BillTypeSelectorProps {
@@ -53,7 +54,10 @@ export function BillTypeSelector({
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.08, duration: 0.3 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => onSelect(opt.type)}
+            onClick={() => {
+              haptics.tap();
+              onSelect(opt.type);
+            }}
             className="group flex items-start gap-4 rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/30"
           >
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
@@ -77,7 +81,10 @@ export function BillTypeSelector({
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: options.length * 0.08, duration: 0.3 }}
             whileTap={{ scale: 0.98 }}
-            onClick={onScanReceipt}
+            onClick={() => {
+              haptics.tap();
+              onScanReceipt!();
+            }}
             className="group flex items-start gap-4 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-5 text-left transition-colors hover:border-primary/50"
           >
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">

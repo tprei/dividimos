@@ -6,6 +6,7 @@ import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { haptics } from "@/hooks/use-haptics";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
 import type { SplitType, UserProfile } from "@/types";
 
@@ -156,6 +157,7 @@ export function SingleAmountStep({
             <button
               key={m.key}
               onClick={() => {
+                haptics.selectionChanged();
                 setMethod(m.key);
                 if (m.key !== "percentage") setPercentages(new Map());
                 if (m.key !== "fixed") setFixedAmounts(new Map());

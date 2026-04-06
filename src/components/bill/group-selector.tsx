@@ -5,6 +5,7 @@ import { Users, X, ChevronDown, ChevronUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { haptics } from "@/hooks/use-haptics";
 import type { UserProfile } from "@/types";
 
 interface GroupEntry {
@@ -148,7 +149,10 @@ export function GroupSelector({
         <Button
           variant="ghost"
           size="sm"
-          onClick={onDeselectGroup}
+          onClick={() => {
+            haptics.tap();
+            onDeselectGroup();
+          }}
           className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
         >
           <X className="h-4 w-4" />
@@ -190,6 +194,7 @@ export function GroupSelector({
                     }`}
                     disabled={disabled}
                     onClick={() => {
+                      haptics.selectionChanged();
                       onSelectGroup(group.id, group.name, group.members);
                       setOpen(false);
                     }}
