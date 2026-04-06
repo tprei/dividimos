@@ -74,6 +74,15 @@ interface ExpenseState {
   splitBillByPercentage: (assignments: { userId: string; percentage: number }[]) => void;
   splitBillByFixed: (assignments: { userId: string; amountCents: number }[]) => void;
 
+  /** Assign multiple items to a user in a single state update (equal split). */
+  batchAssignItems: (itemIds: string[], userId: string) => void;
+  /** Unassign multiple items from a user in a single state update. */
+  batchUnassignItems: (itemIds: string[], userId: string) => void;
+  /** Get all item IDs currently assigned to a given user. */
+  getPersonItems: (userId: string) => string[];
+  /** Get all item IDs that have no splits assigned to anyone. */
+  getUnassignedItems: () => string[];
+
   getGrandTotal: () => number;
   /**
    * Computes client-side preview debts from current splits and payers.
@@ -377,6 +386,102 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       computedAmountCents: a.amountCents,
     }));
     set({ billSplits });
+  },
+
+  batchAssignItems: (itemIds, userId) => {
+    const { items, splits } = get();
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+
+    // Start from existing splits, removing any existing splits for this user on these items
+    const itemIdSet = new Set(itemIds);
+    const otherSplits = splits.filter(
+      (s) => !(itemIdSet.has(s.itemId) && s.userId === userId),
+    );
+
+    const newSplits: ItemSplit[] = [];
+    for (const itemId of itemIds) {
+      const item = itemMap.get(itemId);
+      if (!item) continue;
+
+      // Collect all users who will be assigned to this item after the batch
+      const existingUserIds = splits
+        .filter((s) => s.itemId === itemId && s.userId !== userId)
+        .map((s) => s.userId);
+      const allUserIds = [...existingUserIds, userId];
+
+      // Recompute equal splits for all users on this item
+      const perPerson = Math.floor(item.totalPriceCents / allUserIds.length);
+      const remainder = item.totalPriceCents - perPerson * allUserIds.length;
+
+      for (let idx = 0; idx < allUserIds.length; idx++) {
+        newSplits.push({
+          id: generateId(),
+          itemId,
+          userId: allUserIds[idx],
+          splitType: "equal",
+          value: 100 / allUserIds.length,
+          computedAmountCents: perPerson + (idx < remainder ? 1 : 0),
+        });
+      }
+    }
+
+    // Keep splits for items not in this batch, plus the recomputed ones
+    const untouchedSplits = otherSplits.filter((s) => !itemIdSet.has(s.itemId));
+    set({ splits: [...untouchedSplits, ...newSplits] });
+  },
+
+  batchUnassignItems: (itemIds, userId) => {
+    const { items, splits } = get();
+    const itemMap = new Map(items.map((i) => [i.id, i]));
+    const itemIdSet = new Set(itemIds);
+
+    // Remove this user from the specified items
+    const withoutUser = splits.filter(
+      (s) => !(itemIdSet.has(s.itemId) && s.userId === userId),
+    );
+
+    // Recompute equal splits for remaining users on affected items
+    const untouchedSplits = withoutUser.filter((s) => !itemIdSet.has(s.itemId));
+    const newSplits: ItemSplit[] = [];
+
+    for (const itemId of itemIds) {
+      const item = itemMap.get(itemId);
+      if (!item) continue;
+
+      const remainingUserIds = withoutUser
+        .filter((s) => s.itemId === itemId)
+        .map((s) => s.userId);
+
+      if (remainingUserIds.length === 0) continue;
+
+      const perPerson = Math.floor(item.totalPriceCents / remainingUserIds.length);
+      const remainder = item.totalPriceCents - perPerson * remainingUserIds.length;
+
+      for (let idx = 0; idx < remainingUserIds.length; idx++) {
+        newSplits.push({
+          id: generateId(),
+          itemId,
+          userId: remainingUserIds[idx],
+          splitType: "equal",
+          value: 100 / remainingUserIds.length,
+          computedAmountCents: perPerson + (idx < remainder ? 1 : 0),
+        });
+      }
+    }
+
+    set({ splits: [...untouchedSplits, ...newSplits] });
+  },
+
+  getPersonItems: (userId) => {
+    return get().splits
+      .filter((s) => s.userId === userId)
+      .map((s) => s.itemId);
+  },
+
+  getUnassignedItems: () => {
+    const { items, splits } = get();
+    const assignedItemIds = new Set(splits.map((s) => s.itemId));
+    return items.filter((i) => !assignedItemIds.has(i.id)).map((i) => i.id);
   },
 
   getGrandTotal: () => {
