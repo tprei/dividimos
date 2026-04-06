@@ -23,7 +23,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
-import { VoiceExpenseModal } from "@/components/bill/voice-expense-modal";
+import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import { InviteLinkShareModal } from "@/components/group/invite-link-share-modal";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
@@ -454,7 +454,7 @@ export default function GroupDetailPage({
     setVoiceError(message);
   }, []);
 
-  const handleVoiceConfirm = useCallback((result: VoiceExpenseResult) => {
+  const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!user) return;
     const authUser: User = {
       id: user.id,
@@ -469,6 +469,25 @@ export default function GroupDetailPage({
     };
     store.setCurrentUser(authUser);
     store.hydrateFromVoice(result, id);
+
+    for (const rp of resolvedParticipants) {
+      if (rp.type === "member") {
+        store.addParticipant({
+          id: rp.userId,
+          email: "",
+          handle: rp.handle,
+          name: rp.name,
+          pixKeyType: "email",
+          pixKeyHint: "",
+          avatarUrl: rp.avatarUrl,
+          onboarded: true,
+          createdAt: "",
+        });
+      } else {
+        store.addGuest(rp.name);
+      }
+    }
+
     setVoiceResult(null);
     setShowVoiceInput(false);
     router.push(`/app/bill/new?groupId=${id}&step=payer`);
@@ -806,8 +825,15 @@ export default function GroupDetailPage({
 
           {voiceResult && (
             <VoiceExpenseModal
-              open={!!voiceResult}
               result={voiceResult}
+              groupMembers={members
+                .filter((m) => m.status === "accepted")
+                .map((m) => ({
+                  id: m.userId,
+                  handle: m.profile.handle,
+                  name: m.profile.name,
+                  avatarUrl: m.profile.avatarUrl,
+                }))}
               onConfirm={handleVoiceConfirm}
               onCancel={handleVoiceCancel}
             />

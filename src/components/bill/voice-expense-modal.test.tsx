@@ -27,112 +27,143 @@ const itemizedResult: VoiceExpenseResult = {
   merchantName: "Bar do Zé",
 };
 
-describe("VoiceExpenseModal", () => {
-  it("displays parsed title and amount", () => {
-    render(
-      <VoiceExpenseModal
-        open={true}
-        result={singleResult}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
+const groupMembers = [
+  { id: "user-joao", handle: "joao123", name: "João Silva", avatarUrl: undefined },
+  { id: "user-maria", handle: "maria_s", name: "Maria Santos", avatarUrl: undefined },
+];
 
+describe("VoiceExpenseModal", () => {
+  it("displays parsed title and type", () => {
+    render(
+      <VoiceExpenseModal result={singleResult} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+    );
     expect(screen.getByText("Uber")).toBeInTheDocument();
     expect(screen.getByText("Valor único")).toBeInTheDocument();
+  });
+
+  it("displays amount", () => {
+    render(
+      <VoiceExpenseModal result={singleResult} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+    );
     expect(screen.getByText("R$ 25,00")).toBeInTheDocument();
   });
 
   it("displays items for itemized result", () => {
     render(
-      <VoiceExpenseModal
-        open={true}
-        result={itemizedResult}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
+      <VoiceExpenseModal result={itemizedResult} onConfirm={vi.fn()} onCancel={vi.fn()} />,
     );
-
-    expect(screen.getByText(/2x Cerveja/)).toBeInTheDocument();
-    expect(screen.getByText(/1x Pizza/)).toBeInTheDocument();
-    expect(screen.getByText("Vários itens")).toBeInTheDocument();
+    expect(screen.getByText("Cerveja")).toBeInTheDocument();
+    expect(screen.getByText("Pizza")).toBeInTheDocument();
   });
 
-  it("displays merchant name when present", () => {
+  it("displays participant with attribution button", () => {
     render(
       <VoiceExpenseModal
-        open={true}
-        result={itemizedResult}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Local")).toBeInTheDocument();
-    expect(screen.getAllByText("Bar do Zé").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("displays participants with handle and confidence", () => {
-    render(
-      <VoiceExpenseModal
-        open={true}
         result={singleResult}
+        groupMembers={groupMembers}
         onConfirm={vi.fn()}
         onCancel={vi.fn()}
       />,
     );
-
     expect(screen.getByText("João")).toBeInTheDocument();
-    expect(screen.getByText("@joao123")).toBeInTheDocument();
   });
 
-  it("shows warning when amount is zero for single_amount", () => {
+  it("auto-resolves high-confidence matches when group members provided", () => {
+    render(
+      <VoiceExpenseModal
+        result={singleResult}
+        groupMembers={groupMembers}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("@joao123")).toBeInTheDocument();
+    expect(screen.getByText("Alterar")).toBeInTheDocument();
+  });
+
+  it("shows attribution warning for unresolved participants", () => {
+    const unmatched: VoiceExpenseResult = {
+      ...singleResult,
+      participants: [
+        { spokenName: "Maria", matchedHandle: null, confidence: "low" },
+      ],
+    };
+    render(
+      <VoiceExpenseModal result={unmatched} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect(
+      screen.getByText("Atribua todos os participantes antes de confirmar"),
+    ).toBeInTheDocument();
+  });
+
+  it("expands member list on Atribuir click", async () => {
+    const unmatched: VoiceExpenseResult = {
+      ...singleResult,
+      participants: [
+        { spokenName: "Maria", matchedHandle: null, confidence: "low" },
+      ],
+    };
+    const user = userEvent.setup();
+    render(
+      <VoiceExpenseModal
+        result={unmatched}
+        groupMembers={groupMembers}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByText("Atribuir"));
+    expect(screen.getByText("Membros do grupo")).toBeInTheDocument();
+    expect(screen.getByText("João Silva")).toBeInTheDocument();
+    expect(screen.getByText("Adicionar como convidado")).toBeInTheDocument();
+  });
+
+  it("shows warning when amount is zero", () => {
     const zeroResult: VoiceExpenseResult = {
       ...singleResult,
       amountCents: 0,
+      participants: [],
     };
     render(
-      <VoiceExpenseModal
-        open={true}
-        result={zeroResult}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
+      <VoiceExpenseModal result={zeroResult} onConfirm={vi.fn()} onCancel={vi.fn()} />,
     );
-
-    expect(screen.getByText("Informe o valor antes de confirmar")).toBeInTheDocument();
+    expect(
+      screen.getByText("Informe o valor antes de confirmar"),
+    ).toBeInTheDocument();
   });
 
-  it("calls onConfirm with result when confirm clicked", async () => {
+  it("calls onConfirm when no participants to resolve", async () => {
+    const noParticipantResult: VoiceExpenseResult = {
+      ...singleResult,
+      participants: [],
+    };
     const onConfirm = vi.fn();
     const user = userEvent.setup();
     render(
       <VoiceExpenseModal
-        open={true}
-        result={singleResult}
+        result={noParticipantResult}
         onConfirm={onConfirm}
         onCancel={vi.fn()}
       />,
     );
-
     await user.click(screen.getByText("Confirmar"));
     expect(onConfirm).toHaveBeenCalledOnce();
-    expect(onConfirm.mock.calls[0][0].title).toBe("Uber");
-    expect(onConfirm.mock.calls[0][0].amountCents).toBe(2500);
   });
 
   it("calls onCancel when cancel clicked", async () => {
+    const noParticipantResult: VoiceExpenseResult = {
+      ...singleResult,
+      participants: [],
+    };
     const onCancel = vi.fn();
     const user = userEvent.setup();
     render(
       <VoiceExpenseModal
-        open={true}
-        result={singleResult}
+        result={noParticipantResult}
         onConfirm={vi.fn()}
         onCancel={onCancel}
       />,
     );
-
     await user.click(screen.getByText("Cancelar"));
     expect(onCancel).toHaveBeenCalledOnce();
   });

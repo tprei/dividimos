@@ -1,9 +1,10 @@
 "use client";
 
-import { Loader2, Mic, MicOff } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Loader2, Mic, Square } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVoiceInput } from "@/hooks/use-voice-input";
-import { Button } from "@/components/ui/button";
+import { haptics } from "@/hooks/use-haptics";
 import type { VoiceExpenseResult, MemberContext } from "@/lib/voice-expense-parser";
 
 interface VoiceExpenseButtonProps {
@@ -70,47 +71,100 @@ export function VoiceExpenseButton({
 
   if (parsing) {
     return (
-      <div className="space-y-3 text-center">
-        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Processando...
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col items-center gap-4 py-6"
+      >
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
-        {transcript && (
-          <p className="text-sm italic text-muted-foreground">&ldquo;{transcript}&rdquo;</p>
-        )}
-      </div>
+        <div className="space-y-1 text-center">
+          <p className="text-sm font-medium">Processando...</p>
+          {transcript && (
+            <p className="text-sm italic text-muted-foreground">&ldquo;{transcript}&rdquo;</p>
+          )}
+        </div>
+      </motion.div>
     );
   }
 
   if (isListening) {
     return (
-      <div className="space-y-3">
-        <div className="flex flex-col items-center gap-3">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col items-center gap-4 py-4"
+      >
+        <div className="relative">
+          <motion.div
+            animate={{ scale: [1, 1.15, 1] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute inset-0 rounded-full bg-destructive/20"
+          />
           <button
-            onClick={stopListening}
-            className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-lg transition-transform active:scale-95"
+            onClick={() => {
+              haptics.tap();
+              stopListening();
+            }}
+            className="relative flex h-20 w-20 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-lg transition-transform active:scale-95"
           >
-            <MicOff className="h-7 w-7" />
+            <Square className="h-7 w-7" />
           </button>
-          <p className="text-sm text-muted-foreground">Toque pra parar</p>
         </div>
-        {(transcript || interimTranscript) && (
-          <p className="text-center text-sm">
-            {transcript}
-            {interimTranscript && (
-              <span className="text-muted-foreground">{interimTranscript}</span>
-            )}
-          </p>
+        <p className="text-sm font-medium text-muted-foreground">Toque pra parar</p>
+        <AnimatePresence mode="wait">
+          {(transcript || interimTranscript) && (
+            <motion.div
+              key="transcript"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="w-full rounded-2xl border bg-card p-4 text-center"
+            >
+              <p className="text-base font-medium">
+                {transcript}
+                {interimTranscript && (
+                  <span className="text-muted-foreground"> {interimTranscript}</span>
+                )}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {voiceError && (
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-sm text-destructive"
+          >
+            {voiceError}
+          </motion.p>
         )}
-        {voiceError && <p className="text-center text-sm text-destructive">{voiceError}</p>}
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <Button variant="outline" className="w-full gap-2" onClick={startListening}>
-      <Mic className="h-4 w-4" />
-      Falar despesa
-    </Button>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex flex-col items-center gap-4 py-4"
+    >
+      <button
+        onClick={() => {
+          haptics.tap();
+          startListening();
+        }}
+        className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-primary transition-all hover:bg-primary hover:text-primary-foreground active:scale-95"
+      >
+        <Mic className="h-8 w-8" />
+      </button>
+      <div className="space-y-1 text-center">
+        <p className="text-sm font-medium">Toque pra falar</p>
+        <p className="text-xs text-muted-foreground">
+          Ex: &ldquo;Uber com João 25 reais&rdquo;
+        </p>
+      </div>
+    </motion.div>
   );
 }

@@ -25,7 +25,7 @@ import { RecentContacts } from "@/components/bill/recent-contacts";
 import { BillSummary } from "@/components/bill/bill-summary";
 import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
-import { VoiceExpenseModal } from "@/components/bill/voice-expense-modal";
+import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { ItemCard } from "@/components/bill/item-card";
 import { PayerStep } from "@/components/bill/payer-step";
@@ -264,10 +264,29 @@ function NewBillPageContent() {
     setVoiceError(message);
   }, []);
 
-  const handleVoiceConfirm = useCallback((result: VoiceExpenseResult) => {
+  const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!authUser) return;
     store.setCurrentUser(authUser);
     store.hydrateFromVoice(result, selectedGroupId ?? undefined);
+
+    for (const rp of resolvedParticipants) {
+      if (rp.type === "member") {
+        store.addParticipant({
+          id: rp.userId,
+          email: "",
+          handle: rp.handle,
+          name: rp.name,
+          pixKeyType: "email",
+          pixKeyHint: "",
+          avatarUrl: rp.avatarUrl,
+          onboarded: true,
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        store.addGuest(rp.name);
+      }
+    }
+
     setBillType(result.expenseType);
     setTitle(result.title);
     setMerchantName(result.merchantName || "");
@@ -874,6 +893,13 @@ function NewBillPageContent() {
                     </motion.div>
                   )}
                 </div>
+              ) : voiceResult ? (
+                <VoiceExpenseModal
+                  result={voiceResult}
+                  groupMembers={groupMembers}
+                  onConfirm={handleVoiceConfirm}
+                  onCancel={handleVoiceCancel}
+                />
               ) : showVoiceInput ? (
                 <div className="space-y-3">
                   <VoiceExpenseButton
@@ -903,14 +929,6 @@ function NewBillPageContent() {
                   onSelect={handleTypeSelect}
                   onScanReceipt={() => setShowScanner(true)}
                   onVoiceExpense={() => setShowVoiceInput(true)}
-                />
-              )}
-              {voiceResult && (
-                <VoiceExpenseModal
-                  open={!!voiceResult}
-                  result={voiceResult}
-                  onConfirm={handleVoiceConfirm}
-                  onCancel={handleVoiceCancel}
                 />
               )}
             </motion.div>
