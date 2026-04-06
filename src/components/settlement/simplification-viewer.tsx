@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, MoveHorizontal } from "lucide-react";
 import { useRef, useState } from "react";
 import { DebtGraph } from "./debt-graph";
+import { haptics } from "@/hooks/use-haptics";
 import { springs } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import type { SimplificationResult } from "@/lib/simplify";
@@ -35,6 +36,7 @@ export function SimplificationViewer({
 
   function goTo(index: number) {
     if (index < 0 || index >= totalSteps) return;
+    haptics.selectionChanged();
     setDirection(index > currentStep ? 1 : -1);
     setCurrentStep(index);
   }

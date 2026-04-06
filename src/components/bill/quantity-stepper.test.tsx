@@ -1,7 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QuantityStepper } from "./quantity-stepper";
+import { haptics } from "@/hooks/use-haptics";
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("QuantityStepper", () => {
   it("renders value and buttons", () => {
@@ -106,5 +121,31 @@ describe("QuantityStepper", () => {
 
     const input = screen.getByRole("textbox");
     expect(input).toHaveAttribute("inputmode", "numeric");
+  });
+
+  describe("haptics", () => {
+    it("triggers haptics.selectionChanged on increment", async () => {
+      const user = userEvent.setup();
+      render(<QuantityStepper value="2" onChange={vi.fn()} />);
+
+      await user.click(screen.getByLabelText("Aumentar quantidade"));
+      expect(haptics.selectionChanged).toHaveBeenCalledOnce();
+    });
+
+    it("triggers haptics.selectionChanged on decrement", async () => {
+      const user = userEvent.setup();
+      render(<QuantityStepper value="3" onChange={vi.fn()} />);
+
+      await user.click(screen.getByLabelText("Diminuir quantidade"));
+      expect(haptics.selectionChanged).toHaveBeenCalledOnce();
+    });
+
+    it("does not trigger haptics when at min value", async () => {
+      const user = userEvent.setup();
+      render(<QuantityStepper value="1" onChange={vi.fn()} min={1} />);
+
+      await user.click(screen.getByLabelText("Diminuir quantidade"));
+      expect(haptics.selectionChanged).not.toHaveBeenCalled();
+    });
   });
 });

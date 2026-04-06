@@ -6,6 +6,7 @@ import { startTransition, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { haptics } from "@/hooks/use-haptics";
 import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
 import type { UserProfile } from "@/types";
 
@@ -100,7 +101,10 @@ export function PayerStep({
               <motion.button
                 key={user.id}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => onSetPayerFull(user.id)}
+                onClick={() => {
+                  haptics.selectionChanged();
+                  onSetPayerFull(user.id);
+                }}
                 className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-all ${
                   isSelected
                     ? "border-primary bg-primary/5 ring-2 ring-primary/20"
@@ -173,7 +177,10 @@ export function PayerStep({
             ]).map((m) => (
               <button
                 key={m.key}
-                onClick={() => setPaymentInputMode(m.key)}
+                onClick={() => {
+                  haptics.selectionChanged();
+                  setPaymentInputMode(m.key);
+                }}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all ${
                   paymentInputMode === m.key
                     ? "bg-card text-foreground shadow-sm"

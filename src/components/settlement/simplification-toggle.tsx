@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, ListOrdered, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { haptics } from "@/hooks/use-haptics";
 import { springs } from "@/lib/animations";
 
 interface SimplificationToggleProps {
@@ -42,7 +43,10 @@ export function SimplificationToggle({
 
         <Switch
           checked={enabled}
-          onCheckedChange={(checked) => onToggle(checked)}
+          onCheckedChange={(checked) => {
+            haptics.tap();
+            onToggle(checked);
+          }}
           aria-label="Ativar simplificação de dívidas"
         />
       </div>

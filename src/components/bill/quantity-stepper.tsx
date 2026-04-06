@@ -4,6 +4,7 @@ import { Minus, Plus } from "lucide-react";
 import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { haptics } from "@/hooks/use-haptics";
 
 interface QuantityStepperProps {
   value: string;
@@ -25,11 +26,13 @@ export function QuantityStepper({
   const decrement = useCallback(() => {
     const next = numericValue - step;
     if (next < min) return;
+    haptics.selectionChanged();
     onChange(formatValue(next, allowDecimal));
   }, [numericValue, step, min, onChange, allowDecimal]);
 
   const increment = useCallback(() => {
     const next = numericValue + step;
+    haptics.selectionChanged();
     onChange(formatValue(next, allowDecimal));
   }, [numericValue, step, onChange, allowDecimal]);
 

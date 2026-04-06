@@ -1,7 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SimplificationToggle } from "./simplification-toggle";
+import { haptics } from "@/hooks/use-haptics";
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("SimplificationToggle", () => {
   const defaultProps = {
@@ -59,5 +74,16 @@ describe("SimplificationToggle", () => {
 
     expect(screen.queryByText("Pix")).not.toBeInTheDocument();
     expect(screen.queryByText("Ver como simplificou")).not.toBeInTheDocument();
+  });
+
+  describe("haptics", () => {
+    it("triggers haptics.tap when toggle is switched", async () => {
+      const user = userEvent.setup();
+      render(<SimplificationToggle {...defaultProps} />);
+
+      const toggle = screen.getByLabelText("Ativar simplificação de dívidas");
+      await user.click(toggle);
+      expect(haptics.tap).toHaveBeenCalledOnce();
+    });
   });
 });
