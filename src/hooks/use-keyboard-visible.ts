@@ -11,12 +11,12 @@ export function useKeyboardVisible() {
     async function init() {
       try {
         const { Keyboard } = await import("@capacitor/keyboard");
-        const showHandle = Keyboard.addListener("keyboardWillShow", () => setVisible(true));
-        const hideHandle = Keyboard.addListener("keyboardWillHide", () => setVisible(false));
+        const showHandle = await Keyboard.addListener("keyboardWillShow", () => setVisible(true));
+        const hideHandle = await Keyboard.addListener("keyboardWillHide", () => setVisible(false));
 
         cleanup = () => {
-          showHandle.then((h) => h.remove());
-          hideHandle.then((h) => h.remove());
+          showHandle.remove();
+          hideHandle.remove();
         };
       } catch {
         // Not running in Capacitor — fall back to visualViewport API
