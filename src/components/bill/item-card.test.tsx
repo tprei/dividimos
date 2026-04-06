@@ -1,8 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import { ItemCard } from "./item-card";
+import { haptics } from "@/hooks/use-haptics";
 import type { UserProfile } from "@/types";
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
 
 function makeUser(id: string, name: string): UserProfile {
   return { id, name, handle: id };
@@ -122,6 +135,42 @@ describe("ItemCard", () => {
     expect(screen.getByText("Nao atribuido")).toBeInTheDocument();
   });
 
+  describe("haptics", () => {
+    beforeEach(() => {
+      vi.mocked(haptics.tap).mockClear();
+    });
+
+    it("triggers haptics.tap() when assigning a participant", async () => {
+      const user = userEvent.setup();
+      render(<ItemCard {...defaultProps} onAssign={vi.fn()} />);
+
+      const aliceBtn = screen.getByText("Alice").closest("button")!;
+      await user.click(aliceBtn);
+      expect(haptics.tap).toHaveBeenCalledTimes(1);
+    });
+
+    it("triggers haptics.tap() when unassigning a participant", async () => {
+      const user = userEvent.setup();
+      const splits = [
+        { id: "s1", userId: "alice", computedAmountCents: 4500, user: alice },
+      ];
+      render(<ItemCard {...defaultProps} splits={splits} onUnassign={vi.fn()} />);
+
+      const aliceElements = screen.getAllByText("Alice");
+      const aliceBtn = aliceElements.map((el) => el.closest("button")).find(Boolean);
+      await user.click(aliceBtn!);
+      expect(haptics.tap).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not use navigator.vibrate", () => {
+      const src = readFileSync(
+        resolve(__dirname, "./item-card.tsx"),
+        "utf-8",
+      );
+      expect(src).not.toContain("navigator.vibrate");
+    });
+  });
+
   describe("with guests", () => {
     const guests = [
       { id: "guest_local_1", name: "Maria" },
@@ -167,6 +216,16 @@ describe("ItemCard", () => {
       const mariaBtn = mariaElements.map((el) => el.closest("button")).find(Boolean);
       await user.click(mariaBtn!);
       expect(onUnassign).toHaveBeenCalledWith("item-1", "guest_local_1");
+    });
+
+    it("triggers haptics.tap() on guest toggle", async () => {
+      vi.mocked(haptics.tap).mockClear();
+      const user = userEvent.setup();
+      render(<ItemCard {...defaultProps} guests={guests} onAssign={vi.fn()} />);
+
+      const mariaBtn = screen.getByText("Maria").closest("button")!;
+      await user.click(mariaBtn);
+      expect(haptics.tap).toHaveBeenCalledTimes(1);
     });
 
     it("considers all persons for allAssigned state", () => {
