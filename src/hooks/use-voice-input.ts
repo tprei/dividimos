@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  isNativeSpeechAvailable,
+  startNativeListening,
+} from "@/lib/capacitor/speech";
 
 interface SpeechRecognitionEvent {
   results: SpeechRecognitionResultList;
@@ -67,11 +71,14 @@ export function useVoiceInput(): UseVoiceInputReturn {
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const nativeStopRef = useRef<{ stop: () => Promise<void> } | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStoppingRef = useRef(false);
   const instanceCounterRef = useRef(0);
 
-  const isSupported = typeof window !== "undefined" && getSpeechRecognitionConstructor() !== null;
+  const isSupported =
+    isNativeSpeechAvailable() ||
+    (typeof window !== "undefined" && getSpeechRecognitionConstructor() !== null);
 
   const clearSilenceTimer = useCallback(() => {
     if (silenceTimerRef.current !== null) {
@@ -83,8 +90,11 @@ export function useVoiceInput(): UseVoiceInputReturn {
   const resetSilenceTimer = useCallback(() => {
     clearSilenceTimer();
     silenceTimerRef.current = setTimeout(() => {
-      if (recognitionRef.current && !isStoppingRef.current) {
-        isStoppingRef.current = true;
+      if (isStoppingRef.current) return;
+      isStoppingRef.current = true;
+      if (nativeStopRef.current) {
+        nativeStopRef.current.stop();
+      } else if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
     }, SILENCE_TIMEOUT_MS);
@@ -92,6 +102,11 @@ export function useVoiceInput(): UseVoiceInputReturn {
 
   const stopListening = useCallback(() => {
     clearSilenceTimer();
+    if (nativeStopRef.current) {
+      isStoppingRef.current = true;
+      nativeStopRef.current.stop();
+      return;
+    }
     if (recognitionRef.current && !isStoppingRef.current) {
       isStoppingRef.current = true;
       recognitionRef.current.stop();
@@ -99,6 +114,43 @@ export function useVoiceInput(): UseVoiceInputReturn {
   }, [clearSilenceTimer]);
 
   const startListening = useCallback(() => {
+    setTranscript("");
+    setInterimTranscript("");
+    setError(null);
+    isStoppingRef.current = false;
+
+    if (isNativeSpeechAvailable()) {
+      startNativeListening(
+        (text) => {
+          setInterimTranscript(text);
+          resetSilenceTimer();
+        },
+        (message) => {
+          setError(message);
+          clearSilenceTimer();
+        },
+        () => {
+          setIsListening(false);
+          setInterimTranscript((interim) => {
+            if (interim.trim()) setTranscript(interim);
+            return "";
+          });
+          clearSilenceTimer();
+          isStoppingRef.current = false;
+          nativeStopRef.current = null;
+        },
+      )
+        .then((handle) => {
+          nativeStopRef.current = handle;
+          setIsListening(true);
+          resetSilenceTimer();
+        })
+        .catch(() => {
+          setError("Erro ao iniciar reconhecimento de voz.");
+        });
+      return;
+    }
+
     const Ctor = getSpeechRecognitionConstructor();
     if (!Ctor) return;
 
@@ -106,11 +158,6 @@ export function useVoiceInput(): UseVoiceInputReturn {
       recognitionRef.current.abort();
       recognitionRef.current = null;
     }
-
-    setTranscript("");
-    setInterimTranscript("");
-    setError(null);
-    isStoppingRef.current = false;
 
     instanceCounterRef.current += 1;
     const instanceId = instanceCounterRef.current;
@@ -167,12 +214,21 @@ export function useVoiceInput(): UseVoiceInputReturn {
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setError("Reconhecimento de voz não disponível neste navegador.");
+      recognitionRef.current = null;
+    }
   }, [resetSilenceTimer, clearSilenceTimer]);
 
   useEffect(() => {
     return () => {
       clearSilenceTimer();
+      if (nativeStopRef.current) {
+        nativeStopRef.current.stop();
+        nativeStopRef.current = null;
+      }
       if (recognitionRef.current) {
         recognitionRef.current.abort();
         recognitionRef.current = null;

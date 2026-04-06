@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+
+vi.mock("@/lib/capacitor/speech", () => ({
+  isNativeSpeechAvailable: () => false,
+  startNativeListening: vi.fn(),
+}));
+
 import { useVoiceInput } from "./use-voice-input";
 
 type ResultEntry = { transcript: string; isFinal: boolean; 0: { transcript: string } };
