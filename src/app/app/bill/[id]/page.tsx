@@ -37,6 +37,7 @@ import { loadExpense } from "@/lib/supabase/expense-actions";
 import { activateExpense } from "@/lib/supabase/expense-rpc";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
+import { haptics } from "@/hooks/use-haptics";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import toast from "react-hot-toast";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
@@ -128,10 +129,12 @@ function CreatorDraftView({
     setFinalizing(true);
     const result = await activateExpense({ expense_id: expense.id });
     if ("error" in result) {
+      haptics.error();
       toast.error(result.error);
       setFinalizing(false);
       return;
     }
+    haptics.success();
     notifyExpenseActivated(expense.id).catch(() => {});
     // Reload from DB to get authoritative state
     const fresh = await loadExpense(expense.id);
