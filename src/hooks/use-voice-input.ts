@@ -69,6 +69,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStoppingRef = useRef(false);
+  const instanceCounterRef = useRef(0);
 
   const isSupported = typeof window !== "undefined" && getSpeechRecognitionConstructor() !== null;
 
@@ -111,6 +112,9 @@ export function useVoiceInput(): UseVoiceInputReturn {
     setError(null);
     isStoppingRef.current = false;
 
+    instanceCounterRef.current += 1;
+    const instanceId = instanceCounterRef.current;
+
     const recognition = new Ctor();
     recognition.lang = "pt-BR";
     recognition.continuous = true;
@@ -118,11 +122,13 @@ export function useVoiceInput(): UseVoiceInputReturn {
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
+      if (instanceId !== instanceCounterRef.current) return;
       setIsListening(true);
       resetSilenceTimer();
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      if (instanceId !== instanceCounterRef.current) return;
       let final = "";
       let interim = "";
 
@@ -141,6 +147,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      if (instanceId !== instanceCounterRef.current) return;
       const message = ERROR_MESSAGES[event.error];
       if (message !== undefined) {
         if (message) setError(message);
@@ -151,6 +158,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     };
 
     recognition.onend = () => {
+      if (instanceId !== instanceCounterRef.current) return;
       setIsListening(false);
       setInterimTranscript("");
       clearSilenceTimer();

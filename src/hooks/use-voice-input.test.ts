@@ -284,4 +284,45 @@ describe("useVoiceInput", () => {
     expect(StandardMock.callCount).toBe(1);
     expect(MockSpeechRecognition.callCount).toBe(0);
   });
+
+  it("ignores deferred onend from an aborted instance when a new session has started", () => {
+    let instance1OnEnd: (() => void) | null = null;
+
+    const deferredAbortCtor = function () {
+      const instance = createMockRecognition();
+      instance.abort = vi.fn(function (this: typeof instance) {
+        instance1OnEnd = this.onend;
+      });
+      instance.start = vi.fn(function (this: typeof instance) {
+        this.onstart?.();
+      });
+      deferredAbortCtor.callCount++;
+      mockInstance = instance;
+      return instance;
+    } as unknown as { new (): ReturnType<typeof createMockRecognition>; callCount: number };
+    deferredAbortCtor.callCount = 0;
+
+    Object.defineProperty(window, "webkitSpeechRecognition", {
+      value: deferredAbortCtor,
+      writable: true,
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceInput());
+
+    act(() => result.current.startListening());
+    const instance2Ref = { current: mockInstance };
+
+    act(() => result.current.startListening());
+    const instance2 = mockInstance;
+
+    expect(instance2Ref.current).not.toBe(instance2);
+    expect(result.current.isListening).toBe(true);
+
+    act(() => {
+      instance1OnEnd?.();
+    });
+
+    expect(result.current.isListening).toBe(true);
+  });
 });
