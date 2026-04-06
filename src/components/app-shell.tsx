@@ -8,6 +8,7 @@ import { useCallback, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { UserProvider } from "@/contexts/user-context";
+import { haptics } from "@/hooks/use-haptics";
 import type { User as UserType } from "@/types";
 
 const navItems = [
@@ -32,7 +33,7 @@ function NavBar() {
 
           if (item.primary) {
             return (
-              <Link key={item.href} href={item.href}>
+              <Link key={item.href} href={item.href} onClick={() => haptics.tap()}>
                 <motion.div
                   whileTap={{ scale: 0.92 }}
                   className="gradient-primary -mt-5 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
@@ -47,6 +48,7 @@ function NavBar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => haptics.tap()}
               className="flex flex-col items-center gap-0.5"
             >
               <motion.div whileTap={{ scale: 0.9 }}>
@@ -102,9 +104,11 @@ function usePullToRefresh(onRefresh: () => Promise<void>) {
     if (!isDragging.current) return;
     isDragging.current = false;
     if (pullDistance >= threshold) {
+      haptics.impact();
       setPulling(true);
       setPullDistance(0);
       await onRefresh();
+      haptics.success();
       setPulling(false);
     } else {
       setPullDistance(0);
