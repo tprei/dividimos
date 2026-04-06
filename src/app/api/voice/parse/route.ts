@@ -65,6 +65,12 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (members.length > 100) {
+      return NextResponse.json(
+        { error: "Número de membros excede o limite permitido" },
+        { status: 400 },
+      );
+    }
     for (const m of members) {
       if (
         typeof m.handle !== "string" ||
@@ -72,6 +78,12 @@ export async function POST(request: Request) {
       ) {
         return NextResponse.json(
           { error: "Cada membro deve ter 'handle' e 'name'" },
+          { status: 400 },
+        );
+      }
+      if (m.handle.length > 50 || m.name.length > 100) {
+        return NextResponse.json(
+          { error: "Campos de membro excedem o tamanho permitido" },
           { status: 400 },
         );
       }
@@ -87,9 +99,10 @@ export async function POST(request: Request) {
       (error.name === "TimeoutError" || error.name === "AbortError");
     const message = isTimeout
       ? "Não foi possível processar. Tente novamente."
-      : error instanceof Error
-        ? error.message
-        : "Erro ao processar comando de voz";
+      : "Erro ao processar comando de voz";
+    if (!isTimeout) {
+      console.error("[voice/parse] Gemini error:", error);
+    }
     return NextResponse.json(
       { error: message, timeout: isTimeout },
       { status: isTimeout ? 504 : 500 },
