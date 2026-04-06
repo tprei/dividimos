@@ -24,6 +24,18 @@ vi.mock("@/lib/pix", () => ({
   generatePixCopiaECola: vi.fn(() => "pix-payload"),
 }));
 
+// Mock haptics
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
+import { haptics } from "@/hooks/use-haptics";
 import { PixQrModal } from "./pix-qr-modal";
 
 const defaultProps = {
@@ -37,6 +49,8 @@ const defaultProps = {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.mocked(haptics.success).mockClear();
+  vi.mocked(haptics.error).mockClear();
 });
 
 describe("PixQrModal", () => {
@@ -115,5 +129,58 @@ describe("PixQrModal", () => {
 
     // No error message should be present
     expect(screen.queryByText(/Erro/)).not.toBeInTheDocument();
+  });
+
+  it("triggers haptics.success on copy", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+
+    render(<PixQrModal {...defaultProps} pixKey="alice@test.com" />);
+
+    await waitFor(() => {
+      const copyButton = screen.getByRole("button", { name: /Copiar código Pix/i });
+      expect(copyButton).not.toBeDisabled();
+    });
+
+    const copyButton = screen.getByRole("button", { name: /Copiar código Pix/i });
+    copyButton.click();
+
+    await waitFor(() => {
+      expect(haptics.success).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("triggers haptics.error on API error response", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      json: () => Promise.resolve({ error: "No Pix key" }),
+    });
+
+    render(
+      <PixQrModal
+        {...defaultProps}
+        recipientUserId="user-bob"
+        billId="bill-1"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(haptics.error).toHaveBeenCalled();
+    });
+  });
+
+  it("triggers haptics.error on network failure", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
+
+    render(
+      <PixQrModal
+        {...defaultProps}
+        recipientUserId="user-bob"
+        billId="bill-1"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(haptics.error).toHaveBeenCalled();
+    });
   });
 });
