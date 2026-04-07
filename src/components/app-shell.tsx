@@ -4,11 +4,12 @@ import { motion } from "framer-motion";
 import { Home, Loader2, Plus, Receipt, RefreshCw, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { UserProvider } from "@/contexts/user-context";
 import { haptics } from "@/hooks/use-haptics";
+import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
 import type { User as UserType } from "@/types";
 
 const navItems = [
@@ -19,25 +20,9 @@ const navItems = [
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
 
-function useKeyboardOpen() {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const onResize = () => {
-      setOpen(vv.height < window.innerHeight * 0.75);
-    };
-    vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
-  }, []);
-
-  return open;
-}
-
 function NavBar() {
   const pathname = usePathname();
-  const keyboardOpen = useKeyboardOpen();
+  const keyboardOpen = useKeyboardVisible();
 
   if (keyboardOpen) return null;
 

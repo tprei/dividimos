@@ -1,4 +1,5 @@
 import type { CapacitorConfig } from "@capacitor/cli";
+import { KeyboardResize } from "@capacitor/keyboard";
 
 const devMode = process.env.CAPACITOR_DEV === "true";
 const isIosSimulator = process.env.CAPACITOR_IOS_SIMULATOR === "true";
@@ -49,8 +50,8 @@ const config: CapacitorConfig = {
       backgroundColor: "#F9F9FB",
     },
     Keyboard: {
-      resize: "body",
-      resizeOnFullScreen: true,
+      resize: KeyboardResize.None,
+      resizeOnFullScreen: false,
     },
   },
 };
