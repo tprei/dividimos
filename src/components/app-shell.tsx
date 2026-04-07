@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { Home, Loader2, Plus, Receipt, RefreshCw, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { UserProvider } from "@/contexts/user-context";
@@ -19,8 +19,27 @@ const navItems = [
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
 
+function useKeyboardOpen() {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      setOpen(vv.height < window.innerHeight * 0.75);
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
+
+  return open;
+}
+
 function NavBar() {
   const pathname = usePathname();
+  const keyboardOpen = useKeyboardOpen();
+
+  if (keyboardOpen) return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border/50 safe-bottom">
@@ -140,7 +159,7 @@ export function AppShell({
 
   return (
     <UserProvider initialUser={initialUser}>
-      <div className="flex min-h-screen flex-col bg-background">
+      <div className="flex min-h-dvh flex-col bg-background">
         <header className="sticky top-0 z-40 glass border-b border-border/50">
           <div className="flex h-14 items-center justify-between px-4">
             <Logo size="sm" />
