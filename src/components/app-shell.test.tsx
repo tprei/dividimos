@@ -18,6 +18,10 @@ vi.mock("@/components/shared/logo", () => ({
   Logo: () => <div data-testid="logo" />,
 }));
 
+vi.mock("@/hooks/use-keyboard-visible", () => ({
+  useKeyboardVisible: () => false,
+}));
+
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: {
     tap: vi.fn(),
