@@ -265,9 +265,10 @@ describe("startNativeListening", () => {
       await result.stop();
 
       expect(mockStop).toHaveBeenCalledTimes(1);
-      expect(removePartial).toHaveBeenCalledTimes(1);
-      expect(removeState).toHaveBeenCalledTimes(1);
-      expect(removeError).toHaveBeenCalledTimes(1);
+      // Listeners are now removed in the "stopped" event handler, not in stop()
+      expect(removePartial).toHaveBeenCalledTimes(0);
+      expect(removeState).toHaveBeenCalledTimes(0);
+      expect(removeError).toHaveBeenCalledTimes(0);
     });
   });
 });

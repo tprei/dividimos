@@ -207,7 +207,10 @@ export function useVoiceInput(): UseVoiceInputReturn {
     recognition.onend = () => {
       if (instanceId !== instanceCounterRef.current) return;
       setIsListening(false);
-      setInterimTranscript("");
+      setInterimTranscript((interim) => {
+        if (interim.trim()) setTranscript(interim);
+        return "";
+      });
       clearSilenceTimer();
       isStoppingRef.current = false;
       recognitionRef.current = null;
