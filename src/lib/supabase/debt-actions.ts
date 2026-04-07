@@ -3,24 +3,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { DebtSummary } from "@/types";
 
-interface BalanceRow {
-  group_id: string;
-  user_a: string;
-  user_b: string;
-  amount_cents: number;
-}
-
-interface GroupRow {
-  id: string;
-  name: string;
-}
-
-interface ProfileRow {
-  id: string;
-  name: string;
-  avatar_url: string | null;
-}
-
 export async function fetchUserDebts(userId: string): Promise<DebtSummary[]> {
   const supabase = await createClient();
 
@@ -37,7 +19,7 @@ export async function fetchUserDebts(userId: string): Promise<DebtSummary[]> {
   const groupIds = new Set<string>();
   const counterpartyIds = new Set<string>();
 
-  for (const b of balances as BalanceRow[]) {
+  for (const b of balances) {
     groupIds.add(b.group_id);
     const counterparty = b.user_a === userId ? b.user_b : b.user_a;
     counterpartyIds.add(counterparty);
@@ -52,18 +34,18 @@ export async function fetchUserDebts(userId: string): Promise<DebtSummary[]> {
   ]);
 
   const groupMap = new Map<string, string>();
-  for (const g of (groupsResult.data ?? []) as GroupRow[]) {
+  for (const g of groupsResult.data ?? []) {
     groupMap.set(g.id, g.name);
   }
 
-  const profileMap = new Map<string, ProfileRow>();
-  for (const p of (profilesResult.data ?? []) as ProfileRow[]) {
+  const profileMap = new Map<string, { id: string; name: string; avatar_url: string | null }>();
+  for (const p of profilesResult.data ?? []) {
     profileMap.set(p.id, p);
   }
 
   const debts: DebtSummary[] = [];
 
-  for (const b of balances as BalanceRow[]) {
+  for (const b of balances) {
     const counterpartyId = b.user_a === userId ? b.user_b : b.user_a;
     const profile = profileMap.get(counterpartyId);
 
