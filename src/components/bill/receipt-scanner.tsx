@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera, ImagePlus, QrCode, RotateCcw, ScanLine, X } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import { Button } from "@/components/ui/button";
 import { QrScannerView } from "./qr-scanner-view";
 import type { NfceQrResult } from "@/lib/nfce-qr";
@@ -34,6 +35,7 @@ export function ReceiptScanner({
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [qrPaused, setQrPaused] = useState(false);
+  const isAndroid = Capacitor.getPlatform() === "android";
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
 
@@ -63,6 +65,26 @@ export function ReceiptScanner({
   const handleProcess = useCallback(() => {
     if (file) onProcess(file);
   }, [file, onProcess]);
+
+  const handleNativeCapture = useCallback(
+    async (source: "camera" | "gallery") => {
+      const { takeNativePhoto, pickNativeGalleryPhoto } = await import(
+        "@/lib/capacitor/camera"
+      );
+      const captured =
+        source === "camera"
+          ? await takeNativePhoto()
+          : await pickNativeGalleryPhoto();
+
+      setFile(captured);
+      const url = URL.createObjectURL(captured);
+      setPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    },
+    [],
+  );
 
   const handleQrDecode = useCallback(
     (data: string) => {
@@ -176,7 +198,11 @@ export function ReceiptScanner({
           >
             <button
               type="button"
-              onClick={() => cameraRef.current?.click()}
+              onClick={() =>
+                isAndroid
+                  ? handleNativeCapture("camera")
+                  : cameraRef.current?.click()
+              }
               className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/10"
             >
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -192,7 +218,11 @@ export function ReceiptScanner({
 
             <button
               type="button"
-              onClick={() => galleryRef.current?.click()}
+              onClick={() =>
+                isAndroid
+                  ? handleNativeCapture("gallery")
+                  : galleryRef.current?.click()
+              }
               className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-6 text-center transition-colors hover:border-primary/50 hover:bg-primary/10"
             >
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">

@@ -1,6 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+const mockGetPlatform = vi.fn(() => "web");
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: {
+    getPlatform: () => mockGetPlatform(),
+  },
+}));
+
+const mockTakeNativePhoto = vi.fn();
+const mockPickNativeGalleryPhoto = vi.fn();
+
+vi.mock("@/lib/capacitor/camera", () => ({
+  takeNativePhoto: (...args: unknown[]) => mockTakeNativePhoto(...args),
+  pickNativeGalleryPhoto: (...args: unknown[]) =>
+    mockPickNativeGalleryPhoto(...args),
+}));
+
 import { ReceiptScanner } from "./receipt-scanner";
 
 function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
@@ -10,6 +28,9 @@ function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
 // Stub URL.createObjectURL / revokeObjectURL for happy-dom
 const fakeUrl = "blob:http://localhost/fake-preview";
 beforeEach(() => {
+  mockGetPlatform.mockReturnValue("web");
+  mockTakeNativePhoto.mockReset();
+  mockPickNativeGalleryPhoto.mockReset();
   vi.stubGlobal("URL", {
     ...globalThis.URL,
     createObjectURL: vi.fn(() => fakeUrl),
@@ -217,6 +238,72 @@ describe("ReceiptScanner", () => {
 
       expect(processBtn).toBeDisabled();
       expect(changeBtn).toBeDisabled();
+    });
+  });
+
+  describe("Android native capture", () => {
+    beforeEach(() => {
+      mockGetPlatform.mockReturnValue("android");
+    });
+
+    it("calls takeNativePhoto when Camera is clicked on Android", async () => {
+      const mockFile = createMockFile();
+      mockTakeNativePhoto.mockResolvedValue(mockFile);
+
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      const cameraBtn = screen.getByText("Camera").closest("button")!;
+      await user.click(cameraBtn);
+
+      expect(mockTakeNativePhoto).toHaveBeenCalledOnce();
+      expect(mockPickNativeGalleryPhoto).not.toHaveBeenCalled();
+    });
+
+    it("calls pickNativeGalleryPhoto when Galeria is clicked on Android", async () => {
+      const mockFile = createMockFile();
+      mockPickNativeGalleryPhoto.mockResolvedValue(mockFile);
+
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      const galleryBtn = screen.getByText("Galeria").closest("button")!;
+      await user.click(galleryBtn);
+
+      expect(mockPickNativeGalleryPhoto).toHaveBeenCalledOnce();
+      expect(mockTakeNativePhoto).not.toHaveBeenCalled();
+    });
+
+    it("shows preview after native capture", async () => {
+      const mockFile = createMockFile();
+      mockTakeNativePhoto.mockResolvedValue(mockFile);
+
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      const cameraBtn = screen.getByText("Camera").closest("button")!;
+      await user.click(cameraBtn);
+
+      const img = screen.getByAltText("Foto da nota fiscal");
+      expect(img).toBeInTheDocument();
+      expect(img).toHaveAttribute("src", fakeUrl);
+    });
+  });
+
+  describe("Web file inputs (non-Android)", () => {
+    beforeEach(() => {
+      mockGetPlatform.mockReturnValue("web");
+    });
+
+    it("does not call native capture when Camera is clicked on web", async () => {
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      const cameraBtn = screen.getByText("Camera").closest("button")!;
+      await user.click(cameraBtn);
+
+      expect(mockTakeNativePhoto).not.toHaveBeenCalled();
+      expect(mockPickNativeGalleryPhoto).not.toHaveBeenCalled();
     });
   });
 });
