@@ -249,7 +249,7 @@ export function DashboardContent({
         className="mt-4 grid grid-cols-2 gap-3"
       >
         <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
-        <QuickAction icon={ScanLine} label="Ler cupom" href="/app/bill/new" />
+        <QuickAction icon={ScanLine} label="Ler cupom" href="/app/bill/new?scan=true" />
         <QuickAction icon={Users} label="Grupos" href="/app/groups" />
         <QuickAction icon={QrCode} label="Ler convite" href="/app/scan-invite" />
       </motion.div>

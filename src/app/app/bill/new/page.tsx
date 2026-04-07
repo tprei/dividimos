@@ -518,6 +518,17 @@ function NewBillPageContent() {
     }
   }, [searchParams]);
 
+  // Auto-open scanner when ?scan=true (from "Ler cupom" dashboard button)
+  const scanParamRef = useRef(false);
+  useEffect(() => {
+    if (scanParamRef.current) return;
+    if (searchParams.get("scan") && !showScanner && !scanResult) {
+      scanParamRef.current = true;
+      setBillType("itemized");
+      setShowScanner(true);
+    }
+  }, [searchParams, showScanner, scanResult]);
+
   /** Compute expense shares from store state. Returns one entry per registered participant (excludes guests). */
   const computeShares = useCallback(() => {
     const state = useBillStore.getState();
@@ -1024,7 +1035,7 @@ function NewBillPageContent() {
                         </p>
                       </div>
                     </div>
-                    <Button variant="outline" className="mt-3 w-full gap-2" onClick={() => {}}>
+                    <Button variant="outline" className="mt-3 w-full gap-2" onClick={() => setShowScanner(true)}>
                       <ScanLine className="h-4 w-4" />
                       Escanear
                     </Button>
