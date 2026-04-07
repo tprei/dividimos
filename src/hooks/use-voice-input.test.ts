@@ -331,4 +331,155 @@ describe("useVoiceInput", () => {
 
     expect(result.current.isListening).toBe(true);
   });
+
+  it("sets error and clears ref when recognition.start() throws", () => {
+    const throwingCtor = function () {
+      const instance = createMockRecognition();
+      instance.start = vi.fn(() => {
+        throw new Error("not allowed");
+      });
+      mockInstance = instance;
+      return instance;
+    } as unknown as { new (): ReturnType<typeof createMockRecognition>; callCount: number };
+    throwingCtor.callCount = 0;
+
+    Object.defineProperty(window, "webkitSpeechRecognition", {
+      value: throwingCtor,
+      writable: true,
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceInput());
+    act(() => result.current.startListening());
+
+    expect(result.current.error).toBe(
+      "Reconhecimento de voz não disponível neste navegador.",
+    );
+    expect(result.current.isListening).toBe(false);
+
+    // Subsequent startListening should work without abort() on null ref
+    Object.defineProperty(window, "webkitSpeechRecognition", {
+      value: MockSpeechRecognition,
+      writable: true,
+      configurable: true,
+    });
+    act(() => result.current.startListening());
+    expect(result.current.error).toBeNull();
+  });
+
+  it("concatenates multiple final results in a single onresult event", () => {
+    const { result } = renderHook(() => useVoiceInput());
+    act(() => result.current.startListening());
+
+    act(() => {
+      mockInstance._emitResult([
+        { transcript: "uber ", isFinal: true, 0: { transcript: "uber " } },
+        {
+          transcript: "com João",
+          isFinal: true,
+          0: { transcript: "com João" },
+        },
+      ]);
+    });
+
+    expect(result.current.transcript).toBe("uber com João");
+    expect(result.current.interimTranscript).toBe("");
+  });
+
+  it("concatenates mixed final and interim results in a single onresult event", () => {
+    const { result } = renderHook(() => useVoiceInput());
+    act(() => result.current.startListening());
+
+    act(() => {
+      mockInstance._emitResult([
+        { transcript: "uber ", isFinal: true, 0: { transcript: "uber " } },
+        {
+          transcript: "com João",
+          isFinal: false,
+          0: { transcript: "com João" },
+        },
+      ]);
+    });
+
+    expect(result.current.transcript).toBe("uber ");
+    expect(result.current.interimTranscript).toBe("com João");
+  });
+
+  it("stopListening when not listening is a no-op", () => {
+    const { result } = renderHook(() => useVoiceInput());
+
+    // Should not throw or change any state
+    act(() => result.current.stopListening());
+
+    expect(result.current.isListening).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(result.current.transcript).toBe("");
+  });
+
+  it("handles rapid start/stop cycling without leaked state", () => {
+    const { result } = renderHook(() => useVoiceInput());
+
+    // Rapid cycle 1
+    act(() => result.current.startListening());
+    act(() => result.current.stopListening());
+
+    // Rapid cycle 2
+    act(() => result.current.startListening());
+    act(() => result.current.stopListening());
+
+    // Rapid cycle 3
+    act(() => result.current.startListening());
+
+    expect(result.current.isListening).toBe(true);
+    expect(result.current.transcript).toBe("");
+    expect(result.current.error).toBeNull();
+
+    // Silence timer from earlier cycles should not fire and interfere
+    act(() => vi.advanceTimersByTime(3000));
+
+    // Only the latest instance's stop should be called
+    expect(result.current.isListening).toBe(false);
+  });
+
+  it("does not update transcript when only interim (isFinal: false) results arrive", () => {
+    const { result } = renderHook(() => useVoiceInput());
+    act(() => result.current.startListening());
+
+    act(() => {
+      mockInstance._emitResult([
+        { transcript: "ub", isFinal: false, 0: { transcript: "ub" } },
+      ]);
+    });
+    expect(result.current.transcript).toBe("");
+    expect(result.current.interimTranscript).toBe("ub");
+
+    act(() => {
+      mockInstance._emitResult([
+        { transcript: "uber", isFinal: false, 0: { transcript: "uber" } },
+      ]);
+    });
+    expect(result.current.transcript).toBe("");
+    expect(result.current.interimTranscript).toBe("uber");
+
+    // On end, interim clears without becoming transcript
+    act(() => mockInstance._emitEnd());
+    expect(result.current.transcript).toBe("");
+    expect(result.current.interimTranscript).toBe("");
+    expect(result.current.isListening).toBe(false);
+  });
+
+  it("does not leak silence timer after rapid start/stop cycling", () => {
+    const { result, unmount } = renderHook(() => useVoiceInput());
+
+    act(() => result.current.startListening());
+    act(() => result.current.stopListening());
+    act(() => result.current.startListening());
+    act(() => result.current.stopListening());
+
+    // After unmount, advancing timers should not cause errors
+    unmount();
+    expect(() => {
+      vi.advanceTimersByTime(5000);
+    }).not.toThrow();
+  });
 });
