@@ -93,20 +93,6 @@ export function isSplitType(value: unknown): value is SplitType {
 }
 
 /**
- * Asserts that a value is a valid BillStatus, throwing if not.
- * @param value - The value to check
- * @param context - Optional context for error message
- * @throws Error if value is not a valid BillStatus
- */
-export function assertBillStatus(value: unknown, context?: string): asserts value is BillStatus {
-  if (!isBillStatus(value)) {
-    throw new Error(
-      `Invalid BillStatus: ${JSON.stringify(value)}${context ? ` (context: ${context})` : ""}`,
-    );
-  }
-}
-
-/**
  * Asserts that a value is a valid BillType, throwing if not.
  * @param value - The value to check
  * @param context - Optional context for error message

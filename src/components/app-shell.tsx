@@ -9,6 +9,7 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { UserProvider } from "@/contexts/user-context";
 import { haptics } from "@/hooks/use-haptics";
+import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
 import type { User as UserType } from "@/types";
 
 const navItems = [
@@ -126,6 +127,7 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const keyboardVisible = useKeyboardVisible();
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
@@ -140,7 +142,7 @@ export function AppShell({
 
   return (
     <UserProvider initialUser={initialUser}>
-      <div className="flex min-h-screen flex-col bg-background">
+      <div className="flex min-h-dvh flex-col bg-background">
         <header className="sticky top-0 z-40 glass border-b border-border/50">
           <div className="flex h-14 items-center justify-between px-4">
             <Logo size="sm" />
@@ -182,7 +184,7 @@ export function AppShell({
           {children}
         </main>
 
-        <NavBar />
+        {!keyboardVisible && <NavBar />}
       </div>
     </UserProvider>
   );

@@ -8,6 +8,15 @@ afterEach(() => {
   cleanup();
 });
 
+// Mock Capacitor Keyboard plugin (not available in web test environment)
+vi.mock("@capacitor/keyboard", () => ({
+  Keyboard: {
+    addListener: vi.fn().mockResolvedValue({ remove: vi.fn() }),
+    removeAllListeners: vi.fn().mockResolvedValue(undefined),
+  },
+  KeyboardResize: { Body: "body", Ionic: "ionic", Native: "native", None: "none" },
+}));
+
 // Mock framer-motion to render plain elements (avoids animation-related
 // duplicate renders and timing issues in happy-dom)
 vi.mock("framer-motion", async () => {

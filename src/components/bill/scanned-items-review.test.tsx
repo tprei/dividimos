@@ -126,7 +126,7 @@ describe("ScannedItemsReview", () => {
     const editButtons = screen.getAllByLabelText(/Editar/);
     await user.click(editButtons[1]); // edit Picanha
 
-    const descInput = screen.getByDisplayValue("Picanha 400g");
+    const descInput = await screen.findByDisplayValue("Picanha 400g");
     await user.clear(descInput);
     await user.type(descInput, "Picanha 500g");
 
