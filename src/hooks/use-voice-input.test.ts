@@ -461,9 +461,9 @@ describe("useVoiceInput", () => {
     expect(result.current.transcript).toBe("");
     expect(result.current.interimTranscript).toBe("uber");
 
-    // On end, interim clears without becoming transcript
+    // On end, interim text is promoted to transcript
     act(() => mockInstance._emitEnd());
-    expect(result.current.transcript).toBe("");
+    expect(result.current.transcript).toBe("uber");
     expect(result.current.interimTranscript).toBe("");
     expect(result.current.isListening).toBe(false);
   });

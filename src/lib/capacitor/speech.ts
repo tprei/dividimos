@@ -20,6 +20,12 @@ export async function startNativeListening(
     return { stop: async () => {} };
   }
 
+  const removeAllListeners = () => {
+    partialHandle.remove();
+    stateHandle.remove();
+    errorHandle.remove();
+  };
+
   const partialHandle = await SpeechRecognition.addListener(
     "partialResults",
     (event) => {
@@ -31,7 +37,10 @@ export async function startNativeListening(
   const stateHandle = await SpeechRecognition.addListener(
     "listeningState",
     (event) => {
-      if (event.state === "stopped") onEnd();
+      if (event.state === "stopped") {
+        removeAllListeners();
+        onEnd();
+      }
     },
   );
 
@@ -49,9 +58,6 @@ export async function startNativeListening(
   return {
     stop: async () => {
       await SpeechRecognition.stop();
-      partialHandle.remove();
-      stateHandle.remove();
-      errorHandle.remove();
     },
   };
 }
