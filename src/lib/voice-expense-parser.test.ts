@@ -319,6 +319,294 @@ describe("parseVoiceExpense", () => {
     );
   });
 
+  it("defaults null amountCents to 0", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Test",
+        amountCents: null,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.amountCents).toBe(0);
+  });
+
+  it("defaults undefined amountCents to 0", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Test",
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.amountCents).toBe(0);
+  });
+
+  it("defaults null title to empty string", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: null,
+        amountCents: 1000,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.title).toBe("");
+  });
+
+  it("defaults undefined title to empty string", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        amountCents: 1000,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.title).toBe("");
+  });
+
+  it("clamps negative item quantity to 0", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Test",
+        amountCents: 1000,
+        expenseType: "itemized",
+        items: [
+          {
+            description: "Item",
+            quantity: -3,
+            unitPriceCents: 500,
+            totalCents: 500,
+          },
+        ],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.items[0].quantity).toBe(0);
+  });
+
+  it("clamps negative item unitPriceCents to 0", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Test",
+        amountCents: 1000,
+        expenseType: "itemized",
+        items: [
+          {
+            description: "Item",
+            quantity: 1,
+            unitPriceCents: -200,
+            totalCents: 500,
+          },
+        ],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.items[0].unitPriceCents).toBe(0);
+  });
+
+  it("clamps negative item totalCents to 0", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Test",
+        amountCents: 1000,
+        expenseType: "itemized",
+        items: [
+          {
+            description: "Item",
+            quantity: 1,
+            unitPriceCents: 500,
+            totalCents: -100,
+          },
+        ],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.items[0].totalCents).toBe(0);
+  });
+
+  it("does not override amountCents when itemized with non-zero amount", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Compras",
+        amountCents: 5000,
+        expenseType: "itemized",
+        items: [
+          {
+            description: "Item A",
+            quantity: 1,
+            unitPriceCents: 1000,
+            totalCents: 1000,
+          },
+          {
+            description: "Item B",
+            quantity: 1,
+            unitPriceCents: 2000,
+            totalCents: 2000,
+          },
+        ],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("compras", fakeApiKey);
+
+    expect(result.amountCents).toBe(5000);
+  });
+
+  it("uses no-member prompt when members parameter is undefined", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Test",
+        amountCents: 0,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    await parseVoiceExpense("teste", fakeApiKey, undefined);
+
+    const callArgs = mockGenerateContent.mock.calls[0][0];
+    expect(callArgs.config.systemInstruction).toContain(
+      "Não há membros conhecidos",
+    );
+  });
+
+  it("marks unmatched participant names with null handle and low confidence", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Pizza",
+        amountCents: 4000,
+        expenseType: "single_amount",
+        items: [],
+        participants: [
+          {
+            spokenName: "Carlos",
+            matchedHandle: null,
+            confidence: "low",
+          },
+        ],
+        merchantName: null,
+      }),
+    });
+
+    const members: MemberContext[] = [
+      { handle: "joao123", name: "João Silva" },
+    ];
+
+    const result = await parseVoiceExpense("pizza com Carlos", fakeApiKey, members);
+
+    expect(result.participants[0].matchedHandle).toBeNull();
+    expect(result.participants[0].confidence).toBe("low");
+    expect(result.participants[0].spokenName).toBe("Carlos");
+  });
+
+  it("handles duplicate participant names from Gemini", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Jantar",
+        amountCents: 8000,
+        expenseType: "single_amount",
+        items: [],
+        participants: [
+          { spokenName: "Maria", matchedHandle: "maria1", confidence: "low" },
+          { spokenName: "Maria", matchedHandle: "maria2", confidence: "low" },
+        ],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("jantar com Maria e Maria", fakeApiKey);
+
+    expect(result.participants).toHaveLength(2);
+    expect(result.participants[0].spokenName).toBe("Maria");
+    expect(result.participants[1].spokenName).toBe("Maria");
+  });
+
+  it("handles transcript near 2000 character limit", async () => {
+    const longText = "pizza ".repeat(333).trim();
+    expect(longText.length).toBeLessThanOrEqual(2000);
+    expect(longText.length).toBeGreaterThan(1900);
+
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Pizza",
+        amountCents: 1000,
+        expenseType: "single_amount",
+        items: [],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense(longText, fakeApiKey);
+
+    expect(result.title).toBe("Pizza");
+    const callArgs = mockGenerateContent.mock.calls[0][0];
+    expect(callArgs.contents[0].parts[0].text).toContain(longText);
+  });
+
+  it("handles null item fields with nullish coalescing defaults", async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({
+        title: "Test",
+        amountCents: 1000,
+        expenseType: "itemized",
+        items: [
+          {
+            description: "Item",
+            quantity: null,
+            unitPriceCents: null,
+            totalCents: null,
+          },
+        ],
+        participants: [],
+        merchantName: null,
+      }),
+    });
+
+    const result = await parseVoiceExpense("teste", fakeApiKey);
+
+    expect(result.items[0].quantity).toBe(0);
+    expect(result.items[0].unitPriceCents).toBe(0);
+    expect(result.items[0].totalCents).toBe(0);
+  });
+
   it("rounds item cents to integers", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
