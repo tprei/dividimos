@@ -1,4 +1,4 @@
-import type { Expense, ExpenseItem, User, Bill, BillItem, LedgerEntry } from "@/types";
+import type { Expense, ExpenseItem, User, Bill } from "@/types";
 
 export const userAlice: User = {
   id: "user-alice",
@@ -119,32 +119,3 @@ export function makeSingleAmountBill(overrides: Partial<Bill> = {}): Bill {
   };
 }
 
-/** @deprecated Use makeExpenseItem instead */
-export function makeBillItem(overrides: Partial<BillItem> = {}): BillItem {
-  return {
-    id: "item-1",
-    billId: "bill-1",
-    description: "Pizza",
-    quantity: 1,
-    unitPriceCents: 5000,
-    totalPriceCents: 5000,
-    createdAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-/** @deprecated Use DebtEdge instead */
-export function makeLedgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEntry {
-  return {
-    id: "ledger-1",
-    billId: "bill-1",
-    entryType: "debt",
-    fromUserId: "user-bob",
-    toUserId: "user-alice",
-    amountCents: 5000,
-    paidAmountCents: 0,
-    status: "pending",
-    createdAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}

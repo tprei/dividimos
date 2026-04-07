@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Balance, Settlement, UserProfile } from "@/types";
+import type { Balance, Settlement } from "@/types";
 
 type SettlementRow = {
   id: string;
@@ -199,69 +199,4 @@ export async function querySettlementHistoryForBalance(
   }
 
   return (data as SettlementRow[] ?? []).map(mapSettlementRow);
-}
-
-
-// ============================================================
-// Composite queries (with user profiles)
-// ============================================================
-
-export type SettlementWithUsers = Settlement & {
-  fromUser: UserProfile;
-  toUser: UserProfile;
-};
-
-/**
- * Query settlements for a group with user profile data attached.
- * Fetches settlements and profiles in parallel.
- */
-export async function querySettlementsWithUsers(
-  groupId: string,
-): Promise<SettlementWithUsers[]> {
-  const supabase = createClient();
-
-  const [settlementsResult, profilesResult] = await Promise.all([
-    supabase
-      .from("settlements")
-      .select("*")
-      .eq("group_id", groupId)
-      .order("created_at", { ascending: false }),
-    supabase.from("user_profiles").select("*"),
-  ]);
-
-  if (settlementsResult.error) {
-    throw new Error(
-      `Failed to query settlements: ${settlementsResult.error.message}`,
-    );
-  }
-
-  const settlements = (settlementsResult.data as SettlementRow[] ?? []).map(
-    mapSettlementRow,
-  );
-
-  if (settlements.length === 0) return [];
-
-  // Build profile lookup
-  type ProfileRow = { id: string; handle: string; name: string; avatar_url: string | null };
-  const profiles = new Map<string, UserProfile>();
-  for (const p of (profilesResult.data ?? []) as ProfileRow[]) {
-    profiles.set(p.id, {
-      id: p.id,
-      handle: p.handle,
-      name: p.name,
-      avatarUrl: p.avatar_url ?? undefined,
-    });
-  }
-
-  const unknownUser: UserProfile = {
-    id: "",
-    handle: "unknown",
-    name: "Usuário desconhecido",
-  };
-
-  return settlements.map((s) => ({
-    ...s,
-    fromUser: profiles.get(s.fromUserId) ?? unknownUser,
-    toUser: profiles.get(s.toUserId) ?? unknownUser,
-  }));
 }

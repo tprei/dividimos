@@ -4,9 +4,7 @@ import {
   decimalToCents,
   distributeEvenly,
   distributeProportionally,
-  formatBillAmount,
   formatBRL,
-  parseBRLInput,
   sanitizeDecimalInput,
 } from "./currency";
 
@@ -73,66 +71,6 @@ describe("decimalToCents", () => {
 
   it("1.005 rounds to 100 due to floating point (1.005 * 100 = 100.4999...)", () => {
     expect(decimalToCents(1.005)).toBe(100);
-  });
-});
-
-describe("parseBRLInput", () => {
-  it("parses comma decimal (Brazilian format)", () => {
-    expect(parseBRLInput("10,50")).toBe(1050);
-  });
-
-  it("parses dot decimal", () => {
-    expect(parseBRLInput("10.50")).toBe(1050);
-  });
-
-  it("parses with currency symbol", () => {
-    expect(parseBRLInput("R$ 10,50")).toBe(1050);
-  });
-
-  it("returns 0 for empty string", () => {
-    expect(parseBRLInput("")).toBe(0);
-  });
-
-  it("returns 0 for non-numeric input", () => {
-    expect(parseBRLInput("abc")).toBe(0);
-  });
-
-  it("parses single centavo", () => {
-    expect(parseBRLInput("0,01")).toBe(1);
-  });
-
-  it("parses large number without thousands separator", () => {
-    expect(parseBRLInput("12345,67")).toBe(1234567);
-  });
-
-  // Known limitation: parseBRLInput does not handle thousands-separated Brazilian format.
-  // "1.234,56" (meaning R$ 1,234.56 = 123456 cents) is incorrectly parsed as 123 cents
-  // because the implementation strips the period, replaces only the first comma with a dot,
-  // yielding "1.234.56" → parseFloat returns 1.234 → Math.round(1.234 * 100) = 123.
-  test.fails("parses thousands-separated Brazilian format (known limitation)", () => {
-    expect(parseBRLInput("1.234,56")).toBe(123456);
-  });
-});
-
-describe("formatBillAmount", () => {
-  it('shows "Em criação..." for draft bills', () => {
-    expect(formatBillAmount("draft", 0)).toBe("Em criação...");
-  });
-
-  it('shows "Em criação..." for draft bills even with a non-zero amount', () => {
-    expect(formatBillAmount("draft", 5000)).toBe("Em criação...");
-  });
-
-  it("shows formatted amount for active bills", () => {
-    expect(formatBillAmount("active", 5000)).toBe("R$\u00a050,00");
-  });
-
-  it("shows formatted amount for finalized bills", () => {
-    expect(formatBillAmount("finalized", 1050)).toBe("R$\u00a010,50");
-  });
-
-  it("shows R$ 0,00 for non-draft bills with zero amount", () => {
-    expect(formatBillAmount("active", 0)).toBe("R$\u00a00,00");
   });
 });
 
