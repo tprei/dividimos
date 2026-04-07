@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
+import toast from "react-hot-toast";
 import { parseClaimQrCode } from "@/lib/claim-qr";
 
 const IS_DEV_LOGIN = process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED === "true";
@@ -62,10 +63,16 @@ function AuthPageContent() {
   const handleGoogleSignIn = async () => {
     const { isNativePlatform, nativeGoogleSignIn } = await import("@/lib/capacitor/auth");
     if (isNativePlatform()) {
-      const session = await nativeGoogleSignIn(supabase);
-      if (session) {
-        router.push(next);
-        router.refresh();
+      try {
+        const success = await nativeGoogleSignIn(supabase);
+        if (success) {
+          router.push(next);
+          router.refresh();
+        } else {
+          toast.error("Não foi possível entrar com Google. Tente novamente.");
+        }
+      } catch {
+        toast.error("Erro ao conectar com Google. Verifique sua conexão.");
       }
     } else {
       await supabase.auth.signInWithOAuth({
