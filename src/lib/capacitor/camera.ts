@@ -9,11 +9,6 @@ export async function takeNativePhoto(): Promise<File> {
     "@capacitor/camera"
   );
 
-  const permResult = await Camera.requestPermissions({ permissions: ["camera"] });
-  if (permResult.camera !== "granted") {
-    throw new Error("Permissão da câmera negada. Verifique as configurações.");
-  }
-
   const photo = await Camera.getPhoto({
     source: CameraSource.Camera,
     resultType: CameraResultType.Uri,
@@ -32,11 +27,6 @@ export async function pickNativeGalleryPhoto(): Promise<File> {
   const { Camera, CameraResultType, CameraSource } = await import(
     "@capacitor/camera"
   );
-
-  const permResult = await Camera.requestPermissions({ permissions: ["photos"] });
-  if (permResult.photos !== "granted") {
-    throw new Error("Permissão da galeria negada. Verifique as configurações.");
-  }
 
   const photo = await Camera.getPhoto({
     source: CameraSource.Photos,

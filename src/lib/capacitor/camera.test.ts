@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetPlatform = vi.fn(() => "android");
-const mockRequestPermissions = vi.fn();
 const mockGetPhoto = vi.fn();
 
 vi.mock("@capacitor/core", () => ({
@@ -12,7 +11,6 @@ vi.mock("@capacitor/core", () => ({
 
 vi.mock("@capacitor/camera", () => ({
   Camera: {
-    requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
     getPhoto: (...args: unknown[]) => mockGetPhoto(...args),
   },
   CameraResultType: { Uri: "uri" },
@@ -24,10 +22,6 @@ const fakeBlob = new Blob(["fake-image"], { type: "image/jpeg" });
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetPlatform.mockReturnValue("android");
-  mockRequestPermissions.mockResolvedValue({
-    camera: "granted",
-    photos: "granted",
-  });
   mockGetPhoto.mockResolvedValue({
     webPath: "capacitor://localhost/photo.jpeg",
     format: "jpeg",
@@ -73,22 +67,6 @@ describe("takeNativePhoto", () => {
     );
   });
 
-  it("requests camera permission", async () => {
-    const { takeNativePhoto } = await import("./camera");
-    await takeNativePhoto();
-
-    expect(mockRequestPermissions).toHaveBeenCalledWith({
-      permissions: ["camera"],
-    });
-  });
-
-  it("throws on permission denial", async () => {
-    mockRequestPermissions.mockResolvedValue({ camera: "denied" });
-
-    const { takeNativePhoto } = await import("./camera");
-    await expect(takeNativePhoto()).rejects.toThrow("Permissão da câmera");
-  });
-
   it("uses format from photo result", async () => {
     mockGetPhoto.mockResolvedValue({
       webPath: "capacitor://localhost/photo.png",
@@ -127,21 +105,12 @@ describe("pickNativeGalleryPhoto", () => {
     );
   });
 
-  it("requests photos permission", async () => {
+  it("calls getPhoto with Photos source", async () => {
     const { pickNativeGalleryPhoto } = await import("./camera");
     await pickNativeGalleryPhoto();
 
-    expect(mockRequestPermissions).toHaveBeenCalledWith({
-      permissions: ["photos"],
-    });
-  });
-
-  it("throws on permission denial", async () => {
-    mockRequestPermissions.mockResolvedValue({ photos: "denied" });
-
-    const { pickNativeGalleryPhoto } = await import("./camera");
-    await expect(pickNativeGalleryPhoto()).rejects.toThrow(
-      "Permissão da galeria",
+    expect(mockGetPhoto).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "PHOTOS" }),
     );
   });
 });

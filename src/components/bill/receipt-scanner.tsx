@@ -68,20 +68,24 @@ export function ReceiptScanner({
 
   const handleNativeCapture = useCallback(
     async (source: "camera" | "gallery") => {
-      const { takeNativePhoto, pickNativeGalleryPhoto } = await import(
-        "@/lib/capacitor/camera"
-      );
-      const captured =
-        source === "camera"
-          ? await takeNativePhoto()
-          : await pickNativeGalleryPhoto();
+      try {
+        const { takeNativePhoto, pickNativeGalleryPhoto } = await import(
+          "@/lib/capacitor/camera"
+        );
+        const captured =
+          source === "camera"
+            ? await takeNativePhoto()
+            : await pickNativeGalleryPhoto();
 
-      setFile(captured);
-      const url = URL.createObjectURL(captured);
-      setPreview((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return url;
-      });
+        setFile(captured);
+        const url = URL.createObjectURL(captured);
+        setPreview((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return url;
+        });
+      } catch {
+        // User cancelled the camera/gallery — no action needed
+      }
     },
     [],
   );
