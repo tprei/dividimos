@@ -1,10 +1,10 @@
 import { Capacitor } from '@capacitor/core';
 import { SocialLogin } from '@capgo/capacitor-social-login';
+import type { InitializeOptions } from '@capgo/capacitor-social-login';
 import { createClient } from '@/lib/supabase/client';
 
 const GOOGLE_WEB_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
 const GOOGLE_IOS_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
-const GOOGLE_ANDROID_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
 
 let initialized = false;
 
@@ -16,21 +16,16 @@ export async function ensureInitialized(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
   try {
-    const config: any = {
+    const platform = Capacitor.getPlatform();
+    const config: InitializeOptions = {
       google: {
         webClientId: GOOGLE_WEB_CLIENT_ID,
+        ...(platform === 'ios' && {
+          iOSClientId: GOOGLE_IOS_CLIENT_ID,
+          iOSServerClientId: GOOGLE_WEB_CLIENT_ID,
+        }),
       },
     };
-
-    if (Capacitor.getPlatform() === 'ios') {
-      config.google.iOSClientId = GOOGLE_IOS_CLIENT_ID;
-      config.google.iOSServerClientId = GOOGLE_WEB_CLIENT_ID;
-    }
-
-    if (Capacitor.getPlatform() === 'android') {
-      config.google.androidClientId = GOOGLE_ANDROID_CLIENT_ID;
-      config.google.androidServerClientId = GOOGLE_WEB_CLIENT_ID;
-    }
 
     await SocialLogin.initialize(config);
     initialized = true;
