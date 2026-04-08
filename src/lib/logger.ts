@@ -118,10 +118,6 @@ export function logError(logger: Logger, message: string, error: unknown, contex
   logger.error({ ...context, error: errorInfo }, message);
 }
 
-export function logWarn(logger: Logger, message: string, context?: LogContext): void {
-  logger.warn(context, message);
-}
-
 export function logInfo(logger: Logger, message: string, context?: LogContext): void {
   logger.info(context ?? {}, message);
 }
