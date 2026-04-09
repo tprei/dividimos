@@ -23,6 +23,8 @@ export interface Guest {
   id: string;
   /** Display name entered by the expense creator. */
   name: string;
+  /** Phone number from contact picker, used for WhatsApp claim link delivery. */
+  phone?: string;
 }
 
 interface ExpenseState {
@@ -52,7 +54,7 @@ interface ExpenseState {
   removeParticipant: (userId: string) => void;
 
   /** Adds a guest by name. Returns the generated guest ID. */
-  addGuest: (name: string) => string;
+  addGuest: (name: string, phone?: string) => string;
   /** Removes a guest and cascades removal to splits and billSplits. */
   removeGuest: (guestId: string) => void;
   /** Updates a guest's display name. */
@@ -186,9 +188,9 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     });
   },
 
-  addGuest: (name) => {
+  addGuest: (name, phone) => {
     const id = `guest_${generateId()}`;
-    const guest: Guest = { id, name };
+    const guest: Guest = { id, name, phone };
     set({ guests: [...get().guests, guest] });
     return id;
   },

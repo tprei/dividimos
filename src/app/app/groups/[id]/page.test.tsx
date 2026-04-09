@@ -207,7 +207,7 @@ describe("GroupDetailPage", () => {
     await renderPage();
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Link de convite")).toBeTruthy();
+      expect(screen.getByLabelText("Compartilhar convite")).toBeTruthy();
     });
   });
 
