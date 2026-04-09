@@ -21,6 +21,7 @@ import { DebtCard } from "@/components/dashboard/debt-card";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { useUser } from "@/hooks/use-auth";
+import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { recordSettlement } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { fetchUserDebts } from "@/lib/supabase/debt-actions";
@@ -198,6 +199,7 @@ export function DashboardContent({
         className="mt-5"
       >
         <div
+          data-tour="balance-card"
           className={`rounded-2xl p-5 text-white shadow-lg ${
             isPositive
               ? "gradient-income shadow-income/20"
@@ -246,6 +248,7 @@ export function DashboardContent({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.14, duration: 0.4 }}
+        data-tour="quick-actions"
         className="mt-4 grid grid-cols-2 gap-3"
       >
         <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
@@ -260,7 +263,7 @@ export function DashboardContent({
         transition={{ delay: 0.2, duration: 0.4 }}
         className="mt-8"
       >
-        <div className="flex items-center justify-between">
+        <div data-tour="debt-tabs" className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Quem deve o quê</h2>
           <Link
             href="/app/groups"
@@ -365,6 +368,8 @@ export function DashboardContent({
           })}
         </motion.div>
       </motion.div>
+
+      <OnboardingTour userId={user?.id} />
 
       {pixModal && (
         <PixQrModal
