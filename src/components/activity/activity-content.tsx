@@ -8,9 +8,10 @@ import {
   Receipt,
   UserPlus,
 } from "lucide-react";
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
+import { markLatestActivity } from "@/lib/activity-badge";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { fetchActivityFeed } from "@/lib/supabase/activity-actions";
@@ -109,6 +110,13 @@ export function ActivityContent({
   const [filter, setFilter] = useState<FilterType>("all");
   const [isPending, startTransition] = useTransition();
   const [hasMore, setHasMore] = useState(initialItems.length >= 30);
+
+  useEffect(() => {
+    if (items.length > 0) {
+      markLatestActivity(items[0].timestamp);
+      window.dispatchEvent(new CustomEvent("activity-updated"));
+    }
+  }, [items]);
 
   const handleRefresh = useCallback(() => {
     startTransition(async () => {
