@@ -329,6 +329,27 @@ describe("GroupSettlementView", () => {
     expect(mockIn).toHaveBeenCalledWith("id", [INVITED_ID]);
   });
 
+  it("shows settled empty state with guidance when no debts", async () => {
+    mockQueryBalances.mockResolvedValue([]);
+
+    render(
+      <GroupSettlementView
+        groupId="group-1"
+        participants={participants}
+        currentUserId={CREDITOR_ID}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Tudo liquidado!")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(
+        "Nenhuma dívida pendente no grupo. Quando uma conta for ativada, os saldos aparecem aqui.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("imports haptics.success for settlement recording", () => {
     expect(haptics.success).toBeDefined();
     expect(typeof haptics.success).toBe("function");

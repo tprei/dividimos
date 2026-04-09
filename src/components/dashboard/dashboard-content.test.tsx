@@ -70,9 +70,18 @@ describe("DashboardContent", () => {
     expect(screen.getByText("2 contas pendentes")).toBeInTheDocument();
   });
 
-  it("shows empty state when no debts on active tab", () => {
+  it("shows empty state when no debts on owes tab", () => {
     render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
-    expect(screen.getByText("Tô liso! Tudo certo por aqui.")).toBeInTheDocument();
+    expect(screen.getByText("Tudo certo por aqui!")).toBeInTheDocument();
+    expect(screen.getByText(/Você não tem nenhuma conta pendente/)).toBeInTheDocument();
+  });
+
+  it("shows empty state CTA linking to new bill", () => {
+    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
+    const emptyStateLink = screen.getAllByText("Nova conta")
+      .map((el) => el.closest("a"))
+      .find((a) => a?.getAttribute("href") === "/app/bill/new");
+    expect(emptyStateLink).toBeTruthy();
   });
 
   it("renders debt cards for owes tab by default", () => {

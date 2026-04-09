@@ -218,6 +218,48 @@ describe("GroupDetailPage", () => {
     });
   });
 
+  it("shows empty state with CTA when no expenses", async () => {
+    mockSupabaseData.expenses = [];
+    const user = userEvent.setup();
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Group")).toBeTruthy();
+    });
+
+    await user.click(screen.getByText("Contas"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Nenhuma conta ainda")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Adiciona uma conta pra dividir com o grupo. Pode ser um jantar, mercado, ou qualquer gasto compartilhado.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("shows empty state when no settlements", async () => {
+    mockSupabaseData.settlements = [];
+    const user = userEvent.setup();
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Group")).toBeTruthy();
+    });
+
+    await user.click(screen.getByText("Pagamentos"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Nenhum pagamento ainda")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Quando alguém pagar uma dívida do grupo, o registro aparece aqui.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
   it("shows new expense button in contas tab", async () => {
     const user = userEvent.setup();
     await renderPage();

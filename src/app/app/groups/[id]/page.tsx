@@ -15,6 +15,7 @@ import {
   Receipt,
   Search,
   Share2,
+  Wallet,
   Trash2,
   UserPlus,
   X,
@@ -28,6 +29,7 @@ import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal"
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
 import { Button } from "@/components/ui/button";
@@ -883,11 +885,13 @@ export default function GroupDetailPage({
           )}
 
           {expenses.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground">
-              <Receipt className="mx-auto h-8 w-8 opacity-50" />
-              <p className="mt-2 text-sm">Nenhuma conta ainda</p>
-              <p className="text-xs">Cria uma conta pra começar</p>
-            </div>
+            <EmptyState
+              icon={Receipt}
+              title="Nenhuma conta ainda"
+              description="Adiciona uma conta pra dividir com o grupo. Pode ser um jantar, mercado, ou qualquer gasto compartilhado."
+              actionLabel="Nova conta"
+              onAction={() => router.push(`/app/bill/new?groupId=${id}`)}
+            />
           ) : (
             expenses.map((expense) => {
               const statusCfg = expenseStatusConfig[expense.status];
@@ -938,10 +942,11 @@ export default function GroupDetailPage({
       {activeTab === "pagamentos" && (
         <div className="mt-4 space-y-2">
           {settlements.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground">
-              <Receipt className="mx-auto h-8 w-8 opacity-50" />
-              <p className="mt-2 text-sm">Nenhum pagamento ainda</p>
-            </div>
+            <EmptyState
+              icon={Wallet}
+              title="Nenhum pagamento ainda"
+              description="Quando alguém pagar uma dívida do grupo, o registro aparece aqui."
+            />
           ) : (
             settlements.map((settlement) => {
               const from = members.find((m) => m.userId === settlement.fromUserId);
