@@ -203,6 +203,78 @@ export async function querySettlementHistoryForBalance(
 
 
 // ============================================================
+// Per-contact balance summaries
+// ============================================================
+
+/**
+ * For a given user, compute the net balance vs each counterparty within a single group.
+ * Returns a Map<counterpartyId, netCents> where positive = counterparty owes you,
+ * negative = you owe counterparty.
+ */
+export async function queryGroupBalancesForUser(
+  groupId: string,
+  userId: string,
+): Promise<Map<string, number>> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("balances")
+    .select("*")
+    .eq("group_id", groupId)
+    .neq("amount_cents", 0)
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+
+  if (error) {
+    throw new Error(`Failed to query user balances: ${error.message}`);
+  }
+
+  const result = new Map<string, number>();
+  for (const row of (data as BalanceRow[]) ?? []) {
+    const b = mapBalanceRow(row);
+    if (b.userA === userId) {
+      // positive amountCents = userA owes userB → I owe them → negative for me
+      result.set(b.userB, (result.get(b.userB) ?? 0) - b.amountCents);
+    } else {
+      // userB === userId, positive amountCents = userA owes me → positive for me
+      result.set(b.userA, (result.get(b.userA) ?? 0) + b.amountCents);
+    }
+  }
+  return result;
+}
+
+/**
+ * For a given user, compute the net balance vs each counterparty across ALL groups.
+ * Returns a Map<counterpartyId, netCents> where positive = counterparty owes you,
+ * negative = you owe counterparty.
+ */
+export async function queryAllBalancesForUser(
+  userId: string,
+): Promise<Map<string, number>> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("balances")
+    .select("*")
+    .neq("amount_cents", 0)
+    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+
+  if (error) {
+    throw new Error(`Failed to query all user balances: ${error.message}`);
+  }
+
+  const result = new Map<string, number>();
+  for (const row of (data as BalanceRow[]) ?? []) {
+    const b = mapBalanceRow(row);
+    if (b.userA === userId) {
+      result.set(b.userB, (result.get(b.userB) ?? 0) - b.amountCents);
+    } else {
+      result.set(b.userA, (result.get(b.userA) ?? 0) + b.amountCents);
+    }
+  }
+  return result;
+}
+
+// ============================================================
 // Composite queries (with user profiles)
 // ============================================================
 

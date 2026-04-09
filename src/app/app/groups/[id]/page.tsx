@@ -45,6 +45,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
 import toast from "react-hot-toast";
 import { notifyGroupInvite } from "@/lib/push/push-notify";
+import { queryGroupBalancesForUser } from "@/lib/supabase/settlement-actions";
 import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } from "@/types";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { useBillStore } from "@/stores/bill-store";
@@ -126,6 +127,7 @@ export default function GroupDetailPage({
   const [showVoiceInput, setShowVoiceInput] = useState(false);
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [memberBalances, setMemberBalances] = useState<Map<string, number>>(new Map());
   const store = useBillStore();
 
   const fetchGroup = useCallback(async () => {
@@ -275,6 +277,20 @@ export default function GroupDetailPage({
     window.addEventListener("app-refresh", handleRefresh);
     return () => window.removeEventListener("app-refresh", handleRefresh);
   }, [fetchGroup]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    queryGroupBalancesForUser(id, user.id).then(setMemberBalances).catch(() => {});
+  }, [id, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const refresh = () => {
+      queryGroupBalancesForUser(id, user.id).then(setMemberBalances).catch(() => {});
+    };
+    window.addEventListener("app-refresh", refresh);
+    return () => window.removeEventListener("app-refresh", refresh);
+  }, [id, user?.id]);
 
   const isCreator = user?.id === creatorId;
   const isAcceptedMember = members.some(
@@ -729,6 +745,20 @@ export default function GroupDetailPage({
                   )}
                 </div>
               </div>
+              {(() => {
+                const bal = member.userId !== user?.id ? memberBalances.get(member.userId) : undefined;
+                if (!bal || Math.abs(bal) < 2) return null;
+                return (
+                  <div className="text-right shrink-0">
+                    <p className={`text-xs font-semibold tabular-nums ${bal > 0 ? "text-success" : "text-destructive"}`}>
+                      {bal > 0 ? "+" : ""}{formatBRL(Math.abs(bal))}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {bal > 0 ? "te deve" : "você deve"}
+                    </p>
+                  </div>
+                );
+              })()}
               {isCreator && member.userId !== creatorId && (
                 <button
                   onClick={() =>
