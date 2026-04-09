@@ -67,15 +67,15 @@ export function RecentContacts({
 
       if (!coParticipants || coParticipants.length === 0) return;
 
-      const seen = new Set<string>();
-      const contactUserIds: string[] = [];
+      const frequencyMap = new Map<string, number>();
       for (const row of coParticipants) {
-        if (!seen.has(row.user_id)) {
-          seen.add(row.user_id);
-          contactUserIds.push(row.user_id);
-          if (contactUserIds.length >= 10) break;
-        }
+        frequencyMap.set(row.user_id, (frequencyMap.get(row.user_id) ?? 0) + 1);
       }
+
+      const contactUserIds = [...frequencyMap.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([id]) => id);
 
       const { data: profiles } = await supabase
         .from("user_profiles")
@@ -84,13 +84,16 @@ export function RecentContacts({
 
       if (!profiles) return;
 
+      const profileMap = new Map(
+        (profiles as UserProfileRow[]).map((p) => [p.id, p]),
+      );
       setContacts(
-        (profiles as UserProfileRow[]).map((p) => ({
-          id: p.id,
-          handle: p.handle,
-          name: p.name,
-          avatarUrl: p.avatar_url ?? undefined,
-        })),
+        contactUserIds.flatMap((id) => {
+          const p = profileMap.get(id);
+          return p
+            ? [{ id: p.id, handle: p.handle, name: p.name, avatarUrl: p.avatar_url ?? undefined }]
+            : [];
+        }),
       );
     }
 

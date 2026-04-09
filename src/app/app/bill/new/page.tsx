@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
-  Clock,
   Loader2,
   Plus,
   QrCode,
@@ -100,7 +99,6 @@ function NewBillPageContent() {
   const [fixedFees, setFixedFees] = useState("");
   const [showAddItem, setShowAddItem] = useState(false);
   const [showAddParticipant, setShowAddParticipant] = useState(false);
-  const [showRecentContacts, setShowRecentContacts] = useState(false);
   const [showAddGuest, setShowAddGuest] = useState(false);
   const [guestNameInput, setGuestNameInput] = useState("");
   const [navigating, setNavigating] = useState(false);
@@ -1250,6 +1248,24 @@ function NewBillPageContent() {
               {/* Individual add options — only when no group is selected */}
               {!selectedGroupId && (
                 <>
+                  <RecentContacts
+                    onSelect={(profile) => {
+                      const newUser: User = {
+                        id: profile.id,
+                        email: "",
+                        handle: profile.handle,
+                        name: profile.name,
+                        pixKeyType: "email",
+                        pixKeyHint: "",
+                        avatarUrl: profile.avatarUrl,
+                        onboarded: true,
+                        createdAt: new Date().toISOString(),
+                      };
+                      store.addParticipant(newUser);
+                    }}
+                    excludeIds={store.participants.map((p) => p.id)}
+                    currentUserId={authUser?.id ?? ""}
+                  />
                   <AnimatePresence>
                     {showAddParticipant && (
                       <AddParticipantByHandle
@@ -1273,53 +1289,11 @@ function NewBillPageContent() {
                       />
                     )}
                   </AnimatePresence>
-                  <AnimatePresence>
-                    {showRecentContacts && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="overflow-hidden rounded-2xl border bg-card p-4"
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-semibold">Contas anteriores</span>
-                          <button
-                            onClick={() => setShowRecentContacts(false)}
-                            className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <RecentContacts
-                          onSelect={(profile) => {
-                            const newUser: User = {
-                              id: profile.id,
-                              email: "",
-                              handle: profile.handle,
-                              name: profile.name,
-                              pixKeyType: "email",
-                              pixKeyHint: "",
-                              avatarUrl: profile.avatarUrl,
-                              onboarded: true,
-                              createdAt: new Date().toISOString(),
-                            };
-                            store.addParticipant(newUser);
-                          }}
-                          excludeIds={store.participants.map((p) => p.id)}
-                          currentUserId={authUser?.id ?? ""}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                  {!showAddParticipant && !showRecentContacts && !showAddGuest && (
+                  {!showAddParticipant && !showAddGuest && (
                     <div className="flex flex-col gap-2">
                       <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
                         <UserPlus className="h-4 w-4" />
                         Por @handle
-                      </Button>
-                      <Button variant="outline" className="w-full gap-2" onClick={() => setShowRecentContacts(true)}>
-                        <Clock className="h-4 w-4" />
-                        De contas anteriores
                       </Button>
                       {hasContactPicker && (
                         <Button variant="outline" className="w-full gap-2" onClick={handlePickContacts}>
