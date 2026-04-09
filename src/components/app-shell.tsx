@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Home, Loader2, Plus, Receipt, RefreshCw, Settings, User, Users } from "lucide-react";
+import { Home, Loader2, Plus, Receipt, RefreshCw, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
@@ -150,12 +150,6 @@ export function AppShell({
             <Logo size="sm" />
             <div className="flex items-center gap-1">
               <InstallPrompt />
-              <Link
-                href="/app/settings"
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Settings className="h-4 w-4" />
-              </Link>
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
