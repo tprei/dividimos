@@ -261,6 +261,59 @@ export interface RecordSettlementResult {
 }
 
 // ============================================================
+// Activity feed types
+// ============================================================
+
+export type ActivityType =
+  | "expense_activated"
+  | "settlement_recorded"
+  | "settlement_confirmed"
+  | "member_joined";
+
+export interface ActivityItemBase {
+  id: string;
+  type: ActivityType;
+  groupId: string;
+  groupName: string;
+  actorId: string;
+  actor: UserProfile;
+  timestamp: string;
+}
+
+export interface ExpenseActivatedActivity extends ActivityItemBase {
+  type: "expense_activated";
+  expenseId: string;
+  expenseTitle: string;
+  totalAmount: number;
+}
+
+export interface SettlementRecordedActivity extends ActivityItemBase {
+  type: "settlement_recorded";
+  settlementId: string;
+  toUserId: string;
+  toUser: UserProfile;
+  amountCents: number;
+}
+
+export interface SettlementConfirmedActivity extends ActivityItemBase {
+  type: "settlement_confirmed";
+  settlementId: string;
+  fromUserId: string;
+  fromUser: UserProfile;
+  amountCents: number;
+}
+
+export interface MemberJoinedActivity extends ActivityItemBase {
+  type: "member_joined";
+}
+
+export type ActivityItem =
+  | ExpenseActivatedActivity
+  | SettlementRecordedActivity
+  | SettlementConfirmedActivity
+  | MemberJoinedActivity;
+
+// ============================================================
 // Composite types for UI consumption
 // ============================================================
 
