@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { InviteLinkShareModal } from "./invite-link-share-modal";
+import { GroupInviteModal } from "./group-invite-modal";
 
 vi.mock("qrcode", () => ({
   default: { toCanvas: vi.fn() },
@@ -10,7 +10,14 @@ vi.mock("react-hot-toast", () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-describe("InviteLinkShareModal", () => {
+vi.mock("@/lib/contacts", () => ({
+  isContactPickerSupported: () => false,
+  pickContacts: vi.fn(),
+  buildWhatsAppLink: (msg: string, phone?: string) =>
+    phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`,
+}));
+
+describe("GroupInviteModal", () => {
   const defaultProps = {
     open: true,
     onClose: vi.fn(),
@@ -24,20 +31,21 @@ describe("InviteLinkShareModal", () => {
 
   it("renders nothing when closed", () => {
     const { container } = render(
-      <InviteLinkShareModal {...defaultProps} open={false} />,
+      <GroupInviteModal {...defaultProps} open={false} />,
     );
     expect(container.innerHTML).toBe("");
   });
 
   it("renders group name and heading when open", () => {
-    render(<InviteLinkShareModal {...defaultProps} />);
+    render(<GroupInviteModal {...defaultProps} />);
     expect(screen.getByText("Convite para o grupo")).toBeInTheDocument();
     expect(screen.getByText("Churrasco")).toBeInTheDocument();
   });
 
-  it("renders copy button", () => {
-    render(<InviteLinkShareModal {...defaultProps} />);
+  it("renders copy and WhatsApp buttons", () => {
+    render(<GroupInviteModal {...defaultProps} />);
     expect(screen.getByText("Copiar link")).toBeInTheDocument();
+    expect(screen.getByText("Enviar pelo WhatsApp")).toBeInTheDocument();
   });
 
   it("copies link to clipboard on copy button click", async () => {
@@ -48,7 +56,7 @@ describe("InviteLinkShareModal", () => {
       configurable: true,
     });
 
-    render(<InviteLinkShareModal {...defaultProps} />);
+    render(<GroupInviteModal {...defaultProps} />);
     fireEvent.click(screen.getByText("Copiar link"));
 
     await waitFor(() => {
@@ -59,9 +67,8 @@ describe("InviteLinkShareModal", () => {
   });
 
   it("calls onClose when X button is clicked", () => {
-    render(<InviteLinkShareModal {...defaultProps} />);
+    render(<GroupInviteModal {...defaultProps} />);
     const closeButtons = screen.getAllByRole("button");
-    // The X close button is the one without text content
     const xButton = closeButtons.find(
       (btn) => btn.querySelector("svg") && !btn.textContent?.trim(),
     );
@@ -71,8 +78,7 @@ describe("InviteLinkShareModal", () => {
   });
 
   it("calls onClose when backdrop is clicked", () => {
-    render(<InviteLinkShareModal {...defaultProps} />);
-    // Click the backdrop (outermost motion.div)
+    render(<GroupInviteModal {...defaultProps} />);
     const backdrop = screen.getByText("Convite para o grupo").closest(
       ".fixed",
     );
@@ -83,9 +89,9 @@ describe("InviteLinkShareModal", () => {
   });
 
   it("renders QR hint text", () => {
-    render(<InviteLinkShareModal {...defaultProps} />);
+    render(<GroupInviteModal {...defaultProps} />);
     expect(
-      screen.getByText("Qualquer pessoa com este link pode entrar no grupo"),
+      screen.getByText("Escaneie ou compartilhe o link para entrar no grupo"),
     ).toBeInTheDocument();
   });
 });

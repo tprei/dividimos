@@ -7,15 +7,14 @@ import {
   Check,
   CheckCheck,
   Clock,
-  Link2,
   LogOut,
-  MessageCircle,
   Mic,
   Pencil,
   Plus,
   QrCode,
   Receipt,
   Search,
+  Share2,
   Trash2,
   UserPlus,
   X,
@@ -26,8 +25,7 @@ import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
 import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
-import { InviteLinkShareModal } from "@/components/group/invite-link-share-modal";
-import { WhatsAppInviteModal } from "@/components/group/whatsapp-invite-modal";
+import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -123,8 +121,7 @@ export default function GroupDetailPage({
     expenseTitle: string;
   }>({ open: false, guestName: "", claimToken: "", expenseTitle: "" });
   const [inviteLinkToken, setInviteLinkToken] = useState<string | null>(null);
-  const [showInviteLinkModal, setShowInviteLinkModal] = useState(false);
-  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [creatingInviteLink, setCreatingInviteLink] = useState(false);
   const [showVoiceInput, setShowVoiceInput] = useState(false);
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
@@ -418,14 +415,9 @@ export default function GroupDetailPage({
     return data.token;
   };
 
-  const handleShareInviteLink = async () => {
+  const handleOpenInviteModal = async () => {
     const token = await ensureInviteLink();
-    if (token) setShowInviteLinkModal(true);
-  };
-
-  const handleWhatsAppInvite = async () => {
-    const token = await ensureInviteLink();
-    if (token) setShowWhatsAppModal(true);
+    if (token) setShowInviteModal(true);
   };
 
   const participantsAsUsers: User[] = useMemo(() =>
@@ -565,21 +557,11 @@ export default function GroupDetailPage({
               size="sm"
               variant="outline"
               className="h-8 w-8 p-0"
-              onClick={handleShareInviteLink}
+              onClick={handleOpenInviteModal}
               disabled={creatingInviteLink}
-              aria-label="Link de convite"
+              aria-label="Compartilhar convite"
             >
-              <Link2 className="h-4 w-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 w-8 p-0"
-              onClick={handleWhatsAppInvite}
-              disabled={creatingInviteLink}
-              aria-label="Convidar via WhatsApp"
-            >
-              <MessageCircle className="h-4 w-4" />
+              <Share2 className="h-4 w-4" />
             </Button>
             <Button
               size="sm"
@@ -986,22 +968,11 @@ export default function GroupDetailPage({
         expenseTitle={guestShareModal.expenseTitle}
       />
 
-      <InviteLinkShareModal
-        open={showInviteLinkModal}
-        onClose={() => setShowInviteLinkModal(false)}
+      <GroupInviteModal
+        open={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
         groupName={groupName}
         token={inviteLinkToken ?? ""}
-      />
-
-      <WhatsAppInviteModal
-        open={showWhatsAppModal}
-        onClose={() => setShowWhatsAppModal(false)}
-        groupName={groupName}
-        joinUrl={
-          inviteLinkToken && typeof window !== "undefined"
-            ? `${window.location.origin}/join/${inviteLinkToken}`
-            : ""
-        }
       />
 
       {/* Confirm member removal dialog */}

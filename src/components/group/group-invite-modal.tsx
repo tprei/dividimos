@@ -3,13 +3,15 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
+  Copy,
+  ExternalLink,
   MessageCircle,
   Send,
-  Share2,
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,11 +20,11 @@ import {
   pickContacts,
 } from "@/lib/contacts";
 
-interface WhatsAppInviteModalProps {
+interface GroupInviteModalProps {
   open: boolean;
   onClose: () => void;
   groupName: string;
-  joinUrl: string;
+  token: string;
 }
 
 interface SelectedContact {
@@ -31,24 +33,21 @@ interface SelectedContact {
   sent: boolean;
 }
 
-function canNativeShare(): boolean {
-  return typeof navigator !== "undefined" && !!navigator.share;
-}
-
-export function WhatsAppInviteModal({
+export function GroupInviteModal({
   open,
   onClose,
   groupName,
-  joinUrl,
-}: WhatsAppInviteModalProps) {
-  const [contacts, setContacts] = useState<SelectedContact[]>([]);
+  token,
+}: GroupInviteModalProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [canShare, setCanShare] = useState(false);
   const [hasContactPicker, setHasContactPicker] = useState(false);
-  const [hasNativeShare, setHasNativeShare] = useState(false);
+  const [contacts, setContacts] = useState<SelectedContact[]>([]);
   const [picking, setPicking] = useState(false);
 
   useEffect(() => {
+    setCanShare(typeof navigator?.share === "function");
     setHasContactPicker(isContactPickerSupported());
-    setHasNativeShare(canNativeShare());
   }, []);
 
   useEffect(() => {
@@ -57,7 +56,50 @@ export function WhatsAppInviteModal({
     }
   }, [open]);
 
-  const inviteMessage = `Oi! Entra no grupo "${groupName}" no Dividimos pra gente dividir as contas`;
+  const joinUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/join/${token}`
+      : "";
+
+  useEffect(() => {
+    if (!open || !joinUrl || !canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, joinUrl, {
+      width: 200,
+      margin: 2,
+      color: { dark: "#1a1d2e", light: "#ffffff" },
+    });
+  }, [open, joinUrl]);
+
+  const inviteMessage = `Entre no grupo "${groupName}" no Dividimos!`;
+
+  const handleShare = useCallback(async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Dividimos",
+          text: inviteMessage,
+          url: joinUrl,
+        });
+      } catch (e) {
+        if ((e as DOMException).name !== "AbortError") {
+          toast.error("Erro ao compartilhar");
+        }
+      }
+    } else {
+      await navigator.clipboard.writeText(`${inviteMessage}\n${joinUrl}`);
+      toast.success("Link copiado!");
+    }
+  }, [inviteMessage, joinUrl]);
+
+  const handleCopy = useCallback(async () => {
+    await navigator.clipboard.writeText(joinUrl);
+    toast.success("Link copiado!");
+  }, [joinUrl]);
+
+  const handleWhatsAppDirect = useCallback(() => {
+    const url = buildWhatsAppLink(`${inviteMessage}\n${joinUrl}`);
+    window.open(url, "_blank");
+  }, [inviteMessage, joinUrl]);
 
   const handlePickContacts = useCallback(async () => {
     setPicking(true);
@@ -86,30 +128,13 @@ export function WhatsAppInviteModal({
     [inviteMessage, joinUrl],
   );
 
-  const handleNativeShare = useCallback(async () => {
-    try {
-      await navigator.share({
-        title: "Dividimos",
-        text: inviteMessage,
-        url: joinUrl,
-      });
-    } catch (e) {
-      if ((e as DOMException).name !== "AbortError") {
-        toast.error("Erro ao compartilhar");
-      }
-    }
-  }, [inviteMessage, joinUrl]);
-
-  const handleWhatsAppDirect = useCallback(() => {
-    const url = buildWhatsAppLink(`${inviteMessage}\n${joinUrl}`);
-    window.open(url, "_blank");
-  }, [inviteMessage, joinUrl]);
-
   const handleRemoveContact = useCallback((phone: string) => {
     setContacts((prev) => prev.filter((c) => c.phone !== phone));
   }, []);
 
   if (!open) return null;
+
+  const unsentCount = contacts.filter((c) => !c.sent).length;
 
   return (
     <AnimatePresence>
@@ -134,13 +159,13 @@ export function WhatsAppInviteModal({
             }
           }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl"
+          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl overflow-y-auto max-h-[90vh]"
         >
           <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
 
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-semibold">Convidar amigos</h3>
+              <h3 className="font-semibold">Convite para o grupo</h3>
               <p className="text-sm text-muted-foreground">{groupName}</p>
             </div>
             <button
@@ -151,8 +176,16 @@ export function WhatsAppInviteModal({
             </button>
           </div>
 
+          <div className="flex justify-center rounded-2xl bg-white p-4">
+            <canvas ref={canvasRef} />
+          </div>
+
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            Escaneie ou compartilhe o link para entrar no grupo
+          </p>
+
           {contacts.length > 0 && (
-            <div className="mb-4 max-h-60 space-y-2 overflow-y-auto">
+            <div className="mt-4 max-h-48 space-y-2 overflow-y-auto">
               {contacts.map((contact) => (
                 <div
                   key={contact.phone}
@@ -201,7 +234,25 @@ export function WhatsAppInviteModal({
             </div>
           )}
 
-          <div className="space-y-2">
+          {unsentCount > 1 && (
+            <Button
+              className="mt-2 w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
+              onClick={() => {
+                const unsent = contacts.filter((c) => !c.sent);
+                for (const c of unsent) {
+                  handleSendToContact(c.phone);
+                }
+                toast.success(
+                  `Abrindo WhatsApp para ${unsent.length} contatos`,
+                );
+              }}
+            >
+              <Send className="h-4 w-4" />
+              Enviar para todos ({unsentCount})
+            </Button>
+          )}
+
+          <div className="mt-4 space-y-2">
             {hasContactPicker && (
               <Button
                 className="w-full gap-2"
@@ -216,41 +267,32 @@ export function WhatsAppInviteModal({
               </Button>
             )}
 
-            {contacts.filter((c) => !c.sent).length > 1 && (
-              <Button
-                className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
-                onClick={() => {
-                  const unsent = contacts.filter((c) => !c.sent);
-                  for (const c of unsent) {
-                    handleSendToContact(c.phone);
-                  }
-                  toast.success(
-                    `Abrindo WhatsApp para ${unsent.length} contatos`,
-                  );
-                }}
-              >
-                <Send className="h-4 w-4" />
-                Enviar para todos ({contacts.filter((c) => !c.sent).length})
-              </Button>
-            )}
-
-            {hasNativeShare && (
-              <Button
-                className="w-full gap-2"
-                variant="outline"
-                onClick={handleNativeShare}
-              >
-                <Share2 className="h-4 w-4" />
-                Compartilhar convite
-              </Button>
-            )}
-
             <Button
               className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
               onClick={handleWhatsAppDirect}
             >
               <MessageCircle className="h-4 w-4" />
               Enviar pelo WhatsApp
+            </Button>
+
+            {canShare && (
+              <Button
+                className="w-full gap-2"
+                variant="outline"
+                onClick={handleShare}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Compartilhar
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={handleCopy}
+            >
+              <Copy className="h-4 w-4" />
+              Copiar link
             </Button>
           </div>
 

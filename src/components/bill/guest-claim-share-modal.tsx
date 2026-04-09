@@ -1,17 +1,19 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Copy, ExternalLink, X } from "lucide-react";
+import { Copy, ExternalLink, MessageCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
+import { buildWhatsAppLink } from "@/lib/contacts";
 import { formatBRL } from "@/lib/currency";
 
 interface GuestClaimShareModalProps {
   open: boolean;
   onClose: () => void;
   guestName: string;
+  guestPhone?: string;
   shareAmountCents?: number;
   claimToken: string;
   expenseTitle: string;
@@ -21,6 +23,7 @@ export function GuestClaimShareModal({
   open,
   onClose,
   guestName,
+  guestPhone,
   shareAmountCents,
   claimToken,
   expenseTitle,
@@ -124,14 +127,24 @@ export function GuestClaimShareModal({
           </p>
 
           <div className="mt-4 space-y-2">
+            <Button
+              className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
+              onClick={() => {
+                const url = buildWhatsAppLink(`${shareText}\n${claimUrl}`, guestPhone);
+                window.open(url, "_blank");
+              }}
+            >
+              <MessageCircle className="h-4 w-4" />
+              Enviar pelo WhatsApp
+            </Button>
             {canShare && (
-              <Button className="w-full gap-2" onClick={handleShare}>
+              <Button className="w-full gap-2" variant="outline" onClick={handleShare}>
                 <ExternalLink className="h-4 w-4" />
                 Compartilhar
               </Button>
             )}
             <Button
-              variant={canShare ? "outline" : "default"}
+              variant="outline"
               className="w-full gap-2"
               onClick={handleCopy}
             >

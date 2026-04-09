@@ -13,6 +13,7 @@ import {
   ScanLine,
   UserPlus,
   Users,
+  Users2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -44,6 +45,7 @@ import type { NfceQrResult } from "@/lib/nfce-qr";
 import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
+import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { useBillStore, type Guest } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -119,6 +121,19 @@ function NewBillPageContent() {
   const [showVoiceInput, setShowVoiceInput] = useState(false);
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [hasContactPicker, setHasContactPicker] = useState(false);
+
+  useEffect(() => {
+    setHasContactPicker(isContactPickerSupported());
+  }, []);
+
+  const handlePickContacts = useCallback(async () => {
+    const picked = await pickContacts();
+    if (!picked || picked.length === 0) return;
+    for (const c of picked) {
+      store.addGuest(c.name || c.phone, c.phone);
+    }
+  }, [store]);
 
   const steps = useMemo(
     () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
@@ -1306,6 +1321,12 @@ function NewBillPageContent() {
                         <Clock className="h-4 w-4" />
                         De contas anteriores
                       </Button>
+                      {hasContactPicker && (
+                        <Button variant="outline" className="w-full gap-2" onClick={handlePickContacts}>
+                          <Users2 className="h-4 w-4" />
+                          Dos contatos do celular
+                        </Button>
+                      )}
                       <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
                         <Users className="h-4 w-4" />
                         Adicionar convidado
@@ -1316,10 +1337,18 @@ function NewBillPageContent() {
               )}
 
               {selectedGroupId && !showAddGuest && (
-                <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
-                  <Users className="h-4 w-4" />
-                  Adicionar convidado
-                </Button>
+                <div className="flex flex-col gap-2">
+                  {hasContactPicker && (
+                    <Button variant="outline" className="w-full gap-2" onClick={handlePickContacts}>
+                      <Users2 className="h-4 w-4" />
+                      Dos contatos do celular
+                    </Button>
+                  )}
+                  <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
+                    <Users className="h-4 w-4" />
+                    Adicionar convidado
+                  </Button>
+                </div>
               )}
             </motion.div>
           )}
