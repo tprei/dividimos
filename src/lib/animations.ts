@@ -36,15 +36,6 @@ export const fadeUp = (delay = 0): Variants => ({
   },
 });
 
-export const scaleIn: Variants = {
-  hidden: { opacity: 0, scale: 0.85 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: { type: "spring", stiffness: 400, damping: 20 },
-  },
-};
-
 export const slideInRight: Variants = {
   hidden: { opacity: 0, x: 20 },
   visible: { opacity: 1, x: 0, transition: { duration: 0.3 } },
