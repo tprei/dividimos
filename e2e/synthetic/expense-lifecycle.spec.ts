@@ -89,7 +89,7 @@ test.describe("Expense Lifecycle", () => {
 
     await page.getByRole("button", { name: "Acerto" }).click();
     await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Nenhuma divida pendente no grupo")).toBeVisible();
+    await expect(page.getByText("Nenhuma dívida pendente no grupo")).toBeVisible();
 
     // Pagamentos tab shows confirmed settlement
     await page.getByRole("button", { name: "Pagamentos" }).click();
