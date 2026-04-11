@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { formatBRL } from "@/lib/currency";
+import { queryAllBalancesForUser } from "@/lib/supabase/settlement-actions";
 import type { UserProfile } from "@/types";
 import type { Database } from "@/types/database";
 
@@ -20,6 +22,11 @@ export function RecentContacts({
   currentUserId,
 }: RecentContactsProps) {
   const [contacts, setContacts] = useState<UserProfile[]>([]);
+  const [balances, setBalances] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    queryAllBalancesForUser(currentUserId).then(setBalances).catch(() => {});
+  }, [currentUserId]);
 
   useEffect(() => {
     async function fetchContacts() {
@@ -110,19 +117,27 @@ export function RecentContacts({
         Contatos recentes
       </p>
       <div className="flex gap-3 overflow-x-auto pb-1">
-        {visible.map((contact) => (
-          <button
-            key={contact.id}
-            type="button"
-            onClick={() => onSelect(contact)}
-            className="flex flex-col items-center gap-1 rounded-xl p-2 transition-colors hover:bg-muted"
-          >
-            <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" />
-            <span className="text-[10px] text-muted-foreground max-w-[48px] truncate">
-              {contact.name.split(" ")[0]}
-            </span>
-          </button>
-        ))}
+        {visible.map((contact) => {
+          const bal = balances.get(contact.id);
+          return (
+            <button
+              key={contact.id}
+              type="button"
+              onClick={() => onSelect(contact)}
+              className="flex flex-col items-center gap-1 rounded-xl p-2 transition-colors hover:bg-muted"
+            >
+              <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" />
+              <span className="text-[10px] text-muted-foreground max-w-[56px] truncate">
+                {contact.name.split(" ")[0]}
+              </span>
+              {bal != null && Math.abs(bal) >= 2 && (
+                <span className={`text-[9px] font-semibold tabular-nums ${bal > 0 ? "text-success" : "text-destructive"}`}>
+                  {bal > 0 ? "+" : ""}{formatBRL(Math.abs(bal))}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

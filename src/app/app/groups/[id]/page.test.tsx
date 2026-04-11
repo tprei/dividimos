@@ -58,6 +58,13 @@ vi.mock("@/hooks/use-auth", () => ({
   }),
 }));
 
+// Mock settlement-actions for per-member balance display
+vi.mock("@/lib/supabase/settlement-actions", () => ({
+  queryGroupBalancesForUser: vi.fn().mockResolvedValue(new Map([
+    ["user-2", 1500],
+  ])),
+}));
+
 // Mock GroupSettlementView since it has its own complex dependencies
 vi.mock("@/components/group/group-settlement-view", () => ({
   GroupSettlementView: ({ groupId }: { groupId: string }) => (
@@ -302,6 +309,20 @@ describe("GroupDetailPage", () => {
 
     // RPC should NOT have been called
     expect(mockRpcFn).not.toHaveBeenCalled();
+  });
+
+  it("shows per-member balance in members tab", async () => {
+    await renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Bob Test")).toBeTruthy();
+    });
+
+    // The mock returns user-2 (Bob) with +1500 balance (te deve)
+    await waitFor(() => {
+      expect(screen.getByText("te deve")).toBeTruthy();
+      expect(screen.getByText(/15,00/)).toBeTruthy();
+    });
   });
 
   it("shows toast error when removing member with outstanding balance", async () => {
