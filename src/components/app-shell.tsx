@@ -1,12 +1,13 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Home, Loader2, Plus, Receipt, RefreshCw, Search, Settings, User, Users } from "lucide-react";
+import { Bell, Home, Loader2, Plus, Receipt, RefreshCw, Search, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
+import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
 import { UserProvider } from "@/contexts/user-context";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
@@ -130,7 +131,24 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [refreshing, setRefreshing] = useState(false);
+  const [unread, setUnread] = useState(false);
+
+  useEffect(() => {
+    if (pathname === "/app/activity") {
+      markActivityViewed();
+      setUnread(false);
+    } else {
+      setUnread(hasUnreadActivity());
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    const onNewActivity = () => setUnread(hasUnreadActivity());
+    window.addEventListener("activity-updated", onNewActivity);
+    return () => window.removeEventListener("activity-updated", onNewActivity);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -155,6 +173,16 @@ export function AppShell({
                 className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <Search className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/app/activity"
+                className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Atividade"
+              >
+                <Bell className="h-4 w-4" />
+                {unread && (
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+                )}
               </Link>
               <Link
                 href="/app/settings"

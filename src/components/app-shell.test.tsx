@@ -1,9 +1,19 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+const mockPathname = vi.fn(() => "/app");
+
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/app",
+  usePathname: () => mockPathname(),
   useRouter: () => ({ refresh: vi.fn() }),
+}));
+
+const mockHasUnread = vi.fn(() => false);
+const mockMarkViewed = vi.fn();
+
+vi.mock("@/lib/activity-badge", () => ({
+  hasUnreadActivity: () => mockHasUnread(),
+  markActivityViewed: () => mockMarkViewed(),
 }));
 
 vi.mock("@/contexts/user-context", () => ({
@@ -110,5 +120,53 @@ describe("AppShell haptics", () => {
 
     expect(haptics.impact).not.toHaveBeenCalled();
     expect(haptics.success).not.toHaveBeenCalled();
+  });
+});
+
+describe("AppShell activity bell", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname.mockReturnValue("/app");
+    mockHasUnread.mockReturnValue(false);
+  });
+
+  it("renders the activity bell link", () => {
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const bellLink = screen.getByLabelText("Atividade");
+    expect(bellLink).toBeDefined();
+    expect(bellLink.getAttribute("href")).toBe("/app/activity");
+  });
+
+  it("shows unread badge when there is unread activity", () => {
+    mockHasUnread.mockReturnValue(true);
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const bellLink = screen.getByLabelText("Atividade");
+    const badge = bellLink.querySelector("span");
+    expect(badge).not.toBeNull();
+  });
+
+  it("hides unread badge when there is no unread activity", () => {
+    mockHasUnread.mockReturnValue(false);
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const bellLink = screen.getByLabelText("Atividade");
+    const badge = bellLink.querySelector("span");
+    expect(badge).toBeNull();
+  });
+
+  it("marks activity as viewed when on activity page", () => {
+    mockPathname.mockReturnValue("/app/activity");
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    expect(mockMarkViewed).toHaveBeenCalled();
+  });
+
+  it("does not mark activity as viewed on other pages", () => {
+    mockPathname.mockReturnValue("/app/groups");
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    expect(mockMarkViewed).not.toHaveBeenCalled();
   });
 });
