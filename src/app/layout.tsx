@@ -34,7 +34,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  interactiveWidget: "resizes-visual",
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F9F9FB" },
     { media: "(prefers-color-scheme: dark)", color: "#09243f" },
@@ -49,7 +49,7 @@ export default function RootLayout({
   return (
     <html
       lang="pt-BR"
-      className={`${nunito.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${nunito.variable} ${geistMono.variable} h-dvh overflow-hidden antialiased`}
       suppressHydrationWarning
     >
       <head>
@@ -59,7 +59,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col safe-top safe-bottom">
+      <body className="h-full overflow-hidden flex flex-col safe-top safe-bottom">
         <RegisterSW />
         {children}
         <Toaster

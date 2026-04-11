@@ -231,7 +231,7 @@ export default function DemoPage() {
   const pendingCount = displayEntries.filter((e) => e.status !== "settled").length;
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-dvh flex-col overflow-y-auto bg-background">
       <header className="sticky top-0 z-50 glass border-b border-border/50">
         <div className="mx-auto flex h-16 max-w-lg items-center justify-between px-4">
           <div className="flex items-center gap-2.5">
