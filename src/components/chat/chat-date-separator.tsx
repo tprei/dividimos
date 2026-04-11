@@ -1,18 +1,27 @@
 "use client";
 
+function toUtcDateKey(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+}
+
 function formatDateLabel(dateStr: string): string {
   const date = new Date(dateStr);
   const today = new Date();
   const yesterday = new Date();
-  yesterday.setDate(today.getDate() - 1);
+  yesterday.setUTCDate(today.getUTCDate() - 1);
 
-  if (date.toDateString() === today.toDateString()) return "Hoje";
-  if (date.toDateString() === yesterday.toDateString()) return "Ontem";
+  const dateKey = toUtcDateKey(dateStr);
+  const todayKey = toUtcDateKey(today.toISOString());
+  const yesterdayKey = toUtcDateKey(yesterday.toISOString());
+
+  if (dateKey === todayKey) return "Hoje";
+  if (dateKey === yesterdayKey) return "Ontem";
 
   return date.toLocaleDateString("pt-BR", {
     day: "numeric",
     month: "long",
-    year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
+    year: date.getUTCFullYear() !== today.getUTCFullYear() ? "numeric" : undefined,
   });
 }
 
@@ -30,10 +39,7 @@ export function ChatDateSeparator({ date }: ChatDateSeparatorProps) {
   );
 }
 
-export function shouldShowDateSeparator(
-  currentDate: string,
-  previousDate: string | undefined,
-): boolean {
+export function shouldShowDateSeparator(currentDate: string, previousDate: string | undefined): boolean {
   if (!previousDate) return true;
-  return new Date(currentDate).toDateString() !== new Date(previousDate).toDateString();
+  return toUtcDateKey(currentDate) !== toUtcDateKey(previousDate);
 }

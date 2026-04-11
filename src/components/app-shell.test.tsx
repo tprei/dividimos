@@ -18,6 +18,11 @@ vi.mock("@/lib/activity-badge", () => ({
 
 vi.mock("@/contexts/user-context", () => ({
   UserProvider: ({ children }: { children: React.ReactNode }) => children,
+  useUser: () => null,
+}));
+
+vi.mock("@/hooks/use-unread-conversations", () => ({
+  useUnreadConversations: () => 0,
 }));
 
 vi.mock("@/components/pwa/install-prompt", () => ({
