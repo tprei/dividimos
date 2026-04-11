@@ -87,8 +87,8 @@ function usePullToRefresh(onRefresh: () => Promise<void>) {
   const threshold = 80;
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
-    const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
-    if (scrollTop <= 0) {
+    const target = e.currentTarget as HTMLElement;
+    if (target.scrollTop <= 0) {
       startY.current = e.touches[0].clientY;
       isDragging.current = true;
     }
@@ -162,7 +162,7 @@ export function AppShell({
 
   return (
     <UserProvider initialUser={initialUser}>
-      <div className="flex min-h-dvh flex-col bg-background">
+      <div className="flex h-dvh flex-col overflow-hidden bg-background">
         <header className="sticky top-0 z-40 glass border-b border-border/50">
           <div className="flex h-14 items-center justify-between px-4">
             <Logo size="sm" />
@@ -212,7 +212,7 @@ export function AppShell({
         )}
 
         <main
-          className="flex-1 pb-20"
+          className="flex-1 overflow-y-auto pb-20"
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}

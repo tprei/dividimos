@@ -89,7 +89,7 @@ function AuthPageContent() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-dvh flex-col overflow-y-auto bg-background">
       <div className="gradient-mesh absolute inset-0 -z-10" />
 
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-6 py-12">
