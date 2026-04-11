@@ -14,6 +14,7 @@ interface GroupEntry {
   members: UserProfile[];
   addableCount: number;
   hasPendingInvites: boolean;
+  lastExpenseAt: string | null;
 }
 
 interface GroupSelectorProps {
@@ -97,14 +98,28 @@ export function GroupSelector({
         for (const id of addableMemberIds) allAddableIds.add(id);
       }
 
-      const { data: profiles } = allAddableIds.size > 0
-        ? await supabase
-            .from("user_profiles")
-            .select("id, handle, name, avatar_url")
-            .in("id", [...allAddableIds])
-        : { data: [] };
+      const [{ data: profiles }, { data: recentExpenses }] = await Promise.all([
+        allAddableIds.size > 0
+          ? supabase
+              .from("user_profiles")
+              .select("id, handle, name, avatar_url")
+              .in("id", [...allAddableIds])
+          : Promise.resolve({ data: [] as { id: string; handle: string | null; name: string; avatar_url: string | null }[] }),
+        supabase
+          .from("expenses")
+          .select("group_id, created_at")
+          .in("group_id", allGroupIds)
+          .order("created_at", { ascending: false }),
+      ]);
 
       const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+      const latestExpenseByGroup = new Map<string, string>();
+      for (const exp of recentExpenses ?? []) {
+        if (!latestExpenseByGroup.has(exp.group_id)) {
+          latestExpenseByGroup.set(exp.group_id, exp.created_at);
+        }
+      }
 
       const entries: GroupEntry[] = [];
       for (const group of allGroupData ?? []) {
@@ -124,8 +139,16 @@ export function GroupSelector({
           members: memberProfiles,
           addableCount: meta.addableMemberIds.length,
           hasPendingInvites: meta.hasPendingInvites,
+          lastExpenseAt: latestExpenseByGroup.get(group.id) ?? null,
         });
       }
+
+      entries.sort((a, b) => {
+        if (a.lastExpenseAt && b.lastExpenseAt) return b.lastExpenseAt.localeCompare(a.lastExpenseAt);
+        if (a.lastExpenseAt) return -1;
+        if (b.lastExpenseAt) return 1;
+        return a.name.localeCompare(b.name);
+      });
 
       setGroups(entries);
       setLoading(false);
@@ -184,8 +207,9 @@ export function GroupSelector({
             </p>
           ) : (
             <div className="divide-y">
-              {groups.map((group) => {
+              {groups.map((group, idx) => {
                 const disabled = group.hasPendingInvites || group.addableCount === 0;
+                const isRecent = idx === 0 && group.lastExpenseAt !== null;
                 return (
                   <button
                     key={group.id}
@@ -203,7 +227,14 @@ export function GroupSelector({
                       <Users className="h-4 w-4 text-muted-foreground" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm">{group.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-sm">{group.name}</p>
+                        {isRecent && (
+                          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                            Recente
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {group.hasPendingInvites
                           ? "Aguardando membros aceitarem o convite"
