@@ -55,7 +55,16 @@ function toPixKeyValue(type: PixKeyType, display: string): string {
 
 export default function ProfilePage() {
   const { user, loading } = useAuth();
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof document === "undefined") return false;
+    const stored = localStorage.getItem("theme");
+    if (stored) {
+      const isDark = stored === "dark";
+      document.documentElement.classList.toggle("dark", isDark);
+      return isDark;
+    }
+    return document.documentElement.classList.contains("dark");
+  });
   const [editingPix, setEditingPix] = useState(false);
   const [pixType, setPixType] = useState<PixKeyType>("email");
   const [pixInput, setPixInput] = useState("");
@@ -63,8 +72,10 @@ export default function ProfilePage() {
   const [isPending, startTransition] = useTransition();
 
   const toggleDark = () => {
-    setDarkMode(!darkMode);
-    document.documentElement.classList.toggle("dark");
+    const next = !darkMode;
+    setDarkMode(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
   };
 
   const handleSignOut = async () => {
