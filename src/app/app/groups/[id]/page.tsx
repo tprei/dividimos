@@ -150,10 +150,32 @@ export default function GroupDetailPage({
       ...new Set([group.creator_id, ...memberRows.map((m) => m.user_id)]),
     ];
 
-    const { data: profiles } = await supabase
-      .from("user_profiles")
-      .select("id, handle, name, avatar_url")
-      .in("id", allUserIds);
+    // Profiles depend on member IDs, but expenses/settlements/invite-links only need group ID.
+    // Run them all in parallel to avoid an unnecessary sequential round-trip.
+    const [{ data: profiles }, { data: expenseRows }, { data: settlementRows }, { data: inviteLinkRows }] = await Promise.all([
+      supabase
+        .from("user_profiles")
+        .select("id, handle, name, avatar_url")
+        .in("id", allUserIds),
+      supabase
+        .from("expenses")
+        .select("id, title, total_amount, status, created_at")
+        .eq("group_id", id)
+        .neq("status", "draft")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("settlements")
+        .select("id, group_id, from_user_id, to_user_id, amount_cents, status, created_at, confirmed_at")
+        .eq("group_id", id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("group_invite_links")
+        .select("token")
+        .eq("group_id", id)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1),
+    ]);
 
     const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
 
@@ -193,28 +215,6 @@ export default function GroupDetailPage({
     }
 
     setMembers(entries);
-
-    // Fetch group expenses, settlements, and invite link in parallel
-    const [{ data: expenseRows }, { data: settlementRows }, { data: inviteLinkRows }] = await Promise.all([
-      supabase
-        .from("expenses")
-        .select("id, title, total_amount, status, created_at")
-        .eq("group_id", id)
-        .neq("status", "draft")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("settlements")
-        .select("id, group_id, from_user_id, to_user_id, amount_cents, status, created_at, confirmed_at")
-        .eq("group_id", id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("group_invite_links")
-        .select("token")
-        .eq("group_id", id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(1),
-    ]);
 
     setInviteLinkToken(inviteLinkRows?.[0]?.token ?? null);
 
@@ -282,16 +282,12 @@ export default function GroupDetailPage({
 
   useEffect(() => {
     if (!user?.id) return;
-    queryGroupBalancesForUser(id, user.id).then(setMemberBalances).catch(() => {});
-  }, [id, user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    const refresh = () => {
+    const fetchBalances = () => {
       queryGroupBalancesForUser(id, user.id).then(setMemberBalances).catch(() => {});
     };
-    window.addEventListener("app-refresh", refresh);
-    return () => window.removeEventListener("app-refresh", refresh);
+    fetchBalances();
+    window.addEventListener("app-refresh", fetchBalances);
+    return () => window.removeEventListener("app-refresh", fetchBalances);
   }, [id, user?.id]);
 
   const isCreator = user?.id === creatorId;

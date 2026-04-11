@@ -46,6 +46,8 @@ export function GroupSelector({
       setLoading(true);
       const supabase = createClient();
 
+      // Fetch memberships, created groups, and all group members in parallel.
+      // Created groups already returns full group data, so we reuse it instead of re-querying.
       const [{ data: memberRows }, { data: createdGroups }] = await Promise.all([
         supabase
           .from("group_members")
@@ -59,8 +61,8 @@ export function GroupSelector({
       ]);
 
       const memberGroupIds = (memberRows ?? []).map((r) => r.group_id);
-      const createdGroupIds = (createdGroups ?? []).map((g) => g.id);
-      const allGroupIds = [...new Set([...memberGroupIds, ...createdGroupIds])];
+      const createdGroupMap = new Map((createdGroups ?? []).map((g) => [g.id, g]));
+      const allGroupIds = [...new Set([...memberGroupIds, ...(createdGroups ?? []).map((g) => g.id)])];
 
       if (allGroupIds.length === 0) {
         setGroups([]);
@@ -68,10 +70,17 @@ export function GroupSelector({
         return;
       }
 
-      const [{ data: allGroupData }, { data: allGroupMembers }] = await Promise.all([
-        supabase.from("groups").select("id, name, creator_id").in("id", allGroupIds),
+      // Only fetch groups we don't already have from createdGroups
+      const missingGroupIds = allGroupIds.filter((gid) => !createdGroupMap.has(gid));
+
+      const [{ data: fetchedGroups }, { data: allGroupMembers }] = await Promise.all([
+        missingGroupIds.length > 0
+          ? supabase.from("groups").select("id, name, creator_id").in("id", missingGroupIds)
+          : Promise.resolve({ data: [] as { id: string; name: string; creator_id: string }[] }),
         supabase.from("group_members").select("group_id, user_id, status").in("group_id", allGroupIds),
       ]);
+
+      const allGroupData = [...(createdGroups ?? []), ...(fetchedGroups ?? [])];
 
       const membersByGroup = new Map<string, { user_id: string; status: string }[]>();
       for (const m of allGroupMembers ?? []) {
