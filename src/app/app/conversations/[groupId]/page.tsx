@@ -5,6 +5,7 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
+import { ChatInput } from "@/components/chat/chat-input";
 import {
   ChatDateSeparator,
   shouldShowDateSeparator,
@@ -213,6 +214,8 @@ export default function ConversationThreadPage({
           </motion.div>
         )}
       </div>
+
+      <ChatInput groupId={groupId} />
     </div>
   );
 }
