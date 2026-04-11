@@ -35,6 +35,15 @@ vi.mock("@/hooks/use-haptics", () => ({
 import { haptics } from "@/hooks/use-haptics";
 import { AppShell } from "./app-shell";
 
+describe("AppShell header", () => {
+  it("renders a search icon linking to /app/search", () => {
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const searchLink = document.querySelector('a[href="/app/search"]');
+    expect(searchLink).toBeTruthy();
+  });
+});
+
 describe("AppShell haptics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
