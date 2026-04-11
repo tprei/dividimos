@@ -220,10 +220,14 @@ export function GroupSettlementView({
 
   if (debtEdges.length === 0) {
     return (
-      <div className="py-12 text-center text-muted-foreground">
-        <CheckCheck className="mx-auto h-10 w-10 opacity-40 text-success" />
-        <p className="mt-3 font-medium text-foreground">Tudo liquidado!</p>
-        <p className="text-sm mt-1">Nenhuma divida pendente no grupo</p>
+      <div className="flex flex-col items-center py-12 text-center">
+        <div className="rounded-2xl bg-success/10 p-3">
+          <CheckCheck className="h-8 w-8 text-success" />
+        </div>
+        <p className="mt-3 text-base font-semibold text-foreground">Tudo liquidado!</p>
+        <p className="mt-1 max-w-[240px] text-sm text-muted-foreground">
+          Nenhuma dívida pendente no grupo. Quando uma conta for ativada, os saldos aparecem aqui.
+        </p>
       </div>
     );
   }
