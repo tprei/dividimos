@@ -1,11 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Search } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Input } from "@/components/ui/input";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
@@ -51,6 +52,7 @@ export function ConversationsListContent({
   const user = useUser();
   const [conversations, setConversations] =
     useState<ConversationEntry[]>(initialConversations);
+  const [query, setQuery] = useState("");
 
   const refetchRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
@@ -176,6 +178,16 @@ export function ConversationsListContent({
     refetchRef.current = refetch;
   });
 
+  const trimmedQuery = query.trim().toLowerCase();
+  const filtered =
+    trimmedQuery.length === 0
+      ? conversations
+      : conversations.filter(
+          (c) =>
+            c.counterparty.name.toLowerCase().includes(trimmedQuery) ||
+            c.counterparty.handle.toLowerCase().includes(trimmedQuery),
+        );
+
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <motion.div
@@ -191,13 +203,32 @@ export function ConversationsListContent({
         </p>
       </motion.div>
 
+      {conversations.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05, duration: 0.4 }}
+          className="mt-5"
+        >
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar conversa..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         variants={staggerContainer}
         initial="hidden"
         animate="visible"
         className="mt-6 space-y-2"
       >
-        {conversations.map((conv) => (
+        {filtered.map((conv) => (
           <motion.div key={conv.groupId} variants={staggerItem}>
             <Link href={`/app/conversations/${conv.groupId}`}>
               <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
@@ -247,6 +278,14 @@ export function ConversationsListContent({
             icon={MessageSquare}
             title="Nenhuma conversa"
             description="Conversas aparecem quando você divide contas diretamente com alguém."
+          />
+        )}
+
+        {conversations.length > 0 && filtered.length === 0 && (
+          <EmptyState
+            icon={Search}
+            title="Nenhuma conversa encontrada"
+            description={`Sem resultados para "${query.trim()}".`}
           />
         )}
       </motion.div>
