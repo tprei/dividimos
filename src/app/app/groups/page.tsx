@@ -34,7 +34,7 @@ export default async function GroupsPage() {
   const nonPendingGroupIds = groupIdArray.filter((id) => !pendingGroupIds.includes(id));
 
   const [{ data: groupData }, { data: allMembers }, { data: activeBillRows }] = await Promise.all([
-    supabase.from("groups").select("id, name, creator_id").in("id", groupIdArray),
+    supabase.from("groups").select("id, name, creator_id").in("id", groupIdArray).eq("is_dm", false),
     supabase.from("group_members").select("group_id, user_id").in("group_id", groupIdArray).eq("status", "accepted"),
     nonPendingGroupIds.length > 0
       ? supabase.from("expenses").select("group_id").in("group_id", nonPendingGroupIds).neq("status", "draft")
