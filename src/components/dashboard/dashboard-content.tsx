@@ -118,9 +118,7 @@ export function DashboardContent({
     setActing(debt.groupId + debt.counterpartyId);
     await recordSettlement(debt.groupId, fromUserId, toUserId, amountCents);
     notifySettlementRecorded(debt.groupId, fromUserId, toUserId, amountCents).catch(() => {});
-    setPixModal(null);
     setActing(null);
-    fetchDashboard();
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -382,6 +380,10 @@ export function DashboardContent({
           mode={pixModal.mode}
           onMarkPaid={async (amountCents: number) => {
             await handleRecordSettlement(pixModal!.debt, amountCents);
+          }}
+          onSettlementComplete={() => {
+            setPixModal(null);
+            fetchDashboard();
           }}
         />
       )}

@@ -1057,9 +1057,11 @@ export default function BillDetailPage({
         amountCents={pixModal.amount}
         mode={pixModal.mode}
         groupId={expense.groupId}
-        onMarkPaid={() => {
-          setPixModal({ ...pixModal, open: false });
+        onMarkPaid={async () => {
           toast.success("Pagamento registrado!");
+        }}
+        onSettlementComplete={() => {
+          setPixModal({ ...pixModal, open: false });
         }}
       />
 

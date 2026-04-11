@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { formatBRL, centsToDecimal, sanitizeDecimalInput, decimalToCents } from "@/lib/currency";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { haptics } from "@/hooks/use-haptics";
+import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
+import { ConfettiBurst } from "@/components/shared/confetti-burst";
 
 interface PixQrModalProps {
   open: boolean;
@@ -16,7 +18,8 @@ interface PixQrModalProps {
   recipientName: string;
   amountCents: number;
   paidAmountCents?: number;
-  onMarkPaid: (amountCents: number) => void;
+  onMarkPaid: (amountCents: number) => Promise<void>;
+  onSettlementComplete?: () => void;
   pixKey?: string;
   recipientUserId?: string;
   billId?: string;
@@ -31,6 +34,7 @@ export function PixQrModal({
   amountCents,
   paidAmountCents = 0,
   onMarkPaid,
+  onSettlementComplete,
   pixKey,
   recipientUserId,
   billId,
@@ -41,10 +45,14 @@ export function PixQrModal({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const prevOpenRef = useRef(false);
+  const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copiaECola, setCopiaECola] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isSettling, setIsSettling] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [settledAmountCents, setSettledAmountCents] = useState(0);
 
   const remainingCents = amountCents - paidAmountCents;
   const [inputValue, setInputValue] = useState(() => centsToDecimal(remainingCents).replace(".", ","));
@@ -55,8 +63,18 @@ export function PixQrModal({
   useEffect(() => {
     if (open) {
       setInputValue(centsToDecimal(remainingCents).replace(".", ","));
+      setIsSettling(false);
+      setShowSuccess(false);
+      setSettledAmountCents(0);
     }
   }, [open, remainingCents]);
+
+  // Clean up auto-close timer on unmount
+  useEffect(() => {
+    return () => {
+      if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
+    };
+  }, []);
 
   const qrAmountCents = isValidAmount ? paymentCents : remainingCents;
 
@@ -148,9 +166,53 @@ export function PixQrModal({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handlePayment = () => {
-    if (!isValidAmount) return;
-    onMarkPaid(paymentCents);
+  const handlePayment = async () => {
+    if (!isValidAmount || isSettling) return;
+    setIsSettling(true);
+    setSettledAmountCents(paymentCents);
+    try {
+      await onMarkPaid(paymentCents);
+      haptics.success();
+      setShowSuccess(true);
+      autoCloseRef.current = setTimeout(() => {
+        handleSuccessClose();
+      }, 2500);
+    } catch {
+      setIsSettling(false);
+      toast.error("Erro ao registrar pagamento. Tente novamente.");
+      haptics.error();
+    }
+  };
+
+  const handleSuccessClose = () => {
+    if (autoCloseRef.current) {
+      clearTimeout(autoCloseRef.current);
+      autoCloseRef.current = null;
+    }
+    setShowSuccess(false);
+    setIsSettling(false);
+    onClose();
+    onSettlementComplete?.();
+  };
+
+  const handleBackdropClick = () => {
+    if (isSettling && !showSuccess) return;
+    if (showSuccess) {
+      handleSuccessClose();
+      return;
+    }
+    onClose();
+  };
+
+  const handleDragEnd = (_: unknown, info: { offset: { y: number }; velocity: { y: number } }) => {
+    if (isSettling && !showSuccess) return;
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      if (showSuccess) {
+        handleSuccessClose();
+      } else {
+        onClose();
+      }
+    }
   };
 
   if (!open) return null;
@@ -162,139 +224,212 @@ export function PixQrModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[100] flex items-end justify-center backdrop-blur-sm bg-black/40 sm:items-center"
-        onClick={onClose}
+        onClick={handleBackdropClick}
       >
         <motion.div
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
           transition={{ type: "spring", damping: 25, stiffness: 300 }}
-          drag="y"
+          drag={isSettling && !showSuccess ? false : "y"}
           dragConstraints={{ top: 0 }}
           dragElastic={0.2}
-          onDragEnd={(_, info) => {
-            if (info.offset.y > 100 || info.velocity.y > 500) {
-              onClose();
-            }
-          }}
+          onDragEnd={handleDragEnd}
           onClick={(e) => e.stopPropagation()}
           className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl"
         >
           <div className="mx-auto mb-6 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
 
-          <div className="text-center">
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 400, damping: 20 }}
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-white shadow-lg shadow-primary/20"
-            >
-              <QrCode className="h-7 w-7" />
-            </motion.div>
-            <h2 className="mt-4 text-lg font-bold">
-              {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {mode === "collect" ? "de" : "para"}{" "}
-              <span className="font-medium text-foreground">{recipientName}</span>
-            </p>
+          <AnimatePresence mode="wait">
+            {showSuccess ? (
+              <motion.div
+                key="success"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                className="relative flex flex-col items-center py-8"
+              >
+                <ConfettiBurst />
 
-            {/* Amount input for partial payments */}
-            <div className="mt-3">
-              {paidAmountCents > 0 && (
-                <p className="mb-1 text-xs text-muted-foreground">
-                  Já pago: {formatBRL(paidAmountCents)} de {formatBRL(amountCents)}
-                </p>
-              )}
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-xl font-bold text-primary">R$</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(sanitizeDecimalInput(e.target.value))}
-                  className="w-32 border-b-2 border-primary bg-transparent text-center text-3xl font-bold tabular-nums text-primary outline-none focus:border-primary/80"
-                  aria-label="Valor do pagamento"
-                />
-              </div>
-              {!isFullPayment && isValidAmount && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Resta depois do Pix: {formatBRL(remainingCents - paymentCents)}
-                </p>
-              )}
-              {paymentCents > remainingCents && (
-                <p className="mt-1 text-xs text-destructive">
-                  Valor maior que o restante ({formatBRL(remainingCents)})
-                </p>
-              )}
-            </div>
-          </div>
+                <AnimatedCheckmark size={72} className="text-success" />
 
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
-          >
-            {loading ? (
-              <div className="flex h-[240px] w-[240px] items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : error ? (
-              <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
-                <QrCode className="h-12 w-12 text-muted-foreground/30" />
-                <p className="text-sm text-destructive">{error}</p>
-              </div>
-            ) : (
-              <canvas ref={canvasRef} />
-            )}
-          </motion.div>
+                <motion.h2
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="mt-5 text-xl font-bold text-foreground"
+                >
+                  Pagamento registrado!
+                </motion.h2>
 
-          <div className="mt-5 space-y-2.5">
-            <Button
-              onClick={handleCopy}
-              variant="outline"
-              className="w-full gap-2"
-              size="lg"
-              disabled={!copiaECola}
-            >
-              {copied ? (
-                <>
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                <motion.p
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.55 }}
+                  className="mt-2 text-2xl font-bold tabular-nums text-success"
+                >
+                  {formatBRL(settledAmountCents)}
+                </motion.p>
+
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.7 }}
+                  className="mt-1 text-sm text-muted-foreground"
+                >
+                  {mode === "collect" ? "de" : "para"}{" "}
+                  <span className="font-medium text-foreground">{recipientName}</span>
+                </motion.p>
+
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1 }}
+                  className="mt-6"
+                >
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={handleSuccessClose}
+                    className="gap-2"
                   >
-                    <Check className="h-4 w-4 text-success" />
-                  </motion.span>
-                  Copiado!
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4" />
-                  Copiar código Pix
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={handlePayment}
-              className="w-full gap-2"
-              size="lg"
-              disabled={!isValidAmount}
-            >
-              <Check className="h-4 w-4" />
-              {mode === "collect"
-                ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(paymentCents)}`
-                : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(paymentCents)}`}
-            </Button>
-          </div>
+                    Fechar
+                  </Button>
+                </motion.div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="form"
+                initial={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <div className="text-center">
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-white shadow-lg shadow-primary/20"
+                  >
+                    <QrCode className="h-7 w-7" />
+                  </motion.div>
+                  <h2 className="mt-4 text-lg font-bold">
+                    {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
+                  </h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {mode === "collect" ? "de" : "para"}{" "}
+                    <span className="font-medium text-foreground">{recipientName}</span>
+                  </p>
 
-          <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-            <Shield className="h-3 w-3" />
-            <span>
-              Lê o QR code ou copia o código e cola no app do banco.
-            </span>
-          </div>
+                  {/* Amount input for partial payments */}
+                  <div className="mt-3">
+                    {paidAmountCents > 0 && (
+                      <p className="mb-1 text-xs text-muted-foreground">
+                        Já pago: {formatBRL(paidAmountCents)} de {formatBRL(amountCents)}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-xl font-bold text-primary">R$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(sanitizeDecimalInput(e.target.value))}
+                        disabled={isSettling}
+                        className="w-32 border-b-2 border-primary bg-transparent text-center text-3xl font-bold tabular-nums text-primary outline-none focus:border-primary/80 disabled:opacity-50"
+                        aria-label="Valor do pagamento"
+                      />
+                    </div>
+                    {!isFullPayment && isValidAmount && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Resta depois do Pix: {formatBRL(remainingCents - paymentCents)}
+                      </p>
+                    )}
+                    {paymentCents > remainingCents && (
+                      <p className="mt-1 text-xs text-destructive">
+                        Valor maior que o restante ({formatBRL(remainingCents)})
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                >
+                  {loading ? (
+                    <div className="flex h-[240px] w-[240px] items-center justify-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : error ? (
+                    <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
+                      <QrCode className="h-12 w-12 text-muted-foreground/30" />
+                      <p className="text-sm text-destructive">{error}</p>
+                    </div>
+                  ) : (
+                    <canvas ref={canvasRef} />
+                  )}
+                </motion.div>
+
+                <div className="mt-5 space-y-2.5">
+                  <Button
+                    onClick={handleCopy}
+                    variant="outline"
+                    className="w-full gap-2"
+                    size="lg"
+                    disabled={!copiaECola || isSettling}
+                  >
+                    {copied ? (
+                      <>
+                        <motion.span
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                        >
+                          <Check className="h-4 w-4 text-success" />
+                        </motion.span>
+                        Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copiar código Pix
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={handlePayment}
+                    className="w-full gap-2"
+                    size="lg"
+                    disabled={!isValidAmount || isSettling}
+                  >
+                    {isSettling ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Registrando...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4" />
+                        {mode === "collect"
+                          ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(paymentCents)}`
+                          : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(paymentCents)}`}
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Shield className="h-3 w-3" />
+                  <span>
+                    Lê o QR code ou copia o código e cola no app do banco.
+                  </span>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </motion.div>
     </AnimatePresence>
