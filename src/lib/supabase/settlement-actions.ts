@@ -203,6 +203,54 @@ export async function querySettlementHistoryForBalance(
 
 
 // ============================================================
+// Cross-group balance between two users
+// ============================================================
+
+/**
+ * Query all non-zero balance rows between two specific users across ALL groups.
+ * Returns individual Balance rows plus the aggregated net amount.
+ * netCents: positive = userId2 owes userId1, negative = userId1 owes userId2.
+ */
+export async function queryBalancesBetweenUsers(
+  userId1: string,
+  userId2: string,
+): Promise<{ balances: Balance[]; netCents: number }> {
+  const [userA, userB] = userId1 < userId2
+    ? [userId1, userId2]
+    : [userId2, userId1];
+
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from("balances")
+    .select("*")
+    .eq("user_a", userA)
+    .eq("user_b", userB)
+    .neq("amount_cents", 0);
+
+  if (error) {
+    throw new Error(`Failed to query balances between users: ${error.message}`);
+  }
+
+  const balances = (data as BalanceRow[] ?? []).map(mapBalanceRow);
+
+  // Compute net from userId1's perspective:
+  // positive amountCents = userA owes userB
+  // If userId1 === userA: they owe → negative for userId1
+  // If userId1 === userB: they're owed → positive for userId1
+  let netCents = 0;
+  for (const b of balances) {
+    if (userId1 === b.userA) {
+      netCents -= b.amountCents;
+    } else {
+      netCents += b.amountCents;
+    }
+  }
+
+  return { balances, netCents };
+}
+
+// ============================================================
 // Per-contact balance summaries
 // ============================================================
 
