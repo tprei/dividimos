@@ -22,13 +22,13 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Skeleton } from "@/components/shared/skeleton";
+import { ModalLoadingSkeleton, Skeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import dynamic from "next/dynamic";
 const PixQrModal = dynamic(
   () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
-  { ssr: false },
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { Button } from "@/components/ui/button";
