@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
+import { useRealtimeChat } from "@/hooks/use-realtime-chat";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import {
   loadConversationMessages,
@@ -19,11 +20,17 @@ import {
   type ConversationThread,
 } from "@/lib/supabase/chat-actions";
 import { confirmChatDraft } from "@/lib/supabase/chat-draft-confirm";
+import { markConversationRead } from "@/lib/supabase/unread-actions";
 import { createClient } from "@/lib/supabase/client";
-import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
+import {
+  expenseRowToExpense,
+  settlementRowToSettlement,
+  userProfileRowToUserProfile,
+} from "@/lib/supabase/expense-mappers";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import type { MemberContext } from "@/hooks/use-ai-expense-parse";
 import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
+import type { Database } from "@/types/database";
 
 type DmMemberStatus = "accepted" | "invited" | "declined";
 
@@ -105,12 +112,80 @@ export default function ConversationPage({
 
     setThread(messagesResult);
     setHasMore(messagesResult.messages.length >= PAGE_SIZE);
+
+    const supabaseForReceipt = createClient();
+    await markConversationRead(supabaseForReceipt, user.id, gId);
+
     setLoading(false);
   }, [user, counterpartyId]);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    const handleRefresh = () => initialize();
+    window.addEventListener("app-refresh", handleRefresh);
+    return () => window.removeEventListener("app-refresh", handleRefresh);
+  }, [initialize]);
+
+  const handleRealtimeMessage = useCallback(async (newMessage: ChatMessageWithSender) => {
+    if (!user) return;
+
+    const supabase = createClient();
+
+    let expense: Expense | undefined;
+    let settlement: Settlement | undefined;
+
+    if (newMessage.expenseId) {
+      const { data } = await supabase
+        .from("expenses")
+        .select("*")
+        .eq("id", newMessage.expenseId)
+        .single();
+      if (data) {
+        expense = expenseRowToExpense(data as Database["public"]["Tables"]["expenses"]["Row"]);
+      }
+    }
+
+    if (newMessage.settlementId) {
+      const { data } = await supabase
+        .from("settlements")
+        .select("*")
+        .eq("id", newMessage.settlementId)
+        .single();
+      if (data) {
+        settlement = settlementRowToSettlement(
+          data as Database["public"]["Tables"]["settlements"]["Row"],
+        );
+      }
+    }
+
+    setThread((prev) => {
+      if (!prev) return null;
+      if (prev.messages.some((m) => m.id === newMessage.id)) return prev;
+      const nextExpenses = expense
+        ? new Map([...prev.expenses, [expense.id, expense]])
+        : prev.expenses;
+      const nextSettlements = settlement
+        ? new Map([...prev.settlements, [settlement.id, settlement]])
+        : prev.settlements;
+      return {
+        ...prev,
+        messages: [...prev.messages, newMessage],
+        expenses: nextExpenses,
+        settlements: nextSettlements,
+      };
+    });
+
+    if (groupId) {
+      const supabaseForReceipt = createClient();
+      await markConversationRead(supabaseForReceipt, user.id, groupId);
+      window.dispatchEvent(new CustomEvent("conversations-read"));
+    }
+  }, [user, groupId]);
+
+  useRealtimeChat(groupId ?? undefined, handleRealtimeMessage);
 
   const handleLoadMore = useCallback(async () => {
     if (!groupId || !thread || loadingMore || !hasMore) return;

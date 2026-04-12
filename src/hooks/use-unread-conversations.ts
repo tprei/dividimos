@@ -29,7 +29,11 @@ export function useUnreadConversations(): number {
       refresh();
     };
     window.addEventListener("app-refresh", handleRefresh);
-    return () => window.removeEventListener("app-refresh", handleRefresh);
+    window.addEventListener("conversations-read", handleRefresh);
+    return () => {
+      window.removeEventListener("app-refresh", handleRefresh);
+      window.removeEventListener("conversations-read", handleRefresh);
+    };
   }, [refresh]);
 
   useEffect(() => {
