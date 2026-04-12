@@ -3,8 +3,10 @@
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
+import { ChatAiInput } from "@/components/chat/chat-ai-input";
 import {
   ChatDateSeparator,
   shouldShowDateSeparator,
@@ -12,10 +14,11 @@ import {
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/shared/skeleton";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, useUser } from "@/hooks/use-auth";
 import { useRealtimeChat } from "@/hooks/use-realtime-chat";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
-import { loadThreadMessages, loadDmGroupInfo } from "@/lib/supabase/chat-actions";
+import { loadThreadMessages, loadDmGroupInfo, sendChatMessage } from "@/lib/supabase/chat-actions";
+import { notifyChatMessage } from "@/lib/supabase/chat-notify";
 import { queryBalanceBetween } from "@/lib/supabase/settlement-actions";
 import { formatBRL } from "@/lib/currency";
 import type {
@@ -25,6 +28,7 @@ import type {
   Settlement,
   UserProfile,
 } from "@/types";
+import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export default function ConversationThreadPage({
   params,
@@ -32,7 +36,9 @@ export default function ConversationThreadPage({
   params: Promise<{ groupId: string }>;
 }) {
   const { groupId } = use(params);
-  const { user } = useAuth();
+  useAuth();
+  const currentUser = useUser();
+  const router = useRouter();
 
   const [counterparty, setCounterparty] = useState<UserProfile | null>(null);
   const [messages, setMessages] = useState<ChatMessageWithSender[]>([]);
@@ -114,6 +120,40 @@ export default function ConversationThreadPage({
     return () => window.removeEventListener("app-refresh", handler);
   }, [loadData]);
 
+  const handleConfirmDraft = useCallback(
+    (result: ChatExpenseResult) => {
+      const params = new URLSearchParams({ groupId });
+      if (result.title) params.set("title", result.title);
+      if (result.amountCents > 0)
+        params.set("amount", String(result.amountCents));
+      router.push(`/app/bill/new?${params.toString()}`);
+    },
+    [groupId, router],
+  );
+
+  const handleEditDraft = useCallback(() => {
+    router.push(`/app/bill/new?groupId=${groupId}`);
+  }, [groupId, router]);
+
+  const handleSend = useCallback(
+    async (text: string) => {
+      const result = await sendChatMessage(groupId, text);
+      if (!("error" in result) && counterparty && currentUser) {
+        notifyChatMessage({
+          recipientUserId: counterparty.id,
+          senderName: currentUser.name,
+          messagePreview: text.length > 100 ? text.slice(0, 100) + "…" : text,
+          conversationGroupId: groupId,
+        });
+      }
+    },
+    [groupId, counterparty, currentUser],
+  );
+
+  const aiMembers = counterparty
+    ? [{ handle: counterparty.handle, name: counterparty.name }]
+    : [];
+
   // Compute balance display
   const balanceDisplay = getBalanceDisplay(balance, currentUserId, counterparty);
 
@@ -167,7 +207,7 @@ export default function ConversationThreadPage({
       {/* Messages */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-3"
+        className="flex-1 overflow-y-auto px-4 py-3 pb-0"
       >
         {messages.length === 0 ? (
           <EmptyState
@@ -212,6 +252,16 @@ export default function ConversationThreadPage({
             <div ref={messagesEndRef} />
           </motion.div>
         )}
+      </div>
+
+      <div className="border-t bg-background px-3 py-2">
+        <ChatAiInput
+          groupId={groupId}
+          members={aiMembers}
+          onSend={handleSend}
+          onConfirmDraft={handleConfirmDraft}
+          onEditDraft={handleEditDraft}
+        />
       </div>
     </div>
   );
