@@ -11,7 +11,6 @@ import {
   QrCode,
   RefreshCw,
   ScanLine,
-  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -35,30 +34,6 @@ const PixQrModal = dynamic(
     })),
   { ssr: false },
 );
-
-function QuickAction({
-  icon: Icon,
-  label,
-  href,
-}: {
-  icon: React.ElementType;
-  label: string;
-  href: string;
-}) {
-  return (
-    <Link href={href} className="flex-1">
-      <motion.div
-        whileTap={{ scale: 0.95 }}
-        className="flex flex-col items-center gap-1.5 rounded-2xl border bg-card p-3 transition-colors hover:border-primary/30"
-      >
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
-        </div>
-        <span className="text-xs font-medium">{label}</span>
-      </motion.div>
-    </Link>
-  );
-}
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -255,12 +230,22 @@ export function DashboardContent({
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.14, duration: 0.4 }}
         data-tour="quick-actions"
-        className="mt-4 grid grid-cols-2 gap-3"
+        className="mt-3 flex gap-2"
       >
-        <QuickAction icon={Plus} label="Nova conta" href="/app/bill/new" />
-        <QuickAction icon={ScanLine} label="Ler cupom" href="/app/bill/new?scan=true" />
-        <QuickAction icon={Users} label="Grupos" href="/app/groups" />
-        <QuickAction icon={QrCode} label="Ler convite" href="/app/scan-invite" />
+        <Link
+          href="/app/bill/new?scan=true"
+          className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+        >
+          <ScanLine className="h-3.5 w-3.5" />
+          Ler cupom
+        </Link>
+        <Link
+          href="/app/scan-invite"
+          className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+        >
+          <QrCode className="h-3.5 w-3.5" />
+          Ler convite
+        </Link>
       </motion.div>
 
       <motion.div
