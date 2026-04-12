@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { GroupSelector } from "./group-selector";
+import { createClient } from "@/lib/supabase/client";
 
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: { selectionChanged: vi.fn(), tap: vi.fn() },
@@ -34,10 +35,11 @@ describe("GroupSelector", () => {
   });
 
   async function openDropdown() {
-    // Wait for loading to finish (button becomes enabled)
+    // Wait for loading to finish (spinner disappears from button)
     await waitFor(() => {
       const btn = screen.getByRole("button", { name: /selecionar grupo/i });
-      expect(btn).not.toBeDisabled();
+      const spinner = btn.querySelector("[class*='animate-spin']");
+      expect(spinner).toBeFalsy();
     });
     fireEvent.click(screen.getByRole("button", { name: /selecionar grupo/i }));
   }
@@ -151,6 +153,86 @@ describe("GroupSelector", () => {
     const items = screen.getAllByText(/group/);
     expect(items[0].textContent).toContain("Alpha group");
     expect(items[1].textContent).toContain("Zebra group");
+  });
+
+  it("shows spinner icon in button and skeleton rows while loading", async () => {
+    // Use a deferred promise so loading stays true until we release it
+    let resolveGroups!: (v: { data: unknown[] }) => void;
+    const groupsPromise = new Promise<{ data: unknown[] }>((r) => {
+      resolveGroups = r;
+    });
+    const deferredBuilder = Object.assign(groupsPromise, {
+      select: function () { return this; },
+      eq: function () { return this; },
+      neq: function () { return this; },
+      in: function () { return this; },
+      order: function () { return this; },
+      single: function () { return this; },
+    });
+
+    vi.mocked(createClient).mockReturnValue({
+      from: () => deferredBuilder,
+    } as unknown as ReturnType<typeof createClient>);
+
+    render(
+      <GroupSelector
+        currentUserId="me"
+        excludeIds={[]}
+        selectedGroupId={null}
+        selectedGroupName={null}
+        onSelectGroup={vi.fn()}
+        onDeselectGroup={vi.fn()}
+      />,
+    );
+
+    // Button should show spinner icon while loading
+    const btn = screen.getByRole("button", { name: /selecionar grupo/i });
+    const spinner = btn.querySelector("[class*='animate-spin']");
+    expect(spinner).toBeTruthy();
+
+    // Open dropdown while still loading
+    fireEvent.click(btn);
+
+    // Should show skeleton rows, not text
+    expect(screen.queryByText("Carregando grupos...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nenhum grupo disponível")).not.toBeInTheDocument();
+    const skeletonContainer = document.querySelector(".divide-y");
+    expect(skeletonContainer).toBeTruthy();
+    // 3 GroupRowSkeleton components each have child skeletons
+    const shimmerElements = skeletonContainer!.querySelectorAll("[class*='shimmer']");
+    expect(shimmerElements.length).toBeGreaterThanOrEqual(3);
+
+    // Resolve loading and restore mock to clean up
+    resolveGroups({ data: [] });
+
+    // Restore the original mock so subsequent tests use supabaseData again
+    vi.mocked(createClient).mockImplementation(() => ({
+      from: (table: string) => createQueryBuilder(supabaseData[table] ?? []),
+    }) as unknown as ReturnType<typeof createClient>);
+  });
+
+  it("shows empty state after loading completes with no groups", async () => {
+    supabaseData = {
+      group_members: [],
+      groups: [],
+      user_profiles: [],
+      expenses: [],
+    };
+
+    render(
+      <GroupSelector
+        currentUserId="me"
+        excludeIds={[]}
+        selectedGroupId={null}
+        selectedGroupName={null}
+        onSelectGroup={vi.fn()}
+        onDeselectGroup={vi.fn()}
+      />,
+    );
+
+    await openDropdown();
+
+    expect(screen.getByText("Nenhum grupo disponível")).toBeInTheDocument();
   });
 
   it("does not show 'Recente' badge when no expenses exist", async () => {
