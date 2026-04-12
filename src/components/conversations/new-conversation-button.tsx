@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { ContactRowSkeleton } from "@/components/shared/skeleton";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/hooks/use-auth";
 import type { UserProfile } from "@/types";
@@ -236,17 +237,18 @@ export function NewConversationButton() {
             )}
           </div>
 
-          {knownContacts.length > 0 && (
+          {(loadingContacts || knownContacts.length > 0) && (
             <div className="mt-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Conhecidos
               </p>
               <div className="space-y-1">
                 {loadingContacts ? (
-                  <div className="flex items-center gap-2 py-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Carregando...</span>
-                  </div>
+                  <>
+                    {[1, 2, 3].map((i) => (
+                      <ContactRowSkeleton key={i} />
+                    ))}
+                  </>
                 ) : (
                   knownContacts.map((contact) => (
                     <button
