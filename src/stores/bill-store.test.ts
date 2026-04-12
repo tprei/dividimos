@@ -918,3 +918,43 @@ describe("participant and guest removal flows", () => {
     expect(billSplits.find((s) => s.userId === newGuestId)).toBeDefined();
   });
 });
+
+describe("createExpenseFromDm", () => {
+  it("creates a single_amount expense with groupId and counterparty", () => {
+    setup().createExpenseFromDm("dm-group-1", userBob);
+    const { expense, participants } = useBillStore.getState();
+
+    expect(expense).not.toBeNull();
+    expect(expense?.groupId).toBe("dm-group-1");
+    expect(expense?.expenseType).toBe("single_amount");
+    expect(expense?.serviceFeePercent).toBe(0);
+    expect(expense?.status).toBe("draft");
+    expect(participants).toHaveLength(2);
+    expect(participants[0].id).toBe("user-alice");
+    expect(participants[1].id).toBe("user-bob");
+  });
+
+  it("does nothing when currentUser is not set", () => {
+    useBillStore.getState().createExpenseFromDm("dm-group-1", userBob);
+    const { expense } = useBillStore.getState();
+    expect(expense).toBeNull();
+  });
+
+  it("resets items, payers, splits, and guests", () => {
+    const s = setup();
+    s.createExpense("Old", "itemized");
+    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
+    s.addGuest("Guest");
+
+    s.createExpenseFromDm("dm-group-1", userBob);
+    const state = useBillStore.getState();
+
+    expect(state.items).toHaveLength(0);
+    expect(state.guests).toHaveLength(0);
+    expect(state.payers).toHaveLength(0);
+    expect(state.splits).toHaveLength(0);
+    expect(state.billSplits).toHaveLength(0);
+    expect(state.previewDebts).toHaveLength(0);
+    expect(state.totalAmountInput).toBe(0);
+  });
+});

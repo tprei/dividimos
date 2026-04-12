@@ -2,6 +2,7 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -13,6 +14,7 @@ import {
 } from "@/lib/supabase/chat-actions";
 import { createClient } from "@/lib/supabase/client";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
+import { useBillStore } from "@/stores/bill-store";
 import type { Expense, Settlement, UserProfile } from "@/types";
 
 export default function ConversationPage({
@@ -22,6 +24,9 @@ export default function ConversationPage({
 }) {
   const { counterpartyId } = use(params);
   const { user } = useAuth();
+  const router = useRouter();
+  const createExpenseFromDm = useBillStore((s) => s.createExpenseFromDm);
+  const setCurrentUser = useBillStore((s) => s.setCurrentUser);
 
   const [counterparty, setCounterparty] = useState<UserProfile | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
@@ -131,6 +136,25 @@ export default function ConversationPage({
     setLoadingMore(false);
   }, [groupId, thread, loadingMore, hasMore]);
 
+  const handleNewExpense = useCallback(() => {
+    if (!user || !counterparty || !groupId) return;
+
+    setCurrentUser(user);
+    createExpenseFromDm(groupId, {
+      id: counterparty.id,
+      email: "",
+      handle: counterparty.handle,
+      name: counterparty.name,
+      pixKeyType: "email",
+      pixKeyHint: "",
+      avatarUrl: counterparty.avatarUrl,
+      onboarded: true,
+      createdAt: new Date().toISOString(),
+    });
+
+    router.push(`/app/bill/new?groupId=${groupId}`);
+  }, [user, counterparty, groupId, setCurrentUser, createExpenseFromDm, router]);
+
   if (loading) {
     return (
       <div className="flex h-full flex-col">
@@ -166,7 +190,7 @@ export default function ConversationPage({
 
   return (
     <div className="flex h-full flex-col">
-      <ConversationHeader counterparty={counterparty} />
+      <ConversationHeader counterparty={counterparty} onNewExpense={handleNewExpense} />
       <ChatThread
         messages={thread.messages}
         expenses={thread.expenses}

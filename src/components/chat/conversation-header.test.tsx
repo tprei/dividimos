@@ -47,4 +47,26 @@ describe("ConversationHeader", () => {
     await userEvent.click(screen.getByLabelText("Voltar"));
     expect(mockBack).toHaveBeenCalled();
   });
+
+  it("renders Nova conta button when onNewExpense is provided", () => {
+    render(<ConversationHeader counterparty={counterparty} onNewExpense={() => {}} />);
+
+    expect(screen.getByText("Nova conta")).toBeInTheDocument();
+    expect(screen.getByLabelText("Nova conta")).toBeInTheDocument();
+  });
+
+  it("does not render Nova conta button when onNewExpense is omitted", () => {
+    render(<ConversationHeader counterparty={counterparty} />);
+
+    expect(screen.queryByText("Nova conta")).not.toBeInTheDocument();
+  });
+
+  it("calls onNewExpense when Nova conta button is clicked", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const onNewExpense = vi.fn();
+    render(<ConversationHeader counterparty={counterparty} onNewExpense={onNewExpense} />);
+
+    await userEvent.click(screen.getByLabelText("Nova conta"));
+    expect(onNewExpense).toHaveBeenCalledOnce();
+  });
 });
