@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Receipt } from "lucide-react";
+import { Pencil, Receipt } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { formatBRL } from "@/lib/currency";
 import type { Expense, UserProfile, ExpenseStatus } from "@/types";
@@ -57,6 +57,18 @@ export function SystemExpenseCard({ expense, creator }: SystemExpenseCardProps) 
           )}
         </div>
       </Link>
+      {expense.status === "draft" && (
+        <div className="mt-2 flex justify-center">
+          <Link
+            href={`/app/bill/new?groupId=${expense.groupId}&title=${encodeURIComponent(expense.title)}&amount=${expense.totalAmount}`}
+            className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+            aria-label="Editar rascunho"
+          >
+            <Pencil className="h-3 w-3" />
+            Editar
+          </Link>
+        </div>
+      )}
       <div className="mt-1 flex justify-center">
         <UserAvatar
           name={creator.name}

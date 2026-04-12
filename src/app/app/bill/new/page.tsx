@@ -542,6 +542,33 @@ function NewBillPageContent() {
     }
   }, [searchParams, showScanner, scanResult]);
 
+  // Pre-fill wizard from ?title, ?amount, ?splitType params (AI parse → edit flow)
+  const prefillInitializedRef = useRef(false);
+  useEffect(() => {
+    if (prefillInitializedRef.current) return;
+    if (searchParams.get("draft")) return;
+
+    const titleParam = searchParams.get("title");
+    const amountParam = searchParams.get("amount");
+    if (!titleParam && !amountParam) return;
+    if (!authUser) return;
+
+    prefillInitializedRef.current = true;
+
+    const parsedAmount = amountParam ? parseInt(amountParam, 10) : 0;
+    const amount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 0;
+
+    store.setCurrentUser(authUser);
+    store.createExpense(titleParam || "Nova conta", "single_amount");
+    if (amount > 0) {
+      store.updateExpense({ totalAmountInput: amount });
+    }
+
+    setBillType("single_amount");
+    setTitle(titleParam || "");
+    setStep("info");
+  }, [searchParams, authUser, store]);
+
   /** Compute expense shares from store state. Returns one entry per registered participant (excludes guests). */
   const computeShares = useCallback(() => {
     const state = useBillStore.getState();

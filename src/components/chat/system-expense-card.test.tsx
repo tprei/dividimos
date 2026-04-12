@@ -4,8 +4,8 @@ import { SystemExpenseCard } from "./system-expense-card";
 import type { Expense, UserProfile } from "@/types";
 
 vi.mock("next/link", () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({ children, href, "aria-label": ariaLabel }: { children: React.ReactNode; href: string; "aria-label"?: string }) => (
+    <a href={href} aria-label={ariaLabel}>{children}</a>
   ),
 }));
 
@@ -106,5 +106,45 @@ describe("SystemExpenseCard", () => {
     render(<SystemExpenseCard expense={makeExpense()} creator={creator} />);
 
     expect(screen.getByText("AS")).toBeInTheDocument();
+  });
+
+  it("shows Editar link for draft expenses", () => {
+    render(
+      <SystemExpenseCard expense={makeExpense({ status: "draft" })} creator={creator} />,
+    );
+
+    const editLink = screen.getByRole("link", { name: "Editar rascunho" });
+    expect(editLink).toBeInTheDocument();
+  });
+
+  it("Editar link points to wizard with groupId, title, and amount params", () => {
+    render(
+      <SystemExpenseCard
+        expense={makeExpense({ status: "draft", groupId: "group-1", title: "Jantar no restaurante", totalAmount: 15000 })}
+        creator={creator}
+      />,
+    );
+
+    const editLink = screen.getByRole("link", { name: "Editar rascunho" });
+    expect(editLink).toHaveAttribute(
+      "href",
+      "/app/bill/new?groupId=group-1&title=Jantar%20no%20restaurante&amount=15000",
+    );
+  });
+
+  it("does not show Editar link for active expenses", () => {
+    render(
+      <SystemExpenseCard expense={makeExpense({ status: "active" })} creator={creator} />,
+    );
+
+    expect(screen.queryByRole("link", { name: "Editar rascunho" })).not.toBeInTheDocument();
+  });
+
+  it("does not show Editar link for settled expenses", () => {
+    render(
+      <SystemExpenseCard expense={makeExpense({ status: "settled" })} creator={creator} />,
+    );
+
+    expect(screen.queryByRole("link", { name: "Editar rascunho" })).not.toBeInTheDocument();
   });
 });
