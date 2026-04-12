@@ -1,11 +1,12 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 import { ConversationQuickActions } from "./conversation-quick-actions";
 
 describe("ConversationQuickActions", () => {
   const defaultProps = {
-    groupId: "group-123",
-    counterpartyName: "Maria",
+    onCharge: vi.fn(),
+    onSplit: vi.fn(),
   };
 
   it("renders Cobrar and Dividir conta buttons", () => {
@@ -15,35 +16,33 @@ describe("ConversationQuickActions", () => {
     expect(screen.getByText("Dividir conta")).toBeInTheDocument();
   });
 
-  it("links Cobrar to bill/new with single_amount type", () => {
+  it("renders buttons, not links", () => {
     render(<ConversationQuickActions {...defaultProps} />);
 
-    const link = screen.getByText("Cobrar").closest("a");
-    expect(link).toHaveAttribute(
-      "href",
-      "/app/bill/new?groupId=group-123&type=single_amount&dm=Maria"
-    );
+    const cobrar = screen.getByText("Cobrar");
+    const dividir = screen.getByText("Dividir conta");
+
+    expect(cobrar.tagName).toBe("BUTTON");
+    expect(dividir.tagName).toBe("BUTTON");
+    expect(cobrar.closest("a")).toBeNull();
+    expect(dividir.closest("a")).toBeNull();
   });
 
-  it("links Dividir conta to bill/new with itemized type", () => {
-    render(<ConversationQuickActions {...defaultProps} />);
+  it("calls onCharge when Cobrar is clicked", async () => {
+    const onCharge = vi.fn();
+    render(<ConversationQuickActions onCharge={onCharge} onSplit={vi.fn()} />);
 
-    const link = screen.getByText("Dividir conta").closest("a");
-    expect(link).toHaveAttribute(
-      "href",
-      "/app/bill/new?groupId=group-123&type=itemized&dm=Maria"
-    );
+    await userEvent.click(screen.getByText("Cobrar"));
+
+    expect(onCharge).toHaveBeenCalledOnce();
   });
 
-  it("encodes counterpartyName in the URL", () => {
-    render(
-      <ConversationQuickActions groupId="g1" counterpartyName="João & Maria" />
-    );
+  it("calls onSplit when Dividir conta is clicked", async () => {
+    const onSplit = vi.fn();
+    render(<ConversationQuickActions onCharge={vi.fn()} onSplit={onSplit} />);
 
-    const link = screen.getByText("Cobrar").closest("a");
-    expect(link).toHaveAttribute(
-      "href",
-      "/app/bill/new?groupId=g1&type=single_amount&dm=Jo%C3%A3o%20%26%20Maria"
-    );
+    await userEvent.click(screen.getByText("Dividir conta"));
+
+    expect(onSplit).toHaveBeenCalledOnce();
   });
 });

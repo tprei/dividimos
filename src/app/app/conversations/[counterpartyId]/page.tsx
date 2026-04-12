@@ -419,8 +419,8 @@ export default function ConversationPage({
       {!isCounterpartyPending && groupId && (
         <>
           <ConversationQuickActions
-            groupId={groupId}
-            counterpartyName={counterparty?.name ?? ""}
+            onCharge={() => {}}
+            onSplit={() => {}}
           />
           <ChatAiInput
             groupId={groupId}
