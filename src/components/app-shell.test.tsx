@@ -33,8 +33,10 @@ vi.mock("@/components/shared/logo", () => ({
   Logo: () => <div data-testid="logo" />,
 }));
 
+const mockKeyboardVisible = vi.fn(() => false);
+
 vi.mock("@/hooks/use-keyboard-visible", () => ({
-  useKeyboardVisible: () => false,
+  useKeyboardVisible: () => mockKeyboardVisible(),
 }));
 
 vi.mock("@/hooks/use-haptics", () => ({
@@ -197,5 +199,28 @@ describe("AppShell activity bell", () => {
     render(<AppShell initialUser={null}><div>content</div></AppShell>);
 
     expect(mockMarkViewed).not.toHaveBeenCalled();
+  });
+});
+
+describe("AppShell keyboard padding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname.mockReturnValue("/app");
+  });
+
+  it("applies pb-20 padding to main when keyboard is closed", () => {
+    mockKeyboardVisible.mockReturnValue(false);
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const main = document.querySelector("main")!;
+    expect(main.className).toContain("pb-20");
+  });
+
+  it("removes pb-20 padding from main when keyboard is open", () => {
+    mockKeyboardVisible.mockReturnValue(true);
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const main = document.querySelector("main")!;
+    expect(main.className).not.toContain("pb-20");
   });
 });
