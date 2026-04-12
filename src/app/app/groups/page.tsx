@@ -53,12 +53,29 @@ export default async function GroupsPage() {
     billCountByGroup.set(b.group_id, (billCountByGroup.get(b.group_id) ?? 0) + 1);
   }
 
-  const allMemberIds = [...new Set((allMembers ?? []).map((m) => m.user_id))];
+  const pendingInviteUserIds: string[] = [];
+  const pendingInviteByGroupMap = new Map<string, string>();
+  for (const membership of myMemberships ?? []) {
+    if (pendingGroupIds.includes(membership.group_id)) {
+      const inviterRef = membership.invited_by;
+      if (inviterRef) {
+        pendingInviteByGroupMap.set(membership.group_id, inviterRef);
+        pendingInviteUserIds.push(inviterRef);
+      }
+    }
+  }
+
+  // Combine all user IDs into a single profile query instead of two sequential ones
+  const allMemberIds = [...new Set([
+    ...(allMembers ?? []).map((m) => m.user_id),
+    ...pendingInviteUserIds,
+  ])];
   const { data: profiles } = allMemberIds.length > 0
     ? await supabase.from("user_profiles").select("id, handle, name, avatar_url").in("id", allMemberIds)
     : { data: [] };
 
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const groupDataMap = new Map((groupData ?? []).map((g) => [g.id, g]));
 
   const groups: {
     id: string;
@@ -86,29 +103,12 @@ export default async function GroupsPage() {
     });
   }
 
-  const pendingInviteUserIds: string[] = [];
-  const pendingInviteByGroupMap = new Map<string, string>();
-  for (const membership of myMemberships ?? []) {
-    if (pendingGroupIds.includes(membership.group_id)) {
-      const inviterRef = membership.invited_by;
-      if (inviterRef) {
-        pendingInviteByGroupMap.set(membership.group_id, inviterRef);
-        pendingInviteUserIds.push(inviterRef);
-      }
-    }
-  }
-
-  const { data: inviterProfiles } = pendingInviteUserIds.length > 0
-    ? await supabase.from("user_profiles").select("id, name").in("id", pendingInviteUserIds)
-    : { data: [] };
-
-  const inviterNameMap = new Map((inviterProfiles ?? []).map((p) => [p.id, p.name]));
-
   const invites = pendingGroupIds.flatMap((gid) => {
-    const group = (groupData ?? []).find((g) => g.id === gid);
+    const group = groupDataMap.get(gid);
     if (!group) return [];
     const inviterId = pendingInviteByGroupMap.get(gid) ?? "";
-    return [{ groupId: gid, groupName: group.name, invitedByName: inviterNameMap.get(inviterId) ?? "" }];
+    const inviterProfile = profileMap.get(inviterId);
+    return [{ groupId: gid, groupName: group.name, invitedByName: inviterProfile?.name ?? "" }];
   });
 
   return <GroupsListContent initialGroups={groups} initialInvites={invites} />;

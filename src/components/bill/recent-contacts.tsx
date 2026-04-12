@@ -25,14 +25,14 @@ export function RecentContacts({
   const [balances, setBalances] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
-    queryAllBalancesForUser(currentUserId).then(setBalances).catch(() => {});
-  }, [currentUserId]);
+    let cancelled = false;
 
-  useEffect(() => {
-    async function fetchContacts() {
+    async function fetchContactsAndBalances() {
       const supabase = createClient();
 
-      // Find expenses where current user has a share or is a payer
+      // Start balances fetch in parallel with contacts discovery
+      const balancesPromise = queryAllBalancesForUser(currentUserId);
+
       const [{ data: myShares }, { data: myPayments }] = await Promise.all([
         supabase
           .from("expense_shares")
@@ -44,6 +44,8 @@ export function RecentContacts({
           .eq("user_id", currentUserId),
       ]);
 
+      if (cancelled) return;
+
       const expenseIds = [
         ...new Set([
           ...(myShares ?? []).map((s) => s.expense_id),
@@ -51,9 +53,11 @@ export function RecentContacts({
         ]),
       ];
 
+      // Resolve balances as soon as available
+      balancesPromise.then((b) => { if (!cancelled) setBalances(b); }).catch(() => {});
+
       if (expenseIds.length === 0) return;
 
-      // Find other users who participated in those expenses
       const [{ data: coSharers }, { data: coPayers }] = await Promise.all([
         supabase
           .from("expense_shares")
@@ -66,6 +70,8 @@ export function RecentContacts({
           .in("expense_id", expenseIds)
           .neq("user_id", currentUserId),
       ]);
+
+      if (cancelled) return;
 
       const coParticipants = [
         ...(coSharers ?? []),
@@ -89,7 +95,7 @@ export function RecentContacts({
         .select("*")
         .in("id", contactUserIds);
 
-      if (!profiles) return;
+      if (cancelled || !profiles) return;
 
       const profileMap = new Map(
         (profiles as UserProfileRow[]).map((p) => [p.id, p]),
@@ -104,7 +110,8 @@ export function RecentContacts({
       );
     }
 
-    fetchContacts();
+    fetchContactsAndBalances();
+    return () => { cancelled = true; };
   }, [currentUserId]);
 
   const visible = contacts.filter((c) => !excludeIds.includes(c.id));
