@@ -176,7 +176,6 @@ describe("ChatInput", () => {
     const user = userEvent.setup();
     render(<ChatInput {...defaultProps} />);
 
-    // Toggle to AI mode
     await user.click(
       screen.getByRole("button", {
         name: "Ativar modo IA para criar despesa",
@@ -184,7 +183,9 @@ describe("ChatInput", () => {
     );
 
     const input = screen.getByPlaceholderText(/pizza 60 reais/i);
-    await user.type(input, "pizza 60 reais rachei com João");
+    fireEvent.change(input, {
+      target: { value: "pizza 60 reais rachei com João" },
+    });
 
     await user.click(
       screen.getByRole("button", { name: "Processar com IA" }),
@@ -228,7 +229,7 @@ describe("ChatInput", () => {
     );
 
     const input = screen.getByPlaceholderText(/pizza 60 reais/i);
-    await user.type(input, "pizza 60 reais");
+    fireEvent.change(input, { target: { value: "pizza 60 reais" } });
 
     await user.click(
       screen.getByRole("button", { name: "Processar com IA" }),
