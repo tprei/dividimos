@@ -12,12 +12,21 @@ import {
 } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { haptics } from "@/hooks/use-haptics";
+import { computeGroupDebts } from "./group-settlement-sheet";
 import type { Balance } from "@/types";
 
 const PixQrModal = dynamic(
   () =>
     import("@/components/settlement/pix-qr-modal").then((m) => ({
       default: m.PixQrModal,
+    })),
+  { ssr: false },
+);
+
+const GroupSettlementSheet = dynamic(
+  () =>
+    import("./group-settlement-sheet").then((m) => ({
+      default: m.GroupSettlementSheet,
     })),
   { ssr: false },
 );
@@ -87,7 +96,9 @@ export function ConversationPayButton({
   const [netCents, setNetCents] = useState(0);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showGroupSheet, setShowGroupSheet] = useState(false);
   const [showPix, setShowPix] = useState(false);
+  const [selectedBalances, setSelectedBalances] = useState<Balance[]>([]);
   const [settling, setSettling] = useState(false);
 
   const fetchBalances = useCallback(async () => {
@@ -128,11 +139,35 @@ export function ConversationPayButton({
   const mode: "pay" | "collect" = netCents < 0 ? "pay" : "collect";
   const absAmount = Math.abs(netCents);
 
+  const relevantGroupCount = computeGroupDebts(balances, currentUserId, mode).length;
+
+  const handleButtonClick = () => {
+    if (relevantGroupCount > 1) {
+      setShowGroupSheet(true);
+    } else {
+      setSelectedBalances(balances);
+      setShowPix(true);
+    }
+  };
+
+  const handleGroupConfirm = (filtered: Balance[]) => {
+    setSelectedBalances(filtered);
+    setShowGroupSheet(false);
+    setShowPix(true);
+  };
+
+  const selectedTotal = computeGroupDebts(
+    selectedBalances.length > 0 ? selectedBalances : balances,
+    currentUserId,
+    mode,
+  ).reduce((sum, g) => sum + g.debtCents, 0);
+
   const handleMarkPaid = async (amountCents: number) => {
     setSettling(true);
     try {
+      const source = selectedBalances.length > 0 ? selectedBalances : balances;
       const settlements = distributeSettlement(
-        balances,
+        source,
         currentUserId,
         counterpartyId,
         amountCents,
@@ -146,6 +181,7 @@ export function ConversationPayButton({
 
       haptics.success();
       setShowPix(false);
+      setSelectedBalances([]);
       window.dispatchEvent(new CustomEvent("app-refresh"));
     } catch {
       haptics.error();
@@ -165,7 +201,7 @@ export function ConversationPayButton({
           variant={mode === "pay" ? "default" : "outline"}
           size="sm"
           className="gap-1.5 rounded-full text-xs"
-          onClick={() => setShowPix(true)}
+          onClick={handleButtonClick}
           disabled={settling}
         >
           {mode === "pay" ? (
@@ -177,12 +213,29 @@ export function ConversationPayButton({
         </Button>
       </motion.div>
 
+      {showGroupSheet && (
+        <GroupSettlementSheet
+          open
+          onClose={() => setShowGroupSheet(false)}
+          balances={balances}
+          currentUserId={currentUserId}
+          counterpartyId={counterpartyId}
+          counterpartyName={counterpartyName}
+          mode={mode}
+          totalCents={absAmount}
+          onConfirm={handleGroupConfirm}
+        />
+      )}
+
       {showPix && (
         <PixQrModal
           open
-          onClose={() => setShowPix(false)}
+          onClose={() => {
+            setShowPix(false);
+            setSelectedBalances([]);
+          }}
           recipientName={counterpartyName}
-          amountCents={absAmount}
+          amountCents={selectedTotal || absAmount}
           recipientUserId={mode === "pay" ? counterpartyId : currentUserId}
           mode={mode}
           onMarkPaid={handleMarkPaid}
