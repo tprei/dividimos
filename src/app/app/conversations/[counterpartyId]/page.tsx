@@ -1,12 +1,15 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ConversationQuickActions } from "@/components/chat/conversation-quick-actions";
+import { QuickChargeSheet, type QuickChargeStatus } from "@/components/chat/quick-charge-sheet";
+import { QuickSplitSheet, type QuickSplitStatus, type QuickSplitResult } from "@/components/chat/quick-split-sheet";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { ChatAiInput } from "@/components/chat/chat-ai-input";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -269,7 +272,10 @@ export default function ConversationPage({
 
       if ("error" in confirmResult) {
         toast.error(confirmResult.error);
+        return confirmResult;
       }
+
+      return confirmResult;
     },
     [groupId, user, counterparty],
   );
@@ -294,6 +300,125 @@ export default function ConversationPage({
       { handle: counterparty.handle, name: counterparty.name },
     ];
   }, [counterparty, user]);
+
+  // --- Quick-action sheet state ---
+  const [chargeSheetOpen, setChargeSheetOpen] = useState(false);
+  const [splitSheetOpen, setSplitSheetOpen] = useState(false);
+  const [chargeStatus, setChargeStatus] = useState<QuickChargeStatus>("idle");
+  const [chargeError, setChargeError] = useState<string | undefined>();
+  const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
+  const [splitError, setSplitError] = useState<string | undefined>();
+  const chargeResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const splitResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleOpenCharge = useCallback(() => {
+    setSplitSheetOpen(false);
+    setChargeStatus("idle");
+    setChargeError(undefined);
+    setChargeSheetOpen((prev) => !prev);
+  }, []);
+
+  const handleOpenSplit = useCallback(() => {
+    setChargeSheetOpen(false);
+    setSplitStatus("idle");
+    setSplitError(undefined);
+    setSplitSheetOpen((prev) => !prev);
+  }, []);
+
+  const handleDismissCharge = useCallback(() => {
+    setChargeSheetOpen(false);
+  }, []);
+
+  const handleDismissSplit = useCallback(() => {
+    setSplitSheetOpen(false);
+  }, []);
+
+  const handleQuickChargeConfirm = useCallback(
+    async (result: ChatExpenseResult) => {
+      setChargeStatus("confirming");
+      setChargeError(undefined);
+      const res = await handleConfirmDraft(result);
+      if (res && "error" in res) {
+        setChargeStatus("error");
+        setChargeError(typeof res.error === "string" ? res.error : "Erro ao cobrar");
+        return;
+      }
+      setChargeStatus("confirmed");
+      chargeResetTimer.current = setTimeout(() => {
+        setChargeSheetOpen(false);
+        setChargeStatus("idle");
+      }, 1200);
+    },
+    [handleConfirmDraft],
+  );
+
+  const handleQuickChargeEdit = useCallback(
+    (result: ChatExpenseResult) => {
+      setChargeSheetOpen(false);
+      handleEditDraft(result);
+    },
+    [handleEditDraft],
+  );
+
+  const handleQuickSplitConfirm = useCallback(
+    async (result: QuickSplitResult) => {
+      if (!groupId || !user || !counterparty) return;
+      setSplitStatus("confirming");
+      setSplitError(undefined);
+
+      const chatResult: ChatExpenseResult = {
+        title: result.title,
+        amountCents: result.amountCents,
+        expenseType: "single_amount",
+        splitType: result.splitType === "equal" ? "equal" : "custom",
+        items: [],
+        participants: [
+          {
+            spokenName: counterparty.handle,
+            matchedHandle: counterparty.handle,
+            confidence: "high",
+          },
+        ],
+        payerHandle: result.payerId === user.id ? "SELF" : counterparty.handle,
+        merchantName: null,
+        confidence: "high",
+      };
+
+      const members: UserProfile[] = [
+        { id: user.id, handle: user.handle, name: user.name, avatarUrl: user.avatarUrl },
+        counterparty,
+      ];
+
+      const confirmResult = await confirmChatDraft({
+        result: chatResult,
+        groupId,
+        currentUserId: user.id,
+        members,
+        precomputedShares: result.shares,
+      });
+
+      if ("error" in confirmResult) {
+        setSplitStatus("error");
+        setSplitError(confirmResult.error);
+        return;
+      }
+
+      setSplitStatus("confirmed");
+      splitResetTimer.current = setTimeout(() => {
+        setSplitSheetOpen(false);
+        setSplitStatus("idle");
+      }, 1200);
+    },
+    [groupId, user, counterparty],
+  );
+
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      if (chargeResetTimer.current) clearTimeout(chargeResetTimer.current);
+      if (splitResetTimer.current) clearTimeout(splitResetTimer.current);
+    };
+  }, []);
 
   const handleAccept = useCallback(async () => {
     if (!groupId || !user) return;
@@ -418,9 +543,34 @@ export default function ConversationPage({
       />
       {!isCounterpartyPending && groupId && (
         <>
+          <AnimatePresence>
+            {chargeSheetOpen && (
+              <div className="px-4 pb-2">
+                <QuickChargeSheet
+                  counterpartyName={counterparty.name}
+                  counterpartyHandle={counterparty.handle}
+                  currentUserHandle={user.handle}
+                  onConfirm={handleQuickChargeConfirm}
+                  onEdit={handleQuickChargeEdit}
+                  onDismiss={handleDismissCharge}
+                  status={chargeStatus}
+                  errorMessage={chargeError}
+                />
+              </div>
+            )}
+          </AnimatePresence>
+          <QuickSplitSheet
+            open={splitSheetOpen}
+            onClose={handleDismissSplit}
+            currentUserId={user.id}
+            counterparty={counterparty}
+            onConfirm={handleQuickSplitConfirm}
+            status={splitStatus}
+            errorMessage={splitError}
+          />
           <ConversationQuickActions
-            onCharge={() => {}}
-            onSplit={() => {}}
+            onCharge={handleOpenCharge}
+            onSplit={handleOpenSplit}
           />
           <ChatAiInput
             groupId={groupId}
