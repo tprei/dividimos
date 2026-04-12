@@ -39,6 +39,32 @@ export interface ThreadData {
   settlements: Map<string, { settlement: Settlement; fromUser: UserProfile; toUser: UserProfile }>;
 }
 
+export async function sendChatMessage(
+  groupId: string,
+  content: string,
+): Promise<{ id: string } | { error: string }> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado" };
+
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .insert({
+      group_id: groupId,
+      sender_id: user.id,
+      message_type: "text" as const,
+      content,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+  return { id: data.id };
+}
+
 /**
  * Load chat messages for a group, with sender profiles and linked
  * expense/settlement data for system messages.
