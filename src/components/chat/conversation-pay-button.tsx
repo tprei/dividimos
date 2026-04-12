@@ -237,6 +237,7 @@ export function ConversationPayButton({
           recipientName={counterpartyName}
           amountCents={selectedTotal || absAmount}
           recipientUserId={mode === "pay" ? counterpartyId : currentUserId}
+          groupId={selectedBalances[0]?.groupId ?? balances[0]?.groupId}
           mode={mode}
           onMarkPaid={handleMarkPaid}
         />

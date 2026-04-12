@@ -1,9 +1,77 @@
-import { describe, it, expect } from "vitest";
-import { distributeSettlement } from "./conversation-pay-button";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { distributeSettlement, ConversationPayButton } from "./conversation-pay-button";
 import type { Balance } from "@/types";
+
+vi.mock("@/lib/supabase/settlement-actions", () => ({
+  queryBalancesBetweenUsers: vi.fn(),
+  recordSettlement: vi.fn(),
+}));
+
+vi.mock("@/lib/push/push-notify", () => ({
+  notifySettlementRecorded: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: { success: vi.fn(), error: vi.fn() },
+}));
+
+let capturedPixQrProps: Record<string, unknown> | null = null;
+
+vi.mock("next/dynamic", () => ({
+  default: (loader: () => Promise<{ default: unknown }>) => {
+    const name = String(loader);
+    if (name.includes("pix-qr-modal")) {
+      return (props: Record<string, unknown>) => {
+        capturedPixQrProps = props;
+        return null;
+      };
+    }
+    return () => null;
+  },
+}));
+
+import { queryBalancesBetweenUsers } from "@/lib/supabase/settlement-actions";
 
 const USER_A = "aaa-aaa"; // canonical first (a < b)
 const USER_B = "bbb-bbb";
+
+describe("ConversationPayButton – groupId prop", () => {
+  beforeEach(() => {
+    capturedPixQrProps = null;
+  });
+
+  it("passes groupId from the first balance to PixQrModal when Pagar is clicked", async () => {
+    vi.mocked(queryBalancesBetweenUsers).mockResolvedValue({
+      netCents: -5000,
+      balances: [
+        {
+          groupId: "group-dm-42",
+          userA: USER_A,
+          userB: USER_B,
+          amountCents: 5000,
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    render(
+      <ConversationPayButton
+        currentUserId={USER_A}
+        counterpartyId={USER_B}
+        counterpartyName="Bob"
+      />,
+    );
+
+    const button = await screen.findByRole("button", { name: /pagar/i });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(capturedPixQrProps).not.toBeNull();
+      expect(capturedPixQrProps?.groupId).toBe("group-dm-42");
+    });
+  });
+});
 
 function makeBalance(groupId: string, amountCents: number): Balance {
   return {

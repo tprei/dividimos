@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { loadExpense } from "@/lib/supabase/expense-actions";
 import { activateExpense } from "@/lib/supabase/expense-rpc";
+import { getGroupNavUrl } from "@/lib/group-nav";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import { haptics } from "@/hooks/use-haptics";
@@ -340,6 +341,7 @@ export default function BillDetailPage({
 
   const [expenseData, setExpenseData] = useState<ExpenseWithDetails | null>(null);
   const [loadingFromDb, setLoadingFromDb] = useState(false);
+  const [groupNavUrl, setGroupNavUrl] = useState<string | null>(null);
   const loadedKeyRef = useRef<string | null>(null);
 
   const loadExpenseData = useCallback(async (expenseId: string) => {
@@ -389,6 +391,15 @@ export default function BillDetailPage({
     })();
     return () => { cancelled = true; };
   }, [id, currentUserId, loadExpenseData]);
+
+  useEffect(() => {
+    if (!expenseData?.groupId || !currentUser?.id) return;
+    let cancelled = false;
+    getGroupNavUrl(expenseData.groupId, currentUser.id).then((url) => {
+      if (!cancelled) setGroupNavUrl(url);
+    });
+    return () => { cancelled = true; };
+  }, [expenseData?.groupId, currentUser?.id]);
 
   // Realtime: subscribe to expense status changes
   const onExpenseUpdate = useCallback(
@@ -607,9 +618,9 @@ export default function BillDetailPage({
           {expense.merchantName && (
             <p className="text-xs text-muted-foreground">{expense.merchantName}</p>
           )}
-          {expense.groupId && (
+          {expense.groupId && groupNavUrl && (
             <Link
-              href={`/app/groups/${expense.groupId}`}
+              href={groupNavUrl}
               className="flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
             >
               <Users className="h-3 w-3" />
@@ -833,9 +844,9 @@ export default function BillDetailPage({
           <p className="mt-1 text-sm text-muted-foreground">
             Todos os pagamentos foram confirmados.
           </p>
-          {expense.groupId && (
+          {expense.groupId && groupNavUrl && (
             <Link
-              href={`/app/groups/${expense.groupId}`}
+              href={groupNavUrl}
               className="mt-3 text-sm text-primary hover:underline"
             >
               Ver acerto do grupo
@@ -844,14 +855,14 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && !allSettled && expense.groupId && (
+      {activeTab === "payment" && !allSettled && expense.groupId && groupNavUrl && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           className="mt-5 space-y-4"
         >
           <Link
-            href={`/app/groups/${expense.groupId}`}
+            href={groupNavUrl}
             className="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 p-4 hover:bg-primary/10 transition-colors"
           >
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15">
