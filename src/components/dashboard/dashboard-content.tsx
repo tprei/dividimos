@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -25,6 +26,7 @@ import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { recordSettlement } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { fetchUserDebts } from "@/lib/supabase/debt-actions";
+import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import type { DebtSummary } from "@/types";
 
 const PixQrModal = dynamic(
@@ -76,6 +78,7 @@ export function DashboardContent({
   initialNetBalance,
 }: DashboardContentProps) {
   const user = useUser();
+  const router = useRouter();
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [debts, setDebts] = useState<DebtSummary[]>(initialDebts);
   const [netBalance, setNetBalance] = useState(initialNetBalance);
@@ -105,6 +108,17 @@ export function DashboardContent({
     }
     setNetBalance(net);
   }, [user]);
+
+  const handleNavigate = useCallback(async (debt: DebtSummary) => {
+    if (debt.isDm) {
+      router.push(`/app/conversations/${debt.groupId}`);
+      return;
+    }
+    const result = await getOrCreateDmGroup(debt.counterpartyId);
+    if ("groupId" in result) {
+      router.push(`/app/conversations/${result.groupId}`);
+    }
+  }, [router]);
 
   const handleRecordSettlement = async (
     debt: DebtSummary,
@@ -361,6 +375,7 @@ export function DashboardContent({
                   debt={debt}
                   onPay={(d) => setPixModal({ debt: d, mode: "pay" })}
                   onCollect={(d) => setPixModal({ debt: d, mode: "collect" })}
+                  onNavigate={handleNavigate}
                   isActing={isActingOnThis}
                 />
               </motion.div>

@@ -25,12 +25,17 @@ vi.mock("@/lib/supabase/settlement-actions", () => ({
   recordSettlement: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock("@/lib/supabase/dm-actions", () => ({
+  getOrCreateDmGroup: vi.fn().mockResolvedValue({ groupId: "dm-group-1" }),
+}));
+
 function makeDebt(
   overrides: Partial<DebtSummary> & { direction: "owes" | "owed" },
 ): DebtSummary {
   return {
     groupId: overrides.groupId ?? "group-1",
     groupName: overrides.groupName ?? "Jantar",
+    isDm: overrides.isDm ?? false,
     counterpartyId: overrides.counterpartyId ?? "user-2",
     counterpartyName: overrides.counterpartyName ?? "Maria",
     counterpartyAvatarUrl: overrides.counterpartyAvatarUrl ?? null,

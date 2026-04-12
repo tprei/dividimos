@@ -13,6 +13,7 @@ interface BalanceRow {
 interface GroupRow {
   id: string;
   name: string;
+  is_dm: boolean;
 }
 
 interface ProfileRow {
@@ -44,16 +45,16 @@ export async function fetchUserDebts(userId: string): Promise<DebtSummary[]> {
   }
 
   const [groupsResult, profilesResult] = await Promise.all([
-    supabase.from("groups").select("id, name").in("id", Array.from(groupIds)),
+    supabase.from("groups").select("id, name, is_dm").in("id", Array.from(groupIds)),
     supabase
       .from("user_profiles")
       .select("id, name, avatar_url")
       .in("id", Array.from(counterpartyIds)),
   ]);
 
-  const groupMap = new Map<string, string>();
+  const groupMap = new Map<string, GroupRow>();
   for (const g of (groupsResult.data ?? []) as GroupRow[]) {
-    groupMap.set(g.id, g.name);
+    groupMap.set(g.id, g);
   }
 
   const profileMap = new Map<string, ProfileRow>();
@@ -78,9 +79,11 @@ export async function fetchUserDebts(userId: string): Promise<DebtSummary[]> {
       direction = b.amount_cents > 0 ? "owed" : "owes";
     }
 
+    const group = groupMap.get(b.group_id);
     debts.push({
       groupId: b.group_id,
-      groupName: groupMap.get(b.group_id) ?? "Grupo",
+      groupName: group?.name ?? "Grupo",
+      isDm: group?.is_dm ?? false,
       counterpartyId,
       counterpartyName: profile?.name ?? "Usuario",
       counterpartyAvatarUrl: profile?.avatar_url ?? null,

@@ -10,10 +10,11 @@ interface DebtCardProps {
   debt: DebtSummary;
   onPay: (debt: DebtSummary) => void;
   onCollect: (debt: DebtSummary) => void;
+  onNavigate: (debt: DebtSummary) => void;
   isActing?: boolean;
 }
 
-export function DebtCard({ debt, onPay, onCollect, isActing }: DebtCardProps) {
+export function DebtCard({ debt, onPay, onCollect, onNavigate, isActing }: DebtCardProps) {
   const isOwes = debt.direction === "owes";
 
   return (
@@ -22,7 +23,11 @@ export function DebtCard({ debt, onPay, onCollect, isActing }: DebtCardProps) {
       animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl border bg-card p-4"
     >
-      <div className="flex items-center gap-3 mb-3">
+      <button
+        type="button"
+        onClick={() => onNavigate(debt)}
+        className="flex items-center gap-3 mb-3 w-full text-left"
+      >
         <UserAvatar
           name={debt.counterpartyName}
           avatarUrl={debt.counterpartyAvatarUrl ?? undefined}
@@ -44,7 +49,7 @@ export function DebtCard({ debt, onPay, onCollect, isActing }: DebtCardProps) {
             {isOwes ? "Você deve" : "Você recebe"}
           </p>
         </div>
-      </div>
+      </button>
 
       <div className="flex gap-2">
         {isOwes ? (
