@@ -6,13 +6,21 @@ import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { Skeleton } from "@/components/shared/skeleton";
 import { useAuth } from "@/hooks/use-auth";
+import {
+  useRealtimeChat,
+  type ChatMessageEvent,
+} from "@/hooks/use-realtime-chat";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import {
   loadConversationMessages,
   type ConversationThread,
 } from "@/lib/supabase/chat-actions";
 import { createClient } from "@/lib/supabase/client";
-import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
+import {
+  expenseRowToExpense,
+  settlementRowToSettlement,
+  userProfileRowToUserProfile,
+} from "@/lib/supabase/expense-mappers";
 import type { Expense, Settlement, UserProfile } from "@/types";
 
 export default function ConversationPage({
@@ -130,6 +138,145 @@ export default function ConversationPage({
     setHasMore(result.messages.length >= PAGE_SIZE);
     setLoadingMore(false);
   }, [groupId, thread, loadingMore, hasMore]);
+
+  const handleChatEvent = useCallback(
+    async (event: ChatMessageEvent) => {
+      if (event.type === "deleted") {
+        setThread((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            messages: prev.messages.filter((m) => m.id !== event.messageId),
+          };
+        });
+        return;
+      }
+
+      if (event.type === "updated") {
+        setThread((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            messages: prev.messages.map((m) =>
+              m.id === event.message.id
+                ? { ...m, ...event.message, sender: m.sender }
+                : m,
+            ),
+          };
+        });
+        return;
+      }
+
+      // INSERT — resolve sender profile and related data before appending
+      const msg = event.message;
+      const supabase = createClient();
+
+      // Check if we already have this sender's profile cached
+      const cachedSender = thread?.profiles.get(msg.senderId);
+      const senderProfilePromise = cachedSender
+        ? Promise.resolve(cachedSender)
+        : (supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("id", msg.senderId)
+            .single()
+            .then(({ data }) => (data ? userProfileRowToUserProfile(data) : null)) as Promise<
+            UserProfile | null
+          >);
+
+      let expensePromise: Promise<Expense | null> = Promise.resolve(null);
+      if (msg.messageType === "system_expense" && msg.expenseId) {
+        const expenseId = msg.expenseId;
+        expensePromise = supabase
+          .from("expenses")
+          .select("*")
+          .eq("id", expenseId)
+          .single()
+          .then(({ data }) => (data ? expenseRowToExpense(data) : null)) as Promise<
+          Expense | null
+        >;
+      }
+
+      let settlementPromise: Promise<Settlement | null> = Promise.resolve(null);
+      if (msg.messageType === "system_settlement" && msg.settlementId) {
+        const settlementId = msg.settlementId;
+        settlementPromise = supabase
+          .from("settlements")
+          .select("*")
+          .eq("id", settlementId)
+          .single()
+          .then(({ data }) => (data ? settlementRowToSettlement(data) : null)) as Promise<
+          Settlement | null
+        >;
+      }
+
+      const [senderProfile, newExpense, newSettlement] = await Promise.all([
+        senderProfilePromise,
+        expensePromise,
+        settlementPromise,
+      ]);
+
+      const fallbackProfile: UserProfile = {
+        id: msg.senderId,
+        handle: "unknown",
+        name: "Usuário",
+      };
+
+      // For settlements, also resolve from/to user profiles if needed
+      let extraProfiles: UserProfile[] = [];
+      if (newSettlement) {
+        const missingIds: string[] = [];
+        const knownProfiles = thread?.profiles ?? new Map<string, UserProfile>();
+        if (!knownProfiles.has(newSettlement.fromUserId) && newSettlement.fromUserId !== senderProfile?.id) {
+          missingIds.push(newSettlement.fromUserId);
+        }
+        if (!knownProfiles.has(newSettlement.toUserId) && newSettlement.toUserId !== senderProfile?.id) {
+          missingIds.push(newSettlement.toUserId);
+        }
+        if (missingIds.length > 0) {
+          const { data } = await supabase
+            .from("user_profiles")
+            .select("*")
+            .in("id", missingIds);
+          if (data) {
+            extraProfiles = data.map(userProfileRowToUserProfile);
+          }
+        }
+      }
+
+      setThread((prev) => {
+        if (!prev) return prev;
+
+        // Deduplicate — the message may already exist from optimistic insert
+        if (prev.messages.some((m) => m.id === msg.id)) return prev;
+
+        const updatedProfiles = new Map(prev.profiles);
+        if (senderProfile) updatedProfiles.set(senderProfile.id, senderProfile);
+        for (const p of extraProfiles) {
+          updatedProfiles.set(p.id, p);
+        }
+
+        const updatedExpenses = new Map(prev.expenses);
+        if (newExpense) updatedExpenses.set(newExpense.id, newExpense);
+
+        const updatedSettlements = new Map(prev.settlements);
+        if (newSettlement) updatedSettlements.set(newSettlement.id, newSettlement);
+
+        return {
+          messages: [
+            ...prev.messages,
+            { ...msg, sender: senderProfile ?? fallbackProfile },
+          ],
+          profiles: updatedProfiles,
+          expenses: updatedExpenses,
+          settlements: updatedSettlements,
+        };
+      });
+    },
+    [thread?.profiles],
+  );
+
+  useRealtimeChat(groupId ?? undefined, handleChatEvent);
 
   if (loading) {
     return (
