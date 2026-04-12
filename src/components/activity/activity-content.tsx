@@ -5,10 +5,12 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   Clock,
+  Loader2,
   Receipt,
   UserPlus,
 } from "lucide-react";
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { ActivityCardSkeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { markLatestActivity } from "@/lib/activity-badge";
@@ -158,8 +160,9 @@ export function ActivityContent({
         <button
           onClick={handleRefresh}
           disabled={isPending}
-          className="text-sm font-medium text-primary disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary disabled:opacity-50"
         >
+          {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {isPending ? "Atualizando…" : "Atualizar"}
         </button>
       </div>
@@ -205,14 +208,23 @@ export function ActivityContent({
           </motion.div>
 
           {hasMore && (
-            <div className="mt-4 flex justify-center">
-              <button
-                onClick={handleLoadMore}
-                disabled={isPending}
-                className="text-sm font-medium text-primary disabled:opacity-50"
-              >
-                {isPending ? "Carregando…" : "Carregar mais"}
-              </button>
+            <div className="mt-4">
+              {isPending ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <ActivityCardSkeleton key={i} />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex justify-center">
+                  <button
+                    onClick={handleLoadMore}
+                    className="text-sm font-medium text-primary"
+                  >
+                    Carregar mais
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>

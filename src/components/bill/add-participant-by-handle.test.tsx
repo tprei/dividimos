@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { AddParticipantByHandle } from "./add-participant-by-handle";
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -10,6 +11,9 @@ vi.mock("@/lib/supabase/client", () => ({
           single: vi.fn(() => ({ data: null })),
         })),
       })),
+    })),
+    rpc: vi.fn(() => ({
+      maybeSingle: vi.fn(() => Promise.resolve({ data: null })),
     })),
   })),
 }));
@@ -77,5 +81,29 @@ describe("AddParticipantByHandle", () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText(/handle/)).toHaveValue("test.user.name");
     });
+  });
+
+  it("does not show 'Buscando...' text (uses skeleton instead)", async () => {
+    const user = userEvent.setup();
+    render(
+      <AddParticipantByHandle
+        onAdd={vi.fn()}
+        onCancel={vi.fn()}
+        excludeIds={[]}
+      />,
+    );
+
+    const input = screen.getByPlaceholderText(/handle/);
+    await user.type(input, "alice");
+
+    // Click the search button (the shadcn Button with data-slot)
+    const searchBtn = document.querySelector("[data-slot='button']") as HTMLElement;
+    await user.click(searchBtn);
+
+    // After search resolves, should show not-found and never old "Buscando..." text
+    await waitFor(() => {
+      expect(screen.getByText(/Nenhum usuario encontrado/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Buscando...")).not.toBeInTheDocument();
   });
 });
