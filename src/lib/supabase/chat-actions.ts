@@ -16,8 +16,9 @@ import type {
 import type { Database } from "@/types/database";
 
 type ChatMessageRow = Database["public"]["Tables"]["chat_messages"]["Row"];
+type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
-function chatMessageRowToChatMessage(row: ChatMessageRow): ChatMessage {
+function chatMessageRowToMessage(row: ChatMessageRow): ChatMessage {
   return {
     id: row.id,
     groupId: row.group_id,
@@ -30,137 +31,185 @@ function chatMessageRowToChatMessage(row: ChatMessageRow): ChatMessage {
   };
 }
 
-export { chatMessageRowToChatMessage };
+export { chatMessageRowToMessage };
 
-export interface ConversationThread {
+export interface ThreadData {
   messages: ChatMessageWithSender[];
   expenses: Map<string, Expense>;
-  settlements: Map<string, Settlement>;
-  profiles: Map<string, UserProfile>;
+  settlements: Map<string, { settlement: Settlement; fromUser: UserProfile; toUser: UserProfile }>;
 }
 
 /**
- * Loads chat messages for a group, paginated by cursor.
- * Returns messages in ascending chronological order (oldest first).
- * Also resolves related expenses, settlements, and sender profiles.
+ * Load chat messages for a group, with sender profiles and linked
+ * expense/settlement data for system messages.
+ *
+ * Fetches messages, profiles, and linked entities in parallel where possible.
  */
-export async function loadConversationMessages(
+export async function loadThreadMessages(
   groupId: string,
-  options: { limit?: number; before?: string } = {},
-): Promise<ConversationThread | { error: string }> {
+  limit = 50,
+  before?: string,
+): Promise<ThreadData> {
   const supabase = createClient();
-  const limit = options.limit ?? 50;
 
   let query = supabase
     .from("chat_messages")
     .select("*")
     .eq("group_id", groupId)
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: true })
     .limit(limit);
 
-  if (options.before) {
-    query = query.lt("created_at", options.before);
+  if (before) {
+    query = query.lt("created_at", before);
   }
 
-  const { data: rows, error } = await query;
-  if (error) return { error: error.message };
-  if (!rows || rows.length === 0) {
-    return {
-      messages: [],
-      expenses: new Map(),
-      settlements: new Map(),
-      profiles: new Map(),
-    };
+  const { data: messageRows, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to load messages: ${error.message}`);
   }
 
-  // Reverse to get ascending order for display
-  const messageRows = rows.reverse();
-
-  // Collect IDs for batch lookups
-  const senderIds = new Set<string>();
-  const expenseIds = new Set<string>();
-  const settlementIds = new Set<string>();
-
-  for (const row of messageRows) {
-    senderIds.add(row.sender_id);
-    if (row.expense_id) expenseIds.add(row.expense_id);
-    if (row.settlement_id) settlementIds.add(row.settlement_id);
+  if (!messageRows || messageRows.length === 0) {
+    return { messages: [], expenses: new Map(), settlements: new Map() };
   }
 
-  // Parallel batch fetches for related data
-  const [profilesResult, expensesResult, settlementsResult] =
-    await Promise.all([
-      supabase
-        .from("user_profiles")
-        .select("*")
-        .in("id", [...senderIds]),
-      expenseIds.size > 0
-        ? supabase
-            .from("expenses")
-            .select("*")
-            .in("id", [...expenseIds])
-        : Promise.resolve({ data: [], error: null }),
-      settlementIds.size > 0
-        ? supabase
-            .from("settlements")
-            .select("*")
-            .in("id", [...settlementIds])
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+  const messages = (messageRows as ChatMessageRow[]).map(chatMessageRowToMessage);
 
-  // Build lookup maps
-  const profiles = new Map<string, UserProfile>();
-  if (profilesResult.data) {
-    for (const row of profilesResult.data) {
-      profiles.set(row.id, userProfileRowToUserProfile(row));
-    }
+  // Collect IDs for batch fetching
+  const senderIds = [...new Set(messages.map((m) => m.senderId))];
+  const expenseIds = [
+    ...new Set(
+      messages
+        .filter((m) => m.messageType === "system_expense" && m.expenseId)
+        .map((m) => m.expenseId!),
+    ),
+  ];
+  const settlementIds = [
+    ...new Set(
+      messages
+        .filter((m) => m.messageType === "system_settlement" && m.settlementId)
+        .map((m) => m.settlementId!),
+    ),
+  ];
+
+  // Parallel fetch: sender profiles + expenses + settlements
+  const [profilesResult, expensesResult, settlementsResult] = await Promise.all([
+    supabase
+      .from("user_profiles")
+      .select("*")
+      .in("id", senderIds),
+    expenseIds.length > 0
+      ? supabase.from("expenses").select("*").in("id", expenseIds)
+      : Promise.resolve({ data: [], error: null }),
+    settlementIds.length > 0
+      ? supabase.from("settlements").select("*").in("id", settlementIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  // Build profile lookup
+  const profileMap = new Map<string, UserProfile>();
+  for (const row of (profilesResult.data ?? []) as UserProfileRow[]) {
+    profileMap.set(row.id, userProfileRowToUserProfile(row));
   }
 
-  const expenses = new Map<string, Expense>();
-  if (expensesResult.data) {
-    for (const row of expensesResult.data) {
-      expenses.set(row.id, expenseRowToExpense(row));
-    }
+  // Build expense lookup
+  const expenseMap = new Map<string, Expense>();
+  for (const row of expensesResult.data ?? []) {
+    const expense = expenseRowToExpense(row as Database["public"]["Tables"]["expenses"]["Row"]);
+    expenseMap.set(expense.id, expense);
   }
 
-  const settlements = new Map<string, Settlement>();
-  if (settlementsResult.data) {
-    for (const row of settlementsResult.data) {
-      settlements.set(row.id, settlementRowToSettlement(row));
-    }
-  }
-
-  // For settlements, also resolve from/to user profiles
-  if (settlements.size > 0) {
+  // Build settlement lookup (need from/to user profiles)
+  const settlementMap = new Map<
+    string,
+    { settlement: Settlement; fromUser: UserProfile; toUser: UserProfile }
+  >();
+  if (settlementsResult.data && settlementsResult.data.length > 0) {
     const settlementUserIds = new Set<string>();
-    for (const s of settlements.values()) {
-      if (!profiles.has(s.fromUserId)) settlementUserIds.add(s.fromUserId);
-      if (!profiles.has(s.toUserId)) settlementUserIds.add(s.toUserId);
+    for (const row of settlementsResult.data) {
+      const s = row as Database["public"]["Tables"]["settlements"]["Row"];
+      settlementUserIds.add(s.from_user_id);
+      settlementUserIds.add(s.to_user_id);
     }
-    if (settlementUserIds.size > 0) {
+    // Fetch any settlement user profiles not already loaded
+    const missingIds = [...settlementUserIds].filter((id) => !profileMap.has(id));
+    if (missingIds.length > 0) {
       const { data: extraProfiles } = await supabase
         .from("user_profiles")
         .select("*")
-        .in("id", [...settlementUserIds]);
-      if (extraProfiles) {
-        for (const row of extraProfiles) {
-          profiles.set(row.id, userProfileRowToUserProfile(row));
-        }
+        .in("id", missingIds);
+      for (const row of (extraProfiles ?? []) as UserProfileRow[]) {
+        profileMap.set(row.id, userProfileRowToUserProfile(row));
+      }
+    }
+
+    for (const row of settlementsResult.data) {
+      const settlement = settlementRowToSettlement(
+        row as Database["public"]["Tables"]["settlements"]["Row"],
+      );
+      const fromUser = profileMap.get(settlement.fromUserId);
+      const toUser = profileMap.get(settlement.toUserId);
+      if (fromUser && toUser) {
+        settlementMap.set(settlement.id, { settlement, fromUser, toUser });
       }
     }
   }
 
-  // Build messages with sender
+  // Attach sender profiles to messages
   const fallbackProfile: UserProfile = {
-    id: "unknown",
-    handle: "unknown",
+    id: "",
+    handle: "",
     name: "Usuário",
+    avatarUrl: undefined,
   };
-
-  const messages: ChatMessageWithSender[] = messageRows.map((row) => ({
-    ...chatMessageRowToChatMessage(row),
-    sender: profiles.get(row.sender_id) ?? fallbackProfile,
+  const messagesWithSender: ChatMessageWithSender[] = messages.map((m) => ({
+    ...m,
+    sender: profileMap.get(m.senderId) ?? { ...fallbackProfile, id: m.senderId },
   }));
 
-  return { messages, expenses, settlements, profiles };
+  return {
+    messages: messagesWithSender,
+    expenses: expenseMap,
+    settlements: settlementMap,
+  };
+}
+
+/**
+ * Load counterparty profile and DM group metadata.
+ */
+export async function loadDmGroupInfo(groupId: string): Promise<{
+  counterparty: UserProfile | null;
+  currentUserId: string | null;
+}> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { counterparty: null, currentUserId: null };
+
+  // Get the other member of this DM group
+  const { data: members } = await supabase
+    .from("group_members")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .eq("status", "accepted");
+
+  if (!members) return { counterparty: null, currentUserId: user.id };
+
+  const otherUserId = members.find((m) => m.user_id !== user.id)?.user_id;
+  if (!otherUserId) return { counterparty: null, currentUserId: user.id };
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("id", otherUserId)
+    .single();
+
+  if (!profile) return { counterparty: null, currentUserId: user.id };
+
+  return {
+    counterparty: userProfileRowToUserProfile(profile as UserProfileRow),
+    currentUserId: user.id,
+  };
 }
