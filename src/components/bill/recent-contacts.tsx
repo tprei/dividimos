@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { ContactAvatarSkeleton } from "@/components/shared/skeleton";
 import { formatBRL } from "@/lib/currency";
 import { queryAllBalancesForUser } from "@/lib/supabase/settlement-actions";
 import type { UserProfile } from "@/types";
@@ -23,6 +24,7 @@ export function RecentContacts({
 }: RecentContactsProps) {
   const [contacts, setContacts] = useState<UserProfile[]>([]);
   const [balances, setBalances] = useState<Map<string, number>>(new Map());
+  const [fetched, setFetched] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +58,10 @@ export function RecentContacts({
       // Resolve balances as soon as available
       balancesPromise.then((b) => { if (!cancelled) setBalances(b); }).catch(() => {});
 
-      if (expenseIds.length === 0) return;
+      if (expenseIds.length === 0) {
+        if (!cancelled) setFetched(true);
+        return;
+      }
 
       const [{ data: coSharers }, { data: coPayers }] = await Promise.all([
         supabase
@@ -78,7 +83,10 @@ export function RecentContacts({
         ...(coPayers ?? []),
       ];
 
-      if (!coParticipants || coParticipants.length === 0) return;
+      if (!coParticipants || coParticipants.length === 0) {
+        if (!cancelled) setFetched(true);
+        return;
+      }
 
       const frequencyMap = new Map<string, number>();
       for (const row of coParticipants) {
@@ -108,6 +116,7 @@ export function RecentContacts({
             : [];
         }),
       );
+      if (!cancelled) setFetched(true);
     }
 
     fetchContactsAndBalances();
@@ -116,7 +125,7 @@ export function RecentContacts({
 
   const visible = contacts.filter((c) => !excludeIds.includes(c.id));
 
-  if (visible.length === 0) return null;
+  if (fetched && visible.length === 0) return null;
 
   return (
     <div>
@@ -124,6 +133,12 @@ export function RecentContacts({
         Contatos recentes
       </p>
       <div className="flex gap-3 overflow-x-auto pb-1">
+        {!fetched &&
+          Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="p-2">
+              <ContactAvatarSkeleton />
+            </div>
+          ))}
         {visible.map((contact) => {
           const bal = balances.get(contact.id);
           return (
