@@ -175,6 +175,15 @@
   --sidebar-ring: oklch(0.80 0.16 75);
 }
 
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

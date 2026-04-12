@@ -23,6 +23,10 @@ vi.mock("@/lib/supabase/client", () => ({
   })),
 }));
 
+vi.mock("@/lib/supabase/settlement-actions", () => ({
+  queryAllBalancesForUser: vi.fn(() => Promise.resolve(new Map())),
+}));
+
 describe("RecentContacts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,7 +69,26 @@ describe("RecentContacts", () => {
     expect(buttons[1].textContent).toContain("Bob");
   });
 
-  it("returns null when no contacts found", async () => {
+  it("shows skeleton placeholders while loading", () => {
+    supabaseData = {
+      expense_shares: [{ expense_id: "e1", user_id: "me" }],
+      expense_payers: [],
+    };
+
+    const { container } = render(
+      <RecentContacts
+        onSelect={vi.fn()}
+        excludeIds={[]}
+        currentUserId="me"
+      />,
+    );
+
+    expect(screen.getByText("Contatos recentes")).toBeInTheDocument();
+    const skeletons = container.querySelectorAll("[class*='rounded-full']");
+    expect(skeletons.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("returns null when no contacts found after loading", async () => {
     supabaseData = {
       expense_shares: [],
       expense_payers: [],
