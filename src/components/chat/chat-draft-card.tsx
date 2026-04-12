@@ -1,23 +1,30 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   Check,
+  CheckCircle2,
+  Loader2,
   Pencil,
   Receipt,
   Sparkles,
   Users,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatBRL } from "@/lib/currency";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
+export type ChatDraftStatus = "idle" | "confirming" | "confirmed" | "error";
+
 interface ChatDraftCardProps {
   result: ChatExpenseResult;
   onConfirm: (result: ChatExpenseResult) => void;
   onEdit: (result: ChatExpenseResult) => void;
+  status?: ChatDraftStatus;
+  errorMessage?: string;
 }
 
 const CONFIDENCE_CONFIG = {
@@ -30,11 +37,17 @@ export function ChatDraftCard({
   result,
   onConfirm,
   onEdit,
+  status = "idle",
+  errorMessage,
 }: ChatDraftCardProps) {
   const conf = CONFIDENCE_CONFIG[result.confidence];
   const isLowConfidence = result.confidence === "low";
   const hasAmount = result.amountCents > 0;
   const hasItems = result.items.length > 0;
+  const isConfirming = status === "confirming";
+  const isConfirmed = status === "confirmed";
+  const isError = status === "error";
+  const isDisabled = isConfirming || isConfirmed;
 
   return (
     <motion.div
@@ -53,9 +66,16 @@ export function ChatDraftCard({
             Despesa via IA
           </span>
         </div>
-        <Badge variant={conf.variant} data-testid="confidence-badge">
-          {conf.label}
-        </Badge>
+        {isConfirmed ? (
+          <Badge variant="secondary" data-testid="confirmed-badge">
+            <CheckCircle2 className="mr-1 h-3 w-3" />
+            Confirmada
+          </Badge>
+        ) : (
+          <Badge variant={conf.variant} data-testid="confidence-badge">
+            {conf.label}
+          </Badge>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -123,7 +143,7 @@ export function ChatDraftCard({
         )}
       </div>
 
-      {isLowConfidence && (
+      {isLowConfidence && !isConfirmed && (
         <div
           className="mt-3 flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-foreground"
           data-testid="low-confidence-warning"
@@ -133,28 +153,51 @@ export function ChatDraftCard({
         </div>
       )}
 
-      <div className="mt-4 flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1"
-          onClick={() => onEdit(result)}
-          data-testid="draft-edit-button"
-        >
-          <Pencil className="mr-1.5 h-3.5 w-3.5" />
-          Editar
-        </Button>
-        <Button
-          size="sm"
-          className="flex-1"
-          onClick={() => onConfirm(result)}
-          disabled={!hasAmount && result.expenseType === "single_amount"}
-          data-testid="draft-confirm-button"
-        >
-          <Check className="mr-1.5 h-3.5 w-3.5" />
-          Confirmar
-        </Button>
-      </div>
+      <AnimatePresence mode="wait">
+        {isError && errorMessage && (
+          <motion.div
+            key="error"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-3 flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+            data-testid="draft-error"
+          >
+            <XCircle className="h-3.5 w-3.5 shrink-0" />
+            {errorMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {!isConfirmed && (
+        <div className="mt-4 flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={() => onEdit(result)}
+            disabled={isDisabled}
+            data-testid="draft-edit-button"
+          >
+            <Pencil className="mr-1.5 h-3.5 w-3.5" />
+            Editar
+          </Button>
+          <Button
+            size="sm"
+            className="flex-1"
+            onClick={() => onConfirm(result)}
+            disabled={isDisabled || (!hasAmount && result.expenseType === "single_amount")}
+            data-testid="draft-confirm-button"
+          >
+            {isConfirming ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {isConfirming ? "Confirmando…" : "Confirmar"}
+          </Button>
+        </div>
+      )}
     </motion.div>
   );
 }

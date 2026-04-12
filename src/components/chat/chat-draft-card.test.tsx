@@ -237,4 +237,71 @@ describe("ChatDraftCard", () => {
       expect(screen.getByTestId("draft-confirm-button")).toBeEnabled();
     });
   });
+
+  describe("status states", () => {
+    it("shows loading spinner and disables buttons when confirming", () => {
+      render(<ChatDraftCard {...defaultProps} status="confirming" />);
+
+      expect(screen.getByTestId("draft-confirm-button")).toBeDisabled();
+      expect(screen.getByTestId("draft-edit-button")).toBeDisabled();
+      expect(screen.getByTestId("draft-confirm-button")).toHaveTextContent(
+        "Confirmando…",
+      );
+    });
+
+    it("shows confirmed badge and hides buttons when confirmed", () => {
+      render(<ChatDraftCard {...defaultProps} status="confirmed" />);
+
+      expect(screen.getByTestId("confirmed-badge")).toHaveTextContent(
+        "Confirmada",
+      );
+      expect(screen.queryByTestId("draft-confirm-button")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("draft-edit-button")).not.toBeInTheDocument();
+    });
+
+    it("hides low confidence warning when confirmed", () => {
+      render(
+        <ChatDraftCard
+          {...defaultProps}
+          result={makeResult({ confidence: "low" })}
+          status="confirmed"
+        />,
+      );
+
+      expect(screen.queryByTestId("low-confidence-warning")).not.toBeInTheDocument();
+    });
+
+    it("shows error message when status is error", () => {
+      render(
+        <ChatDraftCard
+          {...defaultProps}
+          status="error"
+          errorMessage="Falha ao ativar despesa"
+        />,
+      );
+
+      expect(screen.getByTestId("draft-error")).toHaveTextContent(
+        "Falha ao ativar despesa",
+      );
+    });
+
+    it("does not show error when status is error but no message", () => {
+      render(<ChatDraftCard {...defaultProps} status="error" />);
+
+      expect(screen.queryByTestId("draft-error")).not.toBeInTheDocument();
+    });
+
+    it("keeps buttons enabled after error for retry", () => {
+      render(
+        <ChatDraftCard
+          {...defaultProps}
+          status="error"
+          errorMessage="Algo deu errado"
+        />,
+      );
+
+      expect(screen.getByTestId("draft-confirm-button")).toBeEnabled();
+      expect(screen.getByTestId("draft-edit-button")).toBeEnabled();
+    });
+  });
 });
