@@ -377,6 +377,7 @@ export interface GroupBalanceSummary {
 export interface DebtSummary {
   groupId: string;
   groupName: string;
+  isDm: boolean;
   counterpartyId: string;
   counterpartyName: string;
   counterpartyAvatarUrl: string | null;
