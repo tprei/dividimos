@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -7,10 +8,12 @@ import type { UserProfile } from "@/types";
 
 interface ConversationHeaderProps {
   counterparty: UserProfile;
+  actions?: ReactNode;
 }
 
 export function ConversationHeader({
   counterparty,
+  actions,
 }: ConversationHeaderProps) {
   const router = useRouter();
 
@@ -34,6 +37,7 @@ export function ConversationHeader({
           @{counterparty.handle}
         </p>
       </div>
+      {actions}
     </div>
   );
 }

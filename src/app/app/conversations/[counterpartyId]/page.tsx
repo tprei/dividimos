@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { ConversationHeader } from "@/components/chat/conversation-header";
+import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { Skeleton } from "@/components/shared/skeleton";
 import { useAuth } from "@/hooks/use-auth";
@@ -166,7 +167,16 @@ export default function ConversationPage({
 
   return (
     <div className="flex h-full flex-col">
-      <ConversationHeader counterparty={counterparty} />
+      <ConversationHeader
+        counterparty={counterparty}
+        actions={
+          <ConversationPayButton
+            currentUserId={user.id}
+            counterpartyId={counterpartyId}
+            counterpartyName={counterparty.name}
+          />
+        }
+      />
       <ChatThread
         messages={thread.messages}
         expenses={thread.expenses}
