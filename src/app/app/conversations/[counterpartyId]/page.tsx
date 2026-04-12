@@ -1,9 +1,11 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ChatThread } from "@/components/chat/chat-thread";
+import { ChatInput } from "@/components/chat/chat-input";
 import { Skeleton } from "@/components/shared/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
@@ -13,7 +15,13 @@ import {
 } from "@/lib/supabase/chat-actions";
 import { createClient } from "@/lib/supabase/client";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
-import type { Expense, Settlement, UserProfile } from "@/types";
+import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
+import type {
+  ChatMessageWithSender,
+  Expense,
+  Settlement,
+  UserProfile,
+} from "@/types";
 
 export default function ConversationPage({
   params,
@@ -131,6 +139,83 @@ export default function ConversationPage({
     setLoadingMore(false);
   }, [groupId, thread, loadingMore, hasMore]);
 
+  const router = useRouter();
+
+  const members = useMemo(() => {
+    if (!counterparty) return [];
+    return [{ handle: counterparty.handle, name: counterparty.name }];
+  }, [counterparty]);
+
+  const handleSendText = useCallback(
+    async (text: string) => {
+      if (!groupId || !user || !thread) return;
+
+      const supabase = createClient();
+      const { data, error: insertError } = await supabase
+        .from("chat_messages")
+        .insert({
+          group_id: groupId,
+          sender_id: user.id,
+          message_type: "text" as const,
+          content: text,
+        })
+        .select()
+        .single();
+
+      if (insertError || !data) {
+        console.error("[ConversationPage] send text error:", insertError);
+        return;
+      }
+
+      const profile = thread.profiles.get(user.id);
+      if (!profile) return;
+
+      const newMessage: ChatMessageWithSender = {
+        id: data.id,
+        groupId: data.group_id,
+        senderId: data.sender_id,
+        messageType: data.message_type as ChatMessageWithSender["messageType"],
+        content: data.content,
+        createdAt: data.created_at,
+        sender: profile,
+      };
+
+      setThread((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: [...prev.messages, newMessage],
+        };
+      });
+    },
+    [groupId, user, thread],
+  );
+
+  const handleAiResult = useCallback(
+    (result: ChatExpenseResult, _originalText: string) => {
+      if (!groupId) return;
+      const params = new URLSearchParams({ groupId });
+      params.set("aiTitle", result.title);
+      if (result.amountCents > 0) {
+        params.set("aiAmount", String(result.amountCents));
+      }
+      if (result.expenseType) {
+        params.set("aiType", result.expenseType);
+      }
+      if (result.payerHandle) {
+        params.set("aiPayer", result.payerHandle);
+      }
+      if (result.merchantName) {
+        params.set("aiMerchant", result.merchantName);
+      }
+      if (result.splitType) {
+        params.set("aiSplit", result.splitType);
+      }
+      router.push(`/app/bill/new?${params.toString()}`);
+    },
+    [groupId, router],
+  );
+
   if (loading) {
     return (
       <div className="flex h-full flex-col">
@@ -177,6 +262,14 @@ export default function ConversationPage({
         hasMore={hasMore}
         onLoadMore={handleLoadMore}
       />
+      {groupId && (
+        <ChatInput
+          groupId={groupId}
+          members={members}
+          onSendText={handleSendText}
+          onAiResult={handleAiResult}
+        />
+      )}
     </div>
   );
 }
