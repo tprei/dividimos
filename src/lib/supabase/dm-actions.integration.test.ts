@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUser,
+  createTestGroup,
   authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -77,7 +78,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(groupIdFromAlice).toBe(groupIdFromBob);
     });
 
-    it("adds both users as accepted group members", async () => {
+    it("adds caller as accepted and counterparty as invited when pair has no prior shared group", async () => {
       const aliceClient = authenticateAs(alice);
 
       const { data: groupId } = await aliceClient.rpc(
@@ -94,6 +95,38 @@ describe.skipIf(!isIntegrationTestReady)(
       const userIds = members!.map((m) => m.user_id).sort();
       const expectedIds = [alice.id, bob.id].sort();
       expect(userIds).toEqual(expectedIds);
+
+      const aliceMember = members!.find((m) => m.user_id === alice.id);
+      const bobMember = members!.find((m) => m.user_id === bob.id);
+      expect(aliceMember!.status).toBe("accepted");
+      expect(bobMember!.status).toBe("invited");
+    });
+
+    it("auto-accepts both users when they already share an accepted group", async () => {
+      const [dan, eve] = await Promise.all([
+        createTestUser({ handle: "dm_auto_dan" }),
+        createTestUser({ handle: "dm_auto_eve" }),
+      ]);
+
+      const sharedGroup = await createTestGroup(dan.id, [eve.id]);
+      await adminClient!
+        .from("group_members")
+        .update({ status: "accepted", accepted_at: new Date().toISOString() })
+        .eq("group_id", sharedGroup.id)
+        .eq("user_id", eve.id);
+
+      const danClient = authenticateAs(dan);
+      const { data: groupId } = await danClient.rpc(
+        "get_or_create_dm_group",
+        { p_other_user_id: eve.id },
+      );
+
+      const { data: members } = await adminClient!
+        .from("group_members")
+        .select("user_id, status")
+        .eq("group_id", groupId!);
+
+      expect(members).toHaveLength(2);
       expect(members!.every((m) => m.status === "accepted")).toBe(true);
     });
 

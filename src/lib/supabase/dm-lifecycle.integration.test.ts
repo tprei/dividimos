@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUser,
+  createTestGroup,
   createAndActivateExpense,
   settleDebt,
   getBalanceBetween,
@@ -35,6 +36,14 @@ describe.skipIf(!isIntegrationTestReady)(
         createTestUser({ handle: "lifecycle_alice" }),
         createTestUser({ handle: "lifecycle_bob" }),
       ]);
+      // Establish a prior shared group so the DM RPC auto-accepts both users
+      // (new invite wall otherwise creates counterparty as 'invited')
+      const shared = await createTestGroup(alice.id, [bob.id]);
+      await adminClient!
+        .from("group_members")
+        .update({ status: "accepted", accepted_at: new Date().toISOString() })
+        .eq("group_id", shared.id)
+        .eq("user_id", bob.id);
     });
 
     it("step 1: creates a DM group via RPC", async () => {
