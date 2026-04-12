@@ -15,6 +15,7 @@ import {
 } from "@/lib/supabase/chat-actions";
 import { createClient } from "@/lib/supabase/client";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
+import { notifyDmTextMessage } from "@/lib/push/push-notify";
 import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
 
 export default function ConversationPage({
@@ -139,6 +140,9 @@ export default function ConversationPage({
 
       const result = await sendChatMessage(groupId, content);
       if ("error" in result) return;
+
+      // Fire-and-forget push notification to counterparty
+      notifyDmTextMessage(groupId, content).catch(() => {});
 
       const senderProfile: UserProfile = {
         id: user.id,

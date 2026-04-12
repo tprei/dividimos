@@ -208,6 +208,58 @@ export async function notifyExpenseActivated(
 }
 
 // ============================================================
+// DM text message
+// ============================================================
+
+/**
+ * Notify the counterparty when a text message is sent in a DM conversation.
+ * Called after a successful sendChatMessage in a DM group.
+ */
+export async function notifyDmTextMessage(
+  groupId: string,
+  messagePreview: string,
+): Promise<void> {
+  if (!isWebPushConfigured()) return;
+
+  const callerId = await getCallerId();
+  if (!callerId) return;
+
+  const admin = createAdminClient();
+
+  // Look up the dm_pairs row to find the counterparty
+  const { data: dmPair } = await admin
+    .from("dm_pairs")
+    .select("user_a, user_b")
+    .eq("group_id", groupId)
+    .single();
+
+  if (!dmPair) return;
+
+  const recipientId =
+    dmPair.user_a === callerId ? dmPair.user_b : dmPair.user_b === callerId ? dmPair.user_a : null;
+  if (!recipientId) return;
+
+  const { data: senderProfile } = await admin
+    .from("user_profiles")
+    .select("name")
+    .eq("id", callerId)
+    .single();
+
+  const senderName = senderProfile?.name ?? "Alguém";
+  const truncated =
+    messagePreview.length > 80
+      ? messagePreview.slice(0, 77) + "…"
+      : messagePreview;
+
+  await safeNotify(recipientId, {
+    title: senderName,
+    body: truncated,
+    url: `/app/conversations/${callerId}`,
+    tag: `dm-${groupId}`,
+  });
+}
+
+// ============================================================
 // Settlement recorded
 // ============================================================
 
