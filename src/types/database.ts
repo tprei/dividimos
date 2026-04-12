@@ -369,6 +369,24 @@ export interface Database {
         };
         Relationships: [];
       };
+      dm_pairs: {
+        Row: {
+          group_id: string;
+          user_a: string;
+          user_b: string;
+        };
+        Insert: {
+          group_id: string;
+          user_a: string;
+          user_b: string;
+        };
+        Update: {
+          group_id?: string;
+          user_a?: string;
+          user_b?: string;
+        };
+        Relationships: [];
+      };
       chat_messages: {
         Row: {
           id: string;
@@ -782,6 +800,12 @@ export interface Database {
           p_group_id: string;
         };
         Returns: void;
+      };
+      get_or_create_dm_group: {
+        Args: {
+          p_other_user_id: string;
+        };
+        Returns: string;
       };
     };
     Enums: {
