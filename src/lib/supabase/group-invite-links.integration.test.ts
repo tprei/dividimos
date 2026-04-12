@@ -86,7 +86,22 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(error).not.toBeNull();
       });
 
-      it("any authenticated user can read invite links", async () => {
+      it("accepted group member can read invite links", async () => {
+        await untypedAdmin()
+          .from("group_invite_links")
+          .insert({ group_id: groupId, created_by: alice.id });
+
+        const client = untypedAs(bob);
+        const { data, error } = await client
+          .from("group_invite_links")
+          .select()
+          .eq("group_id", groupId);
+
+        expect(error).toBeNull();
+        expect(data).toHaveLength(1);
+      });
+
+      it("non-member cannot read invite links", async () => {
         await untypedAdmin()
           .from("group_invite_links")
           .insert({ group_id: groupId, created_by: alice.id });
@@ -98,7 +113,7 @@ describe.skipIf(!isIntegrationTestReady)(
           .eq("group_id", groupId);
 
         expect(error).toBeNull();
-        expect(data).toHaveLength(1);
+        expect(data).toHaveLength(0);
       });
 
       it("link creator can deactivate their link", async () => {

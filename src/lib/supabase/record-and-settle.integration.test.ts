@@ -281,6 +281,21 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(error!.message).toContain("permission_denied");
       });
 
+      it("rejects settlement where counterparty is not a group member", async () => {
+        const [outsider] = await createTestUsers(1);
+
+        const aliceClient = authenticateAs(alice);
+        const { error } = await aliceClient.rpc("record_and_settle", {
+          p_group_id: groupId,
+          p_from_user_id: outsider.id,
+          p_to_user_id: alice.id,
+          p_amount_cents: 1000,
+        });
+
+        expect(error).not.toBeNull();
+        expect(error!.message).toContain("permission_denied");
+      });
+
       it("rejects settlement from an invited-but-not-accepted member", async () => {
         const [dave] = await createTestUsers(1);
         const group2 = await createTestGroup(alice.id, [dave.id]);
