@@ -6,6 +6,7 @@ import { Check, Loader2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
+import { ConversationQuickActions } from "@/components/chat/conversation-quick-actions";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { ChatAiInput } from "@/components/chat/chat-ai-input";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -416,13 +417,19 @@ export default function ConversationPage({
         onLoadMore={handleLoadMore}
       />
       {!isCounterpartyPending && groupId && (
-        <ChatAiInput
-          groupId={groupId}
-          members={aiMembers}
-          onSend={handleSend}
-          onConfirmDraft={handleConfirmDraft}
-          onEditDraft={handleEditDraft}
-        />
+        <>
+          <ConversationQuickActions
+            groupId={groupId}
+            counterpartyName={counterparty?.name ?? ""}
+          />
+          <ChatAiInput
+            groupId={groupId}
+            members={aiMembers}
+            onSend={handleSend}
+            onConfirmDraft={handleConfirmDraft}
+            onEditDraft={handleEditDraft}
+          />
+        </>
       )}
     </div>
   );
