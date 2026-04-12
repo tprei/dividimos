@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Bell, Home, Loader2, MessageSquare, Plus, Receipt, RefreshCw, Search, Settings, User, Users } from "lucide-react";
+import { Bell, Home, Loader2, MessageSquare, Plus, RefreshCw, Search, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
