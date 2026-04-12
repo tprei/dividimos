@@ -65,6 +65,8 @@ export function DashboardContent({
   } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const touchStartY = useRef(0);
+  const touchStartX = useRef(0);
+  const touchStartTime = useRef(0);
 
   const owesCount = debts.filter((d) => d.direction === "owes").length;
   const owedCount = debts.filter((d) => d.direction === "owed").length;
@@ -105,6 +107,8 @@ export function DashboardContent({
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartTime.current = Date.now();
     if (window.scrollY === 0) {
       touchStartY.current = e.touches[0].clientY;
     }
@@ -117,13 +121,25 @@ export function DashboardContent({
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaTime = Date.now() - touchStartTime.current;
+
+    if (Math.abs(deltaX) > 50 && deltaTime < 400) {
+      if (deltaX < 0 && activeTab === "owes") {
+        setActiveTab("owed");
+      } else if (deltaX > 0 && activeTab === "owed") {
+        setActiveTab("owes");
+      }
+    }
+
     if (pullDistance > 60) {
       setRefreshing(true);
       fetchDashboard().finally(() => setRefreshing(false));
     }
     setPullDistance(0);
     touchStartY.current = 0;
+    touchStartX.current = 0;
   };
 
   const isPositive = netBalance >= 0;
