@@ -122,10 +122,62 @@ function NewBillPageContent() {
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [hasContactPicker, setHasContactPicker] = useState(false);
+  const [isDmMode, setIsDmMode] = useState(false);
+  const dmLoadedRef = useRef(false);
 
   useEffect(() => {
     setHasContactPicker(isContactPickerSupported());
   }, []);
+
+  // DM quick-charge mode: consume ?dm=<userId>&groupId=<id>&type=<expenseType>
+  useEffect(() => {
+    const dmUserId = searchParams.get("dm");
+    const dmGroupId = searchParams.get("groupId");
+    if (!dmUserId || !dmGroupId || !authUser || dmLoadedRef.current) return;
+    dmLoadedRef.current = true;
+
+    const dmType = (searchParams.get("type") as ExpenseType) || "single_amount";
+
+    (async () => {
+      const supabase = createClient();
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("id, handle, name, avatar_url")
+        .eq("id", dmUserId)
+        .single();
+      if (!profile) return;
+
+      const counterparty: User = {
+        id: profile.id,
+        email: "",
+        handle: profile.handle ?? "",
+        name: profile.name,
+        pixKeyType: "email",
+        pixKeyHint: "",
+        avatarUrl: profile.avatar_url ?? undefined,
+        onboarded: true,
+        createdAt: new Date().toISOString(),
+      };
+
+      store.setCurrentUser(authUser);
+      setSelectedGroupId(dmGroupId);
+      setIsDmMode(true);
+
+      if (dmType === "single_amount") {
+        store.createExpenseFromDm(dmGroupId, counterparty);
+        const autoTitle = `Cobrança - ${profile.name.split(" ")[0]}`;
+        store.updateExpense({ title: autoTitle });
+        setTitle(autoTitle);
+        setBillType("single_amount");
+        setStep("amount-split");
+      } else {
+        store.createExpense("", "itemized", undefined, dmGroupId);
+        store.addParticipant(counterparty);
+        setBillType("itemized");
+        setStep("info");
+      }
+    })();
+  }, [searchParams, authUser, store]);
 
   const handlePickContacts = useCallback(async () => {
     const picked = await pickContacts();
@@ -602,7 +654,7 @@ function NewBillPageContent() {
 
   const goNext = useCallback(async () => {
     if (step === "info") {
-      if (!isEditing) {
+      if (!isEditing && !isDmMode) {
         initBill();
       } else {
         store.updateExpense({
@@ -679,10 +731,20 @@ function NewBillPageContent() {
         }
       }
     }
-    if ((step === "items" || step === "split" || step === "amount-split" || step === "payer") && remoteBillId && authUser) {
-      const params = buildDraftParams(remoteBillId);
-      if (params) {
-        await saveExpenseDraft(params);
+    if ((step === "items" || step === "split" || step === "amount-split" || step === "payer") && authUser) {
+      if (remoteBillId) {
+        const params = buildDraftParams(remoteBillId);
+        if (params) {
+          await saveExpenseDraft(params);
+        }
+      } else if (isDmMode && selectedGroupId) {
+        const params = buildDraftParams(undefined, selectedGroupId);
+        if (params) {
+          const result = await saveExpenseDraft(params);
+          if ("expenseId" in result) {
+            setRemoteBillId(result.expenseId);
+          }
+        }
       }
     }
     if (step === "summary") {
@@ -719,9 +781,13 @@ function NewBillPageContent() {
       router.push(`/app/bill/${remoteBillId || "new"}`);
       return;
     }
-    const next = steps[stepIndex + 1];
+    let next = steps[stepIndex + 1];
+    // In DM mode, skip the participants step — already pre-filled
+    if (isDmMode && next?.key === "participants") {
+      next = steps[stepIndex + 2];
+    }
     if (next) setStep(next.key);
-  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams]);
+  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, isDmMode, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams]);
 
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
@@ -757,6 +823,10 @@ function NewBillPageContent() {
 
   const goBack = () => {
     if (stepIndex === 0) {
+      if (isDmMode && selectedGroupId) {
+        router.push(`/app/chat/${selectedGroupId}`);
+        return;
+      }
       if (isEditing && editDraftId) {
         router.push(`/app/bill/${editDraftId}`);
         return;
@@ -764,6 +834,20 @@ function NewBillPageContent() {
       setStep("type");
       setBillType(null);
       return;
+    }
+    // In DM single_amount mode, skip back past participants to type/close
+    if (isDmMode && billType === "single_amount") {
+      const prev = steps[stepIndex - 1];
+      if (prev && prev.key === "participants") {
+        // Skip participants — go back one more
+        const prevPrev = steps[stepIndex - 2];
+        if (prevPrev) {
+          setStep(prevPrev.key);
+        } else {
+          router.push(`/app/chat/${selectedGroupId}`);
+        }
+        return;
+      }
     }
     const prev = steps[stepIndex - 1];
     if (prev) setStep(prev.key);
@@ -811,7 +895,9 @@ function NewBillPageContent() {
         ) : !isTypeStep ? (
           <button
             onClick={() => {
-              if (isEditing && editDraftId) {
+              if (isDmMode && selectedGroupId) {
+                router.push(`/app/chat/${selectedGroupId}`);
+              } else if (isEditing && editDraftId) {
                 router.push(`/app/bill/${editDraftId}`);
               } else {
                 setStep("type");
@@ -831,7 +917,7 @@ function NewBillPageContent() {
           </Link>
         )}
         <div className="flex-1">
-          <h1 className="font-semibold">{isEditing ? "Editar rascunho" : "Nova conta"}</h1>
+          <h1 className="font-semibold">{isEditing ? "Editar rascunho" : isDmMode ? "Cobrar" : "Nova conta"}</h1>
           {!isTypeStep && (
             <p className="text-xs text-muted-foreground">
               Passo {stepIndex + 1} de {steps.length}
