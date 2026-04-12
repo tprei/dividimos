@@ -350,18 +350,72 @@ export interface Database {
           id: string;
           name: string;
           creator_id: string;
+          is_dm: boolean;
           created_at: string;
         };
         Insert: {
           id?: string;
           name: string;
           creator_id: string;
+          is_dm?: boolean;
           created_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
           creator_id?: string;
+          is_dm?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      dm_pairs: {
+        Row: {
+          group_id: string;
+          user_a: string;
+          user_b: string;
+        };
+        Insert: {
+          group_id: string;
+          user_a: string;
+          user_b: string;
+        };
+        Update: {
+          group_id?: string;
+          user_a?: string;
+          user_b?: string;
+        };
+        Relationships: [];
+      };
+      chat_messages: {
+        Row: {
+          id: string;
+          group_id: string;
+          sender_id: string;
+          message_type: "text" | "system_expense" | "system_settlement";
+          content: string;
+          expense_id: string | null;
+          settlement_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          sender_id: string;
+          message_type?: "text" | "system_expense" | "system_settlement";
+          content?: string;
+          expense_id?: string | null;
+          settlement_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          group_id?: string;
+          sender_id?: string;
+          message_type?: "text" | "system_expense" | "system_settlement";
+          content?: string;
+          expense_id?: string | null;
+          settlement_id?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -747,6 +801,12 @@ export interface Database {
         };
         Returns: void;
       };
+      get_or_create_dm_group: {
+        Args: {
+          p_other_user_id: string;
+        };
+        Returns: string;
+      };
     };
     Enums: {
       pix_key_type: "cpf" | "email" | "random";
@@ -760,6 +820,7 @@ export interface Database {
       expense_status: "draft" | "active" | "settled";
       expense_type: "itemized" | "single_amount";
       settlement_status: "pending" | "confirmed";
+      chat_message_type: "text" | "system_expense" | "system_settlement";
     };
     CompositeTypes: Record<string, never>;
   };

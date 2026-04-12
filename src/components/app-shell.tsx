@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Bell, Home, Loader2, Plus, Receipt, RefreshCw, Search, Settings, User, Users } from "lucide-react";
+import { Bell, Home, Loader2, MessageSquare, Plus, RefreshCw, Search, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,7 +15,7 @@ import type { User as UserType } from "@/types";
 
 const navItems = [
   { href: "/app", icon: Home, label: "Início" },
-  { href: "/app/bills", icon: Receipt, label: "Contas" },
+  { href: "/app/conversations", icon: MessageSquare, label: "Conversas" },
   { href: "/app/bill/new", icon: Plus, label: "Nova", primary: true },
   { href: "/app/groups", icon: Users, label: "Grupos" },
   { href: "/app/profile", icon: User, label: "Perfil" },
