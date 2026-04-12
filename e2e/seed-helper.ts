@@ -238,6 +238,80 @@ export class SeedHelper {
   }
 
   // -----------------------------------------------------------------------
+  // DM group creation
+  // -----------------------------------------------------------------------
+
+  async createDmGroup(
+    userA: SeededUser,
+    userB: SeededUser,
+  ): Promise<SeededGroup> {
+    const client = await this.authenticateAs(userA.id);
+
+    const { data, error } = await client.rpc("get_or_create_dm_group", {
+      p_other_user_id: userB.id,
+    });
+
+    if (error || !data) {
+      throw new Error(
+        `SeedHelper.createDmGroup: RPC failed: ${error?.message}`,
+      );
+    }
+
+    const groupId = data as string;
+    this.groupIds.push(groupId);
+
+    const { data: groupRow, error: groupError } = await this.admin
+      .from("groups")
+      .select("name")
+      .eq("id", groupId)
+      .single();
+
+    if (groupError || !groupRow) {
+      throw new Error(
+        `SeedHelper.createDmGroup: group fetch failed: ${groupError?.message}`,
+      );
+    }
+
+    return {
+      id: groupId,
+      name: groupRow.name as string,
+      creatorId: userA.id,
+      memberIds: [userA.id, userB.id],
+    };
+  }
+
+  // -----------------------------------------------------------------------
+  // Chat message creation
+  // -----------------------------------------------------------------------
+
+  async sendChatMessage(
+    groupId: string,
+    senderId: string,
+    content: string,
+  ): Promise<string> {
+    const client = await this.authenticateAs(senderId);
+
+    const { data, error } = await client
+      .from("chat_messages")
+      .insert({
+        group_id: groupId,
+        sender_id: senderId,
+        content,
+        message_type: "text",
+      })
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      throw new Error(
+        `SeedHelper.sendChatMessage: insert failed: ${error?.message}`,
+      );
+    }
+
+    return (data as { id: string }).id;
+  }
+
+  // -----------------------------------------------------------------------
   // Expense creation
   // -----------------------------------------------------------------------
 

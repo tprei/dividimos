@@ -1,11 +1,13 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Check, Loader2, X } from "lucide-react";
+import toast from "react-hot-toast";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ChatThread } from "@/components/chat/chat-thread";
-import { ChatInput } from "@/components/chat/chat-input";
+import { ChatAiInput } from "@/components/chat/chat-ai-input";
 import { Skeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
@@ -16,8 +18,11 @@ import {
   sendChatMessage,
   type ConversationThread,
 } from "@/lib/supabase/chat-actions";
+import { confirmChatDraft } from "@/lib/supabase/chat-draft-confirm";
 import { createClient } from "@/lib/supabase/client";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
+import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
+import type { MemberContext } from "@/hooks/use-ai-expense-parse";
 import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
 
 type DmMemberStatus = "accepted" | "invited" | "declined";
@@ -29,6 +34,7 @@ export default function ConversationPage({
 }) {
   const { counterpartyId } = use(params);
   const { user } = useAuth();
+  const router = useRouter();
 
   const [counterparty, setCounterparty] = useState<UserProfile | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
@@ -169,6 +175,50 @@ export default function ConversationPage({
     [groupId, user],
   );
 
+  const handleConfirmDraft = useCallback(
+    async (result: ChatExpenseResult) => {
+      if (!groupId || !user || !counterparty) return;
+
+      const members: UserProfile[] = [
+        { id: user.id, handle: user.handle, name: user.name, avatarUrl: user.avatarUrl },
+        counterparty,
+      ];
+
+      const confirmResult = await confirmChatDraft({
+        result,
+        groupId,
+        currentUserId: user.id,
+        members,
+      });
+
+      if ("error" in confirmResult) {
+        toast.error(confirmResult.error);
+      }
+    },
+    [groupId, user, counterparty],
+  );
+
+  const handleEditDraft = useCallback(
+    (result: ChatExpenseResult) => {
+      if (!groupId) return;
+      const params = new URLSearchParams({
+        groupId,
+        title: result.title,
+        amount: String(result.amountCents),
+      });
+      router.push(`/app/bill/new?${params.toString()}`);
+    },
+    [groupId, router],
+  );
+
+  const aiMembers = useMemo<MemberContext[]>(() => {
+    if (!counterparty || !user) return [];
+    return [
+      { handle: user.handle, name: user.name },
+      { handle: counterparty.handle, name: counterparty.name },
+    ];
+  }, [counterparty, user]);
+
   const handleAccept = useCallback(async () => {
     if (!groupId || !user) return;
     await createClient()
@@ -290,7 +340,15 @@ export default function ConversationPage({
         hasMore={hasMore}
         onLoadMore={handleLoadMore}
       />
-      {!isCounterpartyPending && <ChatInput onSend={handleSend} />}
+      {!isCounterpartyPending && groupId && (
+        <ChatAiInput
+          groupId={groupId}
+          members={aiMembers}
+          onSend={handleSend}
+          onConfirmDraft={handleConfirmDraft}
+          onEditDraft={handleEditDraft}
+        />
+      )}
     </div>
   );
 }
