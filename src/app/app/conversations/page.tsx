@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getUnreadCounts } from "@/lib/supabase/unread-actions";
 import type { UserProfile } from "@/types";
 
+export type DmMemberStatus = "accepted" | "invited" | "declined";
+
 export interface ConversationEntry {
   groupId: string;
   counterparty: UserProfile;
@@ -11,6 +13,8 @@ export interface ConversationEntry {
   lastMessageAt: string | null;
   netBalanceCents: number;
   unreadCount: number;
+  callerStatus: DmMemberStatus;
+  counterpartyStatus: DmMemberStatus;
 }
 
 export default async function ConversationsPage() {
@@ -34,7 +38,7 @@ export default async function ConversationsPage() {
   );
   const groupIds = dmPairs.map((p) => p.group_id);
 
-  const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }, unreadMap] =
+  const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }, { data: memberRows }, unreadMap] =
     await Promise.all([
       supabase
         .from("user_profiles")
@@ -50,6 +54,10 @@ export default async function ConversationsPage() {
         .select("group_id, user_a, user_b, amount_cents")
         .in("group_id", groupIds)
         .neq("amount_cents", 0),
+      supabase
+        .from("group_members")
+        .select("group_id, user_id, status")
+        .in("group_id", groupIds),
       getUnreadCounts(supabase, user.id, groupIds),
     ]);
 
@@ -94,12 +102,26 @@ export default async function ConversationsPage() {
     );
   }
 
+  const memberStatusByGroup = new Map<string, Map<string, string>>();
+  for (const m of (memberRows ?? []) as { group_id: string; user_id: string; status: string }[]) {
+    if (!memberStatusByGroup.has(m.group_id)) {
+      memberStatusByGroup.set(m.group_id, new Map());
+    }
+    memberStatusByGroup.get(m.group_id)!.set(m.user_id, m.status);
+  }
+
   const conversations: ConversationEntry[] = dmPairs
-    .map((pair) => {
+    .flatMap((pair): ConversationEntry[] => {
       const counterpartyId =
         pair.user_a === user.id ? pair.user_b : pair.user_a;
       const counterparty = profileMap.get(counterpartyId);
-      if (!counterparty) return null;
+      if (!counterparty) return [];
+
+      const groupMembers = memberStatusByGroup.get(pair.group_id);
+      const callerStatusRaw = groupMembers?.get(user.id);
+      if (!callerStatusRaw) return [];
+      const callerStatus = callerStatusRaw as DmMemberStatus;
+      const counterpartyStatus = (groupMembers?.get(counterpartyId) ?? "invited") as DmMemberStatus;
 
       const lastMsg = lastMessageByGroup.get(pair.group_id);
       const lastMessageContent = lastMsg
@@ -110,16 +132,17 @@ export default async function ConversationsPage() {
             : "Pagamento registrado"
         : null;
 
-      return {
+      return [{
         groupId: pair.group_id,
         counterparty,
         lastMessageContent,
         lastMessageAt: lastMsg?.createdAt ?? null,
         netBalanceCents: balanceByGroup.get(pair.group_id) ?? 0,
         unreadCount: unreadMap.get(pair.group_id) ?? 0,
-      };
+        callerStatus,
+        counterpartyStatus,
+      }];
     })
-    .filter((c): c is ConversationEntry => c !== null)
     .sort((a, b) => {
       const aTime = a.lastMessageAt ?? "";
       const bTime = b.lastMessageAt ?? "";

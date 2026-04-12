@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   ConversationsListContent,
   type ConversationEntry,
@@ -20,6 +20,34 @@ vi.mock("@/components/ui/input", () => ({
   ),
 }));
 
+vi.mock("@/components/conversations/new-conversation-button", () => ({
+  NewConversationButton: () => <button data-testid="nova-conversa-btn">Nova conversa</button>,
+}));
+
+const chainEq = () => {
+  const obj: Record<string, unknown> = {};
+  obj.eq = () => obj;
+  return obj as { eq: () => typeof obj } & Promise<{ error: null }>;
+};
+
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: () => ({
+    from: () => ({
+      update: () => chainEq(),
+      delete: () => chainEq(),
+      select: () => ({
+        or: () => Promise.resolve({ data: [] }),
+        in: () => Promise.resolve({ data: [] }),
+      }),
+    }),
+    rpc: () => Promise.resolve({ data: null }),
+  }),
+}));
+
+vi.mock("@/lib/supabase/unread-actions", () => ({
+  getUnreadCounts: () => Promise.resolve(new Map()),
+}));
+
 function makeConversation(
   overrides: Partial<ConversationEntry> = {},
 ): ConversationEntry {
@@ -34,6 +62,8 @@ function makeConversation(
     lastMessageAt: overrides.lastMessageAt ?? null,
     netBalanceCents: overrides.netBalanceCents ?? 0,
     unreadCount: overrides.unreadCount ?? 0,
+    callerStatus: overrides.callerStatus ?? "accepted",
+    counterpartyStatus: overrides.counterpartyStatus ?? "accepted",
   };
 }
 
@@ -52,6 +82,11 @@ describe("ConversationsListContent", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("Nenhuma conversa ainda")).toBeInTheDocument();
+  });
+
+  it("renders Nova conversa button always", () => {
+    render(<ConversationsListContent initialConversations={[]} />);
+    expect(screen.getByTestId("nova-conversa-btn")).toBeInTheDocument();
   });
 
   it("renders conversation list with counterparty names", () => {
@@ -218,6 +253,115 @@ describe("ConversationsListContent", () => {
     expect(messageEl.className).toContain("font-medium");
   });
 
+  describe("pending invites", () => {
+    it("shows incoming invite in 'Convites pendentes' section with accept/decline buttons", () => {
+      const conversations = [
+        makeConversation({
+          groupId: "dm-1",
+          counterparty: { id: "u2", handle: "joao", name: "João Santos" },
+          callerStatus: "invited",
+          counterpartyStatus: "accepted",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      expect(screen.getByText("Convites pendentes")).toBeInTheDocument();
+      expect(screen.getByText("João Santos")).toBeInTheDocument();
+      expect(screen.getByText("Aceitar")).toBeInTheDocument();
+    });
+
+    it("shows outgoing pending invite with 'Aguardando resposta' badge", () => {
+      const conversations = [
+        makeConversation({
+          groupId: "dm-1",
+          counterparty: { id: "u2", handle: "ana", name: "Ana Lima" },
+          callerStatus: "accepted",
+          counterpartyStatus: "invited",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      expect(screen.getByText("Aguardando resposta")).toBeInTheDocument();
+      expect(screen.queryByText("Convites pendentes")).not.toBeInTheDocument();
+    });
+
+    it("does not render declined invites", () => {
+      const conversations = [
+        makeConversation({
+          groupId: "dm-1",
+          counterparty: { id: "u2", handle: "carlos", name: "Carlos Mendes" },
+          callerStatus: "declined",
+          counterpartyStatus: "accepted",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      expect(screen.queryByText("Carlos Mendes")).not.toBeInTheDocument();
+    });
+
+    it("removes incoming invite on decline click", async () => {
+      const conversations = [
+        makeConversation({
+          groupId: "dm-invite",
+          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
+          callerStatus: "invited",
+          counterpartyStatus: "accepted",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      expect(screen.getByText("Pedro Alves")).toBeInTheDocument();
+
+      const declineBtn = screen.getAllByRole("button").find(
+        (b) => b.querySelector("svg") && !b.textContent?.includes("Aceitar"),
+      );
+      if (declineBtn) {
+        fireEvent.click(declineBtn);
+      }
+
+      await waitFor(() => {
+        expect(screen.queryByText("Pedro Alves")).not.toBeInTheDocument();
+      });
+    });
+
+    it("renders mixed active and pending conversations correctly", () => {
+      const conversations = [
+        makeConversation({
+          groupId: "dm-1",
+          counterparty: { id: "u2", handle: "alice", name: "Alice Costa" },
+          callerStatus: "accepted",
+          counterpartyStatus: "accepted",
+          lastMessageContent: "Oi",
+          lastMessageAt: new Date().toISOString(),
+        }),
+        makeConversation({
+          groupId: "dm-2",
+          counterparty: { id: "u3", handle: "bob", name: "Bob Ferreira" },
+          callerStatus: "invited",
+          counterpartyStatus: "accepted",
+        }),
+        makeConversation({
+          groupId: "dm-3",
+          counterparty: { id: "u4", handle: "carol", name: "Carol Lima" },
+          callerStatus: "accepted",
+          counterpartyStatus: "invited",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      expect(screen.getByText("Alice Costa")).toBeInTheDocument();
+      expect(screen.getByText("Convites pendentes")).toBeInTheDocument();
+      expect(screen.getByText("Bob Ferreira")).toBeInTheDocument();
+      expect(screen.getByText("Aguardando resposta")).toBeInTheDocument();
+      expect(screen.getByText("Carol Lima")).toBeInTheDocument();
+    });
+  });
+
   describe("search", () => {
     const conversations = [
       makeConversation({
@@ -240,7 +384,7 @@ describe("ConversationsListContent", () => {
       }),
     ];
 
-    it("shows search input when conversations exist", () => {
+    it("shows search input when active conversations exist", () => {
       render(
         <ConversationsListContent initialConversations={conversations} />,
       );
@@ -249,7 +393,7 @@ describe("ConversationsListContent", () => {
       ).toBeInTheDocument();
     });
 
-    it("hides search input when no conversations", () => {
+    it("hides search input when no active conversations", () => {
       render(<ConversationsListContent initialConversations={[]} />);
       expect(
         screen.queryByPlaceholderText("Buscar por nome, @handle ou mensagem..."),
@@ -353,7 +497,7 @@ describe("ConversationsListContent", () => {
 
       expect(screen.queryByText("João Santos")).not.toBeInTheDocument();
 
-      const clearButton = screen.getByRole("button");
+      const clearButton = screen.getByRole("button", { name: "" });
       fireEvent.click(clearButton);
 
       expect(screen.getByText("Maria Silva")).toBeInTheDocument();

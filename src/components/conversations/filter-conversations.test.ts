@@ -16,6 +16,8 @@ function entry(overrides: Partial<ConversationEntry> = {}): ConversationEntry {
     lastMessageAt: overrides.lastMessageAt ?? null,
     netBalanceCents: overrides.netBalanceCents ?? 0,
     unreadCount: overrides.unreadCount ?? 0,
+    callerStatus: overrides.callerStatus ?? "accepted",
+    counterpartyStatus: overrides.counterpartyStatus ?? "accepted",
   };
 }
 

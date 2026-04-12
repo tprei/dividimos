@@ -44,10 +44,12 @@ import type { NfceQrResult } from "@/lib/nfce-qr";
 import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
+import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { useBillStore } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import toast from "react-hot-toast";
 import type { ExpenseType, User, UserProfile } from "@/types";
 
 type Step = "type" | "info" | "participants" | "items" | "split" | "amount-split" | "payer" | "summary";
@@ -617,37 +619,50 @@ function NewBillPageContent() {
       let groupId = selectedGroupId;
 
       if (!groupId) {
-        const supabase = createClient();
         const state = useBillStore.getState();
-        const names = [
-          ...state.participants.map((p) => p.name.split(" ")[0]),
-          ...state.guests.map((g) => g.name.split(" ")[0]),
-        ];
-        const groupName = names.length <= 3
-          ? names.join(" e ")
-          : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+        const otherParticipants = state.participants.filter((p) => p.id !== authUser.id);
+        const hasGuests = state.guests.length > 0;
 
-        const { data: group } = await supabase
-          .from("groups")
-          .insert({ name: groupName, creator_id: authUser.id })
-          .select("id")
-          .single();
-
-        if (group) {
-          const otherParticipants = state.participants.filter((p) => p.id !== authUser.id);
-          if (otherParticipants.length > 0) {
-            await supabase.from("group_members").insert(
-              otherParticipants.map((p) => ({
-                group_id: group.id,
-                user_id: p.id,
-                invited_by: authUser.id,
-                status: "invited" as const,
-              })),
-            );
+        if (otherParticipants.length === 1 && !hasGuests) {
+          const dmResult = await getOrCreateDmGroup(otherParticipants[0].id);
+          if ("error" in dmResult) {
+            toast.error("Não foi possível iniciar a conversa. Tente novamente.");
+            return;
           }
-          groupId = group.id;
-          setSelectedGroupId(group.id);
-          setSelectedGroupName(groupName);
+          groupId = dmResult.groupId;
+          setSelectedGroupId(dmResult.groupId);
+          setSelectedGroupName("");
+        } else {
+          const supabase = createClient();
+          const names = [
+            ...state.participants.map((p) => p.name.split(" ")[0]),
+            ...state.guests.map((g) => g.name.split(" ")[0]),
+          ];
+          const groupName = names.length <= 3
+            ? names.join(" e ")
+            : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+
+          const { data: group } = await supabase
+            .from("groups")
+            .insert({ name: groupName, creator_id: authUser.id })
+            .select("id")
+            .single();
+
+          if (group) {
+            if (otherParticipants.length > 0) {
+              await supabase.from("group_members").insert(
+                otherParticipants.map((p) => ({
+                  group_id: group.id,
+                  user_id: p.id,
+                  invited_by: authUser.id,
+                  status: "invited" as const,
+                })),
+              );
+            }
+            groupId = group.id;
+            setSelectedGroupId(group.id);
+            setSelectedGroupName(groupName);
+          }
         }
       }
 

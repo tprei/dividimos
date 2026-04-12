@@ -1,12 +1,14 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2, X } from "lucide-react";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { ChatInput } from "@/components/chat/chat-input";
 import { Skeleton } from "@/components/shared/skeleton";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import {
@@ -17,6 +19,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
+
+type DmMemberStatus = "accepted" | "invited" | "declined";
 
 export default function ConversationPage({
   params,
@@ -33,6 +37,8 @@ export default function ConversationPage({
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [callerStatus, setCallerStatus] = useState<DmMemberStatus>("accepted");
+  const [counterpartyStatus, setCounterpartyStatus] = useState<DmMemberStatus>("accepted");
 
   const PAGE_SIZE = 50;
 
@@ -70,15 +76,29 @@ export default function ConversationPage({
     const gId = dmResult.groupId;
     setGroupId(gId);
 
-    const result = await loadConversationMessages(gId, { limit: PAGE_SIZE });
-    if ("error" in result) {
-      setError(result.error);
+    const [messagesResult, membersResult] = await Promise.all([
+      loadConversationMessages(gId, { limit: PAGE_SIZE }),
+      supabase
+        .from("group_members")
+        .select("user_id, status")
+        .eq("group_id", gId)
+        .in("user_id", [user.id, counterpartyId]),
+    ]);
+
+    if ("error" in messagesResult) {
+      setError(messagesResult.error);
       setLoading(false);
       return;
     }
 
-    setThread(result);
-    setHasMore(result.messages.length >= PAGE_SIZE);
+    const memberRows = (membersResult.data ?? []) as { user_id: string; status: string }[];
+    const callerRow = memberRows.find((m) => m.user_id === user.id);
+    const counterpartyRow = memberRows.find((m) => m.user_id === counterpartyId);
+    setCallerStatus((callerRow?.status ?? "accepted") as DmMemberStatus);
+    setCounterpartyStatus((counterpartyRow?.status ?? "invited") as DmMemberStatus);
+
+    setThread(messagesResult);
+    setHasMore(messagesResult.messages.length >= PAGE_SIZE);
     setLoading(false);
   }, [user, counterpartyId]);
 
@@ -149,6 +169,26 @@ export default function ConversationPage({
     [groupId, user],
   );
 
+  const handleAccept = useCallback(async () => {
+    if (!groupId || !user) return;
+    await createClient()
+      .from("group_members")
+      .update({ status: "accepted", accepted_at: new Date().toISOString() })
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+    setCallerStatus("accepted");
+  }, [groupId, user]);
+
+  const handleDecline = useCallback(async () => {
+    if (!groupId || !user) return;
+    await createClient()
+      .from("group_members")
+      .delete()
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+    setCallerStatus("declined");
+  }, [groupId, user]);
+
   if (loading) {
     return (
       <div className="flex h-full flex-col">
@@ -182,18 +222,64 @@ export default function ConversationPage({
 
   if (!counterparty || !thread || !user) return null;
 
+  if (callerStatus === "declined") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
+        <p className="text-sm text-muted-foreground">Você recusou este convite.</p>
+      </div>
+    );
+  }
+
+  if (callerStatus === "invited") {
+    return (
+      <div className="flex h-full flex-col">
+        <ConversationHeader counterparty={counterparty} />
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
+          <UserAvatar name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="lg" />
+          <div className="space-y-1">
+            <p className="font-semibold">{counterparty.name}</p>
+            <p className="text-sm text-muted-foreground">
+              Esta conversa está pendente. @{counterparty.handle} convidou você a conversar.
+            </p>
+          </div>
+          <div className="flex w-full max-w-xs flex-col gap-3">
+            <Button onClick={handleAccept} className="w-full gap-2">
+              <Check className="h-4 w-4" />
+              Aceitar convite
+            </Button>
+            <Button variant="outline" onClick={handleDecline} className="w-full gap-2">
+              <X className="h-4 w-4" />
+              Recusar
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const isCounterpartyPending = counterpartyStatus === "invited";
+
   return (
     <div className="flex h-full flex-col">
       <ConversationHeader
         counterparty={counterparty}
         actions={
-          <ConversationPayButton
-            currentUserId={user.id}
-            counterpartyId={counterpartyId}
-            counterpartyName={counterparty.name}
-          />
+          !isCounterpartyPending ? (
+            <ConversationPayButton
+              currentUserId={user.id}
+              counterpartyId={counterpartyId}
+              counterpartyName={counterparty.name}
+            />
+          ) : undefined
         }
       />
+      {isCounterpartyPending && (
+        <div className="border-b bg-muted/50 px-4 py-2.5">
+          <p className="text-center text-xs text-muted-foreground">
+            Aguardando @{counterparty.handle} aceitar o convite
+          </p>
+        </div>
+      )}
       <ChatThread
         messages={thread.messages}
         expenses={thread.expenses}
@@ -204,7 +290,7 @@ export default function ConversationPage({
         hasMore={hasMore}
         onLoadMore={handleLoadMore}
       />
-      <ChatInput onSend={handleSend} />
+      {!isCounterpartyPending && <ChatInput onSend={handleSend} />}
     </div>
   );
 }

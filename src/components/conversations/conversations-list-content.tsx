@@ -1,18 +1,22 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MessageSquare, Search, X } from "lucide-react";
+import { Check, MessageSquare, Search, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { NewConversationButton } from "@/components/conversations/new-conversation-button";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
 import { getUnreadCounts } from "@/lib/supabase/unread-actions";
 import { useUser } from "@/hooks/use-auth";
 import type { UserProfile } from "@/types";
+
+export type DmMemberStatus = "accepted" | "invited" | "declined";
 
 export interface ConversationEntry {
   groupId: string;
@@ -21,6 +25,8 @@ export interface ConversationEntry {
   lastMessageAt: string | null;
   netBalanceCents: number;
   unreadCount: number;
+  callerStatus: DmMemberStatus;
+  counterpartyStatus: DmMemberStatus;
 }
 
 interface ConversationsListContentProps {
@@ -75,9 +81,29 @@ export function ConversationsListContent({
     useState<ConversationEntry[]>(initialConversations);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredConversations = useMemo(
-    () => filterConversations(conversations, searchQuery),
-    [conversations, searchQuery],
+  const activeConversations = useMemo(
+    () => conversations.filter((c) => c.callerStatus === "accepted" && c.counterpartyStatus === "accepted"),
+    [conversations],
+  );
+
+  const pendingIncoming = useMemo(
+    () => conversations.filter((c) => c.callerStatus === "invited"),
+    [conversations],
+  );
+
+  const pendingOutgoing = useMemo(
+    () => conversations.filter((c) => c.callerStatus === "accepted" && c.counterpartyStatus === "invited"),
+    [conversations],
+  );
+
+  const filteredActive = useMemo(
+    () => filterConversations(activeConversations, searchQuery),
+    [activeConversations, searchQuery],
+  );
+
+  const filteredOutgoing = useMemo(
+    () => filterConversations(pendingOutgoing, searchQuery),
+    [pendingOutgoing, searchQuery],
   );
 
   const isSearching = searchQuery.trim().length >= 2;
@@ -109,7 +135,7 @@ export function ConversationsListContent({
     );
     const groupIds = dmPairs.map((p) => p.group_id);
 
-    const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }, unreadMap] =
+    const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }, { data: memberRows }, unreadMap] =
       await Promise.all([
         supabase
           .from("user_profiles")
@@ -125,6 +151,10 @@ export function ConversationsListContent({
           .select("group_id, user_a, user_b, amount_cents")
           .in("group_id", groupIds)
           .neq("amount_cents", 0),
+        supabase
+          .from("group_members")
+          .select("group_id, user_id, status")
+          .in("group_id", groupIds),
         getUnreadCounts(supabase, user.id, groupIds),
       ]);
 
@@ -169,12 +199,26 @@ export function ConversationsListContent({
       );
     }
 
+    const memberStatusByGroup = new Map<string, Map<string, string>>();
+    for (const m of (memberRows ?? []) as { group_id: string; user_id: string; status: string }[]) {
+      if (!memberStatusByGroup.has(m.group_id)) {
+        memberStatusByGroup.set(m.group_id, new Map());
+      }
+      memberStatusByGroup.get(m.group_id)!.set(m.user_id, m.status);
+    }
+
     const entries: ConversationEntry[] = dmPairs
-      .map((pair) => {
+      .flatMap((pair): ConversationEntry[] => {
         const counterpartyId =
           pair.user_a === user.id ? pair.user_b : pair.user_a;
         const counterparty = profileMap.get(counterpartyId);
-        if (!counterparty) return null;
+        if (!counterparty) return [];
+
+        const groupMembers = memberStatusByGroup.get(pair.group_id);
+        const callerStatusRaw = groupMembers?.get(user.id);
+        if (!callerStatusRaw) return [];
+        const callerStatus = callerStatusRaw as DmMemberStatus;
+        const counterpartyStatus = (groupMembers?.get(counterpartyId) ?? "invited") as DmMemberStatus;
 
         const lastMsg = lastMessageByGroup.get(pair.group_id);
         const lastMessageContent = lastMsg
@@ -185,16 +229,17 @@ export function ConversationsListContent({
               : "Pagamento registrado"
           : null;
 
-        return {
+        return [{
           groupId: pair.group_id,
           counterparty,
           lastMessageContent,
           lastMessageAt: lastMsg?.createdAt ?? null,
           netBalanceCents: balanceByGroup.get(pair.group_id) ?? 0,
           unreadCount: unreadMap.get(pair.group_id) ?? 0,
-        };
+          callerStatus,
+          counterpartyStatus,
+        }];
       })
-      .filter((c): c is ConversationEntry => c !== null)
       .sort((a, b) => {
         const aTime = a.lastMessageAt ?? "";
         const bTime = b.lastMessageAt ?? "";
@@ -208,6 +253,28 @@ export function ConversationsListContent({
     refetchRef.current = refetch;
   });
 
+  const handleAccept = useCallback(async (groupId: string) => {
+    if (!user) return;
+    await createClient()
+      .from("group_members")
+      .update({ status: "accepted", accepted_at: new Date().toISOString() })
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+    await refetch();
+  }, [user, refetch]);
+
+  const handleDecline = useCallback(async (groupId: string) => {
+    if (!user) return;
+    setConversations((prev) => prev.filter((c) => c.groupId !== groupId));
+    await createClient()
+      .from("group_members")
+      .delete()
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+  }, [user]);
+
+  const totalCount = conversations.length;
+
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <motion.div
@@ -217,17 +284,66 @@ export function ConversationsListContent({
       >
         <h1 className="text-2xl font-bold">Conversas</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {conversations.length === 0
+          {totalCount === 0
             ? "Nenhuma conversa ainda"
-            : `${conversations.length} conversa${conversations.length !== 1 ? "s" : ""}`}
+            : `${totalCount} conversa${totalCount !== 1 ? "s" : ""}`}
         </p>
       </motion.div>
 
-      {conversations.length > 0 && (
+      {pendingIncoming.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05, duration: 0.4 }}
+          className="mt-6"
+        >
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Convites pendentes
+          </p>
+          <div className="space-y-2">
+            {pendingIncoming.map((conv) => (
+              <div
+                key={conv.groupId}
+                className="flex items-center gap-3 rounded-2xl border bg-card p-4"
+              >
+                <UserAvatar
+                  name={conv.counterparty.name}
+                  avatarUrl={conv.counterparty.avatarUrl}
+                  size="md"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{conv.counterparty.name}</p>
+                  <p className="truncate text-sm text-muted-foreground">
+                    @{conv.counterparty.handle} quer conversar com você
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleDecline(conv.groupId)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleAccept(conv.groupId)}
+                  >
+                    <Check className="h-4 w-4" />
+                    Aceitar
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {activeConversations.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.4 }}
           className="mt-4"
         >
           <div className="relative">
@@ -257,7 +373,7 @@ export function ConversationsListContent({
         animate="visible"
         className="mt-4 space-y-2"
       >
-        {filteredConversations.map((conv) => (
+        {filteredActive.map((conv) => (
           <motion.div key={conv.groupId} variants={staggerItem}>
             <Link href={`/app/conversations/${conv.counterparty.id}`}>
               <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
@@ -311,7 +427,32 @@ export function ConversationsListContent({
           </motion.div>
         ))}
 
-        {isSearching && filteredConversations.length === 0 && (
+        {filteredOutgoing.map((conv) => (
+          <motion.div key={conv.groupId} variants={staggerItem}>
+            <Link href={`/app/conversations/${conv.counterparty.id}`}>
+              <div className="flex items-center gap-3 rounded-2xl border border-dashed bg-card p-4 opacity-70 transition-colors hover:border-primary/30">
+                <UserAvatar
+                  name={conv.counterparty.name}
+                  avatarUrl={conv.counterparty.avatarUrl}
+                  size="md"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate font-medium">{conv.counterparty.name}</p>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      Aguardando resposta
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                    @{conv.counterparty.handle}
+                  </p>
+                </div>
+              </div>
+            </Link>
+          </motion.div>
+        ))}
+
+        {isSearching && filteredActive.length === 0 && filteredOutgoing.length === 0 && (
           <EmptyState
             icon={Search}
             title="Nenhum resultado"
@@ -319,7 +460,7 @@ export function ConversationsListContent({
           />
         )}
 
-        {!isSearching && conversations.length === 0 && (
+        {!isSearching && totalCount === 0 && (
           <EmptyState
             icon={MessageSquare}
             title="Nenhuma conversa"
@@ -327,6 +468,8 @@ export function ConversationsListContent({
           />
         )}
       </motion.div>
+
+      <NewConversationButton />
     </div>
   );
 }
