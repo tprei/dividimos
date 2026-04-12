@@ -45,6 +45,7 @@ export interface Group {
   id: string;
   name: string;
   creatorId: string;
+  isDm: boolean;
   createdAt: string;
 }
 
@@ -258,6 +259,29 @@ export interface RecordSettlementResult {
     userB: string;
     newAmountCents: number;
   };
+}
+
+// ============================================================
+// Chat message types
+// ============================================================
+
+export type ChatMessageType = "text" | "system_expense" | "system_settlement";
+
+/** A message within a group conversation (DM or regular group). */
+export interface ChatMessage {
+  id: string;
+  groupId: string;
+  senderId: string;
+  messageType: ChatMessageType;
+  content: string;
+  expenseId?: string;
+  settlementId?: string;
+  createdAt: string;
+}
+
+/** Chat message with resolved sender profile for display. */
+export interface ChatMessageWithSender extends ChatMessage {
+  sender: UserProfile;
 }
 
 // ============================================================
