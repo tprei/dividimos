@@ -23,7 +23,6 @@ import {
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import { createClient } from "@/lib/supabase/client";
-import { haptics } from "@/hooks/use-haptics";
 import type { Balance, User } from "@/types";
 import type { SimplificationResult } from "@/lib/simplify";
 
@@ -203,11 +202,8 @@ export function GroupSettlementView({
   ) {
     setActing(`${fromUserId}-${toUserId}`);
     await recordSettlement(groupId, fromUserId, toUserId, amountCents);
-    haptics.success();
     notifySettlementRecorded(groupId, fromUserId, toUserId, amountCents).catch(() => {});
-    setPixModal(null);
     setActing(null);
-    window.dispatchEvent(new CustomEvent("app-refresh"));
   }
 
   if (loading) {
@@ -386,12 +382,14 @@ export function GroupSettlementView({
           mode={pixModal.mode}
           onMarkPaid={async (amountCents: number) => {
             if (pixModal.mode === "collect") {
-              // Creditor recording: debtor=recipientId, creditor=currentUserId
               await handleRecordSettlement(pixModal.recipientId, currentUserId, amountCents);
             } else {
-              // Debtor recording: debtor=currentUserId, creditor=recipientId
               await handleRecordSettlement(currentUserId, pixModal.recipientId, amountCents);
             }
+          }}
+          onSettlementComplete={() => {
+            setPixModal(null);
+            window.dispatchEvent(new CustomEvent("app-refresh"));
           }}
         />
       )}

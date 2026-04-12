@@ -555,8 +555,10 @@ export default function DemoPage() {
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
         paidAmountCents={pixModal.paidAmountCents}
-        onMarkPaid={(amountCents) => {
+        onMarkPaid={async (amountCents) => {
           markPaid(pixModal.entryId, amountCents, pixModal.amount);
+        }}
+        onSettlementComplete={() => {
           setPixModal({ ...pixModal, open: false });
         }}
       />
