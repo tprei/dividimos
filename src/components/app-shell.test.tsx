@@ -59,6 +59,30 @@ describe("AppShell header", () => {
   });
 });
 
+describe("AppShell navigation", () => {
+  it("renders Conversas tab linking to /app/conversations", () => {
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const conversasLink = screen.getByText("Conversas").closest("a")!;
+    expect(conversasLink).toBeTruthy();
+    expect(conversasLink.getAttribute("href")).toBe("/app/conversations");
+  });
+
+  it("does not render Contas tab", () => {
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    expect(screen.queryByText("Contas")).toBeNull();
+  });
+
+  it("highlights Conversas tab when on conversations page", () => {
+    mockPathname.mockReturnValue("/app/conversations");
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    const label = screen.getByText("Conversas");
+    expect(label.className).toContain("text-primary");
+  });
+});
+
 describe("AppShell haptics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
