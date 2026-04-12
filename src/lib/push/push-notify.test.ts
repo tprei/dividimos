@@ -27,6 +27,7 @@ import {
   notifyGroupAccepted,
   notifyExpenseActivated,
   notifySettlementRecorded,
+  notifyDmTextMessage,
 } from "./push-notify";
 
 function mockCaller(userId: string | null) {
@@ -598,6 +599,244 @@ describe("push-notify", () => {
 
       await expect(
         notifySettlementRecorded("group-1", "from-1", "to-1", 1000),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("notifyDmTextMessage", () => {
+    it("skips when web push is not configured", async () => {
+      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+
+      await notifyDmTextMessage("group-1", "Oi!");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifyDmTextMessage("group-1", "Oi!");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when dm_pairs row is not found", async () => {
+      const chain = mockSupabaseChain({ data: null, error: null });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyDmTextMessage("group-1", "Oi!");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("notifies counterparty (user_b) when sender is user_a", async () => {
+      mockCaller("user-a");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "user-a", user_b: "user-b" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Alice" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyDmTextMessage("group-1", "Oi, tudo bem?");
+
+      expect(notifyUser).toHaveBeenCalledWith("user-b", {
+        title: "Alice",
+        body: "Oi, tudo bem?",
+        url: "/app/conversations/user-a",
+        tag: "dm-group-1",
+      });
+    });
+
+    it("notifies counterparty (user_a) when sender is user_b", async () => {
+      mockCaller("user-b");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "user-a", user_b: "user-b" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Bob" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyDmTextMessage("group-1", "Vamos dividir?");
+
+      expect(notifyUser).toHaveBeenCalledWith("user-a", {
+        title: "Bob",
+        body: "Vamos dividir?",
+        url: "/app/conversations/user-b",
+        tag: "dm-group-1",
+      });
+    });
+
+    it("truncates long messages to 80 characters", async () => {
+      mockCaller("user-a");
+
+      const longMessage = "A".repeat(100);
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "user-a", user_b: "user-b" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Alice" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyDmTextMessage("group-1", longMessage);
+
+      expect(notifyUser).toHaveBeenCalledWith("user-b", expect.objectContaining({
+        body: "A".repeat(77) + "…",
+      }));
+    });
+
+    it("uses fallback name when sender profile not found", async () => {
+      mockCaller("user-a");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "user-a", user_b: "user-b" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: null, error: null }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyDmTextMessage("group-1", "Oi!");
+
+      expect(notifyUser).toHaveBeenCalledWith("user-b", expect.objectContaining({
+        title: "Alguém",
+      }));
+    });
+
+    it("swallows errors from notifyUser", async () => {
+      mockCaller("user-a");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "user-a", user_b: "user-b" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: { name: "X" }, error: null }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+      vi.mocked(notifyUser).mockRejectedValue(new Error("push failed"));
+
+      await expect(
+        notifyDmTextMessage("group-1", "Oi!"),
       ).resolves.toBeUndefined();
     });
   });
