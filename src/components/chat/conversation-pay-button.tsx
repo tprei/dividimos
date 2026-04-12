@@ -11,7 +11,6 @@ import {
   recordSettlement,
 } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
-import { haptics } from "@/hooks/use-haptics";
 import { computeGroupDebts } from "./group-settlement-sheet";
 import type { Balance } from "@/types";
 
@@ -178,16 +177,15 @@ export function ConversationPayButton({
         await recordSettlement(s.groupId, s.fromUserId, s.toUserId, s.amountCents);
         notifySettlementRecorded(s.groupId, s.fromUserId, s.toUserId, s.amountCents).catch(() => {});
       }
-
-      haptics.success();
-      setShowPix(false);
-      setSelectedBalances([]);
-      window.dispatchEvent(new CustomEvent("app-refresh"));
-    } catch {
-      haptics.error();
     } finally {
       setSettling(false);
     }
+  };
+
+  const handleSettlementComplete = () => {
+    setShowPix(false);
+    setSelectedBalances([]);
+    window.dispatchEvent(new CustomEvent("app-refresh"));
   };
 
   return (
@@ -240,6 +238,7 @@ export function ConversationPayButton({
           groupId={selectedBalances[0]?.groupId ?? balances[0]?.groupId}
           mode={mode}
           onMarkPaid={handleMarkPaid}
+          onSettlementComplete={handleSettlementComplete}
         />
       )}
     </>
