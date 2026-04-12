@@ -48,25 +48,20 @@ describe("ConversationHeader", () => {
     expect(mockBack).toHaveBeenCalled();
   });
 
-  it("renders Nova conta button when onNewExpense is provided", () => {
-    render(<ConversationHeader counterparty={counterparty} onNewExpense={() => {}} />);
+  it("renders actions slot when provided", () => {
+    render(
+      <ConversationHeader
+        counterparty={counterparty}
+        actions={<button>Ação</button>}
+      />,
+    );
 
-    expect(screen.getByText("Nova conta")).toBeInTheDocument();
-    expect(screen.getByLabelText("Nova conta")).toBeInTheDocument();
+    expect(screen.getByText("Ação")).toBeInTheDocument();
   });
 
-  it("does not render Nova conta button when onNewExpense is omitted", () => {
+  it("does not render actions slot when omitted", () => {
     render(<ConversationHeader counterparty={counterparty} />);
 
-    expect(screen.queryByText("Nova conta")).not.toBeInTheDocument();
-  });
-
-  it("calls onNewExpense when Nova conta button is clicked", async () => {
-    const { default: userEvent } = await import("@testing-library/user-event");
-    const onNewExpense = vi.fn();
-    render(<ConversationHeader counterparty={counterparty} onNewExpense={onNewExpense} />);
-
-    await userEvent.click(screen.getByLabelText("Nova conta"));
-    expect(onNewExpense).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Ação" })).not.toBeInTheDocument();
   });
 });
