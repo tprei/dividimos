@@ -91,6 +91,11 @@ interface ExpenseState {
   getExpenseShares: () => ExpenseShare[];
   getParticipantTotal: (userId: string) => number;
   hydrateFromVoice: (result: VoiceExpenseResult, groupId?: string) => void;
+  /**
+   * Initializes a single_amount expense for a DM conversation.
+   * Sets the groupId and adds the counterparty as participant.
+   */
+  createExpenseFromDm: (groupId: string, counterparty: User) => void;
   reset: () => void;
 }
 
@@ -614,6 +619,38 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       participants: [currentUser],
       guests: [],
       items,
+      payers: [],
+      splits: [],
+      billSplits: [],
+      previewDebts: [],
+    });
+  },
+
+  createExpenseFromDm: (groupId, counterparty) => {
+    const currentUser = get().currentUser;
+    if (!currentUser) return;
+
+    const now = new Date().toISOString();
+    const expense: Expense = {
+      id: generateId(),
+      groupId,
+      creatorId: currentUser.id,
+      expenseType: "single_amount",
+      title: "",
+      totalAmount: 0,
+      serviceFeePercent: 0,
+      fixedFees: 0,
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    set({
+      expense,
+      totalAmountInput: 0,
+      participants: [currentUser, counterparty],
+      guests: [],
+      items: [],
       payers: [],
       splits: [],
       billSplits: [],
