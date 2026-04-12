@@ -27,7 +27,7 @@ vi.mock("@/components/conversations/new-conversation-button", () => ({
 const chainEq = () => {
   const obj: Record<string, unknown> = {};
   obj.eq = () => obj;
-  return obj as { eq: () => typeof obj } & Promise<{ error: null }>;
+  return obj as unknown as { eq: () => typeof obj } & Promise<{ error: null }>;
 };
 
 vi.mock("@/lib/supabase/client", () => ({
