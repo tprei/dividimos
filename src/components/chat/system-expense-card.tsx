@@ -22,9 +22,16 @@ export function SystemExpenseCard({ expense, creator }: SystemExpenseCardProps) 
 
   return (
     <div className="mx-auto w-full max-w-xs">
-      <p className="mb-1 text-center text-[11px] text-muted-foreground">
-        {creator.name.split(" ")[0]} adicionou uma conta
-      </p>
+      <div className="mb-1 flex items-center justify-center gap-1.5">
+        <UserAvatar
+          name={creator.name}
+          avatarUrl={creator.avatarUrl}
+          size="xs"
+        />
+        <p className="text-[11px] text-muted-foreground">
+          {creator.name.split(" ")[0]} adicionou uma conta
+        </p>
+      </div>
       <Link href={`/app/bill/${expense.id}`}>
         <div className="rounded-2xl border bg-card p-3 transition-colors hover:bg-muted/30">
           <div className="flex items-center gap-3">
@@ -57,13 +64,6 @@ export function SystemExpenseCard({ expense, creator }: SystemExpenseCardProps) 
           )}
         </div>
       </Link>
-      <div className="mt-1 flex justify-center">
-        <UserAvatar
-          name={creator.name}
-          avatarUrl={creator.avatarUrl}
-          size="xs"
-        />
-      </div>
     </div>
   );
 }

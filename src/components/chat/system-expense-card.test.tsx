@@ -102,9 +102,11 @@ describe("SystemExpenseCard", () => {
     expect(screen.queryByText("Outback Steakhouse")).not.toBeInTheDocument();
   });
 
-  it("renders creator avatar", () => {
+  it("renders creator avatar inline with label text", () => {
     render(<SystemExpenseCard expense={makeExpense()} creator={creator} />);
 
-    expect(screen.getByText("AS")).toBeInTheDocument();
+    const avatar = screen.getByText("AS");
+    const label = screen.getByText("Alice adicionou uma conta");
+    expect(avatar.parentElement).toBe(label.parentElement);
   });
 });
