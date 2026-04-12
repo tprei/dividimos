@@ -14,12 +14,14 @@ import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { computeGroupDebts } from "./group-settlement-sheet";
 import type { Balance } from "@/types";
 
+import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
+
 const PixQrModal = dynamic(
   () =>
     import("@/components/settlement/pix-qr-modal").then((m) => ({
       default: m.PixQrModal,
     })),
-  { ssr: false },
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
 
 const GroupSettlementSheet = dynamic(
@@ -27,7 +29,7 @@ const GroupSettlementSheet = dynamic(
     import("./group-settlement-sheet").then((m) => ({
       default: m.GroupSettlementSheet,
     })),
-  { ssr: false },
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
 
 interface ConversationPayButtonProps {

@@ -6,9 +6,10 @@ import { CheckCheck, Info, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
+import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
 const PixQrModal = dynamic(
   () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
-  { ssr: false },
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";

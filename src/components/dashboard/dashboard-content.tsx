@@ -27,12 +27,14 @@ import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { fetchUserDebts } from "@/lib/supabase/debt-actions";
 import type { DebtSummary } from "@/types";
 
+import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
+
 const PixQrModal = dynamic(
   () =>
     import("@/components/settlement/pix-qr-modal").then((m) => ({
       default: m.PixQrModal,
     })),
-  { ssr: false },
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
 
 function getGreeting(): string {
