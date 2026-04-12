@@ -4,6 +4,11 @@ import { activateExpense } from "@/lib/supabase/expense-rpc";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import type { UserProfile, ActivateExpenseResult } from "@/types";
 
+export interface PrecomputedShare {
+  userId: string;
+  shareAmountCents: number;
+}
+
 export interface ConfirmChatDraftParams {
   /** The parsed expense from the LLM. */
   result: ChatExpenseResult;
@@ -13,6 +18,8 @@ export interface ConfirmChatDraftParams {
   currentUserId: string;
   /** All members of the DM group (exactly 2 for a DM). */
   members: UserProfile[];
+  /** Pre-computed shares for non-equal splits. When provided, skips equal-split computation. */
+  precomputedShares?: PrecomputedShare[];
 }
 
 export interface ConfirmChatDraftSuccess {
@@ -86,20 +93,24 @@ function resolvePayerId(
 export async function confirmChatDraft(
   params: ConfirmChatDraftParams,
 ): Promise<ConfirmChatDraftResult> {
-  const { result, groupId, currentUserId, members } = params;
+  const { result, groupId, currentUserId, members, precomputedShares } = params;
 
   // Resolve participant user IDs
   const participantIds = resolveParticipantIds(result, currentUserId, members);
   const payerId = resolvePayerId(result, currentUserId, members);
 
-  // For equal splits: distribute total evenly among participants
-  const perPersonCents = Math.floor(result.amountCents / participantIds.length);
-  const remainder = result.amountCents - perPersonCents * participantIds.length;
-
-  const shares = participantIds.map((userId, i) => ({
-    userId,
-    shareAmountCents: perPersonCents + (i === 0 ? remainder : 0),
-  }));
+  // Use precomputed shares when provided (non-equal splits), otherwise distribute evenly
+  let shares: Array<{ userId: string; shareAmountCents: number }>;
+  if (precomputedShares && precomputedShares.length > 0) {
+    shares = precomputedShares;
+  } else {
+    const perPersonCents = Math.floor(result.amountCents / participantIds.length);
+    const remainder = result.amountCents - perPersonCents * participantIds.length;
+    shares = participantIds.map((userId, i) => ({
+      userId,
+      shareAmountCents: perPersonCents + (i === 0 ? remainder : 0),
+    }));
+  }
 
   // Build items for itemized expenses
   const items =
