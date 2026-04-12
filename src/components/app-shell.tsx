@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
+import { cn } from "@/lib/utils";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { UserProvider } from "@/contexts/user-context";
 import { haptics } from "@/hooks/use-haptics";
@@ -138,6 +139,7 @@ export function AppShell({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const keyboardOpen = useKeyboardVisible();
   const [refreshing, setRefreshing] = useState(false);
   const [unread, setUnread] = useState(false);
 
@@ -218,7 +220,7 @@ export function AppShell({
         )}
 
         <main
-          className="flex-1 overflow-y-auto pb-20"
+          className={cn("flex-1 overflow-y-auto", !keyboardOpen && "pb-20")}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
