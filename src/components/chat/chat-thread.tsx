@@ -182,6 +182,9 @@ export function ChatThread({
                   key={msg.id}
                   message={msg}
                   isOwn={isOwn}
+                  expenses={expenses}
+                  settlements={new Map()}
+                  showAvatar={!isOwn}
                 />
               );
             })}
