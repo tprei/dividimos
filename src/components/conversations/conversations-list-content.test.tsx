@@ -33,6 +33,7 @@ function makeConversation(
     lastMessageContent: overrides.lastMessageContent ?? null,
     lastMessageAt: overrides.lastMessageAt ?? null,
     netBalanceCents: overrides.netBalanceCents ?? 0,
+    unreadCount: overrides.unreadCount ?? 0,
   };
 }
 
@@ -162,6 +163,59 @@ describe("ConversationsListContent", () => {
       "href",
       "/app/conversations/dm-abc-123",
     );
+  });
+
+  it("shows unread badge when unreadCount > 0", () => {
+    const conversations = [
+      makeConversation({ unreadCount: 3 }),
+    ];
+
+    render(
+      <ConversationsListContent initialConversations={conversations} />,
+    );
+
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("shows 99+ for large unread counts", () => {
+    const conversations = [
+      makeConversation({ unreadCount: 150 }),
+    ];
+
+    render(
+      <ConversationsListContent initialConversations={conversations} />,
+    );
+
+    expect(screen.getByText("99+")).toBeInTheDocument();
+  });
+
+  it("does not show unread badge when count is 0", () => {
+    const conversations = [
+      makeConversation({ unreadCount: 0 }),
+    ];
+
+    render(
+      <ConversationsListContent initialConversations={conversations} />,
+    );
+
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("applies bold styling to unread conversations", () => {
+    const conversations = [
+      makeConversation({
+        unreadCount: 2,
+        lastMessageContent: "Nova mensagem",
+        lastMessageAt: new Date().toISOString(),
+      }),
+    ];
+
+    render(
+      <ConversationsListContent initialConversations={conversations} />,
+    );
+
+    const messageEl = screen.getByText("Nova mensagem");
+    expect(messageEl.className).toContain("font-medium");
   });
 
   describe("search", () => {
