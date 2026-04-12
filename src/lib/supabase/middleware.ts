@@ -48,7 +48,7 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  if (isPublicPath(pathname) && pathname !== "/auth") {
+  if (isPublicPath(pathname) && pathname !== "/auth" && pathname !== "/") {
     return supabaseResponse;
   }
 
@@ -63,7 +63,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && pathname === "/auth") {
+  if (user && (pathname === "/auth" || pathname === "/")) {
     const nextParam = request.nextUrl.searchParams.get("next");
     const redirectTo = safeRedirect(nextParam);
     const url = request.nextUrl.clone();
