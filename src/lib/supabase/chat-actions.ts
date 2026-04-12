@@ -32,6 +32,39 @@ function chatMessageRowToChatMessage(row: ChatMessageRow): ChatMessage {
 
 export { chatMessageRowToChatMessage };
 
+/**
+ * Sends a text message to a DM group conversation.
+ * Returns the created ChatMessage or an error.
+ */
+export async function sendChatMessage(
+  groupId: string,
+  content: string,
+): Promise<ChatMessage | { error: string }> {
+  const trimmed = content.trim();
+  if (!trimmed) return { error: "Mensagem vazia" };
+
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado" };
+
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .insert({
+      group_id: groupId,
+      sender_id: user.id,
+      message_type: "text" as const,
+      content: trimmed,
+    })
+    .select()
+    .single();
+
+  if (error) return { error: error.message };
+  return chatMessageRowToChatMessage(data);
+}
+
 export interface ConversationThread {
   messages: ChatMessageWithSender[];
   expenses: Map<string, Expense>;

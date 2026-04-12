@@ -4,16 +4,18 @@ import { use, useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ChatThread } from "@/components/chat/chat-thread";
+import { ChatInput } from "@/components/chat/chat-input";
 import { Skeleton } from "@/components/shared/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import {
   loadConversationMessages,
+  sendChatMessage,
   type ConversationThread,
 } from "@/lib/supabase/chat-actions";
 import { createClient } from "@/lib/supabase/client";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
-import type { Expense, Settlement, UserProfile } from "@/types";
+import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
 
 export default function ConversationPage({
   params,
@@ -131,6 +133,36 @@ export default function ConversationPage({
     setLoadingMore(false);
   }, [groupId, thread, loadingMore, hasMore]);
 
+  const handleSend = useCallback(
+    async (content: string) => {
+      if (!groupId || !user) return;
+
+      const result = await sendChatMessage(groupId, content);
+      if ("error" in result) return;
+
+      const senderProfile: UserProfile = {
+        id: user.id,
+        handle: user.handle,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+      };
+
+      const messageWithSender: ChatMessageWithSender = {
+        ...result,
+        sender: senderProfile,
+      };
+
+      setThread((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          messages: [...prev.messages, messageWithSender],
+        };
+      });
+    },
+    [groupId, user],
+  );
+
   if (loading) {
     return (
       <div className="flex h-full flex-col">
@@ -177,6 +209,7 @@ export default function ConversationPage({
         hasMore={hasMore}
         onLoadMore={handleLoadMore}
       />
+      <ChatInput onSend={handleSend} />
     </div>
   );
 }

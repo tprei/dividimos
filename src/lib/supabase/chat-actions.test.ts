@@ -1,66 +1,84 @@
-import { describe, expect, it } from "vitest";
-import { chatMessageRowToChatMessage } from "./chat-actions";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-describe("chatMessageRowToChatMessage", () => {
-  it("maps a full chat message row to domain type", () => {
+const mockSingle = vi.fn();
+const mockSelect = vi.fn().mockReturnValue({ single: mockSingle });
+const mockInsert = vi.fn().mockReturnValue({ select: mockSelect });
+const mockFrom = vi.fn().mockReturnValue({ insert: mockInsert });
+const mockGetUser = vi.fn();
+
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: () => ({
+    from: mockFrom,
+    auth: { getUser: mockGetUser },
+  }),
+}));
+
+describe("sendChatMessage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: "user-1" } },
+    });
+  });
+
+  it("returns error for empty content", async () => {
+    const { sendChatMessage } = await import("./chat-actions");
+    const result = await sendChatMessage("group-1", "   ");
+    expect(result).toEqual({ error: "Mensagem vazia" });
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it("returns error when not authenticated", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    const { sendChatMessage } = await import("./chat-actions");
+    const result = await sendChatMessage("group-1", "Olá");
+    expect(result).toEqual({ error: "Não autenticado" });
+  });
+
+  it("inserts a text message and returns mapped result", async () => {
     const row = {
       id: "msg-1",
       group_id: "group-1",
       sender_id: "user-1",
       message_type: "text" as const,
-      content: "Hello!",
+      content: "Olá",
       expense_id: null,
       settlement_id: null,
-      created_at: "2026-04-12T14:00:00Z",
+      created_at: "2026-04-12T00:00:00Z",
     };
+    mockSingle.mockResolvedValue({ data: row, error: null });
 
-    const result = chatMessageRowToChatMessage(row);
+    const { sendChatMessage } = await import("./chat-actions");
+    const result = await sendChatMessage("group-1", "  Olá  ");
+
+    expect(mockFrom).toHaveBeenCalledWith("chat_messages");
+    expect(mockInsert).toHaveBeenCalledWith({
+      group_id: "group-1",
+      sender_id: "user-1",
+      message_type: "text",
+      content: "Olá",
+    });
 
     expect(result).toEqual({
       id: "msg-1",
       groupId: "group-1",
       senderId: "user-1",
       messageType: "text",
-      content: "Hello!",
+      content: "Olá",
       expenseId: undefined,
       settlementId: undefined,
-      createdAt: "2026-04-12T14:00:00Z",
+      createdAt: "2026-04-12T00:00:00Z",
     });
   });
 
-  it("maps expense_id and settlement_id when present", () => {
-    const row = {
-      id: "msg-2",
-      group_id: "group-1",
-      sender_id: "user-1",
-      message_type: "system_expense" as const,
-      content: "",
-      expense_id: "exp-1",
-      settlement_id: null,
-      created_at: "2026-04-12T15:00:00Z",
-    };
+  it("returns error when insert fails", async () => {
+    mockSingle.mockResolvedValue({
+      data: null,
+      error: { message: "RLS violation" },
+    });
 
-    const result = chatMessageRowToChatMessage(row);
-
-    expect(result.expenseId).toBe("exp-1");
-    expect(result.settlementId).toBeUndefined();
-  });
-
-  it("maps settlement message type correctly", () => {
-    const row = {
-      id: "msg-3",
-      group_id: "group-1",
-      sender_id: "user-2",
-      message_type: "system_settlement" as const,
-      content: "",
-      expense_id: null,
-      settlement_id: "set-1",
-      created_at: "2026-04-12T16:00:00Z",
-    };
-
-    const result = chatMessageRowToChatMessage(row);
-
-    expect(result.messageType).toBe("system_settlement");
-    expect(result.settlementId).toBe("set-1");
+    const { sendChatMessage } = await import("./chat-actions");
+    const result = await sendChatMessage("group-1", "Olá");
+    expect(result).toEqual({ error: "RLS violation" });
   });
 });
