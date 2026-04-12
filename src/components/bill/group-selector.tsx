@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Users, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Users, X, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { haptics } from "@/hooks/use-haptics";
+import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import type { UserProfile } from "@/types";
 
 interface GroupEntry {
@@ -199,10 +200,13 @@ export function GroupSelector({
         variant="outline"
         className="w-full justify-between"
         onClick={() => setOpen((v) => !v)}
-        disabled={loading}
       >
         <span className="flex items-center gap-2">
-          <Users className="h-4 w-4" />
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Users className="h-4 w-4" />
+          )}
           Selecionar grupo
         </span>
         {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -210,9 +214,15 @@ export function GroupSelector({
 
       {open && (
         <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-          {groups.length === 0 ? (
+          {loading ? (
+            <div className="divide-y">
+              {[1, 2, 3].map((i) => (
+                <GroupRowSkeleton key={i} />
+              ))}
+            </div>
+          ) : groups.length === 0 ? (
             <p className="px-4 py-3 text-sm text-muted-foreground">
-              {loading ? "Carregando grupos..." : "Nenhum grupo disponível"}
+              Nenhum grupo disponível
             </p>
           ) : (
             <div className="divide-y">
