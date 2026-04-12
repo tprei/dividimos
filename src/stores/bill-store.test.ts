@@ -958,3 +958,189 @@ describe("createExpenseFromDm", () => {
     expect(state.totalAmountInput).toBe(0);
   });
 });
+
+describe("hydrateFromChatDraft", () => {
+  it("creates a single_amount expense with parsed data", () => {
+    setup().hydrateFromChatDraft(
+      {
+        title: "Uber",
+        amountCents: 2500,
+        expenseType: "single_amount",
+        splitType: "equal",
+        items: [],
+        participants: [{ spokenName: "Bob", matchedHandle: "bob", confidence: "high" }],
+        payerHandle: "SELF",
+        merchantName: "Uber",
+        confidence: "high",
+      },
+      "dm-group-1",
+      userBob,
+    );
+
+    const { expense, participants, totalAmountInput, payers } = useBillStore.getState();
+    expect(expense).not.toBeNull();
+    expect(expense?.title).toBe("Uber");
+    expect(expense?.expenseType).toBe("single_amount");
+    expect(expense?.groupId).toBe("dm-group-1");
+    expect(expense?.merchantName).toBe("Uber");
+    expect(expense?.totalAmount).toBe(2500);
+    expect(expense?.status).toBe("draft");
+    expect(totalAmountInput).toBe(2500);
+    expect(participants).toHaveLength(2);
+    expect(participants[0].id).toBe("user-alice");
+    expect(participants[1].id).toBe("user-bob");
+    expect(payers).toHaveLength(1);
+    expect(payers[0].userId).toBe("user-alice");
+    expect(payers[0].amountCents).toBe(2500);
+  });
+
+  it("creates an itemized expense with items", () => {
+    setup().hydrateFromChatDraft(
+      {
+        title: "Mercado",
+        amountCents: 5000,
+        expenseType: "itemized",
+        splitType: "custom",
+        items: [
+          { description: "Arroz", quantity: 1, unitPriceCents: 2000, totalCents: 2000 },
+          { description: "Feijão", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
+        ],
+        participants: [],
+        payerHandle: null,
+        merchantName: null,
+        confidence: "medium",
+      },
+      "dm-group-1",
+      userBob,
+    );
+
+    const { expense, items, payers, totalAmountInput } = useBillStore.getState();
+    expect(expense?.expenseType).toBe("itemized");
+    expect(expense?.serviceFeePercent).toBe(10);
+    expect(items).toHaveLength(2);
+    expect(items[0].description).toBe("Arroz");
+    expect(items[0].totalPriceCents).toBe(2000);
+    expect(items[1].description).toBe("Feijão");
+    expect(items[1].quantity).toBe(2);
+    expect(items[1].totalPriceCents).toBe(3000);
+    expect(payers).toHaveLength(0);
+    expect(totalAmountInput).toBe(0);
+  });
+
+  it("sets counterparty as payer when payerHandle matches", () => {
+    setup().hydrateFromChatDraft(
+      {
+        title: "Pizza",
+        amountCents: 4000,
+        expenseType: "single_amount",
+        splitType: "equal",
+        items: [],
+        participants: [],
+        payerHandle: "bob",
+        merchantName: null,
+        confidence: "high",
+      },
+      "dm-group-1",
+      userBob,
+    );
+
+    const { payers } = useBillStore.getState();
+    expect(payers).toHaveLength(1);
+    expect(payers[0].userId).toBe("user-bob");
+    expect(payers[0].amountCents).toBe(4000);
+  });
+
+  it("skips payer when handle does not match", () => {
+    setup().hydrateFromChatDraft(
+      {
+        title: "Lanche",
+        amountCents: 1500,
+        expenseType: "single_amount",
+        splitType: "equal",
+        items: [],
+        participants: [],
+        payerHandle: "carlos",
+        merchantName: null,
+        confidence: "low",
+      },
+      "dm-group-1",
+      userBob,
+    );
+
+    const { payers } = useBillStore.getState();
+    expect(payers).toHaveLength(0);
+  });
+
+  it("does nothing when currentUser is not set", () => {
+    useBillStore.getState().hydrateFromChatDraft(
+      {
+        title: "Test",
+        amountCents: 1000,
+        expenseType: "single_amount",
+        splitType: "equal",
+        items: [],
+        participants: [],
+        payerHandle: null,
+        merchantName: null,
+        confidence: "high",
+      },
+      "dm-group-1",
+      userBob,
+    );
+
+    const { expense } = useBillStore.getState();
+    expect(expense).toBeNull();
+  });
+
+  it("resets previous state before hydrating", () => {
+    const s = setup();
+    s.createExpense("Old", "itemized");
+    s.addItem({ description: "Old item", quantity: 1, unitPriceCents: 1000, totalPriceCents: 1000 });
+    s.addGuest("Guest");
+
+    s.hydrateFromChatDraft(
+      {
+        title: "New",
+        amountCents: 3000,
+        expenseType: "single_amount",
+        splitType: "equal",
+        items: [],
+        participants: [],
+        payerHandle: null,
+        merchantName: null,
+        confidence: "high",
+      },
+      "dm-group-1",
+      userBob,
+    );
+
+    const state = useBillStore.getState();
+    expect(state.expense?.title).toBe("New");
+    expect(state.items).toHaveLength(0);
+    expect(state.guests).toHaveLength(0);
+    expect(state.splits).toHaveLength(0);
+    expect(state.billSplits).toHaveLength(0);
+    expect(state.previewDebts).toHaveLength(0);
+  });
+
+  it("defaults title to empty string when not provided", () => {
+    setup().hydrateFromChatDraft(
+      {
+        title: "",
+        amountCents: 1000,
+        expenseType: "single_amount",
+        splitType: "equal",
+        items: [],
+        participants: [],
+        payerHandle: null,
+        merchantName: null,
+        confidence: "high",
+      },
+      "dm-group-1",
+      userBob,
+    );
+
+    const { expense } = useBillStore.getState();
+    expect(expense?.title).toBe("");
+  });
+});

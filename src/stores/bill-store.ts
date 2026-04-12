@@ -16,6 +16,7 @@ import type {
   User,
 } from "@/types";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
+import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 /** A guest participant who doesn't have a Dividimos account yet. */
 export interface Guest {
@@ -96,6 +97,11 @@ interface ExpenseState {
    * Sets the groupId and adds the counterparty as participant.
    */
   createExpenseFromDm: (groupId: string, counterparty: User) => void;
+  /**
+   * Hydrates the store from an AI-parsed chat expense draft.
+   * Pre-fills title, amount, type, items, and participants for wizard editing.
+   */
+  hydrateFromChatDraft: (result: ChatExpenseResult, groupId: string, counterparty: User) => void;
   reset: () => void;
 }
 
@@ -652,6 +658,66 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       guests: [],
       items: [],
       payers: [],
+      splits: [],
+      billSplits: [],
+      previewDebts: [],
+    });
+  },
+
+  hydrateFromChatDraft: (result, groupId, counterparty) => {
+    const currentUser = get().currentUser;
+    if (!currentUser) return;
+
+    const now = new Date().toISOString();
+    const expense: Expense = {
+      id: generateId(),
+      groupId,
+      creatorId: currentUser.id,
+      expenseType: result.expenseType,
+      title: result.title || "",
+      merchantName: result.merchantName ?? undefined,
+      totalAmount: result.amountCents,
+      serviceFeePercent: result.expenseType === "itemized" ? 10 : 0,
+      fixedFees: 0,
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const items: ExpenseItem[] = result.items.map((item) => ({
+      id: generateId(),
+      expenseId: expense.id,
+      description: item.description,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents,
+      totalPriceCents: item.totalCents,
+      createdAt: now,
+    }));
+
+    const payers: ExpensePayer[] = [];
+    if (result.payerHandle) {
+      const payerId =
+        result.payerHandle === "SELF"
+          ? currentUser.id
+          : counterparty.handle === result.payerHandle
+            ? counterparty.id
+            : null;
+      if (payerId) {
+        payers.push({
+          expenseId: expense.id,
+          userId: payerId,
+          amountCents: result.amountCents,
+        });
+      }
+    }
+
+    set({
+      expense,
+      totalAmountInput: result.expenseType === "single_amount" ? result.amountCents : 0,
+      participants: [currentUser, counterparty],
+      guests: [],
+      items,
+      payers,
       splits: [],
       billSplits: [],
       previewDebts: [],
