@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
+import { getUnreadCounts } from "@/lib/supabase/unread-actions";
 import { useUser } from "@/hooks/use-auth";
 import type { UserProfile } from "@/types";
 
@@ -18,6 +19,7 @@ export interface ConversationEntry {
   lastMessageContent: string | null;
   lastMessageAt: string | null;
   netBalanceCents: number;
+  unreadCount: number;
 }
 
 interface ConversationsListContentProps {
@@ -79,7 +81,7 @@ export function ConversationsListContent({
     );
     const groupIds = dmPairs.map((p) => p.group_id);
 
-    const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }] =
+    const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }, unreadMap] =
       await Promise.all([
         supabase
           .from("user_profiles")
@@ -95,6 +97,7 @@ export function ConversationsListContent({
           .select("group_id, user_a, user_b, amount_cents")
           .in("group_id", groupIds)
           .neq("amount_cents", 0),
+        getUnreadCounts(supabase, user.id, groupIds),
       ]);
 
     const profileMap = new Map(
@@ -160,6 +163,7 @@ export function ConversationsListContent({
           lastMessageContent,
           lastMessageAt: lastMsg?.createdAt ?? null,
           netBalanceCents: balanceByGroup.get(pair.group_id) ?? 0,
+          unreadCount: unreadMap.get(pair.group_id) ?? 0,
         };
       })
       .filter((c): c is ConversationEntry => c !== null)
@@ -208,33 +212,42 @@ export function ConversationsListContent({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate font-medium">
+                    <p className={`truncate font-medium ${conv.unreadCount > 0 ? "text-foreground" : ""}`}>
                       {conv.counterparty.name}
                     </p>
-                    {conv.lastMessageAt && (
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {formatRelativeTime(conv.lastMessageAt)}
-                      </span>
-                    )}
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {conv.lastMessageAt && (
+                        <span className={`text-xs ${conv.unreadCount > 0 ? "text-primary font-medium" : "text-muted-foreground"}`}>
+                          {formatRelativeTime(conv.lastMessageAt)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <p className="truncate text-sm text-muted-foreground">
+                    <p className={`truncate text-sm ${conv.unreadCount > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}>
                       {conv.lastMessageContent ?? (
                         <span className="italic">Sem mensagens</span>
                       )}
                     </p>
-                    {conv.netBalanceCents !== 0 && (
-                      <span
-                        className={`shrink-0 text-xs font-semibold ${
-                          conv.netBalanceCents > 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-red-600 dark:text-red-400"
-                        }`}
-                      >
-                        {conv.netBalanceCents > 0 ? "+" : ""}
-                        {formatBRL(conv.netBalanceCents)}
-                      </span>
-                    )}
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {conv.netBalanceCents !== 0 && (
+                        <span
+                          className={`text-xs font-semibold ${
+                            conv.netBalanceCents > 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-red-600 dark:text-red-400"
+                          }`}
+                        >
+                          {conv.netBalanceCents > 0 ? "+" : ""}
+                          {formatBRL(conv.netBalanceCents)}
+                        </span>
+                      )}
+                      {conv.unreadCount > 0 && (
+                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                          {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

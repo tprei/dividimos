@@ -1,21 +1,23 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Bell, Home, Loader2, MessageSquare, Plus, RefreshCw, Search, Settings, User, Users } from "lucide-react";
+import { Bell, Home, Loader2, MessageSquare, Plus, Receipt, RefreshCw, Search, Settings, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
+import { UnreadBadge } from "@/components/shared/unread-badge";
 import { UserProvider } from "@/contexts/user-context";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
+import { useUnreadConversations } from "@/hooks/use-unread-conversations";
 import type { User as UserType } from "@/types";
 
 const navItems = [
   { href: "/app", icon: Home, label: "Início" },
-  { href: "/app/conversations", icon: MessageSquare, label: "Conversas" },
+  { href: "/app/conversations", icon: MessageSquare, label: "Conversas", badge: true as const },
   { href: "/app/bill/new", icon: Plus, label: "Nova", primary: true },
   { href: "/app/groups", icon: Users, label: "Grupos" },
   { href: "/app/profile", icon: User, label: "Perfil" },
@@ -24,6 +26,7 @@ const navItems = [
 function NavBar() {
   const pathname = usePathname();
   const keyboardOpen = useKeyboardVisible();
+  const unreadConversations = useUnreadConversations();
 
   if (keyboardOpen) return null;
 
@@ -49,6 +52,8 @@ function NavBar() {
             );
           }
 
+          const showBadge = "badge" in item && item.badge;
+
           return (
             <Link
               key={item.href}
@@ -56,13 +61,14 @@ function NavBar() {
               onClick={() => haptics.tap()}
               className="flex flex-col items-center gap-0.5"
             >
-              <motion.div whileTap={{ scale: 0.9 }}>
+              <motion.div whileTap={{ scale: 0.9 }} className="relative">
                 <item.icon
                   className={`h-5 w-5 transition-colors ${
                     isActive ? "text-primary" : "text-muted-foreground"
                   }`}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
+                {showBadge && <UnreadBadge count={unreadConversations} />}
               </motion.div>
               <span
                 className={`text-[10px] font-medium transition-colors ${

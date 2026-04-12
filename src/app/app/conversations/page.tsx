@@ -1,6 +1,7 @@
 import { ConversationsListContent } from "@/components/conversations/conversations-list-content";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getUnreadCounts } from "@/lib/supabase/unread-actions";
 import type { UserProfile } from "@/types";
 
 export interface ConversationEntry {
@@ -9,6 +10,7 @@ export interface ConversationEntry {
   lastMessageContent: string | null;
   lastMessageAt: string | null;
   netBalanceCents: number;
+  unreadCount: number;
 }
 
 export default async function ConversationsPage() {
@@ -32,7 +34,7 @@ export default async function ConversationsPage() {
   );
   const groupIds = dmPairs.map((p) => p.group_id);
 
-  const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }] =
+  const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }, unreadMap] =
     await Promise.all([
       supabase
         .from("user_profiles")
@@ -48,6 +50,7 @@ export default async function ConversationsPage() {
         .select("group_id, user_a, user_b, amount_cents")
         .in("group_id", groupIds)
         .neq("amount_cents", 0),
+      getUnreadCounts(supabase, user.id, groupIds),
     ]);
 
   const profileMap = new Map(
@@ -113,6 +116,7 @@ export default async function ConversationsPage() {
         lastMessageContent,
         lastMessageAt: lastMsg?.createdAt ?? null,
         netBalanceCents: balanceByGroup.get(pair.group_id) ?? 0,
+        unreadCount: unreadMap.get(pair.group_id) ?? 0,
       };
     })
     .filter((c): c is ConversationEntry => c !== null)

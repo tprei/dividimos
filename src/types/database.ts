@@ -726,6 +726,24 @@ export interface Database {
         };
         Relationships: [];
       };
+      conversation_read_receipts: {
+        Row: {
+          user_id: string;
+          group_id: string;
+          last_read_at: string;
+        };
+        Insert: {
+          user_id: string;
+          group_id: string;
+          last_read_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          group_id?: string;
+          last_read_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       user_profiles: {
