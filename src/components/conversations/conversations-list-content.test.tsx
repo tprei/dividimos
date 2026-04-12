@@ -149,9 +149,9 @@ describe("ConversationsListContent", () => {
     expect(screen.queryByText(/R\$/)).not.toBeInTheDocument();
   });
 
-  it("links to conversation thread", () => {
+  it("links to conversation thread via counterparty id", () => {
     const conversations = [
-      makeConversation({ groupId: "dm-abc-123" }),
+      makeConversation({ counterparty: { id: "user-2", handle: "maria", name: "Maria Silva" } }),
     ];
 
     render(
@@ -161,7 +161,7 @@ describe("ConversationsListContent", () => {
     const link = screen.getByRole("link");
     expect(link).toHaveAttribute(
       "href",
-      "/app/conversations/dm-abc-123",
+      "/app/conversations/user-2",
     );
   });
 
