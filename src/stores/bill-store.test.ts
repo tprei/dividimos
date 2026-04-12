@@ -918,3 +918,200 @@ describe("participant and guest removal flows", () => {
     expect(billSplits.find((s) => s.userId === newGuestId)).toBeDefined();
   });
 });
+
+describe("batchAssignItems", () => {
+  function setupWithItems() {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addParticipant(userBob);
+    s.addParticipant(userCarlos);
+    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "Cerveja", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
+    s.addItem({ description: "Sobremesa", quantity: 1, unitPriceCents: 3000, totalPriceCents: 3000 });
+    return useBillStore.getState();
+  }
+
+  it("assigns multiple items to a user in one update", () => {
+    setupWithItems();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().batchAssignItems([itemIds[0], itemIds[1]], "user-bob");
+    const splits = useBillStore.getState().splits;
+    const bobSplits = splits.filter((s) => s.userId === "user-bob");
+    expect(bobSplits).toHaveLength(2);
+    expect(bobSplits.map((s) => s.itemId).sort()).toEqual([itemIds[0], itemIds[1]].sort());
+  });
+
+  it("recomputes equal splits when adding to an item with existing assignments", () => {
+    setupWithItems();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().splitItemEqually(itemIds[0], ["user-alice"]);
+    expect(useBillStore.getState().splits.find((s) => s.itemId === itemIds[0] && s.userId === "user-alice")?.computedAmountCents).toBe(10000);
+
+    useBillStore.getState().batchAssignItems([itemIds[0]], "user-bob");
+    const splits = useBillStore.getState().splits.filter((s) => s.itemId === itemIds[0]);
+    expect(splits).toHaveLength(2);
+    const total = splits.reduce((sum, s) => sum + s.computedAmountCents, 0);
+    expect(total).toBe(10000);
+    expect(splits.find((s) => s.userId === "user-alice")?.computedAmountCents).toBe(5000);
+    expect(splits.find((s) => s.userId === "user-bob")?.computedAmountCents).toBe(5000);
+  });
+
+  it("does not affect items not in the batch", () => {
+    setupWithItems();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().splitItemEqually(itemIds[2], ["user-alice", "user-carlos"]);
+    useBillStore.getState().batchAssignItems([itemIds[0]], "user-bob");
+
+    const sobremesaSplits = useBillStore.getState().splits.filter((s) => s.itemId === itemIds[2]);
+    expect(sobremesaSplits).toHaveLength(2);
+    expect(sobremesaSplits.find((s) => s.userId === "user-alice")?.computedAmountCents).toBe(1500);
+  });
+
+  it("handles remainder distribution correctly with 3 people on 10000 cents", () => {
+    setupWithItems();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().splitItemEqually(itemIds[0], ["user-alice", "user-carlos"]);
+    useBillStore.getState().batchAssignItems([itemIds[0]], "user-bob");
+
+    const splits = useBillStore.getState().splits.filter((s) => s.itemId === itemIds[0]);
+    expect(splits).toHaveLength(3);
+    const amounts = splits.map((s) => s.computedAmountCents).sort((a, b) => b - a);
+    expect(amounts).toEqual([3334, 3333, 3333]);
+    expect(amounts.reduce((a, b) => a + b, 0)).toBe(10000);
+  });
+
+  it("skips invalid item IDs silently", () => {
+    setupWithItems();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().batchAssignItems(["nonexistent", itemIds[0]], "user-bob");
+    const bobSplits = useBillStore.getState().splits.filter((s) => s.userId === "user-bob");
+    expect(bobSplits).toHaveLength(1);
+    expect(bobSplits[0].itemId).toBe(itemIds[0]);
+  });
+
+  it("is idempotent — re-assigning same items does not duplicate", () => {
+    setupWithItems();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().batchAssignItems([itemIds[0]], "user-bob");
+    useBillStore.getState().batchAssignItems([itemIds[0]], "user-bob");
+    const bobSplits = useBillStore.getState().splits.filter((s) => s.userId === "user-bob" && s.itemId === itemIds[0]);
+    expect(bobSplits).toHaveLength(1);
+  });
+});
+
+describe("batchUnassignItems", () => {
+  function setupWithAssignments() {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addParticipant(userBob);
+    s.addParticipant(userCarlos);
+    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "Cerveja", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
+    const state = useBillStore.getState();
+    const itemIds = state.items.map((i) => i.id);
+    state.splitItemEqually(itemIds[0], ["user-alice", "user-bob", "user-carlos"]);
+    state.splitItemEqually(itemIds[1], ["user-alice", "user-bob"]);
+    return useBillStore.getState();
+  }
+
+  it("unassigns a user from multiple items in one update", () => {
+    setupWithAssignments();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().batchUnassignItems([itemIds[0], itemIds[1]], "user-alice");
+
+    const aliceSplits = useBillStore.getState().splits.filter((s) => s.userId === "user-alice");
+    expect(aliceSplits).toHaveLength(0);
+  });
+
+  it("recomputes remaining splits after unassignment", () => {
+    setupWithAssignments();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().batchUnassignItems([itemIds[0]], "user-carlos");
+
+    const pizzaSplits = useBillStore.getState().splits.filter((s) => s.itemId === itemIds[0]);
+    expect(pizzaSplits).toHaveLength(2);
+    expect(pizzaSplits.find((s) => s.userId === "user-alice")?.computedAmountCents).toBe(5000);
+    expect(pizzaSplits.find((s) => s.userId === "user-bob")?.computedAmountCents).toBe(5000);
+  });
+
+  it("removes all splits when last user is unassigned", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "Solo", quantity: 1, unitPriceCents: 2000, totalPriceCents: 2000 });
+    const itemId = useBillStore.getState().items[0].id;
+    useBillStore.getState().splitItemEqually(itemId, ["user-alice"]);
+    useBillStore.getState().batchUnassignItems([itemId], "user-alice");
+
+    const splits = useBillStore.getState().splits.filter((s) => s.itemId === itemId);
+    expect(splits).toHaveLength(0);
+  });
+
+  it("does not affect items not in the batch", () => {
+    setupWithAssignments();
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().batchUnassignItems([itemIds[0]], "user-bob");
+
+    const cervejaSplits = useBillStore.getState().splits.filter((s) => s.itemId === itemIds[1]);
+    expect(cervejaSplits).toHaveLength(2);
+    expect(cervejaSplits.find((s) => s.userId === "user-bob")).toBeDefined();
+  });
+});
+
+describe("getPersonItems", () => {
+  it("returns item IDs assigned to a user", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "A", quantity: 1, unitPriceCents: 1000, totalPriceCents: 1000 });
+    s.addItem({ description: "B", quantity: 1, unitPriceCents: 2000, totalPriceCents: 2000 });
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().assignItem(itemIds[0], "user-alice", "equal", 100);
+    useBillStore.getState().assignItem(itemIds[1], "user-alice", "equal", 100);
+
+    const result = useBillStore.getState().getPersonItems("user-alice");
+    expect(result.sort()).toEqual(itemIds.sort());
+  });
+
+  it("returns empty array for user with no assignments", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "A", quantity: 1, unitPriceCents: 1000, totalPriceCents: 1000 });
+
+    const result = useBillStore.getState().getPersonItems("user-bob");
+    expect(result).toEqual([]);
+  });
+});
+
+describe("getUnassignedItems", () => {
+  it("returns all items when none are assigned", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "A", quantity: 1, unitPriceCents: 1000, totalPriceCents: 1000 });
+    s.addItem({ description: "B", quantity: 1, unitPriceCents: 2000, totalPriceCents: 2000 });
+
+    const result = useBillStore.getState().getUnassignedItems();
+    expect(result).toHaveLength(2);
+  });
+
+  it("excludes items that have at least one split", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "A", quantity: 1, unitPriceCents: 1000, totalPriceCents: 1000 });
+    s.addItem({ description: "B", quantity: 1, unitPriceCents: 2000, totalPriceCents: 2000 });
+    const itemIds = useBillStore.getState().items.map((i) => i.id);
+    useBillStore.getState().assignItem(itemIds[0], "user-alice", "equal", 100);
+
+    const result = useBillStore.getState().getUnassignedItems();
+    expect(result).toEqual([itemIds[1]]);
+  });
+
+  it("returns empty when all items are assigned", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "A", quantity: 1, unitPriceCents: 1000, totalPriceCents: 1000 });
+    const itemId = useBillStore.getState().items[0].id;
+    useBillStore.getState().assignItem(itemId, "user-alice", "equal", 100);
+
+    const result = useBillStore.getState().getUnassignedItems();
+    expect(result).toEqual([]);
+  });
+});
