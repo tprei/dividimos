@@ -19,7 +19,6 @@ import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import type { MemberContext } from "@/lib/chat-expense-parser";
 
 export interface ChatInputProps {
-  groupId: string;
   members?: MemberContext[];
   disabled?: boolean;
   onSendText: (text: string) => Promise<void>;
@@ -29,7 +28,6 @@ export interface ChatInputProps {
 type InputMode = "text" | "ai";
 
 export function ChatInput({
-  groupId,
   members,
   disabled,
   onSendText,

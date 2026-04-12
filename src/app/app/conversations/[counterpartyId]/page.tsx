@@ -192,7 +192,7 @@ export default function ConversationPage({
   );
 
   const handleAiResult = useCallback(
-    (result: ChatExpenseResult, _originalText: string) => {
+    (result: ChatExpenseResult) => {
       if (!groupId) return;
       const params = new URLSearchParams({ groupId });
       params.set("aiTitle", result.title);
@@ -264,7 +264,6 @@ export default function ConversationPage({
       />
       {groupId && (
         <ChatInput
-          groupId={groupId}
           members={members}
           onSendText={handleSendText}
           onAiResult={handleAiResult}

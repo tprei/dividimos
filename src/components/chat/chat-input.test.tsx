@@ -38,7 +38,6 @@ const mockResult: ChatExpenseResult = {
 
 describe("ChatInput", () => {
   const defaultProps = {
-    groupId: "group-123",
     members: [{ handle: "joao", name: "João" }],
     onSendText: vi.fn().mockResolvedValue(undefined),
     onAiResult: vi.fn(),
