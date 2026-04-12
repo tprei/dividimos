@@ -12,7 +12,7 @@ export default async function GroupsPage() {
 
   const [{ data: myMemberships }, { data: createdGroups }] = await Promise.all([
     supabase.from("group_members").select("group_id, status, invited_by").eq("user_id", user.id),
-    supabase.from("groups").select("id").eq("creator_id", user.id),
+    supabase.from("groups").select("id").eq("creator_id", user.id).eq("is_dm", false),
   ]);
 
   const allGroupIds = new Set<string>();
