@@ -45,7 +45,7 @@ import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
-import { useBillStore, type Guest } from "@/stores/bill-store";
+import { useBillStore } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { ExpenseType, User, UserProfile } from "@/types";
@@ -520,7 +520,8 @@ function NewBillPageContent() {
   const voiceStepRef = useRef(false);
   useEffect(() => {
     const stepParam = searchParams.get("step");
-    if (stepParam !== "payer" || voiceStepRef.current) return;
+    if (!stepParam || voiceStepRef.current) return;
+    if (stepParam !== "payer" && stepParam !== "participants") return;
     const storeState = useBillStore.getState();
     if (storeState.expense) {
       voiceStepRef.current = true;
