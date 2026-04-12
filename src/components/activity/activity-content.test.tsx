@@ -250,4 +250,16 @@ describe("ActivityContent", () => {
     render(<ActivityContent initialItems={items} userId="user-a" />);
     expect(screen.queryByText("Carregar mais")).not.toBeInTheDocument();
   });
+
+  it("refresh button has spinner layout class", () => {
+    render(
+      <ActivityContent
+        initialItems={[makeExpenseActivity()]}
+        userId="user-a"
+      />,
+    );
+
+    const refreshButton = screen.getByText("Atualizar");
+    expect(refreshButton).toHaveClass("inline-flex", "items-center", "gap-1.5");
+  });
 });

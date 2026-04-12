@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { ContactRowSkeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { createClient } from "@/lib/supabase/client";
 import type { UserProfile } from "@/types";
@@ -106,7 +107,9 @@ export function AddParticipantByHandle({
       </div>
 
       {loading && (
-        <p className="mt-3 text-sm text-muted-foreground">Buscando...</p>
+        <div className="mt-3">
+          <ContactRowSkeleton />
+        </div>
       )}
 
       {result === "not_found" && (
