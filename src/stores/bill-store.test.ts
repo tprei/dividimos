@@ -957,6 +957,27 @@ describe("createExpenseFromDm", () => {
     expect(state.previewDebts).toHaveLength(0);
     expect(state.totalAmountInput).toBe(0);
   });
+  it("supports auto-title via updateExpense after creation", () => {
+    const s = setup();
+    s.createExpenseFromDm("dm-group-1", userBob);
+    s.updateExpense({ title: "Cobrança - Bob" });
+    const { expense } = useBillStore.getState();
+    expect(expense?.title).toBe("Cobrança - Bob");
+    expect(expense?.groupId).toBe("dm-group-1");
+    expect(expense?.expenseType).toBe("single_amount");
+  });
+
+  it("allows setting amount after DM creation for quick-charge flow", () => {
+    const s = setup();
+    s.createExpenseFromDm("dm-group-1", userBob);
+    s.updateExpense({ title: "Cobrança - Bob", totalAmountInput: 5000, totalAmount: 5000 });
+    const allIds = useBillStore.getState().participants.map((p) => p.id);
+    s.splitBillEqually(allIds);
+    const state = useBillStore.getState();
+    expect(state.totalAmountInput).toBe(5000);
+    expect(state.billSplits).toHaveLength(2);
+    expect(state.billSplits[0].computedAmountCents + state.billSplits[1].computedAmountCents).toBe(5000);
+  });
 });
 
 describe("hydrateFromChatDraft", () => {
