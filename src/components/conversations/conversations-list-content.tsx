@@ -1,11 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Search, X } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Input } from "@/components/ui/input";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { createClient } from "@/lib/supabase/client";
@@ -47,12 +48,39 @@ function formatRelativeTime(isoDate: string): string {
   });
 }
 
+export function filterConversations(
+  entries: ConversationEntry[],
+  query: string,
+): ConversationEntry[] {
+  const trimmed = query.trim().toLowerCase();
+  if (trimmed.length < 2) return entries;
+
+  return entries.filter((conv) => {
+    const name = conv.counterparty.name.toLowerCase();
+    const handle = conv.counterparty.handle.toLowerCase();
+    const message = (conv.lastMessageContent ?? "").toLowerCase();
+    return (
+      name.includes(trimmed) ||
+      handle.includes(trimmed) ||
+      message.includes(trimmed)
+    );
+  });
+}
+
 export function ConversationsListContent({
   initialConversations,
 }: ConversationsListContentProps) {
   const user = useUser();
   const [conversations, setConversations] =
     useState<ConversationEntry[]>(initialConversations);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredConversations = useMemo(
+    () => filterConversations(conversations, searchQuery),
+    [conversations, searchQuery],
+  );
+
+  const isSearching = searchQuery.trim().length >= 2;
 
   const refetchRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
@@ -195,13 +223,41 @@ export function ConversationsListContent({
         </p>
       </motion.div>
 
+      {conversations.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05, duration: 0.4 }}
+          className="mt-4"
+        >
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, @handle ou mensagem..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-9"
+            />
+            {searchQuery.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </motion.div>
+      )}
+
       <motion.div
         variants={staggerContainer}
         initial="hidden"
         animate="visible"
-        className="mt-6 space-y-2"
+        className="mt-4 space-y-2"
       >
-        {conversations.map((conv) => (
+        {filteredConversations.map((conv) => (
           <motion.div key={conv.groupId} variants={staggerItem}>
             <Link href={`/app/conversations/${conv.groupId}`}>
               <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
@@ -255,7 +311,15 @@ export function ConversationsListContent({
           </motion.div>
         ))}
 
-        {conversations.length === 0 && (
+        {isSearching && filteredConversations.length === 0 && (
+          <EmptyState
+            icon={Search}
+            title="Nenhum resultado"
+            description={`Sem resultados para "${searchQuery.trim()}".`}
+          />
+        )}
+
+        {!isSearching && conversations.length === 0 && (
           <EmptyState
             icon={MessageSquare}
             title="Nenhuma conversa"

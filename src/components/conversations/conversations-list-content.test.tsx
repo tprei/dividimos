@@ -1,5 +1,6 @@
+import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import {
   ConversationsListContent,
   type ConversationEntry,
@@ -11,6 +12,12 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/hooks/use-auth", () => ({
   useUser: () => ({ id: "user-1", name: "Test User" }),
+}));
+
+vi.mock("@/components/ui/input", () => ({
+  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => (
+    <input {...props} />
+  ),
 }));
 
 function makeConversation(
@@ -209,5 +216,149 @@ describe("ConversationsListContent", () => {
 
     const messageEl = screen.getByText("Nova mensagem");
     expect(messageEl.className).toContain("font-medium");
+  });
+
+  describe("search", () => {
+    const conversations = [
+      makeConversation({
+        groupId: "dm-1",
+        counterparty: { id: "u2", handle: "maria", name: "Maria Silva" },
+        lastMessageContent: "Oi, tudo bem?",
+        lastMessageAt: new Date().toISOString(),
+      }),
+      makeConversation({
+        groupId: "dm-2",
+        counterparty: { id: "u3", handle: "joao", name: "João Santos" },
+        lastMessageContent: "Vamos dividir a conta",
+        lastMessageAt: new Date().toISOString(),
+      }),
+      makeConversation({
+        groupId: "dm-3",
+        counterparty: { id: "u4", handle: "ana_luz", name: "Ana Luz" },
+        lastMessageContent: null,
+        lastMessageAt: null,
+      }),
+    ];
+
+    it("shows search input when conversations exist", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+      expect(
+        screen.getByPlaceholderText("Buscar por nome, @handle ou mensagem..."),
+      ).toBeInTheDocument();
+    });
+
+    it("hides search input when no conversations", () => {
+      render(<ConversationsListContent initialConversations={[]} />);
+      expect(
+        screen.queryByPlaceholderText("Buscar por nome, @handle ou mensagem..."),
+      ).not.toBeInTheDocument();
+    });
+
+    it("filters by counterparty name", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+
+      const input = screen.getByPlaceholderText(
+        "Buscar por nome, @handle ou mensagem...",
+      );
+      fireEvent.change(input, { target: { value: "Maria" } });
+
+      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
+      expect(screen.queryByText("João Santos")).not.toBeInTheDocument();
+      expect(screen.queryByText("Ana Luz")).not.toBeInTheDocument();
+    });
+
+    it("filters by counterparty handle", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+
+      const input = screen.getByPlaceholderText(
+        "Buscar por nome, @handle ou mensagem...",
+      );
+      fireEvent.change(input, { target: { value: "joao" } });
+
+      expect(screen.getByText("João Santos")).toBeInTheDocument();
+      expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
+    });
+
+    it("filters by last message content", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+
+      const input = screen.getByPlaceholderText(
+        "Buscar por nome, @handle ou mensagem...",
+      );
+      fireEvent.change(input, { target: { value: "dividir" } });
+
+      expect(screen.getByText("João Santos")).toBeInTheDocument();
+      expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
+    });
+
+    it("is case insensitive", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+
+      const input = screen.getByPlaceholderText(
+        "Buscar por nome, @handle ou mensagem...",
+      );
+      fireEvent.change(input, { target: { value: "MARIA" } });
+
+      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
+      expect(screen.queryByText("João Santos")).not.toBeInTheDocument();
+    });
+
+    it("shows empty state when no results match", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+
+      const input = screen.getByPlaceholderText(
+        "Buscar por nome, @handle ou mensagem...",
+      );
+      fireEvent.change(input, { target: { value: "zzzzz" } });
+
+      expect(screen.getByText("Nenhum resultado")).toBeInTheDocument();
+    });
+
+    it("does not filter with less than 2 characters", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+
+      const input = screen.getByPlaceholderText(
+        "Buscar por nome, @handle ou mensagem...",
+      );
+      fireEvent.change(input, { target: { value: "M" } });
+
+      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
+      expect(screen.getByText("João Santos")).toBeInTheDocument();
+      expect(screen.getByText("Ana Luz")).toBeInTheDocument();
+    });
+
+    it("clears search when X button is clicked", () => {
+      render(
+        <ConversationsListContent initialConversations={conversations} />,
+      );
+
+      const input = screen.getByPlaceholderText(
+        "Buscar por nome, @handle ou mensagem...",
+      );
+      fireEvent.change(input, { target: { value: "Maria" } });
+
+      expect(screen.queryByText("João Santos")).not.toBeInTheDocument();
+
+      const clearButton = screen.getByRole("button");
+      fireEvent.click(clearButton);
+
+      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
+      expect(screen.getByText("João Santos")).toBeInTheDocument();
+      expect(screen.getByText("Ana Luz")).toBeInTheDocument();
+    });
   });
 });
