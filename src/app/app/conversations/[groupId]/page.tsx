@@ -3,8 +3,10 @@
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
+import { ChatAiInput } from "@/components/chat/chat-ai-input";
 import {
   ChatDateSeparator,
   shouldShowDateSeparator,
@@ -25,6 +27,7 @@ import type {
   Settlement,
   UserProfile,
 } from "@/types";
+import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export default function ConversationThreadPage({
   params,
@@ -32,7 +35,8 @@ export default function ConversationThreadPage({
   params: Promise<{ groupId: string }>;
 }) {
   const { groupId } = use(params);
-  const { user } = useAuth();
+  useAuth();
+  const router = useRouter();
 
   const [counterparty, setCounterparty] = useState<UserProfile | null>(null);
   const [messages, setMessages] = useState<ChatMessageWithSender[]>([]);
@@ -64,7 +68,6 @@ export default function ConversationThreadPage({
       setExpenses(thread.expenses);
       setSettlements(thread.settlements);
 
-      // Load balance between users
       if (groupInfo.currentUserId && groupInfo.counterparty) {
         const bal = await queryBalanceBetween(
           groupId,
@@ -84,28 +87,23 @@ export default function ConversationThreadPage({
     loadData();
   }, [loadData]);
 
-  // Scroll to bottom when messages load or new message arrives
   useEffect(() => {
     if (!loading && messages.length > 0) {
       scrollToBottom();
     }
   }, [loading, messages.length, scrollToBottom]);
 
-  // Realtime: new chat messages
   useRealtimeChat(groupId, (newMessage) => {
     setMessages((prev) => {
-      // Deduplicate
       if (prev.some((m) => m.id === newMessage.id)) return prev;
       return [...prev, newMessage];
     });
   });
 
-  // Realtime: balance updates
   useRealtimeBalances(groupId, (updatedBalance) => {
     setBalance(updatedBalance);
   });
 
-  // Listen for app-refresh events (pull-to-refresh)
   useEffect(() => {
     const handler = () => {
       loadData();
@@ -114,7 +112,24 @@ export default function ConversationThreadPage({
     return () => window.removeEventListener("app-refresh", handler);
   }, [loadData]);
 
-  // Compute balance display
+  const handleConfirmDraft = useCallback(
+    (result: ChatExpenseResult) => {
+      const qs = new URLSearchParams({ groupId });
+      if (result.title) qs.set("title", result.title);
+      if (result.amountCents > 0) qs.set("amount", String(result.amountCents));
+      router.push(`/app/bill/new?${qs.toString()}`);
+    },
+    [groupId, router],
+  );
+
+  const handleEditDraft = useCallback(() => {
+    router.push(`/app/bill/new?groupId=${groupId}`);
+  }, [groupId, router]);
+
+  const aiMembers = counterparty
+    ? [{ handle: counterparty.handle, name: counterparty.name }]
+    : [];
+
   const balanceDisplay = getBalanceDisplay(balance, currentUserId, counterparty);
 
   if (loading) {
@@ -213,6 +228,15 @@ export default function ConversationThreadPage({
           </motion.div>
         )}
       </div>
+
+      <div className="border-t bg-background px-3 py-2">
+        <ChatAiInput
+          groupId={groupId}
+          members={aiMembers}
+          onConfirmDraft={handleConfirmDraft}
+          onEditDraft={handleEditDraft}
+        />
+      </div>
     </div>
   );
 }
@@ -233,7 +257,6 @@ function getBalanceDisplay(
   if (!balance || !currentUserId || !counterparty || balance.amountCents === 0)
     return null;
 
-  // Positive = userA owes userB; negative = userB owes userA
   const currentIsA = currentUserId === balance.userA;
   const iOwe = currentIsA
     ? balance.amountCents > 0
