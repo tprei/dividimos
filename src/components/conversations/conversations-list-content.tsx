@@ -259,7 +259,7 @@ export function ConversationsListContent({
       >
         {filteredConversations.map((conv) => (
           <motion.div key={conv.groupId} variants={staggerItem}>
-            <Link href={`/app/conversations/${conv.groupId}`}>
+            <Link href={`/app/conversations/${conv.counterparty.id}`}>
               <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
                 <UserAvatar
                   name={conv.counterparty.name}

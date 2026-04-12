@@ -26,7 +26,6 @@ import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { recordSettlement } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
 import { fetchUserDebts } from "@/lib/supabase/debt-actions";
-import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import type { DebtSummary } from "@/types";
 
 const PixQrModal = dynamic(
@@ -110,14 +109,7 @@ export function DashboardContent({
   }, [user]);
 
   const handleNavigate = useCallback(async (debt: DebtSummary) => {
-    if (debt.isDm) {
-      router.push(`/app/conversations/${debt.groupId}`);
-      return;
-    }
-    const result = await getOrCreateDmGroup(debt.counterpartyId);
-    if ("groupId" in result) {
-      router.push(`/app/conversations/${result.groupId}`);
-    }
+    router.push(`/app/conversations/${debt.counterpartyId}`);
   }, [router]);
 
   const handleRecordSettlement = async (
