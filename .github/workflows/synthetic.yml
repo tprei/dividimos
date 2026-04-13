@@ -8,6 +8,10 @@ jobs:
   synthetic:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +64,7 @@ jobs:
           echo "Server did not start in time" && exit 1
 
       - name: Run synthetic tests
-        run: npm run test:synthetic
+        run: npm run test:synthetic -- --workers=2 --shard=${{ matrix.shard }}/2
         env:
           CI: "true"
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
@@ -74,7 +78,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: synthetic-test-results
+          name: synthetic-test-results-shard-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
