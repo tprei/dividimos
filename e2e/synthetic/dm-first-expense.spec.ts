@@ -1,12 +1,7 @@
 import { test, expect, loginInContext } from "../fixtures";
 
 test.describe("DM first expense", () => {
-  // TODO(ci/synthetic): the test URL passes ?title=Uber&amount=2500 but
-  // src/app/app/bill/new/page.tsx does not consume those params, so the info
-  // step's title input stays empty and the Próximo button is disabled. Either
-  // wire the URL params into state or have the test type the title/amount
-  // manually. Skipped until we can verify selectors against a local Supabase.
-  test.fixme("wizard creates expense and system message appears in thread", async ({
+  test("wizard creates expense and system message appears in thread", async ({
     page,
     seed,
     loginAs,
@@ -22,66 +17,67 @@ test.describe("DM first expense", () => {
     await page.goto(`/app/conversations/${bob.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText(bob.name)).toBeVisible();
+    await expect(page.getByText(bob.name).first()).toBeVisible();
 
+    // Open the wizard with the chat-edit URL shape (title + amount). The
+    // bill-new page consumes these params and lands at the participants step
+    // with title and totalAmountInput pre-filled, skipping the type and info
+    // steps the same way ?dm= jumps straight to amount-split.
     await page.goto(`/app/bill/new?groupId=${dm.id}&title=Uber&amount=2500`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByRole("button", { name: /Valor único|Dividir|single/i }).first()).toBeVisible({ timeout: 5000 });
-    const singleAmountBtn = page.getByRole("button", { name: /Valor único/i });
-    if (await singleAmountBtn.isVisible()) {
-      await singleAmountBtn.click();
-    }
+    // participants step → amount-split (group members auto-loaded from groupId)
+    await expect(page.getByText(bob.name).first()).toBeVisible({
+      timeout: 5000,
+    });
+    await page
+      .getByRole("button", { name: /Próximo|Continuar/i })
+      .click();
 
-    const nextBtn = page.getByRole("button", { name: /Próximo|Continuar/i });
-    if (await nextBtn.isVisible()) {
-      await nextBtn.click();
-    }
+    // amount-split step → payer (split is auto-equal because totalInput is set)
+    await page
+      .getByRole("button", { name: /Próximo|Continuar/i })
+      .click();
 
-    await page.waitForLoadState("networkidle");
+    // payer step needs an explicit selection; pick alice as the full payer
+    await page.getByRole("button", { name: alice.name }).click();
+    await page
+      .getByRole("button", { name: /Próximo|Continuar/i })
+      .click();
 
-    const infoNext = page.getByRole("button", { name: /Próximo|Continuar/i });
-    if (await infoNext.isVisible()) {
-      await infoNext.click();
-    }
+    // summary step → finalize ("Gerar cobranças Pix" saves the draft and
+    // calls activate_expense; on success the page navigates to /app/bill/{id})
+    await page
+      .getByRole("button", { name: /Gerar cobranças Pix/i })
+      .click();
 
-    await page.waitForLoadState("networkidle");
+    // Wait for navigation away from /new — the page only leaves /app/bill/new
+    // after saveExpenseDraft + activate_expense complete.
+    await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, {
+      timeout: 15000,
+    });
 
-    const participantsNext = page.getByRole("button", { name: /Próximo|Continuar/i });
-    if (await participantsNext.isVisible()) {
-      await participantsNext.click();
-    }
-
-    await page.waitForLoadState("networkidle");
-
-    const amountNext = page.getByRole("button", { name: /Próximo|Continuar/i });
-    if (await amountNext.isVisible()) {
-      await amountNext.click();
-    }
-
-    await page.waitForLoadState("networkidle");
-
-    const payerNext = page.getByRole("button", { name: /Próximo|Continuar/i });
-    if (await payerNext.isVisible()) {
-      await payerNext.click();
-    }
-
-    await page.waitForLoadState("networkidle");
-
-    const confirmBtn = page.getByRole("button", { name: /Finalizar|Confirmar|Ativar/i });
-    if (await confirmBtn.isVisible()) {
-      await confirmBtn.click();
-      await page.waitForLoadState("networkidle");
-    }
+    // Poll the DB for the active expense — saveExpenseDraft + activate_expense
+    // are async and may lag slightly behind the navigation.
+    await expect
+      .poll(
+        async () => {
+          const { data } = await adminClient
+            .from("expenses")
+            .select("id")
+            .eq("group_id", dm.id)
+            .eq("status", "active");
+          return data?.length ?? 0;
+        },
+        { timeout: 10000 },
+      )
+      .toBeGreaterThan(0);
 
     const { data: expenses } = await adminClient
       .from("expenses")
       .select("id, status, group_id")
       .eq("group_id", dm.id)
       .eq("status", "active");
-
-    expect(expenses).not.toBeNull();
-    expect(expenses!.length).toBeGreaterThan(0);
 
     const expense = expenses![0];
 
