@@ -24,6 +24,7 @@ import {
   type ConversationThread,
 } from "@/lib/supabase/chat-actions";
 import { confirmChatDraft } from "@/lib/supabase/chat-draft-confirm";
+import { notifyDmTextMessage, notifyExpenseActivated } from "@/lib/push/push-notify";
 import { markConversationRead } from "@/lib/supabase/unread-actions";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -230,6 +231,8 @@ export default function ConversationPage({
       const result = await sendChatMessage(groupId, content);
       if ("error" in result) return;
 
+      notifyDmTextMessage(groupId, content).catch(() => {});
+
       const senderProfile: UserProfile = {
         id: user.id,
         handle: user.handle,
@@ -273,6 +276,8 @@ export default function ConversationPage({
         toast.error(confirmResult.error);
         return confirmResult;
       }
+
+      notifyExpenseActivated(confirmResult.expenseId).catch(() => {});
 
       return confirmResult;
     },
