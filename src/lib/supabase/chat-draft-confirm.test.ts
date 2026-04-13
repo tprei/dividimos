@@ -238,6 +238,40 @@ describe("confirmChatDraft", () => {
     });
   });
 
+  it("uses precomputedShares when provided instead of equal split", async () => {
+    mockSaveExpenseDraft.mockResolvedValue({ expenseId: "exp-precomputed" });
+    mockActivateExpense.mockResolvedValue({
+      expenseId: "exp-precomputed",
+      status: "active",
+      updatedBalances: [],
+    });
+
+    const precomputedShares = [
+      { userId: "user-alice", shareAmountCents: 1500 },
+      { userId: "user-bob", shareAmountCents: 1000 },
+    ];
+
+    await confirmChatDraft(makeParams({ precomputedShares }));
+
+    const draftArgs = mockSaveExpenseDraft.mock.calls[0][0];
+    expect(draftArgs.shares).toEqual(precomputedShares);
+  });
+
+  it("falls back to equal split when precomputedShares is empty array", async () => {
+    mockSaveExpenseDraft.mockResolvedValue({ expenseId: "exp-empty-shares" });
+    mockActivateExpense.mockResolvedValue({
+      expenseId: "exp-empty-shares",
+      status: "active",
+      updatedBalances: [],
+    });
+
+    await confirmChatDraft(makeParams({ precomputedShares: [] }));
+
+    const draftArgs = mockSaveExpenseDraft.mock.calls[0][0];
+    expect(draftArgs.shares).toHaveLength(2);
+    expect(draftArgs.shares[0].shareAmountCents + draftArgs.shares[1].shareAmountCents).toBe(2500);
+  });
+
   it("resolves explicit participants by handle", async () => {
     mockSaveExpenseDraft.mockResolvedValue({ expenseId: "exp-10" });
     mockActivateExpense.mockResolvedValue({
