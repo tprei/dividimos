@@ -130,8 +130,6 @@ export function logDebug(logger: Logger, message: string, context?: LogContext):
   logger.debug(context, message);
 }
 
-export const serverLogger = createLogger("server");
-
 export function createRequestLogger(requestId: string, userId?: string): Logger {
   return getLogger({
     module: "api",
