@@ -39,7 +39,16 @@ jobs:
       - name: Start Supabase
         id: supabase
         run: |
-          supabase start
+          for attempt in 1 2 3; do
+            if supabase start; then
+              break
+            fi
+            echo "supabase start failed (attempt $attempt/3), retrying..."
+            supabase stop --no-backup 2>/dev/null || true
+            if [ "$attempt" -eq 3 ]; then
+              echo "supabase start failed after 3 attempts" && exit 1
+            fi
+          done
           ANON_KEY=$(supabase status --output json | jq -r '.ANON_KEY')
           SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.SERVICE_ROLE_KEY')
           echo "anon_key=${ANON_KEY}" >> $GITHUB_OUTPUT
