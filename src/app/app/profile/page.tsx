@@ -10,11 +10,13 @@ import {
   LogOut,
   Moon,
   Pencil,
+  QrCode,
   Shield,
   Smartphone,
   X,
 } from "lucide-react";
 import { useState, useTransition } from "react";
+import { ProfileShareModal } from "@/components/profile/profile-share-modal";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
@@ -70,6 +72,7 @@ export default function ProfilePage() {
   const [pixInput, setPixInput] = useState("");
   const [pixError, setPixError] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [shareOpen, setShareOpen] = useState(false);
 
   const toggleDark = () => {
     const next = !darkMode;
@@ -161,13 +164,20 @@ export default function ProfilePage() {
           avatarUrl={user?.avatarUrl}
           size="lg"
         />
-        <div>
+        <div className="flex-1">
           <h1 className="text-xl font-bold">{user?.name}</h1>
           <p className="text-sm text-muted-foreground">@{user?.handle}</p>
           {user?.email && (
             <p className="text-xs text-muted-foreground">{user.email}</p>
           )}
         </div>
+        <button
+          onClick={() => setShareOpen(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+          aria-label="Compartilhar perfil"
+        >
+          <QrCode className="h-5 w-5" />
+        </button>
       </motion.div>
 
       <motion.div
@@ -382,6 +392,14 @@ export default function ProfilePage() {
           Sair
         </Button>
       </motion.div>
+
+      <ProfileShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        handle={user?.handle ?? ""}
+        name={user?.name ?? ""}
+        avatarUrl={user?.avatarUrl}
+      />
     </div>
   );
 }
