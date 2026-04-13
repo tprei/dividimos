@@ -39,6 +39,10 @@ jobs:
           </html>
           HTML
 
+      - name: Inject google-services.json for FCM
+        if: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
+        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > android/app/google-services.json
+
       - name: Sync Capacitor Android
         run: npx cap sync android
 

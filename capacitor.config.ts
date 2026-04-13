@@ -53,6 +53,9 @@ const config: CapacitorConfig = {
       resize: KeyboardResize.None,
       resizeOnFullScreen: false,
     },
+    PushNotifications: {
+      presentationOptions: ["badge", "sound", "alert"],
+    },
   },
 };
 
