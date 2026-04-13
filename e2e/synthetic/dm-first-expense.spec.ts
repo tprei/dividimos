@@ -45,20 +45,39 @@ test.describe("DM first expense", () => {
       .getByRole("button", { name: /Próximo|Continuar/i })
       .click();
 
-    // summary step → finalize ("Gerar cobranças Pix" activates the expense)
+    // summary step → finalize ("Gerar cobranças Pix" saves the draft and
+    // calls activate_expense; on success the page navigates to /app/bill/{id})
     await page
       .getByRole("button", { name: /Gerar cobranças Pix/i })
       .click();
-    await page.waitForLoadState("networkidle");
+
+    // Wait for navigation away from /new — the page only leaves /app/bill/new
+    // after saveExpenseDraft + activate_expense complete.
+    await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, {
+      timeout: 15000,
+    });
+
+    // Poll the DB for the active expense — saveExpenseDraft + activate_expense
+    // are async and may lag slightly behind the navigation.
+    await expect
+      .poll(
+        async () => {
+          const { data } = await adminClient
+            .from("expenses")
+            .select("id")
+            .eq("group_id", dm.id)
+            .eq("status", "active");
+          return data?.length ?? 0;
+        },
+        { timeout: 10000 },
+      )
+      .toBeGreaterThan(0);
 
     const { data: expenses } = await adminClient
       .from("expenses")
       .select("id, status, group_id")
       .eq("group_id", dm.id)
       .eq("status", "active");
-
-    expect(expenses).not.toBeNull();
-    expect(expenses!.length).toBeGreaterThan(0);
 
     const expense = expenses![0];
 
