@@ -316,12 +316,12 @@ describe("ConversationsListContent", () => {
 
       expect(screen.getByText("Pedro Alves")).toBeInTheDocument();
 
-      const declineBtn = screen.getAllByRole("button").find(
-        (b) => b.querySelector("svg") && !b.textContent?.includes("Aceitar"),
+      const inviteCard = screen.getByText("Pedro Alves").closest(".rounded-2xl");
+      const buttons = inviteCard!.querySelectorAll("button");
+      const declineBtn = Array.from(buttons).find(
+        (b) => !b.textContent?.includes("Aceitar"),
       );
-      if (declineBtn) {
-        fireEvent.click(declineBtn);
-      }
+      fireEvent.click(declineBtn!);
 
       await waitFor(() => {
         expect(screen.queryByText("Pedro Alves")).not.toBeInTheDocument();
