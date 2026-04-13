@@ -65,11 +65,12 @@ test.describe("DM navigation and deep links", () => {
     });
 
     // A DM pair should now exist for alice+bob
-    const { data: dmPairs } = await adminClient
+    const { data: dmPairs, error: dmPairsError } = await adminClient
       .from("dm_pairs")
-      .select("id, user_a, user_b")
+      .select("group_id, user_a, user_b")
       .or(`user_a.eq.${alice.id},user_b.eq.${alice.id}`);
 
+    expect(dmPairsError).toBeNull();
     const matching = (dmPairs ?? []).filter(
       (p) => p.user_a === bob.id || p.user_b === bob.id,
     );
