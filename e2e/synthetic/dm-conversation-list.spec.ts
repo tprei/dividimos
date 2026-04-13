@@ -14,7 +14,9 @@ test.describe("DM conversations list", () => {
       page.getByRole("heading", { name: "Conversas" }),
     ).toBeVisible();
 
-    await expect(page.getByText("Nenhuma conversa")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Nenhuma conversa" }),
+    ).toBeVisible();
     await expect(
       page.getByPlaceholder("Buscar por nome, @handle ou mensagem..."),
     ).not.toBeVisible();

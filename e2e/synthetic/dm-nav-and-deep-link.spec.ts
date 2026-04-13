@@ -60,12 +60,13 @@ test.describe("DM navigation and deep links", () => {
     // A DM pair should now exist for alice+bob
     const { data: dmPairs } = await adminClient
       .from("dm_pairs")
-      .select("id")
-      .or(`user_a.eq.${alice.id},user_b.eq.${alice.id}`)
-      .or(`user_a.eq.${bob.id},user_b.eq.${bob.id}`);
+      .select("id, user_a, user_b")
+      .or(`user_a.eq.${alice.id},user_b.eq.${alice.id}`);
 
-    expect(dmPairs).not.toBeNull();
-    expect(dmPairs!.length).toBeGreaterThan(0);
+    const matching = (dmPairs ?? []).filter(
+      (p) => p.user_a === bob.id || p.user_b === bob.id,
+    );
+    expect(matching.length).toBeGreaterThan(0);
   });
 
   // Test 3: Debt card direct link when debt is already in a DM
@@ -107,8 +108,8 @@ test.describe("DM navigation and deep links", () => {
       timeout: 8000,
     });
 
-    // Page renders the conversation header with bob's name
-    await expect(page.getByText(bob.name.split(" ")[0])).toBeVisible({
+    // Page renders the conversation header with bob's full name
+    await expect(page.getByText(bob.name, { exact: true }).first()).toBeVisible({
       timeout: 5000,
     });
   });
