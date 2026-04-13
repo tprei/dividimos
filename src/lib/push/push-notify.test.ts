@@ -28,6 +28,9 @@ import {
   notifyExpenseActivated,
   notifySettlementRecorded,
   notifyDmTextMessage,
+  notifyPaymentNudge,
+  notifyExpenseEdited,
+  notifyExpenseDeleted,
 } from "./push-notify";
 
 function mockCaller(userId: string | null) {
@@ -838,6 +841,246 @@ describe("push-notify", () => {
       await expect(
         notifyDmTextMessage("group-1", "Oi!"),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("notifyPaymentNudge", () => {
+    it("skips when web push is not configured", async () => {
+      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+
+      await notifyPaymentNudge("group-1", "debtor-1", 5000);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is the debtor (cannot nudge yourself)", async () => {
+      mockCaller("debtor-1");
+
+      await notifyPaymentNudge("group-1", "debtor-1", 5000);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifyPaymentNudge("group-1", "debtor-1", 5000);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("notifies debtor with creditor name and amount", async () => {
+      mockCaller("creditor-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: { name: "Viagem" }, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: { name: "João" }, error: null }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyPaymentNudge("group-1", "debtor-1", 5000);
+
+      expect(notifyUser).toHaveBeenCalledWith("debtor-1", {
+        title: "Lembrete de pagamento",
+        body: 'João pediu R$\u00a050,00 em "Viagem"',
+        url: "/app/groups/group-1",
+        tag: "nudge-group-1-creditor-1",
+      });
+    });
+
+    it("uses fallback names when DB returns null", async () => {
+      mockCaller("creditor-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation(() => ({
+        select: () => ({
+          eq: () => ({
+            single: () => Promise.resolve({ data: null, error: null }),
+          }),
+        }),
+      }));
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyPaymentNudge("group-1", "debtor-1", 2500);
+
+      expect(notifyUser).toHaveBeenCalledWith("debtor-1", {
+        title: "Lembrete de pagamento",
+        body: 'Alguém pediu R$\u00a025,00 em "um grupo"',
+        url: "/app/groups/group-1",
+        tag: "nudge-group-1-creditor-1",
+      });
+    });
+  });
+
+  describe("notifyExpenseEdited", () => {
+    it("skips when web push is not configured", async () => {
+      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+
+      await notifyExpenseEdited("exp-1", "group-1", "Pizza", ["user-2"]);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifyExpenseEdited("exp-1", "group-1", "Pizza", ["user-2"]);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("notifies affected users excluding the editor", async () => {
+      mockCaller("editor-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: { name: "Amigos" }, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: { name: "Carlos" }, error: null }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyExpenseEdited("exp-1", "group-1", "Pizza", [
+        "editor-1",
+        "user-2",
+        "user-3",
+      ]);
+
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+      expect(notifyUser).toHaveBeenCalledWith("user-2", {
+        title: 'Despesa editada em "Amigos"',
+        body: 'Carlos editou "Pizza"',
+        url: "/app/bill/exp-1",
+        tag: "expense-edited-exp-1",
+      });
+      expect(notifyUser).toHaveBeenCalledWith("user-3", expect.objectContaining({
+        title: 'Despesa editada em "Amigos"',
+      }));
+    });
+  });
+
+  describe("notifyExpenseDeleted", () => {
+    it("skips when web push is not configured", async () => {
+      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+
+      await notifyExpenseDeleted("group-1", "Pizza", ["user-2"]);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifyExpenseDeleted("group-1", "Pizza", ["user-2"]);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("notifies affected users excluding the deleter", async () => {
+      mockCaller("deleter-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: { name: "Casa" }, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: { name: "Ana" }, error: null }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyExpenseDeleted("group-1", "Almoço", [
+        "deleter-1",
+        "user-2",
+      ]);
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith("user-2", {
+        title: 'Despesa removida em "Casa"',
+        body: 'Ana removeu "Almoço"',
+        url: "/app/groups/group-1",
+        tag: "expense-deleted-group-1",
+      });
+    });
+
+    it("uses fallback names when DB returns null", async () => {
+      mockCaller("deleter-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation(() => ({
+        select: () => ({
+          eq: () => ({
+            single: () => Promise.resolve({ data: null, error: null }),
+          }),
+        }),
+      }));
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyExpenseDeleted("group-1", "Pizza", [
+        "deleter-1",
+        "user-2",
+      ]);
+
+      expect(notifyUser).toHaveBeenCalledWith("user-2", {
+        title: 'Despesa removida em "um grupo"',
+        body: 'Alguém removeu "Pizza"',
+        url: "/app/groups/group-1",
+        tag: "expense-deleted-group-1",
+      });
     });
   });
 });

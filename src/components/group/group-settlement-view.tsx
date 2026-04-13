@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCheck, Info, Loader2 } from "lucide-react";
+import { Bell, CheckCheck, Info, Loader2 } from "lucide-react";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
@@ -21,7 +21,7 @@ import {
   queryBalances,
   recordSettlement,
 } from "@/lib/supabase/settlement-actions";
-import { notifySettlementRecorded } from "@/lib/push/push-notify";
+import { notifySettlementRecorded, notifyPaymentNudge } from "@/lib/push/push-notify";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import { createClient } from "@/lib/supabase/client";
 import type { Balance, User } from "@/types";
@@ -67,6 +67,20 @@ export function GroupSettlementView({
     mode: "pay" | "collect";
   } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [nudgeSent, setNudgeSent] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    const stored = localStorage.getItem("nudge-cooldowns");
+    if (!stored) return new Set();
+    try {
+      const parsed = JSON.parse(stored) as Record<string, number>;
+      const now = Date.now();
+      const active = new Set<string>();
+      for (const [key, ts] of Object.entries(parsed)) {
+        if (now - ts < 24 * 60 * 60 * 1000) active.add(key);
+      }
+      return active;
+    } catch { return new Set(); }
+  });
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -207,6 +221,22 @@ export function GroupSettlementView({
     setActing(null);
   }
 
+  function handleNudge(debtorId: string, amountCents: number) {
+    const key = `${groupId}-${debtorId}`;
+    if (nudgeSent.has(key)) return;
+
+    notifyPaymentNudge(groupId, debtorId, amountCents).catch(() => {});
+
+    const next = new Set(nudgeSent);
+    next.add(key);
+    setNudgeSent(next);
+
+    const stored = localStorage.getItem("nudge-cooldowns");
+    const parsed: Record<string, number> = stored ? JSON.parse(stored) : {};
+    parsed[key] = Date.now();
+    localStorage.setItem("nudge-cooldowns", JSON.stringify(parsed));
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -326,22 +356,33 @@ export function GroupSettlementView({
                   )}
 
                   {isCreditor && (
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      size="sm"
-                      onClick={() =>
-                        setPixModal({
-                          recipientId: edge.fromUserId,
-                          recipientName: from.name,
-                          amountCents: edge.amountCents,
-                          mode: "collect",
-                        })
-                      }
-                      disabled={isActing}
-                    >
-                      Gerar cobranca
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        size="sm"
+                        onClick={() =>
+                          setPixModal({
+                            recipientId: edge.fromUserId,
+                            recipientName: from.name,
+                            amountCents: edge.amountCents,
+                            mode: "collect",
+                          })
+                        }
+                        disabled={isActing}
+                      >
+                        Gerar cobranca
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleNudge(edge.fromUserId, edge.amountCents)}
+                        disabled={isActing || nudgeSent.has(`${groupId}-${edge.fromUserId}`)}
+                        title={nudgeSent.has(`${groupId}-${edge.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
+                      >
+                        <Bell className="h-4 w-4" />
+                      </Button>
+                    </>
                   )}
 
                   {!isDebtor && !isCreditor && (

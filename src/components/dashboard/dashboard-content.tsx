@@ -23,7 +23,7 @@ import { formatBRL } from "@/lib/currency";
 import { useUser } from "@/hooks/use-auth";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { recordSettlement } from "@/lib/supabase/settlement-actions";
-import { notifySettlementRecorded } from "@/lib/push/push-notify";
+import { notifySettlementRecorded, notifyPaymentNudge } from "@/lib/push/push-notify";
 import { fetchUserDebts } from "@/lib/supabase/debt-actions";
 import type { DebtSummary } from "@/types";
 
@@ -66,6 +66,20 @@ export function DashboardContent({
     mode: "pay" | "collect";
   } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [nudgeSent, setNudgeSent] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    const stored = localStorage.getItem("nudge-cooldowns");
+    if (!stored) return new Set();
+    try {
+      const parsed = JSON.parse(stored) as Record<string, number>;
+      const now = Date.now();
+      const active = new Set<string>();
+      for (const [key, ts] of Object.entries(parsed)) {
+        if (now - ts < 24 * 60 * 60 * 1000) active.add(key);
+      }
+      return active;
+    } catch { return new Set(); }
+  });
   const touchStartY = useRef(0);
   const touchStartX = useRef(0);
   const touchStartTime = useRef(0);
@@ -105,6 +119,22 @@ export function DashboardContent({
     notifySettlementRecorded(debt.groupId, fromUserId, toUserId, amountCents).catch(() => {});
     setActing(null);
   };
+
+  const handleNudge = useCallback((debt: DebtSummary) => {
+    const key = `${debt.groupId}-${debt.counterpartyId}`;
+    if (nudgeSent.has(key)) return;
+
+    notifyPaymentNudge(debt.groupId, debt.counterpartyId, debt.amountCents).catch(() => {});
+
+    const next = new Set(nudgeSent);
+    next.add(key);
+    setNudgeSent(next);
+
+    const stored = localStorage.getItem("nudge-cooldowns");
+    const parsed: Record<string, number> = stored ? JSON.parse(stored) : {};
+    parsed[key] = Date.now();
+    localStorage.setItem("nudge-cooldowns", JSON.stringify(parsed));
+  }, [nudgeSent]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
@@ -368,8 +398,10 @@ export function DashboardContent({
                   debt={debt}
                   onPay={(d) => setPixModal({ debt: d, mode: "pay" })}
                   onCollect={(d) => setPixModal({ debt: d, mode: "collect" })}
+                  onNudge={handleNudge}
                   onNavigate={handleNavigate}
                   isActing={isActingOnThis}
+                  nudgeCooldown={nudgeSent.has(`${debt.groupId}-${debt.counterpartyId}`)}
                 />
               </motion.div>
             );
