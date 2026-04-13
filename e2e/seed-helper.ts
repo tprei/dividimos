@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { SignJWT } from "jose";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,6 +75,7 @@ export class SeedHelper {
   private admin: SupabaseClient;
   private supabaseUrl: string;
   private supabaseAnonKey: string;
+  private jwtSecret: Uint8Array | null;
 
   private userIds: string[] = [];
   private groupIds: string[] = [];
@@ -86,11 +88,40 @@ export class SeedHelper {
     this.supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     this.supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+    const secret = process.env.SUPABASE_JWT_SECRET;
+    this.jwtSecret = secret ? new TextEncoder().encode(secret) : null;
+
     if (!this.supabaseUrl || !this.supabaseAnonKey) {
       throw new Error(
         "SeedHelper requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY",
       );
     }
+  }
+
+  private async mintAccessToken(
+    userId: string,
+    email: string,
+    role: string = "authenticated",
+  ): Promise<string> {
+    if (!this.jwtSecret) {
+      throw new Error(
+        "SeedHelper.mintAccessToken: SUPABASE_JWT_SECRET is required to mint JWTs",
+      );
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+
+    return new SignJWT({
+      sub: userId,
+      email,
+      role,
+      aud: "authenticated",
+      iss: `${this.supabaseUrl}/auth/v1`,
+    })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 3600)
+      .sign(this.jwtSecret);
   }
 
   // -----------------------------------------------------------------------
@@ -105,7 +136,6 @@ export class SeedHelper {
     const onboarded = options.onboarded ?? true;
 
     const email = `synth_${testId}@test.dividimos.local`;
-    const password = `synth_${testId}_pass!`;
 
     const { data: authData, error: authError } =
       await this.admin.auth.admin.createUser({
@@ -140,22 +170,34 @@ export class SeedHelper {
       );
     }
 
-    await this.admin.auth.admin.updateUserById(userId, { password });
+    let accessToken: string;
+    let refreshToken: string;
 
-    const anonClient = createClient(this.supabaseUrl, this.supabaseAnonKey, {
-      auth: { persistSession: false },
-    });
+    if (this.jwtSecret) {
+      accessToken = await this.mintAccessToken(userId, email);
+      refreshToken = "noop";
+    } else {
+      const password = `synth_${testId}_pass!`;
+      await this.admin.auth.admin.updateUserById(userId, { password });
 
-    const { data: signInData, error: signInError } =
-      await anonClient.auth.signInWithPassword({ email, password });
+      const anonClient = createClient(this.supabaseUrl, this.supabaseAnonKey, {
+        auth: { persistSession: false },
+      });
 
-    if (signInError || !signInData.session) {
-      throw new Error(
-        `SeedHelper.createUser: sign-in failed: ${signInError?.message}`,
-      );
+      const { data: signInData, error: signInError } =
+        await anonClient.auth.signInWithPassword({ email, password });
+
+      if (signInError || !signInData.session) {
+        throw new Error(
+          `SeedHelper.createUser: sign-in failed: ${signInError?.message}`,
+        );
+      }
+
+      accessToken = signInData.session.access_token;
+      refreshToken = signInData.session.refresh_token;
     }
 
-    this.sessionCache.set(userId, signInData.session.access_token);
+    this.sessionCache.set(userId, accessToken);
 
     return {
       id: userId,
@@ -165,8 +207,8 @@ export class SeedHelper {
       pixKeyType,
       pixKeyHint,
       onboarded,
-      accessToken: signInData.session.access_token,
-      refreshToken: signInData.session.refresh_token,
+      accessToken,
+      refreshToken,
     };
   }
 
