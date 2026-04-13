@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, expect } from "vitest";
 
 interface MinimalUser {
   id: string;
@@ -41,34 +40,34 @@ describe("buildSessionCookie", () => {
     const user = makeUser();
     const cookie = buildSessionCookie(user);
 
-    assert.match(cookie, /^base64-/);
+    expect(cookie).toMatch(/^base64-/);
 
     const session = decodeCookie(cookie);
-    assert.equal(session.access_token, "access-token-abc");
-    assert.equal(session.refresh_token, "refresh-token-xyz");
-    assert.equal(session.token_type, "bearer");
-    assert.equal(session.expires_in, 3600);
-    assert.equal(typeof session.expires_at, "number");
+    expect(session.access_token).toBe("access-token-abc");
+    expect(session.refresh_token).toBe("refresh-token-xyz");
+    expect(session.token_type).toBe("bearer");
+    expect(session.expires_in).toBe(3600);
+    expect(typeof session.expires_at).toBe("number");
     const user_obj = session.user as { id: string; email: string };
-    assert.equal(user_obj.id, "user-123");
-    assert.equal(user_obj.email, "test@example.com");
+    expect(user_obj.id).toBe("user-123");
+    expect(user_obj.email).toBe("test@example.com");
   });
 
   it("defaults refresh_token to 'noop' when refreshToken is empty string", () => {
     const user = makeUser({ refreshToken: "" });
     const session = decodeCookie(buildSessionCookie(user));
-    assert.equal(session.refresh_token, "noop");
+    expect(session.refresh_token).toBe("noop");
   });
 
   it("preserves 'noop' refresh token from JWT-minted users", () => {
     const user = makeUser({ refreshToken: "noop" });
     const session = decodeCookie(buildSessionCookie(user));
-    assert.equal(session.refresh_token, "noop");
+    expect(session.refresh_token).toBe("noop");
   });
 
   it("preserves a real refresh token when provided", () => {
     const user = makeUser({ refreshToken: "real-refresh-token" });
     const session = decodeCookie(buildSessionCookie(user));
-    assert.equal(session.refresh_token, "real-refresh-token");
+    expect(session.refresh_token).toBe("real-refresh-token");
   });
 });
