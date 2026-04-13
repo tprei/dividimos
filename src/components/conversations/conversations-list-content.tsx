@@ -1,13 +1,14 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Check, MessageSquare, Search, X } from "lucide-react";
+import { Check, MessageSquare, Search, Share2, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ConversationShareModal } from "@/components/conversations/conversation-share-modal";
 import { NewConversationButton } from "@/components/conversations/new-conversation-button";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
@@ -80,6 +81,7 @@ export function ConversationsListContent({
   const [conversations, setConversations] =
     useState<ConversationEntry[]>(initialConversations);
   const [searchQuery, setSearchQuery] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
 
   const activeConversations = useMemo(
     () => conversations.filter((c) => c.callerStatus === "accepted" && c.counterpartyStatus === "accepted"),
@@ -281,13 +283,27 @@ export function ConversationsListContent({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
+        className="flex items-start justify-between"
       >
-        <h1 className="text-2xl font-bold">Conversas</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {totalCount === 0
-            ? "Nenhuma conversa ainda"
-            : `${totalCount} conversa${totalCount !== 1 ? "s" : ""}`}
-        </p>
+        <div>
+          <h1 className="text-2xl font-bold">Conversas</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {totalCount === 0
+              ? "Nenhuma conversa ainda"
+              : `${totalCount} conversa${totalCount !== 1 ? "s" : ""}`}
+          </p>
+        </div>
+        {user && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 w-8 p-0"
+            onClick={() => setShareOpen(true)}
+            aria-label="Compartilhar convite"
+          >
+            <Share2 className="h-4 w-4" />
+          </Button>
+        )}
       </motion.div>
 
       {pendingIncoming.length > 0 && (
@@ -470,6 +486,14 @@ export function ConversationsListContent({
       </motion.div>
 
       <NewConversationButton />
+
+      {user && (
+        <ConversationShareModal
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          handle={user.handle}
+        />
+      )}
     </div>
   );
 }
