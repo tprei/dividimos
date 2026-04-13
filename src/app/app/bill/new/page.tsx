@@ -836,6 +836,7 @@ function NewBillPageContent() {
       const paid = store.payers.reduce((s, p) => s + p.amountCents, 0);
       return gt <= 0 || Math.abs(gt - paid) > 1;
     }
+    if (step === "summary") return store.wouldProduceNoEdges();
     return false;
   }, [navigating, isTypeStep, step, title, store]);
 
@@ -1654,6 +1655,20 @@ function NewBillPageContent() {
                       participants={store.participants}
                     />
                   )}
+                  {store.wouldProduceNoEdges() && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-lg border border-yellow-300 bg-yellow-50 p-4 dark:border-yellow-700 dark:bg-yellow-950"
+                    >
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                        Essa conta não gera nenhuma cobrança
+                      </p>
+                      <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-300">
+                        Cada pessoa já pagou exatamente o que consumiu. Volte e ajuste a divisão ou os pagadores para que alguém fique devendo.
+                      </p>
+                    </motion.div>
+                  )}
                 </>
               )}
             </motion.div>
@@ -1679,6 +1694,8 @@ function NewBillPageContent() {
           if (paid > 0 && gt > 0 && Math.abs(gt - paid) > 1) {
             errorMsg = `O pagamento (${formatBRL(paid)}) não bate com o total (${formatBRL(gt)})`;
           }
+        } else if (step === "summary" && store.wouldProduceNoEdges()) {
+          errorMsg = "Nenhuma dívida será gerada — quem pagou já consumiu tudo que pagou. Ajuste a divisão ou os pagadores.";
         }
         return (
           <div className="mt-6">

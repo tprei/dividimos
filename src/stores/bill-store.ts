@@ -90,6 +90,12 @@ interface ExpenseState {
    * Used when activating an expense to send to the server.
    */
   getExpenseShares: () => ExpenseShare[];
+  /**
+   * Returns true when the current splits and payers would produce zero debt
+   * edges — i.e. everyone already owes nothing because each person paid
+   * exactly what they consumed.
+   */
+  wouldProduceNoEdges: () => boolean;
   getParticipantTotal: (userId: string) => number;
   hydrateFromVoice: (result: VoiceExpenseResult, groupId?: string) => void;
   /**
@@ -499,6 +505,57 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       previewDebts: debts,
       expense: { ...expense, status: newStatus, updatedAt: new Date().toISOString() },
     });
+  },
+
+  wouldProduceNoEdges: () => {
+    const { expense, participants, guests, items, splits, billSplits, payers } = get();
+    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
+    if (!expense || allPersonIds.length === 0) return true;
+
+    const consumption = new Map<string, number>();
+    const payment = new Map<string, number>();
+    for (const id of allPersonIds) {
+      consumption.set(id, 0);
+      payment.set(id, 0);
+    }
+
+    if (expense.expenseType === "single_amount") {
+      for (const bs of billSplits) {
+        consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
+      }
+    } else {
+      const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+      for (const split of splits) {
+        consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
+      }
+      if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
+        const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
+        const weights = allPersonIds.map((id) => consumption.get(id) || 0);
+        const fees = distributeProportionally(totalServiceFee, weights);
+        allPersonIds.forEach((id, i) => {
+          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
+        });
+      }
+      if (expense.fixedFees > 0) {
+        const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
+        allPersonIds.forEach((id, i) => {
+          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
+        });
+      }
+    }
+
+    const effectivePayers = payers.length > 0
+      ? payers
+      : [{ expenseId: expense.id, userId: expense.creatorId, amountCents: get().getGrandTotal() }];
+    for (const payer of effectivePayers) {
+      payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
+    }
+
+    for (const id of allPersonIds) {
+      const net = (payment.get(id) || 0) - (consumption.get(id) || 0);
+      if (Math.abs(net) > 1) return false;
+    }
+    return true;
   },
 
   getExpenseShares: () => {
