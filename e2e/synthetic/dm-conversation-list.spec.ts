@@ -10,7 +10,9 @@ test.describe("DM conversations list", () => {
 
     await loginAs(solo);
     await page.goto("/app/conversations");
-    await expect(page.getByText("Conversas")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Conversas" }),
+    ).toBeVisible();
 
     await expect(page.getByText("Nenhuma conversa")).toBeVisible();
     await expect(
@@ -78,7 +80,9 @@ test.describe("DM conversations list", () => {
 
     await loginAs(alice);
     await page.goto("/app/conversations");
-    await expect(page.getByText("Conversas")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Conversas" }),
+    ).toBeVisible();
 
     await expect(page.getByText("Bob Lista")).toBeVisible();
     await expect(page.getByText("Carol Lista")).toBeVisible();
@@ -134,7 +138,9 @@ test.describe("DM conversations list", () => {
 
     await loginAs(alice);
     await page.goto("/app/conversations");
-    await expect(page.getByText("Conversas")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Conversas" }),
+    ).toBeVisible();
 
     const searchInput = page.getByPlaceholder(
       "Buscar por nome, @handle ou mensagem...",
@@ -185,7 +191,9 @@ test.describe("DM conversations list", () => {
 
     await loginAs(alice);
     await page.goto("/app/conversations");
-    await expect(page.getByText("Conversas")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Conversas" }),
+    ).toBeVisible();
 
     const searchInput = page.getByPlaceholder(
       "Buscar por nome, @handle ou mensagem...",
@@ -240,7 +248,9 @@ test.describe("DM conversations list", () => {
 
     await loginAs(alice);
     await page.goto("/app/conversations");
-    await expect(page.getByText("Conversas")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Conversas" }),
+    ).toBeVisible();
 
     const searchInput = page.getByPlaceholder(
       "Buscar por nome, @handle ou mensagem...",
@@ -290,7 +300,9 @@ test.describe("DM conversations list", () => {
 
     await loginAs(alice);
     await page.goto("/app/conversations");
-    await expect(page.getByText("Conversas")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Conversas" }),
+    ).toBeVisible();
 
     const searchInput = page.getByPlaceholder(
       "Buscar por nome, @handle ou mensagem...",
@@ -315,11 +327,13 @@ test.describe("DM conversations list", () => {
       seed.createUser({ name: "Bob Convite" }),
     ]);
 
-    await seed.createDmGroup(bob, alice);
+    await seed.createDmGroup(bob, alice, { autoAcceptCounterparty: false });
 
     await loginAs(alice);
     await page.goto("/app/conversations");
-    await expect(page.getByText("Conversas")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Conversas" }),
+    ).toBeVisible();
 
     await expect(page.getByText("Convites pendentes")).toBeVisible();
     await expect(page.getByText("Bob Convite")).toBeVisible();

@@ -79,6 +79,7 @@ export class SeedHelper {
   private groupIds: string[] = [];
   private expenseIds: string[] = [];
   private settlementIds: string[] = [];
+  private sessionCache = new Map<string, string>();
 
   constructor(admin: SupabaseClient) {
     this.admin = admin;
@@ -153,6 +154,8 @@ export class SeedHelper {
         `SeedHelper.createUser: sign-in failed: ${signInError?.message}`,
       );
     }
+
+    this.sessionCache.set(userId, signInData.session.access_token);
 
     return {
       id: userId,
@@ -244,7 +247,10 @@ export class SeedHelper {
   async createDmGroup(
     userA: SeededUser,
     userB: SeededUser,
+    options: { autoAcceptCounterparty?: boolean } = {},
   ): Promise<SeededGroup> {
+    const { autoAcceptCounterparty = true } = options;
+
     const client = await this.authenticateAs(userA.id);
 
     const { data, error } = await client.rpc("get_or_create_dm_group", {
@@ -272,16 +278,18 @@ export class SeedHelper {
       );
     }
 
-    const { error: acceptError } = await this.admin
-      .from("group_members")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
-      .eq("group_id", groupId)
-      .neq("status", "accepted");
+    if (autoAcceptCounterparty) {
+      const { error: acceptError } = await this.admin
+        .from("group_members")
+        .update({ status: "accepted", accepted_at: new Date().toISOString() })
+        .eq("group_id", groupId)
+        .neq("status", "accepted");
 
-    if (acceptError) {
-      throw new Error(
-        `SeedHelper.createDmGroup: auto-accept failed: ${acceptError.message}`,
-      );
+      if (acceptError) {
+        throw new Error(
+          `SeedHelper.createDmGroup: auto-accept failed: ${acceptError.message}`,
+        );
+      }
     }
 
     return {
@@ -506,49 +514,22 @@ export class SeedHelper {
   // -----------------------------------------------------------------------
 
   async authenticateAs(userId: string): Promise<SupabaseClient> {
-    const { data, error } =
-      await this.admin.auth.admin.generateLink({
-        type: "magiclink",
-        email: (await this.getUserEmail(userId))!,
-      });
-
-    if (error || !data) {
-      throw new Error(
-        `SeedHelper.authenticateAs: generateLink failed: ${error?.message}`,
-      );
-    }
-
-    const url = new URL(data.properties.action_link);
-    const token = url.searchParams.get("token");
-
-    if (!token) {
-      throw new Error("SeedHelper.authenticateAs: no token in magic link");
-    }
-
-    const anonClient = createClient(this.supabaseUrl, this.supabaseAnonKey, {
-      auth: { persistSession: false },
-    });
-
-    const { data: verifyData, error: verifyError } =
-      await anonClient.auth.verifyOtp({
-        token_hash: token,
-        type: "magiclink",
-      });
-
-    if (verifyError || !verifyData.session) {
-      throw new Error(
-        `SeedHelper.authenticateAs: verify failed: ${verifyError?.message}`,
-      );
-    }
-
-    return createClient(this.supabaseUrl, this.supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${verifyData.session.access_token}`,
+    const cached = this.sessionCache.get(userId);
+    if (cached) {
+      return createClient(this.supabaseUrl, this.supabaseAnonKey, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${cached}`,
+          },
         },
-      },
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+    }
+
+    throw new Error(
+      `SeedHelper.authenticateAs: no cached session for userId=${userId}. ` +
+        `Only users created via SeedHelper.createUser are supported.`,
+    );
   }
 
   // -----------------------------------------------------------------------
@@ -616,6 +597,7 @@ export class SeedHelper {
     this.expenseIds = [];
     this.groupIds = [];
     this.userIds = [];
+    this.sessionCache.clear();
   }
 
   // -----------------------------------------------------------------------
@@ -637,13 +619,6 @@ export class SeedHelper {
     return shares;
   }
 
-  private async getUserEmail(userId: string): Promise<string | null> {
-    const { data, error } =
-      await this.admin.auth.admin.getUserById(userId);
-
-    if (error || !data.user) return null;
-    return data.user.email ?? null;
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -58,6 +58,14 @@ export async function loginInContext(
       path: "/",
     },
   ]);
+
+  await ctx.addInitScript((userId: string) => {
+    try {
+      window.localStorage.setItem(`dividimos_tour_completed_${userId}`, "true");
+    } catch {
+      // localStorage unavailable; tour will show but test can still proceed
+    }
+  }, user.id);
 }
 
 // ---------------------------------------------------------------------------

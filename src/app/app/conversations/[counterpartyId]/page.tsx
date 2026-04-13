@@ -67,22 +67,7 @@ export default function ConversationPage({
 
     const supabase = createClient();
 
-    const [profileResult, dmResult] = await Promise.all([
-      supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", counterpartyId)
-        .single(),
-      getOrCreateDmGroup(counterpartyId),
-    ]);
-
-    if (profileResult.error || !profileResult.data) {
-      setError("Usuário não encontrado");
-      setLoading(false);
-      return;
-    }
-
-    setCounterparty(userProfileRowToUserProfile(profileResult.data));
+    const dmResult = await getOrCreateDmGroup(counterpartyId);
 
     if ("error" in dmResult) {
       setError(dmResult.error);
@@ -92,6 +77,20 @@ export default function ConversationPage({
 
     const gId = dmResult.groupId;
     setGroupId(gId);
+
+    const profileResult = await supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("id", counterpartyId)
+      .single();
+
+    if (profileResult.error || !profileResult.data) {
+      setError("Usuário não encontrado");
+      setLoading(false);
+      return;
+    }
+
+    setCounterparty(userProfileRowToUserProfile(profileResult.data));
 
     const [messagesResult, membersResult] = await Promise.all([
       loadConversationMessages(gId, { limit: PAGE_SIZE }),

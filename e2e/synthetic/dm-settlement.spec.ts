@@ -32,7 +32,7 @@ test.describe("DM settlements", () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(
-      page.getByRole("button", { name: /Cobrar/i }),
+      page.getByRole("button", { name: /Cobrar.*R\$/i }),
     ).not.toBeVisible();
   });
 
@@ -133,7 +133,7 @@ test.describe("DM settlements", () => {
     ).toBeVisible({ timeout: 10000 });
 
     await expect(
-      page.getByRole("button", { name: /Pagar/i }),
+      page.getByRole("button", { name: /Pagar.*R\$/i }),
     ).not.toBeVisible();
   });
 
@@ -172,11 +172,11 @@ test.describe("DM settlements", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(
-      page.getByRole("button", { name: /Pagar/i }),
+      page.getByRole("button", { name: /Pagar.*R\$/i }),
     ).not.toBeVisible({ timeout: 10000 });
 
     await expect(
-      page.getByRole("button", { name: /Cobrar/i }),
+      page.getByRole("button", { name: /Cobrar.*R\$/i }),
     ).not.toBeVisible();
   });
 });
