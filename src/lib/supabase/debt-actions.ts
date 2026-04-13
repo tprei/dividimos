@@ -25,6 +25,11 @@ interface ProfileRow {
 export async function fetchUserDebts(userId: string): Promise<DebtSummary[]> {
   const supabase = await createClient();
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || user.id !== userId) return [];
+
   const { data: balances, error } = await supabase
     .from("balances")
     .select("group_id, user_a, user_b, amount_cents")

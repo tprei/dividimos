@@ -57,10 +57,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 403 });
   }
 
+  let safeUrl = reqBody.url;
+  if (safeUrl) {
+    if (safeUrl.startsWith("/") && !safeUrl.startsWith("//")) {
+      // relative path — safe
+    } else {
+      try {
+        const parsed = new URL(safeUrl);
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+          safeUrl = undefined;
+        }
+      } catch {
+        safeUrl = undefined;
+      }
+    }
+  }
+
   const payload: PushPayload = {
     title,
     body: notifBody,
-    url: reqBody.url,
+    url: safeUrl,
     icon: "/icon-192.png",
     tag: reqBody.tag,
   };
