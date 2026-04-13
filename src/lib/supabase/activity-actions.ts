@@ -70,6 +70,11 @@ export async function fetchActivityFeed(
   const { userId, groupId, limit = 30, before } = options;
   const supabase = await createClient();
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || user.id !== userId) return [];
+
   const userGroupIds = await resolveUserGroupIds(supabase, userId, groupId);
   if (userGroupIds.length === 0) return [];
 

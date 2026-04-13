@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockFrom } = vi.hoisted(() => {
+const { mockFrom, mockGetUser } = vi.hoisted(() => {
   const mockFrom = vi.fn();
-  return { mockFrom };
+  const mockGetUser = vi.fn().mockResolvedValue({
+    data: { user: { id: "u1" } },
+  });
+  return { mockFrom, mockGetUser };
 });
 
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn().mockResolvedValue({ from: mockFrom }),
+  createClient: vi.fn().mockResolvedValue({
+    from: mockFrom,
+    auth: { getUser: mockGetUser },
+  }),
 }));
 
 import { fetchActivityFeed } from "./activity-actions";

@@ -19,6 +19,13 @@ import { createServerClient } from "@supabase/ssr";
  * Returns: { success, userId, redirect, cookies }
  */
 export async function POST(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Dev login is disabled in production" },
+      { status: 404 },
+    );
+  }
+
   if (process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED !== "true") {
     return NextResponse.json(
       { error: "Dev login is only available in test mode" },
