@@ -253,7 +253,7 @@ export function DashboardContent({
           className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
         >
           <ScanLine className="h-3.5 w-3.5" />
-          Ler cupom
+          Escanear notinha
         </Link>
         <Link
           href="/app/scan-invite"
