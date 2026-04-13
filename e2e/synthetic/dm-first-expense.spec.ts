@@ -45,9 +45,9 @@ test.describe("DM first expense", () => {
       .getByRole("button", { name: /Próximo|Continuar/i })
       .click();
 
-    // summary step → finalize
+    // summary step → finalize ("Gerar cobranças Pix" activates the expense)
     await page
-      .getByRole("button", { name: /Finalizar|Confirmar|Ativar/i })
+      .getByRole("button", { name: /Gerar cobranças Pix/i })
       .click();
     await page.waitForLoadState("networkidle");
 
