@@ -16,13 +16,13 @@ export default async function PublicProfilePage({
   const normalizedHandle = handle.toLowerCase().trim();
 
   const admin = createAdminClient();
-  const { data: profile } = await admin
+  const { data: profile, error } = await admin
     .from("user_profiles")
     .select("id, handle, name, avatar_url")
     .eq("handle", normalizedHandle)
     .single();
 
-  if (!profile) notFound();
+  if (error || !profile) notFound();
 
   const supabase = await createClient();
   const {
@@ -37,14 +37,14 @@ export default async function PublicProfilePage({
         <div className="flex flex-col items-center text-center">
           <div className="rounded-full bg-card p-1 shadow-lg">
             <UserAvatar
-              name={profile.name}
+              name={profile.name || normalizedHandle}
               avatarUrl={profile.avatar_url}
               size="lg"
               className="h-24 w-24 text-2xl"
             />
           </div>
 
-          <h1 className="mt-4 text-2xl font-bold">{profile.name}</h1>
+          <h1 className="mt-4 text-2xl font-bold">{profile.name || `@${profile.handle}`}</h1>
           <p className="text-muted-foreground">@{profile.handle}</p>
         </div>
 
@@ -64,7 +64,7 @@ export default async function PublicProfilePage({
               Criar conta
             </Link>
             <p className="text-center text-xs text-muted-foreground">
-              Crie sua conta para dividir contas com {profile.name}
+              Crie sua conta para dividir contas com {profile.name || `@${profile.handle}`}
             </p>
           </div>
         )}
