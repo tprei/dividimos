@@ -124,6 +124,7 @@ function NewBillPageContent() {
   const [hasContactPicker, setHasContactPicker] = useState(false);
   const [isDmMode, setIsDmMode] = useState(false);
   const dmLoadedRef = useRef(false);
+  const draftEditLoadedRef = useRef(false);
 
   useEffect(() => {
     setHasContactPicker(isContactPickerSupported());
@@ -177,6 +178,37 @@ function NewBillPageContent() {
         setStep("info");
       }
     })();
+  }, [searchParams, authUser, store]);
+
+  // Chat draft edit mode: consume ?groupId=<id>&title=<text>&amount=<cents>
+  // emitted by handleEditDraft in the conversation page when a user clicks
+  // "edit" on an AI-parsed expense draft. Skip when ?dm= is present so the
+  // dm quick-charge handler above takes precedence.
+  useEffect(() => {
+    const draftGroupId = searchParams.get("groupId");
+    const draftTitle = searchParams.get("title");
+    const draftAmount = searchParams.get("amount");
+    const dmUserId = searchParams.get("dm");
+    if (
+      !draftGroupId ||
+      !draftTitle ||
+      !draftAmount ||
+      dmUserId ||
+      !authUser ||
+      draftEditLoadedRef.current
+    ) {
+      return;
+    }
+    const amountCents = Number.parseInt(draftAmount, 10);
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return;
+    draftEditLoadedRef.current = true;
+
+    store.setCurrentUser(authUser);
+    store.createExpense(draftTitle, "single_amount", undefined, draftGroupId);
+    store.updateExpense({ totalAmountInput: amountCents });
+    setTitle(draftTitle);
+    setBillType("single_amount");
+    setStep("participants");
   }, [searchParams, authUser, store]);
 
   const handlePickContacts = useCallback(async () => {
