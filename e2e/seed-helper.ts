@@ -272,6 +272,18 @@ export class SeedHelper {
       );
     }
 
+    const { error: acceptError } = await this.admin
+      .from("group_members")
+      .update({ status: "accepted", accepted_at: new Date().toISOString() })
+      .eq("group_id", groupId)
+      .neq("status", "accepted");
+
+    if (acceptError) {
+      throw new Error(
+        `SeedHelper.createDmGroup: auto-accept failed: ${acceptError.message}`,
+      );
+    }
+
     return {
       id: groupId,
       name: groupRow.name as string,

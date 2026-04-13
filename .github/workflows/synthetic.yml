@@ -7,11 +7,11 @@ on:
 jobs:
   synthetic:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
 
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +64,7 @@ jobs:
           echo "Server did not start in time" && exit 1
 
       - name: Run synthetic tests
-        run: npm run test:synthetic -- --workers=2 --shard=${{ matrix.shard }}/2
+        run: npm run test:synthetic -- --shard=${{ matrix.shard }}/3
         env:
           CI: "true"
           NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
