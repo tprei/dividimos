@@ -3,6 +3,14 @@ name: Synthetic Tests
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "e2e/synthetic/**"
+      - "e2e/seed-helper.ts"
+      - "e2e/fixtures.ts"
+      - "playwright.config.ts"
+      - "supabase/migrations/**"
+      - ".github/workflows/synthetic.yml"
 
 jobs:
   synthetic:
