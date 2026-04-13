@@ -1,0 +1,79 @@
+import React from "react";
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({
+    user: {
+      id: "u1",
+      name: "Ana Costa",
+      handle: "anacosta",
+      email: "ana@test.com",
+      avatarUrl: null,
+      pixKeyType: "email",
+      pixKeyHint: "a**@test.com",
+    },
+    loading: false,
+  }),
+}));
+
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: { signOut: vi.fn().mockResolvedValue({}) },
+  }),
+}));
+
+vi.mock("@/components/profile/profile-share-modal", () => ({
+  ProfileShareModal: ({
+    open,
+    onClose,
+    handle,
+  }: {
+    open: boolean;
+    onClose: () => void;
+    handle: string;
+  }) =>
+    open ? (
+      <div data-testid="share-modal">
+        <span>@{handle}</span>
+        <button onClick={onClose}>close</button>
+      </div>
+    ) : null,
+}));
+
+vi.mock("react-hot-toast", () => ({ default: { success: vi.fn() } }));
+
+import ProfilePage from "./page";
+
+describe("ProfilePage QR share button", () => {
+  it("renders the share button with QR icon", () => {
+    render(<ProfilePage />);
+    const btn = screen.getByLabelText("Compartilhar perfil");
+    expect(btn).toBeInTheDocument();
+  });
+
+  it("opens ProfileShareModal when QR button is clicked", async () => {
+    const user = userEvent.setup();
+    render(<ProfilePage />);
+
+    expect(screen.queryByTestId("share-modal")).not.toBeInTheDocument();
+
+    await user.click(screen.getByLabelText("Compartilhar perfil"));
+
+    const modal = screen.getByTestId("share-modal");
+    expect(modal).toBeInTheDocument();
+    expect(modal).toHaveTextContent("@anacosta");
+  });
+
+  it("closes the modal when onClose is called", async () => {
+    const user = userEvent.setup();
+    render(<ProfilePage />);
+
+    await user.click(screen.getByLabelText("Compartilhar perfil"));
+    expect(screen.getByTestId("share-modal")).toBeInTheDocument();
+
+    await user.click(screen.getByText("close"));
+    expect(screen.queryByTestId("share-modal")).not.toBeInTheDocument();
+  });
+});
