@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       .from("group_members")
       .select("user_id")
       .eq("group_id", groupId)
+      .eq("status", "accepted")
       .in("user_id", [user.id, recipientUserId]),
     supabase.from("groups").select("creator_id").eq("id", groupId).single(),
     admin.from("users").select("pix_key_encrypted, name").eq("id", recipientUserId).single(),

@@ -3,6 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import React from "react";
 
+vi.mock("server-only", () => ({}));
+
 // Ensure DOM cleanup between tests
 afterEach(() => {
   cleanup();

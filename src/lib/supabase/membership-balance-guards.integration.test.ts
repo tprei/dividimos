@@ -540,7 +540,7 @@ describe.skipIf(!isIntegrationTestReady)(
         });
       });
 
-      it("activate_expense with removed member in shares — documents behavior", async () => {
+      it("activate_expense rejects shares for removed/non-member users", async () => {
         // Create a draft expense via admin with removed carol in shares
         const { data: expense } = await adminClient!
           .from("expenses")
@@ -585,26 +585,12 @@ describe.skipIf(!isIntegrationTestReady)(
           p_expense_id: expense!.id,
         });
 
-        // activate_expense uses my_group_ids() for membership check of the creator,
-        // but does NOT validate that share/payer users are group members.
-        // This documents the current behavior — carol's share is accepted and
-        // a balance is created for her even though she's not a member.
-        // This is a known limitation that could be tightened in the future.
-        if (error) {
-          // If this now fails, the validation was added — great!
-          expect(error.message).toBeDefined();
-        } else {
-          // Current behavior: activation succeeds
-          // Carol gets a balance row even though she's not a member
-          const balance = await getBalanceBetween(
-            groupId,
-            carol.id,
-            alice.id,
-          );
-          expect(balance).toBeGreaterThan(0);
-        }
+        expect(error).not.toBeNull();
+        expect(error!.message).toContain("non_member");
 
-        // Cleanup
+        const balance = await getBalanceBetween(groupId, carol.id, alice.id);
+        expect(balance).toBe(0);
+
         await adminClient!.from("expenses").delete().eq("id", expense!.id);
       });
     });
@@ -843,6 +829,54 @@ describe.skipIf(!isIntegrationTestReady)(
 
         // Document current behavior: settlements are not cleaned up
         expect(settlements!.length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    // ──────────────────────────────────────────────────────
+    // has_outstanding_balance — membership guard
+    // ──────────────────────────────────────────────────────
+    describe("has_outstanding_balance rejects non-members", () => {
+      let alice: TestUser;
+      let bob: TestUser;
+      let outsider: TestUser;
+      let groupId: string;
+
+      beforeAll(async () => {
+        [alice, bob, outsider] = await createTestUsers(3);
+        const group = await createTestGroupWithMembers(alice, [bob]);
+        groupId = group.id;
+
+        await createAndActivateExpense({
+          creator: alice,
+          groupId,
+          shares: [{ userId: bob.id, amount: 5000 }],
+          payers: [{ userId: alice.id, amount: 5000 }],
+        });
+      });
+
+      it("non-member cannot probe balance existence", async () => {
+        const outsiderClient = authenticateAs(outsider);
+        const { error } = await outsiderClient.rpc("has_outstanding_balance", {
+          p_group_id: groupId,
+          p_user_id: bob.id,
+        });
+
+        expect(error).not.toBeNull();
+        expect(error!.message).toContain("permission_denied");
+      });
+
+      it("accepted member can check balance existence", async () => {
+        const aliceClient = authenticateAs(alice);
+        const { data, error } = await aliceClient.rpc(
+          "has_outstanding_balance",
+          {
+            p_group_id: groupId,
+            p_user_id: bob.id,
+          },
+        );
+
+        expect(error).toBeNull();
+        expect(data).toBe(true);
       });
     });
 
