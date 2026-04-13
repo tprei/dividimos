@@ -6,6 +6,10 @@ import {
   decryptPixKey as decrypt,
 } from "@/lib/crypto";
 
+type SubscribeBody =
+  | { subscription: PushSubscriptionJSON; channel?: "web" }
+  | { token: string; channel: "fcm" };
+
 export async function POST(request: Request) {
   const supabase = await createClient();
 
@@ -16,14 +20,69 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  let body: { subscription: PushSubscriptionJSON };
+  let body: SubscribeBody;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const { subscription } = body;
+  const channel = ("channel" in body && body.channel === "fcm") ? "fcm" : "web";
+
+  const admin = createAdminClient();
+
+  if (channel === "fcm") {
+    const fcmBody = body as { token: string; channel: "fcm" };
+    if (!fcmBody.token || typeof fcmBody.token !== "string") {
+      return NextResponse.json(
+        { error: "Token FCM obrigatório" },
+        { status: 400 },
+      );
+    }
+
+    const { data: existing } = await admin
+      .from("push_subscriptions")
+      .select("id, subscription")
+      .eq("user_id", user.id)
+      .eq("channel", "fcm");
+
+    const duplicateIds: string[] = [];
+    for (const row of existing ?? []) {
+      try {
+        const decrypted = decrypt(row.subscription);
+        if (decrypted === fcmBody.token) {
+          duplicateIds.push(row.id);
+        }
+      } catch {
+        // Skip rows that can't be decrypted — stale data
+      }
+    }
+
+    if (duplicateIds.length > 0) {
+      await admin.from("push_subscriptions").delete().in("id", duplicateIds);
+    }
+
+    const encrypted = encrypt(fcmBody.token);
+
+    const { error } = await admin.from("push_subscriptions").insert({
+      user_id: user.id,
+      subscription: encrypted,
+      channel: "fcm",
+    });
+
+    if (error) {
+      return NextResponse.json(
+        { error: "Erro ao salvar subscription" },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // Web Push flow (existing behavior)
+  const webBody = body as { subscription: PushSubscriptionJSON };
+  const { subscription } = webBody;
   if (!subscription?.endpoint || !subscription?.keys) {
     return NextResponse.json(
       { error: "Subscription inválida — endpoint e keys são obrigatórios" },
@@ -31,12 +90,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const admin = createAdminClient();
-
   const { data: existing } = await admin
     .from("push_subscriptions")
     .select("id, subscription")
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .eq("channel", "web");
 
   const duplicateIds: string[] = [];
   for (const row of existing ?? []) {
@@ -61,6 +119,7 @@ export async function POST(request: Request) {
   const { error } = await admin.from("push_subscriptions").insert({
     user_id: user.id,
     subscription: encrypted,
+    channel: "web",
   });
 
   if (error) {

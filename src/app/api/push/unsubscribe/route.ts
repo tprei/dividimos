@@ -13,23 +13,63 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  let body: { endpoint: string };
+  let body: { endpoint?: string; token?: string; channel?: "web" | "fcm" };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
+  const channel = body.channel === "fcm" ? "fcm" : "web";
+
+  const admin = createAdminClient();
+
+  if (channel === "fcm") {
+    const { token } = body;
+    if (!token) {
+      return NextResponse.json({ error: "Token FCM é obrigatório" }, { status: 400 });
+    }
+
+    const { data: rows, error: fetchError } = await admin
+      .from("push_subscriptions")
+      .select("id, subscription")
+      .eq("user_id", user.id)
+      .eq("channel", "fcm");
+
+    if (fetchError || !rows) {
+      return NextResponse.json({ error: "Erro ao buscar subscriptions" }, { status: 500 });
+    }
+
+    const idsToDelete: string[] = [];
+    for (const row of rows) {
+      try {
+        const decrypted = decrypt(row.subscription);
+        if (decrypted === token) {
+          idsToDelete.push(row.id);
+        }
+      } catch {
+        // Skip rows that can't be decrypted — they're stale anyway
+      }
+    }
+
+    if (idsToDelete.length > 0) {
+      await admin.from("push_subscriptions").delete().in("id", idsToDelete);
+    }
+
+    return NextResponse.json({ ok: true, deleted: idsToDelete.length });
+  }
+
+  // Web Push flow (existing behavior)
   const { endpoint } = body;
   if (!endpoint) {
     return NextResponse.json({ error: "Endpoint é obrigatório" }, { status: 400 });
   }
 
-  const admin = createAdminClient();
   const { data: rows, error: fetchError } = await admin
     .from("push_subscriptions")
     .select("id, subscription")
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .eq("channel", "web");
 
   if (fetchError || !rows) {
     return NextResponse.json({ error: "Erro ao buscar subscriptions" }, { status: 500 });
