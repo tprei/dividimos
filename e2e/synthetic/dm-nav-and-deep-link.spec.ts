@@ -57,6 +57,13 @@ test.describe("DM navigation and deep links", () => {
 
     await expect(page).toHaveURL(/\/app\/conversations\/.+/, { timeout: 8000 });
 
+    // Wait for the conversation page to finish initialize() — bob's name in
+    // the header only renders after getOrCreateDmGroup completes, so this
+    // proves the DM pair has been written before we query it.
+    await expect(page.getByText(bob.name).first()).toBeVisible({
+      timeout: 10000,
+    });
+
     // A DM pair should now exist for alice+bob
     const { data: dmPairs } = await adminClient
       .from("dm_pairs")
