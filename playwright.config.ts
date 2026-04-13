@@ -34,13 +34,14 @@ export default defineConfig({
       testDir: "./e2e/flows",
     },
     // Synthetic tests — self-contained, each test seeds its own data via SeedHelper.
-    // CI shards these across jobs via --shard=N/3; each shard runs sequentially
-    // (workers: 1) because the shared local Supabase stack races on magic-link
-    // generation under intra-job parallelism.
+    // JWT-based auth (no GoTrue sign-in) eliminates magic-link races, so these
+    // can safely run in parallel within each CI shard.
     {
       name: "synthetic",
       use: { ...devices["Desktop Chrome"] },
       testDir: "./e2e/synthetic",
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : 1,
     },
   ],
   // Run local dev server before tests
