@@ -33,11 +33,13 @@ export default defineConfig({
       dependencies: ["setup"],
       testDir: "./e2e/flows",
     },
-    // Synthetic tests — self-contained, each test seeds its own data via SeedHelper
+    // Synthetic tests — self-contained, each test seeds its own data via SeedHelper.
+    // Safe to run in parallel; CI passes --workers=2 --shard=N/2 to fan them out.
     {
       name: "synthetic",
       use: { ...devices["Desktop Chrome"] },
       testDir: "./e2e/synthetic",
+      fullyParallel: true,
     },
   ],
   // Run local dev server before tests
