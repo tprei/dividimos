@@ -6,6 +6,7 @@ import { formatBRL } from "@/lib/currency";
 import { isWebPushConfigured } from "./web-push";
 import { notifyUser } from "./notify-user";
 import type { PushPayload } from "./web-push";
+import type { NotificationCategory } from "@/types";
 
 async function getCallerId(): Promise<string | null> {
   const supabase = await createClient();
@@ -16,12 +17,37 @@ async function getCallerId(): Promise<string | null> {
 }
 
 /**
+ * Check whether a user has a notification category enabled.
+ * Missing key = enabled (opt-out model).
+ */
+export async function checkPreference(
+  userId: string,
+  category: NotificationCategory,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("users")
+    .select("notification_preferences")
+    .eq("id", userId)
+    .single();
+  if (!data) return true;
+  const prefs = (data.notification_preferences ?? {}) as Record<string, boolean>;
+  return prefs[category] !== false;
+}
+
+/**
  * Fire-and-forget wrapper that swallows all errors.
  * Push notification failure must never break the primary action.
  */
-async function safeNotify(userId: string, payload: PushPayload): Promise<void> {
+async function safeNotify(
+  userId: string,
+  payload: PushPayload,
+  category: NotificationCategory,
+): Promise<void> {
   if (!isWebPushConfigured()) return;
   try {
+    const enabled = await checkPreference(userId, category);
+    if (!enabled) return;
     await notifyUser(userId, payload);
   } catch {
     // Intentionally swallowed — push is best-effort
@@ -36,10 +62,11 @@ async function safeNotifyMany(
   userIds: string[],
   excludeUserId: string,
   payload: PushPayload,
+  category: NotificationCategory,
 ): Promise<void> {
   const recipients = userIds.filter((id) => id !== excludeUserId);
   if (recipients.length === 0) return;
-  await Promise.all(recipients.map((id) => safeNotify(id, payload)));
+  await Promise.all(recipients.map((id) => safeNotify(id, payload, category)));
 }
 
 // ============================================================
@@ -98,7 +125,7 @@ export async function notifyGroupInvite(
     body: `${inviterName} convidou você para "${groupName}"`,
     url: "/app/groups",
     tag: `group-invite-${groupId}`,
-  });
+  }, "groups");
 }
 
 // ============================================================
@@ -146,7 +173,7 @@ export async function notifyGroupAccepted(
     body: `${accepterName} entrou em "${groupName}"`,
     url: `/app/groups/${groupId}`,
     tag: `group-accepted-${groupId}`,
-  });
+  }, "groups");
 }
 
 // ============================================================
@@ -204,7 +231,7 @@ export async function notifyExpenseActivated(
     body: `${creatorName} adicionou "${title}" — ${amount}`,
     url: `/app/bill/${expenseId}`,
     tag: `expense-${expenseId}`,
-  });
+  }, "expenses");
 }
 
 // ============================================================
@@ -246,7 +273,132 @@ export async function notifySettlementRecorded(
     body: `${fromName} pagou ${amount} em "${groupName}"`,
     url: `/app/groups/${groupId}`,
     tag: `settlement-${groupId}`,
-  });
+  }, "settlements");
+}
+
+// ============================================================
+// Payment nudge (creditor → debtor reminder)
+// ============================================================
+
+/**
+ * Notify the debtor that the creditor is requesting payment.
+ * Called from the settlement UI when creditor taps "Lembrar".
+ * Rate limiting is enforced client-side (localStorage cooldown).
+ */
+export async function notifyPaymentNudge(
+  groupId: string,
+  debtorId: string,
+  amountCents: number,
+): Promise<void> {
+  if (!isWebPushConfigured()) return;
+
+  const callerId = await getCallerId();
+  if (!callerId || callerId === debtorId) return;
+
+  const admin = createAdminClient();
+
+  const [groupResult, creditorResult] = await Promise.all([
+    admin.from("groups").select("name").eq("id", groupId).single(),
+    admin
+      .from("user_profiles")
+      .select("name")
+      .eq("id", callerId)
+      .single(),
+  ]);
+
+  const groupName = groupResult.data?.name ?? "um grupo";
+  const creditorName = creditorResult.data?.name ?? "Alguém";
+  const amount = formatBRL(amountCents);
+
+  await safeNotify(debtorId, {
+    title: "Lembrete de pagamento",
+    body: `${creditorName} pediu ${amount} em "${groupName}"`,
+    url: `/app/groups/${groupId}`,
+    tag: `nudge-${groupId}-${callerId}`,
+  }, "nudges");
+}
+
+// ============================================================
+// Expense edited
+// ============================================================
+
+/**
+ * Notify affected group members when an active expense is edited.
+ * Accepts pre-fetched data so it works even if the caller already
+ * updated the row.
+ */
+export async function notifyExpenseEdited(
+  expenseId: string,
+  groupId: string,
+  title: string,
+  affectedUserIds: string[],
+): Promise<void> {
+  if (!isWebPushConfigured()) return;
+
+  const callerId = await getCallerId();
+  if (!callerId) return;
+
+  const admin = createAdminClient();
+
+  const [groupResult, editorResult] = await Promise.all([
+    admin.from("groups").select("name").eq("id", groupId).single(),
+    admin
+      .from("user_profiles")
+      .select("name")
+      .eq("id", callerId)
+      .single(),
+  ]);
+
+  const groupName = groupResult.data?.name ?? "um grupo";
+  const editorName = editorResult.data?.name ?? "Alguém";
+
+  await safeNotifyMany(affectedUserIds, callerId, {
+    title: `Despesa editada em "${groupName}"`,
+    body: `${editorName} editou "${title}"`,
+    url: `/app/bill/${expenseId}`,
+    tag: `expense-edited-${expenseId}`,
+  }, "expenses");
+}
+
+// ============================================================
+// Expense deleted
+// ============================================================
+
+/**
+ * Notify affected group members when an expense is deleted.
+ * Accepts pre-fetched data since the expense row may already
+ * be gone by the time this runs.
+ */
+export async function notifyExpenseDeleted(
+  groupId: string,
+  title: string,
+  affectedUserIds: string[],
+): Promise<void> {
+  if (!isWebPushConfigured()) return;
+
+  const callerId = await getCallerId();
+  if (!callerId) return;
+
+  const admin = createAdminClient();
+
+  const [groupResult, deleterResult] = await Promise.all([
+    admin.from("groups").select("name").eq("id", groupId).single(),
+    admin
+      .from("user_profiles")
+      .select("name")
+      .eq("id", callerId)
+      .single(),
+  ]);
+
+  const groupName = groupResult.data?.name ?? "um grupo";
+  const deleterName = deleterResult.data?.name ?? "Alguém";
+
+  await safeNotifyMany(affectedUserIds, callerId, {
+    title: `Despesa removida em "${groupName}"`,
+    body: `${deleterName} removeu "${title}"`,
+    url: `/app/groups/${groupId}`,
+    tag: `expense-deleted-${groupId}`,
+  }, "expenses");
 }
 
 // ============================================================
@@ -422,5 +574,5 @@ export async function notifyDmTextMessage(
     body: truncated,
     url: `/app/conversations/${callerId}`,
     tag: `dm-${groupId}`,
-  });
+  }, "messages");
 }
