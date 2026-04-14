@@ -59,6 +59,13 @@ describe("capacitor.config", () => {
     expect(config.android).toBeDefined();
   });
 
+  it("has PushNotifications plugin config with presentation options", async () => {
+    const config = await loadConfig();
+    expect(config.plugins?.PushNotifications).toEqual({
+      presentationOptions: ["badge", "sound", "alert"],
+    });
+  });
+
   it("enables cleartext only in dev mode", async () => {
     delete process.env.CAPACITOR_DEV;
     const prodConfig = await loadConfig();
