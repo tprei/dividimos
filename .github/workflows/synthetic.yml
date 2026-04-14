@@ -4,22 +4,21 @@ on:
   push:
     branches: [main]
   pull_request:
-    paths:
-      - "e2e/synthetic/**"
-      - "e2e/seed-helper.ts"
-      - "e2e/fixtures.ts"
-      - "playwright.config.ts"
-      - "supabase/migrations/**"
-      - ".github/workflows/synthetic.yml"
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+  PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  NEXT_PUBLIC_DEV_LOGIN_ENABLED: "true"
 
 jobs:
   synthetic:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: ${{ github.event_name == 'pull_request' && fromJSON('[1, 2]') || fromJSON('[1, 2, 3]') }}
+        total: ${{ github.event_name == 'pull_request' && fromJSON('[2]') || fromJSON('[3]') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -33,14 +32,26 @@ jobs:
 
       - run: npm ci
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright deps (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Start Supabase
         id: supabase
         run: |
           for attempt in 1 2 3; do
-            if supabase start; then
+            if supabase start -x vector,imgproxy,logflare,edge-runtime; then
               break
             fi
             echo "supabase start failed (attempt $attempt/3), retrying..."
@@ -49,28 +60,39 @@ jobs:
               echo "supabase start failed after 3 attempts" && exit 1
             fi
           done
-          ANON_KEY=$(supabase status --output json | jq -r '.ANON_KEY')
-          SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.SERVICE_ROLE_KEY')
-          echo "anon_key=${ANON_KEY}" >> $GITHUB_OUTPUT
-          echo "service_role_key=${SERVICE_ROLE_KEY}" >> $GITHUB_OUTPUT
+          STATUS=$(supabase status --output json)
+          echo "anon_key=$(echo "$STATUS" | jq -r '.ANON_KEY')" >> $GITHUB_OUTPUT
+          echo "service_role_key=$(echo "$STATUS" | jq -r '.SERVICE_ROLE_KEY')" >> $GITHUB_OUTPUT
+          echo "jwt_secret=$(echo "$STATUS" | jq -r '.JWT_SECRET')" >> $GITHUB_OUTPUT
+
+      - name: Cache Next.js build
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**') }}
+          restore-keys: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
       - name: Build app
+        if: github.event_name != 'pull_request'
         run: npm run build
         env:
-          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-          NEXT_PUBLIC_DEV_LOGIN_ENABLED: "true"
 
-      - name: Start server
+      - name: Start server (production)
+        if: github.event_name != 'pull_request'
         run: npm run start &
         env:
-          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-          NEXT_PUBLIC_DEV_LOGIN_ENABLED: "true"
+
+      - name: Start server (Turbopack dev)
+        if: github.event_name == 'pull_request'
+        run: npx next dev --turbopack &
+        env:
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
 
       - name: Wait for server
         run: |
@@ -81,14 +103,12 @@ jobs:
           echo "Server did not start in time" && exit 1
 
       - name: Run synthetic tests
-        run: npm run test:synthetic -- --shard=${{ matrix.shard }}/3
+        run: npm run test:synthetic -- --shard=${{ matrix.shard }}/${{ matrix.total }}
         env:
           CI: "true"
-          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-          NEXT_PUBLIC_DEV_LOGIN_ENABLED: "true"
+          SUPABASE_JWT_SECRET: ${{ steps.supabase.outputs.jwt_secret }}
           E2E_BASE_URL: http://localhost:3000
 
       - name: Upload test artifacts
