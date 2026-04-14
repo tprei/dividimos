@@ -348,6 +348,7 @@ export default function ConversationPage({
         return;
       }
       setChargeStatus("confirmed");
+      window.dispatchEvent(new CustomEvent("app-refresh"));
       chargeResetTimer.current = setTimeout(() => {
         setChargeSheetOpen(false);
         setChargeStatus("idle");
@@ -408,6 +409,7 @@ export default function ConversationPage({
       }
 
       setSplitStatus("confirmed");
+      window.dispatchEvent(new CustomEvent("app-refresh"));
       splitResetTimer.current = setTimeout(() => {
         setSplitSheetOpen(false);
         setSplitStatus("idle");
