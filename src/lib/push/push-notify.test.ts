@@ -689,15 +689,15 @@ describe("push-notify", () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it("skips when caller does not match fromUserId", async () => {
-      mockCaller("different-user");
+    it("skips when caller is neither the debtor nor the creditor", async () => {
+      mockCaller("outsider");
 
       await notifySettlementRecorded("group-1", "from-1", "to-1", 2500);
 
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it("notifies the creditor with settlement details", async () => {
+    it("notifies the creditor when the debtor records the settlement (pay mode)", async () => {
       mockCaller("from-1");
 
       const chain = mockSupabaseChain({ data: null, error: null });
@@ -831,6 +831,114 @@ describe("push-notify", () => {
         title: "Pagamento registrado",
         body: "Ana pagou R$\u00a025,00",
         url: "/app/conversations/from-1",
+        tag: "settlement-group-1",
+      });
+    });
+
+    it("notifies the debtor when the creditor records a collection (collect mode)", async () => {
+      // When the creditor taps "Cobrar" in the UI, the client calls
+      // notifySettlementRecorded with the debtor as fromUserId and the
+      // creditor as toUserId but the caller/session is the creditor.
+      // The debtor should be notified that their payment was marked as
+      // received.
+      mockCaller("to-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Viagem", is_dm: false },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Bia" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifySettlementRecorded("group-1", "from-1", "to-1", 1500);
+
+      expect(notifyUser).toHaveBeenCalledWith("from-1", {
+        title: "Pagamento registrado",
+        body: 'Bia marcou seu pagamento de R$\u00a015,00 como recebido em "Viagem"',
+        url: "/app/groups/group-1",
+        tag: "settlement-group-1",
+      });
+    });
+
+    it("notifies the debtor in a DM when the creditor records a collection", async () => {
+      mockCaller("to-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "", is_dm: true },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "to-1", user_b: "from-1" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Bia" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifySettlementRecorded("group-1", "from-1", "to-1", 500);
+
+      expect(notifyUser).toHaveBeenCalledWith("from-1", {
+        title: "Pagamento registrado",
+        body: "Bia marcou seu pagamento de R$\u00a05,00 como recebido",
+        url: "/app/conversations/to-1",
         tag: "settlement-group-1",
       });
     });

@@ -293,8 +293,18 @@ export async function notifyExpenseActivated(
 // ============================================================
 
 /**
- * Notify the creditor when a settlement is recorded.
+ * Notify the other party when a settlement is recorded.
  * Called after a successful record_and_settle RPC.
+ *
+ * Two directions, depending on who initiated:
+ *   - Pay mode    (caller = debtor/fromUser): notify the creditor
+ *                  "{payer} pagou {amount}"
+ *   - Collect mode (caller = creditor/toUser): notify the debtor
+ *                   "{creditor} marcou seu pagamento de {amount} como recebido"
+ *
+ * Previously the guard only accepted `callerId === fromUserId`, so the
+ * "Cobrar" flow (creditor records an incoming payment) silently dropped
+ * every notification. Both directions now flow through a single function.
  */
 export async function notifySettlementRecorded(
   groupId: string,
@@ -305,27 +315,42 @@ export async function notifySettlementRecorded(
   if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
-  if (!callerId || callerId !== fromUserId) return;
+  if (!callerId) return;
+
+  const callerIsFromUser = callerId === fromUserId;
+  const callerIsToUser = callerId === toUserId;
+  if (!callerIsFromUser && !callerIsToUser) return;
+
+  const recipientId = callerIsFromUser ? toUserId : fromUserId;
+  const counterpartyId = callerIsFromUser ? fromUserId : toUserId;
 
   const admin = createAdminClient();
 
-  const [fromUserResult, groupContext] = await Promise.all([
-    admin.from("user_profiles").select("name").eq("id", fromUserId).single(),
+  const [counterpartyResult, groupContext] = await Promise.all([
+    admin
+      .from("user_profiles")
+      .select("name")
+      .eq("id", counterpartyId)
+      .single(),
     getGroupNotificationContext(groupId, callerId),
   ]);
 
-  const fromName = fromUserResult.data?.name ?? "Alguém";
+  const counterpartyName = counterpartyResult.data?.name ?? "Alguém";
   const amount = formatBRL(amountCents);
 
-  const body = groupContext.isDm
-    ? `${fromName} pagou ${amount}`
-    : `${fromName} pagou ${amount} em "${groupContext.displayName}"`;
+  const body = callerIsFromUser
+    ? (groupContext.isDm
+        ? `${counterpartyName} pagou ${amount}`
+        : `${counterpartyName} pagou ${amount} em "${groupContext.displayName}"`)
+    : (groupContext.isDm
+        ? `${counterpartyName} marcou seu pagamento de ${amount} como recebido`
+        : `${counterpartyName} marcou seu pagamento de ${amount} como recebido em "${groupContext.displayName}"`);
 
-  await safeNotify(toUserId, {
+  await safeNotify(recipientId, {
     title: "Pagamento registrado",
     body,
     url: groupContext.isDm
-      ? `/app/conversations/${fromUserId}`
+      ? `/app/conversations/${counterpartyId}`
       : `/app/groups/${groupId}`,
     tag: `settlement-${groupId}`,
   }, "settlements");
