@@ -3,6 +3,14 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["10.0.2.2"],
+  // Surface Vercel's deployment ID to Next.js so old client bundles
+  // (cached by service workers, Capacitor WebViews, PWAs) detect version
+  // skew on their next navigation and hard-reload instead of calling
+  // server actions whose closure IDs no longer exist on the new deploy.
+  // Vercel sets VERCEL_DEPLOYMENT_ID automatically during the build.
+  ...(process.env.VERCEL_DEPLOYMENT_ID
+    ? { deploymentId: process.env.VERCEL_DEPLOYMENT_ID }
+    : {}),
   images: {
     remotePatterns: [
       {
