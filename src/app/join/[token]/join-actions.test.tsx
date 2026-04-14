@@ -13,16 +13,32 @@ const rpcMock = vi.fn().mockResolvedValue({
   data: { group_id: "group-1", already_member: false },
   error: null,
 });
+const getUserMock = vi.fn().mockResolvedValue({
+  data: { user: { id: "user-1" } },
+  error: null,
+});
 
 vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({ rpc: rpcMock }),
+  createClient: () => ({
+    rpc: rpcMock,
+    auth: { getUser: getUserMock },
+  }),
+}));
+
+vi.mock("@/lib/push/push-notify", () => ({
+  notifyGroupAccepted: vi.fn().mockResolvedValue(undefined),
 }));
 
 beforeEach(() => {
   pushMock.mockClear();
   rpcMock.mockClear();
+  getUserMock.mockClear();
   rpcMock.mockResolvedValue({
     data: { group_id: "group-1", already_member: false },
+    error: null,
+  });
+  getUserMock.mockResolvedValue({
+    data: { user: { id: "user-1" } },
     error: null,
   });
 });

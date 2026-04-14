@@ -14,6 +14,11 @@ vi.mock("./web-push", () => ({
   sendPushNotification: vi.fn(),
 }));
 
+vi.mock("./fcm", () => ({
+  isFcmConfigured: vi.fn().mockReturnValue(false),
+  sendFcmNotification: vi.fn(),
+}));
+
 vi.mock("./notify-user", () => ({
   notifyUser: vi.fn(),
 }));
@@ -212,6 +217,79 @@ describe("push-notify", () => {
       expect(notifyUser).toHaveBeenCalledWith("invitee-1", {
         title: "Novo convite de grupo",
         body: 'Alguém convidou você para "um grupo"',
+        url: "/app/groups",
+        tag: "group-invite-group-1",
+      });
+    });
+
+    it("notifies the invitee when caller is the group creator (not in group_members)", async () => {
+      // Creators have no row in group_members. The check must also accept
+      // groups.creator_id === callerId, otherwise invites from the creator
+      // silently fail.
+      mockCaller("creator-1");
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Viagem", creator_id: "creator-1" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "group_members") {
+          return {
+            select: (_col: string, opts?: { count?: string }) => {
+              if (opts?.count) {
+                return {
+                  eq: () => ({
+                    eq: () => ({
+                      eq: () => Promise.resolve({ count: 0 }),
+                    }),
+                  }),
+                };
+              }
+              return {
+                eq: () => ({
+                  eq: () => ({
+                    single: () =>
+                      Promise.resolve({
+                        data: { invited_by: "creator-1" },
+                        error: null,
+                      }),
+                  }),
+                }),
+              };
+            },
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Thiago" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyGroupInvite("group-1", "invitee-1");
+
+      expect(notifyUser).toHaveBeenCalledWith("invitee-1", {
+        title: "Novo convite de grupo",
+        body: 'Thiago convidou você para "Viagem"',
         url: "/app/groups",
         tag: "group-invite-group-1",
       });
@@ -505,6 +583,100 @@ describe("push-notify", () => {
       await notifyExpenseActivated("expense-1");
 
       expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("omits group name and deep-links to the conversation in a DM", async () => {
+      // DM groups have no meaningful `name` — using it verbatim produced
+      // titles like 'Nova despesa em ""'. For DMs we should omit the group
+      // part and deep-link to /app/conversations/<creator> instead.
+      mockCaller("creator-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "expenses") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: {
+                      group_id: "dm-group-1",
+                      creator_id: "creator-1",
+                      title: "Almoço",
+                      total_amount: 4500,
+                    },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "expense_shares") {
+          return {
+            select: () => ({
+              eq: () =>
+                Promise.resolve({
+                  data: [
+                    { user_id: "creator-1" },
+                    { user_id: "counterparty-1" },
+                  ],
+                  error: null,
+                }),
+            }),
+          };
+        }
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "", is_dm: true },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "creator-1", user_b: "counterparty-1" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Carlos" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyExpenseActivated("expense-1");
+
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith("counterparty-1", {
+        title: "Nova despesa",
+        body: 'Carlos adicionou "Almoço" — R$\u00a045,00',
+        url: "/app/conversations/creator-1",
+        tag: "expense-expense-1",
+      });
     });
   });
 
