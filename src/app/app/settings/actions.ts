@@ -30,9 +30,11 @@ export async function updateNotificationPreferences(
 
   const admin = createAdminClient();
   const { error } = await admin
-    .from("users")
-    .update({ notification_preferences: sanitized })
-    .eq("id", user.id);
+    .from("notification_preferences")
+    .upsert(
+      { user_id: user.id, preferences: sanitized, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" },
+    );
 
   if (error) return { error: "Erro ao salvar preferências" };
   return {};

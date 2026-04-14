@@ -24,13 +24,12 @@ function mockAuth(userId: string | null) {
 }
 
 function mockAdmin(error: unknown = null) {
-  const eq = vi.fn().mockResolvedValue({ error });
-  const update = vi.fn().mockReturnValue({ eq });
-  const from = vi.fn().mockReturnValue({ update });
+  const upsert = vi.fn().mockResolvedValue({ error });
+  const from = vi.fn().mockReturnValue({ upsert });
 
   vi.mocked(createAdminClient).mockReturnValue({ from } as unknown as ReturnType<typeof createAdminClient>);
 
-  return { from, update, eq };
+  return { from, upsert };
 }
 
 describe("updateNotificationPreferences", () => {
@@ -46,7 +45,7 @@ describe("updateNotificationPreferences", () => {
 
   it("saves valid preferences", async () => {
     mockAuth("user-1");
-    const { update } = mockAdmin();
+    const { upsert } = mockAdmin();
 
     const result = await updateNotificationPreferences({
       expenses: false,
@@ -55,18 +54,22 @@ describe("updateNotificationPreferences", () => {
     });
 
     expect(result.error).toBeUndefined();
-    expect(update).toHaveBeenCalledWith({
-      notification_preferences: {
-        expenses: false,
-        settlements: true,
-        nudges: false,
-      },
-    });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "user-1",
+        preferences: {
+          expenses: false,
+          settlements: true,
+          nudges: false,
+        },
+      }),
+      { onConflict: "user_id" },
+    );
   });
 
   it("strips invalid category keys", async () => {
     mockAuth("user-1");
-    const { update } = mockAdmin();
+    const { upsert } = mockAdmin();
 
     const prefs = {
       expenses: true,
@@ -75,12 +78,16 @@ describe("updateNotificationPreferences", () => {
 
     await updateNotificationPreferences(prefs);
 
-    expect(update).toHaveBeenCalledWith({
-      notification_preferences: { expenses: true },
-    });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "user-1",
+        preferences: { expenses: true },
+      }),
+      { onConflict: "user_id" },
+    );
   });
 
-  it("returns error when db update fails", async () => {
+  it("returns error when db upsert fails", async () => {
     mockAuth("user-1");
     mockAdmin({ message: "DB error" });
 

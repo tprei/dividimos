@@ -873,7 +873,27 @@ describe("push-notify", () => {
       mockCaller("creditor-1");
 
       const chain = mockSupabaseChain({ data: null, error: null });
+      const eqChain = { eq: vi.fn().mockReturnThis() as ReturnType<typeof vi.fn>, then: undefined as unknown };
+      eqChain.eq = vi.fn().mockReturnValue(eqChain);
       chain.from.mockImplementation((table: string) => {
+        if (table === "group_members") {
+          const last = { then: (fn: (v: unknown) => unknown) => fn({ count: 1, error: null }) };
+          const eq3 = vi.fn().mockReturnValue(last);
+          const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+          const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+          return { select: vi.fn().mockReturnValue({ eq: eq1 }) };
+        }
+        if (table === "nudge_log") {
+          const gteResult = { then: (fn: (v: unknown) => unknown) => fn({ count: 0, error: null }) };
+          const gte = vi.fn().mockReturnValue(gteResult);
+          const eq3 = vi.fn().mockReturnValue({ gte });
+          const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+          const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+          return {
+            select: vi.fn().mockReturnValue({ eq: eq1 }),
+            insert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
         if (table === "groups") {
           return {
             select: () => ({
@@ -908,17 +928,87 @@ describe("push-notify", () => {
       });
     });
 
+    it("skips when caller is not a group member", async () => {
+      mockCaller("creditor-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "group_members") {
+          const last = { then: (fn: (v: unknown) => unknown) => fn({ count: 0, error: null }) };
+          const eq3 = vi.fn().mockReturnValue(last);
+          const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+          const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+          return { select: vi.fn().mockReturnValue({ eq: eq1 }) };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyPaymentNudge("group-1", "debtor-1", 5000);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when rate limited", async () => {
+      mockCaller("creditor-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "group_members") {
+          const last = { then: (fn: (v: unknown) => unknown) => fn({ count: 1, error: null }) };
+          const eq3 = vi.fn().mockReturnValue(last);
+          const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+          const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+          return { select: vi.fn().mockReturnValue({ eq: eq1 }) };
+        }
+        if (table === "nudge_log") {
+          const gteResult = { then: (fn: (v: unknown) => unknown) => fn({ count: 1, error: null }) };
+          const gte = vi.fn().mockReturnValue(gteResult);
+          const eq3 = vi.fn().mockReturnValue({ gte });
+          const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+          const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+          return { select: vi.fn().mockReturnValue({ eq: eq1 }) };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifyPaymentNudge("group-1", "debtor-1", 5000);
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
     it("uses fallback names when DB returns null", async () => {
       mockCaller("creditor-1");
 
       const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation(() => ({
-        select: () => ({
-          eq: () => ({
-            single: () => Promise.resolve({ data: null, error: null }),
+      chain.from.mockImplementation((table: string) => {
+        if (table === "group_members") {
+          const last = { then: (fn: (v: unknown) => unknown) => fn({ count: 1, error: null }) };
+          const eq3 = vi.fn().mockReturnValue(last);
+          const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+          const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+          return { select: vi.fn().mockReturnValue({ eq: eq1 }) };
+        }
+        if (table === "nudge_log") {
+          const gteResult = { then: (fn: (v: unknown) => unknown) => fn({ count: 0, error: null }) };
+          const gte = vi.fn().mockReturnValue(gteResult);
+          const eq3 = vi.fn().mockReturnValue({ gte });
+          const eq2 = vi.fn().mockReturnValue({ eq: eq3 });
+          const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
+          return {
+            select: vi.fn().mockReturnValue({ eq: eq1 }),
+            insert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({
+              single: () => Promise.resolve({ data: null, error: null }),
+            }),
           }),
-        }),
-      }));
+        };
+      });
       vi.mocked(createAdminClient).mockReturnValue(chain as never);
 
       await notifyPaymentNudge("group-1", "debtor-1", 2500);

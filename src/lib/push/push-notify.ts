@@ -26,12 +26,12 @@ export async function checkPreference(
 ): Promise<boolean> {
   const admin = createAdminClient();
   const { data } = await admin
-    .from("users")
-    .select("notification_preferences")
-    .eq("id", userId)
+    .from("notification_preferences")
+    .select("preferences")
+    .eq("user_id", userId)
     .single();
   if (!data) return true;
-  const prefs = (data.notification_preferences ?? {}) as Record<string, boolean>;
+  const prefs = (data.preferences ?? {}) as Record<string, boolean>;
   return prefs[category] !== false;
 }
 
@@ -280,10 +280,12 @@ export async function notifySettlementRecorded(
 // Payment nudge (creditor → debtor reminder)
 // ============================================================
 
+const NUDGE_COOLDOWN_MINUTES = 10;
+
 /**
  * Notify the debtor that the creditor is requesting payment.
  * Called from the settlement UI when creditor taps "Lembrar".
- * Rate limiting is enforced client-side (localStorage cooldown).
+ * Rate limiting is enforced server-side via nudge_log table.
  */
 export async function notifyPaymentNudge(
   groupId: string,
@@ -296,6 +298,36 @@ export async function notifyPaymentNudge(
   if (!callerId || callerId === debtorId) return;
 
   const admin = createAdminClient();
+
+  // Verify caller is an accepted member of the group
+  const { count: memberCount } = await admin
+    .from("group_members")
+    .select("*", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .eq("user_id", callerId)
+    .eq("status", "accepted");
+  if (!memberCount || memberCount === 0) return;
+
+  // Server-side rate limit: max 1 nudge per pair per group per cooldown period
+  const cooldownThreshold = new Date(
+    Date.now() - NUDGE_COOLDOWN_MINUTES * 60 * 1000,
+  ).toISOString();
+
+  const { count: recentCount } = await admin
+    .from("nudge_log")
+    .select("*", { count: "exact", head: true })
+    .eq("from_user", callerId)
+    .eq("to_user", debtorId)
+    .eq("group_id", groupId)
+    .gte("created_at", cooldownThreshold);
+  if (recentCount && recentCount > 0) return;
+
+  // Log the nudge (also triggers old-entry pruning)
+  await admin.from("nudge_log").insert({
+    group_id: groupId,
+    from_user: callerId,
+    to_user: debtorId,
+  });
 
   const [groupResult, creditorResult] = await Promise.all([
     admin.from("groups").select("name").eq("id", groupId).single(),

@@ -20,7 +20,6 @@ export interface Database {
           pix_key_hint: string;
           avatar_url: string | null;
           onboarded: boolean;
-          notification_preferences: Json;
           created_at: string;
         };
         Insert: {
@@ -33,7 +32,6 @@ export interface Database {
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
-          notification_preferences?: Json;
           created_at?: string;
         };
         Update: {
@@ -46,7 +44,6 @@ export interface Database {
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
-          notification_preferences?: Json;
           created_at?: string;
         };
         Relationships: [];
@@ -665,6 +662,48 @@ export interface Database {
           user_id?: string;
           subscription?: string;
           channel?: "web" | "fcm";
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      notification_preferences: {
+        Row: {
+          user_id: string;
+          preferences: Json;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          preferences?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          preferences?: Json;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      nudge_log: {
+        Row: {
+          id: string;
+          group_id: string;
+          from_user: string;
+          to_user: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          from_user: string;
+          to_user: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          group_id?: string;
+          from_user?: string;
+          to_user?: string;
           created_at?: string;
         };
         Relationships: [];

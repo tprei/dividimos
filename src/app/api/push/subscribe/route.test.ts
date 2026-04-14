@@ -64,6 +64,8 @@ describe("POST /api/push/subscribe", () => {
 
   it("returns 400 when subscription has no endpoint", async () => {
     serverMock.setUser({ id: "u1" });
+    // count check for subscription cap
+    adminMock.onTable("push_subscriptions", { data: null, count: 0 } as never);
     const res = await POST(makeRequest({ subscription: { keys: { p256dh: "a", auth: "b" } } }));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain("endpoint");
@@ -71,13 +73,24 @@ describe("POST /api/push/subscribe", () => {
 
   it("returns 400 when subscription has no keys", async () => {
     serverMock.setUser({ id: "u1" });
+    adminMock.onTable("push_subscriptions", { data: null, count: 0 } as never);
     const res = await POST(makeRequest({ subscription: { endpoint: "https://x.com/sub" } }));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain("keys");
   });
 
+  it("returns 429 when subscription limit reached", async () => {
+    serverMock.setUser({ id: "u1" });
+    adminMock.onTable("push_subscriptions", { data: null, count: 20 } as never);
+
+    const res = await POST(makeRequest({ subscription: validSubscription }));
+    expect(res.status).toBe(429);
+    expect((await res.json()).error).toContain("Limite");
+  });
+
   it("inserts new subscription when no duplicates exist", async () => {
     serverMock.setUser({ id: "u1" });
+    adminMock.onTable("push_subscriptions", { data: null, count: 0 } as never);
     adminMock.onTable("push_subscriptions", { data: [] });
     adminMock.onTable("push_subscriptions", { data: null, error: null });
 
@@ -92,6 +105,7 @@ describe("POST /api/push/subscribe", () => {
 
   it("deletes duplicate subscriptions before inserting", async () => {
     serverMock.setUser({ id: "u1" });
+    adminMock.onTable("push_subscriptions", { data: null, count: 2 } as never);
 
     mockDecrypt.mockImplementation((encrypted: string) => {
       if (encrypted === "enc-dup")
@@ -119,6 +133,7 @@ describe("POST /api/push/subscribe", () => {
 
   it("skips rows that fail to decrypt without error", async () => {
     serverMock.setUser({ id: "u1" });
+    adminMock.onTable("push_subscriptions", { data: null, count: 1 } as never);
 
     mockDecrypt.mockImplementation(() => {
       throw new Error("decrypt failed");
@@ -138,6 +153,7 @@ describe("POST /api/push/subscribe", () => {
 
   it("returns 500 when insert fails", async () => {
     serverMock.setUser({ id: "u1" });
+    adminMock.onTable("push_subscriptions", { data: null, count: 0 } as never);
     adminMock.onTable("push_subscriptions", { data: [] });
     adminMock.onTable("push_subscriptions", { data: null, error: { message: "db error" } });
 

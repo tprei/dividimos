@@ -31,6 +31,18 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
 
+  const MAX_SUBSCRIPTIONS_PER_USER = 20;
+  const { count: subCount } = await admin
+    .from("push_subscriptions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id);
+  if (subCount !== null && subCount >= MAX_SUBSCRIPTIONS_PER_USER) {
+    return NextResponse.json(
+      { error: "Limite de dispositivos atingido" },
+      { status: 429 },
+    );
+  }
+
   if (channel === "fcm") {
     const fcmBody = body as { token: string; channel: "fcm" };
     if (!fcmBody.token || typeof fcmBody.token !== "string") {
