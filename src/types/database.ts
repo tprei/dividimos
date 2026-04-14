@@ -647,18 +647,21 @@ export interface Database {
           id: string;
           user_id: string;
           subscription: string;
+          channel: "web" | "fcm";
           created_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
           subscription: string;
+          channel?: "web" | "fcm";
           created_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
           subscription?: string;
+          channel?: "web" | "fcm";
           created_at?: string;
         };
         Relationships: [];

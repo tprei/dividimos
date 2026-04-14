@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptPixKey as decrypt } from "@/lib/crypto";
 import { sendPushNotification, type PushPayload } from "./web-push";
+import { sendFcmNotification, isFcmConfigured } from "./fcm";
 
 /**
  * Decrypt a push subscription stored in the DB.
@@ -10,8 +11,11 @@ function decryptSubscription(encrypted: string): string {
   return decrypt(encrypted);
 }
 
+type SubscriptionChannel = "web" | "fcm";
+
 /**
  * Send a push notification to all of a user's registered devices.
+ * Routes to Web Push or FCM based on the subscription's channel.
  * Automatically cleans up stale subscriptions (expired/unsubscribed).
  */
 export async function notifyUser(
@@ -22,7 +26,7 @@ export async function notifyUser(
 
   const { data: rows, error } = await admin
     .from("push_subscriptions")
-    .select("id, subscription")
+    .select("id, subscription, channel")
     .eq("user_id", userId);
 
   if (error || !rows || rows.length === 0) {
@@ -35,15 +39,24 @@ export async function notifyUser(
 
   await Promise.all(
     rows.map(async (row) => {
-      let subscriptionJson: string;
+      const channel = (row.channel ?? "web") as SubscriptionChannel;
+
+      let decrypted: string;
       try {
-        subscriptionJson = decryptSubscription(row.subscription);
+        decrypted = decryptSubscription(row.subscription);
       } catch {
         staleIds.push(row.id);
         return;
       }
 
-      const delivered = await sendPushNotification(subscriptionJson, payload);
+      let delivered: boolean;
+      if (channel === "fcm") {
+        if (!isFcmConfigured()) return;
+        delivered = await sendFcmNotification(decrypted, payload);
+      } else {
+        delivered = await sendPushNotification(decrypted, payload);
+      }
+
       if (delivered) {
         sent++;
       } else {
