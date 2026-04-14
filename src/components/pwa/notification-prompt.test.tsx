@@ -10,6 +10,7 @@ vi.mock("@/hooks/use-push-notifications", () => ({
     permission: "default" as const,
     isSubscribed: false,
     isLoading: false,
+      isInitializing: false,
     isNative: false,
     subscribe: mockSubscribe,
     unsubscribe: mockUnsubscribe,
@@ -28,6 +29,7 @@ describe("NotificationPrompt", () => {
       permission: "default",
       isSubscribed: false,
       isLoading: false,
+      isInitializing: false,
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
@@ -40,11 +42,27 @@ describe("NotificationPrompt", () => {
     expect(screen.getByRole("button", { name: "Ativar" })).toBeInTheDocument();
   });
 
+  it("does not render while the initial permission check is in flight", () => {
+    mockUsePush.mockReturnValue({
+      permission: "default",
+      isSubscribed: false,
+      isLoading: false,
+      isInitializing: true,
+      isNative: false,
+      subscribe: mockSubscribe,
+      unsubscribe: mockUnsubscribe,
+    });
+
+    const { container } = render(<NotificationPrompt />);
+    expect(container.innerHTML).toBe("");
+  });
+
   it("does not render when already subscribed", () => {
     mockUsePush.mockReturnValue({
       permission: "granted",
       isSubscribed: true,
       isLoading: false,
+      isInitializing: false,
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
@@ -59,6 +77,7 @@ describe("NotificationPrompt", () => {
       permission: "denied",
       isSubscribed: false,
       isLoading: false,
+      isInitializing: false,
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
@@ -73,6 +92,7 @@ describe("NotificationPrompt", () => {
       permission: "unsupported",
       isSubscribed: false,
       isLoading: false,
+      isInitializing: false,
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
@@ -111,6 +131,7 @@ describe("NotificationPrompt", () => {
       permission: "default",
       isSubscribed: false,
       isLoading: true,
+      isInitializing: false,
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
@@ -128,6 +149,7 @@ describe("NotificationPrompt", () => {
         permission: "default",
         isSubscribed: false,
         isLoading: false,
+      isInitializing: false,
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
@@ -165,6 +187,7 @@ describe("NotificationPrompt", () => {
         permission: "granted",
         isSubscribed: true,
         isLoading: false,
+      isInitializing: false,
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
@@ -179,6 +202,7 @@ describe("NotificationPrompt", () => {
         permission: "denied",
         isSubscribed: false,
         isLoading: false,
+      isInitializing: false,
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,

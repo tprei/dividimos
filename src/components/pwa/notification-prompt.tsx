@@ -18,12 +18,24 @@ const SESSION_KEY = "dividimos:notification-prompt-dismissed";
  * Uses Capacitor's runtime permission API instead of the Web Push flow.
  */
 export function NotificationPrompt() {
-  const { permission, isSubscribed, isLoading, isNative, subscribe } =
-    usePushNotifications();
+  const {
+    permission,
+    isSubscribed,
+    isLoading,
+    isInitializing,
+    isNative,
+    subscribe,
+  } = usePushNotifications();
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === "undefined") return true;
     return sessionStorage.getItem(SESSION_KEY) === "1";
   });
+
+  // Hold the prompt back until the hook finishes its initial permission +
+  // subscription check. Otherwise it flashes visible for the already-subscribed
+  // case and then disappears, which reads as "the toggle looked off and then
+  // snapped on by itself".
+  if (isInitializing) return null;
 
   // Don't show if already subscribed, denied, unsupported, or dismissed
   if (isSubscribed || permission === "denied" || permission === "unsupported" || dismissed) {
