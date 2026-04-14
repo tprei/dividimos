@@ -1,8 +1,5 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { Database } from "@/types/database";
-
-type UserRow = Database["public"]["Tables"]["users"]["Row"];
 
 export const getAuthUser = cache(async () => {
   const supabase = await createClient();
@@ -21,16 +18,15 @@ export const getAuthUser = cache(async () => {
 
   if (!profile) return null;
 
-  const p = profile as UserRow;
   return {
-    id: p.id,
-    email: p.email ?? "",
-    handle: p.handle ?? "",
-    name: p.name,
-    pixKeyType: p.pix_key_type,
-    pixKeyHint: p.pix_key_hint,
-    avatarUrl: p.avatar_url ?? undefined,
-    onboarded: p.onboarded,
-    createdAt: p.created_at,
+    id: profile.id,
+    email: profile.email ?? "",
+    handle: profile.handle ?? "",
+    name: profile.name,
+    pixKeyType: profile.pix_key_type,
+    pixKeyHint: profile.pix_key_hint,
+    avatarUrl: profile.avatar_url ?? undefined,
+    onboarded: profile.onboarded,
+    createdAt: profile.created_at,
   };
 });
