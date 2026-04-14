@@ -71,7 +71,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     if (native) {
       (async () => {
         const { PushNotifications } = await import(
-          "@capacitor/push-notifications"
+          /* @vite-ignore */ "@capacitor/push-notifications"
         );
         const result = await PushNotifications.checkPermissions();
         const mapped = mapNativePermission(result.receive);
@@ -110,7 +110,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       setIsLoading(true);
       try {
         const { PushNotifications } = await import(
-          "@capacitor/push-notifications"
+          /* @vite-ignore */ "@capacitor/push-notifications"
         );
         const result = await PushNotifications.requestPermissions();
         const mapped = mapNativePermission(result.receive);
