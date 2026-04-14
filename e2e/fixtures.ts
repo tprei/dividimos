@@ -27,10 +27,10 @@ function getSupabaseCookieName(): string {
   return `sb-${ref}-auth-token`;
 }
 
-function buildSessionCookie(user: SeededUser): string {
+export function buildSessionCookie(user: SeededUser): string {
   const session = {
     access_token: user.accessToken,
-    refresh_token: user.refreshToken,
+    refresh_token: user.refreshToken || "noop",
     token_type: "bearer",
     expires_in: 3600,
     expires_at: Math.floor(Date.now() / 1000) + 3600,
