@@ -8,6 +8,22 @@ const mockRegister = vi.fn();
 const mockUnregister = vi.fn();
 let mockIsNativePlatform = false;
 
+type RegistrationHandler = (payload: { value: string }) => void | Promise<void>;
+type RegistrationErrorHandler = (payload: { error: string }) => void;
+let registrationHandler: RegistrationHandler | null = null;
+
+const mockAddListener = vi.fn(
+  (
+    event: string,
+    handler: RegistrationHandler | RegistrationErrorHandler,
+  ) => {
+    if (event === "registration") {
+      registrationHandler = handler as RegistrationHandler;
+    }
+    return Promise.resolve({ remove: vi.fn() });
+  },
+);
+
 vi.mock("@capacitor/core", () => ({
   Capacitor: {
     isNativePlatform: () => mockIsNativePlatform,
@@ -20,10 +36,16 @@ vi.mock("@capacitor/push-notifications", () => ({
     requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
     register: (...args: unknown[]) => mockRegister(...args),
     unregister: (...args: unknown[]) => mockUnregister(...args),
+    addListener: (...args: unknown[]) =>
+      mockAddListener(
+        args[0] as string,
+        args[1] as RegistrationHandler | RegistrationErrorHandler,
+      ),
   },
 }));
 
 import { usePushNotifications } from "./use-push-notifications";
+import { __resetNativeRegistrationForTests } from "@/lib/push/native-registration";
 
 describe("usePushNotifications", () => {
   const originalNavigator = globalThis.navigator;
@@ -37,6 +59,13 @@ describe("usePushNotifications", () => {
 
   beforeEach(() => {
     mockIsNativePlatform = false;
+    __resetNativeRegistrationForTests();
+    registrationHandler = null;
+    mockAddListener.mockClear();
+    mockCheckPermissions.mockReset();
+    mockRequestPermissions.mockReset();
+    mockRegister.mockReset().mockResolvedValue(undefined);
+    mockUnregister.mockReset().mockResolvedValue(undefined);
 
     mockPushManager = {
       getSubscription: vi.fn().mockResolvedValue(null),
@@ -191,34 +220,51 @@ describe("usePushNotifications", () => {
   describe("native platform", () => {
     beforeEach(() => {
       mockIsNativePlatform = true;
-      mockCheckPermissions.mockReset();
-      mockRequestPermissions.mockReset();
-      mockRegister.mockReset();
-      mockUnregister.mockReset();
     });
 
-    it("returns isNative true on native platform", () => {
+    async function fireRegistration(token: string): Promise<void> {
+      // Wait until the native-registration module has attached the listener
+      await vi.waitFor(() => {
+        expect(registrationHandler).not.toBeNull();
+      });
+      await registrationHandler!({ value: token });
+    }
+
+    it("returns isNative true on native platform", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
 
       const { result } = renderHook(() => usePushNotifications());
       expect(result.current.isNative).toBe(true);
+
+      // Let the mount-time check resolve
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
     });
 
-    it("checks native permissions on mount", async () => {
+    it("re-registers FCM token on startup when permission is already granted", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "granted" });
 
       const { result } = renderHook(() => usePushNotifications());
 
       await act(async () => {
+        await fireRegistration("startup-token");
         await new Promise((r) => setTimeout(r, 10));
       });
 
-      expect(mockCheckPermissions).toHaveBeenCalled();
+      expect(mockRegister).toHaveBeenCalled();
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/push/subscribe",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ token: "startup-token", channel: "fcm" }),
+        }),
+      );
       expect(result.current.permission).toBe("granted");
       expect(result.current.isSubscribed).toBe(true);
     });
 
-    it("maps prompt permission to default", async () => {
+    it("maps prompt permission to default and skips startup registration", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
 
       const { result } = renderHook(() => usePushNotifications());
@@ -229,6 +275,7 @@ describe("usePushNotifications", () => {
 
       expect(result.current.permission).toBe("default");
       expect(result.current.isSubscribed).toBe(false);
+      expect(mockRegister).not.toHaveBeenCalled();
     });
 
     it("maps prompt-with-rationale to default", async () => {
@@ -254,12 +301,12 @@ describe("usePushNotifications", () => {
 
       expect(result.current.permission).toBe("denied");
       expect(result.current.isSubscribed).toBe(false);
+      expect(mockRegister).not.toHaveBeenCalled();
     });
 
-    it("native subscribe requests permission and registers", async () => {
+    it("native subscribe requests permission, registers, and POSTs token", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
       mockRequestPermissions.mockResolvedValue({ receive: "granted" });
-      mockRegister.mockResolvedValue(undefined);
 
       const { result } = renderHook(() => usePushNotifications());
 
@@ -267,12 +314,25 @@ describe("usePushNotifications", () => {
         await new Promise((r) => setTimeout(r, 10));
       });
 
-      await act(async () => {
+      const subscribePromise = act(async () => {
         await result.current.subscribe();
       });
 
+      await act(async () => {
+        await fireRegistration("opt-in-token");
+      });
+
+      await subscribePromise;
+
       expect(mockRequestPermissions).toHaveBeenCalled();
       expect(mockRegister).toHaveBeenCalled();
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/push/subscribe",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ token: "opt-in-token", channel: "fcm" }),
+        }),
+      );
       expect(result.current.permission).toBe("granted");
       expect(result.current.isSubscribed).toBe(true);
     });
@@ -297,20 +357,29 @@ describe("usePushNotifications", () => {
       expect(result.current.isSubscribed).toBe(false);
     });
 
-    it("native unsubscribe calls PushNotifications.unregister", async () => {
+    it("native unsubscribe POSTs token and calls PushNotifications.unregister", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "granted" });
-      mockUnregister.mockResolvedValue(undefined);
 
       const { result } = renderHook(() => usePushNotifications());
 
       await act(async () => {
+        await fireRegistration("live-token");
         await new Promise((r) => setTimeout(r, 10));
       });
+
+      (globalThis.fetch as ReturnType<typeof vi.fn>).mockClear();
 
       await act(async () => {
         await result.current.unsubscribe();
       });
 
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/push/unsubscribe",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ token: "live-token", channel: "fcm" }),
+        }),
+      );
       expect(mockUnregister).toHaveBeenCalled();
       expect(result.current.isSubscribed).toBe(false);
     });
@@ -318,7 +387,6 @@ describe("usePushNotifications", () => {
     it("does not use web push APIs on native", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
       mockRequestPermissions.mockResolvedValue({ receive: "granted" });
-      mockRegister.mockResolvedValue(undefined);
 
       const { result } = renderHook(() => usePushNotifications());
 
@@ -326,12 +394,17 @@ describe("usePushNotifications", () => {
         await new Promise((r) => setTimeout(r, 10));
       });
 
-      await act(async () => {
+      const subscribePromise = act(async () => {
         await result.current.subscribe();
       });
 
+      await act(async () => {
+        await fireRegistration("native-only-token");
+      });
+
+      await subscribePromise;
+
       expect(mockPushManager.subscribe).not.toHaveBeenCalled();
-      expect(globalThis.fetch).not.toHaveBeenCalled();
     });
   });
 });

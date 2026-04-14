@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Capacitor } from "@capacitor/core";
+import {
+  isNativePlatform,
+  registerNativePushToken,
+  unregisterNativePushToken,
+} from "@/lib/push/native-registration";
 
 export type PushPermission = "default" | "granted" | "denied" | "unsupported";
 
@@ -43,14 +47,6 @@ function isPushSupported(): boolean {
   );
 }
 
-function isNativePlatform(): boolean {
-  try {
-    return typeof window !== "undefined" && Capacitor.isNativePlatform();
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Map Capacitor's PermissionState to our PushPermission type.
  * Capacitor uses 'prompt' | 'prompt-with-rationale' | 'granted' | 'denied'.
@@ -68,21 +64,30 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   const checkedRef = useRef(false);
   const native = isNativePlatform();
 
-  // Check initial state
   useEffect(() => {
     if (checkedRef.current) return;
     checkedRef.current = true;
 
     if (native) {
-      import("@capacitor/push-notifications").then(
-        ({ PushNotifications }) => {
-          PushNotifications.checkPermissions().then((result) => {
-            const mapped = mapNativePermission(result.receive);
-            setPermission(mapped);
-            setIsSubscribed(mapped === "granted");
-          });
-        },
-      );
+      (async () => {
+        const { PushNotifications } = await import(
+          "@capacitor/push-notifications"
+        );
+        const result = await PushNotifications.checkPermissions();
+        const mapped = mapNativePermission(result.receive);
+        setPermission(mapped);
+
+        if (mapped === "granted") {
+          // Previously opted in — refresh the FCM token on startup so the
+          // server always holds the current token (tokens can rotate).
+          try {
+            await registerNativePushToken();
+            setIsSubscribed(true);
+          } catch {
+            setIsSubscribed(false);
+          }
+        }
+      })();
       return;
     }
 
@@ -113,7 +118,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
         if (mapped !== "granted") return;
 
-        await PushNotifications.register();
+        await registerNativePushToken();
         setIsSubscribed(true);
       } finally {
         setIsLoading(false);
@@ -162,10 +167,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     if (native) {
       setIsLoading(true);
       try {
-        const { PushNotifications } = await import(
-          "@capacitor/push-notifications"
-        );
-        await PushNotifications.unregister();
+        await unregisterNativePushToken();
         setIsSubscribed(false);
       } finally {
         setIsLoading(false);
