@@ -1,16 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 
-type PushPermission = "default" | "granted" | "denied" | "unsupported";
+export type PushPermission = "default" | "granted" | "denied" | "unsupported";
 
-interface UsePushNotificationsReturn {
+export interface UsePushNotificationsReturn {
   /** Current permission state */
   permission: PushPermission;
   /** Whether the user is subscribed on this device */
   isSubscribed: boolean;
   /** Whether a subscribe/unsubscribe operation is in progress */
   isLoading: boolean;
+  /** Whether running inside a native Capacitor shell */
+  isNative: boolean;
   /** Request permission and subscribe to push notifications. Must be called from a user gesture. */
   subscribe: () => Promise<void>;
   /** Unsubscribe from push notifications on this device */
@@ -40,16 +43,48 @@ function isPushSupported(): boolean {
   );
 }
 
+function isNativePlatform(): boolean {
+  try {
+    return typeof window !== "undefined" && Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Map Capacitor's PermissionState to our PushPermission type.
+ * Capacitor uses 'prompt' | 'prompt-with-rationale' | 'granted' | 'denied'.
+ */
+function mapNativePermission(state: string): PushPermission {
+  if (state === "granted") return "granted";
+  if (state === "denied") return "denied";
+  return "default";
+}
+
 export function usePushNotifications(): UsePushNotificationsReturn {
   const [permission, setPermission] = useState<PushPermission>("default");
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const checkedRef = useRef(false);
+  const native = isNativePlatform();
 
   // Check initial state
   useEffect(() => {
     if (checkedRef.current) return;
     checkedRef.current = true;
+
+    if (native) {
+      import("@capacitor/push-notifications").then(
+        ({ PushNotifications }) => {
+          PushNotifications.checkPermissions().then((result) => {
+            const mapped = mapNativePermission(result.receive);
+            setPermission(mapped);
+            setIsSubscribed(mapped === "granted");
+          });
+        },
+      );
+      return;
+    }
 
     if (!isPushSupported()) {
       setPermission("unsupported");
@@ -63,9 +98,29 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         setIsSubscribed(sub !== null);
       });
     });
-  }, []);
+  }, [native]);
 
   const subscribe = useCallback(async () => {
+    if (native) {
+      setIsLoading(true);
+      try {
+        const { PushNotifications } = await import(
+          "@capacitor/push-notifications"
+        );
+        const result = await PushNotifications.requestPermissions();
+        const mapped = mapNativePermission(result.receive);
+        setPermission(mapped);
+
+        if (mapped !== "granted") return;
+
+        await PushNotifications.register();
+        setIsSubscribed(true);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     if (!isPushSupported()) return;
 
     setIsLoading(true);
@@ -101,9 +156,23 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [native]);
 
   const unsubscribe = useCallback(async () => {
+    if (native) {
+      setIsLoading(true);
+      try {
+        const { PushNotifications } = await import(
+          "@capacitor/push-notifications"
+        );
+        await PushNotifications.unregister();
+        setIsSubscribed(false);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     if (!isPushSupported()) return;
 
     setIsLoading(true);
@@ -125,7 +194,14 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [native]);
 
-  return { permission, isSubscribed, isLoading, subscribe, unsubscribe };
+  return {
+    permission,
+    isSubscribed,
+    isLoading,
+    isNative: native,
+    subscribe,
+    unsubscribe,
+  };
 }

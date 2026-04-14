@@ -10,6 +10,7 @@ vi.mock("@/hooks/use-push-notifications", () => ({
     permission: "default" as const,
     isSubscribed: false,
     isLoading: false,
+    isNative: false,
     subscribe: mockSubscribe,
     unsubscribe: mockUnsubscribe,
   })),
@@ -27,6 +28,7 @@ describe("NotificationPrompt", () => {
       permission: "default",
       isSubscribed: false,
       isLoading: false,
+      isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
     });
@@ -43,6 +45,7 @@ describe("NotificationPrompt", () => {
       permission: "granted",
       isSubscribed: true,
       isLoading: false,
+      isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
     });
@@ -56,6 +59,7 @@ describe("NotificationPrompt", () => {
       permission: "denied",
       isSubscribed: false,
       isLoading: false,
+      isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
     });
@@ -69,6 +73,7 @@ describe("NotificationPrompt", () => {
       permission: "unsupported",
       isSubscribed: false,
       isLoading: false,
+      isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
     });
@@ -106,11 +111,95 @@ describe("NotificationPrompt", () => {
       permission: "default",
       isSubscribed: false,
       isLoading: true,
+      isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
     });
 
     render(<NotificationPrompt />);
     expect(screen.getByRole("button", { name: "..." })).toBeDisabled();
+  });
+
+  // --- Native-specific tests ---
+
+  describe("native platform", () => {
+    beforeEach(() => {
+      mockUsePush.mockReturnValue({
+        permission: "default",
+        isSubscribed: false,
+        isLoading: false,
+        isNative: true,
+        subscribe: mockSubscribe,
+        unsubscribe: mockUnsubscribe,
+      });
+    });
+
+    it("renders native description text", () => {
+      render(<NotificationPrompt />);
+      expect(
+        screen.getByText("Receba alertas de contas novas e pagamentos"),
+      ).toBeInTheDocument();
+    });
+
+    it("does not show dismiss button on native", () => {
+      render(<NotificationPrompt />);
+      expect(screen.queryByLabelText("Fechar")).not.toBeInTheDocument();
+    });
+
+    it("shows Ativar button on native", () => {
+      render(<NotificationPrompt />);
+      expect(screen.getByRole("button", { name: "Ativar" })).toBeInTheDocument();
+    });
+
+    it("calls subscribe on native Ativar click", async () => {
+      mockSubscribe.mockResolvedValue(undefined);
+      render(<NotificationPrompt />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Ativar" }));
+
+      expect(mockSubscribe).toHaveBeenCalledOnce();
+    });
+
+    it("hides when already subscribed on native", () => {
+      mockUsePush.mockReturnValue({
+        permission: "granted",
+        isSubscribed: true,
+        isLoading: false,
+        isNative: true,
+        subscribe: mockSubscribe,
+        unsubscribe: mockUnsubscribe,
+      });
+
+      const { container } = render(<NotificationPrompt />);
+      expect(container.innerHTML).toBe("");
+    });
+
+    it("hides when permission denied on native", () => {
+      mockUsePush.mockReturnValue({
+        permission: "denied",
+        isSubscribed: false,
+        isLoading: false,
+        isNative: true,
+        subscribe: mockSubscribe,
+        unsubscribe: mockUnsubscribe,
+      });
+
+      const { container } = render(<NotificationPrompt />);
+      expect(container.innerHTML).toBe("");
+    });
+  });
+
+  describe("web platform", () => {
+    it("shows web description text", () => {
+      render(<NotificationPrompt />);
+      expect(
+        screen.getByText("Fica sabendo quando rolar conta nova ou pagamento"),
+      ).toBeInTheDocument();
+    });
+
+    it("shows dismiss button on web", () => {
+      render(<NotificationPrompt />);
+      expect(screen.getByLabelText("Fechar")).toBeInTheDocument();
+    });
   });
 });
