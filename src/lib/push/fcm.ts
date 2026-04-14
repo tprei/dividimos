@@ -96,6 +96,14 @@ export async function sendFcmNotification(
 
   const url = `https://fcm.googleapis.com/v1/projects/${FCM_PROJECT_ID}/messages:send`;
 
+  // Do NOT set click_action. The legacy "FCM_PLUGIN_ACTIVITY" value from
+  // old Cordova/Capacitor templates only works if the AndroidManifest has a
+  // matching intent filter, which we don't have — and that caused taps to
+  // silently do nothing. Omitting click_action lets Android fall back to
+  // the launcher intent, which opens MainActivity (Capacitor entry point).
+  // Capacitor's push-notifications plugin fires pushNotificationActionPerformed
+  // on the JS side either way, and our AppShell listener reads data.url
+  // from there to route via next/router.
   const message: Record<string, unknown> = {
     token: deviceToken,
     notification: {
@@ -104,7 +112,6 @@ export async function sendFcmNotification(
     },
     android: {
       notification: {
-        click_action: "FCM_PLUGIN_ACTIVITY",
         ...(payload.tag ? { tag: payload.tag } : {}),
         ...(payload.icon ? { icon: payload.icon } : {}),
       },

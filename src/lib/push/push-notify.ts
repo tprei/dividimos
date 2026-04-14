@@ -177,7 +177,7 @@ export async function notifyGroupInvite(
   await safeNotify(inviteeId, {
     title: "Novo convite de grupo",
     body: `${inviterName} convidou você para "${groupName}"`,
-    url: "/app/groups",
+    url: `/app/groups/${groupId}`,
     tag: `group-invite-${groupId}`,
   }, "groups");
 }
@@ -309,23 +309,24 @@ export async function notifySettlementRecorded(
 
   const admin = createAdminClient();
 
-  const [groupResult, fromUserResult] = await Promise.all([
-    admin.from("groups").select("name").eq("id", groupId).single(),
-    admin
-      .from("user_profiles")
-      .select("name")
-      .eq("id", fromUserId)
-      .single(),
+  const [fromUserResult, groupContext] = await Promise.all([
+    admin.from("user_profiles").select("name").eq("id", fromUserId).single(),
+    getGroupNotificationContext(groupId, callerId),
   ]);
 
-  const groupName = groupResult.data?.name ?? "um grupo";
   const fromName = fromUserResult.data?.name ?? "Alguém";
   const amount = formatBRL(amountCents);
 
+  const body = groupContext.isDm
+    ? `${fromName} pagou ${amount}`
+    : `${fromName} pagou ${amount} em "${groupContext.displayName}"`;
+
   await safeNotify(toUserId, {
     title: "Pagamento registrado",
-    body: `${fromName} pagou ${amount} em "${groupName}"`,
-    url: `/app/groups/${groupId}`,
+    body,
+    url: groupContext.isDm
+      ? `/app/conversations/${fromUserId}`
+      : `/app/groups/${groupId}`,
     tag: `settlement-${groupId}`,
   }, "settlements");
 }
