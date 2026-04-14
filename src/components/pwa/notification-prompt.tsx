@@ -10,11 +10,16 @@ const SESSION_KEY = "dividimos:notification-prompt-dismissed";
 
 /**
  * Contextual notification opt-in banner shown once per session on group pages.
- * Only renders when push is supported, permission hasn't been decided, and
+ *
+ * On web: renders when push is supported, permission hasn't been decided, and
  * the user hasn't dismissed this session.
+ *
+ * On native (Capacitor): renders when permission is still promptable ("default").
+ * Uses Capacitor's runtime permission API instead of the Web Push flow.
  */
 export function NotificationPrompt() {
-  const { permission, isSubscribed, isLoading, subscribe } = usePushNotifications();
+  const { permission, isSubscribed, isLoading, isNative, subscribe } =
+    usePushNotifications();
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === "undefined") return true;
     return sessionStorage.getItem(SESSION_KEY) === "1";
@@ -50,7 +55,9 @@ export function NotificationPrompt() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">Ativar notificações</p>
           <p className="text-xs text-muted-foreground">
-            Fica sabendo quando rolar conta nova ou pagamento
+            {isNative
+              ? "Receba alertas de contas novas e pagamentos"
+              : "Fica sabendo quando rolar conta nova ou pagamento"}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -61,13 +68,15 @@ export function NotificationPrompt() {
           >
             {isLoading ? "..." : "Ativar"}
           </Button>
-          <button
-            onClick={handleDismiss}
-            className="rounded-lg p-1 text-muted-foreground hover:text-foreground"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          {!isNative && (
+            <button
+              onClick={handleDismiss}
+              className="rounded-lg p-1 text-muted-foreground hover:text-foreground"
+              aria-label="Fechar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </motion.div>
     </AnimatePresence>

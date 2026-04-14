@@ -1,5 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
+
+// ---------- Capacitor mocks (must be before importing the hook) ----------
+const mockCheckPermissions = vi.fn();
+const mockRequestPermissions = vi.fn();
+const mockRegister = vi.fn();
+const mockUnregister = vi.fn();
+let mockIsNativePlatform = false;
+
+vi.mock("@capacitor/core", () => ({
+  Capacitor: {
+    isNativePlatform: () => mockIsNativePlatform,
+  },
+}));
+
+vi.mock("@capacitor/push-notifications", () => ({
+  PushNotifications: {
+    checkPermissions: (...args: unknown[]) => mockCheckPermissions(...args),
+    requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
+    register: (...args: unknown[]) => mockRegister(...args),
+    unregister: (...args: unknown[]) => mockUnregister(...args),
+  },
+}));
+
 import { usePushNotifications } from "./use-push-notifications";
 
 describe("usePushNotifications", () => {
@@ -13,6 +36,8 @@ describe("usePushNotifications", () => {
   let mockRegistration: { pushManager: typeof mockPushManager };
 
   beforeEach(() => {
+    mockIsNativePlatform = false;
+
     mockPushManager = {
       getSubscription: vi.fn().mockResolvedValue(null),
       subscribe: vi.fn(),
@@ -70,6 +95,7 @@ describe("usePushNotifications", () => {
     const { result } = renderHook(() => usePushNotifications());
     expect(result.current.permission).toBe("unsupported");
     expect(result.current.isSubscribed).toBe(false);
+    expect(result.current.isNative).toBe(false);
   });
 
   it("detects existing subscription", async () => {
@@ -158,5 +184,154 @@ describe("usePushNotifications", () => {
       method: "POST",
     }));
     expect(result.current.isSubscribed).toBe(false);
+  });
+
+  // --- Native (Capacitor) tests ---
+
+  describe("native platform", () => {
+    beforeEach(() => {
+      mockIsNativePlatform = true;
+      mockCheckPermissions.mockReset();
+      mockRequestPermissions.mockReset();
+      mockRegister.mockReset();
+      mockUnregister.mockReset();
+    });
+
+    it("returns isNative true on native platform", () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
+
+      const { result } = renderHook(() => usePushNotifications());
+      expect(result.current.isNative).toBe(true);
+    });
+
+    it("checks native permissions on mount", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "granted" });
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      expect(mockCheckPermissions).toHaveBeenCalled();
+      expect(result.current.permission).toBe("granted");
+      expect(result.current.isSubscribed).toBe(true);
+    });
+
+    it("maps prompt permission to default", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      expect(result.current.permission).toBe("default");
+      expect(result.current.isSubscribed).toBe(false);
+    });
+
+    it("maps prompt-with-rationale to default", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt-with-rationale" });
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      expect(result.current.permission).toBe("default");
+    });
+
+    it("maps denied native permission correctly", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "denied" });
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      expect(result.current.permission).toBe("denied");
+      expect(result.current.isSubscribed).toBe(false);
+    });
+
+    it("native subscribe requests permission and registers", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
+      mockRequestPermissions.mockResolvedValue({ receive: "granted" });
+      mockRegister.mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      await act(async () => {
+        await result.current.subscribe();
+      });
+
+      expect(mockRequestPermissions).toHaveBeenCalled();
+      expect(mockRegister).toHaveBeenCalled();
+      expect(result.current.permission).toBe("granted");
+      expect(result.current.isSubscribed).toBe(true);
+    });
+
+    it("native subscribe does not register when denied", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
+      mockRequestPermissions.mockResolvedValue({ receive: "denied" });
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      await act(async () => {
+        await result.current.subscribe();
+      });
+
+      expect(mockRequestPermissions).toHaveBeenCalled();
+      expect(mockRegister).not.toHaveBeenCalled();
+      expect(result.current.permission).toBe("denied");
+      expect(result.current.isSubscribed).toBe(false);
+    });
+
+    it("native unsubscribe calls PushNotifications.unregister", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "granted" });
+      mockUnregister.mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      await act(async () => {
+        await result.current.unsubscribe();
+      });
+
+      expect(mockUnregister).toHaveBeenCalled();
+      expect(result.current.isSubscribed).toBe(false);
+    });
+
+    it("does not use web push APIs on native", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "prompt" });
+      mockRequestPermissions.mockResolvedValue({ receive: "granted" });
+      mockRegister.mockResolvedValue(undefined);
+
+      const { result } = renderHook(() => usePushNotifications());
+
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      await act(async () => {
+        await result.current.subscribe();
+      });
+
+      expect(mockPushManager.subscribe).not.toHaveBeenCalled();
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
   });
 });
