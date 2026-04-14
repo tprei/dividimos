@@ -45,6 +45,7 @@ import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
+import { notifyExpenseActivated } from "@/lib/push/push-notify";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { useBillStore } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
@@ -804,6 +805,7 @@ function NewBillPageContent() {
           );
 
           if (!rpcError) {
+            notifyExpenseActivated(expenseId).catch(() => {});
             useBillStore.setState({ expense: null, items: [], splits: [], billSplits: [], payers: [] });
             router.push(`/app/bill/${expenseId}`);
             return;
