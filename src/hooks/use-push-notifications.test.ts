@@ -127,6 +127,19 @@ describe("usePushNotifications", () => {
     expect(result.current.isNative).toBe(false);
   });
 
+  it("starts isInitializing true, flips to false once mount check resolves", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(null);
+
+    const { result } = renderHook(() => usePushNotifications());
+    expect(result.current.isInitializing).toBe(true);
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(result.current.isInitializing).toBe(false);
+  });
+
   it("detects existing subscription", async () => {
     const existingSub = { endpoint: "https://fcm.example.com/abc" };
     mockPushManager.getSubscription.mockResolvedValue(existingSub);

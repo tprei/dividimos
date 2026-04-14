@@ -16,6 +16,8 @@ export interface UsePushNotificationsReturn {
   isSubscribed: boolean;
   /** Whether a subscribe/unsubscribe operation is in progress */
   isLoading: boolean;
+  /** True until the initial permission + subscription check resolves. */
+  isInitializing: boolean;
   /** Whether running inside a native Capacitor shell */
   isNative: boolean;
   /** Request permission and subscribe to push notifications. Must be called from a user gesture. */
@@ -61,6 +63,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   const [permission, setPermission] = useState<PushPermission>("default");
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const checkedRef = useRef(false);
   const native = isNativePlatform();
 
@@ -70,22 +73,26 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
     if (native) {
       (async () => {
-        const { PushNotifications } = await import(
-          "@capacitor/push-notifications"
-        );
-        const result = await PushNotifications.checkPermissions();
-        const mapped = mapNativePermission(result.receive);
-        setPermission(mapped);
+        try {
+          const { PushNotifications } = await import(
+            "@capacitor/push-notifications"
+          );
+          const result = await PushNotifications.checkPermissions();
+          const mapped = mapNativePermission(result.receive);
+          setPermission(mapped);
 
-        if (mapped === "granted") {
-          // Previously opted in — refresh the FCM token on startup so the
-          // server always holds the current token (tokens can rotate).
-          try {
-            await registerNativePushToken();
-            setIsSubscribed(true);
-          } catch {
-            setIsSubscribed(false);
+          if (mapped === "granted") {
+            // Previously opted in — refresh the FCM token on startup so the
+            // server always holds the current token (tokens can rotate).
+            try {
+              await registerNativePushToken();
+              setIsSubscribed(true);
+            } catch {
+              setIsSubscribed(false);
+            }
           }
+        } finally {
+          setIsInitializing(false);
         }
       })();
       return;
@@ -93,16 +100,20 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
     if (!isPushSupported()) {
       setPermission("unsupported");
+      setIsInitializing(false);
       return;
     }
 
     setPermission(Notification.permission as PushPermission);
 
-    navigator.serviceWorker.ready.then((registration) => {
-      registration.pushManager.getSubscription().then((sub) => {
+    navigator.serviceWorker.ready
+      .then((registration) => registration.pushManager.getSubscription())
+      .then((sub) => {
         setIsSubscribed(sub !== null);
+      })
+      .finally(() => {
+        setIsInitializing(false);
       });
-    });
   }, [native]);
 
   const subscribe = useCallback(async () => {
@@ -202,6 +213,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     permission,
     isSubscribed,
     isLoading,
+    isInitializing,
     isNative: native,
     subscribe,
     unsubscribe,
