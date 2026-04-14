@@ -20,6 +20,7 @@ export interface Database {
           pix_key_hint: string;
           avatar_url: string | null;
           onboarded: boolean;
+          notification_preferences: Json;
           created_at: string;
         };
         Insert: {
@@ -32,6 +33,7 @@ export interface Database {
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
+          notification_preferences?: Json;
           created_at?: string;
         };
         Update: {
@@ -44,6 +46,7 @@ export interface Database {
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
+          notification_preferences?: Json;
           created_at?: string;
         };
         Relationships: [];

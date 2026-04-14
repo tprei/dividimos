@@ -6,6 +6,7 @@ import { formatBRL } from "@/lib/currency";
 import { isWebPushConfigured } from "./web-push";
 import { notifyUser } from "./notify-user";
 import type { PushPayload } from "./web-push";
+import type { NotificationCategory } from "@/types";
 
 async function getCallerId(): Promise<string | null> {
   const supabase = await createClient();
@@ -16,12 +17,37 @@ async function getCallerId(): Promise<string | null> {
 }
 
 /**
+ * Check whether a user has a notification category enabled.
+ * Missing key = enabled (opt-out model).
+ */
+export async function checkPreference(
+  userId: string,
+  category: NotificationCategory,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("users")
+    .select("notification_preferences")
+    .eq("id", userId)
+    .single();
+  if (!data) return true;
+  const prefs = (data.notification_preferences ?? {}) as Record<string, boolean>;
+  return prefs[category] !== false;
+}
+
+/**
  * Fire-and-forget wrapper that swallows all errors.
  * Push notification failure must never break the primary action.
  */
-async function safeNotify(userId: string, payload: PushPayload): Promise<void> {
+async function safeNotify(
+  userId: string,
+  payload: PushPayload,
+  category: NotificationCategory,
+): Promise<void> {
   if (!isWebPushConfigured()) return;
   try {
+    const enabled = await checkPreference(userId, category);
+    if (!enabled) return;
     await notifyUser(userId, payload);
   } catch {
     // Intentionally swallowed — push is best-effort
@@ -36,10 +62,11 @@ async function safeNotifyMany(
   userIds: string[],
   excludeUserId: string,
   payload: PushPayload,
+  category: NotificationCategory,
 ): Promise<void> {
   const recipients = userIds.filter((id) => id !== excludeUserId);
   if (recipients.length === 0) return;
-  await Promise.all(recipients.map((id) => safeNotify(id, payload)));
+  await Promise.all(recipients.map((id) => safeNotify(id, payload, category)));
 }
 
 // ============================================================
@@ -98,7 +125,7 @@ export async function notifyGroupInvite(
     body: `${inviterName} convidou você para "${groupName}"`,
     url: "/app/groups",
     tag: `group-invite-${groupId}`,
-  });
+  }, "groups");
 }
 
 // ============================================================
@@ -146,7 +173,7 @@ export async function notifyGroupAccepted(
     body: `${accepterName} entrou em "${groupName}"`,
     url: `/app/groups/${groupId}`,
     tag: `group-accepted-${groupId}`,
-  });
+  }, "groups");
 }
 
 // ============================================================
@@ -204,7 +231,7 @@ export async function notifyExpenseActivated(
     body: `${creatorName} adicionou "${title}" — ${amount}`,
     url: `/app/bill/${expenseId}`,
     tag: `expense-${expenseId}`,
-  });
+  }, "expenses");
 }
 
 // ============================================================
@@ -246,7 +273,7 @@ export async function notifySettlementRecorded(
     body: `${fromName} pagou ${amount} em "${groupName}"`,
     url: `/app/groups/${groupId}`,
     tag: `settlement-${groupId}`,
-  });
+  }, "settlements");
 }
 
 // ============================================================
@@ -288,7 +315,7 @@ export async function notifyPaymentNudge(
     body: `${creditorName} pediu ${amount} em "${groupName}"`,
     url: `/app/groups/${groupId}`,
     tag: `nudge-${groupId}-${callerId}`,
-  });
+  }, "nudges");
 }
 
 // ============================================================
@@ -330,7 +357,7 @@ export async function notifyExpenseEdited(
     body: `${editorName} editou "${title}"`,
     url: `/app/bill/${expenseId}`,
     tag: `expense-edited-${expenseId}`,
-  });
+  }, "expenses");
 }
 
 // ============================================================
@@ -371,7 +398,7 @@ export async function notifyExpenseDeleted(
     body: `${deleterName} removeu "${title}"`,
     url: `/app/groups/${groupId}`,
     tag: `expense-deleted-${groupId}`,
-  });
+  }, "expenses");
 }
 
 // ============================================================
@@ -422,5 +449,5 @@ export async function notifyDmTextMessage(
     body: truncated,
     url: `/app/conversations/${callerId}`,
     tag: `dm-${groupId}`,
-  });
+  }, "messages");
 }

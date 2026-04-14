@@ -158,6 +158,7 @@ function NewBillPageContent() {
         avatarUrl: profile.avatar_url ?? undefined,
         onboarded: true,
         createdAt: new Date().toISOString(),
+
       };
 
       store.setCurrentUser(authUser);
@@ -1394,6 +1395,7 @@ function NewBillPageContent() {
                         avatarUrl: profile.avatarUrl,
                         onboarded: true,
                         createdAt: new Date().toISOString(),
+                
                       };
                       store.addParticipant(newUser);
                     }}
@@ -1414,6 +1416,7 @@ function NewBillPageContent() {
                             avatarUrl: profile.avatarUrl,
                             onboarded: true,
                             createdAt: new Date().toISOString(),
+                    
                           };
                           store.addParticipant(newUser);
                           setShowAddParticipant(false);

@@ -15,7 +15,21 @@ export type ExpenseType = "itemized" | "single_amount";
 export type SettlementStatus = "pending" | "confirmed";
 
 // ============================================================
-// User types (unchanged)
+// Notification preference categories
+// ============================================================
+
+export type NotificationCategory =
+  | "expenses"
+  | "settlements"
+  | "nudges"
+  | "groups"
+  | "messages";
+
+/** Per-category push notification opt-out. Missing key = enabled. */
+export type NotificationPreferences = Partial<Record<NotificationCategory, boolean>>;
+
+// ============================================================
+// User types
 // ============================================================
 
 export interface User {
@@ -28,6 +42,7 @@ export interface User {
   avatarUrl?: string;
   onboarded: boolean;
   createdAt: string;
+  notificationPreferences?: NotificationPreferences;
 }
 
 export interface UserProfile {

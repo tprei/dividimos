@@ -61,6 +61,7 @@ export function UserProvider({
           avatarUrl: p.avatar_url ?? undefined,
           onboarded: p.onboarded,
           createdAt: p.created_at,
+          notificationPreferences: (p.notification_preferences ?? {}) as Record<string, boolean>,
         });
       }
     }

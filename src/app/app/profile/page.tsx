@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AtSign,
+  Bell,
   Check,
   ChevronRight,
   Clipboard,
@@ -12,10 +13,10 @@ import {
   Pencil,
   QrCode,
   Shield,
-  Smartphone,
   X,
 } from "lucide-react";
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { ProfileShareModal } from "@/components/profile/profile-share-modal";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -347,13 +348,16 @@ export default function ProfilePage() {
             />
           </div>
           <Separator />
-          <div className="flex items-center justify-between p-4">
+          <Link
+            href="/app/settings"
+            className="flex items-center justify-between p-4 transition-colors hover:bg-muted/50"
+          >
             <div className="flex items-center gap-3">
-              <Smartphone className="h-5 w-5 text-muted-foreground" />
+              <Bell className="h-5 w-5 text-muted-foreground" />
               <span className="font-medium">Notificações</span>
             </div>
-            <Switch defaultChecked />
-          </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
         </div>
       </motion.div>
 
