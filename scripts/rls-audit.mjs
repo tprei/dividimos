@@ -11,9 +11,11 @@
  *   node scripts/rls-audit.mjs [--json] [--diff <file>]
  *
  * Environment:
- *   ANTHROPIC_API_KEY   — required
- *   SUPABASE_DB_URL     — postgres connection string (default: local Supabase)
- *   RLS_AUDIT_MODEL     — Claude model to use (default: claude-sonnet-4-20250514)
+ *   ANTHROPIC_API_KEY        — required
+ *   ANTHROPIC_BASE_URL       — base URL for the API (default: https://api.anthropic.com)
+ *                               e.g. https://api.z.ai/api/anthropic for z.ai
+ *   SUPABASE_DB_URL          — postgres connection string (default: local Supabase)
+ *   RLS_AUDIT_MODEL          — Claude model to use (default: claude-sonnet-4-20250514)
  *
  * Exit codes:
  *   0 — no CRITICAL or HIGH findings
@@ -35,6 +37,7 @@ if (!API_KEY) {
   exit(2);
 }
 
+const API_BASE_URL = env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com";
 const DB_URL =
   env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@localhost:54322/postgres";
 const MODEL = env.RLS_AUDIT_MODEL ?? "claude-sonnet-4-20250514";
@@ -154,11 +157,11 @@ const userMessage = [
 // Step 4: Call Claude API
 // ---------------------------------------------------------------------------
 
-console.error(`Sending to Claude (${MODEL})...`);
+console.error(`Sending to ${API_BASE_URL} (${MODEL})...`);
 
 let response;
 try {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch(`${API_BASE_URL}/v1/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
