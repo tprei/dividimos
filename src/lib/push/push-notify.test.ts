@@ -173,7 +173,7 @@ describe("push-notify", () => {
       expect(notifyUser).toHaveBeenCalledWith("invitee-1", {
         title: "Novo convite de grupo",
         body: 'João convidou você para "Almoço"',
-        url: "/app/groups",
+        url: "/app/groups/group-1",
         tag: "group-invite-group-1",
       });
     });
@@ -217,7 +217,7 @@ describe("push-notify", () => {
       expect(notifyUser).toHaveBeenCalledWith("invitee-1", {
         title: "Novo convite de grupo",
         body: 'Alguém convidou você para "um grupo"',
-        url: "/app/groups",
+        url: "/app/groups/group-1",
         tag: "group-invite-group-1",
       });
     });
@@ -290,7 +290,7 @@ describe("push-notify", () => {
       expect(notifyUser).toHaveBeenCalledWith("invitee-1", {
         title: "Novo convite de grupo",
         body: 'Thiago convidou você para "Viagem"',
-        url: "/app/groups",
+        url: "/app/groups/group-1",
         tag: "group-invite-group-1",
       });
     });
@@ -775,6 +775,64 @@ describe("push-notify", () => {
       await expect(
         notifySettlementRecorded("group-1", "from-1", "to-1", 1000),
       ).resolves.toBeUndefined();
+    });
+
+    it("omits group name and deep-links to the conversation in a DM", async () => {
+      mockCaller("from-1");
+
+      const chain = mockSupabaseChain({ data: null, error: null });
+      chain.from.mockImplementation((table: string) => {
+        if (table === "groups") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "", is_dm: true },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { user_a: "from-1", user_b: "to-1" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        if (table === "user_profiles") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { name: "Ana" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        }
+        return chain;
+      });
+      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+
+      await notifySettlementRecorded("group-1", "from-1", "to-1", 2500);
+
+      expect(notifyUser).toHaveBeenCalledWith("to-1", {
+        title: "Pagamento registrado",
+        body: "Ana pagou R$\u00a025,00",
+        url: "/app/conversations/from-1",
+        tag: "settlement-group-1",
+      });
     });
   });
 
