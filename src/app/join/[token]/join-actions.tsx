@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { notifyGroupAccepted } from "@/lib/push/push-notify";
 
 interface JoinActionsProps {
   token: string;
@@ -93,6 +94,15 @@ export function JoinActions({
     if (result.already_member) {
       router.push(`/app/groups/${result.group_id}`);
       return;
+    }
+
+    // Notify the inviter/creator that someone joined via the invite link.
+    // The join_group_via_link RPC creates the membership, but doesn't fire
+    // notifications — that has to happen client-side from the joiner.
+    const { data: sessionData } = await supabase.auth.getUser();
+    const joinerId = sessionData.user?.id;
+    if (joinerId) {
+      notifyGroupAccepted(result.group_id, joinerId).catch(() => {});
     }
 
     router.push(`/app/groups/${result.group_id}`);

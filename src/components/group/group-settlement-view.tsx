@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Bell, CheckCheck, Info, Loader2 } from "lucide-react";
+import toast from "react-hot-toast";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
@@ -221,12 +222,11 @@ export function GroupSettlementView({
     setActing(null);
   }
 
-  function handleNudge(debtorId: string, amountCents: number) {
+  async function handleNudge(debtorId: string, amountCents: number) {
     const key = `${groupId}-${debtorId}`;
     if (nudgeSent.has(key)) return;
 
-    notifyPaymentNudge(groupId, debtorId, amountCents).catch(() => {});
-
+    // Optimistically mark as sent so repeated taps are ignored immediately.
     const next = new Set(nudgeSent);
     next.add(key);
     setNudgeSent(next);
@@ -235,6 +235,21 @@ export function GroupSettlementView({
     const parsed: Record<string, number> = stored ? JSON.parse(stored) : {};
     parsed[key] = Date.now();
     localStorage.setItem("nudge-cooldowns", JSON.stringify(parsed));
+
+    const debtorName = getParticipant(debtorId).name;
+    const toastId = toast.loading(`Enviando lembrete…`);
+    try {
+      await notifyPaymentNudge(groupId, debtorId, amountCents);
+      toast.success(`Lembrete enviado para ${debtorName}`, { id: toastId });
+    } catch {
+      toast.error("Erro ao enviar lembrete", { id: toastId });
+      // Roll back the optimistic lockout so they can retry
+      const rollback = new Set(next);
+      rollback.delete(key);
+      setNudgeSent(rollback);
+      delete parsed[key];
+      localStorage.setItem("nudge-cooldowns", JSON.stringify(parsed));
+    }
   }
 
   if (loading) {

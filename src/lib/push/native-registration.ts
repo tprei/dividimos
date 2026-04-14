@@ -10,8 +10,10 @@ interface PendingResolver {
 }
 
 let cachedToken: string | null = null;
+let lastPostedToken: string | null = null;
 let listenersAttached = false;
 let attachPromise: Promise<void> | null = null;
+let registerInflight: Promise<string> | null = null;
 const pendingResolvers: PendingResolver[] = [];
 const subscribers = new Set<TokenHandler>();
 
@@ -78,7 +80,10 @@ async function ensureListenersAttached(): Promise<void> {
       cachedToken = token.value;
       notifySubscribers(cachedToken);
       try {
-        await postSubscribe(token.value);
+        if (lastPostedToken !== token.value) {
+          await postSubscribe(token.value);
+          lastPostedToken = token.value;
+        }
         resolvePending(token.value);
       } catch (error) {
         rejectPending(
@@ -104,11 +109,10 @@ async function ensureListenersAttached(): Promise<void> {
 /**
  * Kick off native FCM registration and upload the token to the server.
  *
- * Idempotent across calls within a single app lifetime. Capacitor listeners
- * are attached exactly once; every `registration` event (including refresh
- * events after the initial one) re-POSTs the latest token so the server
- * stays in sync. Safe to call on every app startup — FCM tokens can rotate
- * between launches.
+ * Concurrent callers share a single in-flight `register()` call, so the
+ * listener fires exactly once per registration round. Token-refresh events
+ * are deduplicated via `lastPostedToken`, so the server only receives a
+ * POST when the token actually changes. Safe to call on every app startup.
  */
 export async function registerNativePushToken(): Promise<string | null> {
   if (!isNativePlatform()) return null;
@@ -116,13 +120,27 @@ export async function registerNativePushToken(): Promise<string | null> {
   const { PushNotifications } = await import("@capacitor/push-notifications");
   await ensureListenersAttached();
 
-  return new Promise<string>((resolve, reject) => {
-    pendingResolvers.push({ resolve, reject });
+  if (registerInflight) return registerInflight;
+
+  registerInflight = new Promise<string>((resolve, reject) => {
+    pendingResolvers.push({
+      resolve: (token) => {
+        registerInflight = null;
+        resolve(token);
+      },
+      reject: (error) => {
+        registerInflight = null;
+        reject(error);
+      },
+    });
     PushNotifications.register().catch((error) => {
       const err = error instanceof Error ? error : new Error(String(error));
+      registerInflight = null;
       rejectPending(err);
     });
   });
+
+  return registerInflight;
 }
 
 /**
@@ -147,6 +165,7 @@ export async function unregisterNativePushToken(): Promise<void> {
     await PushNotifications.unregister();
   } finally {
     cachedToken = null;
+    lastPostedToken = null;
     notifySubscribers(null);
   }
 }
@@ -154,8 +173,10 @@ export async function unregisterNativePushToken(): Promise<void> {
 /** Test-only: reset module state between tests. */
 export function __resetNativeRegistrationForTests(): void {
   cachedToken = null;
+  lastPostedToken = null;
   listenersAttached = false;
   attachPromise = null;
+  registerInflight = null;
   pendingResolvers.splice(0);
   subscribers.clear();
 }

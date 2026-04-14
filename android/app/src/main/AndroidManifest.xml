@@ -56,6 +56,16 @@
             </intent-filter>
             <meta-data android:name="photopicker_activity:0:required" android:value="" />
         </service>
+
+        <!-- FCM notification styling: use a tinted silhouette icon instead
+             of the generic Android bell. default_notification_color sets the
+             accent color Android tints the silhouette with. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
     </application>
 
     <!-- Allow resolveActivity() to find camera/gallery apps (Android 11+) -->

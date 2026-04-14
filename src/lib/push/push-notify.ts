@@ -4,9 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatBRL } from "@/lib/currency";
 import { isWebPushConfigured } from "./web-push";
+import { isFcmConfigured } from "./fcm";
 import { notifyUser } from "./notify-user";
 import type { PushPayload } from "./web-push";
 import type { NotificationCategory } from "@/types";
+
+function isAnyPushConfigured(): boolean {
+  return isWebPushConfigured() || isFcmConfigured();
+}
 
 async function getCallerId(): Promise<string | null> {
   const supabase = await createClient();
@@ -14,6 +19,50 @@ async function getCallerId(): Promise<string | null> {
     data: { user },
   } = await supabase.auth.getUser();
   return user?.id ?? null;
+}
+
+/**
+ * Resolve a group's display context for notifications. DM groups have no
+ * meaningful `name`; return the counterparty's name instead so titles like
+ * "Nova despesa em '{name}'" don't render with an empty string.
+ */
+async function getGroupNotificationContext(
+  groupId: string,
+  callerId: string,
+): Promise<{ displayName: string; isDm: boolean }> {
+  const admin = createAdminClient();
+  const { data: group } = await admin
+    .from("groups")
+    .select("name, is_dm")
+    .eq("id", groupId)
+    .single();
+
+  if (!group) return { displayName: "um grupo", isDm: false };
+  if (!group.is_dm) return { displayName: group.name ?? "um grupo", isDm: false };
+
+  const { data: dmPair } = await admin
+    .from("dm_pairs")
+    .select("user_a, user_b")
+    .eq("group_id", groupId)
+    .single();
+
+  const counterpartyId = dmPair
+    ? dmPair.user_a === callerId
+      ? dmPair.user_b
+      : dmPair.user_b === callerId
+        ? dmPair.user_a
+        : null
+    : null;
+
+  if (!counterpartyId) return { displayName: "", isDm: true };
+
+  const { data: profile } = await admin
+    .from("user_profiles")
+    .select("name")
+    .eq("id", counterpartyId)
+    .single();
+
+  return { displayName: profile?.name ?? "", isDm: true };
 }
 
 /**
@@ -44,7 +93,7 @@ async function safeNotify(
   payload: PushPayload,
   category: NotificationCategory,
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
   try {
     const enabled = await checkPreference(userId, category);
     if (!enabled) return;
@@ -81,24 +130,25 @@ export async function notifyGroupInvite(
   groupId: string,
   inviteeId: string,
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId) return;
 
   const admin = createAdminClient();
 
-  const { count } = await admin
-    .from("group_members")
-    .select("*", { count: "exact", head: true })
-    .eq("group_id", groupId)
-    .eq("user_id", callerId)
-    .eq("status", "accepted");
-  if (!count || count === 0) return;
-
-  const [groupResult, inviterResult] = await Promise.all([
-    admin.from("groups").select("name").eq("id", groupId).single(),
-    // The most recent "accepted" or creator member who invited this person
+  // Caller must be the group creator OR an accepted member.
+  // Group creators have no row in group_members — they're tracked via
+  // groups.creator_id — so membership-only checks would skip notifies from
+  // the creator, which is the most common path.
+  const [groupResult, memberCountResult, inviterResult] = await Promise.all([
+    admin.from("groups").select("name, creator_id").eq("id", groupId).single(),
+    admin
+      .from("group_members")
+      .select("*", { count: "exact", head: true })
+      .eq("group_id", groupId)
+      .eq("user_id", callerId)
+      .eq("status", "accepted"),
     admin
       .from("group_members")
       .select("invited_by")
@@ -106,6 +156,10 @@ export async function notifyGroupInvite(
       .eq("user_id", inviteeId)
       .single(),
   ]);
+
+  const isMember = (memberCountResult.count ?? 0) > 0;
+  const isCreator = groupResult.data?.creator_id === callerId;
+  if (!isMember && !isCreator) return;
 
   const groupName = groupResult.data?.name ?? "um grupo";
   const inviterId = inviterResult.data?.invited_by;
@@ -140,7 +194,7 @@ export async function notifyGroupAccepted(
   groupId: string,
   accepterId: string,
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId || callerId !== accepterId) return;
@@ -187,7 +241,7 @@ export async function notifyGroupAccepted(
 export async function notifyExpenseActivated(
   expenseId: string,
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId) return;
@@ -212,24 +266,24 @@ export async function notifyExpenseActivated(
   const { group_id, creator_id, title, total_amount } = expenseResult.data;
   const affectedUserIds = (sharesResult.data ?? []).map((s) => s.user_id);
 
-  // Fetch group name and creator name in parallel
-  const [groupResult, creatorResult] = await Promise.all([
-    admin.from("groups").select("name").eq("id", group_id).single(),
-    admin
-      .from("user_profiles")
-      .select("name")
-      .eq("id", creator_id)
-      .single(),
+  const [creatorResult, groupContext] = await Promise.all([
+    admin.from("user_profiles").select("name").eq("id", creator_id).single(),
+    getGroupNotificationContext(group_id, callerId),
   ]);
 
-  const groupName = groupResult.data?.name ?? "um grupo";
   const creatorName = creatorResult.data?.name ?? "Alguém";
   const amount = formatBRL(total_amount);
 
+  const notificationTitle = groupContext.isDm
+    ? "Nova despesa"
+    : `Nova despesa em "${groupContext.displayName}"`;
+
   await safeNotifyMany(affectedUserIds, creator_id, {
-    title: `Nova despesa em "${groupName}"`,
+    title: notificationTitle,
     body: `${creatorName} adicionou "${title}" — ${amount}`,
-    url: `/app/bill/${expenseId}`,
+    url: groupContext.isDm
+      ? `/app/conversations/${creator_id}`
+      : `/app/bill/${expenseId}`,
     tag: `expense-${expenseId}`,
   }, "expenses");
 }
@@ -248,7 +302,7 @@ export async function notifySettlementRecorded(
   toUserId: string,
   amountCents: number,
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId || callerId !== fromUserId) return;
@@ -290,30 +344,31 @@ export async function notifyPaymentNudge(
   debtorId: string,
   amountCents: number,
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId || callerId === debtorId) return;
 
   const admin = createAdminClient();
 
-  const [groupResult, creditorResult] = await Promise.all([
-    admin.from("groups").select("name").eq("id", groupId).single(),
-    admin
-      .from("user_profiles")
-      .select("name")
-      .eq("id", callerId)
-      .single(),
+  const [creditorResult, groupContext] = await Promise.all([
+    admin.from("user_profiles").select("name").eq("id", callerId).single(),
+    getGroupNotificationContext(groupId, callerId),
   ]);
 
-  const groupName = groupResult.data?.name ?? "um grupo";
   const creditorName = creditorResult.data?.name ?? "Alguém";
   const amount = formatBRL(amountCents);
 
+  const body = groupContext.isDm
+    ? `${creditorName} pediu ${amount}`
+    : `${creditorName} pediu ${amount} em "${groupContext.displayName}"`;
+
   await safeNotify(debtorId, {
     title: "Lembrete de pagamento",
-    body: `${creditorName} pediu ${amount} em "${groupName}"`,
-    url: `/app/groups/${groupId}`,
+    body,
+    url: groupContext.isDm
+      ? `/app/conversations/${callerId}`
+      : `/app/groups/${groupId}`,
     tag: `nudge-${groupId}-${callerId}`,
   }, "nudges");
 }
@@ -333,7 +388,7 @@ export async function notifyExpenseEdited(
   title: string,
   affectedUserIds: string[],
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId) return;
@@ -374,7 +429,7 @@ export async function notifyExpenseDeleted(
   title: string,
   affectedUserIds: string[],
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId) return;
@@ -413,7 +468,7 @@ export async function notifyDmTextMessage(
   groupId: string,
   messagePreview: string,
 ): Promise<void> {
-  if (!isWebPushConfigured()) return;
+  if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId) return;

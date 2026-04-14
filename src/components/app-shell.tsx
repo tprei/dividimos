@@ -158,6 +158,44 @@ export function AppShell({
     return () => window.removeEventListener("activity-updated", onNewActivity);
   }, []);
 
+  // Deep-link on notification tap (native only). Capacitor's
+  // pushNotificationActionPerformed event fires when the user taps a
+  // notification that arrived while the app was in any state. The payload
+  // carries { data: { url: "/app/..." } } which we dispatched server-side.
+  useEffect(() => {
+    let handle: { remove: () => Promise<void> } | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { Capacitor } = await import("@capacitor/core");
+        if (!Capacitor.isNativePlatform()) return;
+        const { PushNotifications } = await import(
+          "@capacitor/push-notifications"
+        );
+        const listener = await PushNotifications.addListener(
+          "pushNotificationActionPerformed",
+          (action) => {
+            const url = action.notification?.data?.url;
+            if (typeof url === "string" && url.startsWith("/app/")) {
+              router.push(url);
+            }
+          },
+        );
+        if (cancelled) {
+          await listener.remove();
+        } else {
+          handle = listener;
+        }
+      } catch {
+        // Capacitor not available (e.g. web) — ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+      handle?.remove().catch(() => {});
+    };
+  }, [router]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     window.dispatchEvent(new CustomEvent("app-refresh"));
