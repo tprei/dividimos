@@ -72,9 +72,9 @@ async function ensureListenersAttached(): Promise<void> {
   if (attachPromise) return attachPromise;
 
   attachPromise = (async () => {
-    const { PushNotifications } = await import("@capacitor/push-notifications");
+    const { PushNotifications } = await import(/* @vite-ignore */ "@capacitor/push-notifications");
 
-    await PushNotifications.addListener("registration", async (token) => {
+    await PushNotifications.addListener("registration", async (token: { value: string }) => {
       cachedToken = token.value;
       notifySubscribers(cachedToken);
       try {
@@ -87,7 +87,7 @@ async function ensureListenersAttached(): Promise<void> {
       }
     });
 
-    await PushNotifications.addListener("registrationError", (err) => {
+    await PushNotifications.addListener("registrationError", (err: { error: string }) => {
       const message =
         err && typeof err.error === "string"
           ? err.error
@@ -113,7 +113,7 @@ async function ensureListenersAttached(): Promise<void> {
 export async function registerNativePushToken(): Promise<string | null> {
   if (!isNativePlatform()) return null;
 
-  const { PushNotifications } = await import("@capacitor/push-notifications");
+  const { PushNotifications } = await import(/* @vite-ignore */ "@capacitor/push-notifications");
   await ensureListenersAttached();
 
   return new Promise<string>((resolve, reject) => {
@@ -133,7 +133,7 @@ export async function unregisterNativePushToken(): Promise<void> {
   if (!isNativePlatform()) return;
 
   const token = cachedToken;
-  const { PushNotifications } = await import("@capacitor/push-notifications");
+  const { PushNotifications } = await import(/* @vite-ignore */ "@capacitor/push-notifications");
 
   if (token) {
     try {
