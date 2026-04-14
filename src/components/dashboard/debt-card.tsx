@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Bell } from "lucide-react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
@@ -10,11 +11,13 @@ interface DebtCardProps {
   debt: DebtSummary;
   onPay: (debt: DebtSummary) => void;
   onCollect: (debt: DebtSummary) => void;
+  onNudge?: (debt: DebtSummary) => void;
   onNavigate: (debt: DebtSummary) => void;
   isActing?: boolean;
+  nudgeCooldown?: boolean;
 }
 
-export function DebtCard({ debt, onPay, onCollect, onNavigate, isActing }: DebtCardProps) {
+export function DebtCard({ debt, onPay, onCollect, onNudge, onNavigate, isActing, nudgeCooldown }: DebtCardProps) {
   const isOwes = debt.direction === "owes";
 
   return (
@@ -62,15 +65,28 @@ export function DebtCard({ debt, onPay, onCollect, onNavigate, isActing }: DebtC
             Pagar via Pix
           </Button>
         ) : (
-          <Button
-            variant="outline"
-            className="flex-1"
-            size="sm"
-            onClick={() => onCollect(debt)}
-            disabled={isActing}
-          >
-            Cobrar via Pix
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              className="flex-1"
+              size="sm"
+              onClick={() => onCollect(debt)}
+              disabled={isActing}
+            >
+              Cobrar via Pix
+            </Button>
+            {onNudge && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onNudge(debt)}
+                disabled={isActing || nudgeCooldown}
+                title={nudgeCooldown ? "Lembrete já enviado" : "Enviar lembrete"}
+              >
+                <Bell className="h-4 w-4" />
+              </Button>
+            )}
+          </>
         )}
       </div>
     </motion.div>
