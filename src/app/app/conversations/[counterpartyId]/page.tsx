@@ -1,594 +1,264 @@
-"use client";
-
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { Check, Loader2, X } from "lucide-react";
-import toast from "react-hot-toast";
-import { ConversationHeader } from "@/components/chat/conversation-header";
-import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
-import { ConversationQuickActions } from "@/components/chat/conversation-quick-actions";
-import { QuickChargeSheet, type QuickChargeStatus } from "@/components/chat/quick-charge-sheet";
-import { QuickSplitSheet, type QuickSplitStatus, type QuickSplitResult } from "@/components/chat/quick-split-sheet";
-import { ChatThread } from "@/components/chat/chat-thread";
-import { ChatAiInput } from "@/components/chat/chat-ai-input";
-import { Skeleton } from "@/components/shared/skeleton";
-import { UserAvatar } from "@/components/shared/user-avatar";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks/use-auth";
-import { useRealtimeChat } from "@/hooks/use-realtime-chat";
-import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
-import {
-  loadConversationMessages,
-  sendChatMessage,
-  type ConversationThread,
-} from "@/lib/supabase/chat-actions";
-import { confirmChatDraft } from "@/lib/supabase/chat-draft-confirm";
-import { notifyDmTextMessage, notifyExpenseActivated } from "@/lib/push/push-notify";
-import { markConversationRead } from "@/lib/supabase/unread-actions";
-import { createClient } from "@/lib/supabase/client";
+import { getAuthUser } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import {
   expenseRowToExpense,
   settlementRowToSettlement,
   userProfileRowToUserProfile,
 } from "@/lib/supabase/expense-mappers";
-import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
-import type { MemberContext } from "@/hooks/use-ai-expense-parse";
+import { ConversationPageClient } from "./conversation-page-client";
+import type { ConversationInitialData } from "./conversation-page-client";
 import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
 import type { Database } from "@/types/database";
 
-type DmMemberStatus = "accepted" | "invited" | "declined";
+type ChatMessageRow = Database["public"]["Tables"]["chat_messages"]["Row"];
 
-export default function ConversationPage({
+const PAGE_SIZE = 50;
+
+export default async function ConversationPage({
   params,
 }: {
   params: Promise<{ counterpartyId: string }>;
 }) {
-  const { counterpartyId } = use(params);
-  const { user } = useAuth();
-  const router = useRouter();
+  const { counterpartyId } = await params;
+  const user = await getAuthUser();
 
-  const [counterparty, setCounterparty] = useState<UserProfile | null>(null);
-  const [groupId, setGroupId] = useState<string | null>(null);
-  const [thread, setThread] = useState<ConversationThread | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [callerStatus, setCallerStatus] = useState<DmMemberStatus>("accepted");
-  const [counterpartyStatus, setCounterpartyStatus] = useState<DmMemberStatus>("accepted");
+  if (!user) return null;
 
-  const PAGE_SIZE = 50;
+  const supabase = await createClient();
 
-  const initialize = useCallback(async () => {
-    if (!user) return;
+  // Get or create DM group (must exist before profile fetch due to RLS)
+  const { data: groupId, error: rpcError } = await supabase.rpc(
+    "get_or_create_dm_group",
+    { p_other_user_id: counterpartyId },
+  );
 
-    setLoading(true);
-    setError(null);
+  if (rpcError || !groupId) {
+    return (
+      <ConversationPageClient
+        initialData={{
+          counterpartyId,
+          currentUser: {
+            id: user.id,
+            handle: user.handle,
+            name: user.name,
+            avatarUrl: user.avatarUrl,
+          },
+          error: rpcError?.message ?? "Erro ao criar conversa",
+          groupId: null,
+          counterparty: null,
+          thread: null,
+          hasMore: false,
+          callerStatus: "accepted",
+          counterpartyStatus: "accepted",
+        }}
+      />
+    );
+  }
 
-    const supabase = createClient();
-
-    // DM group must be created first — RLS on user_profiles requires shared
-    // group membership, so the profile fetch depends on the group existing.
-    const dmResult = await getOrCreateDmGroup(counterpartyId);
-
-    if ("error" in dmResult) {
-      setError(dmResult.error);
-      setLoading(false);
-      return;
-    }
-
-    const gId = dmResult.groupId;
-    setGroupId(gId);
-
-    const profileResult = await supabase
+  // Parallel: profile, messages, member statuses
+  const [profileResult, messagesQuery, membersResult] = await Promise.all([
+    supabase
       .from("user_profiles")
       .select("*")
       .eq("id", counterpartyId)
-      .single();
+      .single(),
+    supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: false })
+      .limit(PAGE_SIZE),
+    supabase
+      .from("group_members")
+      .select("user_id, status")
+      .eq("group_id", groupId)
+      .in("user_id", [user.id, counterpartyId]),
+  ]);
 
-    if (profileResult.error || !profileResult.data) {
-      setError("Usuário não encontrado");
-      setLoading(false);
-      return;
-    }
-
-    setCounterparty(userProfileRowToUserProfile(profileResult.data));
-
-    const [messagesResult, membersResult] = await Promise.all([
-      loadConversationMessages(gId, { limit: PAGE_SIZE }),
-      supabase
-        .from("group_members")
-        .select("user_id, status")
-        .eq("group_id", gId)
-        .in("user_id", [user.id, counterpartyId]),
-    ]);
-
-    if ("error" in messagesResult) {
-      setError(messagesResult.error);
-      setLoading(false);
-      return;
-    }
-
-    const memberRows = (membersResult.data ?? []) as { user_id: string; status: string }[];
-    const callerRow = memberRows.find((m) => m.user_id === user.id);
-    const counterpartyRow = memberRows.find((m) => m.user_id === counterpartyId);
-    setCallerStatus((callerRow?.status ?? "accepted") as DmMemberStatus);
-    setCounterpartyStatus((counterpartyRow?.status ?? "invited") as DmMemberStatus);
-
-    setThread(messagesResult);
-    setHasMore(messagesResult.messages.length >= PAGE_SIZE);
-
-    // Fire-and-forget: mark as read without blocking page render
-    markConversationRead(createClient(), user.id, gId).catch(() => {});
-
-    setLoading(false);
-  }, [user, counterpartyId]);
-
-  useEffect(() => {
-    initialize();
-  }, [initialize]);
-
-  useEffect(() => {
-    const handleRefresh = () => initialize();
-    window.addEventListener("app-refresh", handleRefresh);
-    return () => window.removeEventListener("app-refresh", handleRefresh);
-  }, [initialize]);
-
-  const handleRealtimeMessage = useCallback(async (newMessage: ChatMessageWithSender) => {
-    if (!user) return;
-
-    const supabase = createClient();
-
-    let expense: Expense | undefined;
-    let settlement: Settlement | undefined;
-
-    if (newMessage.expenseId) {
-      const { data } = await supabase
-        .from("expenses")
-        .select("*")
-        .eq("id", newMessage.expenseId)
-        .single();
-      if (data) {
-        expense = expenseRowToExpense(data as Database["public"]["Tables"]["expenses"]["Row"]);
-      }
-    }
-
-    if (newMessage.settlementId) {
-      const { data } = await supabase
-        .from("settlements")
-        .select("*")
-        .eq("id", newMessage.settlementId)
-        .single();
-      if (data) {
-        settlement = settlementRowToSettlement(
-          data as Database["public"]["Tables"]["settlements"]["Row"],
-        );
-      }
-    }
-
-    setThread((prev) => {
-      if (!prev) return null;
-      if (prev.messages.some((m) => m.id === newMessage.id)) return prev;
-      const nextExpenses = expense
-        ? new Map([...prev.expenses, [expense.id, expense]])
-        : prev.expenses;
-      const nextSettlements = settlement
-        ? new Map([...prev.settlements, [settlement.id, settlement]])
-        : prev.settlements;
-      return {
-        ...prev,
-        messages: [...prev.messages, newMessage],
-        expenses: nextExpenses,
-        settlements: nextSettlements,
-      };
-    });
-
-    if (groupId) {
-      const supabaseForReceipt = createClient();
-      await markConversationRead(supabaseForReceipt, user.id, groupId);
-      window.dispatchEvent(new CustomEvent("conversations-read"));
-    }
-  }, [user, groupId]);
-
-  useRealtimeChat(groupId ?? undefined, handleRealtimeMessage);
-
-  const handleLoadMore = useCallback(async () => {
-    if (!groupId || !thread || loadingMore || !hasMore) return;
-
-    const oldestMessage = thread.messages[0];
-    if (!oldestMessage) return;
-
-    setLoadingMore(true);
-
-    const result = await loadConversationMessages(groupId, {
-      limit: PAGE_SIZE,
-      before: oldestMessage.createdAt,
-    });
-
-    if ("error" in result) {
-      setLoadingMore(false);
-      return;
-    }
-
-    setThread((prev) => {
-      if (!prev) return result;
-
-      return {
-        messages: [...result.messages, ...prev.messages],
-        profiles: new Map([...prev.profiles, ...result.profiles]),
-        expenses: new Map<string, Expense>([...prev.expenses, ...result.expenses]),
-        settlements: new Map<string, Settlement>([...prev.settlements, ...result.settlements]),
-      };
-    });
-
-    setHasMore(result.messages.length >= PAGE_SIZE);
-    setLoadingMore(false);
-  }, [groupId, thread, loadingMore, hasMore]);
-
-  const handleSend = useCallback(
-    async (content: string) => {
-      if (!groupId || !user) return;
-
-      const result = await sendChatMessage(groupId, content);
-      if ("error" in result) return;
-
-      notifyDmTextMessage(groupId, content).catch(() => {});
-
-      const senderProfile: UserProfile = {
-        id: user.id,
-        handle: user.handle,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-      };
-
-      const messageWithSender: ChatMessageWithSender = {
-        ...result,
-        sender: senderProfile,
-      };
-
-      setThread((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          messages: [...prev.messages, messageWithSender],
-        };
-      });
-    },
-    [groupId, user],
-  );
-
-  const handleConfirmDraft = useCallback(
-    async (result: ChatExpenseResult) => {
-      if (!groupId || !user || !counterparty) return;
-
-      const members: UserProfile[] = [
-        { id: user.id, handle: user.handle, name: user.name, avatarUrl: user.avatarUrl },
-        counterparty,
-      ];
-
-      const confirmResult = await confirmChatDraft({
-        result,
-        groupId,
-        currentUserId: user.id,
-        members,
-      });
-
-      if ("error" in confirmResult) {
-        toast.error(confirmResult.error);
-        return confirmResult;
-      }
-
-      notifyExpenseActivated(confirmResult.expenseId).catch(() => {});
-
-      return confirmResult;
-    },
-    [groupId, user, counterparty],
-  );
-
-  const handleEditDraft = useCallback(
-    (result: ChatExpenseResult) => {
-      if (!groupId) return;
-      const params = new URLSearchParams({
-        groupId,
-        title: result.title,
-        amount: String(result.amountCents),
-      });
-      router.push(`/app/bill/new?${params.toString()}`);
-    },
-    [groupId, router],
-  );
-
-  const aiMembers = useMemo<MemberContext[]>(() => {
-    if (!counterparty || !user) return [];
-    return [
-      { handle: user.handle, name: user.name },
-      { handle: counterparty.handle, name: counterparty.name },
-    ];
-  }, [counterparty, user]);
-
-  // --- Quick-action sheet state ---
-  const [chargeSheetOpen, setChargeSheetOpen] = useState(false);
-  const [splitSheetOpen, setSplitSheetOpen] = useState(false);
-  const [chargeStatus, setChargeStatus] = useState<QuickChargeStatus>("idle");
-  const [chargeError, setChargeError] = useState<string | undefined>();
-  const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
-  const [splitError, setSplitError] = useState<string | undefined>();
-  const chargeResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const splitResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleOpenCharge = useCallback(() => {
-    setSplitSheetOpen(false);
-    setChargeStatus("idle");
-    setChargeError(undefined);
-    setChargeSheetOpen((prev) => !prev);
-  }, []);
-
-  const handleOpenSplit = useCallback(() => {
-    setChargeSheetOpen(false);
-    setSplitStatus("idle");
-    setSplitError(undefined);
-    setSplitSheetOpen((prev) => !prev);
-  }, []);
-
-  const handleDismissCharge = useCallback(() => {
-    setChargeSheetOpen(false);
-  }, []);
-
-  const handleDismissSplit = useCallback(() => {
-    setSplitSheetOpen(false);
-  }, []);
-
-  const handleQuickChargeConfirm = useCallback(
-    async (result: ChatExpenseResult) => {
-      setChargeStatus("confirming");
-      setChargeError(undefined);
-      const res = await handleConfirmDraft(result);
-      if (res && "error" in res) {
-        setChargeStatus("error");
-        setChargeError(typeof res.error === "string" ? res.error : "Erro ao cobrar");
-        return;
-      }
-      setChargeStatus("confirmed");
-      window.dispatchEvent(new CustomEvent("app-refresh"));
-      chargeResetTimer.current = setTimeout(() => {
-        setChargeSheetOpen(false);
-        setChargeStatus("idle");
-      }, 1200);
-    },
-    [handleConfirmDraft],
-  );
-
-  const handleQuickChargeEdit = useCallback(
-    (result: ChatExpenseResult) => {
-      setChargeSheetOpen(false);
-      handleEditDraft(result);
-    },
-    [handleEditDraft],
-  );
-
-  const handleQuickSplitConfirm = useCallback(
-    async (result: QuickSplitResult) => {
-      if (!groupId || !user || !counterparty) return;
-      setSplitStatus("confirming");
-      setSplitError(undefined);
-
-      const chatResult: ChatExpenseResult = {
-        title: result.title,
-        amountCents: result.amountCents,
-        expenseType: "single_amount",
-        splitType: result.splitType === "equal" ? "equal" : "custom",
-        items: [],
-        participants: [
-          {
-            spokenName: counterparty.handle,
-            matchedHandle: counterparty.handle,
-            confidence: "high",
+  if (profileResult.error || !profileResult.data) {
+    return (
+      <ConversationPageClient
+        initialData={{
+          counterpartyId,
+          currentUser: {
+            id: user.id,
+            handle: user.handle,
+            name: user.name,
+            avatarUrl: user.avatarUrl,
           },
-        ],
-        payerHandle: result.payerId === user.id ? "SELF" : counterparty.handle,
-        merchantName: null,
-        confidence: "high",
-      };
+          error: "Usuário não encontrado",
+          groupId: groupId as string,
+          counterparty: null,
+          thread: null,
+          hasMore: false,
+          callerStatus: "accepted",
+          counterpartyStatus: "accepted",
+        }}
+      />
+    );
+  }
 
-      const members: UserProfile[] = [
-        { id: user.id, handle: user.handle, name: user.name, avatarUrl: user.avatarUrl },
-        counterparty,
-      ];
+  const counterparty = userProfileRowToUserProfile(profileResult.data);
 
-      const confirmResult = await confirmChatDraft({
-        result: chatResult,
-        groupId,
-        currentUserId: user.id,
-        members,
-        precomputedShares: result.shares,
-      });
+  // Parse member statuses
+  const memberRows = (membersResult.data ?? []) as { user_id: string; status: string }[];
+  const callerRow = memberRows.find((m) => m.user_id === user.id);
+  const counterpartyRow = memberRows.find((m) => m.user_id === counterpartyId);
+  const callerStatus = (callerRow?.status ?? "accepted") as "accepted" | "invited" | "declined";
+  const counterpartyStatus = (counterpartyRow?.status ?? "invited") as "accepted" | "invited" | "declined";
 
-      if ("error" in confirmResult) {
-        setSplitStatus("error");
-        setSplitError(confirmResult.error);
-        return;
+  // Process messages
+  const messageRows = (messagesQuery.data ?? []).reverse() as ChatMessageRow[];
+  const hasMore = (messagesQuery.data ?? []).length >= PAGE_SIZE;
+
+  if (messageRows.length === 0) {
+    // Fire-and-forget read receipt
+    supabase.from("conversation_read_receipts").upsert(
+      { user_id: user.id, group_id: groupId as string, last_read_at: new Date().toISOString() },
+      { onConflict: "user_id,group_id" },
+    ).then(() => {});
+
+    return (
+      <ConversationPageClient
+        initialData={{
+          counterpartyId,
+          currentUser: {
+            id: user.id,
+            handle: user.handle,
+            name: user.name,
+            avatarUrl: user.avatarUrl,
+          },
+          groupId: groupId as string,
+          counterparty,
+          thread: {
+            messages: [],
+            expenses: [],
+            settlements: [],
+            profiles: [[counterparty.id, counterparty]],
+          },
+          hasMore: false,
+          callerStatus,
+          counterpartyStatus,
+          error: null,
+        }}
+      />
+    );
+  }
+
+  // Collect IDs for batch fetching
+  const senderIds = new Set<string>();
+  const expenseIds = new Set<string>();
+  const settlementIds = new Set<string>();
+
+  for (const row of messageRows) {
+    senderIds.add(row.sender_id);
+    if (row.expense_id) expenseIds.add(row.expense_id);
+    if (row.settlement_id) settlementIds.add(row.settlement_id);
+  }
+
+  // Parallel batch fetches for related entities
+  const [profilesResult, expensesResult, settlementsResult] = await Promise.all([
+    supabase
+      .from("user_profiles")
+      .select("*")
+      .in("id", [...senderIds]),
+    expenseIds.size > 0
+      ? supabase.from("expenses").select("*").in("id", [...expenseIds])
+      : Promise.resolve({ data: [] as Database["public"]["Tables"]["expenses"]["Row"][], error: null }),
+    settlementIds.size > 0
+      ? supabase.from("settlements").select("*").in("id", [...settlementIds])
+      : Promise.resolve({ data: [] as Database["public"]["Tables"]["settlements"]["Row"][], error: null }),
+  ]);
+
+  // Build profile map
+  const profileMap = new Map<string, UserProfile>();
+  profileMap.set(counterparty.id, counterparty);
+  for (const row of profilesResult.data ?? []) {
+    profileMap.set(row.id, userProfileRowToUserProfile(row));
+  }
+
+  // Build expense map
+  const expenseEntries: [string, Expense][] = [];
+  for (const row of expensesResult.data ?? []) {
+    const expense = expenseRowToExpense(row as Database["public"]["Tables"]["expenses"]["Row"]);
+    expenseEntries.push([expense.id, expense]);
+  }
+
+  // Build settlement map
+  const settlementEntries: [string, Settlement][] = [];
+  if (settlementsResult.data && settlementsResult.data.length > 0) {
+    // Fetch any settlement user profiles not already loaded
+    const settlementUserIds = new Set<string>();
+    for (const row of settlementsResult.data) {
+      const s = row as Database["public"]["Tables"]["settlements"]["Row"];
+      if (!profileMap.has(s.from_user_id)) settlementUserIds.add(s.from_user_id);
+      if (!profileMap.has(s.to_user_id)) settlementUserIds.add(s.to_user_id);
+    }
+    if (settlementUserIds.size > 0) {
+      const { data: extraProfiles } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .in("id", [...settlementUserIds]);
+      for (const row of extraProfiles ?? []) {
+        profileMap.set(row.id, userProfileRowToUserProfile(row));
       }
+    }
 
-      setSplitStatus("confirmed");
-      window.dispatchEvent(new CustomEvent("app-refresh"));
-      splitResetTimer.current = setTimeout(() => {
-        setSplitSheetOpen(false);
-        setSplitStatus("idle");
-      }, 1200);
+    for (const row of settlementsResult.data) {
+      const settlement = settlementRowToSettlement(
+        row as Database["public"]["Tables"]["settlements"]["Row"],
+      );
+      settlementEntries.push([settlement.id, settlement]);
+    }
+  }
+
+  // Build messages with sender profiles
+  const fallbackProfile: UserProfile = {
+    id: "unknown",
+    handle: "unknown",
+    name: "Usuário",
+  };
+
+  const messages: ChatMessageWithSender[] = messageRows.map((row) => ({
+    id: row.id,
+    groupId: row.group_id,
+    senderId: row.sender_id,
+    messageType: row.message_type,
+    content: row.content,
+    expenseId: row.expense_id ?? undefined,
+    settlementId: row.settlement_id ?? undefined,
+    createdAt: row.created_at,
+    sender: profileMap.get(row.sender_id) ?? { ...fallbackProfile, id: row.sender_id },
+  }));
+
+  // Fire-and-forget read receipt (server-side, non-blocking)
+  supabase.from("conversation_read_receipts").upsert(
+    { user_id: user.id, group_id: groupId as string, last_read_at: new Date().toISOString() },
+    { onConflict: "user_id,group_id" },
+  ).then(() => {});
+
+  // Serialize Maps as arrays of tuples for SSR transfer
+  const initialData: ConversationInitialData = {
+    counterpartyId,
+    currentUser: {
+      id: user.id,
+      handle: user.handle,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
     },
-    [groupId, user, counterparty],
-  );
+    groupId: groupId as string,
+    counterparty,
+    thread: {
+      messages,
+      expenses: expenseEntries,
+      settlements: settlementEntries,
+      profiles: [...profileMap.entries()],
+    },
+    hasMore,
+    callerStatus,
+    counterpartyStatus,
+    error: null,
+  };
 
-  // Clean up timers on unmount
-  useEffect(() => {
-    return () => {
-      if (chargeResetTimer.current) clearTimeout(chargeResetTimer.current);
-      if (splitResetTimer.current) clearTimeout(splitResetTimer.current);
-    };
-  }, []);
-
-  const handleAccept = useCallback(async () => {
-    if (!groupId || !user) return;
-    await createClient()
-      .from("group_members")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
-    setCallerStatus("accepted");
-  }, [groupId, user]);
-
-  const handleDecline = useCallback(async () => {
-    if (!groupId || !user) return;
-    await createClient()
-      .from("group_members")
-      .delete()
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
-    setCallerStatus("declined");
-  }, [groupId, user]);
-
-  if (loading) {
-    return (
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-3 border-b border-border/50 px-3 py-2.5">
-          <Skeleton className="h-8 w-8 rounded-full" />
-          <div className="flex-1 space-y-1">
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-3 w-16" />
-          </div>
-        </div>
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-destructive">{error}</p>
-        <button
-          onClick={initialize}
-          className="text-sm text-primary underline"
-        >
-          Tentar novamente
-        </button>
-      </div>
-    );
-  }
-
-  if (!counterparty || !thread || !user) return null;
-
-  if (callerStatus === "declined") {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-muted-foreground">Você recusou este convite.</p>
-      </div>
-    );
-  }
-
-  if (callerStatus === "invited") {
-    return (
-      <div className="flex h-full flex-col">
-        <ConversationHeader counterparty={counterparty} />
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
-          <UserAvatar name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="lg" />
-          <div className="space-y-1">
-            <p className="font-semibold">{counterparty.name}</p>
-            <p className="text-sm text-muted-foreground">
-              Esta conversa está pendente. @{counterparty.handle} convidou você a conversar.
-            </p>
-          </div>
-          <div className="flex w-full max-w-xs flex-col gap-3">
-            <Button onClick={handleAccept} className="w-full gap-2">
-              <Check className="h-4 w-4" />
-              Aceitar convite
-            </Button>
-            <Button variant="outline" onClick={handleDecline} className="w-full gap-2">
-              <X className="h-4 w-4" />
-              Recusar
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isCounterpartyPending = counterpartyStatus === "invited";
-
-  return (
-    <div className="flex h-full flex-col">
-      <ConversationHeader
-        counterparty={counterparty}
-        actions={
-          !isCounterpartyPending ? (
-            <ConversationPayButton
-              currentUserId={user.id}
-              counterpartyId={counterpartyId}
-              counterpartyName={counterparty.name}
-            />
-          ) : undefined
-        }
-      />
-      {isCounterpartyPending && (
-        <div className="border-b bg-muted/50 px-4 py-2.5">
-          <p className="text-center text-xs text-muted-foreground">
-            Aguardando @{counterparty.handle} aceitar o convite
-          </p>
-        </div>
-      )}
-      <ChatThread
-        messages={thread.messages}
-        expenses={thread.expenses}
-        settlements={thread.settlements}
-        profiles={thread.profiles}
-        currentUserId={user.id}
-        loading={loadingMore}
-        hasMore={hasMore}
-        onLoadMore={handleLoadMore}
-      />
-      {!isCounterpartyPending && groupId && (
-        <>
-          <AnimatePresence>
-            {chargeSheetOpen && (
-              <div className="px-4 pb-2">
-                <QuickChargeSheet
-                  counterpartyName={counterparty.name}
-                  counterpartyHandle={counterparty.handle}
-                  currentUserHandle={user.handle}
-                  onConfirm={handleQuickChargeConfirm}
-                  onEdit={handleQuickChargeEdit}
-                  onDismiss={handleDismissCharge}
-                  status={chargeStatus}
-                  errorMessage={chargeError}
-                />
-              </div>
-            )}
-          </AnimatePresence>
-          <QuickSplitSheet
-            open={splitSheetOpen}
-            onClose={handleDismissSplit}
-            currentUserId={user.id}
-            counterparty={counterparty}
-            onConfirm={handleQuickSplitConfirm}
-            status={splitStatus}
-            errorMessage={splitError}
-          />
-          <ConversationQuickActions
-            onCharge={handleOpenCharge}
-            onSplit={handleOpenSplit}
-          />
-          <ChatAiInput
-            groupId={groupId}
-            members={aiMembers}
-            onSend={handleSend}
-            onConfirmDraft={handleConfirmDraft}
-            onEditDraft={handleEditDraft}
-          />
-        </>
-      )}
-    </div>
-  );
+  return <ConversationPageClient initialData={initialData} />;
 }
