@@ -1,48 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import { Suspense } from "react";
-import type { ConversationThread } from "@/lib/supabase/chat-actions";
 
-// Mock next/navigation
-const mockPush = vi.fn();
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
+// Mock getAuthUser
+const mockUser = {
+  id: "user-1",
+  name: "Alice Test",
+  email: "alice@test.com",
+  handle: "alice",
+  avatarUrl: undefined,
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  createdAt: "2026-01-01T00:00:00Z",
+  notificationPreferences: {},
+};
+
+vi.mock("@/lib/auth", () => ({
+  getAuthUser: vi.fn(() => Promise.resolve(mockUser)),
 }));
 
-// Mock DM actions
-const mockGetOrCreateDmGroup = vi.fn();
-vi.mock("@/lib/supabase/dm-actions", () => ({
-  getOrCreateDmGroup: (...args: unknown[]) => mockGetOrCreateDmGroup(...args),
-}));
+// Mock server supabase
+const mockSupabaseData: Record<string, { data: unknown; error: unknown }> = {};
+let mockRpcResult: { data: unknown; error: unknown } = { data: "dm-group-1", error: null };
 
-// Mock chat-actions
-const mockLoadConversationMessages = vi.fn();
-vi.mock("@/lib/supabase/chat-actions", () => ({
-  loadConversationMessages: (...args: unknown[]) => mockLoadConversationMessages(...args),
-  sendChatMessage: vi.fn(),
-}));
-
-// Mock chat-draft-confirm
-vi.mock("@/lib/supabase/chat-draft-confirm", () => ({
-  confirmChatDraft: vi.fn(),
-}));
-
-// Mock push notifications
-vi.mock("@/lib/push/push-notify", () => ({
-  notifyDmTextMessage: vi.fn().mockResolvedValue(undefined),
-  notifyExpenseActivated: vi.fn().mockResolvedValue(undefined),
-}));
-
-// Mock markConversationRead
-const mockMarkConversationRead = vi.fn().mockResolvedValue(undefined);
-vi.mock("@/lib/supabase/unread-actions", () => ({
-  markConversationRead: (...args: unknown[]) => mockMarkConversationRead(...args),
-}));
-
-// Build a chainable Supabase mock
 function chainable(resolveValue: unknown) {
   const chain: Record<string, unknown> = {};
-  const methods = ["from", "select", "eq", "neq", "in", "is", "order", "limit", "single", "maybeSingle", "insert", "delete", "update", "rpc"];
+  const methods = ["select", "eq", "neq", "in", "is", "or", "order", "limit", "single", "maybeSingle", "insert", "delete", "update", "upsert"];
   for (const m of methods) {
     chain[m] = vi.fn(() => chain);
   }
@@ -50,82 +34,25 @@ function chainable(resolveValue: unknown) {
   return chain;
 }
 
-const mockSupabaseData: Record<string, { data: unknown; error: unknown }> = {};
-
-function createMockSupabase() {
-  const fromMock = vi.fn((table: string) => {
-    const result = mockSupabaseData[table] ?? { data: [], error: null };
-    return chainable(result);
-  });
-
-  return {
-    from: fromMock,
-    rpc: vi.fn(() => chainable({ data: null, error: null })),
-    channel: () => ({
-      on: () => ({ subscribe: () => ({}) }),
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: vi.fn(() =>
+    Promise.resolve({
+      from: vi.fn((table: string) => {
+        const result = mockSupabaseData[table] ?? { data: [], error: null };
+        return chainable(result);
+      }),
+      rpc: vi.fn(() => mockRpcResult),
     }),
-    removeChannel: vi.fn(),
-  };
-}
-
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => createMockSupabase(),
-}));
-
-// Stable user reference to avoid infinite re-renders
-const stableUser = {
-  id: "user-1",
-  name: "Alice Test",
-  email: "alice@test.com",
-  handle: "alice",
-  avatarUrl: null,
-};
-
-vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({ user: stableUser }),
-}));
-
-// Mock realtime chat hook
-vi.mock("@/hooks/use-realtime-chat", () => ({
-  useRealtimeChat: vi.fn(),
-}));
-
-// Mock react-hot-toast
-vi.mock("react-hot-toast", () => ({
-  default: { success: vi.fn(), error: vi.fn() },
-}));
-
-// Mock framer-motion
-vi.mock("framer-motion", () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  motion: {
-    div: ({ children, ...props }: { children?: React.ReactNode } & Record<string, unknown>) => <div {...props}>{children}</div>,
-  },
-}));
-
-// Mock child components to simplify
-vi.mock("@/components/chat/conversation-header", () => ({
-  ConversationHeader: ({ counterparty }: { counterparty: { name: string } }) => (
-    <div data-testid="conversation-header">{counterparty.name}</div>
   ),
 }));
-vi.mock("@/components/chat/conversation-pay-button", () => ({
-  ConversationPayButton: () => <div data-testid="pay-button" />,
-}));
-vi.mock("@/components/chat/conversation-quick-actions", () => ({
-  ConversationQuickActions: () => <div data-testid="quick-actions" />,
-}));
-vi.mock("@/components/chat/quick-charge-sheet", () => ({
-  QuickChargeSheet: () => null,
-}));
-vi.mock("@/components/chat/quick-split-sheet", () => ({
-  QuickSplitSheet: () => null,
-}));
-vi.mock("@/components/chat/chat-thread", () => ({
-  ChatThread: () => <div data-testid="chat-thread" />,
-}));
-vi.mock("@/components/chat/chat-ai-input", () => ({
-  ChatAiInput: () => <div data-testid="chat-input" />,
+
+// Mock the client component to verify props
+const mockClientComponent = vi.fn();
+vi.mock("./conversation-page-client", () => ({
+  ConversationPageClient: (props: unknown) => {
+    mockClientComponent(props);
+    return <div data-testid="conversation-client">Rendered</div>;
+  },
 }));
 
 import ConversationPage from "./page";
@@ -142,16 +69,11 @@ async function renderPage(counterpartyId = "user-2") {
   return result!;
 }
 
-const emptyThread: ConversationThread = {
-  messages: [],
-  expenses: new Map(),
-  settlements: new Map(),
-  profiles: new Map(),
-};
-
-describe("ConversationPage", () => {
+describe("ConversationPage (server component)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockRpcResult = { data: "dm-group-1", error: null };
 
     mockSupabaseData["user_profiles"] = {
       data: {
@@ -162,6 +84,7 @@ describe("ConversationPage", () => {
       },
       error: null,
     };
+    mockSupabaseData["chat_messages"] = { data: [], error: null };
     mockSupabaseData["group_members"] = {
       data: [
         { user_id: "user-1", status: "accepted" },
@@ -169,83 +92,72 @@ describe("ConversationPage", () => {
       ],
       error: null,
     };
-
-    mockGetOrCreateDmGroup.mockResolvedValue({ groupId: "dm-group-1" });
-    mockLoadConversationMessages.mockResolvedValue(emptyThread);
+    mockSupabaseData["conversation_read_receipts"] = { data: null, error: null };
   });
 
-  it("renders conversation after loading", async () => {
+  it("renders client component with initial data", async () => {
     await renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("conversation-header")).toHaveTextContent("Bob Test");
-    });
-    expect(screen.getByTestId("chat-thread")).toBeInTheDocument();
+    expect(screen.getByTestId("conversation-client")).toBeInTheDocument();
+    expect(mockClientComponent).toHaveBeenCalledTimes(1);
+
+    const props = mockClientComponent.mock.calls[0][0];
+    expect(props.initialData.groupId).toBe("dm-group-1");
+    expect(props.initialData.counterparty.handle).toBe("bob");
+    expect(props.initialData.error).toBeNull();
   });
 
-  it("creates DM group before fetching profile (RLS dependency)", async () => {
-    const callOrder: string[] = [];
-
-    mockGetOrCreateDmGroup.mockImplementation(() => {
-      callOrder.push("dm");
-      return Promise.resolve({ groupId: "dm-group-1" });
-    });
+  it("passes error when DM group RPC fails", async () => {
+    mockRpcResult = { data: null, error: { message: "Grupo não encontrado" } };
 
     await renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
-    });
-
-    expect(mockGetOrCreateDmGroup).toHaveBeenCalledWith("user-2");
-    expect(callOrder).toContain("dm");
+    const props = mockClientComponent.mock.calls[0][0];
+    expect(props.initialData.error).toBe("Grupo não encontrado");
+    expect(props.initialData.groupId).toBeNull();
   });
 
-  it("fires markConversationRead as fire-and-forget", async () => {
-    let markReadResolved = false;
-    mockMarkConversationRead.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          setTimeout(() => {
-            markReadResolved = true;
-            resolve();
-          }, 10000);
-        }),
-    );
-
-    await renderPage();
-
-    // Page should render fully even though markConversationRead hasn't resolved
-    await waitFor(() => {
-      expect(screen.getByTestId("chat-thread")).toBeInTheDocument();
-    });
-
-    // markConversationRead was called
-    expect(mockMarkConversationRead).toHaveBeenCalled();
-    // But it hasn't resolved — page rendered without waiting
-    expect(markReadResolved).toBe(false);
-  });
-
-  it("shows error when DM group creation fails", async () => {
-    mockGetOrCreateDmGroup.mockResolvedValue({
-      error: "Grupo não encontrado",
-      code: "not_found",
-    });
-
-    await renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText("Grupo não encontrado")).toBeInTheDocument();
-    });
-  });
-
-  it("shows error when counterparty profile not found", async () => {
+  it("passes error when counterparty profile not found", async () => {
     mockSupabaseData["user_profiles"] = { data: null, error: { message: "not found" } };
 
     await renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("Usuário não encontrado")).toBeInTheDocument();
-    });
+    const props = mockClientComponent.mock.calls[0][0];
+    expect(props.initialData.error).toBe("Usuário não encontrado");
+    expect(props.initialData.counterparty).toBeNull();
+  });
+
+  it("passes member statuses from group_members query", async () => {
+    mockSupabaseData["group_members"] = {
+      data: [
+        { user_id: "user-1", status: "invited" },
+        { user_id: "user-2", status: "accepted" },
+      ],
+      error: null,
+    };
+
+    await renderPage();
+
+    const props = mockClientComponent.mock.calls[0][0];
+    expect(props.initialData.callerStatus).toBe("invited");
+    expect(props.initialData.counterpartyStatus).toBe("accepted");
+  });
+
+  it("passes currentUser from auth", async () => {
+    await renderPage();
+
+    const props = mockClientComponent.mock.calls[0][0];
+    expect(props.initialData.currentUser.id).toBe("user-1");
+    expect(props.initialData.currentUser.handle).toBe("alice");
+  });
+
+  it("passes empty thread when no messages", async () => {
+    mockSupabaseData["chat_messages"] = { data: [], error: null };
+
+    await renderPage();
+
+    const props = mockClientComponent.mock.calls[0][0];
+    expect(props.initialData.hasMore).toBe(false);
+    expect(props.initialData.thread.messages).toHaveLength(0);
   });
 });
