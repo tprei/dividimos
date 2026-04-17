@@ -35,14 +35,20 @@ import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { loadExpense } from "@/lib/supabase/expense-actions";
 import { activateExpense } from "@/lib/supabase/expense-rpc";
+import {
+  queryBalanceBetween,
+  recordSettlement,
+} from "@/lib/supabase/settlement-actions";
 import { getGroupNavUrl } from "@/lib/group-nav";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import { haptics } from "@/hooks/use-haptics";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
+import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import toast from "react-hot-toast";
-import { notifyExpenseActivated, notifyPaymentNudge } from "@/lib/push/push-notify";
+import { notifyExpenseActivated, notifyPaymentNudge, notifySettlementRecorded } from "@/lib/push/push-notify";
 import type {
+  Balance,
   DebtEdge,
   Expense,
   ExpenseItem,
@@ -324,12 +330,16 @@ export default function BillDetailPage({
     name: string;
     amount: number;
     mode: "pay" | "collect";
+    debtFromUserId: string;
+    debtToUserId: string;
   }>({
     open: false,
     recipientUserId: "",
     name: "",
     amount: 0,
     mode: "pay",
+    debtFromUserId: "",
+    debtToUserId: "",
   });
 
   const [guestShareModal, setGuestShareModal] = useState<{
@@ -358,6 +368,8 @@ export default function BillDetailPage({
     } catch { return new Set(); }
   });
   const loadedKeyRef = useRef<string | null>(null);
+  const [dmBalance, setDmBalance] = useState<Balance | null>(null);
+  const [dmBalanceLoaded, setDmBalanceLoaded] = useState(false);
 
   const loadExpenseData = useCallback(async (expenseId: string) => {
     const data = await loadExpense(expenseId);
@@ -469,6 +481,7 @@ export default function BillDetailPage({
   useRealtimeExpense(expenseData?.id, onExpenseUpdate);
 
   const expense = expenseData;
+
   // Unique participants from shares + payers
   const allParticipants = useMemo(() => {
     if (!expense) return [];
@@ -478,10 +491,42 @@ export default function BillDetailPage({
     return Array.from(map.values());
   }, [expense]);
 
+  const counterparty = useMemo(() => {
+    if (!isDmGroup || !currentUserId) return undefined;
+    return allParticipants.find((p) => p.id !== currentUserId);
+  }, [isDmGroup, currentUserId, allParticipants]);
+
+  useEffect(() => {
+    if (!isDmGroup || !expense?.groupId || !currentUserId || !counterparty?.id) return;
+    let cancelled = false;
+    queryBalanceBetween(expense.groupId, currentUserId, counterparty.id).then((balance) => {
+      if (!cancelled) {
+        setDmBalance(balance);
+        setDmBalanceLoaded(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isDmGroup, expense?.groupId, currentUserId, counterparty?.id]);
+
+  useRealtimeBalances(
+    isDmGroup ? expense?.groupId : undefined,
+    useCallback((updated: Balance) => {
+      setDmBalance(updated.amountCents === 0 ? null : updated);
+    }, []),
+  );
+
   const debts = useMemo(() => {
     if (!expense || expense.status === "draft") return [];
     return computeDebtsFromExpense(expense.shares, expense.payers);
   }, [expense]);
+
+  const dmDebts = useMemo((): DebtEdge[] => {
+    if (!isDmGroup || !dmBalance || dmBalance.amountCents === 0) return [];
+    if (dmBalance.amountCents > 0) {
+      return [{ fromUserId: dmBalance.userA, toUserId: dmBalance.userB, amountCents: dmBalance.amountCents }];
+    }
+    return [{ fromUserId: dmBalance.userB, toUserId: dmBalance.userA, amountCents: Math.abs(dmBalance.amountCents) }];
+  }, [isDmGroup, dmBalance]);
 
   const unclaimedGuests = useMemo(
     () => (expense?.guests ?? []).filter((g) => !g.claimedBy),
@@ -647,7 +692,9 @@ export default function BillDetailPage({
 
   // Active / settled view
   const statusConfig = expenseStatusConfig[expense.status];
-  const allSettled = expense.status === "settled";
+  const allSettled = isDmGroup
+    ? (dmBalanceLoaded && dmDebts.length === 0)
+    : expense.status === "settled";
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -704,10 +751,10 @@ export default function BillDetailPage({
               <Users className="h-3.5 w-3.5" />
               {allParticipants.length + unclaimedGuests.length} pessoas
             </span>
-            {debts.length > 0 && (
+            {(isDmGroup ? dmDebts : debts).length > 0 && (
               <span className="flex items-center gap-1">
                 <Check className="h-3.5 w-3.5" />
-                {debts.length} cobrança{debts.length !== 1 ? "s" : ""}
+                {(isDmGroup ? dmDebts : debts).length} cobrança{(isDmGroup ? dmDebts : debts).length !== 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -764,9 +811,9 @@ export default function BillDetailPage({
             }`}
           >
             {tab.label}
-            {tab.key === "payment" && debts.length > 0 && (
+            {tab.key === "payment" && (isDmGroup ? dmDebts : debts).length > 0 && (
               <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
-                {allSettled ? "\u2713" : debts.length}
+                {allSettled ? "\u2713" : (isDmGroup ? dmDebts : debts).length}
               </span>
             )}
           </button>
@@ -970,7 +1017,14 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && !allSettled && expense.groupId && isDmGroup && debts.length > 0 && (
+      {activeTab === "payment" && !allSettled && expense.groupId && isDmGroup && !dmBalanceLoaded && (
+        <div className="mt-5 space-y-3">
+          <Skeleton className="h-6 w-24" />
+          <Skeleton className="h-24 w-full rounded-2xl" />
+        </div>
+      )}
+
+      {activeTab === "payment" && !allSettled && expense.groupId && isDmGroup && dmBalanceLoaded && dmDebts.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -980,7 +1034,7 @@ export default function BillDetailPage({
           <h2 className="mb-3 text-sm font-semibold">Cobranças</h2>
           <div className="space-y-3">
             <AnimatePresence mode="popLayout">
-              {debts.map((debt, idx) => {
+              {dmDebts.map((debt, idx) => {
                 const debtor = allParticipants.find((p) => p.id === debt.fromUserId);
                 const creditor = allParticipants.find((p) => p.id === debt.toUserId);
                 const isDebtor = currentUser?.id === debt.fromUserId;
@@ -1028,6 +1082,8 @@ export default function BillDetailPage({
                                 name: creditor?.name || "",
                                 amount: debt.amountCents,
                                 mode: "pay",
+                                debtFromUserId: debt.fromUserId,
+                                debtToUserId: debt.toUserId,
                               })
                             }
                           >
@@ -1050,6 +1106,8 @@ export default function BillDetailPage({
                                 name: debtor?.name || "",
                                 amount: debt.amountCents,
                                 mode: "collect",
+                                debtFromUserId: debt.fromUserId,
+                                debtToUserId: debt.toUserId,
                               })
                             }
                           >
@@ -1163,6 +1221,8 @@ export default function BillDetailPage({
                                 name: creditor?.name || "",
                                 amount: debt.amountCents,
                                 mode: "pay",
+                                debtFromUserId: debt.fromUserId,
+                                debtToUserId: debt.toUserId,
                               })
                             }
                           >
@@ -1185,6 +1245,8 @@ export default function BillDetailPage({
                                 name: debtor?.name || "",
                                 amount: debt.amountCents,
                                 mode: "collect",
+                                debtFromUserId: debt.fromUserId,
+                                debtToUserId: debt.toUserId,
                               })
                             }
                           >
@@ -1213,7 +1275,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && debts.length === 0 && !allSettled && (
+      {activeTab === "payment" && debts.length === 0 && !allSettled && !isDmGroup && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -1233,12 +1295,19 @@ export default function BillDetailPage({
         amountCents={pixModal.amount}
         mode={pixModal.mode}
         groupId={expense.groupId}
-        onMarkPaid={async () => {
-          toast.success("Pagamento registrado!");
+        onMarkPaid={async (amountCents: number) => {
+          if (!expense.groupId) return;
+          await recordSettlement(expense.groupId, pixModal.debtFromUserId, pixModal.debtToUserId, amountCents);
+          notifySettlementRecorded(expense.groupId, pixModal.debtFromUserId, pixModal.debtToUserId, amountCents).catch(() => {});
+          if (isDmGroup && currentUserId && counterparty?.id) {
+            const balance = await queryBalanceBetween(expense.groupId, currentUserId, counterparty.id);
+            setDmBalance(balance);
+            setDmBalanceLoaded(true);
+          }
         }}
         onSettlementComplete={() => {
           setPixModal({ ...pixModal, open: false });
-          loadExpenseData(id);
+          window.dispatchEvent(new CustomEvent("app-refresh"));
         }}
       />
 
