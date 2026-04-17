@@ -47,7 +47,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
 import toast from "react-hot-toast";
 import { notifyGroupInvite } from "@/lib/push/push-notify";
-import { queryGroupBalancesForUser } from "@/lib/supabase/settlement-actions";
 import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } from "@/types";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { useBillStore } from "@/stores/bill-store";
@@ -132,7 +131,7 @@ export default function GroupDetailPage({
   const [memberBalances, setMemberBalances] = useState<Map<string, number>>(new Map());
   const store = useBillStore();
 
-  const fetchGroup = useCallback(async () => {
+  const fetchGroup = useCallback(async (userId?: string) => {
     const supabase = createClient();
 
     const [{ data: group }, { data: groupMembers }] = await Promise.all([
@@ -150,9 +149,24 @@ export default function GroupDetailPage({
       ...new Set([group.creator_id, ...memberRows.map((m) => m.user_id)]),
     ];
 
-    // Profiles depend on member IDs, but expenses/settlements/invite-links only need group ID.
-    // Run them all in parallel to avoid an unnecessary sequential round-trip.
-    const [{ data: profiles }, { data: expenseRows }, { data: settlementRows }, { data: inviteLinkRows }] = await Promise.all([
+    // Profiles depend on member IDs, but expenses/settlements/invite-links/balances
+    // only need group ID (or group ID + user ID). Run them all in parallel.
+    const balancePromise = userId
+      ? supabase
+          .from("balances")
+          .select("*")
+          .eq("group_id", id)
+          .neq("amount_cents", 0)
+          .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+      : Promise.resolve({ data: null });
+
+    const [
+      { data: profiles },
+      { data: expenseRows },
+      { data: settlementRows },
+      { data: inviteLinkRows },
+      { data: balanceRows },
+    ] = await Promise.all([
       supabase
         .from("user_profiles")
         .select("id, handle, name, avatar_url")
@@ -175,7 +189,21 @@ export default function GroupDetailPage({
         .eq("is_active", true)
         .order("created_at", { ascending: false })
         .limit(1),
+      balancePromise,
     ]);
+
+    // Guest query depends on expense IDs from the parallel batch above.
+    const expenseList = expenseRows ?? [];
+    const expenseIds = expenseList.map((e) => e.id);
+    let guestRows: { id: string; expense_id: string; display_name: string; claim_token: string }[] = [];
+    if (expenseIds.length > 0) {
+      const { data } = await supabase
+        .from("expense_guests")
+        .select("id, expense_id, display_name, claim_token")
+        .in("expense_id", expenseIds)
+        .is("claimed_by", null);
+      guestRows = data ?? [];
+    }
 
     const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
 
@@ -241,54 +269,44 @@ export default function GroupDetailPage({
       }))
     );
 
-    const expenseList = expenseRows ?? [];
-    const expenseIds = expenseList.map((e) => e.id);
-    if (expenseIds.length > 0) {
-      const { data: guestRows } = await supabase
-        .from("expense_guests")
-        .select("id, expense_id, display_name, claim_token, claimed_by")
-        .in("expense_id", expenseIds)
-        .is("claimed_by", null);
+    const expenseTitleMap = new Map(expenseList.map((e) => [e.id, e.title]));
+    setUnclaimedGuests(
+      guestRows.map((g) => ({
+        id: g.id,
+        expenseId: g.expense_id,
+        displayName: g.display_name,
+        claimToken: g.claim_token,
+        expenseTitle: expenseTitleMap.get(g.expense_id) ?? "Despesa",
+      })),
+    );
 
-      const expenseTitleMap = new Map(expenseList.map((e) => [e.id, e.title]));
-      setUnclaimedGuests(
-        (guestRows ?? []).map((g) => ({
-          id: g.id,
-          expenseId: g.expense_id,
-          displayName: g.display_name,
-          claimToken: g.claim_token,
-          expenseTitle: expenseTitleMap.get(g.expense_id) ?? "Despesa",
-        })),
-      );
-    } else {
-      setUnclaimedGuests([]);
+    if (userId && balanceRows) {
+      const result = new Map<string, number>();
+      for (const row of balanceRows as { user_a: string; user_b: string; amount_cents: number }[]) {
+        if (row.user_a === userId) {
+          result.set(row.user_b, (result.get(row.user_b) ?? 0) - row.amount_cents);
+        } else {
+          result.set(row.user_a, (result.get(row.user_a) ?? 0) + row.amount_cents);
+        }
+      }
+      setMemberBalances(result);
     }
 
     setLoading(false);
   }, [id]);
 
   useEffect(() => {
-    fetchGroup();
-  }, [fetchGroup]);
+    fetchGroup(user?.id);
+  }, [fetchGroup, user?.id]);
 
   useEffect(() => {
     const handleRefresh = () => {
       setLoading(true);
-      fetchGroup();
+      fetchGroup(user?.id);
     };
     window.addEventListener("app-refresh", handleRefresh);
     return () => window.removeEventListener("app-refresh", handleRefresh);
-  }, [fetchGroup]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    const fetchBalances = () => {
-      queryGroupBalancesForUser(id, user.id).then(setMemberBalances).catch(() => {});
-    };
-    fetchBalances();
-    window.addEventListener("app-refresh", fetchBalances);
-    return () => window.removeEventListener("app-refresh", fetchBalances);
-  }, [id, user?.id]);
+  }, [fetchGroup, user?.id]);
 
   const isCreator = user?.id === creatorId;
   const isAcceptedMember = members.some(

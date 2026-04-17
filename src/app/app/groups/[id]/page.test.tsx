@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({
 // Build a chainable Supabase mock
 function chainable(resolveValue: unknown) {
   const chain: Record<string, unknown> = {};
-  const methods = ["from", "select", "eq", "neq", "in", "is", "order", "limit", "single", "maybeSingle", "insert", "delete", "rpc"];
+  const methods = ["from", "select", "eq", "neq", "in", "is", "or", "order", "limit", "single", "maybeSingle", "insert", "delete", "rpc"];
   for (const m of methods) {
     chain[m] = vi.fn(() => chain);
   }
@@ -56,13 +56,6 @@ vi.mock("@/hooks/use-auth", () => ({
       handle: "alice",
     },
   }),
-}));
-
-// Mock settlement-actions for per-member balance display
-vi.mock("@/lib/supabase/settlement-actions", () => ({
-  queryGroupBalancesForUser: vi.fn().mockResolvedValue(new Map([
-    ["user-2", 1500],
-  ])),
 }));
 
 // Mock GroupSettlementView since it has its own complex dependencies
@@ -134,6 +127,9 @@ describe("GroupDetailPage", () => {
         created_at: "2026-03-28T13:00:00Z",
         confirmed_at: "2026-03-28T14:00:00Z",
       },
+    ];
+    mockSupabaseData.balances = [
+      { group_id: "group-1", user_a: "user-1", user_b: "user-2", amount_cents: -1500 },
     ];
   });
 
