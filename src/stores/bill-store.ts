@@ -116,6 +116,98 @@ function generateId(): string {
   return `local_${Date.now()}_${nextId++}`;
 }
 
+/**
+ * Pure function that computes each participant's consumption in centavos.
+ * Shared by computeLedger, getExpenseShares, wouldProduceNoEdges, and getParticipantTotal.
+ */
+function computeConsumption(
+  expense: Expense,
+  allPersonIds: string[],
+  items: ExpenseItem[],
+  splits: ItemSplit[],
+  billSplits: BillSplit[],
+): Map<string, number> {
+  const consumption = new Map<string, number>();
+  for (const id of allPersonIds) {
+    consumption.set(id, 0);
+  }
+
+  if (expense.expenseType === "single_amount") {
+    for (const bs of billSplits) {
+      consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
+    }
+  } else {
+    const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
+    for (const split of splits) {
+      consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
+    }
+    if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
+      const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
+      const weights = allPersonIds.map((id) => consumption.get(id) || 0);
+      const fees = distributeProportionally(totalServiceFee, weights);
+      allPersonIds.forEach((id, i) => {
+        consumption.set(id, (consumption.get(id) || 0) + fees[i]);
+      });
+    }
+    if (expense.fixedFees > 0) {
+      const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
+      allPersonIds.forEach((id, i) => {
+        consumption.set(id, (consumption.get(id) || 0) + fees[i]);
+      });
+    }
+  }
+
+  return consumption;
+}
+
+/** Memoized wrapper around computeConsumption using reference equality. */
+let _cachedConsumption: Map<string, number> | null = null;
+let _cacheKeys: {
+  expense: Expense;
+  participants: User[];
+  guests: Guest[];
+  items: ExpenseItem[];
+  splits: ItemSplit[];
+  billSplits: BillSplit[];
+} | null = null;
+
+function getCachedConsumption(state: ExpenseState): Map<string, number> | null {
+  const { expense, participants, guests, items, splits, billSplits } = state;
+  if (!expense) return null;
+
+  if (
+    _cacheKeys &&
+    _cachedConsumption &&
+    _cacheKeys.expense === expense &&
+    _cacheKeys.participants === participants &&
+    _cacheKeys.guests === guests &&
+    _cacheKeys.items === items &&
+    _cacheKeys.splits === splits &&
+    _cacheKeys.billSplits === billSplits
+  ) {
+    return _cachedConsumption;
+  }
+
+  const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
+  if (allPersonIds.length === 0) return null;
+
+  const result = computeConsumption(expense, allPersonIds, items, splits, billSplits);
+  _cacheKeys = { expense, participants, guests, items, splits, billSplits };
+  _cachedConsumption = result;
+  return result;
+}
+
+/** Invalidate the consumption cache (called on store reset). */
+function invalidateConsumptionCache() {
+  _cachedConsumption = null;
+  _cacheKeys = null;
+}
+
+/** Exported for testing — returns true when cache holds a valid entry. */
+export function _testGetCacheState() {
+  return { hasCachedResult: _cachedConsumption !== null };
+}
+
 export const useBillStore = create<ExpenseState>((set, get) => ({
   currentUser: null,
   expense: null,
@@ -415,41 +507,15 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   computeLedger: () => {
-    const { expense, participants, guests, items, splits, billSplits, payers } = get();
+    const state = get();
+    const { expense, participants, guests, payers } = state;
+    const consumption = getCachedConsumption(state);
+    if (!expense || !consumption) return;
+
     const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
-    if (!expense || allPersonIds.length === 0) return;
-
-    const consumption = new Map<string, number>();
     const payment = new Map<string, number>();
-
     for (const id of allPersonIds) {
-      consumption.set(id, 0);
       payment.set(id, 0);
-    }
-
-    if (expense.expenseType === "single_amount") {
-      for (const bs of billSplits) {
-        consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
-      }
-    } else {
-      const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-      for (const split of splits) {
-        consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
-      }
-      if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
-        const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
-        const weights = allPersonIds.map((id) => consumption.get(id) || 0);
-        const fees = distributeProportionally(totalServiceFee, weights);
-        allPersonIds.forEach((id, i) => {
-          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
-        });
-      }
-      if (expense.fixedFees > 0) {
-        const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
-        allPersonIds.forEach((id, i) => {
-          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
-        });
-      }
     }
 
     const effectivePayers = payers.length > 0
@@ -460,19 +526,13 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
     }
 
-    const netBalance = new Map<string, number>();
-    for (const id of allPersonIds) {
-      const paid = payment.get(id) || 0;
-      const consumed = consumption.get(id) || 0;
-      netBalance.set(id, paid - consumed);
-    }
-
     const debtors: { id: string; amount: number }[] = [];
     const creditors: { id: string; amount: number }[] = [];
 
-    for (const [id, balance] of netBalance) {
-      if (balance < -1) debtors.push({ id, amount: Math.abs(balance) });
-      if (balance > 1) creditors.push({ id, amount: balance });
+    for (const id of allPersonIds) {
+      const net = (payment.get(id) || 0) - (consumption.get(id) || 0);
+      if (net < -1) debtors.push({ id, amount: Math.abs(net) });
+      if (net > 1) creditors.push({ id, amount: net });
     }
 
     debtors.sort((a, b) => b.amount - a.amount);
@@ -508,40 +568,15 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   wouldProduceNoEdges: () => {
-    const { expense, participants, guests, items, splits, billSplits, payers } = get();
-    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
-    if (!expense || allPersonIds.length === 0) return true;
+    const state = get();
+    const { expense, participants, guests, payers } = state;
+    const consumption = getCachedConsumption(state);
+    if (!expense || !consumption) return true;
 
-    const consumption = new Map<string, number>();
+    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
     const payment = new Map<string, number>();
     for (const id of allPersonIds) {
-      consumption.set(id, 0);
       payment.set(id, 0);
-    }
-
-    if (expense.expenseType === "single_amount") {
-      for (const bs of billSplits) {
-        consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
-      }
-    } else {
-      const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-      for (const split of splits) {
-        consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
-      }
-      if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
-        const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
-        const weights = allPersonIds.map((id) => consumption.get(id) || 0);
-        const fees = distributeProportionally(totalServiceFee, weights);
-        allPersonIds.forEach((id, i) => {
-          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
-        });
-      }
-      if (expense.fixedFees > 0) {
-        const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
-        allPersonIds.forEach((id, i) => {
-          consumption.set(id, (consumption.get(id) || 0) + fees[i]);
-        });
-      }
     }
 
     const effectivePayers = payers.length > 0
@@ -559,47 +594,14 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   getExpenseShares: () => {
-    const { expense, participants, guests, items, splits, billSplits } = get();
+    const state = get();
+    const { expense, participants, guests } = state;
     if (!expense) return [];
 
+    const consumption = getCachedConsumption(state);
+    if (!consumption) return [];
+
     const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
-
-    if (expense.expenseType === "single_amount") {
-      return billSplits.map((bs) => ({
-        id: generateId(),
-        expenseId: expense.id,
-        userId: bs.userId,
-        shareAmountCents: bs.computedAmountCents,
-      }));
-    }
-
-    // Itemized: compute each person's total share including fees
-    const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-    const consumption = new Map<string, number>();
-
-    for (const id of allPersonIds) {
-      consumption.set(id, 0);
-    }
-
-    for (const split of splits) {
-      consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
-    }
-
-    if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
-      const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
-      const weights = allPersonIds.map((id) => consumption.get(id) || 0);
-      const fees = distributeProportionally(totalServiceFee, weights);
-      allPersonIds.forEach((id, i) => {
-        consumption.set(id, (consumption.get(id) || 0) + fees[i]);
-      });
-    }
-
-    if (expense.fixedFees > 0) {
-      const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
-      allPersonIds.forEach((id, i) => {
-        consumption.set(id, (consumption.get(id) || 0) + fees[i]);
-      });
-    }
 
     return allPersonIds
       .filter((id) => (consumption.get(id) || 0) > 0)
@@ -612,37 +614,10 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   getParticipantTotal: (userId) => {
-    const { expense, items, splits, billSplits, participants, guests } = get();
-    if (!expense) return 0;
-
-    if (expense.expenseType === "single_amount") {
-      const bs = billSplits.find((s) => s.userId === userId);
-      return bs?.computedAmountCents || 0;
-    }
-
-    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
-    const itemsGrandTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-    const userIndex = allPersonIds.indexOf(userId);
-    if (userIndex === -1) return 0;
-
-    const personItemTotals = allPersonIds.map((id) =>
-      splits.filter((s) => s.userId === id).reduce((sum, s) => sum + s.computedAmountCents, 0),
-    );
-
-    const itemTotal = personItemTotals[userIndex];
-
-    let serviceFee = 0;
-    if (expense.serviceFeePercent > 0 && itemsGrandTotal > 0) {
-      const totalServiceFee = Math.round((itemsGrandTotal * expense.serviceFeePercent) / 100);
-      serviceFee = distributeProportionally(totalServiceFee, personItemTotals)[userIndex];
-    }
-
-    const fixedFeeShare =
-      allPersonIds.length > 0
-        ? distributeEvenly(expense.fixedFees, allPersonIds.length)[userIndex]
-        : 0;
-
-    return itemTotal + serviceFee + fixedFeeShare;
+    const state = get();
+    const consumption = getCachedConsumption(state);
+    if (!consumption) return 0;
+    return consumption.get(userId) || 0;
   },
 
   hydrateFromVoice: (result, groupId) => {
@@ -781,7 +756,8 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     });
   },
 
-  reset: () =>
+  reset: () => {
+    invalidateConsumptionCache();
     set({
       expense: null,
       totalAmountInput: 0,
@@ -792,7 +768,8 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       splits: [],
       billSplits: [],
       previewDebts: [],
-    }),
+    });
+  },
 }));
 
 function recalcTotal(
