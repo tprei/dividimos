@@ -20,7 +20,13 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    optimizePackageImports: ["lucide-react", "framer-motion"],
+    optimizePackageImports: [
+      "lucide-react",
+      "framer-motion",
+      "@supabase/supabase-js",
+      "qrcode",
+      "cheerio",
+    ],
     serverComponentsHmrCache: true,
   },
   turbopack: {
