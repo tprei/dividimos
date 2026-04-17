@@ -149,7 +149,7 @@ describe("ScannedItemsReview", () => {
     expect(
       screen.getByPlaceholderText("Descricao (ex: Picanha 400g)"),
     ).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("0,00")).toBeInTheDocument();
+    expect(screen.getByText("Preco unitario (R$)")).toBeInTheDocument();
     // Adicionar button should be disabled when fields are empty
     expect(screen.getByText("Adicionar")).toBeDisabled();
   });
@@ -225,12 +225,13 @@ describe("ScannedItemsReview", () => {
     );
 
     await user.click(screen.getByLabelText("Editar Item A"));
-    // Find the unit price input by its current value
+    // Find the unit price CurrencyInput by its current value "10,00"
     const priceInputs = screen.getAllByRole("textbox");
     const priceInput = priceInputs.find(
       (el) => (el as HTMLInputElement).value === "10,00",
     );
     expect(priceInput).toBeDefined();
+    // CurrencyInput responds to change events with Brazilian format parsing
     fireEvent.change(priceInput!, { target: { value: "20,00" } });
     await user.click(screen.getByText("Salvar"));
 

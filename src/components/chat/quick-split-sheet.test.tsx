@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QuickSplitSheet } from "./quick-split-sheet";
 import type { UserProfile } from "@/types";
@@ -29,20 +29,16 @@ function renderSheet(overrides: Partial<Parameters<typeof QuickSplitSheet>[0]> =
 }
 
 function setInput(testId: string, value: string) {
-  const el = screen.getByTestId(testId) as HTMLInputElement;
-  // Use native setter to trigger React's onChange
-  const nativeSetter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  nativeSetter?.call(el, value);
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-  el.dispatchEvent(new Event("change", { bubbles: true }));
+  fireEvent.change(screen.getByTestId(testId), { target: { value } });
+}
+
+function setCurrencyInput(testId: string, value: string) {
+  fireEvent.change(screen.getByTestId(testId), { target: { value } });
 }
 
 function fillForm(title: string, amount: string) {
   setInput("quick-split-title", title);
-  setInput("quick-split-amount", amount);
+  setCurrencyInput("quick-split-amount", amount);
 }
 
 describe("QuickSplitSheet", () => {
@@ -149,7 +145,7 @@ describe("QuickSplitSheet", () => {
     const { user, onConfirm } = renderSheet();
     fillForm("Uber", "30,00");
     await user.click(screen.getByTestId("split-method-fixed"));
-    setInput("quick-split-my-fixed", "20,00");
+    setCurrencyInput("quick-split-my-fixed", "20,00");
     await user.click(screen.getByTestId("quick-split-confirm"));
 
     const result = onConfirm.mock.calls[0][0];
@@ -200,7 +196,7 @@ describe("QuickSplitSheet", () => {
     const { user } = renderSheet();
     fillForm("X", "30,00");
     await user.click(screen.getByTestId("split-method-fixed"));
-    setInput("quick-split-my-fixed", "40,00");
+    setCurrencyInput("quick-split-my-fixed", "40,00");
 
     expect(screen.getByText("Valor excede o total")).toBeInTheDocument();
   });

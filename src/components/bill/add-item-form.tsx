@@ -5,9 +5,9 @@ import { Minus, Plus, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { Button } from "@/components/ui/button";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { haptics } from "@/hooks/use-haptics";
-import { decimalToCents, sanitizeDecimalInput } from "@/lib/currency";
 
 interface AddItemFormProps {
   onAdd: (item: {
@@ -22,7 +22,7 @@ interface AddItemFormProps {
 export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState(1);
-  const [price, setPrice] = useState("");
+  const [priceCents, setPriceCents] = useState(0);
 
   const decrement = useCallback(() => {
     setQuantity((q) => {
@@ -39,22 +39,18 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim() || !price) return;
-
-    const qty = quantity;
-    const unitPriceCents = decimalToCents(parseFloat(price.replace(",", ".")) || 0);
-    const totalPriceCents = unitPriceCents * qty;
+    if (!description.trim() || priceCents <= 0) return;
 
     onAdd({
       description: description.trim(),
-      quantity: qty,
-      unitPriceCents,
-      totalPriceCents,
+      quantity,
+      unitPriceCents: priceCents,
+      totalPriceCents: priceCents * quantity,
     });
 
     setDescription("");
     setQuantity(1);
-    setPrice("");
+    setPriceCents(0);
   };
 
   return (
@@ -114,25 +110,26 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               Preço unitário (R$)
             </label>
-            <Input
-              type="text"
-              inputMode="decimal"
-              placeholder="0,00"
-              value={price}
-              onChange={(e) => setPrice(sanitizeDecimalInput(e.target.value))}
-            />
+            <div className="flex items-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+              <span className="pl-2.5 text-sm text-muted-foreground">R$</span>
+              <CurrencyInput
+                valueCents={priceCents}
+                onChangeCents={setPriceCents}
+                className="flex-1 h-8 px-2.5 py-1 text-base md:text-sm text-left"
+              />
+            </div>
             <div className="mt-1.5">
               <AmountQuickAdd
                 increments={[1, 2, 5, 10, 20]}
-                currentValue={price}
-                onChange={setPrice}
+                valueCents={priceCents}
+                onChangeCents={setPriceCents}
               />
             </div>
           </div>
         </div>
       </div>
 
-      <Button type="submit" className="mt-4 w-full gap-2" disabled={!description.trim() || !price}>
+      <Button type="submit" className="mt-4 w-full gap-2" disabled={!description.trim() || priceCents <= 0}>
         <Plus className="h-4 w-4" />
         Adicionar
       </Button>

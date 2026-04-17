@@ -5,7 +5,8 @@ import { motion } from "framer-motion";
 import { Check, DollarSign, Loader2, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
-import { formatBRL, parseBRLInput, sanitizeDecimalInput } from "@/lib/currency";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { formatBRL } from "@/lib/currency";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export type QuickChargeStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -61,12 +62,10 @@ export function QuickChargeSheet({
   status = "idle",
   errorMessage,
 }: QuickChargeSheetProps) {
-  const [amountInput, setAmountInput] = useState("0,00");
+  const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
   const [descriptionEdited, setDescriptionEdited] = useState(false);
   const [payerIsSelf, setPayerIsSelf] = useState(true);
-
-  const amountCents = useMemo(() => parseBRLInput(amountInput), [amountInput]);
 
   const autoDescription = useMemo(
     () => buildDescription(amountCents, counterpartyName),
@@ -78,17 +77,6 @@ export function QuickChargeSheet({
   const isConfirming = status === "confirming";
   const isConfirmed = status === "confirmed";
   const isDisabled = isConfirming || isConfirmed || amountCents <= 0;
-
-  const handleAmountChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setAmountInput(sanitizeDecimalInput(e.target.value));
-    },
-    [],
-  );
-
-  const handleQuickAdd = useCallback((newValue: string) => {
-    setAmountInput(newValue);
-  }, []);
 
   const handleDescriptionChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,13 +142,10 @@ export function QuickChargeSheet({
         </div>
         <div className="flex items-center justify-center gap-1">
           <span className="text-lg font-bold text-muted-foreground">R$</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={amountInput}
-            onChange={handleAmountChange}
-            className="w-32 bg-transparent text-center text-3xl font-bold tabular-nums outline-none placeholder:text-muted-foreground/40"
-            placeholder="0,00"
+          <CurrencyInput
+            valueCents={amountCents}
+            onChangeCents={setAmountCents}
+            className="w-32 text-3xl font-bold"
             autoFocus
             data-testid="quick-charge-amount"
           />
@@ -173,7 +158,7 @@ export function QuickChargeSheet({
       </div>
 
       <div className="mb-3 flex justify-center">
-        <AmountQuickAdd currentValue={amountInput} onChange={handleQuickAdd} />
+        <AmountQuickAdd valueCents={amountCents} onChangeCents={setAmountCents} />
       </div>
 
       <div className="mb-3">

@@ -24,7 +24,7 @@ describe("AddItemForm", () => {
 
     expect(screen.getByText("Adicionar item")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Descrição/)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("0,00")).toBeInTheDocument();
+    expect(screen.getByText("Preço unitário (R$)")).toBeInTheDocument();
   });
 
   it("renders quantity with default value of 1", () => {

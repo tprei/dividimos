@@ -5,7 +5,8 @@ import { AlertTriangle, Check, Pencil, Store, UserPlus } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { formatBRL } from "@/lib/currency";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import type { UserProfile } from "@/types";
 
@@ -28,11 +29,7 @@ export function VoiceExpenseModal({
 }: VoiceExpenseModalProps) {
   const [title, setTitle] = useState(result.title);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [amountInput, setAmountInput] = useState(
-    result.amountCents > 0
-      ? (result.amountCents / 100).toFixed(2).replace(".", ",")
-      : "",
-  );
+  const [amountCents, setAmountCents] = useState(result.amountCents);
   const [editingAmount, setEditingAmount] = useState(false);
   const [merchant, setMerchant] = useState(result.merchantName ?? "");
   const [resolved, setResolved] = useState<(ResolvedParticipant | null)[]>(() =>
@@ -55,9 +52,7 @@ export function VoiceExpenseModal({
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
   const handleConfirm = useCallback(() => {
-    const amountCents = amountInput
-      ? Math.round(parseFloat(amountInput.replace(",", ".")) * 100)
-      : result.amountCents;
+    const finalAmountCents = amountCents > 0 ? amountCents : result.amountCents;
     const resolvedParticipants = resolved.filter(
       (r): r is ResolvedParticipant => r !== null,
     );
@@ -65,17 +60,17 @@ export function VoiceExpenseModal({
       {
         ...result,
         title: title || result.title,
-        amountCents: Number.isFinite(amountCents) ? amountCents : result.amountCents,
+        amountCents: finalAmountCents,
         merchantName: merchant || result.merchantName,
       },
       resolvedParticipants,
     );
-  }, [result, title, amountInput, merchant, resolved, onConfirm]);
+  }, [result, title, amountCents, merchant, resolved, onConfirm]);
 
   const needsAmount =
     result.amountCents === 0 &&
     result.expenseType === "single_amount" &&
-    !amountInput;
+    amountCents === 0;
 
   const hasUnresolved =
     result.participants.length > 0 && resolved.some((r) => r === null);
@@ -161,13 +156,11 @@ export function VoiceExpenseModal({
           {editingAmount ? (
             <div className="mt-1.5 flex gap-1">
               <span className="mt-1 text-sm font-medium">R$</span>
-              <Input
-                value={amountInput}
-                onChange={(e) => setAmountInput(sanitizeDecimalInput(e.target.value))}
+              <CurrencyInput
+                valueCents={amountCents}
+                onChangeCents={setAmountCents}
                 autoFocus
-                className="flex-1"
-                inputMode="decimal"
-                placeholder="0,00"
+                className="flex-1 h-8 px-2.5 py-1 text-base md:text-sm rounded-lg border border-input bg-transparent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
               <Button size="sm" onClick={() => setEditingAmount(false)}>
                 <Check className="h-3.5 w-3.5" />
@@ -184,7 +177,7 @@ export function VoiceExpenseModal({
               }}
             >
               <p className="text-lg font-bold tabular-nums">
-                {result.amountCents > 0 ? formatBRL(result.amountCents) : "—"}
+                {amountCents > 0 ? formatBRL(amountCents) : "—"}
               </p>
               <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
             </div>

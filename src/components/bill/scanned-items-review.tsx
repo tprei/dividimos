@@ -8,10 +8,9 @@ import { QuantityStepper } from "@/components/bill/quantity-stepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { staggerContainer, staggerItem } from "@/lib/animations";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   formatBRL,
-  decimalToCents,
-  centsToDecimal,
   sanitizeDecimalInput,
 } from "@/lib/currency";
 import type { ReceiptOcrResult, ReceiptItem } from "@/lib/receipt-ocr";
@@ -20,7 +19,7 @@ interface EditingState {
   index: number;
   description: string;
   quantity: string;
-  unitPrice: string;
+  unitPriceCents: number;
 }
 
 interface ScannedItemsReviewProps {
@@ -43,7 +42,7 @@ export function ScannedItemsReview({
   const [adding, setAdding] = useState(false);
   const [newDescription, setNewDescription] = useState("");
   const [newQuantity, setNewQuantity] = useState("1");
-  const [newPrice, setNewPrice] = useState("");
+  const [newPriceCents, setNewPriceCents] = useState(0);
 
   const computedTotal = items.reduce((sum, item) => sum + item.totalCents, 0);
 
@@ -54,7 +53,7 @@ export function ScannedItemsReview({
         index,
         description: item.description,
         quantity: item.quantity.toString(),
-        unitPrice: centsToDecimal(item.unitPriceCents).replace(".", ","),
+        unitPriceCents: item.unitPriceCents,
       });
     },
     [items],
@@ -63,9 +62,6 @@ export function ScannedItemsReview({
   const saveEdit = useCallback(() => {
     if (!editing) return;
     const qty = Math.max(0.001, parseFloat(editing.quantity) || 1);
-    const unitPriceCents = decimalToCents(
-      parseFloat(editing.unitPrice.replace(",", ".")) || 0,
-    );
     setItems((prev) =>
       prev.map((item, i) =>
         i === editing.index
@@ -73,8 +69,8 @@ export function ScannedItemsReview({
               ...item,
               description: editing.description.trim() || item.description,
               quantity: qty,
-              unitPriceCents,
-              totalCents: unitPriceCents * qty,
+              unitPriceCents: editing.unitPriceCents,
+              totalCents: editing.unitPriceCents * qty,
             }
           : item,
       ),
@@ -94,25 +90,22 @@ export function ScannedItemsReview({
 
   const addItem = useCallback(() => {
     const desc = newDescription.trim();
-    if (!desc || !newPrice) return;
+    if (!desc || newPriceCents <= 0) return;
     const qty = Math.max(0.001, parseFloat(newQuantity) || 1);
-    const unitPriceCents = decimalToCents(
-      parseFloat(newPrice.replace(",", ".")) || 0,
-    );
     setItems((prev) => [
       ...prev,
       {
         description: desc,
         quantity: qty,
-        unitPriceCents,
-        totalCents: unitPriceCents * qty,
+        unitPriceCents: newPriceCents,
+        totalCents: newPriceCents * qty,
       },
     ]);
     setNewDescription("");
     setNewQuantity("1");
-    setNewPrice("");
+    setNewPriceCents(0);
     setAdding(false);
-  }, [newDescription, newQuantity, newPrice]);
+  }, [newDescription, newQuantity, newPriceCents]);
 
   const handleConfirm = useCallback(() => {
     if (items.length === 0) return;
@@ -197,24 +190,22 @@ export function ScannedItemsReview({
                       <label className="mb-1 block text-xs font-medium text-muted-foreground">
                         Preco unit. (R$)
                       </label>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0,00"
-                        value={editing.unitPrice}
-                        onChange={(e) =>
-                          setEditing({
-                            ...editing,
-                            unitPrice: sanitizeDecimalInput(e.target.value),
-                          })
-                        }
-                      />
+                      <div className="flex items-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                        <span className="pl-2.5 text-sm text-muted-foreground">R$</span>
+                        <CurrencyInput
+                          valueCents={editing.unitPriceCents}
+                          onChangeCents={(cents) =>
+                            setEditing({ ...editing, unitPriceCents: cents })
+                          }
+                          className="flex-1 h-8 px-2.5 py-1 text-base md:text-sm text-left"
+                        />
+                      </div>
                       <div className="mt-1.5">
                         <AmountQuickAdd
                           increments={[1, 2, 5, 10, 20]}
-                          currentValue={editing.unitPrice}
-                          onChange={(v) =>
-                            setEditing({ ...editing, unitPrice: v })
+                          valueCents={editing.unitPriceCents}
+                          onChangeCents={(cents) =>
+                            setEditing({ ...editing, unitPriceCents: cents })
                           }
                         />
                       </div>
@@ -330,20 +321,19 @@ export function ScannedItemsReview({
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">
                     Preco unitario (R$)
                   </label>
-                  <Input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0,00"
-                    value={newPrice}
-                    onChange={(e) =>
-                      setNewPrice(sanitizeDecimalInput(e.target.value))
-                    }
-                  />
+                  <div className="flex items-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                    <span className="pl-2.5 text-sm text-muted-foreground">R$</span>
+                    <CurrencyInput
+                      valueCents={newPriceCents}
+                      onChangeCents={setNewPriceCents}
+                      className="flex-1 h-8 px-2.5 py-1 text-base md:text-sm text-left"
+                    />
+                  </div>
                   <div className="mt-1.5">
                     <AmountQuickAdd
                       increments={[1, 2, 5, 10, 20]}
-                      currentValue={newPrice}
-                      onChange={setNewPrice}
+                      valueCents={newPriceCents}
+                      onChangeCents={setNewPriceCents}
                     />
                   </div>
                 </div>
@@ -352,7 +342,7 @@ export function ScannedItemsReview({
             <Button
               className="mt-4 w-full gap-2"
               onClick={addItem}
-              disabled={!newDescription.trim() || !newPrice}
+              disabled={!newDescription.trim() || newPriceCents <= 0}
             >
               <Plus className="h-4 w-4" />
               Adicionar

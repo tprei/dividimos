@@ -13,11 +13,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   distributeEvenly,
   distributeProportionally,
   formatBRL,
-  parseBRLInput,
   sanitizeDecimalInput,
 } from "@/lib/currency";
 import type { SplitType, UserProfile } from "@/types";
@@ -58,10 +58,10 @@ export function QuickSplitSheet({
   errorMessage,
 }: QuickSplitSheetProps) {
   const [title, setTitle] = useState("");
-  const [amountInput, setAmountInput] = useState("");
+  const [totalCents, setTotalCents] = useState(0);
   const [splitMethod, setSplitMethod] = useState<SplitType>("equal");
   const [myPercentage, setMyPercentage] = useState("50");
-  const [myFixedInput, setMyFixedInput] = useState("");
+  const [myFixedCents, setMyFixedCents] = useState(0);
 
   const participants = useMemo(
     () => [
@@ -71,7 +71,6 @@ export function QuickSplitSheet({
     [currentUserId, counterparty],
   );
 
-  const totalCents = parseBRLInput(amountInput);
   const isConfirming = status === "confirming";
   const isConfirmed = status === "confirmed";
   const isDisabled = isConfirming || isConfirmed;
@@ -99,17 +98,16 @@ export function QuickSplitSheet({
     }
 
     if (splitMethod === "fixed") {
-      const myAmount = parseBRLInput(myFixedInput);
-      const otherAmount = totalCents - myAmount;
-      if (myAmount < 0 || otherAmount < 0) return null;
+      const otherAmount = totalCents - myFixedCents;
+      if (myFixedCents < 0 || otherAmount < 0) return null;
       return [
-        { userId: currentUserId, shareAmountCents: myAmount },
+        { userId: currentUserId, shareAmountCents: myFixedCents },
         { userId: counterparty.id, shareAmountCents: otherAmount },
       ];
     }
 
     return null;
-  }, [totalCents, splitMethod, participants, myPercentage, myFixedInput, currentUserId, counterparty.id]);
+  }, [totalCents, splitMethod, participants, myPercentage, myFixedCents, currentUserId, counterparty.id]);
 
   const shares = computeShares();
 
@@ -128,10 +126,9 @@ export function QuickSplitSheet({
 
   const fixedWarning = useMemo(() => {
     if (splitMethod !== "fixed" || totalCents <= 0) return null;
-    const myAmount = parseBRLInput(myFixedInput);
-    if (myAmount > totalCents) return "Valor excede o total";
+    if (myFixedCents > totalCents) return "Valor excede o total";
     return null;
-  }, [splitMethod, totalCents, myFixedInput]);
+  }, [splitMethod, totalCents, myFixedCents]);
 
   const handleConfirm = () => {
     if (!isValid || !shares) return;
@@ -215,16 +212,16 @@ export function QuickSplitSheet({
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
                 Valor total (R$)
               </label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                placeholder="0,00"
-                value={amountInput}
-                onChange={(e) => setAmountInput(sanitizeDecimalInput(e.target.value))}
-                disabled={isDisabled}
-                className="text-2xl font-bold h-14 text-center"
-                data-testid="quick-split-amount"
-              />
+              <div className="flex items-center justify-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 h-14">
+                <span className="pl-3 text-lg font-bold text-muted-foreground">R$</span>
+                <CurrencyInput
+                  valueCents={totalCents}
+                  onChangeCents={setTotalCents}
+                  disabled={isDisabled}
+                  className="flex-1 text-2xl font-bold h-14"
+                  data-testid="quick-split-amount"
+                />
+              </div>
             </div>
 
             <div>
@@ -318,14 +315,11 @@ export function QuickSplitSheet({
                       <span className="text-sm flex-1">Você</span>
                       <div className="flex items-center gap-1 w-28">
                         <span className="text-sm text-muted-foreground">R$</span>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="0,00"
-                          value={myFixedInput}
-                          onChange={(e) => setMyFixedInput(sanitizeDecimalInput(e.target.value))}
+                        <CurrencyInput
+                          valueCents={myFixedCents}
+                          onChangeCents={setMyFixedCents}
                           disabled={isDisabled}
-                          className="h-8 text-right text-sm"
+                          className="h-8 w-full text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                           data-testid="quick-split-my-fixed"
                         />
                       </div>
@@ -333,7 +327,7 @@ export function QuickSplitSheet({
                     <div className="flex items-center justify-between">
                       <span className="text-sm">{participants[1].name}</span>
                       <span className="text-sm font-semibold tabular-nums">
-                        {formatBRL(Math.max(0, totalCents - parseBRLInput(myFixedInput)))}
+                        {formatBRL(Math.max(0, totalCents - myFixedCents))}
                       </span>
                     </div>
                     {fixedWarning && (
