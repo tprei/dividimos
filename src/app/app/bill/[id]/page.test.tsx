@@ -231,8 +231,6 @@ describe("ExpenseSharesSummary", () => {
 // ---------------------------------------------------------------------------
 
 describe("DM group payment tab rendering conditions", () => {
-  const groupId = "group-dm-1";
-
   const makeConditions = ({
     activeTab = "payment" as const,
     allSettled = false,
