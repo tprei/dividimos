@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
-import { formatBRL, centsToDecimal, sanitizeDecimalInput, decimalToCents } from "@/lib/currency";
+import { CurrencyInput } from "@/components/ui/currency-input";
+import { formatBRL } from "@/lib/currency";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { haptics } from "@/hooks/use-haptics";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
@@ -55,21 +56,20 @@ export function PixQrModal({
   const [settledAmountCents, setSettledAmountCents] = useState(0);
 
   const remainingCents = amountCents - paidAmountCents;
-  const [inputValue, setInputValue] = useState(() => centsToDecimal(remainingCents).replace(".", ","));
-  const paymentCents = decimalToCents(parseFloat(inputValue.replace(",", ".")) || 0);
+  const [paymentCents, setPaymentCents] = useState(remainingCents);
   const isFullPayment = paymentCents >= remainingCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= remainingCents;
+  const halfCents = Math.ceil(remainingCents / 2);
 
   useEffect(() => {
     if (open) {
-      setInputValue(centsToDecimal(remainingCents).replace(".", ","));
+      setPaymentCents(remainingCents);
       setIsSettling(false);
       setShowSuccess(false);
       setSettledAmountCents(0);
     }
   }, [open, remainingCents]);
 
-  // Clean up auto-close timer on unmount
   useEffect(() => {
     return () => {
       if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
@@ -321,7 +321,6 @@ export function PixQrModal({
                     <span className="font-medium text-foreground">{recipientName}</span>
                   </p>
 
-                  {/* Amount input for partial payments */}
                   <div className="mt-3">
                     {paidAmountCents > 0 && (
                       <p className="mb-1 text-xs text-muted-foreground">
@@ -330,16 +329,45 @@ export function PixQrModal({
                     )}
                     <div className="flex items-center justify-center gap-2">
                       <span className="text-xl font-bold text-primary">R$</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={inputValue}
-                        onChange={(e) => setInputValue(sanitizeDecimalInput(e.target.value))}
+                      <CurrencyInput
+                        valueCents={paymentCents}
+                        onChangeCents={setPaymentCents}
+                        maxCents={remainingCents}
                         disabled={isSettling}
-                        className="w-32 border-b-2 border-primary bg-transparent text-center text-3xl font-bold tabular-nums text-primary outline-none focus:border-primary/80 disabled:opacity-50"
+                        className="w-32 border-b-2 border-primary text-3xl font-bold text-primary focus:border-primary/80"
                         aria-label="Valor do pagamento"
                       />
                     </div>
+
+                    <div className="mt-2 flex justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentCents(remainingCents)}
+                        disabled={isSettling || paymentCents === remainingCents}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                          paymentCents === remainingCents
+                            ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                            : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                        } disabled:opacity-50`}
+                      >
+                        Tudo: {formatBRL(remainingCents)}
+                      </button>
+                      {halfCents !== remainingCents && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentCents(halfCents)}
+                          disabled={isSettling || paymentCents === halfCents}
+                          className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                            paymentCents === halfCents
+                              ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                              : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                          } disabled:opacity-50`}
+                        >
+                          Metade: {formatBRL(halfCents)}
+                        </button>
+                      )}
+                    </div>
+
                     {!isFullPayment && isValidAmount && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         Resta depois do Pix: {formatBRL(remainingCents - paymentCents)}

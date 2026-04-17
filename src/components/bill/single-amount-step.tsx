@@ -4,10 +4,10 @@ import { motion } from "framer-motion";
 import { Equal, Hash, Percent, Users } from "lucide-react";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { haptics } from "@/hooks/use-haptics";
-import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
+import { formatBRL } from "@/lib/currency";
 import type { SplitType, UserProfile } from "@/types";
 
 interface GuestEntry {
@@ -45,15 +45,9 @@ export function SingleAmountStep({
     [participants, guests],
   );
   const [method, setMethod] = useState<SplitType>("equal");
-  const [totalInput, setTotalInput] = useState(
-    totalAmountInput > 0 ? (totalAmountInput / 100).toFixed(2).replace(".", ",") : "",
-  );
+  const [totalCents, setTotalCents] = useState(totalAmountInput);
   const [percentages, setPercentages] = useState<Map<string, string>>(new Map());
-  const [fixedAmounts, setFixedAmounts] = useState<Map<string, string>>(new Map());
-
-  const totalCents = Math.round(
-    (parseFloat(totalInput.replace(",", ".")) || 0) * 100,
-  );
+  const [fixedAmounts, setFixedAmounts] = useState<Map<string, number>>(new Map());
 
   const onSetTotalRef = useRef(onSetTotal);
   useEffect(() => { onSetTotalRef.current = onSetTotal; });
@@ -84,9 +78,7 @@ export function SingleAmountStep({
     } else if (method === "fixed") {
       const assignments = allPersons.map((p) => ({
         userId: p.id,
-        amountCents: Math.round(
-          parseFloat(fixedAmounts.get(p.id)?.replace(",", ".") || "0") * 100,
-        ),
+        amountCents: fixedAmounts.get(p.id) || 0,
       }));
       onSplitByFixedRef.current(assignments);
     }
@@ -100,18 +92,16 @@ export function SingleAmountStep({
     setPercentages(next);
   };
 
-  const handleFixedChange = (userId: string, val: string) => {
+  const handleFixedChange = (userId: string, cents: number) => {
     const next = new Map(fixedAmounts);
-    next.set(userId, val);
+    next.set(userId, cents);
     setFixedAmounts(next);
   };
 
   const applyFixed = () => {
     const assignments = allPersons.map((p) => ({
       userId: p.id,
-      amountCents: Math.round(
-        parseFloat(fixedAmounts.get(p.id)?.replace(",", ".") || "0") * 100,
-      ),
+      amountCents: fixedAmounts.get(p.id) || 0,
     }));
     onSplitByFixed(assignments);
   };
@@ -121,7 +111,7 @@ export function SingleAmountStep({
     0,
   );
   const fixedTotal = Array.from(fixedAmounts.values()).reduce(
-    (s, v) => s + Math.round(parseFloat(v.replace(",", ".") || "0") * 100),
+    (s, v) => s + v,
     0,
   );
 
@@ -131,19 +121,19 @@ export function SingleAmountStep({
         <label className="mb-1.5 block text-sm font-medium">
           Valor total (R$)
         </label>
-        <Input
-          type="text"
-          inputMode="decimal"
-          placeholder="0,00"
-          value={totalInput}
-          onChange={(e) => setTotalInput(sanitizeDecimalInput(e.target.value))}
-          className="text-2xl font-bold h-14 text-center"
-        />
+        <div className="flex items-center justify-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 h-14">
+          <span className="pl-3 text-lg font-bold text-muted-foreground">R$</span>
+          <CurrencyInput
+            valueCents={totalCents}
+            onChangeCents={setTotalCents}
+            className="flex-1 text-2xl font-bold h-14"
+          />
+        </div>
         <div className="mt-2">
           <AmountQuickAdd
             increments={[1, 5, 10, 50, 100]}
-            currentValue={totalInput}
-            onChange={setTotalInput}
+            valueCents={totalCents}
+            onChangeCents={setTotalCents}
           />
         </div>
       </div>
@@ -309,12 +299,12 @@ export function SingleAmountStep({
             <div className="space-y-3">
               {allPersons.map((person) => {
                 const isGuest = person.id.startsWith("guest_");
-                const userVal = fixedAmounts.get(person.id) || "";
+                const userCents = fixedAmounts.get(person.id) || 0;
                 const othersTotal = Array.from(fixedAmounts.entries())
                   .filter(([id]) => id !== person.id)
-                  .reduce((s, [, v]) => s + Math.round(parseFloat(v.replace(",", ".") || "0") * 100), 0);
+                  .reduce((s, [, v]) => s + v, 0);
                 const userRemaining = totalCents - othersTotal;
-                const showFillRemaining = !userVal && othersTotal > 0 && userRemaining > 0;
+                const showFillRemaining = userCents === 0 && othersTotal > 0 && userRemaining > 0;
 
                 return (
                   <div key={person.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
@@ -333,8 +323,7 @@ export function SingleAmountStep({
                         variant="outline"
                         className="h-8 text-xs gap-1 text-primary border-primary/30"
                         onClick={() => {
-                          const formatted = (userRemaining / 100).toFixed(2).replace(".", ",");
-                          handleFixedChange(person.id, formatted);
+                          handleFixedChange(person.id, userRemaining);
                           setTimeout(applyFixed, 0);
                         }}
                       >
@@ -344,21 +333,21 @@ export function SingleAmountStep({
                       <div className="flex flex-col items-end gap-1.5">
                         <div className="flex items-center gap-1 w-28">
                           <span className="text-sm text-muted-foreground">R$</span>
-                          <Input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="0,00"
-                            className="h-8 text-right text-sm"
-                            value={userVal}
-                            onChange={(e) => handleFixedChange(person.id, e.target.value)}
-                            onBlur={applyFixed}
+                          <CurrencyInput
+                            valueCents={userCents}
+                            onChangeCents={(cents) => {
+                              handleFixedChange(person.id, cents);
+                              setTimeout(applyFixed, 0);
+                            }}
+                            maxCents={totalCents}
+                            className="h-8 w-full text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                           />
                         </div>
                         <AmountQuickAdd
                           increments={[1, 5, 10, 50]}
-                          currentValue={userVal}
-                          onChange={(newVal) => {
-                            handleFixedChange(person.id, newVal);
+                          valueCents={userCents}
+                          onChangeCents={(cents) => {
+                            handleFixedChange(person.id, cents);
                             setTimeout(applyFixed, 0);
                           }}
                         />
@@ -372,14 +361,14 @@ export function SingleAmountStep({
                 size="sm"
                 className="w-full gap-2"
                 onClick={() => {
-                  const eq = (totalCents / 100 / allPersons.length).toFixed(2);
-                  const next = new Map<string, string>();
-                  allPersons.forEach((p) => next.set(p.id, eq));
+                  const perPersonCents = Math.round(totalCents / allPersons.length);
+                  const next = new Map<string, number>();
+                  allPersons.forEach((p) => next.set(p.id, perPersonCents));
                   setFixedAmounts(next);
                   onSplitByFixed(
                     allPersons.map((p) => ({
                       userId: p.id,
-                      amountCents: Math.round(parseFloat(eq) * 100),
+                      amountCents: perPersonCents,
                     })),
                   );
                 }}

@@ -4,11 +4,23 @@ import { useCallback, useRef, useState } from "react";
 import { Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-interface AmountQuickAddProps {
+interface AmountQuickAddCentsProps {
+  increments?: number[];
+  valueCents: number;
+  onChangeCents: (cents: number) => void;
+  currentValue?: never;
+  onChange?: never;
+}
+
+interface AmountQuickAddStringProps {
   increments?: number[];
   currentValue: string;
   onChange: (newValue: string) => void;
+  valueCents?: never;
+  onChangeCents?: never;
 }
+
+type AmountQuickAddProps = AmountQuickAddCentsProps | AmountQuickAddStringProps;
 
 function parseCurrentValue(value: string): number {
   return parseFloat(value.replace(",", ".")) || 0;
@@ -18,32 +30,47 @@ function formatBrazilian(value: number): string {
   return value.toFixed(2).replace(".", ",");
 }
 
-export function AmountQuickAdd({
-  increments = [1, 5, 10, 50, 100],
-  currentValue,
-  onChange,
-}: AmountQuickAddProps) {
-  const historyRef = useRef<string[]>([]);
+export function AmountQuickAdd(props: AmountQuickAddProps) {
+  const { increments = [1, 5, 10, 50, 100] } = props;
+  const isCentsMode = "valueCents" in props && props.valueCents != null;
+
+  const centsHistoryRef = useRef<number[]>([]);
+  const stringHistoryRef = useRef<string[]>([]);
   const [canUndo, setCanUndo] = useState(false);
 
   const handleAdd = useCallback(
     (increment: number) => {
-      historyRef.current.push(currentValue);
-      setCanUndo(true);
-      const current = parseCurrentValue(currentValue);
-      const next = current + increment;
-      onChange(formatBrazilian(next));
+      if (isCentsMode) {
+        const p = props as AmountQuickAddCentsProps;
+        centsHistoryRef.current.push(p.valueCents);
+        setCanUndo(true);
+        p.onChangeCents(p.valueCents + increment * 100);
+      } else {
+        const p = props as AmountQuickAddStringProps;
+        stringHistoryRef.current.push(p.currentValue);
+        setCanUndo(true);
+        const current = parseCurrentValue(p.currentValue);
+        p.onChange(formatBrazilian(current + increment));
+      }
     },
-    [currentValue, onChange],
+    [props, isCentsMode],
   );
 
   const handleUndo = useCallback(() => {
-    const prev = historyRef.current.pop();
-    if (prev !== undefined) {
-      onChange(prev);
+    if (isCentsMode) {
+      const prev = centsHistoryRef.current.pop();
+      if (prev !== undefined) {
+        (props as AmountQuickAddCentsProps).onChangeCents(prev);
+      }
+      setCanUndo(centsHistoryRef.current.length > 0);
+    } else {
+      const prev = stringHistoryRef.current.pop();
+      if (prev !== undefined) {
+        (props as AmountQuickAddStringProps).onChange(prev);
+      }
+      setCanUndo(stringHistoryRef.current.length > 0);
     }
-    setCanUndo(historyRef.current.length > 0);
-  }, [onChange]);
+  }, [props, isCentsMode]);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">

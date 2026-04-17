@@ -271,13 +271,12 @@ describe("VoiceExpenseModal", () => {
     // Click on the amount to enter editing mode
     await user.click(screen.getByText("R$ 25,00"));
 
-    // Should show input with initial formatted value
+    // Should show CurrencyInput with initial formatted value
     const amountInput = screen.getByDisplayValue("25,00");
     expect(amountInput).toBeInTheDocument();
 
-    // Clear and type a new amount
-    await user.clear(amountInput);
-    await user.type(amountInput, "42,50");
+    // CurrencyInput responds to change events with Brazilian format parsing
+    fireEvent.change(amountInput, { target: { value: "42,50" } });
 
     // Find and click the confirm edit button (the small Check button next to input)
     const buttonsInAmountArea = screen.getByDisplayValue("42,50").parentElement!.querySelectorAll("button");
@@ -308,7 +307,7 @@ describe("VoiceExpenseModal", () => {
     amountButton.focus();
     await user.keyboard("{Enter}");
 
-    // Should now show an input
+    // Should now show a CurrencyInput with the value
     expect(screen.getByDisplayValue("25,00")).toBeInTheDocument();
   });
 

@@ -5,9 +5,9 @@ import { Check, Hash, Percent, Split, Users } from "lucide-react";
 import { startTransition, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { haptics } from "@/hooks/use-haptics";
-import { formatBRL, sanitizeDecimalInput } from "@/lib/currency";
+import { formatBRL } from "@/lib/currency";
 import type { UserProfile } from "@/types";
 
 interface PayerStepProps {
@@ -31,12 +31,12 @@ export function PayerStep({
 }: PayerStepProps) {
   const [multiMode, setMultiMode] = useState(payers.length > 1);
   const [paymentInputMode, setPaymentInputMode] = useState<"fixed" | "percentage">("fixed");
-  const [localAmounts, setLocalAmounts] = useState<Map<string, string>>(() => {
+  const [localAmounts, setLocalAmounts] = useState<Map<string, number>>(() => {
     if (payers.length > 1) {
-      const m = new Map<string, string>();
+      const m = new Map<string, number>();
       for (const p of payers) {
         if (p.amountCents > 0) {
-          m.set(p.userId, (p.amountCents / 100).toFixed(2).replace(".", ","));
+          m.set(p.userId, p.amountCents);
         }
       }
       return m;
@@ -49,17 +49,12 @@ export function PayerStep({
   const totalPaid = payers.reduce((sum, p) => sum + p.amountCents, 0);
   const remaining = grandTotal - totalPaid;
 
-  const handleLocalChange = (userId: string, val: string) => {
+  const handleLocalChange = (userId: string, cents: number) => {
     const next = new Map(localAmounts);
-    next.set(userId, val);
+    next.set(userId, cents);
     setLocalAmounts(next);
-  };
-
-  const handleBlur = (userId: string) => {
-    const raw = localAmounts.get(userId) || "";
-    const val = parseFloat(raw.replace(",", ".")) || 0;
-    if (val > 0) {
-      onSetPayerAmount(userId, Math.round(val * 100));
+    if (cents > 0) {
+      onSetPayerAmount(userId, cents);
     } else {
       onRemovePayerEntry(userId);
     }
@@ -71,9 +66,8 @@ export function PayerStep({
       .reduce((sum, p) => sum + p.amountCents, 0);
     const remaining = grandTotal - othersTotal;
     if (remaining > 0) {
-      const formatted = (remaining / 100).toFixed(2).replace(".", ",");
       const next = new Map(localAmounts);
-      next.set(userId, formatted);
+      next.set(userId, remaining);
       setLocalAmounts(next);
       onSetPayerAmount(userId, remaining);
     }
@@ -282,9 +276,9 @@ export function PayerStep({
           })()}
 
           {paymentInputMode === "fixed" && <div className="space-y-3">{participants.map((user) => {
-            const localVal = localAmounts.get(user.id) || "";
+            const userCents = localAmounts.get(user.id) || 0;
             const storeAmount = payerMap.get(user.id) || 0;
-            const hasValue = localVal !== "" || storeAmount > 0;
+            const hasValue = userCents > 0 || storeAmount > 0;
             const othersFilled = participants.some(
               (p) => p.id !== user.id && (payerMap.get(p.id) || 0) > 0,
             );
@@ -318,14 +312,11 @@ export function PayerStep({
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-muted-foreground">R$</span>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0,00"
-                        className="h-8 w-24 text-right text-sm"
-                        value={localVal}
-                        onChange={(e) => handleLocalChange(user.id, sanitizeDecimalInput(e.target.value))}
-                        onBlur={() => handleBlur(user.id)}
+                      <CurrencyInput
+                        valueCents={userCents}
+                        onChangeCents={(cents) => handleLocalChange(user.id, cents)}
+                        maxCents={grandTotal}
+                        className="h-8 w-24 text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       />
                     </div>
                   )}
@@ -334,14 +325,8 @@ export function PayerStep({
                   <div className="mt-2">
                     <AmountQuickAdd
                       increments={[5, 10, 50, 100]}
-                      currentValue={localVal}
-                      onChange={(newVal) => {
-                        handleLocalChange(user.id, newVal);
-                        const cents = Math.round(parseFloat(newVal.replace(",", ".")) * 100);
-                        startTransition(() => {
-                          onSetPayerAmount(user.id, cents);
-                        });
-                      }}
+                      valueCents={userCents}
+                      onChangeCents={(cents) => handleLocalChange(user.id, cents)}
                     />
                   </div>
                 )}
@@ -354,11 +339,7 @@ export function PayerStep({
                     value={sliderValue}
                     onChange={(e) => {
                       const cents = parseInt(e.target.value);
-                      const formatted = (cents / 100).toFixed(2).replace(".", ",");
-                      handleLocalChange(user.id, formatted);
-                      startTransition(() => {
-                        onSetPayerAmount(user.id, cents);
-                      });
+                      handleLocalChange(user.id, cents);
                     }}
                     className="mt-2 w-full"
                   />
@@ -373,11 +354,9 @@ export function PayerStep({
               className="w-full gap-2"
               onClick={() => {
                 onSplitPaymentEqually(participants.map((p) => p.id));
-                const perPerson = grandTotal / participants.length;
-                const m = new Map<string, string>();
-                participants.forEach((p) =>
-                  m.set(p.id, (perPerson / 100).toFixed(2).replace(".", ",")),
-                );
+                const perPerson = Math.round(grandTotal / participants.length);
+                const m = new Map<string, number>();
+                participants.forEach((p) => m.set(p.id, perPerson));
                 setLocalAmounts(m);
               }}
             >
