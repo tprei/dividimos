@@ -26,27 +26,11 @@ export function UserProvider({
   useEffect(() => {
     const supabase = createClient();
 
-    async function refreshUser() {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-
-      if (!authUser) {
-        lastAuthUserId.current = null;
-        setUser(null);
-        return;
-      }
-
-      if (authUser.id === lastAuthUserId.current) {
-        return;
-      }
-
-      lastAuthUserId.current = authUser.id;
-
+    async function fetchProfile(userId: string) {
       const { data: profile } = await supabase
         .from("users")
         .select("*")
-        .eq("id", authUser.id)
+        .eq("id", userId)
         .single();
 
       if (profile) {
@@ -68,9 +52,18 @@ export function UserProvider({
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
-        refreshUser();
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        lastAuthUserId.current = null;
+        setUser(null);
+        return;
+      }
+
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        const userId = session?.user?.id;
+        if (!userId || userId === lastAuthUserId.current) return;
+        lastAuthUserId.current = userId;
+        fetchProfile(userId);
       }
     });
 
