@@ -225,3 +225,138 @@ describe("ExpenseSharesSummary", () => {
     expect(container.innerHTML).toBe("");
   });
 });
+
+// ---------------------------------------------------------------------------
+// DM group inline pay/collect rendering conditions
+// ---------------------------------------------------------------------------
+
+describe("DM group payment tab rendering conditions", () => {
+  const makeConditions = ({
+    activeTab = "payment" as const,
+    allSettled = false,
+    hasGroupId = true,
+    hasGroupNavUrl = true,
+    isDmGroup = true,
+    debtsLength = 1,
+  }) => ({
+    showDmInline:
+      activeTab === "payment" &&
+      !allSettled &&
+      hasGroupId &&
+      isDmGroup &&
+      debtsLength > 0,
+    showMultiMemberRedirect:
+      activeTab === "payment" &&
+      !allSettled &&
+      hasGroupId &&
+      hasGroupNavUrl &&
+      !isDmGroup,
+    showNoGroupInline:
+      activeTab === "payment" &&
+      !allSettled &&
+      !hasGroupId &&
+      debtsLength > 0,
+  });
+
+  it("shows DM inline buttons for a DM group with debts", () => {
+    const conds = makeConditions({ isDmGroup: true, debtsLength: 1 });
+    expect(conds.showDmInline).toBe(true);
+    expect(conds.showMultiMemberRedirect).toBe(false);
+  });
+
+  it("shows multi-member redirect for a non-DM group", () => {
+    const conds = makeConditions({ isDmGroup: false });
+    expect(conds.showDmInline).toBe(false);
+    expect(conds.showMultiMemberRedirect).toBe(true);
+  });
+
+  it("hides DM inline buttons when all settled", () => {
+    const conds = makeConditions({ isDmGroup: true, allSettled: true });
+    expect(conds.showDmInline).toBe(false);
+  });
+
+  it("hides DM inline buttons on non-payment tabs", () => {
+    const items = makeConditions({ isDmGroup: true, activeTab: "items" as "payment" });
+    expect(items.showDmInline).toBe(false);
+
+    const split = makeConditions({ isDmGroup: true, activeTab: "split" as "payment" });
+    expect(split.showDmInline).toBe(false);
+  });
+
+  it("hides DM inline buttons when there are no debts", () => {
+    const conds = makeConditions({ isDmGroup: true, debtsLength: 0 });
+    expect(conds.showDmInline).toBe(false);
+  });
+
+  it("shows no-group inline buttons when expense has no group", () => {
+    const conds = makeConditions({ hasGroupId: false, isDmGroup: false });
+    expect(conds.showNoGroupInline).toBe(true);
+    expect(conds.showDmInline).toBe(false);
+    expect(conds.showMultiMemberRedirect).toBe(false);
+  });
+});
+
+describe("DM inline pay/collect button rendering", () => {
+  const alice = { id: "user-1", name: "Alice Silva", handle: "alice" };
+  const bob = { id: "user-2", name: "Bob Santos", handle: "bob" };
+
+  function renderDebtCard({
+    debt,
+    currentUserId,
+    participants,
+  }: {
+    debt: { fromUserId: string; toUserId: string; amountCents: number };
+    currentUserId: string;
+    participants: { id: string; name: string }[];
+  }) {
+    const debtor = participants.find((p) => p.id === debt.fromUserId);
+    const creditor = participants.find((p) => p.id === debt.toUserId);
+    const isDebtor = currentUserId === debt.fromUserId;
+    const isCreditor = currentUserId === debt.toUserId;
+
+    const entryLabel = isDebtor
+      ? `Você deve para ${creditor?.name.split(" ")[0] || "?"}`
+      : isCreditor
+        ? `${debtor?.name.split(" ")[0] || "?"} te deve`
+        : `${debtor?.name.split(" ")[0] || "?"} → ${creditor?.name.split(" ")[0] || "?"}`;
+
+    return { entryLabel, isDebtor, isCreditor, debtor, creditor };
+  }
+
+  it("debtor sees pay button with amount and creditor name", () => {
+    const result = renderDebtCard({
+      debt: { fromUserId: alice.id, toUserId: bob.id, amountCents: 5000 },
+      currentUserId: alice.id,
+      participants: [alice, bob],
+    });
+
+    expect(result.isDebtor).toBe(true);
+    expect(result.isCreditor).toBe(false);
+    expect(result.entryLabel).toBe("Você deve para Bob");
+  });
+
+  it("creditor sees collect button", () => {
+    const result = renderDebtCard({
+      debt: { fromUserId: alice.id, toUserId: bob.id, amountCents: 5000 },
+      currentUserId: bob.id,
+      participants: [alice, bob],
+    });
+
+    expect(result.isDebtor).toBe(false);
+    expect(result.isCreditor).toBe(true);
+    expect(result.entryLabel).toBe("Alice te deve");
+  });
+
+  it("third-party observer sees directional label", () => {
+    const carol = { id: "user-3", name: "Carol Souza", handle: "carol" };
+    const result = renderDebtCard({
+      debt: { fromUserId: alice.id, toUserId: bob.id, amountCents: 5000 },
+      currentUserId: carol.id,
+      participants: [alice, bob, carol],
+    });
+
+    expect(result.isDebtor).toBe(false);
+    expect(result.isCreditor).toBe(false);
+    expect(result.entryLabel).toBe("Alice → Bob");
+  });
+});
