@@ -72,8 +72,8 @@ export function ConversationPageClient({
 }) {
   const router = useRouter();
 
-  const [counterparty, setCounterparty] = useState<UserProfile | null>(initialData.counterparty);
-  const [groupId, setGroupId] = useState<string | null>(initialData.groupId);
+  const [counterparty] = useState<UserProfile | null>(initialData.counterparty);
+  const [groupId] = useState<string | null>(initialData.groupId);
   const [thread, setThread] = useState<ConversationThread | null>(
     initialData.thread ? hydrateThread(initialData.thread) : null,
   );
