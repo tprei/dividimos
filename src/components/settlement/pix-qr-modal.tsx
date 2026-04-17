@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
-import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { haptics } from "@/hooks/use-haptics";
@@ -327,17 +326,21 @@ export function PixQrModal({
                         Já pago: {formatBRL(paidAmountCents)} de {formatBRL(amountCents)}
                       </p>
                     )}
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="text-xl font-bold text-primary">R$</span>
-                      <CurrencyInput
-                        valueCents={paymentCents}
-                        onChangeCents={setPaymentCents}
-                        maxCents={remainingCents}
-                        disabled={isSettling}
-                        className="w-32 border-b-2 border-primary text-3xl font-bold text-primary focus:border-primary/80"
-                        aria-label="Valor do pagamento"
-                      />
-                    </div>
+                    <p className="text-3xl font-bold tabular-nums text-primary">
+                      {formatBRL(paymentCents)}
+                    </p>
+                    <input
+                      type="range"
+                      min={remainingCents < 100 ? 1 : 100}
+                      max={remainingCents}
+                      step={remainingCents < 100 ? 1 : 100}
+                      value={paymentCents}
+                      onChange={(e) => setPaymentCents(parseInt(e.target.value))}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      disabled={isSettling}
+                      className="mt-3 w-full"
+                      aria-label="Valor do pagamento"
+                    />
 
                     <div className="mt-2 flex justify-center gap-2">
                       <button
@@ -371,11 +374,6 @@ export function PixQrModal({
                     {!isFullPayment && isValidAmount && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         Resta depois do Pix: {formatBRL(remainingCents - paymentCents)}
-                      </p>
-                    )}
-                    {paymentCents > remainingCents && (
-                      <p className="mt-1 text-xs text-destructive">
-                        Valor maior que o restante ({formatBRL(remainingCents)})
                       </p>
                     )}
                   </div>
