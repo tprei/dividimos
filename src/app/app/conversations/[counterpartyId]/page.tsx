@@ -68,7 +68,15 @@ export default function ConversationPage({
 
     const supabase = createClient();
 
-    const dmResult = await getOrCreateDmGroup(counterpartyId);
+    // Fetch DM group and counterparty profile in parallel (independent queries)
+    const [dmResult, profileResult] = await Promise.all([
+      getOrCreateDmGroup(counterpartyId),
+      supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("id", counterpartyId)
+        .single(),
+    ]);
 
     if ("error" in dmResult) {
       setError(dmResult.error);
@@ -76,21 +84,14 @@ export default function ConversationPage({
       return;
     }
 
-    const gId = dmResult.groupId;
-    setGroupId(gId);
-
-    const profileResult = await supabase
-      .from("user_profiles")
-      .select("*")
-      .eq("id", counterpartyId)
-      .single();
-
     if (profileResult.error || !profileResult.data) {
       setError("Usuário não encontrado");
       setLoading(false);
       return;
     }
 
+    const gId = dmResult.groupId;
+    setGroupId(gId);
     setCounterparty(userProfileRowToUserProfile(profileResult.data));
 
     const [messagesResult, membersResult] = await Promise.all([
@@ -117,8 +118,8 @@ export default function ConversationPage({
     setThread(messagesResult);
     setHasMore(messagesResult.messages.length >= PAGE_SIZE);
 
-    const supabaseForReceipt = createClient();
-    await markConversationRead(supabaseForReceipt, user.id, gId);
+    // Fire-and-forget: mark as read without blocking page render
+    markConversationRead(createClient(), user.id, gId).catch(() => {});
 
     setLoading(false);
   }, [user, counterpartyId]);
