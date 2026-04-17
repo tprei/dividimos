@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
-import { useBillStore } from "./bill-store";
+import { useBillStore, _testGetCacheState } from "./bill-store";
 
 function setup() {
   const s = useBillStore.getState();
@@ -1163,5 +1163,114 @@ describe("hydrateFromChatDraft", () => {
 
     const { expense } = useBillStore.getState();
     expect(expense?.title).toBe("");
+  });
+});
+
+describe("consumption memoization", () => {
+  it("caches consumption across computeLedger and getExpenseShares calls", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addParticipant(userBob);
+    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    s.splitItemEqually(itemId, ["user-alice", "user-bob"]);
+    s.setPayerFull("user-alice");
+
+    s.computeLedger();
+    expect(_testGetCacheState().hasCachedResult).toBe(true);
+
+    const shares = useBillStore.getState().getExpenseShares();
+    expect(shares).toHaveLength(2);
+
+    const aliceShare = shares.find((s) => s.userId === "user-alice");
+    const bobShare = shares.find((s) => s.userId === "user-bob");
+    expect(aliceShare!.shareAmountCents + bobShare!.shareAmountCents).toBe(
+      useBillStore.getState().getGrandTotal(),
+    );
+  });
+
+  it("invalidates cache when state changes", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.addParticipant(userBob);
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.splitBillEqually(["user-alice", "user-bob"]);
+    s.setPayerFull("user-alice");
+
+    s.computeLedger();
+    expect(_testGetCacheState().hasCachedResult).toBe(true);
+
+    s.splitBillEqually(["user-alice", "user-bob"]);
+
+    s.computeLedger();
+    expect(_testGetCacheState().hasCachedResult).toBe(true);
+  });
+
+  it("invalidates cache on reset", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.addParticipant(userBob);
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.splitBillEqually(["user-alice", "user-bob"]);
+    s.setPayerFull("user-alice");
+
+    s.computeLedger();
+    expect(_testGetCacheState().hasCachedResult).toBe(true);
+
+    useBillStore.getState().reset();
+    expect(_testGetCacheState().hasCachedResult).toBe(false);
+  });
+
+  it("getParticipantTotal returns same values as getExpenseShares", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addParticipant(userBob);
+    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    s.splitItemEqually(itemId, ["user-alice", "user-bob"]);
+
+    const state = useBillStore.getState();
+    const shares = state.getExpenseShares();
+    for (const share of shares) {
+      expect(state.getParticipantTotal(share.userId)).toBe(share.shareAmountCents);
+    }
+  });
+
+  it("computeLedger and getExpenseShares agree on consumption for itemized with fees", () => {
+    const s = setup();
+    s.createExpense("Jantar", "itemized");
+    s.addParticipant(userBob);
+    s.addParticipant(userCarlos);
+    s.updateExpense({ serviceFeePercent: 10, fixedFees: 300 });
+    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 6000, totalPriceCents: 6000 });
+    s.addItem({ description: "Drinks", quantity: 1, unitPriceCents: 3000, totalPriceCents: 3000 });
+    const items = useBillStore.getState().items;
+    s.splitItemEqually(items[0].id, ["user-alice", "user-bob", "user-carlos"]);
+    s.splitItemEqually(items[1].id, ["user-alice", "user-bob"]);
+    s.setPayerFull("user-alice");
+
+    s.computeLedger();
+    const debts = useBillStore.getState().previewDebts;
+    const shares = useBillStore.getState().getExpenseShares();
+
+    const totalShares = shares.reduce((sum, sh) => sum + sh.shareAmountCents, 0);
+    expect(totalShares).toBe(useBillStore.getState().getGrandTotal());
+
+    const totalDebtsOwed = debts.reduce((sum, d) => sum + d.amountCents, 0);
+    const aliceShare = shares.find((sh) => sh.userId === "user-alice")!.shareAmountCents;
+    const alicePaid = useBillStore.getState().getGrandTotal();
+    expect(totalDebtsOwed).toBe(alicePaid - aliceShare);
+  });
+
+  it("wouldProduceNoEdges uses memoized consumption", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.addParticipant(userBob);
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.splitBillEqually(["user-alice", "user-bob"]);
+    s.splitPaymentEqually(["user-alice", "user-bob"]);
+
+    expect(useBillStore.getState().wouldProduceNoEdges()).toBe(true);
+    expect(_testGetCacheState().hasCachedResult).toBe(true);
   });
 });
