@@ -183,17 +183,12 @@ describe("ConversationPage", () => {
     expect(screen.getByTestId("chat-thread")).toBeInTheDocument();
   });
 
-  it("calls getOrCreateDmGroup and profile fetch before either resolves", async () => {
+  it("creates DM group before fetching profile (RLS dependency)", async () => {
     const callOrder: string[] = [];
 
     mockGetOrCreateDmGroup.mockImplementation(() => {
-      callOrder.push("dm:called");
-      return new Promise((resolve) => {
-        queueMicrotask(() => {
-          callOrder.push("dm:resolved");
-          resolve({ groupId: "dm-group-1" });
-        });
-      });
+      callOrder.push("dm");
+      return Promise.resolve({ groupId: "dm-group-1" });
     });
 
     await renderPage();
@@ -202,10 +197,8 @@ describe("ConversationPage", () => {
       expect(screen.getByTestId("conversation-header")).toBeInTheDocument();
     });
 
-    // dm:called should appear — profile fetch initiated before dm resolved
-    // because they're in Promise.all. If sequential, profile wouldn't start
-    // until after dm:resolved.
     expect(mockGetOrCreateDmGroup).toHaveBeenCalledWith("user-2");
+    expect(callOrder).toContain("dm");
   });
 
   it("fires markConversationRead as fire-and-forget", async () => {

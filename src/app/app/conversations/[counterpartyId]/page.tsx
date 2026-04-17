@@ -68,15 +68,9 @@ export default function ConversationPage({
 
     const supabase = createClient();
 
-    // Fetch DM group and counterparty profile in parallel (independent queries)
-    const [dmResult, profileResult] = await Promise.all([
-      getOrCreateDmGroup(counterpartyId),
-      supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", counterpartyId)
-        .single(),
-    ]);
+    // DM group must be created first — RLS on user_profiles requires shared
+    // group membership, so the profile fetch depends on the group existing.
+    const dmResult = await getOrCreateDmGroup(counterpartyId);
 
     if ("error" in dmResult) {
       setError(dmResult.error);
@@ -84,14 +78,21 @@ export default function ConversationPage({
       return;
     }
 
+    const gId = dmResult.groupId;
+    setGroupId(gId);
+
+    const profileResult = await supabase
+      .from("user_profiles")
+      .select("*")
+      .eq("id", counterpartyId)
+      .single();
+
     if (profileResult.error || !profileResult.data) {
       setError("Usuário não encontrado");
       setLoading(false);
       return;
     }
 
-    const gId = dmResult.groupId;
-    setGroupId(gId);
     setCounterparty(userProfileRowToUserProfile(profileResult.data));
 
     const [messagesResult, membersResult] = await Promise.all([
