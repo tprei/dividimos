@@ -19,9 +19,9 @@ describe("getGroupNavUrl", () => {
   it("returns group URL for a regular group", async () => {
     mock.onTable("groups", { data: { is_dm: false }, error: null });
 
-    const url = await getGroupNavUrl("group-1", "user-alice");
+    const result = await getGroupNavUrl("group-1", "user-alice");
 
-    expect(url).toBe("/app/groups/group-1");
+    expect(result).toEqual({ url: "/app/groups/group-1", isDm: false });
   });
 
   it("routes to conversation thread for a DM group (caller is user_a)", async () => {
@@ -31,9 +31,9 @@ describe("getGroupNavUrl", () => {
       error: null,
     });
 
-    const url = await getGroupNavUrl("group-dm-1", "user-alice");
+    const result = await getGroupNavUrl("group-dm-1", "user-alice");
 
-    expect(url).toBe("/app/conversations/user-bob");
+    expect(result).toEqual({ url: "/app/conversations/user-bob", isDm: true });
   });
 
   it("routes to conversation thread for a DM group (caller is user_b)", async () => {
@@ -43,25 +43,25 @@ describe("getGroupNavUrl", () => {
       error: null,
     });
 
-    const url = await getGroupNavUrl("group-dm-1", "user-bob");
+    const result = await getGroupNavUrl("group-dm-1", "user-bob");
 
-    expect(url).toBe("/app/conversations/user-alice");
+    expect(result).toEqual({ url: "/app/conversations/user-alice", isDm: true });
   });
 
   it("falls back to group URL when dm_pairs row is missing", async () => {
     mock.onTable("groups", { data: { is_dm: true }, error: null });
     mock.onTable("dm_pairs", { data: null, error: null });
 
-    const url = await getGroupNavUrl("group-dm-1", "user-alice");
+    const result = await getGroupNavUrl("group-dm-1", "user-alice");
 
-    expect(url).toBe("/app/groups/group-dm-1");
+    expect(result).toEqual({ url: "/app/groups/group-dm-1", isDm: false });
   });
 
   it("falls back to group URL when groups row is missing", async () => {
     mock.onTable("groups", { data: null, error: null });
 
-    const url = await getGroupNavUrl("group-missing", "user-alice");
+    const result = await getGroupNavUrl("group-missing", "user-alice");
 
-    expect(url).toBe("/app/groups/group-missing");
+    expect(result).toEqual({ url: "/app/groups/group-missing", isDm: false });
   });
 });

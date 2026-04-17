@@ -342,6 +342,7 @@ export default function BillDetailPage({
   const [expenseData, setExpenseData] = useState<ExpenseWithDetails | null>(null);
   const [loadingFromDb, setLoadingFromDb] = useState(false);
   const [groupNavUrl, setGroupNavUrl] = useState<string | null>(null);
+  const [isDmGroup, setIsDmGroup] = useState(false);
   const loadedKeyRef = useRef<string | null>(null);
 
   const loadExpenseData = useCallback(async (expenseId: string) => {
@@ -395,8 +396,11 @@ export default function BillDetailPage({
   useEffect(() => {
     if (!expenseData?.groupId || !currentUser?.id) return;
     let cancelled = false;
-    getGroupNavUrl(expenseData.groupId, currentUser.id).then((url) => {
-      if (!cancelled) setGroupNavUrl(url);
+    getGroupNavUrl(expenseData.groupId, currentUser.id).then((result) => {
+      if (!cancelled) {
+        setGroupNavUrl(result.url);
+        setIsDmGroup(result.isDm);
+      }
     });
     return () => { cancelled = true; };
   }, [expenseData?.groupId, currentUser?.id]);
@@ -855,7 +859,7 @@ export default function BillDetailPage({
         </motion.div>
       )}
 
-      {activeTab === "payment" && !allSettled && expense.groupId && groupNavUrl && (
+      {activeTab === "payment" && !allSettled && expense.groupId && groupNavUrl && !isDmGroup && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -922,6 +926,120 @@ export default function BillDetailPage({
               Cada membro pode ver e quitar suas dívidas na página do grupo
             </p>
           </div>
+        </motion.div>
+      )}
+
+      {activeTab === "payment" && !allSettled && expense.groupId && isDmGroup && debts.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+          className="mt-5"
+        >
+          <h2 className="mb-3 text-sm font-semibold">Cobranças</h2>
+          <div className="space-y-3">
+            <AnimatePresence mode="popLayout">
+              {debts.map((debt, idx) => {
+                const debtor = allParticipants.find((p) => p.id === debt.fromUserId);
+                const creditor = allParticipants.find((p) => p.id === debt.toUserId);
+                const isDebtor = currentUser?.id === debt.fromUserId;
+                const isCreditor = currentUser?.id === debt.toUserId;
+
+                const entryLabel = isDebtor
+                  ? `Você deve para ${creditor?.name.split(" ")[0] || "?"}`
+                  : isCreditor
+                    ? `${debtor?.name.split(" ")[0] || "?"} te deve`
+                    : `${debtor?.name.split(" ")[0] || "?"} \u2192 ${creditor?.name.split(" ")[0] || "?"}`;
+
+                return (
+                  <motion.div
+                    key={`${debt.fromUserId}-${debt.toUserId}`}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.06 }}
+                    className="overflow-hidden rounded-2xl border bg-card"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <UserAvatar
+                            name={(isDebtor ? creditor?.name : debtor?.name) || "?"}
+                            avatarUrl={isDebtor ? creditor?.avatarUrl : debtor?.avatarUrl}
+                            size="sm"
+                          />
+                          <p className="text-sm font-medium">{entryLabel}</p>
+                        </div>
+                        <p className="text-lg font-bold tabular-nums">
+                          {formatBRL(debt.amountCents)}
+                        </p>
+                      </div>
+
+                      {isDebtor && (
+                        <div className="mt-3">
+                          <Button
+                            size="sm"
+                            className="w-full gap-1.5 bg-success text-success-foreground hover:bg-success/90"
+                            onClick={() =>
+                              setPixModal({
+                                open: true,
+                                recipientUserId: creditor?.id || "",
+                                name: creditor?.name || "",
+                                amount: debt.amountCents,
+                                mode: "pay",
+                              })
+                            }
+                          >
+                            <QrCode className="h-4 w-4" />
+                            Pagar {formatBRL(debt.amountCents)} para {creditor?.name.split(" ")[0]}
+                          </Button>
+                        </div>
+                      )}
+
+                      {isCreditor && (
+                        <div className="mt-3 flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1 gap-1.5"
+                            onClick={() =>
+                              setPixModal({
+                                open: true,
+                                recipientUserId: currentUser?.id || "",
+                                name: debtor?.name || "",
+                                amount: debt.amountCents,
+                                mode: "collect",
+                              })
+                            }
+                          >
+                            <QrCode className="h-4 w-4" />
+                            Cobrar via Pix
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1 text-muted-foreground"
+                          >
+                            <Bell className="h-3.5 w-3.5" />
+                            Lembrar
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+
+          {groupNavUrl && (
+            <Link
+              href={groupNavUrl}
+              className="mt-3 block text-center text-xs text-muted-foreground hover:text-primary transition-colors"
+            >
+              Ver conversa
+            </Link>
+          )}
         </motion.div>
       )}
 
