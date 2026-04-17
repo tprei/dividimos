@@ -45,7 +45,11 @@ export default function LandingPage() {
       <footer className="border-t py-8">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 text-sm text-muted-foreground sm:px-6">
           <Logo size="sm" animated />
-          <p>2026 Dividimos</p>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy" className="hover:text-foreground transition-colors">Privacidade</Link>
+            <Link href="/terms" className="hover:text-foreground transition-colors">Termos</Link>
+            <p>2026 Dividimos</p>
+          </div>
         </div>
       </footer>
     </div>
