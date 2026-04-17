@@ -41,7 +41,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { haptics } from "@/hooks/use-haptics";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import toast from "react-hot-toast";
-import { notifyExpenseActivated } from "@/lib/push/push-notify";
+import { notifyExpenseActivated, notifyPaymentNudge } from "@/lib/push/push-notify";
 import type {
   DebtEdge,
   Expense,
@@ -343,6 +343,20 @@ export default function BillDetailPage({
   const [loadingFromDb, setLoadingFromDb] = useState(false);
   const [groupNavUrl, setGroupNavUrl] = useState<string | null>(null);
   const [isDmGroup, setIsDmGroup] = useState(false);
+  const [nudgeSent, setNudgeSent] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    const stored = localStorage.getItem("nudge-cooldowns");
+    if (!stored) return new Set();
+    try {
+      const parsed = JSON.parse(stored) as Record<string, number>;
+      const now = Date.now();
+      const active = new Set<string>();
+      for (const [key, ts] of Object.entries(parsed)) {
+        if (now - ts < 24 * 60 * 60 * 1000) active.add(key);
+      }
+      return active;
+    } catch { return new Set(); }
+  });
   const loadedKeyRef = useRef<string | null>(null);
 
   const loadExpenseData = useCallback(async (expenseId: string) => {
@@ -370,6 +384,33 @@ export default function BillDetailPage({
     }
     return data;
   }, []);
+
+  const handleNudge = useCallback(async (debtorId: string, debtorName: string, amountCents: number, groupId: string) => {
+    const key = `${groupId}-${debtorId}`;
+    if (nudgeSent.has(key)) return;
+
+    const next = new Set(nudgeSent);
+    next.add(key);
+    setNudgeSent(next);
+
+    const stored = localStorage.getItem("nudge-cooldowns");
+    const parsed: Record<string, number> = stored ? JSON.parse(stored) : {};
+    parsed[key] = Date.now();
+    localStorage.setItem("nudge-cooldowns", JSON.stringify(parsed));
+
+    const toastId = toast.loading("Enviando lembrete…");
+    try {
+      await notifyPaymentNudge(groupId, debtorId, amountCents);
+      toast.success(`Lembrete enviado para ${debtorName}`, { id: toastId });
+    } catch {
+      toast.error("Erro ao enviar lembrete", { id: toastId });
+      const rollback = new Set(next);
+      rollback.delete(key);
+      setNudgeSent(rollback);
+      delete parsed[key];
+      localStorage.setItem("nudge-cooldowns", JSON.stringify(parsed));
+    }
+  }, [nudgeSent]);
 
   const currentUserId = currentUser?.id;
 
@@ -1019,6 +1060,9 @@ export default function BillDetailPage({
                             size="sm"
                             variant="ghost"
                             className="gap-1 text-muted-foreground"
+                            onClick={() => handleNudge(debt.fromUserId, debtor?.name || "?", debt.amountCents, expense.groupId!)}
+                            disabled={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`)}
+                            title={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
                           >
                             <Bell className="h-3.5 w-3.5" />
                             Lembrar
@@ -1151,6 +1195,9 @@ export default function BillDetailPage({
                             size="sm"
                             variant="ghost"
                             className="gap-1 text-muted-foreground"
+                            onClick={() => handleNudge(debt.fromUserId, debtor?.name || "?", debt.amountCents, expense.groupId!)}
+                            disabled={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`)}
+                            title={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
                           >
                             <Bell className="h-3.5 w-3.5" />
                             Lembrar
@@ -1191,6 +1238,7 @@ export default function BillDetailPage({
         }}
         onSettlementComplete={() => {
           setPixModal({ ...pixModal, open: false });
+          loadExpenseData(id);
         }}
       />
 
