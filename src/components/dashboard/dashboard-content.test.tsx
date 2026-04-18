@@ -4,7 +4,7 @@ import { DashboardContent } from "./dashboard-content";
 import type { DebtSummary } from "@/types";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }),
 }));
 
 vi.mock("next/link", () => ({

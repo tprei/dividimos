@@ -48,6 +48,7 @@ import toast from "react-hot-toast";
 import { notifyGroupInvite } from "@/lib/push/push-notify";
 import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } from "@/types";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
+import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { useBillStore } from "@/stores/bill-store";
 import type { Database } from "@/types/database";
 
@@ -144,6 +145,10 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
     new Map(Object.entries(initialData.memberBalances))
   );
   const store = useBillStore();
+
+  // Prefetch bill creation route since it's the primary action on this page
+  const billRoutes = useMemo(() => [`/app/bill/new?groupId=${id}`], [id]);
+  usePrefetchRoutes(billRoutes);
 
   const fetchGroup = useCallback(async (userId?: string) => {
     const supabase = createClient();

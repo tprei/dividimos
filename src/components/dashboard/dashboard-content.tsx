@@ -13,14 +13,14 @@ import {
   ScanLine,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { DebtCard } from "@/components/dashboard/debt-card";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
 import { useUser } from "@/hooks/use-auth";
+import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { recordSettlement } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded, notifyPaymentNudge } from "@/lib/push/push-notify";
@@ -54,7 +54,6 @@ export function DashboardContent({
   initialNetBalance,
 }: DashboardContentProps) {
   const user = useUser();
-  const router = useRouter();
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [debts, setDebts] = useState<DebtSummary[]>(initialDebts);
   const [netBalance, setNetBalance] = useState(initialNetBalance);
@@ -101,9 +100,12 @@ export function DashboardContent({
     setNetBalance(net);
   }, [user]);
 
-  const handleNavigate = useCallback(async (debt: DebtSummary) => {
-    router.push(`/app/conversations/${debt.counterpartyId}`);
-  }, [router]);
+  // Prefetch conversation routes for visible debt cards
+  const conversationRoutes = useMemo(
+    () => debts.map((d) => `/app/conversations/${d.counterpartyId}`),
+    [debts],
+  );
+  usePrefetchRoutes(conversationRoutes);
 
   const handleRecordSettlement = async (
     debt: DebtSummary,
@@ -399,7 +401,6 @@ export function DashboardContent({
                   onPay={(d) => setPixModal({ debt: d, mode: "pay" })}
                   onCollect={(d) => setPixModal({ debt: d, mode: "collect" })}
                   onNudge={handleNudge}
-                  onNavigate={handleNavigate}
                   isActing={isActingOnThis}
                   nudgeCooldown={nudgeSent.has(`${debt.groupId}-${debt.counterpartyId}`)}
                 />
