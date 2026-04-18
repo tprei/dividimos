@@ -127,8 +127,7 @@ describe("ScannedItemsReview", () => {
     await user.click(editButtons[1]); // edit Picanha
 
     const descInput = screen.getByDisplayValue("Picanha 400g");
-    await user.clear(descInput);
-    await user.type(descInput, "Picanha 500g");
+    fireEvent.change(descInput, { target: { value: "Picanha 500g" } });
 
     await user.click(screen.getByText("Salvar"));
 
