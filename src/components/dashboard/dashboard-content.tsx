@@ -11,6 +11,7 @@ import {
   QrCode,
   RefreshCw,
   ScanLine,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -33,6 +34,14 @@ const PixQrModal = dynamic(
   () =>
     import("@/components/settlement/pix-qr-modal").then((m) => ({
       default: m.PixQrModal,
+    })),
+  { ssr: false, loading: () => <ModalLoadingSkeleton /> },
+);
+
+const QuickChargeModal = dynamic(
+  () =>
+    import("@/components/dashboard/quick-charge-modal").then((m) => ({
+      default: m.QuickChargeModal,
     })),
   { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
@@ -65,6 +74,7 @@ export function DashboardContent({
     mode: "pay" | "collect";
   } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [quickChargeOpen, setQuickChargeOpen] = useState(false);
   const [nudgeSent, setNudgeSent] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     const stored = localStorage.getItem("nudge-cooldowns");
@@ -294,6 +304,15 @@ export function DashboardContent({
           <QrCode className="h-3.5 w-3.5" />
           Ler convite
         </Link>
+        {user?.pixKeyHint && (
+          <button
+            onClick={() => setQuickChargeOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/5 px-3 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/10"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            Cobrar rápido
+          </button>
+        )}
       </motion.div>
 
       <motion.div
@@ -411,6 +430,13 @@ export function DashboardContent({
       </motion.div>
 
       <OnboardingTour userId={user?.id} />
+
+      {quickChargeOpen && (
+        <QuickChargeModal
+          open
+          onClose={() => setQuickChargeOpen(false)}
+        />
+      )}
 
       {pixModal && (
         <PixQrModal
