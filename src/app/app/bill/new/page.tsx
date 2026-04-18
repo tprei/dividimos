@@ -29,7 +29,9 @@ import { ReceiptScanner } from "@/components/bill/receipt-scanner";
 import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
-import { processReceiptScan } from "@/lib/process-receipt-scan";
+import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
+import type { NfceQrResult } from "@/lib/nfce-qr";
+import { checkDuplicateReceipt } from "@/lib/nfce-dedup";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
@@ -207,6 +209,8 @@ function NewBillPageContent() {
   const handleTypeSelect = useCallback((type: ExpenseType) => {
     setBillType(type);
     setStep("info");
+    setShowScanner(false);
+    setPageScanResult(null);
   }, []);
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
@@ -260,6 +264,38 @@ function NewBillPageContent() {
 
   const handlePageScanReviewCancel = useCallback(() => {
     setPageScanResult(null);
+  }, []);
+
+  const handlePageQrDetected = useCallback(async (result: NfceQrResult) => {
+    setScanProcessing(true);
+
+    const previousScan = checkDuplicateReceipt(result.chaveAcesso);
+    if (previousScan) {
+      const date = new Date(previousScan);
+      const formatted = date.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      toast.error(`Esta nota já foi escaneada em ${formatted}.`);
+      setScanProcessing(false);
+      return;
+    }
+
+    try {
+      const receipt = await fetchSefazReceipt(result.url);
+      setShowScanner(false);
+      setPageScanResult(receipt);
+    } catch (err) {
+      if (err instanceof SefazFallbackError) {
+        toast.error("Não foi possível ler a nota online. Tente capturar a foto.");
+      } else {
+        toast.error(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
+      }
+    } finally {
+      setScanProcessing(false);
+    }
   }, []);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
@@ -736,6 +772,8 @@ function NewBillPageContent() {
       }
       setStep("type");
       setBillType(null);
+      setShowScanner(false);
+      setPageScanResult(null);
       return;
     }
     if (isDmMode && billType === "single_amount") {
@@ -915,6 +953,7 @@ function NewBillPageContent() {
             >
               <ReceiptScanner
                 onProcess={handlePageScanProcess}
+                onQrDetected={handlePageQrDetected}
                 onBack={() => setShowScanner(false)}
                 processing={scanProcessing}
               />
