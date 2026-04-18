@@ -22,7 +22,6 @@ import { ItemsStep } from "@/components/bill/wizard/items-step";
 import { ParticipantsStep } from "@/components/bill/wizard/participants-step";
 import { SplitStep } from "@/components/bill/wizard/split-step";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
-import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
