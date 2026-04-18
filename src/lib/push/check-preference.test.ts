@@ -12,7 +12,7 @@ import { checkPreference } from "./push-notify";
 
 function mockAdminWithPrefs(prefs: NotificationPreferences | null) {
   const single = vi.fn().mockResolvedValue({
-    data: prefs !== null ? { notification_preferences: prefs } : null,
+    data: prefs !== null ? { preferences: prefs } : null,
     error: null,
   });
   const eq = vi.fn().mockReturnValue({ single });

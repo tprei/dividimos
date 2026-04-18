@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     } else {
       try {
         const parsed = new URL(safeUrl);
-        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        if (parsed.protocol !== "https:") {
           safeUrl = undefined;
         }
       } catch {
