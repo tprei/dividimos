@@ -26,6 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import { ReceiptScanner } from "@/components/bill/receipt-scanner";
+import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
+import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { processReceiptScan } from "@/lib/process-receipt-scan";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
@@ -97,6 +99,8 @@ function NewBillPageContent() {
   const editLoadedRef = useRef(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scanProcessing, setScanProcessing] = useState(false);
+  const [scanProcessingPhoto, setScanProcessingPhoto] = useState(false);
+  const [pageScanResult, setPageScanResult] = useState<ReceiptOcrResult | null>(null);
   const [hasContactPicker, setHasContactPicker] = useState(false);
   const [isDmMode, setIsDmMode] = useState(false);
   const dmLoadedRef = useRef(false);
@@ -236,16 +240,27 @@ function NewBillPageContent() {
 
   const handlePageScanProcess = useCallback(async (file: File) => {
     setScanProcessing(true);
+    setScanProcessingPhoto(true);
     try {
       const result: ReceiptOcrResult = await processReceiptScan(file);
       setShowScanner(false);
-      handleScanConfirm(result);
+      setPageScanResult(result);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erro ao processar imagem");
     } finally {
       setScanProcessing(false);
+      setScanProcessingPhoto(false);
     }
+  }, []);
+
+  const handlePageScanReviewConfirm = useCallback((result: ReceiptOcrResult) => {
+    setPageScanResult(null);
+    handleScanConfirm(result);
   }, [handleScanConfirm]);
+
+  const handlePageScanReviewCancel = useCallback(() => {
+    setPageScanResult(null);
+  }, []);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!authUser) return;
@@ -861,7 +876,35 @@ function NewBillPageContent() {
             </motion.div>
           )}
 
-          {step === "info" && showScanner && (
+          {step === "info" && pageScanResult && (
+            <motion.div
+              key="info-scan-review"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <ScannedItemsReview
+                result={pageScanResult}
+                onConfirm={handlePageScanReviewConfirm}
+                onCancel={handlePageScanReviewCancel}
+              />
+            </motion.div>
+          )}
+
+          {step === "info" && scanProcessingPhoto && !pageScanResult && (
+            <motion.div
+              key="info-scan-skeleton"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <ScanSkeletonLoader />
+            </motion.div>
+          )}
+
+          {step === "info" && showScanner && !scanProcessingPhoto && !pageScanResult && (
             <motion.div
               key="info-scanner"
               initial={{ opacity: 0, x: 20 }}
@@ -878,7 +921,7 @@ function NewBillPageContent() {
             </motion.div>
           )}
 
-          {step === "info" && !showScanner && (
+          {step === "info" && !showScanner && !scanProcessingPhoto && !pageScanResult && (
             <motion.div
               key="info"
               initial={{ opacity: 0, x: 20 }}
