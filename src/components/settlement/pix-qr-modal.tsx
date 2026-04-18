@@ -12,28 +12,42 @@ import { haptics } from "@/hooks/use-haptics";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { ConfettiBurst } from "@/components/shared/confetti-burst";
 
-/**
- * Generate "round" snap points for the payment slider.
- * Returns centavo values at multiples of R$ 5, R$ 10, R$ 50, etc.
- * depending on the total range.
- */
-function getSnapPoints(maxCents: number): number[] {
-  const tiers = [50_00, 10_00, 5_00]; // R$ 50, R$ 10, R$ 5
-  const points = new Set<number>();
-
-  for (const step of tiers) {
-    if (maxCents < step * 2) continue;
-    for (let v = step; v < maxCents; v += step) {
-      points.add(v);
-    }
-  }
-
-  return Array.from(points).sort((a, b) => a - b);
+/** Round `raw` up to the next value in the 1-2-5 series (in centavos). */
+function niceStep(raw: number): number {
+  if (raw <= 0) return 1;
+  const exp = Math.floor(Math.log10(raw));
+  const base = Math.pow(10, exp);
+  const n = raw / base;
+  const mult = n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10;
+  return mult * base;
 }
 
-/** Snap radius: 0.5% of range, capped at R$ 3, min R$ 1 */
-function getSnapRadius(rangeCents: number): number {
-  return Math.max(100, Math.min(300, Math.floor(rangeCents * 0.005)));
+/** Pick a snap step that yields ~8 interior snap points across the range. */
+function getSnapStep(rangeCents: number): number {
+  return niceStep(rangeCents / 8);
+}
+
+/** Generate snap points evenly spaced by a scale-aware step. */
+function getSnapPoints(minCents: number, maxCents: number): number[] {
+  const range = maxCents - minCents;
+  if (range <= 0) return [];
+  const step = getSnapStep(range);
+  const points: number[] = [];
+  const first = Math.ceil((minCents + 1) / step) * step;
+  for (let v = first; v < maxCents; v += step) points.push(v);
+  return points;
+}
+
+/** Snap radius = 25% of snap step, but never below the slider step. */
+function getSnapRadius(snapStep: number, sliderStep: number): number {
+  return Math.max(sliderStep, Math.floor(snapStep * 0.25));
+}
+
+/** Slider granularity scales with range so drag feels smooth at any scale. */
+function getSliderStep(rangeCents: number): number {
+  if (rangeCents < 1_000) return 1;
+  if (rangeCents < 100_000) return 10;
+  return 100;
 }
 
 interface PixQrModalProps {
@@ -86,8 +100,11 @@ export function PixQrModal({
 
   const lastSnapRef = useRef<number | null>(null);
   const sliderMin = remainingCents < 100 ? 1 : 100;
-  const snapPoints = getSnapPoints(remainingCents);
-  const snapRadius = getSnapRadius(remainingCents - sliderMin);
+  const range = remainingCents - sliderMin;
+  const sliderStep = getSliderStep(range);
+  const snapStep = getSnapStep(range);
+  const snapPoints = getSnapPoints(sliderMin, remainingCents);
+  const snapRadius = getSnapRadius(snapStep, sliderStep);
 
   const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -392,7 +409,7 @@ export function PixQrModal({
                       type="range"
                       min={sliderMin}
                       max={remainingCents}
-                      step={remainingCents < 100 ? 1 : 100}
+                      step={sliderStep}
                       value={paymentCents}
                       onChange={handleSliderChange}
                       onPointerDown={(e) => e.stopPropagation()}
