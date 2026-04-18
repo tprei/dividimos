@@ -1702,43 +1702,69 @@ function NewBillPageContent() {
         } else if (step === "summary" && store.wouldProduceNoEdges()) {
           errorMsg = "Nenhuma dívida será gerada — quem pagou já consumiu tudo que pagou. Ajuste a divisão ou os pagadores.";
         }
+        const isSummary = step === "summary";
         return (
           <div className="mt-6">
             {errorMsg && (
               <p className="mb-2 text-center text-xs text-destructive">{errorMsg}</p>
             )}
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={goBack} className="gap-1" disabled={navigating}>
-                <ArrowLeft className="h-4 w-4" />
-                Voltar
-              </Button>
-              <Button
-                onClick={async () => {
-                  setNavigating(true);
-                  try {
-                    await goNext();
-                  } finally {
-                    setNavigating(false);
-                  }
-                }}
-                className="flex-1 gap-2"
-                disabled={isNextDisabled()}
-              >
-                {navigating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : step === "summary" ? (
-                  <>
-                    <QrCode className="h-4 w-4" />
-                    Gerar cobranças Pix
-                  </>
-                ) : (
-                  <>
-                    Próximo
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </Button>
-            </div>
+            {isSummary ? (
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={async () => {
+                    setNavigating(true);
+                    try {
+                      await goNext();
+                    } finally {
+                      setNavigating(false);
+                    }
+                  }}
+                  className="w-full h-12 gap-2 text-base font-semibold"
+                  disabled={isNextDisabled()}
+                >
+                  {navigating ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <>
+                      <QrCode className="h-5 w-5" />
+                      Gerar cobranças Pix
+                    </>
+                  )}
+                </Button>
+                <Button variant="ghost" onClick={goBack} className="gap-1 text-muted-foreground" disabled={navigating}>
+                  <ArrowLeft className="h-4 w-4" />
+                  Voltar
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <Button variant="ghost" onClick={goBack} className="gap-1 text-muted-foreground h-10" disabled={navigating}>
+                  <ArrowLeft className="h-4 w-4" />
+                  Voltar
+                </Button>
+                <Button
+                  onClick={async () => {
+                    setNavigating(true);
+                    try {
+                      await goNext();
+                    } finally {
+                      setNavigating(false);
+                    }
+                  }}
+                  className="flex-1 gap-2 h-10 text-base font-medium"
+                  disabled={isNextDisabled()}
+                >
+                  {navigating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      Próximo
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
         );
       })()}
