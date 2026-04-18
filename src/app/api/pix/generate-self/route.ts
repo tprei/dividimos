@@ -17,7 +17,12 @@ export async function POST(request: Request) {
   const body = await request.json();
   const { amountCents } = body as { amountCents: number };
 
-  if (!amountCents || amountCents <= 0) {
+  if (
+    !amountCents ||
+    amountCents <= 0 ||
+    !Number.isInteger(amountCents) ||
+    amountCents > 100_000_00
+  ) {
     return NextResponse.json({ error: "Valor invalido" }, { status: 400 });
   }
 

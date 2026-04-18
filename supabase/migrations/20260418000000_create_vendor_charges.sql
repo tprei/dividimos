@@ -29,4 +29,5 @@ create policy "Users can insert own charges"
 -- Users can only update their own charges (for confirming)
 create policy "Users can update own charges"
   on vendor_charges for update
-  using (user_id = auth.uid());
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());

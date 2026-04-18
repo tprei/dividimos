@@ -61,7 +61,8 @@ export async function confirmVendorCharge(chargeId: string): Promise<void> {
       status: "received",
       confirmed_at: new Date().toISOString(),
     })
-    .eq("id", chargeId);
+    .eq("id", chargeId)
+    .eq("status", "pending");
 
   if (error) throw new Error(`Falha ao confirmar cobrança: ${error.message}`);
 }

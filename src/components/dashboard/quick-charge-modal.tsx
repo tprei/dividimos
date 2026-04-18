@@ -74,25 +74,26 @@ export function QuickChargeModal({
     abortRef.current = new AbortController();
 
     try {
-      const [res, charge] = await Promise.all([
-        fetch("/api/pix/generate-self", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amountCents }),
-          signal: abortRef.current.signal,
-        }),
-        recordVendorCharge(amountCents, description || undefined),
-      ]);
-
-      setChargeId(charge.id);
+      const res = await fetch("/api/pix/generate-self", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountCents }),
+        signal: abortRef.current.signal,
+      });
 
       const data = await res.json();
-      if (data.copiaECola) {
-        setCopiaECola(data.copiaECola);
-      } else {
+      if (!data.copiaECola) {
         setError(data.error || "Eita, deu ruim no Pix");
         haptics.error();
+        return;
       }
+
+      const charge = await recordVendorCharge(
+        amountCents,
+        description || undefined,
+      );
+      setChargeId(charge.id);
+      setCopiaECola(data.copiaECola);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       setError("Sem conexão. Tenta de novo.");
