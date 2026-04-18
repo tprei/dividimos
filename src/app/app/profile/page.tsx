@@ -164,6 +164,7 @@ export default function ProfilePage() {
           name={user?.name ?? ""}
           avatarUrl={user?.avatarUrl}
           size="lg"
+          priority
         />
         <div className="flex-1">
           <h1 className="text-xl font-bold">{user?.name}</h1>

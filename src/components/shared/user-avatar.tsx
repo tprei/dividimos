@@ -9,6 +9,7 @@ interface UserAvatarProps {
   avatarUrl?: string | null;
   size?: "xs" | "sm" | "md" | "lg";
   className?: string;
+  priority?: boolean;
 }
 
 const sizeClasses = {
@@ -16,6 +17,13 @@ const sizeClasses = {
   sm: "h-8 w-8 text-xs",
   md: "h-10 w-10 text-sm",
   lg: "h-14 w-14 text-lg",
+};
+
+const sizePx = {
+  xs: 24,
+  sm: 32,
+  md: 40,
+  lg: 56,
 };
 
 function getInitials(name: string): string {
@@ -26,14 +34,23 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function UserAvatar({ name, avatarUrl, size = "md", className }: UserAvatarProps) {
+export function UserAvatar({ name, avatarUrl, size = "md", className, priority }: UserAvatarProps) {
   const [imgError, setImgError] = useState(false);
   const sizeClass = sizeClasses[size];
+  const px = sizePx[size];
 
   if (avatarUrl && !imgError) {
     return (
       <div className={cn("relative overflow-hidden rounded-full", sizeClass, className)}>
-        <Image src={avatarUrl} alt={name} fill className="object-cover" onError={() => setImgError(true)} />
+        <Image
+          src={avatarUrl}
+          alt={name}
+          fill
+          sizes={`${px}px`}
+          className="object-cover"
+          priority={priority}
+          onError={() => setImgError(true)}
+        />
       </div>
     );
   }

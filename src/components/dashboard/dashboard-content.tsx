@@ -215,7 +215,7 @@ export function DashboardContent({
               />
             </button>
             <Link href="/app/profile">
-              <UserAvatar name={user?.name ?? ""} avatarUrl={user?.avatarUrl} size="md" />
+              <UserAvatar name={user?.name ?? ""} avatarUrl={user?.avatarUrl} size="md" priority />
             </Link>
           </div>
         </div>
