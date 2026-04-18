@@ -69,10 +69,12 @@ export function QuickChargeModal({
     setLoading(true);
     setError("");
     setCopiaECola("");
+    setChargeId(null);
 
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
+    let copia: string | null = null;
     try {
       const res = await fetch("/api/pix/generate-self", {
         method: "POST",
@@ -88,18 +90,28 @@ export function QuickChargeModal({
         return;
       }
 
-      const charge = await recordVendorCharge(
-        amountCents,
-        description || undefined,
-      );
-      setChargeId(charge.id);
+      copia = data.copiaECola;
       setCopiaECola(data.copiaECola);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       setError("Sem conexão. Tenta de novo.");
       haptics.error();
+      return;
     } finally {
       setLoading(false);
+    }
+
+    if (!copia) return;
+
+    try {
+      const charge = await recordVendorCharge(
+        amountCents,
+        description || undefined,
+      );
+      setChargeId(charge.id);
+    } catch {
+      // Recording failed (network blip or server error). The QR is valid and
+      // usable — we'll retry the insert when the user marks the charge received.
     }
   }, [amountCents, description]);
 
@@ -121,11 +133,20 @@ export function QuickChargeModal({
   };
 
   const handleConfirm = async () => {
-    if (!chargeId || isConfirming) return;
+    if (isConfirming) return;
     setIsConfirming(true);
     setConfirmedAmount(amountCents);
     try {
-      await confirmVendorCharge(chargeId);
+      let id = chargeId;
+      if (!id) {
+        const charge = await recordVendorCharge(
+          amountCents,
+          description || undefined,
+        );
+        id = charge.id;
+        setChargeId(id);
+      }
+      await confirmVendorCharge(id);
       haptics.success();
       setPhase("success");
       autoCloseRef.current = setTimeout(() => {

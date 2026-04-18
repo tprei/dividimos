@@ -55,14 +55,9 @@ export async function recordVendorCharge(
 export async function confirmVendorCharge(chargeId: string): Promise<void> {
   const supabase = await createClient();
 
-  const { error } = await supabase
-    .from("vendor_charges")
-    .update({
-      status: "received",
-      confirmed_at: new Date().toISOString(),
-    })
-    .eq("id", chargeId)
-    .eq("status", "pending");
+  const { error } = await supabase.rpc("confirm_vendor_charge", {
+    p_charge_id: chargeId,
+  });
 
   if (error) throw new Error(`Falha ao confirmar cobrança: ${error.message}`);
 }
