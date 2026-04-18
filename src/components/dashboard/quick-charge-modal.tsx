@@ -16,6 +16,7 @@ import {
   recordVendorCharge,
   confirmVendorCharge,
 } from "@/lib/supabase/vendor-charge-actions";
+import type { VendorCharge } from "@/types";
 
 interface QuickChargeModalProps {
   open: boolean;
@@ -31,6 +32,8 @@ export function QuickChargeModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generationRef = useRef(0);
+  const insertPromiseRef = useRef<Promise<VendorCharge | null> | null>(null);
 
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
@@ -54,6 +57,7 @@ export function QuickChargeModal({
       setChargeId(null);
       setIsConfirming(false);
       setConfirmedAmount(0);
+      insertPromiseRef.current = null;
     } else {
       if (autoCloseRef.current) {
         clearTimeout(autoCloseRef.current);
@@ -69,10 +73,14 @@ export function QuickChargeModal({
     setLoading(true);
     setError("");
     setCopiaECola("");
+    setChargeId(null);
+    insertPromiseRef.current = null;
 
+    const gen = ++generationRef.current;
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
+    let copia: string | null = null;
     try {
       const res = await fetch("/api/pix/generate-self", {
         method: "POST",
@@ -82,25 +90,40 @@ export function QuickChargeModal({
       });
 
       const data = await res.json();
+      if (generationRef.current !== gen) return;
+
       if (!data.copiaECola) {
         setError(data.error || "Eita, deu ruim no Pix");
         haptics.error();
         return;
       }
 
-      const charge = await recordVendorCharge(
-        amountCents,
-        description || undefined,
-      );
-      setChargeId(charge.id);
+      copia = data.copiaECola;
       setCopiaECola(data.copiaECola);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
+      if (generationRef.current !== gen) return;
       setError("Sem conexão. Tenta de novo.");
       haptics.error();
+      return;
     } finally {
-      setLoading(false);
+      if (generationRef.current === gen) setLoading(false);
     }
+
+    if (!copia) return;
+
+    // Kick off the insert and stash the promise so handleConfirm can await it
+    // instead of issuing a duplicate. Failures become null and trigger a retry
+    // on confirm. Stale resolutions (from a prior generation) never touch state.
+    const insertPromise = recordVendorCharge(
+      amountCents,
+      description || undefined,
+    ).catch(() => null);
+    insertPromiseRef.current = insertPromise;
+
+    const charge = await insertPromise;
+    if (generationRef.current !== gen) return;
+    if (charge) setChargeId(charge.id);
   }, [amountCents, description]);
 
   useEffect(() => {
@@ -121,11 +144,32 @@ export function QuickChargeModal({
   };
 
   const handleConfirm = async () => {
-    if (!chargeId || isConfirming) return;
+    if (isConfirming) return;
     setIsConfirming(true);
     setConfirmedAmount(amountCents);
     try {
-      await confirmVendorCharge(chargeId);
+      let id = chargeId;
+
+      // Await an in-flight best-effort insert before creating a new one —
+      // otherwise two inserts race and one pending row becomes orphaned.
+      if (!id && insertPromiseRef.current) {
+        const charge = await insertPromiseRef.current;
+        if (charge) {
+          id = charge.id;
+          setChargeId(id);
+        }
+      }
+
+      if (!id) {
+        const charge = await recordVendorCharge(
+          amountCents,
+          description || undefined,
+        );
+        id = charge.id;
+        setChargeId(id);
+      }
+
+      await confirmVendorCharge(id);
       haptics.success();
       setPhase("success");
       autoCloseRef.current = setTimeout(() => {

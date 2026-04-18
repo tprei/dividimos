@@ -818,6 +818,10 @@ export interface Database {
         Args: { p_settlement_id: string };
         Returns: void;
       };
+      confirm_vendor_charge: {
+        Args: { p_charge_id: string };
+        Returns: void;
+      };
       record_and_settle: {
         Args: {
           p_group_id: string;
