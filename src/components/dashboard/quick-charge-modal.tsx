@@ -29,7 +29,6 @@ export function QuickChargeModal({
   onChargeConfirmed,
 }: QuickChargeModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -55,15 +54,13 @@ export function QuickChargeModal({
       setChargeId(null);
       setIsConfirming(false);
       setConfirmedAmount(0);
+    } else {
+      if (autoCloseRef.current) {
+        clearTimeout(autoCloseRef.current);
+        autoCloseRef.current = null;
+      }
     }
   }, [open]);
-
-  useEffect(() => {
-    return () => {
-      if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
 
   const generateQr = useCallback(async () => {
     if (amountCents <= 0) return;
