@@ -31,7 +31,7 @@ import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
 import type { NfceQrResult } from "@/lib/nfce-qr";
-import { checkDuplicateReceipt } from "@/lib/nfce-dedup";
+import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
@@ -107,6 +107,7 @@ function NewBillPageContent() {
   const [isDmMode, setIsDmMode] = useState(false);
   const dmLoadedRef = useRef(false);
   const draftEditLoadedRef = useRef(false);
+  const lastPageQrResultRef = useRef<NfceQrResult | null>(null);
 
   useEffect(() => {
     setHasContactPicker(isContactPickerSupported());
@@ -258,16 +259,23 @@ function NewBillPageContent() {
   }, []);
 
   const handlePageScanReviewConfirm = useCallback((result: ReceiptOcrResult) => {
+    const chaveAcesso = lastPageQrResultRef.current?.chaveAcesso ?? null;
+    if (chaveAcesso) {
+      markReceiptScanned(chaveAcesso);
+      lastPageQrResultRef.current = null;
+    }
     setPageScanResult(null);
     handleScanConfirm(result);
   }, [handleScanConfirm]);
 
   const handlePageScanReviewCancel = useCallback(() => {
+    lastPageQrResultRef.current = null;
     setPageScanResult(null);
   }, []);
 
   const handlePageQrDetected = useCallback(async (result: NfceQrResult) => {
     setScanProcessing(true);
+    lastPageQrResultRef.current = result;
 
     const previousScan = checkDuplicateReceipt(result.chaveAcesso);
     if (previousScan) {
