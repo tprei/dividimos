@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Loader2, QrCode, Shield } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,30 @@ import { generatePixCopiaECola } from "@/lib/pix";
 import { haptics } from "@/hooks/use-haptics";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { ConfettiBurst } from "@/components/shared/confetti-burst";
+
+/**
+ * Generate "round" snap points for the payment slider.
+ * Returns centavo values at multiples of R$ 5, R$ 10, R$ 50, etc.
+ * depending on the total range.
+ */
+function getSnapPoints(maxCents: number): number[] {
+  const tiers = [50_00, 10_00, 5_00]; // R$ 50, R$ 10, R$ 5
+  const points = new Set<number>();
+
+  for (const step of tiers) {
+    if (maxCents < step * 2) continue;
+    for (let v = step; v < maxCents; v += step) {
+      points.add(v);
+    }
+  }
+
+  return Array.from(points).sort((a, b) => a - b);
+}
+
+/** Snap radius: 0.5% of range, capped at R$ 3, min R$ 1 */
+function getSnapRadius(rangeCents: number): number {
+  return Math.max(100, Math.min(300, Math.floor(rangeCents * 0.005)));
+}
 
 interface PixQrModalProps {
   open: boolean;
@@ -59,6 +83,41 @@ export function PixQrModal({
   const isFullPayment = paymentCents >= remainingCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= remainingCents;
   const halfCents = Math.ceil(remainingCents / 2);
+
+  const lastSnapRef = useRef<number | null>(null);
+  const sliderMin = remainingCents < 100 ? 1 : 100;
+  const snapPoints = getSnapPoints(remainingCents);
+  const snapRadius = getSnapRadius(remainingCents - sliderMin);
+
+  const handleSliderChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = parseInt(e.target.value);
+
+      let snapped = raw;
+      for (const sp of snapPoints) {
+        if (Math.abs(raw - sp) <= snapRadius) {
+          snapped = sp;
+          break;
+        }
+      }
+
+      // Haptic tick when crossing a snap boundary
+      const nearestSnap = snapPoints.reduce<number | null>(
+        (best, sp) =>
+          best === null || Math.abs(raw - sp) < Math.abs(raw - best)
+            ? sp
+            : best,
+        null,
+      );
+      if (nearestSnap !== null && nearestSnap !== lastSnapRef.current) {
+        lastSnapRef.current = nearestSnap;
+        haptics.selectionChanged();
+      }
+
+      setPaymentCents(snapped);
+    },
+    [snapPoints, snapRadius],
+  );
 
   useEffect(() => {
     if (open) {
@@ -331,16 +390,29 @@ export function PixQrModal({
                     </p>
                     <input
                       type="range"
-                      min={remainingCents < 100 ? 1 : 100}
+                      min={sliderMin}
                       max={remainingCents}
                       step={remainingCents < 100 ? 1 : 100}
                       value={paymentCents}
-                      onChange={(e) => setPaymentCents(parseInt(e.target.value))}
+                      onChange={handleSliderChange}
                       onPointerDown={(e) => e.stopPropagation()}
                       disabled={isSettling}
                       className="mt-3 w-full"
                       aria-label="Valor do pagamento"
                     />
+                    {snapPoints.length > 0 && remainingCents > sliderMin && (
+                      <div className="relative mx-[11px] h-2">
+                        {snapPoints.map((v) => (
+                          <div
+                            key={v}
+                            className="absolute top-0 w-0.5 h-1.5 rounded-full bg-muted-foreground/30"
+                            style={{
+                              left: `${((v - sliderMin) / (remainingCents - sliderMin)) * 100}%`,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
 
                     <div className="mt-2 flex justify-center gap-2">
                       <button

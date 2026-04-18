@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Mock framer-motion to render children directly
 vi.mock("framer-motion", () => ({
@@ -182,5 +182,26 @@ describe("PixQrModal", () => {
     await waitFor(() => {
       expect(haptics.error).toHaveBeenCalled();
     });
+  });
+
+  it("snaps slider to round amount and triggers haptic tick", () => {
+    render(<PixQrModal {...defaultProps} amountCents={50000} pixKey="key@test.com" />);
+
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i });
+
+    // Move slider near R$ 10.00 (1000 centavos) — should snap
+    fireEvent.change(slider, { target: { value: "1020" } });
+    expect(slider).toHaveValue("1000");
+    expect(haptics.selectionChanged).toHaveBeenCalled();
+  });
+
+  it("renders visual tick marks for snap points", () => {
+    const { container } = render(
+      <PixQrModal {...defaultProps} amountCents={50000} pixKey="key@test.com" />,
+    );
+
+    // Snap points at multiples of R$ 5 for a R$ 500 range — should have tick marks
+    const ticks = container.querySelectorAll(".bg-muted-foreground\\/30");
+    expect(ticks.length).toBeGreaterThan(0);
   });
 });
