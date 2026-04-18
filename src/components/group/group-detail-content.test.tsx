@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 
 const mockPush = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: mockPush, prefetch: vi.fn() }),
 }));
 
 function chainable(resolveValue: unknown) {

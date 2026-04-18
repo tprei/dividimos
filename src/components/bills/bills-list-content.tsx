@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Loader2, Receipt, Search } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SwipeableBillCard } from "@/components/bill/swipeable-bill-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import { deleteExpense } from "@/lib/supabase/expense-actions";
 import { useUser } from "@/hooks/use-auth";
+import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import type { ExpenseStatus } from "@/types";
 
 interface BillEntry {
@@ -60,6 +61,13 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
   const [bills, setBills] = useState<BillEntry[]>(initialBills);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Prefetch bill detail and draft-edit routes for visible bills
+  const billRoutes = useMemo(
+    () => bills.map((b) => `/app/bill/${b.id}`),
+    [bills],
+  );
+  usePrefetchRoutes(billRoutes);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;

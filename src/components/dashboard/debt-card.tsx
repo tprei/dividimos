@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Bell } from "lucide-react";
+import Link from "next/link";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
@@ -12,12 +13,11 @@ interface DebtCardProps {
   onPay: (debt: DebtSummary) => void;
   onCollect: (debt: DebtSummary) => void;
   onNudge?: (debt: DebtSummary) => void;
-  onNavigate: (debt: DebtSummary) => void;
   isActing?: boolean;
   nudgeCooldown?: boolean;
 }
 
-export function DebtCard({ debt, onPay, onCollect, onNudge, onNavigate, isActing, nudgeCooldown }: DebtCardProps) {
+export function DebtCard({ debt, onPay, onCollect, onNudge, isActing, nudgeCooldown }: DebtCardProps) {
   const isOwes = debt.direction === "owes";
 
   return (
@@ -26,9 +26,8 @@ export function DebtCard({ debt, onPay, onCollect, onNudge, onNavigate, isActing
       animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl border bg-card p-4"
     >
-      <button
-        type="button"
-        onClick={() => onNavigate(debt)}
+      <Link
+        href={`/app/conversations/${debt.counterpartyId}`}
         className="flex items-center gap-3 mb-3 w-full text-left"
       >
         <UserAvatar
@@ -52,7 +51,7 @@ export function DebtCard({ debt, onPay, onCollect, onNudge, onNavigate, isActing
             {isOwes ? "Você deve" : "Você recebe"}
           </p>
         </div>
-      </button>
+      </Link>
 
       <div className="flex gap-2">
         {isOwes ? (
