@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://www.dividimos.ai">Web</a> &middot;
+  <a href="https://www.dividimos.ai/demo">Demo</a> &middot;
   <a href="https://play.google.com/store/apps/details?id=ai.dividimos.app">Android (WIP)</a>
 </p>
 
@@ -33,6 +34,8 @@ flowchart LR
 
 - **Leitura de NFC-e** &mdash; Escaneia o QR da nota fiscal eletrônica e extrai itens, valores e estabelecimento automaticamente
 - **OCR de cupom** &mdash; Tira foto do cupom térmico e interpreta abreviações de PDV, formatação brasileira e itens agrupados
+- **Entrada por linguagem natural (IA)** &mdash; Digita "jantar 120 dividido em 4" e a IA extrai valor, itens e participantes como rascunho editável
+- **Entrada por voz** &mdash; Fala a despesa no celular (reconhecimento nativo) e a IA monta o rascunho
 - **Dois modos de conta** &mdash; Itemizada (restaurante com itens por pessoa) ou valor único (Uber, Airbnb, etc.)
 
 ### Divisão
@@ -46,6 +49,12 @@ flowchart LR
 - **QR Code Pix** &mdash; Geração de BR Code EMV com Copia e Cola para liquidação instantânea
 - **Simplificação de dívidas** &mdash; Minimiza o número de transferências com visualização passo a passo
 - **Liquidação com confirmação** &mdash; Devedor registra pagamento, credor confirma. Saldo atualiza atomicamente
+- **Cobrar Rápido** &mdash; Gere uma cobrança Pix avulsa (sem grupo) e acompanhe o status no histórico
+
+### Chat e cobrança
+
+- **Conversas 1-a-1** &mdash; Mensagens diretas entre usuários com saldo líquido no cabeçalho e cards de sistema para despesas e liquidações
+- **Criação inline** &mdash; Crie rachadinho, cobrança ou liquidação direto na conversa sem sair do chat
 
 ### Social
 
@@ -58,7 +67,14 @@ flowchart LR
 - **Grupos com confirmação mútua** &mdash; Convide por @handle ou link de convite. O membro precisa aceitar
 - **Links de convite** &mdash; Gere um link ou QR Code pra compartilhar no WhatsApp, Telegram, etc. Deep link abre direto no app
 - **Claim links** &mdash; Adicione convidados sem conta no app. Eles recebem um link pra reivindicar sua parte e pagar via Pix
+- **Perfil público** &mdash; `dividimos.ai/u/@handle` é uma página compartilhável que permite iniciar uma conversa
 - **Sync em tempo real** &mdash; Supabase Realtime mantém todos os participantes atualizados
+
+### App e notificações
+
+- **PWA instalável** &mdash; Instale no navegador com ícone, splash screen e modo offline básico
+- **Push notifications** &mdash; Notificações Web Push e nativas (Android) para cobranças, liquidações e convites
+- **Onboarding guiado** &mdash; Tour interativo na primeira sessão apresentando saldo, ações rápidas e liquidação
 
 ### Segurança
 
@@ -76,7 +92,8 @@ flowchart LR
 | Backend | Supabase (PostgreSQL + Auth + Realtime) |
 | Auth | Google OAuth (web), Google Credential Manager (Android nativo) |
 | Deploy | Vercel (frontend), Supabase (banco de dados) |
-| Mobile | Capacitor 8 (Android) |
+| Mobile | Capacitor 8 (Android; iOS em breve) |
+| IA | Parsing de linguagem natural, voz e OCR de cupom |
 | Linguagem | TypeScript 5 |
 
 ## Estrutura
