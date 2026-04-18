@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -216,9 +217,7 @@ describe("ExpenseSharesSummary", () => {
   // Since ExpenseSharesSummary is not exported, we test through the detail page
   // but we can at least verify the PayerSummaryCard renders correctly
 
-  it("PayerSummaryCard renders payer names and amounts", async () => {
-    const { PayerSummaryCard } = await import("@/components/bill/payer-summary-card");
-
+  it("PayerSummaryCard renders payer names and amounts", () => {
     const payers = [
       { userId: "user-1", amountCents: 10000 },
       { userId: "user-2", amountCents: 5000 },
@@ -236,8 +235,7 @@ describe("ExpenseSharesSummary", () => {
     expect(screen.getByText("Bob")).toBeInTheDocument();
   });
 
-  it("PayerSummaryCard shows 'pagou tudo' for single payer", async () => {
-    const { PayerSummaryCard } = await import("@/components/bill/payer-summary-card");
+  it("PayerSummaryCard shows 'pagou tudo' for single payer", () => {
 
     const payers = [{ userId: "user-1", amountCents: 10000 }];
     const participants = [
@@ -248,8 +246,7 @@ describe("ExpenseSharesSummary", () => {
     expect(screen.getByText("pagou tudo")).toBeInTheDocument();
   });
 
-  it("PayerSummaryCard returns null for empty payers", async () => {
-    const { PayerSummaryCard } = await import("@/components/bill/payer-summary-card");
+  it("PayerSummaryCard returns null for empty payers", () => {
 
     const { container } = render(
       <PayerSummaryCard payers={[]} participants={[]} />,

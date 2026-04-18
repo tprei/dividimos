@@ -22,11 +22,16 @@ import { ItemsStep } from "@/components/bill/wizard/items-step";
 import { ParticipantsStep } from "@/components/bill/wizard/participants-step";
 import { SplitStep } from "@/components/bill/wizard/split-step";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
-import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { ReceiptScanner } from "@/components/bill/receipt-scanner";
+import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
+import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
+import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
+import type { NfceQrResult } from "@/lib/nfce-qr";
+import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
@@ -95,10 +100,14 @@ function NewBillPageContent() {
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const editLoadedRef = useRef(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [scanProcessing, setScanProcessing] = useState(false);
+  const [scanProcessingPhoto, setScanProcessingPhoto] = useState(false);
+  const [pageScanResult, setPageScanResult] = useState<ReceiptOcrResult | null>(null);
   const [hasContactPicker, setHasContactPicker] = useState(false);
   const [isDmMode, setIsDmMode] = useState(false);
   const dmLoadedRef = useRef(false);
   const draftEditLoadedRef = useRef(false);
+  const lastPageQrResultRef = useRef<NfceQrResult | null>(null);
 
   useEffect(() => {
     setHasContactPicker(isContactPickerSupported());
@@ -201,6 +210,8 @@ function NewBillPageContent() {
   const handleTypeSelect = useCallback((type: ExpenseType) => {
     setBillType(type);
     setStep("info");
+    setShowScanner(false);
+    setPageScanResult(null);
   }, []);
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
@@ -231,6 +242,69 @@ function NewBillPageContent() {
     setServiceFee(String(result.serviceFeePercent || 0));
     setStep("participants");
   }, [authUser, store]);
+
+  const handlePageScanProcess = useCallback(async (file: File) => {
+    setScanProcessing(true);
+    setScanProcessingPhoto(true);
+    try {
+      const result: ReceiptOcrResult = await processReceiptScan(file);
+      setShowScanner(false);
+      setPageScanResult(result);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao processar imagem");
+    } finally {
+      setScanProcessing(false);
+      setScanProcessingPhoto(false);
+    }
+  }, []);
+
+  const handlePageScanReviewConfirm = useCallback((result: ReceiptOcrResult) => {
+    const chaveAcesso = lastPageQrResultRef.current?.chaveAcesso ?? null;
+    if (chaveAcesso) {
+      markReceiptScanned(chaveAcesso);
+      lastPageQrResultRef.current = null;
+    }
+    setPageScanResult(null);
+    handleScanConfirm(result);
+  }, [handleScanConfirm]);
+
+  const handlePageScanReviewCancel = useCallback(() => {
+    lastPageQrResultRef.current = null;
+    setPageScanResult(null);
+  }, []);
+
+  const handlePageQrDetected = useCallback(async (result: NfceQrResult) => {
+    setScanProcessing(true);
+    lastPageQrResultRef.current = result;
+
+    const previousScan = checkDuplicateReceipt(result.chaveAcesso);
+    if (previousScan) {
+      const date = new Date(previousScan);
+      const formatted = date.toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      toast.error(`Esta nota já foi escaneada em ${formatted}.`);
+      setScanProcessing(false);
+      return;
+    }
+
+    try {
+      const receipt = await fetchSefazReceipt(result.url);
+      setShowScanner(false);
+      setPageScanResult(receipt);
+    } catch (err) {
+      if (err instanceof SefazFallbackError) {
+        toast.error("Não foi possível ler a nota online. Tente capturar a foto.");
+      } else {
+        toast.error(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
+      }
+    } finally {
+      setScanProcessing(false);
+    }
+  }, []);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!authUser) return;
@@ -706,6 +780,8 @@ function NewBillPageContent() {
       }
       setStep("type");
       setBillType(null);
+      setShowScanner(false);
+      setPageScanResult(null);
       return;
     }
     if (isDmMode && billType === "single_amount") {
@@ -846,7 +922,53 @@ function NewBillPageContent() {
             </motion.div>
           )}
 
-          {step === "info" && (
+          {step === "info" && pageScanResult && (
+            <motion.div
+              key="info-scan-review"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <ScannedItemsReview
+                result={pageScanResult}
+                onConfirm={handlePageScanReviewConfirm}
+                onCancel={handlePageScanReviewCancel}
+              />
+            </motion.div>
+          )}
+
+          {step === "info" && scanProcessingPhoto && !pageScanResult && (
+            <motion.div
+              key="info-scan-skeleton"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <ScanSkeletonLoader />
+            </motion.div>
+          )}
+
+          {step === "info" && showScanner && !scanProcessingPhoto && !pageScanResult && (
+            <motion.div
+              key="info-scanner"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-3"
+            >
+              <ReceiptScanner
+                onProcess={handlePageScanProcess}
+                onQrDetected={handlePageQrDetected}
+                onBack={() => setShowScanner(false)}
+                processing={scanProcessing}
+              />
+            </motion.div>
+          )}
+
+          {step === "info" && !showScanner && !scanProcessingPhoto && !pageScanResult && (
             <motion.div
               key="info"
               initial={{ opacity: 0, x: 20 }}
