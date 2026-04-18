@@ -26,7 +26,9 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
+import { ReceiptScanner } from "@/components/bill/receipt-scanner";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
+import { processReceiptScan } from "@/lib/process-receipt-scan";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
@@ -95,6 +97,7 @@ function NewBillPageContent() {
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const editLoadedRef = useRef(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [scanProcessing, setScanProcessing] = useState(false);
   const [hasContactPicker, setHasContactPicker] = useState(false);
   const [isDmMode, setIsDmMode] = useState(false);
   const dmLoadedRef = useRef(false);
@@ -231,6 +234,19 @@ function NewBillPageContent() {
     setServiceFee(String(result.serviceFeePercent || 0));
     setStep("participants");
   }, [authUser, store]);
+
+  const handlePageScanProcess = useCallback(async (file: File) => {
+    setScanProcessing(true);
+    try {
+      const result: ReceiptOcrResult = await processReceiptScan(file);
+      setShowScanner(false);
+      handleScanConfirm(result);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao processar imagem");
+    } finally {
+      setScanProcessing(false);
+    }
+  }, [handleScanConfirm]);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!authUser) return;
@@ -846,7 +862,24 @@ function NewBillPageContent() {
             </motion.div>
           )}
 
-          {step === "info" && (
+          {step === "info" && showScanner && (
+            <motion.div
+              key="info-scanner"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-3"
+            >
+              <ReceiptScanner
+                onProcess={handlePageScanProcess}
+                onBack={() => setShowScanner(false)}
+                processing={scanProcessing}
+              />
+            </motion.div>
+          )}
+
+          {step === "info" && !showScanner && (
             <motion.div
               key="info"
               initial={{ opacity: 0, x: 20 }}

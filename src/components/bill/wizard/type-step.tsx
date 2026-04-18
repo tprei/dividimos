@@ -52,10 +52,9 @@ export function TypeStep({
     if (scanParamRef.current) return;
     if (searchParams.get("scan") && !showScanner && !scanResult) {
       scanParamRef.current = true;
-      onTypeSelect("itemized");
       setShowScanner(true);
     }
-  }, [searchParams, showScanner, scanResult, onTypeSelect]);
+  }, [searchParams, showScanner, scanResult]);
 
   const handleScanProcess = useCallback(async (file: File) => {
     setScanProcessing(true);
