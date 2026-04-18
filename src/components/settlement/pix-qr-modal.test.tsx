@@ -189,9 +189,9 @@ describe("PixQrModal", () => {
 
     const slider = screen.getByRole("slider", { name: /Valor do pagamento/i });
 
-    // Move slider near R$ 10.00 (1000 centavos) — should snap
-    fireEvent.change(slider, { target: { value: "1020" } });
-    expect(slider).toHaveValue("1000");
+    // Move slider near R$ 50.00 (5000 centavos) — should snap
+    fireEvent.change(slider, { target: { value: "5100" } });
+    expect(slider).toHaveValue("5000");
     expect(haptics.selectionChanged).toHaveBeenCalled();
   });
 
