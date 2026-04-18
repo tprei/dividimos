@@ -1,6 +1,6 @@
 // Service worker — offline cache + fallback for PWA installability.
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
@@ -10,6 +10,7 @@ const PRECACHE_URLS = [
   OFFLINE_URL,
   "/icon-192.png",
   "/icon-512.png",
+  "/badge-72.png",
 ];
 
 // ── Install ──────────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(title, {
       body,
       icon,
-      badge: "/icon-192.png",
+      badge: "/badge-72.png",
       tag: tag || undefined,
       data: { url: url || "/" },
     })

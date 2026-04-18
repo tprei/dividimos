@@ -109,7 +109,7 @@ describe("Service Worker — push events", () => {
       expect(sw.registration.showNotification).toHaveBeenCalledWith("Nova despesa", {
         body: "Alice adicionou uma despesa de R$ 50,00",
         icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        badge: "/badge-72.png",
         tag: "expense-456",
         data: { url: "/app/groups/123" },
       });
@@ -130,7 +130,7 @@ describe("Service Worker — push events", () => {
       expect(sw.registration.showNotification).toHaveBeenCalledWith("Dividimos", {
         body: "Plain text message",
         icon: "/icon-192.png",
-        badge: "/icon-192.png",
+        badge: "/badge-72.png",
         tag: undefined,
         data: { url: "/" },
       });
