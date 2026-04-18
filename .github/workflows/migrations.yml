@@ -1,0 +1,57 @@
+name: Migrations
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - '.github/workflows/migrations.yml'
+
+jobs:
+  replay:
+    name: Replay on fresh database
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+
+      - name: Start Supabase (applies every migration in order)
+        run: |
+          for attempt in 1 2 3; do
+            if supabase start; then
+              break
+            fi
+            echo "supabase start failed (attempt $attempt/3), retrying..."
+            supabase stop --no-backup 2>/dev/null || true
+            if [ "$attempt" -eq 3 ]; then
+              echo "supabase start failed after 3 attempts" && exit 1
+            fi
+          done
+
+      - name: Reset and replay migrations
+        run: supabase db reset --local
+
+  filename-immutability:
+    name: No renamed or deleted migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject renames or deletions under supabase/migrations
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          CHANGES=$(git diff --name-status --diff-filter=RD "$BASE_SHA"...HEAD -- 'supabase/migrations/*.sql')
+          if [ -n "$CHANGES" ]; then
+            echo "::error::Existing migration files must not be renamed or deleted in a PR."
+            echo "$CHANGES"
+            echo ""
+            echo "Why: the remote DB records each migration by its filename timestamp."
+            echo "Renaming on the feature branch after pushing to remote creates phantom"
+            echo "versions in supabase_migrations.schema_migrations and breaks 'db push'."
+            echo ""
+            echo "Fix: add a new migration that reverses or supersedes the change instead."
+            exit 1
+          fi
+          echo "OK: no migrations renamed or deleted."
