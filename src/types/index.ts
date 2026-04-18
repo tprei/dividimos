@@ -353,6 +353,23 @@ export type ActivityItem =
   | MemberJoinedActivity;
 
 // ============================================================
+// Vendor charge types (standalone QR code payments)
+// ============================================================
+
+export type VendorChargeStatus = "pending" | "received";
+
+/** A standalone charge generated via "Cobrar rápido" — not tied to any group. */
+export interface VendorCharge {
+  id: string;
+  userId: string;
+  amountCents: number;
+  description?: string;
+  status: VendorChargeStatus;
+  createdAt: string;
+  confirmedAt?: string;
+}
+
+// ============================================================
 // Composite types for UI consumption
 // ============================================================
 

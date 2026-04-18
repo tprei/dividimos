@@ -750,6 +750,36 @@ export interface Database {
         };
         Relationships: [];
       };
+      vendor_charges: {
+        Row: {
+          id: string;
+          user_id: string;
+          amount_cents: number;
+          description: string | null;
+          status: "pending" | "received";
+          created_at: string;
+          confirmed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          amount_cents: number;
+          description?: string | null;
+          status?: "pending" | "received";
+          created_at?: string;
+          confirmed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          amount_cents?: number;
+          description?: string | null;
+          status?: "pending" | "received";
+          created_at?: string;
+          confirmed_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       user_profiles: {
