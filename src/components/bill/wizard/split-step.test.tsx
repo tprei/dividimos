@@ -19,8 +19,8 @@ beforeEach(() => {
 });
 
 const mockItems: ExpenseItem[] = [
-  { id: "item-1", expenseId: "exp-1", description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 },
-  { id: "item-2", expenseId: "exp-1", description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalPriceCents: 3000 },
+  { id: "item-1", expenseId: "exp-1", description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000, createdAt: "" },
+  { id: "item-2", expenseId: "exp-1", description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalPriceCents: 3000, createdAt: "" },
 ];
 
 const mockParticipants: User[] = [

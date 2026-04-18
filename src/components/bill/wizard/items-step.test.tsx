@@ -15,6 +15,7 @@ const mockItem: ExpenseItem = {
   quantity: 2,
   unitPriceCents: 3500,
   totalPriceCents: 7000,
+  createdAt: "",
 };
 
 describe("ItemsStep", () => {

@@ -15,7 +15,7 @@ const makeExpense = (overrides?: Partial<ExpenseWithDetails>): ExpenseWithDetail
   groupId: "g1",
   creatorId: "u1",
   title: "Dinner",
-  merchantName: null,
+  merchantName: undefined,
   expenseType: "itemized",
   totalAmount: 10000,
   serviceFeePercent: 0,
@@ -25,11 +25,11 @@ const makeExpense = (overrides?: Partial<ExpenseWithDetails>): ExpenseWithDetail
   updatedAt: "",
   items: [],
   shares: [
-    { userId: "u1", shareAmountCents: 6000, user: alice },
-    { userId: "u2", shareAmountCents: 4000, user: bob },
+    { id: "s1", expenseId: "exp-1", userId: "u1", shareAmountCents: 6000, user: alice },
+    { id: "s2", expenseId: "exp-1", userId: "u2", shareAmountCents: 4000, user: bob },
   ],
   payers: [
-    { userId: "u1", amountCents: 10000, user: alice },
+    { expenseId: "exp-1", userId: "u1", amountCents: 10000, user: alice },
   ],
   guests: [],
   ...overrides,
