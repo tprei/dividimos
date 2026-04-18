@@ -113,7 +113,6 @@ export async function sendFcmNotification(
     android: {
       notification: {
         ...(payload.tag ? { tag: payload.tag } : {}),
-        ...(payload.icon ? { icon: payload.icon } : {}),
       },
     },
     ...(payload.url ? { data: { url: payload.url } } : {}),
