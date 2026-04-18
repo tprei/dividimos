@@ -51,9 +51,9 @@ test.describe("DM navigation and deep links", () => {
     const debtCard = page.locator(".rounded-2xl.border.bg-card").first();
     await expect(debtCard).toBeVisible({ timeout: 10000 });
 
-    const cardHeader = debtCard.locator("button[type='button']").first();
-    await expect(cardHeader).toBeVisible();
-    await cardHeader.click();
+    const cardLink = debtCard.locator("a[href*='/app/conversations/']").first();
+    await expect(cardLink).toBeVisible();
+    await cardLink.click();
 
     await expect(page).toHaveURL(/\/app\/conversations\/.+/, { timeout: 8000 });
 
@@ -109,8 +109,8 @@ test.describe("DM navigation and deep links", () => {
     const debtCard = page.locator(".rounded-2xl.border.bg-card").first();
     await expect(debtCard).toBeVisible({ timeout: 10000 });
 
-    const cardHeader = debtCard.locator("button[type='button']").first();
-    await cardHeader.click();
+    const cardLink = debtCard.locator("a[href*='/app/conversations/']").first();
+    await cardLink.click();
 
     await expect(page).toHaveURL(`/app/conversations/${bob.id}`, {
       timeout: 8000,
