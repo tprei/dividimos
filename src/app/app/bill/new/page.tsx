@@ -6,52 +6,42 @@ import {
   ArrowRight,
   Camera,
   Loader2,
-  Plus,
   QrCode,
-  Receipt,
   ScanLine,
-  UserPlus,
-  Users,
-  Users2,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AddItemForm } from "@/components/bill/add-item-form";
-import { GroupSelector } from "@/components/bill/group-selector";
-import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
-import { RecentContacts } from "@/components/bill/recent-contacts";
 import { BillSummary } from "@/components/bill/bill-summary";
-import { BillTypeSelector } from "@/components/bill/bill-type-selector";
-import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
-import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
-import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
-import { ItemCard } from "@/components/bill/item-card";
 import { PayerStep } from "@/components/bill/payer-step";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
-import { ReceiptScanner } from "@/components/bill/receipt-scanner";
-import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
-import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { SingleAmountStep } from "@/components/bill/single-amount-step";
+import { ItemsStep } from "@/components/bill/wizard/items-step";
+import { ParticipantsStep } from "@/components/bill/wizard/participants-step";
+import { SplitStep } from "@/components/bill/wizard/split-step";
+import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
-import { useQrScannerPreload } from "@/hooks/use-qr-preload";
-import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
-import type { NfceQrResult } from "@/lib/nfce-qr";
-import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
+import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
+import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
-import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { useBillStore } from "@/stores/bill-store";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
 import type { ExpenseType, User, UserProfile } from "@/types";
+
+const TypeStep = dynamic(
+  () => import("@/components/bill/wizard/type-step").then((m) => ({ default: m.TypeStep })),
+  { ssr: false },
+);
 
 type Step = "type" | "info" | "participants" | "items" | "split" | "amount-split" | "payer" | "summary";
 
@@ -91,19 +81,12 @@ function NewBillPageContent() {
   const store = useBillStore();
   const { user: authUser } = useAuth();
 
-  // Preload qr-scanner WASM in background so the QR tab opens fast
-  useQrScannerPreload();
-
   const [billType, setBillType] = useState<ExpenseType | null>(null);
   const [step, setStep] = useState<Step>("type");
   const [title, setTitle] = useState("");
   const [merchantName, setMerchantName] = useState("");
   const [serviceFee, setServiceFee] = useState("10");
   const [fixedFees, setFixedFees] = useState("");
-  const [showAddItem, setShowAddItem] = useState(false);
-  const [showAddParticipant, setShowAddParticipant] = useState(false);
-  const [showAddGuest, setShowAddGuest] = useState(false);
-  const [guestNameInput, setGuestNameInput] = useState("");
   const [navigating, setNavigating] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
@@ -112,16 +95,6 @@ function NewBillPageContent() {
   const [editDraftId, setEditDraftId] = useState<string | null>(null);
   const editLoadedRef = useRef(false);
   const [showScanner, setShowScanner] = useState(false);
-  const [scanProcessing, setScanProcessing] = useState(false);
-  const [scanProcessingPhoto, setScanProcessingPhoto] = useState(false);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [scanResult, setScanResult] = useState<ReceiptOcrResult | null>(null);
-  const [sefazFallback, setSefazFallback] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
-  const lastQrResultRef = useRef<NfceQrResult | null>(null);
-  const [showVoiceInput, setShowVoiceInput] = useState(false);
-  const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [hasContactPicker, setHasContactPicker] = useState(false);
   const [isDmMode, setIsDmMode] = useState(false);
   const dmLoadedRef = useRef(false);
@@ -183,9 +156,6 @@ function NewBillPageContent() {
   }, [searchParams, authUser, store]);
 
   // Chat draft edit mode: consume ?groupId=<id>&title=<text>&amount=<cents>
-  // emitted by handleEditDraft in the conversation page when a user clicks
-  // "edit" on an AI-parsed expense draft. Skip when ?dm= is present so the
-  // dm quick-charge handler above takes precedence.
   useEffect(() => {
     const draftGroupId = searchParams.get("groupId");
     const draftTitle = searchParams.get("title");
@@ -228,93 +198,12 @@ function NewBillPageContent() {
   const stepIndex = steps.findIndex((s) => s.key === step);
   const isTypeStep = step === "type";
 
-  const handleTypeSelect = (type: ExpenseType) => {
+  const handleTypeSelect = useCallback((type: ExpenseType) => {
     setBillType(type);
     setStep("info");
-  };
-
-  const handleScanProcess = useCallback(async (file: File) => {
-    setScanProcessing(true);
-    setScanProcessingPhoto(true);
-    setScanError(null);
-    try {
-      const result: ReceiptOcrResult = await processReceiptScan(file);
-      // Show review UI instead of populating store directly
-      setScanResult(result);
-      setShowScanner(false);
-    } catch (err) {
-      setScanError(err instanceof Error ? err.message : "Erro ao processar imagem");
-    } finally {
-      setScanProcessing(false);
-      setScanProcessingPhoto(false);
-    }
-  }, []);
-
-  const handleQrDetected = useCallback(async (result: NfceQrResult) => {
-    setScanError(null);
-    setDuplicateWarning(null);
-    setScanProcessing(true);
-    lastQrResultRef.current = result;
-
-    // Check for duplicate receipt
-    const previousScan = checkDuplicateReceipt(result.chaveAcesso);
-    if (previousScan) {
-      const date = new Date(previousScan);
-      const formatted = date.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      setDuplicateWarning(
-        `Esta nota já foi escaneada em ${formatted}. Deseja continuar mesmo assim?`,
-      );
-      setScanProcessing(false);
-      return;
-    }
-
-    try {
-      const receipt = await fetchSefazReceipt(result.url);
-      setScanResult(receipt);
-      setShowScanner(false);
-    } catch (err) {
-      if (err instanceof SefazFallbackError) {
-        // SEFAZ blocked (captcha/timeout/unparseable) — nudge user to photo
-        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
-        setSefazFallback(true);
-        setShowScanner(true);
-      } else {
-        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
-      }
-    } finally {
-      setScanProcessing(false);
-    }
-  }, []);
-
-  const handleDuplicateContinue = useCallback(async () => {
-    const qrResult = lastQrResultRef.current;
-    if (!qrResult) return;
-    setDuplicateWarning(null);
-    setScanProcessing(true);
-    try {
-      const receipt = await fetchSefazReceipt(qrResult.url);
-      setScanResult(receipt);
-      setShowScanner(false);
-    } catch (err) {
-      if (err instanceof SefazFallbackError) {
-        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
-        setSefazFallback(true);
-        setShowScanner(true);
-      } else {
-        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
-      }
-    } finally {
-      setScanProcessing(false);
-    }
   }, []);
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
-    // Populate store with reviewed items
     setBillType("itemized");
     if (authUser) {
       store.setCurrentUser(authUser);
@@ -337,33 +226,11 @@ function NewBillPageContent() {
       }
     }
 
-    // Mark receipt as scanned to detect future duplicates
-    if (lastQrResultRef.current) {
-      markReceiptScanned(lastQrResultRef.current.chaveAcesso);
-      lastQrResultRef.current = null;
-    }
-
     setTitle(result.merchant || "Nota escaneada");
     setMerchantName(result.merchant || "");
     setServiceFee(String(result.serviceFeePercent || 0));
-    setScanResult(null);
-    setDuplicateWarning(null);
     setStep("participants");
   }, [authUser, store]);
-
-  const handleScanCancel = useCallback(() => {
-    setScanResult(null);
-  }, []);
-
-  const handleVoiceResult = useCallback((result: VoiceExpenseResult) => {
-    setVoiceResult(result);
-    setShowVoiceInput(false);
-    setVoiceError(null);
-  }, []);
-
-  const handleVoiceError = useCallback((message: string) => {
-    setVoiceError(message);
-  }, []);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!authUser) return;
@@ -394,20 +261,14 @@ function NewBillPageContent() {
     if (result.expenseType === "itemized") {
       setServiceFee("10");
     }
-    setVoiceResult(null);
     setStep("participants");
   }, [authUser, store, selectedGroupId]);
-
-  const handleVoiceCancel = useCallback(() => {
-    setVoiceResult(null);
-  }, []);
 
   // Load draft for editing when ?draft=<id> is present
   useEffect(() => {
     const draftId = searchParams.get("draft");
     if (!draftId || !authUser || editLoadedRef.current) return;
 
-    // If store already has this draft loaded, just restore local state
     const storeState = useBillStore.getState();
     if (storeState.expense?.id === draftId) {
       editLoadedRef.current = true;
@@ -428,7 +289,6 @@ function NewBillPageContent() {
       if (!loaded || editLoadedRef.current) return;
       editLoadedRef.current = true;
 
-      // Convert loaded expense data back to store format for wizard state
       const participants = loaded.shares.map((s) => ({
         id: s.user.id,
         email: "",
@@ -441,7 +301,6 @@ function NewBillPageContent() {
         createdAt: new Date().toISOString(),
       }));
 
-      // Also add payers who might not be in shares
       for (const p of loaded.payers) {
         if (!participants.find((u) => u.id === p.user.id)) {
           participants.push({
@@ -458,7 +317,6 @@ function NewBillPageContent() {
         }
       }
 
-      // Build an Expense object the store can hold
       const expenseForStore = {
         id: loaded.id,
         groupId: loaded.groupId,
@@ -495,7 +353,6 @@ function NewBillPageContent() {
           : [],
       });
 
-      // Restore local form state
       setIsEditing(true);
       setEditDraftId(draftId);
       setBillType(loaded.expenseType);
@@ -514,7 +371,6 @@ function NewBillPageContent() {
         .single();
       if (group) setSelectedGroupName(group.name);
 
-      // Determine starting step based on what data exists
       if (loaded.payers.length > 0) {
         setStep("payer");
       } else if (loaded.expenseType === "itemized" && loaded.items.length > 0) {
@@ -542,8 +398,6 @@ function NewBillPageContent() {
   const [, setSyncing] = useState(false);
   const [remoteBillId, setRemoteBillId] = useState<string | null>(null);
 
-  // In the expense model, all expenses belong to a group.
-  // Group members are already accepted — no per-expense acceptance needed.
   const allAccepted = true;
 
   // Auto-select group from ?groupId URL param when entering participants step
@@ -620,18 +474,6 @@ function NewBillPageContent() {
     }
   }, [searchParams]);
 
-  // Auto-open scanner when ?scan=true (from "Ler cupom" dashboard button)
-  const scanParamRef = useRef(false);
-  useEffect(() => {
-    if (scanParamRef.current) return;
-    if (searchParams.get("scan") && !showScanner && !scanResult) {
-      scanParamRef.current = true;
-      setBillType("itemized");
-      setShowScanner(true);
-    }
-  }, [searchParams, showScanner, scanResult]);
-
-  /** Compute expense shares from store state. Returns one entry per registered participant (excludes guests). */
   const computeShares = useCallback(() => {
     const state = useBillStore.getState();
     return state.participants.map((p) => ({
@@ -640,7 +482,6 @@ function NewBillPageContent() {
     }));
   }, []);
 
-  /** Build the saveExpenseDraft params from current store state. */
   const buildDraftParams = useCallback((existingId?: string, groupIdOverride?: string) => {
     const state = useBillStore.getState();
     const effectiveGroupId = groupIdOverride ?? selectedGroupId;
@@ -787,7 +628,6 @@ function NewBillPageContent() {
       }
       setSyncing(true);
 
-      // Save final state as draft, then activate via RPC
       const params = buildDraftParams(remoteBillId ?? undefined);
       if (params) {
         const saveResult = await saveExpenseDraft(params);
@@ -796,9 +636,7 @@ function NewBillPageContent() {
           : remoteBillId;
 
         if (expenseId) {
-          // Activate the expense — this transitions draft→active and updates balances
           const supabase = createClient();
-          // RPC defined in migration but not yet in generated DB types — cast needed
           const { error: rpcError } = await (supabase.rpc as unknown as (fn: string, params: Record<string, unknown>) => Promise<{ error: { message: string } | null }>)(
             "activate_expense",
             { p_expense_id: expenseId },
@@ -817,7 +655,6 @@ function NewBillPageContent() {
       return;
     }
     let next = steps[stepIndex + 1];
-    // In DM mode, skip the participants step — already pre-filled
     if (isDmMode && next?.key === "participants") {
       next = steps[stepIndex + 2];
     }
@@ -871,11 +708,9 @@ function NewBillPageContent() {
       setBillType(null);
       return;
     }
-    // In DM single_amount mode, skip back past participants to type/close
     if (isDmMode && billType === "single_amount") {
       const prev = steps[stepIndex - 1];
       if (prev && prev.key === "participants") {
-        // Skip participants — go back one more
         const prevPrev = steps[stepIndex - 2];
         if (prevPrev) {
           setStep(prevPrev.key);
@@ -1002,97 +837,12 @@ function NewBillPageContent() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-              {scanResult ? (
-                <ScannedItemsReview
-                  result={scanResult}
-                  onConfirm={handleScanConfirm}
-                  onCancel={handleScanCancel}
-                />
-              ) : scanProcessingPhoto ? (
-                <ScanSkeletonLoader />
-              ) : showScanner ? (
-                <div className="space-y-3">
-                  <ReceiptScanner
-                    key={sefazFallback ? "fallback" : "default"}
-                    onProcess={handleScanProcess}
-                    onBack={() => { setShowScanner(false); setScanError(null); setSefazFallback(false); }}
-                    processing={scanProcessing}
-                    onQrDetected={handleQrDetected}
-                  />
-                  {scanError && (
-                    <motion.p
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-center text-sm text-destructive"
-                    >
-                      {scanError}
-                    </motion.p>
-                  )}
-                  {duplicateWarning && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-center dark:border-yellow-700 dark:bg-yellow-950"
-                    >
-                      <p className="mb-2 text-sm text-yellow-800 dark:text-yellow-200">
-                        {duplicateWarning}
-                      </p>
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => { setDuplicateWarning(null); lastQrResultRef.current = null; }}
-                        >
-                          Cancelar
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={handleDuplicateContinue}
-                        >
-                          Continuar mesmo assim
-                        </Button>
-                      </div>
-                    </motion.div>
-                  )}
-                </div>
-              ) : voiceResult ? (
-                <VoiceExpenseModal
-                  result={voiceResult}
-                  groupMembers={groupMembers}
-                  onConfirm={handleVoiceConfirm}
-                  onCancel={handleVoiceCancel}
-                />
-              ) : showVoiceInput ? (
-                <div className="space-y-3">
-                  <VoiceExpenseButton
-                    members={groupMembers.map((m) => ({ handle: m.handle, name: m.name }))}
-                    onResult={handleVoiceResult}
-                    onError={handleVoiceError}
-                  />
-                  {voiceError && (
-                    <motion.p
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-center text-sm text-destructive"
-                    >
-                      {voiceError}
-                    </motion.p>
-                  )}
-                  <Button
-                    variant="ghost"
-                    className="w-full"
-                    onClick={() => { setShowVoiceInput(false); setVoiceError(null); }}
-                  >
-                    Voltar
-                  </Button>
-                </div>
-              ) : (
-                <BillTypeSelector
-                  onSelect={handleTypeSelect}
-                  onScanReceipt={() => setShowScanner(true)}
-                  onVoiceExpense={() => setShowVoiceInput(true)}
-                />
-              )}
+              <TypeStep
+                groupMembers={groupMembers}
+                onTypeSelect={handleTypeSelect}
+                onScanConfirm={handleScanConfirm}
+                onVoiceConfirm={handleVoiceConfirm}
+              />
             </motion.div>
           )}
 
@@ -1203,20 +953,15 @@ function NewBillPageContent() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
-              className="space-y-4"
             >
-              <p className="text-sm text-muted-foreground">
-                {selectedGroupId
-                  ? "Participantes do grupo selecionado."
-                  : "Adiciona a galera pelo @handle ou escolhe um grupo."}
-              </p>
-
-              {/* Group selector — shown when no group is linked yet or one is linked */}
-              <GroupSelector
-                currentUserId={authUser?.id ?? ""}
-                excludeIds={[]}
+              <ParticipantsStep
+                authUser={authUser}
+                participants={store.participants}
+                guests={store.guests}
                 selectedGroupId={selectedGroupId}
                 selectedGroupName={selectedGroupName}
+                groupMembers={groupMembers}
+                hasContactPicker={hasContactPicker}
                 onSelectGroup={(groupId, groupName, members) => {
                   setSelectedGroupId(groupId);
                   setSelectedGroupName(groupName);
@@ -1247,223 +992,12 @@ function NewBillPageContent() {
                     if (p.id !== authUser?.id) store.removeParticipant(p.id);
                   }
                 }}
+                onAddParticipant={(user) => store.addParticipant(user)}
+                onRemoveParticipant={(id) => store.removeParticipant(id)}
+                onAddGuest={(name, phone) => store.addGuest(name, phone)}
+                onRemoveGuest={(id) => store.removeGuest(id)}
+                onPickContacts={handlePickContacts}
               />
-
-              <div className="space-y-2">
-                {selectedGroupId && groupMembers.length > 0 ? (
-                  <>
-                    <p className="text-xs text-muted-foreground">Quem participou desta conta?</p>
-                    <div
-                      key={authUser?.id}
-                      className="flex items-center gap-3 rounded-xl border bg-card p-3"
-                    >
-                      <input type="checkbox" checked disabled className="h-4 w-4 accent-primary" />
-                      <UserAvatar name={authUser?.name ?? ""} avatarUrl={authUser?.avatarUrl} size="sm" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{authUser?.name}</p>
-                        <p className="text-xs text-muted-foreground">@{authUser?.handle}</p>
-                      </div>
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
-                    </div>
-                    {groupMembers.map((m) => {
-                      const isChecked = store.participants.some((p) => p.id === m.id);
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            if (isChecked) {
-                              store.removeParticipant(m.id);
-                            } else {
-                              store.addParticipant({
-                                id: m.id,
-                                email: "",
-                                handle: m.handle,
-                                name: m.name,
-                                pixKeyType: "email",
-                                pixKeyHint: "",
-                                avatarUrl: m.avatarUrl,
-                                onboarded: true,
-                                createdAt: new Date().toISOString(),
-                              });
-                            }
-                          }}
-                          className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/30"
-                        >
-                          <input type="checkbox" checked={isChecked} readOnly className="h-4 w-4 accent-primary pointer-events-none" />
-                          <UserAvatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">{m.name}</p>
-                            <p className="text-xs text-muted-foreground">@{m.handle}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </>
-                ) : (
-                  store.participants.map((p) => (
-                    <div key={p.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                      <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">@{p.handle}</p>
-                      </div>
-                      {p.id === authUser?.id ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
-                      ) : (
-                        <button onClick={() => store.removeParticipant(p.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {store.guests.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Convidados (sem conta no Dividimos)</p>
-                  {store.guests.map((g) => (
-                    <div key={g.id} className="flex items-center gap-3 rounded-xl border border-dashed bg-card p-3">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                        {g.name.charAt(0)}
-                      </span>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{g.name}</p>
-                      </div>
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Convidado</span>
-                      <button onClick={() => store.removeGuest(g.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <AnimatePresence>
-                {showAddGuest && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden rounded-2xl border border-dashed bg-card p-4"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-semibold">Adicionar convidado</span>
-                      <button
-                        onClick={() => { setShowAddGuest(false); setGuestNameInput(""); }}
-                        className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <form onSubmit={(e) => {
-                      e.preventDefault();
-                      const name = guestNameInput.trim();
-                      if (!name) return;
-                      store.addGuest(name);
-                      setGuestNameInput("");
-                    }} className="flex gap-2">
-                      <Input
-                        type="text"
-                        placeholder="Nome do convidado"
-                        value={guestNameInput}
-                        onChange={(e) => setGuestNameInput(e.target.value)}
-                        autoFocus
-                        className="flex-1"
-                      />
-                      <Button type="submit" size="sm" disabled={!guestNameInput.trim()}>
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </form>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Convidados recebem um link pra confirmar a participação depois.
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Individual add options — only when no group is selected */}
-              {!selectedGroupId && (
-                <>
-                  <RecentContacts
-                    onSelect={(profile) => {
-                      const newUser: User = {
-                        id: profile.id,
-                        email: "",
-                        handle: profile.handle,
-                        name: profile.name,
-                        pixKeyType: "email",
-                        pixKeyHint: "",
-                        avatarUrl: profile.avatarUrl,
-                        onboarded: true,
-                        createdAt: new Date().toISOString(),
-                
-                      };
-                      store.addParticipant(newUser);
-                    }}
-                    excludeIds={store.participants.map((p) => p.id)}
-                    currentUserId={authUser?.id ?? ""}
-                  />
-                  <AnimatePresence>
-                    {showAddParticipant && (
-                      <AddParticipantByHandle
-                        onAdd={(profile: UserProfile) => {
-                          const newUser: User = {
-                            id: profile.id,
-                            email: "",
-                            handle: profile.handle,
-                            name: profile.name,
-                            pixKeyType: "email",
-                            pixKeyHint: "",
-                            avatarUrl: profile.avatarUrl,
-                            onboarded: true,
-                            createdAt: new Date().toISOString(),
-                    
-                          };
-                          store.addParticipant(newUser);
-                          setShowAddParticipant(false);
-                        }}
-                        onCancel={() => setShowAddParticipant(false)}
-                        excludeIds={store.participants.map((p) => p.id)}
-                      />
-                    )}
-                  </AnimatePresence>
-                  {!showAddParticipant && !showAddGuest && (
-                    <div className="flex flex-col gap-2">
-                      <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
-                        <UserPlus className="h-4 w-4" />
-                        Por @handle
-                      </Button>
-                      {hasContactPicker && (
-                        <Button variant="outline" className="w-full gap-2" onClick={handlePickContacts}>
-                          <Users2 className="h-4 w-4" />
-                          Dos contatos do celular
-                        </Button>
-                      )}
-                      <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
-                        <Users className="h-4 w-4" />
-                        Adicionar convidado
-                      </Button>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {selectedGroupId && !showAddGuest && (
-                <div className="flex flex-col gap-2">
-                  {hasContactPicker && (
-                    <Button variant="outline" className="w-full gap-2" onClick={handlePickContacts}>
-                      <Users2 className="h-4 w-4" />
-                      Dos contatos do celular
-                    </Button>
-                  )}
-                  <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
-                    <Users className="h-4 w-4" />
-                    Adicionar convidado
-                  </Button>
-                </div>
-              )}
             </motion.div>
           )}
 
@@ -1474,65 +1008,14 @@ function NewBillPageContent() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
-              className="space-y-4"
             >
-              <p className="text-sm text-muted-foreground">
-                Adicione os itens da conta.{" "}
-                {store.items.length > 0 && (
-                  <span className="font-medium text-foreground">
-                    {store.items.length} itens — {formatBRL(store.expense?.totalAmount || 0)}
-                  </span>
-                )}
-              </p>
-              <AnimatePresence>
-                {store.items.map((item) => (
-                  <motion.div key={item.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -100 }} className="flex items-center justify-between rounded-xl border bg-card p-3">
-                    <div>
-                      <p className="text-sm font-medium">{item.description}</p>
-                      <p className="text-xs text-muted-foreground">{item.quantity}x {formatBRL(item.unitPriceCents)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold tabular-nums text-sm">{formatBRL(item.totalPriceCents)}</span>
-                      <button onClick={() => store.removeItem(item.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-              <AnimatePresence>
-                {showAddItem && (
-                  <AddItemForm onAdd={(item) => { store.addItem(item); setShowAddItem(false); }} onCancel={() => setShowAddItem(false)} />
-                )}
-              </AnimatePresence>
-              {!showAddItem && (
-                <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddItem(true)}>
-                  <Plus className="h-4 w-4" />
-                  Adicionar item
-                </Button>
-              )}
-              {store.items.length > 0 && store.expense && store.expense.serviceFeePercent > 0 && (
-                <div className="rounded-xl bg-muted/50 p-3 text-sm space-y-1">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Subtotal</span>
-                    <span className="tabular-nums">{formatBRL(store.expense.totalAmount)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Garçom ({store.expense.serviceFeePercent}%)</span>
-                    <span className="tabular-nums">{formatBRL(Math.round(store.expense.totalAmount * store.expense.serviceFeePercent / 100))}</span>
-                  </div>
-                  {store.expense.fixedFees > 0 && (
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Couvert</span>
-                      <span className="tabular-nums">{formatBRL(store.expense.fixedFees)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-semibold border-t border-border pt-1">
-                    <span>Total com garçom</span>
-                    <span className="tabular-nums text-primary">{formatBRL(store.getGrandTotal())}</span>
-                  </div>
-                </div>
-              )}
+              <ItemsStep
+                items={store.items}
+                expense={store.expense}
+                grandTotal={store.getGrandTotal()}
+                onAddItem={(item) => store.addItem(item)}
+                onRemoveItem={(id) => store.removeItem(id)}
+              />
             </motion.div>
           )}
 
@@ -1543,42 +1026,18 @@ function NewBillPageContent() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
-              className="space-y-4"
             >
-              <p className="text-sm text-muted-foreground">
-                Toca nos nomes pra atribuir itens. Compartilhados são divididos igualmente.
-              </p>
-              <AnimatePresence>
-                {store.items.map((item) => {
-                  const itemSplits = store.splits
-                    .filter((s) => s.itemId === item.id)
-                    .map((s) => {
-                      const user = store.participants.find((p) => p.id === s.userId);
-                      const guest = !user ? store.guests.find((g) => g.id === s.userId) : null;
-                      return { ...s, user: user ?? (guest ? { id: guest.id, name: guest.name, handle: "" } as UserProfile : undefined) };
-                    });
-                  return (
-                    <ItemCard key={item.id} item={item} splits={itemSplits} participants={store.participants} guests={store.guests} onAssign={handleAssign} onUnassign={handleUnassign} onAssignAll={handleAssignAll} onRemove={(id) => store.removeItem(id)} />
-                  );
-                })}
-              </AnimatePresence>
-              {store.items.length > 0 && (() => {
-                const unassignedItems = store.items.filter((item) => store.splits.filter((s) => s.itemId === item.id).length === 0);
-                if (unassignedItems.length === 0) return null;
-                const allPersonIds = [...store.participants.map((p) => p.id), ...store.guests.map((g) => g.id)];
-                return (
-                  <Button variant="outline" className="w-full gap-2 border-dashed border-primary/40 text-primary" onClick={() => { for (const item of unassignedItems) { store.splitItemEqually(item.id, allPersonIds); } }}>
-                    <Users className="h-4 w-4" />
-                    Dividir {unassignedItems.length} restante{unassignedItems.length > 1 ? "s" : ""} igualmente
-                  </Button>
-                );
-              })()}
-              {store.items.length === 0 && (
-                <div className="py-12 text-center text-muted-foreground">
-                  <Receipt className="mx-auto h-8 w-8 opacity-50" />
-                  <p className="mt-2 text-sm">Adicione itens primeiro</p>
-                </div>
-              )}
+              <SplitStep
+                items={store.items}
+                splits={store.splits}
+                participants={store.participants}
+                guests={store.guests}
+                onAssign={handleAssign}
+                onUnassign={handleUnassign}
+                onAssignAll={handleAssignAll}
+                onRemoveItem={(id) => store.removeItem(id)}
+                onSplitItemEqually={(itemId, userIds) => store.splitItemEqually(itemId, userIds)}
+              />
             </motion.div>
           )}
 

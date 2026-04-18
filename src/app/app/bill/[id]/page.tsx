@@ -4,22 +4,20 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
   Bell,
-  Calculator,
   Check,
-  ChevronDown,
-  ChevronUp,
   Clock,
   Loader2,
-  Pencil,
   QrCode,
   Receipt,
-  UserCheck,
   Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
+import { CreatorDraftView } from "@/components/bill/creator-draft-view";
+import { ExpenseSharesSummary } from "@/components/bill/expense-shares-summary";
+import { ExpenseChargeExplanation } from "@/components/bill/expense-charge-explanation";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ModalLoadingSkeleton, Skeleton } from "@/components/shared/skeleton";
@@ -30,11 +28,9 @@ const PixQrModal = dynamic(
   () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
   { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
-import { DebtGraph } from "@/components/settlement/debt-graph";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { loadExpense } from "@/lib/supabase/expense-actions";
-import { activateExpense } from "@/lib/supabase/expense-rpc";
 import {
   queryBalanceBetween,
   recordSettlement,
@@ -46,12 +42,10 @@ import { haptics } from "@/hooks/use-haptics";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import toast from "react-hot-toast";
-import { notifyExpenseActivated, notifyPaymentNudge, notifySettlementRecorded } from "@/lib/push/push-notify";
+import { notifyPaymentNudge, notifySettlementRecorded } from "@/lib/push/push-notify";
 import type {
   Balance,
   DebtEdge,
-  Expense,
-  ExpenseItem,
   ExpenseStatus,
   ExpenseWithDetails,
   UserProfile,
@@ -63,7 +57,6 @@ const expenseStatusConfig: Record<ExpenseStatus, { label: string; color: string 
   settled: { label: "Quitada", color: "bg-success/15 text-success" },
 };
 
-/** Compute debt edges from shares and payers (net-balance algorithm). */
 function computeDebtsFromExpense(
   shares: { userId: string; shareAmountCents: number }[],
   payers: { userId: string; amountCents: number }[],
@@ -107,212 +100,6 @@ function computeDebtsFromExpense(
   }
 
   return debts;
-}
-
-function CreatorDraftView({
-  expense,
-  participants,
-  items,
-  shares,
-  guests,
-}: {
-  expense: Expense;
-  participants: UserProfile[];
-  items: ExpenseItem[];
-  shares: { userId: string; shareAmountCents: number }[];
-  guests: { id: string; displayName: string; claimToken: string; share?: { shareAmountCents: number } }[];
-}) {
-  const [finalizing, setFinalizing] = useState(false);
-  const [guestShareModal, setGuestShareModal] = useState<{
-    open: boolean;
-    guestName: string;
-    shareAmountCents?: number;
-    claimToken: string;
-  }>({ open: false, guestName: "", claimToken: "" });
-
-  const hasContent = shares.length > 0 || items.length > 0;
-
-  const handleFinalize = async () => {
-    setFinalizing(true);
-    const result = await activateExpense({ expense_id: expense.id });
-    if ("error" in result) {
-      haptics.error();
-      toast.error(result.error);
-      setFinalizing(false);
-      return;
-    }
-    haptics.success();
-    notifyExpenseActivated(expense.id).catch(() => {});
-    // Reload from DB to get authoritative state
-    const fresh = await loadExpense(expense.id);
-    if (fresh) {
-      useBillStore.setState({
-        expense: {
-          id: fresh.id,
-          groupId: fresh.groupId,
-          creatorId: fresh.creatorId,
-          title: fresh.title,
-          merchantName: fresh.merchantName,
-          expenseType: fresh.expenseType,
-          totalAmount: fresh.totalAmount,
-          serviceFeePercent: fresh.serviceFeePercent,
-          fixedFees: fresh.fixedFees,
-          status: fresh.status,
-          createdAt: fresh.createdAt,
-          updatedAt: fresh.updatedAt,
-        },
-      });
-    }
-    setFinalizing(false);
-  };
-
-  return (
-    <div className="mx-auto max-w-lg px-4 py-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/app"
-          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="font-semibold">{expense.title}</h1>
-          {expense.merchantName && (
-            <p className="text-xs text-muted-foreground">{expense.merchantName}</p>
-          )}
-        </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${expenseStatusConfig.draft.color}`}>
-          {expenseStatusConfig.draft.label}
-        </span>
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.4 }}
-        className="mt-6"
-      >
-        <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
-          <p className="text-sm text-white/70">Total da despesa</p>
-          <p className="mt-1 text-3xl font-bold tabular-nums">
-            {formatBRL(expense.totalAmount)}
-          </p>
-          <div className="mt-2 flex gap-4 text-sm text-white/70">
-            <span className="flex items-center gap-1">
-              <Users className="h-3.5 w-3.5" />
-              {participants.length} pessoas
-            </span>
-          </div>
-        </div>
-      </motion.div>
-
-      {participants.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.4 }}
-          className="mt-5"
-        >
-          <h2 className="mb-3 text-sm font-semibold">Participantes</h2>
-          <div className="space-y-2">
-            {participants.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3"
-              >
-                <UserAvatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
-                <span className="flex-1 text-sm font-medium">{p.name}</span>
-                {p.id === expense.creatorId && (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    Criador
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {guests.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25, duration: 0.4 }}
-          className="mt-5"
-        >
-          <h2 className="mb-3 text-sm font-semibold">Convidados</h2>
-          <div className="space-y-2">
-            {guests.map((guest) => (
-              <div
-                key={guest.id}
-                className="flex items-center justify-between rounded-xl border border-dashed bg-card px-4 py-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                    {guest.displayName.charAt(0)}
-                  </span>
-                  <span className="text-sm font-medium">{guest.displayName}</span>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 text-xs"
-                  onClick={() =>
-                    setGuestShareModal({
-                      open: true,
-                      guestName: guest.displayName,
-                      shareAmountCents: guest.share?.shareAmountCents,
-                      claimToken: guest.claimToken,
-                    })
-                  }
-                >
-                  <QrCode className="h-3.5 w-3.5" />
-                  Convidar
-                </Button>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.4 }}
-        className="mt-6 space-y-3"
-      >
-        {hasContent && (
-          <Button
-            onClick={handleFinalize}
-            disabled={finalizing}
-            className="w-full gap-2"
-          >
-            {finalizing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Check className="h-4 w-4" />
-            )}
-            Finalizar despesa
-          </Button>
-        )}
-        <Link href={`/app/bill/new?draft=${expense.id}`}>
-          <Button variant="outline" className="w-full gap-2">
-            <Pencil className="h-4 w-4" />
-            Editar rascunho
-          </Button>
-        </Link>
-      </motion.div>
-
-      <GuestClaimShareModal
-        open={guestShareModal.open}
-        onClose={() => setGuestShareModal({ ...guestShareModal, open: false })}
-        guestName={guestShareModal.guestName}
-        shareAmountCents={guestShareModal.shareAmountCents}
-        claimToken={guestShareModal.claimToken}
-        expenseTitle={expense.title}
-      />
-    </div>
-  );
 }
 
 export default function BillDetailPage({
@@ -375,7 +162,6 @@ export default function BillDetailPage({
     const data = await loadExpense(expenseId);
     if (data) {
       setExpenseData(data);
-      // Also update the store so draft editing works
       useBillStore.setState({
         expense: {
           id: data.id,
@@ -458,7 +244,6 @@ export default function BillDetailPage({
     return () => { cancelled = true; };
   }, [expenseData?.groupId, currentUser?.id]);
 
-  // Realtime: subscribe to expense status changes
   const onExpenseUpdate = useCallback(
     (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => {
       setExpenseData((prev) => {
@@ -470,7 +255,6 @@ export default function BillDetailPage({
           ? { ...state.expense, status: updated.status, updatedAt: updated.updatedAt }
           : null,
       }));
-      // If activated, reload to get full data
       if (updated.status === "active") {
         loadExpenseData(updated.id);
       }
@@ -482,7 +266,6 @@ export default function BillDetailPage({
 
   const expense = expenseData;
 
-  // Unique participants from shares + payers
   const allParticipants = useMemo(() => {
     if (!expense) return [];
     const map = new Map<string, UserProfile>();
@@ -533,7 +316,6 @@ export default function BillDetailPage({
     [expense],
   );
 
-  // Auto-close the guest share modal when the open guest's token is claimed
   const prevUnclaimedTokensRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -911,7 +693,7 @@ export default function BillDetailPage({
                       )}
                       {isClaimed && (
                         <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <UserCheck className="h-3 w-3" />
+                          <Check className="h-3 w-3" />
                           Confirmado
                         </div>
                       )}
@@ -1319,217 +1101,6 @@ export default function BillDetailPage({
         claimToken={guestShareModal.claimToken}
         expenseTitle={expense.title}
       />
-    </div>
-  );
-}
-
-/** Shows per-person share breakdown for the "Divisão" tab. */
-function ExpenseSharesSummary({
-  expense,
-  allParticipants,
-}: {
-  expense: ExpenseWithDetails;
-  allParticipants: UserProfile[];
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border bg-card p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <Receipt className="h-4 w-4 text-primary" />
-          Por pessoa
-        </div>
-        <div className="mt-3 space-y-3">
-          {expense.shares.map((share, idx) => {
-            const payer = expense.payers.find((p) => p.userId === share.userId);
-            const net = (payer?.amountCents ?? 0) - share.shareAmountCents;
-
-            return (
-              <motion.div
-                key={share.userId}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="rounded-xl bg-muted/50 p-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <UserAvatar name={share.user.name} avatarUrl={share.user.avatarUrl} size="xs" />
-                    <span className="font-medium text-sm">
-                      {share.user.name.split(" ")[0]}
-                    </span>
-                  </div>
-                  <span className="text-lg font-bold tabular-nums">
-                    {formatBRL(share.shareAmountCents)}
-                  </span>
-                </div>
-                <div className="mt-1 flex gap-3 text-[11px] text-muted-foreground">
-                  <span>Consumo: {formatBRL(share.shareAmountCents)}</span>
-                  {payer && (
-                    <span>Pagou: {formatBRL(payer.amountCents)}</span>
-                  )}
-                  {Math.abs(net) > 1 && (
-                    <span className={net > 0 ? "text-success" : "text-destructive"}>
-                      {net > 0 ? "+" : ""}{formatBRL(Math.abs(net))} {net > 0 ? "a receber" : "a pagar"}
-                    </span>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      </div>
-
-      {expense.payers.length > 0 && (
-        <PayerSummaryCard
-          payers={expense.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))}
-          participants={allParticipants}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Simplified charge explanation for expense model. */
-function ExpenseChargeExplanation({
-  expense,
-  allParticipants,
-  debts,
-  currentUserId,
-}: {
-  expense: ExpenseWithDetails;
-  allParticipants: UserProfile[];
-  debts: DebtEdge[];
-  currentUserId?: string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="rounded-2xl border bg-card overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-muted/30"
-      >
-        <div className="flex items-center gap-2">
-          <Calculator className="h-4 w-4 text-primary" />
-          <span className="text-sm font-semibold">De onde veio esse valor</span>
-        </div>
-        {expanded ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-        )}
-      </button>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t px-4 pb-4 pt-3 space-y-5">
-              {debts.length > 0 && allParticipants.length >= 2 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">
-                    Quem paga quem
-                  </p>
-                  <DebtGraph participants={allParticipants} edges={debts} />
-                </div>
-              )}
-
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">
-                  Quanto cada um consumiu
-                </p>
-                <div className="space-y-1.5">
-                  {expense.shares.map((share) => {
-                    const payer = expense.payers.find((p) => p.userId === share.userId);
-                    const isMe = share.userId === currentUserId;
-                    return (
-                      <div
-                        key={share.userId}
-                        className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-                          isMe ? "bg-primary/5" : "bg-muted/30"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <UserAvatar name={share.user.name} avatarUrl={share.user.avatarUrl} size="xs" />
-                          <span className={isMe ? "font-medium" : ""}>
-                            {share.user.name.split(" ")[0]}
-                            {isMe && " (você)"}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="tabular-nums font-medium">
-                            {formatBRL(share.shareAmountCents)}
-                          </span>
-                          {payer && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              pagou {formatBRL(payer.amountCents)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-2">
-                  Saldo líquido
-                </p>
-                <div className="space-y-1">
-                  {expense.shares.map((share) => {
-                    const payer = expense.payers.find((p) => p.userId === share.userId);
-                    const net = (payer?.amountCents ?? 0) - share.shareAmountCents;
-                    if (Math.abs(net) < 2) return null;
-                    return (
-                      <div
-                        key={share.userId}
-                        className="flex items-center justify-between text-sm px-3 py-1"
-                      >
-                        <span className="text-muted-foreground">
-                          {share.user.name.split(" ")[0]}
-                        </span>
-                        <span
-                          className={`font-medium tabular-nums ${
-                            net > 0 ? "text-success" : "text-destructive"
-                          }`}
-                        >
-                          {net > 0 ? "+" : ""}
-                          {formatBRL(Math.abs(net))}
-                          <span className="ml-1 text-xs font-normal text-muted-foreground">
-                            {net > 0 ? "a receber" : "a pagar"}
-                          </span>
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="rounded-lg bg-muted/30 p-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total da conta</span>
-                  <span className="font-bold tabular-nums">{formatBRL(expense.totalAmount)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                  <span>Quem pagou</span>
-                  <span>
-                    {expense.payers.map((py) => {
-                      const name = py.user.name.split(" ")[0];
-                      return `${name} (${formatBRL(py.amountCents)})`;
-                    }).join(", ")}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
