@@ -470,7 +470,7 @@ function FixedAmountRow({
           </button>
         )}
         {remainderToComplete > 0 &&
-          remainderToComplete <= sliderMax &&
+          remainderToComplete < sliderMax &&
           remainderToComplete !== equalShare && (
             <button
               type="button"
