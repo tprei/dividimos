@@ -377,9 +377,6 @@ function FixedAmountRow({
   const snapStep = getSnapStep(range);
   const extras: number[] = [];
   if (equalShare > 0) extras.push(equalShare);
-  if (remainderToComplete > 0 && remainderToComplete < sliderMax) {
-    extras.push(remainderToComplete);
-  }
   const snapPoints = getSnapPoints(sliderMin, sliderMax, extras);
   const snapRadius = getSnapRadius(snapStep, sliderStep);
 
