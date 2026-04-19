@@ -44,6 +44,19 @@ vi.mock("@/components/profile/profile-share-modal", () => ({
 
 vi.mock("react-hot-toast", () => ({ default: { success: vi.fn() } }));
 
+const updatePixKeyMock = vi.fn<(formData: FormData) => Promise<{ success: true; hint: string }>>(
+  async () => ({ success: true, hint: "" }),
+);
+vi.mock("./actions", () => ({
+  updatePixKey: (formData: FormData) => updatePixKeyMock(formData),
+}));
+
+const reloadMock = vi.fn();
+Object.defineProperty(window, "location", {
+  configurable: true,
+  value: { ...window.location, reload: reloadMock, href: "" },
+});
+
 import ProfilePage from "./page";
 
 describe("ProfilePage QR share button", () => {
@@ -75,5 +88,49 @@ describe("ProfilePage QR share button", () => {
 
     await user.click(screen.getByText("close"));
     expect(screen.queryByTestId("share-modal")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProfilePage phone Pix key editing", () => {
+  it("offers phone as a Pix key option", async () => {
+    const user = userEvent.setup();
+    render(<ProfilePage />);
+
+    await user.click(screen.getByText("E-mail"));
+
+    expect(
+      screen.getByRole("button", { name: "Telefone" }),
+    ).toBeInTheDocument();
+  });
+
+  it("formats digits as a Brazilian phone mask when phone is selected", async () => {
+    const user = userEvent.setup();
+    render(<ProfilePage />);
+
+    await user.click(screen.getByText("E-mail"));
+    await user.click(screen.getByRole("button", { name: "Telefone" }));
+
+    await user.type(screen.getByPlaceholderText("(11) 99999-9999"), "11999998888");
+
+    expect(await screen.findByDisplayValue("(11) 99999-8888")).toBeInTheDocument();
+  });
+
+  it("submits the phone Pix key with a +55 prefix and stripped formatting", async () => {
+    updatePixKeyMock.mockClear();
+    const user = userEvent.setup();
+    render(<ProfilePage />);
+
+    await user.click(screen.getByText("E-mail"));
+    await user.click(screen.getByRole("button", { name: "Telefone" }));
+
+    const input = screen.getByPlaceholderText("(11) 99999-9999");
+    await user.type(input, "11999998888");
+
+    await user.click(screen.getByRole("button", { name: /salvar/i }));
+
+    expect(updatePixKeyMock).toHaveBeenCalledTimes(1);
+    const formData = updatePixKeyMock.mock.calls[0][0];
+    expect(formData.get("pixKeyType")).toBe("phone");
+    expect(formData.get("pixKey")).toBe("+5511999998888");
   });
 });
