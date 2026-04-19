@@ -1,24 +1,9 @@
 import { createClient } from "@/lib/supabase/client";
 import type { Balance, Settlement, UserProfile } from "@/types";
+import type { Database } from "@/types/database";
 
-type SettlementRow = {
-  id: string;
-  group_id: string;
-  from_user_id: string;
-  to_user_id: string;
-  amount_cents: number;
-  status: "pending" | "confirmed";
-  created_at: string;
-  confirmed_at: string | null;
-};
-
-type BalanceRow = {
-  group_id: string;
-  user_a: string;
-  user_b: string;
-  amount_cents: number;
-  updated_at: string;
-};
+type BalanceRow = Database["public"]["Tables"]["balances"]["Row"];
+type SettlementRow = Database["public"]["Tables"]["settlements"]["Row"];
 
 function mapBalanceRow(row: BalanceRow): Balance {
   return {
@@ -64,7 +49,7 @@ export async function queryBalances(groupId: string): Promise<Balance[]> {
     throw new Error(`Failed to query balances: ${error.message}`);
   }
 
-  return (data as BalanceRow[] ?? []).map(mapBalanceRow);
+  return (data ?? []).map(mapBalanceRow);
 }
 
 /**
@@ -97,7 +82,7 @@ export async function queryBalanceBetween(
 
   if (!data) return null;
 
-  return mapBalanceRow(data as BalanceRow);
+  return mapBalanceRow(data);
 }
 
 // ============================================================
@@ -137,7 +122,7 @@ export async function recordSettlement(
   }
 
   return {
-    id: data as string,
+    id: data,
     groupId,
     fromUserId,
     toUserId,
@@ -170,7 +155,7 @@ export async function querySettlements(
     throw new Error(`Failed to query settlements: ${error.message}`);
   }
 
-  return (data as SettlementRow[] ?? []).map(mapSettlementRow);
+  return (data ?? []).map(mapSettlementRow);
 }
 
 /**
@@ -198,7 +183,7 @@ export async function querySettlementHistoryForBalance(
     throw new Error(`Failed to query settlement history: ${error.message}`);
   }
 
-  return (data as SettlementRow[] ?? []).map(mapSettlementRow);
+  return (data ?? []).map(mapSettlementRow);
 }
 
 
@@ -355,16 +340,13 @@ export async function querySettlementsWithUsers(
     );
   }
 
-  const settlements = (settlementsResult.data as SettlementRow[] ?? []).map(
-    mapSettlementRow,
-  );
+  const settlements = (settlementsResult.data ?? []).map(mapSettlementRow);
 
   if (settlements.length === 0) return [];
 
   // Build profile lookup
-  type ProfileRow = { id: string; handle: string; name: string; avatar_url: string | null };
   const profiles = new Map<string, UserProfile>();
-  for (const p of (profilesResult.data ?? []) as ProfileRow[]) {
+  for (const p of profilesResult.data ?? []) {
     profiles.set(p.id, {
       id: p.id,
       handle: p.handle,
