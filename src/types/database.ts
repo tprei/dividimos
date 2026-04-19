@@ -16,7 +16,7 @@ export interface Database {
           handle: string | null;
           name: string;
           pix_key_encrypted: string;
-          pix_key_type: "cpf" | "email" | "random";
+          pix_key_type: "cpf" | "email" | "phone" | "random";
           pix_key_hint: string;
           avatar_url: string | null;
           onboarded: boolean;
@@ -29,7 +29,7 @@ export interface Database {
           handle?: string | null;
           name: string;
           pix_key_encrypted: string;
-          pix_key_type?: "cpf" | "email" | "random";
+          pix_key_type?: "cpf" | "email" | "phone" | "random";
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
@@ -42,7 +42,7 @@ export interface Database {
           handle?: string | null;
           name?: string;
           pix_key_encrypted?: string;
-          pix_key_type?: "cpf" | "email" | "random";
+          pix_key_type?: "cpf" | "email" | "phone" | "random";
           pix_key_hint?: string;
           avatar_url?: string | null;
           onboarded?: boolean;
@@ -867,7 +867,7 @@ export interface Database {
       };
     };
     Enums: {
-      pix_key_type: "cpf" | "email" | "random";
+      pix_key_type: "cpf" | "email" | "phone" | "random";
       bill_status: "draft" | "active" | "partially_settled" | "settled";
       bill_participant_status: "invited" | "accepted" | "declined";
       split_type: "equal" | "percentage" | "fixed";
