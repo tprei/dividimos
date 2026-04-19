@@ -8,6 +8,12 @@ import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { haptics } from "@/hooks/use-haptics";
 import { formatBRL } from "@/lib/currency";
+import {
+  getSliderStep,
+  getSnapPoints,
+  getSnapRadius,
+  getSnapStep,
+} from "@/lib/slider-snap";
 import type { SplitType, UserProfile } from "@/types";
 
 interface GuestEntry {
@@ -96,14 +102,6 @@ export function SingleAmountStep({
     const next = new Map(fixedAmounts);
     next.set(userId, cents);
     setFixedAmounts(next);
-  };
-
-  const applyFixed = () => {
-    const assignments = allPersons.map((p) => ({
-      userId: p.id,
-      amountCents: fixedAmounts.get(p.id) || 0,
-    }));
-    onSplitByFixed(assignments);
   };
 
   const percentTotal = Array.from(percentages.values()).reduce(
@@ -303,57 +301,20 @@ export function SingleAmountStep({
                 const othersTotal = Array.from(fixedAmounts.entries())
                   .filter(([id]) => id !== person.id)
                   .reduce((s, [, v]) => s + v, 0);
-                const userRemaining = totalCents - othersTotal;
-                const showFillRemaining = userCents === 0 && othersTotal > 0 && userRemaining > 0;
+                const remainderToComplete = Math.max(0, totalCents - othersTotal);
+                const equalShare = Math.round(totalCents / allPersons.length);
 
                 return (
-                  <div key={person.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isGuest ? "bg-muted text-muted-foreground border border-dashed border-muted-foreground/40" : "bg-primary/10 text-primary"}`}>
-                      {person.name.charAt(0)}
-                    </span>
-                    <span className="flex-1 text-sm font-medium">
-                      {person.name.split(" ")[0]}
-                      {isGuest && (
-                        <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">Convidado</span>
-                      )}
-                    </span>
-                    {showFillRemaining ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs gap-1 text-primary border-primary/30"
-                        onClick={() => {
-                          handleFixedChange(person.id, userRemaining);
-                          setTimeout(applyFixed, 0);
-                        }}
-                      >
-                        Restante ({formatBRL(userRemaining)})
-                      </Button>
-                    ) : (
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex items-center gap-1 w-28">
-                          <span className="text-sm text-muted-foreground">R$</span>
-                          <CurrencyInput
-                            valueCents={userCents}
-                            onChangeCents={(cents) => {
-                              handleFixedChange(person.id, cents);
-                              setTimeout(applyFixed, 0);
-                            }}
-                            maxCents={totalCents}
-                            className="h-8 w-full text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                          />
-                        </div>
-                        <AmountQuickAdd
-                          increments={[1, 5, 10, 50]}
-                          valueCents={userCents}
-                          onChangeCents={(cents) => {
-                            handleFixedChange(person.id, cents);
-                            setTimeout(applyFixed, 0);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
+                  <FixedAmountRow
+                    key={person.id}
+                    name={person.name}
+                    isGuest={isGuest}
+                    userCents={userCents}
+                    totalCents={totalCents}
+                    equalShare={equalShare}
+                    remainderToComplete={remainderToComplete}
+                    onChange={(cents) => handleFixedChange(person.id, cents)}
+                  />
                 );
               })}
               <Button
@@ -385,6 +346,146 @@ export function SingleAmountStep({
           )}
         </motion.div>
       )}
+    </div>
+  );
+}
+
+interface FixedAmountRowProps {
+  name: string;
+  isGuest: boolean;
+  userCents: number;
+  totalCents: number;
+  equalShare: number;
+  remainderToComplete: number;
+  onChange: (cents: number) => void;
+}
+
+function FixedAmountRow({
+  name,
+  isGuest,
+  userCents,
+  totalCents,
+  equalShare,
+  remainderToComplete,
+  onChange,
+}: FixedAmountRowProps) {
+  const lastSnapRef = useRef<number | null>(null);
+  const sliderMax = totalCents;
+  const sliderMin = 0;
+  const range = sliderMax - sliderMin;
+  const sliderStep = getSliderStep(range);
+  const snapStep = getSnapStep(range);
+  const extras: number[] = [];
+  if (equalShare > 0) extras.push(equalShare);
+  if (remainderToComplete > 0 && remainderToComplete < sliderMax) {
+    extras.push(remainderToComplete);
+  }
+  const snapPoints = getSnapPoints(sliderMin, sliderMax, extras);
+  const snapRadius = getSnapRadius(snapStep, sliderStep);
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = parseInt(e.target.value);
+
+    let snapped = raw;
+    for (const sp of snapPoints) {
+      if (Math.abs(raw - sp) <= snapRadius) {
+        snapped = sp;
+        break;
+      }
+    }
+
+    const nearestSnap = snapPoints.reduce<number | null>(
+      (best, sp) =>
+        best === null || Math.abs(raw - sp) < Math.abs(raw - best) ? sp : best,
+      null,
+    );
+    if (nearestSnap !== null && nearestSnap !== lastSnapRef.current) {
+      lastSnapRef.current = nearestSnap;
+      haptics.selectionChanged();
+    }
+
+    onChange(snapped);
+  };
+
+  return (
+    <div className="rounded-xl border bg-card p-3">
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+            isGuest
+              ? "bg-muted text-muted-foreground border border-dashed border-muted-foreground/40"
+              : "bg-primary/10 text-primary"
+          }`}
+        >
+          {name.charAt(0)}
+        </span>
+        <span className="flex-1 text-sm font-medium">
+          {name.split(" ")[0]}
+          {isGuest && (
+            <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
+              Convidado
+            </span>
+          )}
+        </span>
+        <span className="text-sm font-bold tabular-nums text-primary">
+          {formatBRL(userCents)}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={sliderMin}
+        max={sliderMax}
+        step={sliderStep}
+        value={Math.min(userCents, sliderMax)}
+        onChange={handleSliderChange}
+        className="mt-3 w-full"
+        aria-label={`Valor de ${name.split(" ")[0]}`}
+      />
+      {snapPoints.length > 0 && (
+        <div className="relative mx-[11px] h-2">
+          {snapPoints.map((v) => (
+            <div
+              key={v}
+              className="absolute top-0 w-0.5 h-1.5 rounded-full bg-muted-foreground/30"
+              style={{
+                left: `${((v - sliderMin) / (sliderMax - sliderMin)) * 100}%`,
+              }}
+            />
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap justify-end gap-2">
+        {equalShare > 0 && (
+          <button
+            type="button"
+            onClick={() => onChange(equalShare)}
+            disabled={userCents === equalShare}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+              userCents === equalShare
+                ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
+            } disabled:opacity-50`}
+          >
+            Igual: {formatBRL(equalShare)}
+          </button>
+        )}
+        {remainderToComplete > 0 &&
+          remainderToComplete < sliderMax &&
+          remainderToComplete !== equalShare && (
+            <button
+              type="button"
+              onClick={() => onChange(remainderToComplete)}
+              disabled={userCents === remainderToComplete}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                userCents === remainderToComplete
+                  ? "bg-primary/15 text-primary ring-1 ring-primary/30"
+                  : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
+              } disabled:opacity-50`}
+            >
+              Restante: {formatBRL(remainderToComplete)}
+            </button>
+          )}
+      </div>
     </div>
   );
 }
