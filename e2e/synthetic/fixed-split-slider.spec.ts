@@ -47,17 +47,20 @@ test.describe("Fixed-amount split slider", () => {
 
     // Initial state: nothing allocated → total mismatch warning shown
     await expect(
-      page.getByText(/Total: R\$ 0,00 \(deve ser R\$ 150,00\)/i),
+      page.getByText(/Total: R\$\s0,00 \(deve ser R\$\s150,00\)/i),
     ).toBeVisible();
 
-    // Set Alice and Bob via "Igual" pill (R$ 50 each), leaving Carol interactable
+    // Set Alice and Bob via their row-scoped "Igual" pills (R$ 50 each)
+    // Scope by row to avoid accidentally clicking a disabled button after the first click
     await page
-      .getByRole("button", { name: /^Igual: R\$ 50,00$/ })
-      .nth(0)
+      .locator(".rounded-xl")
+      .filter({ hasText: /Alice/i })
+      .getByRole("button", { name: /Igual/i })
       .click();
     await page
-      .getByRole("button", { name: /^Igual: R\$ 50,00$/ })
-      .nth(0)
+      .locator(".rounded-xl")
+      .filter({ hasText: /Bob/i })
+      .getByRole("button", { name: /Igual/i })
       .click();
 
     // All three sliders must remain rendered after two allocations —
@@ -65,14 +68,18 @@ test.describe("Fixed-amount split slider", () => {
     await expect(sliders).toHaveCount(3);
     await expect(page.getByRole("slider", { name: /Carol/i })).toBeVisible();
 
-    // Carol completes the bill via her own "Restante" pill
+    // Carol completes the bill via her own "Igual" pill.
+    // "Restante" is hidden when remainderToComplete === equalShare (both R$ 50),
+    // so we click "Igual" instead — same amount, same end state.
     await page
-      .getByRole("button", { name: /^Restante: R\$ 50,00$/ })
+      .locator(".rounded-xl")
+      .filter({ hasText: /Carol/i })
+      .getByRole("button", { name: /Igual/i })
       .click();
 
     // Mismatch warning must be gone
     await expect(
-      page.getByText(/deve ser R\$ 150,00/i),
+      page.getByText(/deve ser R\$\s150,00/i),
     ).not.toBeVisible();
 
     // Continue through payer → summary → activate
