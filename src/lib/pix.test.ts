@@ -78,6 +78,24 @@ describe("generatePixCopiaECola", () => {
 });
 
 describe("validatePixKey", () => {
+  describe("phone keys", () => {
+    it("accepts +55 with 11 digits", () => {
+      expect(validatePixKey("+5511999998888", "phone")).toBe(true);
+    });
+
+    it("accepts +55 with 10 digits", () => {
+      expect(validatePixKey("+551199998888", "phone")).toBe(true);
+    });
+
+    it("rejects phone without +55 prefix", () => {
+      expect(validatePixKey("11999998888", "phone")).toBe(false);
+    });
+
+    it("rejects phone too short after +55", () => {
+      expect(validatePixKey("+5511", "phone")).toBe(false);
+    });
+  });
+
   describe("CPF keys", () => {
     it("accepts exactly 11 digits", () => {
       expect(validatePixKey("12345678901", "cpf")).toBe(true);
@@ -126,6 +144,10 @@ describe("validatePixKey", () => {
 });
 
 describe("maskPixKey", () => {
+  it("masks phone key", () => {
+    expect(maskPixKey("+5511999998888")).toBe("(**) *****-8888");
+  });
+
   it("masks 11-digit CPF correctly", () => {
     expect(maskPixKey("12345678901")).toBe("***.***.*89*-01");
   });
