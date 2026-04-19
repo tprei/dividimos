@@ -98,14 +98,6 @@ export function SingleAmountStep({
     setFixedAmounts(next);
   };
 
-  const applyFixed = () => {
-    const assignments = allPersons.map((p) => ({
-      userId: p.id,
-      amountCents: fixedAmounts.get(p.id) || 0,
-    }));
-    onSplitByFixed(assignments);
-  };
-
   const percentTotal = Array.from(percentages.values()).reduce(
     (s, v) => s + (parseFloat(v.replace(",", ".")) || 0),
     0,
@@ -324,7 +316,6 @@ export function SingleAmountStep({
                         className="h-8 text-xs gap-1 text-primary border-primary/30"
                         onClick={() => {
                           handleFixedChange(person.id, userRemaining);
-                          setTimeout(applyFixed, 0);
                         }}
                       >
                         Restante ({formatBRL(userRemaining)})
@@ -337,7 +328,6 @@ export function SingleAmountStep({
                             valueCents={userCents}
                             onChangeCents={(cents) => {
                               handleFixedChange(person.id, cents);
-                              setTimeout(applyFixed, 0);
                             }}
                             maxCents={totalCents}
                             className="h-8 w-full text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -348,7 +338,6 @@ export function SingleAmountStep({
                           valueCents={userCents}
                           onChangeCents={(cents) => {
                             handleFixedChange(person.id, cents);
-                            setTimeout(applyFixed, 0);
                           }}
                         />
                       </div>
