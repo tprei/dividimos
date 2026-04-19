@@ -34,14 +34,22 @@ import type { PixKeyType } from "@/types";
 const pixKeyTypeLabels: Record<string, string> = {
   cpf: "CPF",
   email: "E-mail",
+  phone: "Telefone",
   random: "Chave aleatória",
 };
 
 const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
   { type: "email", label: "E-mail" },
+  { type: "phone", label: "Telefone" },
   { type: "cpf", label: "CPF" },
   { type: "random", label: "Chave aleatória" },
 ];
+
+function formatPhoneInput(digits: string): string {
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
 
 function formatCPF(digits: string): string {
   if (digits.length <= 3) return digits;
@@ -52,6 +60,7 @@ function formatCPF(digits: string): string {
 }
 
 function toPixKeyValue(type: PixKeyType, display: string): string {
+  if (type === "phone") return `+55${display.replace(/\D/g, "")}`;
   if (type === "cpf") return display.replace(/\D/g, "");
   return display;
 }
@@ -96,7 +105,9 @@ export default function ProfilePage() {
   };
 
   const handlePixInput = (value: string) => {
-    if (pixType === "cpf") {
+    if (pixType === "phone") {
+      setPixInput(formatPhoneInput(value.replace(/\D/g, "").slice(0, 11)));
+    } else if (pixType === "cpf") {
       setPixInput(formatCPF(value.replace(/\D/g, "").slice(0, 11)));
     } else if (pixType === "random") {
       setPixInput(value.replace(/[^0-9a-fA-F-]/g, "").slice(0, 36).toLowerCase());
@@ -131,6 +142,7 @@ export default function ProfilePage() {
 
   const getPlaceholder = () => {
     switch (pixType) {
+      case "phone": return "(11) 99999-9999";
       case "cpf": return "000.000.000-00";
       case "random": return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
       default: return "seu@email.com";
@@ -244,7 +256,7 @@ export default function ProfilePage() {
                     placeholder={getPlaceholder()}
                     value={pixInput}
                     onChange={(e) => handlePixInput(e.target.value)}
-                    inputMode={pixType === "cpf" ? "numeric" : "text"}
+                    inputMode={pixType === "phone" || pixType === "cpf" ? "numeric" : "text"}
                     autoFocus
                   />
                   <Button
