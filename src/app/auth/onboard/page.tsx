@@ -42,7 +42,17 @@ function formatCPF(digits: string): string {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 }
 
+function formatPhoneInput(digits: string): string {
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
 function toPixKeyValue(type: PixKeyType, displayValue: string): string {
+  if (type === "phone") {
+    const digits = displayValue.replace(/\D/g, "");
+    return `+55${digits}`;
+  }
   if (type === "cpf") {
     return displayValue.replace(/\D/g, "");
   }
@@ -51,6 +61,7 @@ function toPixKeyValue(type: PixKeyType, displayValue: string): string {
 
 const PIX_KEY_OPTIONS: { type: PixKeyType; label: string }[] = [
   { type: "email", label: "E-mail" },
+  { type: "phone", label: "Telefone" },
   { type: "cpf", label: "CPF" },
   { type: "random", label: "Chave aleatória" },
 ];
@@ -130,6 +141,12 @@ function OnboardPageContent() {
     setPixError("");
   };
 
+  const handlePhonePixInput = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 11);
+    setCustomPixInput(formatPhoneInput(digits));
+    setPixError("");
+  };
+
   const handleRandomInput = (value: string) => {
     const cleaned = value.replace(/[^0-9a-fA-F-]/g, "").slice(0, 36).toLowerCase();
     setCustomPixInput(cleaned);
@@ -143,6 +160,7 @@ function OnboardPageContent() {
 
   const getInputHandler = () => {
     switch (pixKeyType) {
+      case "phone": return handlePhonePixInput;
       case "cpf": return handleCPFInput;
       case "random": return handleRandomInput;
       default: return handleEmailInput;
@@ -151,6 +169,7 @@ function OnboardPageContent() {
 
   const getInputPlaceholder = () => {
     switch (pixKeyType) {
+      case "phone": return "(11) 99999-9999";
       case "cpf": return "000.000.000-00";
       case "random": return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
       default: return "seu@email.com";
@@ -348,7 +367,7 @@ function OnboardPageContent() {
                       autoCorrect="off"
                       spellCheck={false}
                       inputMode={
-                        pixKeyType === "cpf"
+                        pixKeyType === "phone" || pixKeyType === "cpf"
                           ? "numeric"
                           : "text"
                       }
