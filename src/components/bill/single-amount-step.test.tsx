@@ -132,4 +132,27 @@ describe("SingleAmountStep fixed split", () => {
     expect(aliceSlider).toHaveValue("5000");
     expect(haptics.selectionChanged).toHaveBeenCalled();
   });
+
+  it("a slider's tick marks do not shift when another participant's amount changes", () => {
+    renderFixed(15000);
+
+    const bobSlider = screen.getByRole("slider", { name: /Bob/i });
+    const bobRow = bobSlider.closest(".rounded-xl") as HTMLElement;
+    const readBobTicks = () =>
+      Array.from(
+        bobRow.querySelectorAll<HTMLElement>("div.absolute.top-0"),
+      ).map((el) => el.style.left);
+
+    const before = readBobTicks();
+    expect(before.length).toBeGreaterThan(0);
+
+    // Drag Alice's slider across several positions that would, under the old
+    // behaviour, each inject a different `remainderToComplete` tick into Bob's row.
+    for (const v of ["3000", "6000", "9000", "12000"]) {
+      fireEvent.change(screen.getByRole("slider", { name: /Alice/i }), {
+        target: { value: v },
+      });
+      expect(readBobTicks()).toEqual(before);
+    }
+  });
 });
