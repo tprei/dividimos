@@ -1,0 +1,62 @@
+name: RLS Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+
+jobs:
+  rls-audit:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ANTHROPIC_API_KEY != '' || secrets.ANTHROPIC_API_KEY != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: supabase/setup-cli@v1
+
+      - name: Start Supabase
+        run: |
+          for attempt in 1 2 3; do
+            if supabase start -x vector,imgproxy,logflare,edge-runtime; then
+              break
+            fi
+            echo "supabase start failed (attempt $attempt/3), retrying..."
+            supabase stop --no-backup 2>/dev/null || true
+            if [ "$attempt" -eq 3 ]; then
+              echo "supabase start failed after 3 attempts" && exit 1
+            fi
+          done
+
+      - name: Extract migration diff (PRs only)
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD -- supabase/migrations/ > /tmp/migration-diff.sql || true
+          if [ -s /tmp/migration-diff.sql ]; then
+            echo "DIFF_FLAG=--diff /tmp/migration-diff.sql" >> $GITHUB_ENV
+          fi
+
+      - name: Run RLS audit
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' }}
+          SUPABASE_DB_URL: postgresql://postgres:postgres@localhost:54322/postgres
+        run: |
+          node scripts/rls-audit.mjs ${{ env.DIFF_FLAG }} | tee /tmp/rls-audit-report.md
+
+      - name: Post audit report as PR comment
+        if: github.event_name == 'pull_request' && always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: rls-audit
+          path: /tmp/rls-audit-report.md
