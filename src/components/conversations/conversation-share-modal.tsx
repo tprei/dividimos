@@ -88,14 +88,26 @@ export function ConversationShareModal({
 
   const handlePickContacts = useCallback(async () => {
     setPicking(true);
-    const picked = await pickContacts();
+    const result = await pickContacts();
     setPicking(false);
 
-    if (!picked || picked.length === 0) return;
+    if (result.status === "cancelled") return;
+    if (result.status === "unsupported") {
+      toast.error("Seu dispositivo não suporta escolher contatos do celular.");
+      return;
+    }
+    if (result.status === "error") {
+      toast.error("Não foi possível abrir os contatos. Tente novamente.");
+      return;
+    }
+    if (result.contacts.length === 0) {
+      toast.error("Nenhum contato com telefone selecionado.");
+      return;
+    }
 
     setContacts((prev) => {
       const existingPhones = new Set(prev.map((c) => c.phone));
-      const newContacts = picked
+      const newContacts = result.contacts
         .filter((c) => !existingPhones.has(c.phone))
         .map((c) => ({ ...c, sent: false }));
       return [...prev, ...newContacts];
