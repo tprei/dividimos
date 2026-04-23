@@ -14,6 +14,11 @@
 
 import { Capacitor } from "@capacitor/core";
 
+import {
+  isNativeContactsAvailable,
+  pickNativeContact,
+} from "./capacitor/contacts";
+
 interface ContactInfo {
   name: string[];
   tel: string[];
@@ -27,14 +32,16 @@ export type PickContactsResult =
   | { status: "ok"; contacts: { name: string; phone: string }[] }
   | { status: "cancelled" }
   | { status: "unsupported" }
+  | { status: "permission_denied" }
   | { status: "error"; error: Error };
 
 /** Whether the browser supports the Contact Picker API. */
 export function isContactPickerSupported(): boolean {
   if (typeof navigator === "undefined" || typeof window === "undefined") return false;
-  // Capacitor WebViews expose `navigator.contacts` via Cordova shims but
-  // the Web Contact Picker API is not implemented there. Force-disable to
-  // avoid silent no-ops inside the native apps.
+  // Android native: backed by @capacitor-community/contacts via plugin.
+  if (isNativeContactsAvailable()) return true;
+  // iOS: upstream plugin does not yet support Capacitor 8 (deployment target
+  // mismatch), so the button stays hidden inside the iOS app.
   if (Capacitor.isNativePlatform()) return false;
   const nav = navigator as NavigatorWithContacts;
   return (
@@ -49,6 +56,20 @@ export function isContactPickerSupported(): boolean {
  * discriminated union so callers can surface meaningful feedback.
  */
 export async function pickContacts(): Promise<PickContactsResult> {
+  if (isNativeContactsAvailable()) {
+    const result = await pickNativeContact();
+    if (result.status === "ok") {
+      if (!result.phone) return { status: "ok", contacts: [] };
+      return {
+        status: "ok",
+        contacts: [
+          { name: result.name, phone: normalizeBrazilianPhone(result.phone) },
+        ],
+      };
+    }
+    return result;
+  }
+
   if (!isContactPickerSupported()) return { status: "unsupported" };
 
   const nav = navigator as NavigatorWithContacts;

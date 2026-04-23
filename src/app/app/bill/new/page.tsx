@@ -199,6 +199,10 @@ function NewBillPageContent() {
       toast.error("Seu dispositivo não suporta escolher contatos do celular.");
       return;
     }
+    if (result.status === "permission_denied") {
+      toast.error("Permissão de contatos negada. Verifique as configurações do app.");
+      return;
+    }
     if (result.status === "error") {
       toast.error("Não foi possível abrir os contatos. Tente novamente.");
       return;
