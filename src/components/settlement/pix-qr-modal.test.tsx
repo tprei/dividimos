@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { useState } from "react";
 
 // Mock framer-motion to render children directly
 vi.mock("framer-motion", () => ({
@@ -196,12 +197,75 @@ describe("PixQrModal", () => {
   });
 
   it("renders visual tick marks for snap points", () => {
-    const { container } = render(
+    render(
       <PixQrModal {...defaultProps} amountCents={50000} pixKey="key@test.com" />,
     );
 
-    // Snap points at multiples of R$ 5 for a R$ 500 range — should have tick marks
-    const ticks = container.querySelectorAll(".bg-muted-foreground\\/30");
+    // Snap points at multiples of R$ 5 for a R$ 500 range — should have tick marks.
+    // Dialog renders via Portal so ticks are outside the render container.
+    const ticks = document.querySelectorAll(".bg-muted-foreground\\/30");
     expect(ticks.length).toBeGreaterThan(0);
+  });
+
+  it("Escape key calls onClose", () => {
+    const onClose = vi.fn();
+    render(<PixQrModal {...defaultProps} onClose={onClose} pixKey="key@test.com" />);
+
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("has role=dialog", () => {
+    render(<PixQrModal {...defaultProps} pixKey="key@test.com" />);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it("focus enters dialog on open", async () => {
+    render(<PixQrModal {...defaultProps} pixKey="key@test.com" />);
+
+    const dialog = screen.getByRole("dialog");
+
+    await waitFor(() => {
+      expect(dialog).toBeInTheDocument();
+    });
+
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  it("focus returns to trigger on close", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Abrir</button>
+          <PixQrModal
+            {...defaultProps}
+            open={open}
+            onClose={() => setOpen(false)}
+            pixKey="key@test.com"
+          />
+        </>
+      );
+    }
+
+    const { getByText } = render(<Harness />);
+    const triggerButton = getByText("Abrir") as HTMLButtonElement;
+    triggerButton.focus();
+    act(() => { triggerButton.click(); });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(document.body, { key: "Escape", code: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    expect(document.activeElement).toBe(triggerButton);
   });
 });
