@@ -175,10 +175,17 @@ export function ConversationPayButton({
         mode,
       );
 
-      for (const s of settlements) {
-        await recordSettlement(s.groupId, s.fromUserId, s.toUserId, s.amountCents);
-        notifySettlementRecorded(s.groupId, s.fromUserId, s.toUserId, s.amountCents).catch(() => {});
-      }
+      await Promise.all(
+        settlements.map(async (s) => {
+          await recordSettlement(s.groupId, s.fromUserId, s.toUserId, s.amountCents);
+          notifySettlementRecorded(
+            s.groupId,
+            s.fromUserId,
+            s.toUserId,
+            s.amountCents,
+          ).catch(() => {});
+        }),
+      );
     } finally {
       setSettling(false);
     }
