@@ -54,7 +54,7 @@ export default async function ConversationsPage() {
         .from("group_members")
         .select("group_id, user_id, status")
         .in("group_id", groupIds),
-      getUnreadCounts(supabase, user.id, groupIds),
+      getUnreadCounts(supabase, groupIds),
     ]);
 
   const profileMap = new Map(

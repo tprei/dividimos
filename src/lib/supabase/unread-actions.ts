@@ -6,11 +6,8 @@ export interface UnreadCount {
   count: number;
 }
 
-// TODO: userId is no longer used in the query (the RPC uses auth.uid() internally).
-// It is kept in the signature for now to avoid touching all callers at once.
 export async function getUnreadCounts(
   supabase: SupabaseClient<Database>,
-  userId: string,
   groupIds: string[],
 ): Promise<Map<string, number>> {
   if (groupIds.length === 0) return new Map();
@@ -31,17 +28,15 @@ export async function getUnreadCounts(
  */
 export async function getTotalUnreadCount(
   supabase: SupabaseClient<Database>,
-  userId: string,
 ): Promise<number> {
   const { data: dmPairs } = await supabase
     .from("dm_pairs")
-    .select("group_id")
-    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+    .select("group_id");
 
   if (!dmPairs || dmPairs.length === 0) return 0;
 
   const groupIds = dmPairs.map((p) => p.group_id);
-  const countMap = await getUnreadCounts(supabase, userId, groupIds);
+  const countMap = await getUnreadCounts(supabase, groupIds);
 
   let total = 0;
   for (const count of countMap.values()) {

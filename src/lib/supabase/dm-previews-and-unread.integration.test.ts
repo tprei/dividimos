@@ -216,6 +216,47 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(error).toBeNull();
         expect(data).toHaveLength(0);
       });
+
+      it("returns no row when caller sent all messages (no self-unread)", async () => {
+        const [alice, bob] = await Promise.all([createTestUser(), createTestUser()]);
+        const groupId = await createDmGroup(alice, bob.id);
+
+        await insertMessage(groupId, alice.id, "msg 1");
+        await insertMessage(groupId, alice.id, "msg 2");
+        await insertMessage(groupId, alice.id, "msg 3");
+
+        const aliceClient = authenticateAs(alice);
+        const { data, error } = await aliceClient.rpc("get_unread_counts", {
+          p_group_ids: [groupId],
+        });
+
+        expect(error).toBeNull();
+        expect(data).toHaveLength(0);
+      });
+    });
+
+    describe("get_dm_previews tie-breaker", () => {
+      it("returns a deterministic row when two messages share the same created_at", async () => {
+        const [alice, bob] = await Promise.all([createTestUser(), createTestUser()]);
+        const groupId = await createDmGroup(alice, bob.id);
+
+        const sharedTs = "2026-05-16T10:00:00.000Z";
+        await insertMessage(groupId, alice.id, "first inserted", sharedTs);
+        await insertMessage(groupId, bob.id, "second inserted", sharedTs);
+
+        const aliceClient = authenticateAs(alice);
+
+        const [{ data: data1 }, { data: data2 }] = await Promise.all([
+          aliceClient.rpc("get_dm_previews", { p_group_ids: [groupId] }),
+          aliceClient.rpc("get_dm_previews", { p_group_ids: [groupId] }),
+        ]);
+
+        expect(data1).toHaveLength(1);
+        expect(data2).toHaveLength(1);
+        expect(
+          (data1 as { content: string }[])[0].content,
+        ).toBe((data2 as { content: string }[])[0].content);
+      });
     });
   },
 );

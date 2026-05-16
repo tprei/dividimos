@@ -31,7 +31,7 @@ AS $$
     created_at
   FROM public.chat_messages
   WHERE group_id = ANY(p_group_ids)
-  ORDER BY group_id, created_at DESC;
+  ORDER BY group_id, created_at DESC, id DESC;
 $$;
 
 -- ============================================================
@@ -57,9 +57,9 @@ AS $$
   FROM public.chat_messages cm
   LEFT JOIN public.conversation_read_receipts crr
     ON crr.group_id = cm.group_id
-   AND crr.user_id  = auth.uid()
+   AND crr.user_id  = (SELECT auth.uid())
   WHERE cm.group_id  = ANY(p_group_ids)
-    AND cm.sender_id != auth.uid()
+    AND cm.sender_id != (SELECT auth.uid())
     AND cm.created_at > COALESCE(crr.last_read_at, '-infinity'::timestamptz)
   GROUP BY cm.group_id
   HAVING COUNT(*) > 0;

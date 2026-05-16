@@ -25,9 +25,7 @@ function mockSupabase(overrides: {
     }
     if (table === "dm_pairs") {
       return {
-        select: () => ({
-          or: () => Promise.resolve({ data: cfg.dmPairs, error: null }),
-        }),
+        select: () => Promise.resolve({ data: cfg.dmPairs, error: null }),
       };
     }
     return {};
@@ -39,13 +37,13 @@ function mockSupabase(overrides: {
 describe("getUnreadCounts", () => {
   it("returns empty map for empty groupIds", async () => {
     const supabase = mockSupabase();
-    const result = await getUnreadCounts(supabase, "user-1", []);
+    const result = await getUnreadCounts(supabase, []);
     expect(result.size).toBe(0);
   });
 
   it("calls get_unread_counts RPC with the provided groupIds", async () => {
     const supabase = mockSupabase({ rpcRows: [] });
-    await getUnreadCounts(supabase, "user-1", ["g1", "g2"]);
+    await getUnreadCounts(supabase, ["g1", "g2"]);
     expect(supabase.rpc).toHaveBeenCalledWith("get_unread_counts", {
       p_group_ids: ["g1", "g2"],
     });
@@ -59,7 +57,7 @@ describe("getUnreadCounts", () => {
       ],
     });
 
-    const result = await getUnreadCounts(supabase, "user-1", ["g1", "g2"]);
+    const result = await getUnreadCounts(supabase, ["g1", "g2"]);
     expect(result.get("g1")).toBe(2);
     expect(result.get("g2")).toBe(1);
   });
@@ -67,7 +65,7 @@ describe("getUnreadCounts", () => {
   it("returns empty map when RPC returns no rows (all read)", async () => {
     const supabase = mockSupabase({ rpcRows: [] });
 
-    const result = await getUnreadCounts(supabase, "user-1", ["g1"]);
+    const result = await getUnreadCounts(supabase, ["g1"]);
     expect(result.has("g1")).toBe(false);
   });
 
@@ -75,7 +73,7 @@ describe("getUnreadCounts", () => {
     const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
     const supabase = { from: vi.fn(), rpc: rpcMock } as unknown as Parameters<typeof getUnreadCounts>[0];
 
-    const result = await getUnreadCounts(supabase, "user-1", ["g1"]);
+    const result = await getUnreadCounts(supabase, ["g1"]);
     expect(result.size).toBe(0);
   });
 });
@@ -83,7 +81,7 @@ describe("getUnreadCounts", () => {
 describe("getTotalUnreadCount", () => {
   it("returns 0 when no DM pairs exist", async () => {
     const supabase = mockSupabase({ dmPairs: [] });
-    const result = await getTotalUnreadCount(supabase, "user-1");
+    const result = await getTotalUnreadCount(supabase);
     expect(result).toBe(0);
   });
 
@@ -96,7 +94,7 @@ describe("getTotalUnreadCount", () => {
       ],
     });
 
-    const result = await getTotalUnreadCount(supabase, "user-1");
+    const result = await getTotalUnreadCount(supabase);
     expect(result).toBe(3);
   });
 });
