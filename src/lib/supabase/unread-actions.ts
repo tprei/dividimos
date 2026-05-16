@@ -6,11 +6,8 @@ export interface UnreadCount {
   count: number;
 }
 
-/**
- * Fetches unread message counts for all DM conversations of a user.
- * Compares chat_messages.created_at against conversation_read_receipts.last_read_at.
- * Groups with no read receipt are treated as fully unread.
- */
+// TODO: userId is no longer used in the query (the RPC uses auth.uid() internally).
+// It is kept in the signature for now to avoid touching all callers at once.
 export async function getUnreadCounts(
   supabase: SupabaseClient<Database>,
   userId: string,
@@ -18,32 +15,14 @@ export async function getUnreadCounts(
 ): Promise<Map<string, number>> {
   if (groupIds.length === 0) return new Map();
 
-  const [{ data: receipts }, { data: messages }] = await Promise.all([
-    supabase
-      .from("conversation_read_receipts")
-      .select("group_id, last_read_at")
-      .eq("user_id", userId)
-      .in("group_id", groupIds),
-    supabase
-      .from("chat_messages")
-      .select("group_id, created_at")
-      .in("group_id", groupIds)
-      .neq("sender_id", userId),
-  ]);
-
-  const receiptMap = new Map<string, string>();
-  for (const r of receipts ?? []) {
-    receiptMap.set(r.group_id, r.last_read_at);
-  }
+  const { data } = await supabase.rpc("get_unread_counts", {
+    p_group_ids: groupIds,
+  });
 
   const countMap = new Map<string, number>();
-  for (const msg of messages ?? []) {
-    const lastRead = receiptMap.get(msg.group_id);
-    if (!lastRead || msg.created_at > lastRead) {
-      countMap.set(msg.group_id, (countMap.get(msg.group_id) ?? 0) + 1);
-    }
+  for (const row of data ?? []) {
+    countMap.set(row.group_id, row.unread_count);
   }
-
   return countMap;
 }
 

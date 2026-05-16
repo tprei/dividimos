@@ -928,9 +928,25 @@ export type Database = {
         Args: { p_charge_id: string }
         Returns: undefined
       }
+      get_dm_previews: {
+        Args: { p_group_ids: string[] }
+        Returns: {
+          group_id: string
+          content: string
+          message_type: string
+          created_at: string
+        }[]
+      }
       get_or_create_dm_group: {
         Args: { p_other_user_id: string }
         Returns: string
+      }
+      get_unread_counts: {
+        Args: { p_group_ids: string[] }
+        Returns: {
+          group_id: string
+          unread_count: number
+        }[]
       }
       has_outstanding_balance: {
         Args: { p_group_id: string; p_user_id: string }
