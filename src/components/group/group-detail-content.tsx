@@ -51,6 +51,7 @@ import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } 
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { useBillStore } from "@/stores/bill-store";
+import { useShallow } from "zustand/react/shallow";
 import type { Database } from "@/types/database";
 
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
@@ -145,7 +146,14 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
   const [memberBalances, setMemberBalances] = useState<Map<string, number>>(
     new Map(Object.entries(initialData.memberBalances))
   );
-  const store = useBillStore();
+  const store = useBillStore(
+    useShallow((s) => ({
+      setCurrentUser: s.setCurrentUser,
+      hydrateFromVoice: s.hydrateFromVoice,
+      addParticipant: s.addParticipant,
+      addGuest: s.addGuest,
+    })),
+  );
 
   // Prefetch bill creation route since it's the primary action on this page
   const billRoutes = useMemo(() => [`/app/bill/new?groupId=${id}`], [id]);

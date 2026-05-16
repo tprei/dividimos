@@ -39,6 +39,7 @@ import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
 import { useBillStore } from "@/stores/bill-store";
+import { useShallow } from "zustand/react/shallow";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
@@ -84,7 +85,40 @@ export default function NewBillPage() {
 function NewBillPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const store = useBillStore();
+  const store = useBillStore(
+    useShallow((s) => ({
+      expense: s.expense,
+      participants: s.participants,
+      guests: s.guests,
+      items: s.items,
+      payers: s.payers,
+      splits: s.splits,
+      billSplits: s.billSplits,
+      totalAmountInput: s.totalAmountInput,
+      setCurrentUser: s.setCurrentUser,
+      createExpense: s.createExpense,
+      createExpenseFromDm: s.createExpenseFromDm,
+      updateExpense: s.updateExpense,
+      addParticipant: s.addParticipant,
+      removeParticipant: s.removeParticipant,
+      addGuest: s.addGuest,
+      removeGuest: s.removeGuest,
+      addItem: s.addItem,
+      removeItem: s.removeItem,
+      hydrateFromVoice: s.hydrateFromVoice,
+      splitItemEqually: s.splitItemEqually,
+      unassignItem: s.unassignItem,
+      splitBillByFixed: s.splitBillByFixed,
+      splitBillByPercentage: s.splitBillByPercentage,
+      splitBillEqually: s.splitBillEqually,
+      splitPaymentEqually: s.splitPaymentEqually,
+      setPayerAmount: s.setPayerAmount,
+      setPayerFull: s.setPayerFull,
+      removePayerEntry: s.removePayerEntry,
+      getGrandTotal: s.getGrandTotal,
+      wouldProduceNoEdges: s.wouldProduceNoEdges,
+    })),
+  );
   const { user: authUser } = useAuth();
 
   const [billType, setBillType] = useState<ExpenseType | null>(null);
