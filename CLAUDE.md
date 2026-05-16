@@ -123,6 +123,8 @@ npm run test:integration
 
 **Writing integration tests**: use `.integration.test.ts` suffix, wrap in `describe.skipIf(!isIntegrationTestReady)` so they are skipped when env vars are absent.
 
+**Migrations with semantic logic must be covered by integration tests.** Any new migration that adds or modifies an RPC, RLS policy, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, RLS denial for outsiders, and the edge cases the SQL specifically guards (locks, validation, accepted-membership checks). The coverage can extend an existing test file or live in a new one; what matters is that an integration test exercises the change. Pure structural migrations (adding an index, renaming a column with no semantic change) are exempt. The migration-replay CI job only proves the SQL applies cleanly; it does not exercise behavior.
+
 ## Key concepts
 
 **Authentication**: Google OAuth via Supabase Auth. No phone or 2FA. On first login, a trigger auto-creates a user profile with handle derived from email. Users complete onboarding by confirming handle and setting their Pix key.
