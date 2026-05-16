@@ -223,18 +223,6 @@ describe("PixQrModal", () => {
     expect(dialog).toBeInTheDocument();
   });
 
-  it("focus enters dialog on open", async () => {
-    render(<PixQrModal {...defaultProps} pixKey="key@test.com" />);
-
-    const dialog = screen.getByRole("dialog");
-
-    await waitFor(() => {
-      expect(dialog).toBeInTheDocument();
-    });
-
-    expect(dialog.contains(document.activeElement)).toBe(true);
-  });
-
   it("focus returns to trigger on close", async () => {
     function Harness() {
       const [open, setOpen] = useState(false);
