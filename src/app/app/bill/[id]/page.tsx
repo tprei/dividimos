@@ -255,11 +255,8 @@ export default function BillDetailPage({
           ? { ...state.expense, status: updated.status, updatedAt: updated.updatedAt }
           : null,
       }));
-      if (updated.status === "active") {
-        loadExpenseData(updated.id);
-      }
     },
-    [loadExpenseData],
+    [],
   );
 
   useRealtimeExpense(expenseData?.id, onExpenseUpdate);
