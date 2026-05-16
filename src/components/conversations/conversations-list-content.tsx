@@ -137,17 +137,13 @@ export function ConversationsListContent({
     );
     const groupIds = dmPairs.map((p) => p.group_id);
 
-    const [{ data: profiles }, { data: lastMessages }, { data: balanceRows }, { data: memberRows }, unreadMap] =
+    const [{ data: profiles }, { data: previews }, { data: balanceRows }, { data: memberRows }, unreadMap] =
       await Promise.all([
         supabase
           .from("user_profiles")
           .select("id, handle, name, avatar_url")
           .in("id", counterpartyIds),
-        supabase
-          .from("chat_messages")
-          .select("group_id, content, message_type, created_at")
-          .in("group_id", groupIds)
-          .order("created_at", { ascending: false }),
+        supabase.rpc("get_dm_previews", { p_group_ids: groupIds }),
         supabase
           .from("balances")
           .select("group_id, user_a, user_b, amount_cents")
@@ -157,7 +153,7 @@ export function ConversationsListContent({
           .from("group_members")
           .select("group_id, user_id, status")
           .in("group_id", groupIds),
-        getUnreadCounts(supabase, user.id, groupIds),
+        getUnreadCounts(supabase, groupIds),
       ]);
 
     const profileMap = new Map(
@@ -176,14 +172,12 @@ export function ConversationsListContent({
       string,
       { content: string; messageType: string; createdAt: string }
     >();
-    for (const msg of lastMessages ?? []) {
-      if (!lastMessageByGroup.has(msg.group_id)) {
-        lastMessageByGroup.set(msg.group_id, {
-          content: msg.content,
-          messageType: msg.message_type,
-          createdAt: msg.created_at,
-        });
-      }
+    for (const row of previews ?? []) {
+      lastMessageByGroup.set(row.group_id, {
+        content: row.content,
+        messageType: row.message_type,
+        createdAt: row.created_at,
+      });
     }
 
     const balanceByGroup = new Map<string, number>();

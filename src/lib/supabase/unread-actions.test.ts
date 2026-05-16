@@ -1,121 +1,100 @@
 import { describe, expect, it, vi } from "vitest";
 import { getUnreadCounts, getTotalUnreadCount, markConversationRead } from "./unread-actions";
 
-function mockSupabase(overrides: Record<string, unknown> = {}) {
-  const defaults = {
-    receipts: [] as { group_id: string; last_read_at: string }[],
-    messages: [] as { group_id: string; created_at: string; sender_id?: string }[],
+type UnreadRow = { group_id: string; unread_count: number };
+
+function mockSupabase(overrides: {
+  rpcRows?: UnreadRow[];
+  dmPairs?: { group_id: string }[];
+  upsertResult?: { error: null | { message: string } };
+} = {}) {
+  const cfg = {
+    rpcRows: [] as UnreadRow[],
     dmPairs: [] as { group_id: string }[],
     upsertResult: { error: null },
+    ...overrides,
   };
-  const cfg = { ...defaults, ...overrides };
+
+  const rpcMock = vi.fn().mockResolvedValue({ data: cfg.rpcRows, error: null });
 
   const fromMock = vi.fn().mockImplementation((table: string) => {
     if (table === "conversation_read_receipts") {
       return {
-        select: () => ({
-          eq: () => ({
-            in: () => Promise.resolve({ data: cfg.receipts, error: null }),
-          }),
-        }),
         upsert: () => Promise.resolve(cfg.upsertResult),
-      };
-    }
-    if (table === "chat_messages") {
-      return {
-        select: () => ({
-          in: () => ({
-            neq: () => Promise.resolve({ data: cfg.messages, error: null }),
-          }),
-        }),
       };
     }
     if (table === "dm_pairs") {
       return {
-        select: () => ({
-          or: () => Promise.resolve({ data: cfg.dmPairs, error: null }),
-        }),
+        select: () => Promise.resolve({ data: cfg.dmPairs, error: null }),
       };
     }
     return {};
   });
 
-  return { from: fromMock } as unknown as Parameters<typeof getUnreadCounts>[0];
+  return { from: fromMock, rpc: rpcMock } as unknown as Parameters<typeof getUnreadCounts>[0];
 }
 
 describe("getUnreadCounts", () => {
   it("returns empty map for empty groupIds", async () => {
     const supabase = mockSupabase();
-    const result = await getUnreadCounts(supabase, "user-1", []);
+    const result = await getUnreadCounts(supabase, []);
     expect(result.size).toBe(0);
   });
 
-  it("counts all messages as unread when no read receipts exist", async () => {
+  it("calls get_unread_counts RPC with the provided groupIds", async () => {
+    const supabase = mockSupabase({ rpcRows: [] });
+    await getUnreadCounts(supabase, ["g1", "g2"]);
+    expect(supabase.rpc).toHaveBeenCalledWith("get_unread_counts", {
+      p_group_ids: ["g1", "g2"],
+    });
+  });
+
+  it("returns counts from RPC rows", async () => {
     const supabase = mockSupabase({
-      receipts: [],
-      messages: [
-        { group_id: "g1", created_at: "2026-04-11T10:00:00Z" },
-        { group_id: "g1", created_at: "2026-04-11T11:00:00Z" },
-        { group_id: "g2", created_at: "2026-04-11T12:00:00Z" },
+      rpcRows: [
+        { group_id: "g1", unread_count: 2 },
+        { group_id: "g2", unread_count: 1 },
       ],
     });
 
-    const result = await getUnreadCounts(supabase, "user-1", ["g1", "g2"]);
+    const result = await getUnreadCounts(supabase, ["g1", "g2"]);
     expect(result.get("g1")).toBe(2);
     expect(result.get("g2")).toBe(1);
   });
 
-  it("only counts messages after last_read_at", async () => {
-    const supabase = mockSupabase({
-      receipts: [
-        { group_id: "g1", last_read_at: "2026-04-11T10:30:00Z" },
-      ],
-      messages: [
-        { group_id: "g1", created_at: "2026-04-11T10:00:00Z" },
-        { group_id: "g1", created_at: "2026-04-11T11:00:00Z" },
-        { group_id: "g1", created_at: "2026-04-11T12:00:00Z" },
-      ],
-    });
+  it("returns empty map when RPC returns no rows (all read)", async () => {
+    const supabase = mockSupabase({ rpcRows: [] });
 
-    const result = await getUnreadCounts(supabase, "user-1", ["g1"]);
-    expect(result.get("g1")).toBe(2);
+    const result = await getUnreadCounts(supabase, ["g1"]);
+    expect(result.has("g1")).toBe(false);
   });
 
-  it("returns empty map when all messages are read", async () => {
-    const supabase = mockSupabase({
-      receipts: [
-        { group_id: "g1", last_read_at: "2026-04-11T13:00:00Z" },
-      ],
-      messages: [
-        { group_id: "g1", created_at: "2026-04-11T10:00:00Z" },
-        { group_id: "g1", created_at: "2026-04-11T11:00:00Z" },
-      ],
-    });
+  it("returns empty map when RPC returns null data", async () => {
+    const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    const supabase = { from: vi.fn(), rpc: rpcMock } as unknown as Parameters<typeof getUnreadCounts>[0];
 
-    const result = await getUnreadCounts(supabase, "user-1", ["g1"]);
-    expect(result.has("g1")).toBe(false);
+    const result = await getUnreadCounts(supabase, ["g1"]);
+    expect(result.size).toBe(0);
   });
 });
 
 describe("getTotalUnreadCount", () => {
   it("returns 0 when no DM pairs exist", async () => {
     const supabase = mockSupabase({ dmPairs: [] });
-    const result = await getTotalUnreadCount(supabase, "user-1");
+    const result = await getTotalUnreadCount(supabase);
     expect(result).toBe(0);
   });
 
   it("sums unread counts across all DM groups", async () => {
     const supabase = mockSupabase({
       dmPairs: [{ group_id: "g1" }, { group_id: "g2" }],
-      receipts: [],
-      messages: [
-        { group_id: "g1", created_at: "2026-04-11T10:00:00Z" },
-        { group_id: "g1", created_at: "2026-04-11T11:00:00Z" },
-        { group_id: "g2", created_at: "2026-04-11T12:00:00Z" },
+      rpcRows: [
+        { group_id: "g1", unread_count: 2 },
+        { group_id: "g2", unread_count: 1 },
       ],
     });
 
-    const result = await getTotalUnreadCount(supabase, "user-1");
+    const result = await getTotalUnreadCount(supabase);
     expect(result).toBe(3);
   });
 });

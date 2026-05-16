@@ -16,7 +16,7 @@ export function useUnreadConversations(): number {
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    const total = await getTotalUnreadCount(supabaseRef.current, user.id);
+    const total = await getTotalUnreadCount(supabaseRef.current);
     setCount(total);
   }, [user]);
 

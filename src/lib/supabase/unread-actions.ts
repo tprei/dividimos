@@ -6,44 +6,20 @@ export interface UnreadCount {
   count: number;
 }
 
-/**
- * Fetches unread message counts for all DM conversations of a user.
- * Compares chat_messages.created_at against conversation_read_receipts.last_read_at.
- * Groups with no read receipt are treated as fully unread.
- */
 export async function getUnreadCounts(
   supabase: SupabaseClient<Database>,
-  userId: string,
   groupIds: string[],
 ): Promise<Map<string, number>> {
   if (groupIds.length === 0) return new Map();
 
-  const [{ data: receipts }, { data: messages }] = await Promise.all([
-    supabase
-      .from("conversation_read_receipts")
-      .select("group_id, last_read_at")
-      .eq("user_id", userId)
-      .in("group_id", groupIds),
-    supabase
-      .from("chat_messages")
-      .select("group_id, created_at")
-      .in("group_id", groupIds)
-      .neq("sender_id", userId),
-  ]);
-
-  const receiptMap = new Map<string, string>();
-  for (const r of receipts ?? []) {
-    receiptMap.set(r.group_id, r.last_read_at);
-  }
+  const { data } = await supabase.rpc("get_unread_counts", {
+    p_group_ids: groupIds,
+  });
 
   const countMap = new Map<string, number>();
-  for (const msg of messages ?? []) {
-    const lastRead = receiptMap.get(msg.group_id);
-    if (!lastRead || msg.created_at > lastRead) {
-      countMap.set(msg.group_id, (countMap.get(msg.group_id) ?? 0) + 1);
-    }
+  for (const row of data ?? []) {
+    countMap.set(row.group_id, row.unread_count);
   }
-
   return countMap;
 }
 
@@ -52,17 +28,15 @@ export async function getUnreadCounts(
  */
 export async function getTotalUnreadCount(
   supabase: SupabaseClient<Database>,
-  userId: string,
 ): Promise<number> {
   const { data: dmPairs } = await supabase
     .from("dm_pairs")
-    .select("group_id")
-    .or(`user_a.eq.${userId},user_b.eq.${userId}`);
+    .select("group_id");
 
   if (!dmPairs || dmPairs.length === 0) return 0;
 
   const groupIds = dmPairs.map((p) => p.group_id);
-  const countMap = await getUnreadCounts(supabase, userId, groupIds);
+  const countMap = await getUnreadCounts(supabase, groupIds);
 
   let total = 0;
   for (const count of countMap.values()) {
