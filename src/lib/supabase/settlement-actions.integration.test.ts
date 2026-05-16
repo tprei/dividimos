@@ -289,6 +289,100 @@ describe.skipIf(!isIntegrationTestReady)(
 
         expect(balances).toHaveLength(0);
       });
+
+      it("rejects confirm_settlement when the confirmer has been removed from the group", async () => {
+        // Use bob as the group creator so alice can be fully removed.
+        // my_accepted_group_ids() also returns groups where creator_id = auth.uid(),
+        // so removing the creator's group_members row would not block them.
+        const { data: isolatedGroup } = await adminClient!
+          .from("groups")
+          .insert({ name: "Isolated group", creator_id: bob.id })
+          .select("id")
+          .single();
+        const isolatedGroupId = isolatedGroup!.id;
+
+        await adminClient!.from("group_members").insert([
+          {
+            group_id: isolatedGroupId,
+            user_id: bob.id,
+            status: "accepted",
+            invited_by: bob.id,
+          },
+          {
+            group_id: isolatedGroupId,
+            user_id: alice.id,
+            status: "accepted",
+            invited_by: bob.id,
+          },
+        ]);
+
+        // Alice pays 8000, bob owes alice 4000
+        await createAndActivateExpense({
+          groupId: isolatedGroupId,
+          creatorId: alice.id,
+          creatorToken: alice.accessToken!,
+          totalAmount: 8000,
+          shares: [
+            { userId: alice.id, amount: 4000 },
+            { userId: bob.id, amount: 4000 },
+          ],
+          payers: [{ userId: alice.id, amount: 8000 }],
+        });
+
+        // Read the balance before the settlement attempt
+        const [userA, userB] =
+          alice.id < bob.id ? [alice.id, bob.id] : [bob.id, alice.id];
+        const { data: balanceBefore } = await adminClient!
+          .from("balances")
+          .select("amount_cents")
+          .eq("group_id", isolatedGroupId)
+          .eq("user_a", userA)
+          .eq("user_b", userB)
+          .single();
+        const amountBefore = balanceBefore!.amount_cents;
+
+        // Bob records a pending settlement to alice
+        const bobClient = authenticateAs(bob);
+        const { data: settlement } = await bobClient
+          .from("settlements")
+          .insert({
+            group_id: isolatedGroupId,
+            from_user_id: bob.id,
+            to_user_id: alice.id,
+            amount_cents: 4000,
+          })
+          .select()
+          .single();
+
+        // Admin removes alice from the group (alice is NOT the creator, so this
+        // fully revokes her my_accepted_group_ids() membership)
+        await adminClient!
+          .from("group_members")
+          .delete()
+          .eq("group_id", isolatedGroupId)
+          .eq("user_id", alice.id);
+
+        // Alice tries to confirm — she is no longer a group member
+        const aliceClient = authenticateAs(alice);
+        const { error: confirmError } = await aliceClient.rpc(
+          "confirm_settlement" as never,
+          { p_settlement_id: settlement!.id } as never,
+        );
+
+        expect(confirmError).not.toBeNull();
+        expect(confirmError!.message).toMatch(/permission_denied/);
+
+        // Balance must be unchanged
+        const { data: balanceAfter } = await adminClient!
+          .from("balances")
+          .select("amount_cents")
+          .eq("group_id", isolatedGroupId)
+          .eq("user_a", userA)
+          .eq("user_b", userB)
+          .single();
+
+        expect(balanceAfter!.amount_cents).toBe(amountBefore);
+      });
     });
   },
 );
