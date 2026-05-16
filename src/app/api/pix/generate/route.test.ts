@@ -80,14 +80,40 @@ describe("POST /api/pix/generate", () => {
     expect(response.status).toBe(400);
   });
 
-  it("returns 400 when billId is provided", async () => {
+  it("returns 400 when amountCents is not an integer", async () => {
     serverMock.setUser({ id: "user-alice" });
 
     const response = await POST(
-      makeRequest({ recipientUserId: "user-bob", amountCents: 5000, billId: "bill-1" }),
+      makeRequest({ recipientUserId: "user-bob", amountCents: 50.5, groupId: "group-1" }),
     );
 
     expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Dados invalidos");
+  });
+
+  it("returns 400 when amountCents exceeds R$100,000 cap", async () => {
+    serverMock.setUser({ id: "user-alice" });
+
+    const response = await POST(
+      makeRequest({ recipientUserId: "user-bob", amountCents: 100_000_01, groupId: "group-1" }),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Dados invalidos");
+  });
+
+  it("returns 400 when amountCents is Number.MAX_SAFE_INTEGER", async () => {
+    serverMock.setUser({ id: "user-alice" });
+
+    const response = await POST(
+      makeRequest({ recipientUserId: "user-bob", amountCents: Number.MAX_SAFE_INTEGER, groupId: "group-1" }),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Dados invalidos");
   });
 
   describe("group settlement flow", () => {
