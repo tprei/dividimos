@@ -1,6 +1,7 @@
 import { GroupsListContent } from "@/components/groups/groups-list-content";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import type { UserProfile } from "@/types";
 
 export default async function GroupsPage() {
@@ -74,7 +75,10 @@ export default async function GroupsPage() {
     ? await supabase.from("user_profiles").select("id, handle, name, avatar_url").in("id", allMemberIds)
     : { data: [] };
 
-  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const profileMap = new Map((profiles ?? []).map((p) => {
+    const profile = userProfileRowToUserProfile(p);
+    return [profile.id, profile];
+  }));
   const groupDataMap = new Map((groupData ?? []).map((g) => [g.id, g]));
 
   const groups: {
@@ -91,7 +95,7 @@ export default async function GroupsPage() {
     const memberIds = membersByGroup.get(g.id) ?? [];
     const memberProfiles: UserProfile[] = memberIds.slice(0, 5).flatMap((id) => {
       const p = profileMap.get(id);
-      return p ? [{ id: p.id, handle: p.handle, name: p.name, avatarUrl: p.avatar_url ?? undefined }] : [];
+      return p ? [p] : [];
     });
     groups.push({
       id: g.id,

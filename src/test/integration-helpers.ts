@@ -148,37 +148,6 @@ export async function createTestUsers(
   );
 }
 
-export async function createTestBill(
-  creatorId: string,
-  overrides: Partial<Database["public"]["Tables"]["bills"]["Insert"]> = {},
-): Promise<Database["public"]["Tables"]["bills"]["Row"]> {
-  if (!isIntegrationTestReady || !adminClient) {
-    throw new Error("Integration tests require Supabase environment variables.");
-  }
-
-  const testId = generateTestId();
-
-  const { data, error } = await adminClient
-    .from("bills")
-    .insert({
-      creator_id: creatorId,
-      title: `Test Bill ${testId.slice(0, 8)}`,
-      bill_type: "single_amount",
-      status: "draft",
-      total_amount: 0,
-      total_amount_input: 10000,
-      ...overrides,
-    })
-    .select()
-    .single();
-
-  if (error || !data) {
-    throw new Error(`Failed to create test bill: ${error?.message}`);
-  }
-
-  return data as Database["public"]["Tables"]["bills"]["Row"];
-}
-
 export async function createTestGroup(
   creatorId: string,
   memberIds: string[] = [],

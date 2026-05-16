@@ -205,10 +205,10 @@ export function SearchContent({ userId }: SearchContentProps) {
         }
 
         const people: PersonResult[] = (peopleRes.data ?? [])
-          .filter((p) => p.id !== userId)
-          .map((p) => {
+          .flatMap((p) => {
+            if (p.id === null || p.id === userId || p.handle === null || p.name === null) return [];
             const bal = balanceByUser.get(p.id);
-            return {
+            return [{
               id: p.id,
               handle: p.handle,
               name: p.name,
@@ -216,7 +216,7 @@ export function SearchContent({ userId }: SearchContentProps) {
               balanceCents: bal?.cents ?? 0,
               balanceDirection:
                 bal && bal.cents > 0 ? bal.direction : "settled",
-            };
+            }];
           });
 
         if (controller.signal.aborted) return;

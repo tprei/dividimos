@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ContactRowSkeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { createClient } from "@/lib/supabase/client";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import type { UserProfile } from "@/types";
 import type { Database } from "@/types/database";
 
@@ -48,12 +49,7 @@ export function AddParticipantByHandle({
       return;
     }
 
-    setResult({
-      id: profile.id,
-      handle: profile.handle,
-      name: profile.name,
-      avatarUrl: profile.avatar_url ?? undefined,
-    });
+    setResult(userProfileRowToUserProfile(profile));
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

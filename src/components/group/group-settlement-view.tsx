@@ -109,6 +109,7 @@ export function GroupSettlementView({
       const fetched = new Set<string>();
 
       for (const p of profiles ?? []) {
+        if (p.id === null || p.name === null || p.handle === null) continue;
         fetched.add(p.id);
         extra.push({
           id: p.id,

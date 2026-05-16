@@ -1,5 +1,6 @@
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { GroupDetailContent } from "@/components/group/group-detail-content";
 import type { GroupDetailData, MemberEntry, ExpenseSummaryEntry } from "@/components/group/group-detail-content";
 import type { ExpenseStatus, GroupMemberStatus, Settlement } from "@/types";
@@ -77,7 +78,10 @@ export default async function GroupDetailPage({
     guestRows = data ?? [];
   }
 
-  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const profileMap = new Map((profiles ?? []).map((p) => {
+    const profile = userProfileRowToUserProfile(p);
+    return [profile.id, profile];
+  }));
 
   const members: MemberEntry[] = [];
 
@@ -86,12 +90,7 @@ export default async function GroupDetailPage({
     members.push({
       userId: group.creator_id,
       status: "accepted",
-      profile: {
-        id: creatorProfile.id,
-        handle: creatorProfile.handle,
-        name: creatorProfile.name,
-        avatarUrl: creatorProfile.avatar_url ?? undefined,
-      },
+      profile: creatorProfile,
       invitedBy: group.creator_id,
     });
   }
@@ -103,12 +102,7 @@ export default async function GroupDetailPage({
       members.push({
         userId: m.user_id,
         status: m.status as GroupMemberStatus,
-        profile: {
-          id: profile.id,
-          handle: profile.handle,
-          name: profile.name,
-          avatarUrl: profile.avatar_url ?? undefined,
-        },
+        profile,
         invitedBy: m.invited_by,
       });
     }

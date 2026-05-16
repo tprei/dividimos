@@ -13,6 +13,7 @@ import {
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { ContactRowSkeleton } from "@/components/shared/skeleton";
 import { createClient } from "@/lib/supabase/client";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { useUser } from "@/hooks/use-auth";
 import type { UserProfile } from "@/types";
 import type { Database } from "@/types/database";
@@ -24,15 +25,6 @@ interface KnownContact {
   handle: string;
   name: string;
   avatarUrl?: string;
-}
-
-function rowToProfile(row: UserProfileRow): KnownContact {
-  return {
-    id: row.id,
-    handle: row.handle,
-    name: row.name,
-    avatarUrl: row.avatar_url ?? undefined,
-  };
 }
 
 export function NewConversationButton() {
@@ -101,7 +93,7 @@ export function NewConversationButton() {
       .in("id", otherIds);
 
     const contacts = (profiles ?? [])
-      .map((p) => rowToProfile(p as UserProfileRow))
+      .map((p) => userProfileRowToUserProfile(p as UserProfileRow))
       .filter((c) => !existingDmIds.has(c.id));
 
     setKnownContacts(contacts);
@@ -147,12 +139,7 @@ export function NewConversationButton() {
         return;
       }
 
-      setSearchResult({
-        id: profile.id,
-        handle: profile.handle,
-        name: profile.name,
-        avatarUrl: profile.avatar_url ?? undefined,
-      });
+      setSearchResult(userProfileRowToUserProfile(profile));
     }, 500);
 
     return () => {

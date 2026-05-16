@@ -35,6 +35,7 @@ import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
 import { useBillStore } from "@/stores/bill-store";
@@ -130,18 +131,18 @@ function NewBillPageContent() {
         .eq("id", dmUserId)
         .single();
       if (!profile) return;
+      const profileMapped = userProfileRowToUserProfile(profile);
 
       const counterparty: User = {
-        id: profile.id,
+        id: profileMapped.id,
         email: "",
-        handle: profile.handle ?? "",
-        name: profile.name,
+        handle: profileMapped.handle,
+        name: profileMapped.name,
         pixKeyType: "email",
         pixKeyHint: "",
-        avatarUrl: profile.avatar_url ?? undefined,
+        avatarUrl: profileMapped.avatarUrl,
         onboarded: true,
         createdAt: new Date().toISOString(),
-
       };
 
       store.setCurrentUser(authUser);
@@ -150,7 +151,7 @@ function NewBillPageContent() {
 
       if (dmType === "single_amount") {
         store.createExpenseFromDm(dmGroupId, counterparty);
-        const autoTitle = `Cobrança - ${profile.name.split(" ")[0]}`;
+        const autoTitle = `Cobrança - ${profileMapped.name.split(" ")[0]}`;
         store.updateExpense({ title: autoTitle });
         setTitle(autoTitle);
         setBillType("single_amount");
@@ -528,25 +529,21 @@ function NewBillPageContent() {
 
       setSelectedGroupId(groupIdParam);
       setSelectedGroupName(group.name);
-      setGroupMembers((profiles ?? []).map((p) => ({
-        id: p.id,
-        handle: p.handle ?? "",
-        name: p.name,
-        avatarUrl: p.avatar_url ?? undefined,
-      })));
+      setGroupMembers((profiles ?? []).map(userProfileRowToUserProfile));
 
       for (const p of [...store.participants]) {
         if (p.id !== authUser.id) store.removeParticipant(p.id);
       }
-      for (const profile of profiles ?? []) {
+      for (const row of profiles ?? []) {
+        const mapped = userProfileRowToUserProfile(row);
         store.addParticipant({
-          id: profile.id,
+          id: mapped.id,
           email: "",
-          handle: profile.handle ?? "",
-          name: profile.name,
+          handle: mapped.handle,
+          name: mapped.name,
           pixKeyType: "email",
           pixKeyHint: "",
-          avatarUrl: profile.avatar_url ?? undefined,
+          avatarUrl: mapped.avatarUrl,
           onboarded: true,
           createdAt: new Date().toISOString(),
         });
