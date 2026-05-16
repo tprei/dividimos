@@ -15,18 +15,20 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { recipientUserId, amountCents, billId, groupId } = body as {
+  const { recipientUserId, amountCents, groupId } = body as {
     recipientUserId: string;
     amountCents: number;
-    billId?: string;
     groupId?: string;
   };
 
-  if (billId) {
-    return NextResponse.json({ error: "Dados invalidos" }, { status: 400 });
-  }
-
-  if (!recipientUserId || !amountCents || amountCents <= 0 || !groupId) {
+  if (
+    !recipientUserId ||
+    !amountCents ||
+    amountCents <= 0 ||
+    !Number.isInteger(amountCents) ||
+    amountCents > 100_000_00 ||
+    !groupId
+  ) {
     return NextResponse.json({ error: "Dados invalidos" }, { status: 400 });
   }
 
@@ -46,10 +48,10 @@ export async function POST(request: Request) {
 
   const callerIsCreator = groupRow?.creator_id === user.id;
   const recipientIsCreator = groupRow?.creator_id === recipientUserId;
-  const callerIsMember = callerIsCreator || memberRows?.some((m) => m.user_id === user.id);
-  const recipientIsMember = recipientIsCreator || memberRows?.some((m) => m.user_id === recipientUserId);
+  const callerIsAcceptedMember = callerIsCreator || memberRows?.some((m) => m.user_id === user.id);
+  const recipientIsAcceptedMember = recipientIsCreator || memberRows?.some((m) => m.user_id === recipientUserId);
 
-  if (!callerIsMember || !recipientIsMember) {
+  if (!callerIsAcceptedMember || !recipientIsAcceptedMember) {
     return NextResponse.json(
       { error: "Acesso negado — voces nao pertencem ao mesmo grupo" },
       { status: 403 },
