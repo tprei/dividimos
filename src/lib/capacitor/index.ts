@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { App } from "@capacitor/app";
 import { configureStatusBar } from "./status-bar";
+import { resolveDeepLinkTarget } from "./deep-link";
 
 export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
@@ -21,8 +22,8 @@ export async function initCapacitor(): Promise<void> {
   });
 
   App.addListener("appUrlOpen", ({ url }) => {
-    const parsed = new URL(url);
-    window.location.href = parsed.pathname + parsed.search + parsed.hash;
+    const target = resolveDeepLinkTarget(url);
+    if (target) window.location.href = target;
   });
 }
 
