@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
 import toast from "react-hot-toast";
@@ -224,34 +225,24 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
 
     const entries: MemberEntry[] = [];
 
-    const creatorProfile = profileMap.get(group.creator_id);
-    if (creatorProfile) {
+    const creatorProfileRow = profileMap.get(group.creator_id);
+    if (creatorProfileRow) {
       entries.push({
         userId: group.creator_id,
         status: "accepted",
-        profile: {
-          id: creatorProfile.id,
-          handle: creatorProfile.handle,
-          name: creatorProfile.name,
-          avatarUrl: creatorProfile.avatar_url ?? undefined,
-        },
+        profile: userProfileRowToUserProfile(creatorProfileRow),
         invitedBy: group.creator_id,
       });
     }
 
     for (const m of memberRows) {
       if (m.user_id === group.creator_id) continue;
-      const profile = profileMap.get(m.user_id);
-      if (profile) {
+      const profileRow = profileMap.get(m.user_id);
+      if (profileRow) {
         entries.push({
           userId: m.user_id,
           status: m.status as GroupMemberStatus,
-          profile: {
-            id: profile.id,
-            handle: profile.handle,
-            name: profile.name,
-            avatarUrl: profile.avatar_url ?? undefined,
-          },
+          profile: userProfileRowToUserProfile(profileRow),
           invitedBy: m.invited_by,
         });
       }
@@ -344,12 +335,7 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
     } else if (members.some((m) => m.userId === typedProfile.id)) {
       setLookupError("Já tá no grupo");
     } else {
-      setLookupResult({
-        id: typedProfile.id,
-        handle: typedProfile.handle,
-        name: typedProfile.name,
-        avatarUrl: typedProfile.avatar_url ?? undefined,
-      });
+      setLookupResult(userProfileRowToUserProfile(typedProfile));
     }
     setSearching(false);
   };

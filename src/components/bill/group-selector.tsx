@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { haptics } from "@/hooks/use-haptics";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import type { UserProfile } from "@/types";
 
 interface GroupEntry {
@@ -138,9 +139,7 @@ export function GroupSelector({
 
         const memberProfiles: UserProfile[] = meta.addableMemberIds.flatMap((id) => {
           const p = profileMap.get(id);
-          return p
-            ? [{ id: p.id, handle: p.handle ?? "", name: p.name, avatarUrl: p.avatar_url ?? undefined }]
-            : [];
+          return p ? [userProfileRowToUserProfile(p)] : [];
         });
 
         entries.push({

@@ -10,6 +10,7 @@ import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { useUser } from "@/hooks/use-auth";
 import { notifyGroupAccepted } from "@/lib/push/push-notify";
 import type { GroupMemberStatus, UserProfile } from "@/types";
@@ -129,7 +130,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
       const memberIds = membersByGroup.get(g.id) ?? [];
       const memberProfiles: UserProfile[] = memberIds.slice(0, 5).flatMap((id) => {
         const p = profileMap.get(id);
-        return p ? [{ id: p.id, handle: p.handle, name: p.name, avatarUrl: p.avatar_url ?? undefined }] : [];
+        return p ? [userProfileRowToUserProfile(p)] : [];
       });
       entries.push({
         id: g.id,

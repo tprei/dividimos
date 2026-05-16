@@ -174,7 +174,8 @@ export default async function ConversationPage({
   const profileMap = new Map<string, UserProfile>();
   profileMap.set(counterparty.id, counterparty);
   for (const row of profilesResult.data ?? []) {
-    profileMap.set(row.id, userProfileRowToUserProfile(row));
+    const profile = userProfileRowToUserProfile(row);
+    profileMap.set(profile.id, profile);
   }
 
   // Build expense map
@@ -200,7 +201,8 @@ export default async function ConversationPage({
         .select("*")
         .in("id", [...settlementUserIds]);
       for (const row of extraProfiles ?? []) {
-        profileMap.set(row.id, userProfileRowToUserProfile(row));
+        const profile = userProfileRowToUserProfile(row);
+        profileMap.set(profile.id, profile);
       }
     }
 

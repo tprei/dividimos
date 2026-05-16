@@ -64,7 +64,7 @@ describe.skipIf(!isIntegrationTestReady)("user_profiles access control", () => {
       .from("user_profiles")
       .select("*");
 
-    const ids = (data ?? []).map((p: { id: string }) => p.id);
+    const ids = (data ?? []).map((p) => p.id);
     expect(ids).toContain(alice.id);
     expect(ids).toContain(bob.id);
     expect(ids).not.toContain(outsider.id);

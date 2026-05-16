@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { UserCircle } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buttonVariants } from "@/components/ui/button";
 import { SendMessageButton } from "./profile-actions";
@@ -24,12 +25,14 @@ export default async function PublicProfilePage({
 
   if (error || !profile) notFound();
 
+  const typedProfile = userProfileRowToUserProfile(profile);
+
   const supabase = await createClient();
   const {
     data: { user: authUser },
   } = await supabase.auth.getUser();
 
-  const isSelf = authUser?.id === profile.id;
+  const isSelf = authUser?.id === typedProfile.id;
 
   return (
     <div className="flex min-h-[80vh] items-center justify-center px-4">
@@ -71,8 +74,8 @@ export default async function PublicProfilePage({
 
         {authUser && !isSelf && (
           <SendMessageButton
-            targetUserId={profile.id}
-            targetName={profile.name}
+            targetUserId={typedProfile.id}
+            targetName={typedProfile.name}
           />
         )}
 

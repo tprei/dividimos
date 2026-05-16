@@ -109,7 +109,8 @@ export async function loadThreadMessages(
   // Build profile lookup
   const profileMap = new Map<string, UserProfile>();
   for (const row of (profilesResult.data ?? []) as UserProfileRow[]) {
-    profileMap.set(row.id, userProfileRowToUserProfile(row));
+    const profile = userProfileRowToUserProfile(row);
+    profileMap.set(profile.id, profile);
   }
 
   // Build expense lookup
@@ -139,7 +140,8 @@ export async function loadThreadMessages(
         .select("*")
         .in("id", missingIds);
       for (const row of (extraProfiles ?? []) as UserProfileRow[]) {
-        profileMap.set(row.id, userProfileRowToUserProfile(row));
+        const profile = userProfileRowToUserProfile(row);
+        profileMap.set(profile.id, profile);
       }
     }
 
@@ -280,7 +282,8 @@ export async function loadConversationMessages(
   const profiles = new Map<string, UserProfile>();
   if (profilesResult.data) {
     for (const row of profilesResult.data) {
-      profiles.set(row.id, userProfileRowToUserProfile(row));
+      const profile = userProfileRowToUserProfile(row);
+      profiles.set(profile.id, profile);
     }
   }
 
@@ -318,7 +321,8 @@ export async function loadConversationMessages(
         .in("id", [...settlementUserIds]);
       if (extraProfiles) {
         for (const row of extraProfiles) {
-          profiles.set(row.id, userProfileRowToUserProfile(row));
+          const profile = userProfileRowToUserProfile(row);
+          profiles.set(profile.id, profile);
         }
       }
     }

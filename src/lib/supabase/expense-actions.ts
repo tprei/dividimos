@@ -314,7 +314,8 @@ export async function loadExpense(
 
   const profileMap = new Map<string, UserProfile>();
   for (const p of (profiles ?? []) as unknown as UserProfileRow[]) {
-    profileMap.set(p.id, userProfileRowToUserProfile(p));
+    const profile = userProfileRowToUserProfile(p);
+    profileMap.set(profile.id, profile);
   }
 
   const fallbackProfile = (userId: string): UserProfile => ({

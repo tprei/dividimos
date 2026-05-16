@@ -91,6 +91,9 @@ export function settlementRowToSettlement(row: SettlementRow): Settlement {
 }
 
 export function userProfileRowToUserProfile(row: UserProfileRow): UserProfile {
+  if (row.id === null || row.handle === null || row.name === null) {
+    throw new Error("user_profiles row missing required column");
+  }
   return {
     id: row.id,
     handle: row.handle,

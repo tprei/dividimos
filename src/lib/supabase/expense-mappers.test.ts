@@ -212,6 +212,16 @@ describe("userProfileRowToUserProfile", () => {
 
     expect(result.avatarUrl).toBeUndefined();
   });
+
+  it.each([
+    ["id", { id: null, handle: "alice", name: "Alice", avatar_url: null }],
+    ["handle", { id: "u-1", handle: null, name: "Alice", avatar_url: null }],
+    ["name", { id: "u-1", handle: "alice", name: null, avatar_url: null }],
+  ])("throws when %s is null", (_field, row) => {
+    expect(() => userProfileRowToUserProfile(row)).toThrow(
+      /user_profiles row missing required column/,
+    );
+  });
 });
 
 describe("expenseGuestRowToExpenseGuest", () => {

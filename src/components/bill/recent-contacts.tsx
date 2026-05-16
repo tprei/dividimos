@@ -6,6 +6,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { ContactAvatarSkeleton } from "@/components/shared/skeleton";
 import { formatBRL } from "@/lib/currency";
 import { queryAllBalancesForUser } from "@/lib/supabase/settlement-actions";
+import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import type { UserProfile } from "@/types";
 import type { Database } from "@/types/database";
 
@@ -111,9 +112,7 @@ export function RecentContacts({
       setContacts(
         contactUserIds.flatMap((id) => {
           const p = profileMap.get(id);
-          return p
-            ? [{ id: p.id, handle: p.handle, name: p.name, avatarUrl: p.avatar_url ?? undefined }]
-            : [];
+          return p ? [userProfileRowToUserProfile(p)] : [];
         }),
       );
       if (!cancelled) setFetched(true);
