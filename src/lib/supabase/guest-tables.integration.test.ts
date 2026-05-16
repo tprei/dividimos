@@ -952,4 +952,80 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
 
     expect(membership!.status).toBe("accepted");
   });
+
+  it("preserves ledger invariants when claim follows activate_expense", async () => {
+    const { data: expense } = await adminClient!
+      .from("expenses")
+      .insert({
+        group_id: groupId,
+        creator_id: alice.id,
+        title: "Multi-party claim invariant",
+        total_amount: 6000,
+      })
+      .select("id")
+      .single();
+
+    const { data: guest } = await adminClient!
+      .from("expense_guests")
+      .insert({ expense_id: expense!.id, display_name: "Future user" })
+      .select()
+      .single();
+
+    await Promise.all([
+      adminClient!.from("expense_shares").insert([
+        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
+        { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 1000 },
+      ]),
+      adminClient!.from("expense_guest_shares").insert({
+        expense_id: expense!.id,
+        guest_id: guest!.id,
+        share_amount_cents: 2000,
+      }),
+      adminClient!.from("expense_payers").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        amount_cents: 6000,
+      }),
+    ]);
+
+    const aliceClient = authenticateAs(alice);
+    const { error: activateError } = await aliceClient.rpc("activate_expense", {
+      p_expense_id: expense!.id,
+    });
+    expect(activateError).toBeNull();
+
+    const bobOwesAliceAfterActivate = await getBalanceBetween(groupId, bob.id, alice.id);
+    expect(bobOwesAliceAfterActivate).toBe(1000);
+
+    const carolClient = authenticateAs(carol);
+    const { error: claimError } = await carolClient.rpc("claim_guest_spot", {
+      p_claim_token: guest!.claim_token,
+    });
+    expect(claimError).toBeNull();
+
+    const bobOwesAliceAfterClaim = await getBalanceBetween(groupId, bob.id, alice.id);
+    expect(bobOwesAliceAfterClaim).toBe(1000);
+
+    const carolOwesAlice = await getBalanceBetween(groupId, carol.id, alice.id);
+    expect(carolOwesAlice).toBe(2000);
+
+    const { data: allBalances } = await adminClient!
+      .from("balances")
+      .select("user_a, user_b, amount_cents")
+      .eq("group_id", groupId)
+      .neq("amount_cents", 0);
+
+    expect(allBalances).toHaveLength(2);
+
+    const netByUser = new Map<string, number>();
+    for (const row of allBalances!) {
+      netByUser.set(row.user_a, (netByUser.get(row.user_a) ?? 0) - row.amount_cents);
+      netByUser.set(row.user_b, (netByUser.get(row.user_b) ?? 0) + row.amount_cents);
+    }
+    const netSum = Array.from(netByUser.values()).reduce((a, b) => a + b, 0);
+    expect(netSum).toBe(0);
+    expect(netByUser.get(alice.id)).toBe(3000);
+    expect(netByUser.get(bob.id)).toBe(-1000);
+    expect(netByUser.get(carol.id)).toBe(-2000);
+  });
 });
