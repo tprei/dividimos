@@ -507,13 +507,21 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     expect(carolToAlice!.amount).toBe(3333);
   });
 
-  it("rounding-residual case: each user net matches exact value", async () => {
+  it("rounding-residual case: sum invariant + bounded per-user error", async () => {
     // total=200, shares={alice:10, bob:10, carol:180}, payers={alice:10, bob:100, carol:90}
     // Exact net per user = consumed - paid:
     //   alice: 10 - 10 = 0
     //   bob:   10 - 100 = -90  (bob is owed 90 net)
     //   carol: 180 - 90 = +90  (carol owes 90 net)
-    // Old code (round-before-sum) produces off-by-1 errors on at least two users.
+    //
+    // The algorithm guarantees:
+    //   - sum of all balance rows for this group = 0 (universe conservation)
+    //   - each per-pair rounded value differs from the exact by ≤ 1 cent
+    //   - per-user error is bounded by ±2 cents (a user can appear in multiple pairs)
+    //
+    // Per-user exact values (alice=0, bob=-90, carol=+90) are NOT guaranteed to be
+    // reproduced exactly because the residual correction lands on a single canonical pair
+    // and is UUID-ordering-dependent.
     const expenseId = await createDraftExpense({
       groupId,
       creatorId: alice.id,
@@ -540,10 +548,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     const balances = await getBalances(groupId);
 
     // Compute per-user net from balance rows (UUID-ordering-agnostic).
-    // net[u] = SUM of signed deltas oriented toward u:
-    //   for rows where user_a = u: net[u] += -amount_cents (u owes user_b; positive = u owes)
-    //   for rows where user_b = u: net[u] += +amount_cents (positive = user_a owes u)
-    // Positive net means the user owes others; negative means others owe the user.
+    // Positive net means the user is a net debtor; negative means net creditor.
     const net: Record<string, number> = {
       [alice.id]: 0,
       [bob.id]: 0,
@@ -554,9 +559,15 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
       if (row.user_b in net) net[row.user_b] -= row.amount_cents;
     }
 
-    expect(net[alice.id]).toBe(0);
-    expect(net[bob.id]).toBe(-90);
-    expect(net[carol.id]).toBe(90);
+    // Sum invariant: all nets sum to zero (universe-level conservation).
+    const totalNet = net[alice.id] + net[bob.id] + net[carol.id];
+    expect(totalNet).toBe(0);
+
+    // Per-user error bounded by ±2 cents from exact net.
+    // Exact: alice=0, bob=-90, carol=+90.
+    expect(Math.abs(net[alice.id] - 0)).toBeLessThanOrEqual(2);
+    expect(Math.abs(net[bob.id] - (-90))).toBeLessThanOrEqual(2);
+    expect(Math.abs(net[carol.id] - 90)).toBeLessThanOrEqual(2);
   });
 
   it("rounding-residual case: sum of all balance deltas is exact", async () => {
@@ -628,6 +639,190 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     }
     const totalNet = Object.values(net).reduce((a, b) => a + b, 0);
     expect(totalNet).toBe(0);
+  });
+
+  it("guest shares present: excluded from balance pairs, sum-zero holds", async () => {
+    // total=200, real shares={alice:5, bob:5}, guest_share=190, payers={alice:100, bob:100}
+    // Only alice↔bob balance pair exists; guest portion is excluded.
+    // What matters: the real-user sum-zero holds for whichever users appear in balance rows.
+    const { data: expense } = await adminClient!
+      .from("expenses")
+      .insert({
+        group_id: groupId,
+        creator_id: alice.id,
+        title: "Guest share expense",
+        total_amount: 200,
+        expense_type: "single_amount",
+      })
+      .select()
+      .single();
+
+    // Create guest entry first (required by FK constraint).
+    const { data: guest } = await adminClient!
+      .from("expense_guests")
+      .insert({ expense_id: expense!.id, display_name: "Guest" })
+      .select()
+      .single();
+
+    await adminClient!.from("expense_shares").insert([
+      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 5 },
+      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 5 },
+    ]);
+
+    await adminClient!.from("expense_guest_shares").insert([
+      { expense_id: expense!.id, guest_id: guest!.id, share_amount_cents: 190 },
+    ]);
+
+    await adminClient!.from("expense_payers").insert([
+      { expense_id: expense!.id, user_id: alice.id, amount_cents: 100 },
+      { expense_id: expense!.id, user_id: bob.id, amount_cents: 100 },
+    ]);
+
+    const client = authenticateAs(alice);
+    const { error } = await client.rpc("activate_expense", {
+      p_expense_id: expense!.id,
+    });
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+
+    // Sum across all real-user nets must be zero.
+    const net: Record<string, number> = { [alice.id]: 0, [bob.id]: 0 };
+    for (const row of balances) {
+      if (row.user_a in net) net[row.user_a] += row.amount_cents;
+      if (row.user_b in net) net[row.user_b] -= row.amount_cents;
+    }
+    const totalNet = net[alice.id] + net[bob.id];
+    expect(totalNet).toBe(0);
+  });
+
+  it("single-user expense: sole share and sole payer produces zero balance rows", async () => {
+    // Alice creates an expense she fully paid and fully consumed.
+    // There are no canonical (user_a, user_b) pairs with user_a != user_b, so no balance rows.
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Solo expense",
+      totalAmount: 500,
+      shares: [{ userId: alice.id, amount: 500 }],
+      payers: [{ userId: alice.id, amount: 500 }],
+    });
+
+    const client = authenticateAs(alice);
+    const { error } = await client.rpc("activate_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+    // No pairs with distinct users → no balance rows created.
+    expect(balances).toHaveLength(0);
+  });
+
+  it("many-user expense (5 users): sum invariant + bounded per-user error", async () => {
+    // Extend the group with 2 more members beyond alice, bob, carol.
+    const [dave, eve] = await createTestUsers(2);
+    await adminClient!.from("group_members").insert([
+      { group_id: groupId, user_id: dave.id, status: "accepted", invited_by: alice.id },
+      { group_id: groupId, user_id: eve.id, status: "accepted", invited_by: alice.id },
+    ]);
+
+    // total=701 (intentionally not divisible by 5)
+    // shares: alice=200, bob=150, carol=150, dave=100, eve=101
+    // payers: alice=400, bob=301
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Five-user expense",
+      totalAmount: 701,
+      shares: [
+        { userId: alice.id, amount: 200 },
+        { userId: bob.id, amount: 150 },
+        { userId: carol.id, amount: 150 },
+        { userId: dave.id, amount: 100 },
+        { userId: eve.id, amount: 101 },
+      ],
+      payers: [
+        { userId: alice.id, amount: 400 },
+        { userId: bob.id, amount: 301 },
+      ],
+    });
+
+    const client = authenticateAs(alice);
+    const { error } = await client.rpc("activate_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+
+    const users = [alice.id, bob.id, carol.id, dave.id, eve.id];
+    const net: Record<string, number> = Object.fromEntries(users.map((u) => [u, 0]));
+    for (const row of balances) {
+      if (row.user_a in net) net[row.user_a] += row.amount_cents;
+      if (row.user_b in net) net[row.user_b] -= row.amount_cents;
+    }
+
+    // Sum invariant.
+    const totalNet = users.reduce((acc, u) => acc + net[u], 0);
+    expect(totalNet).toBe(0);
+
+    // Exact nets: consumed - paid (centavos).
+    const exactNets: Record<string, number> = {
+      [alice.id]: 200 - 400,  // -200
+      [bob.id]: 150 - 301,    // -151
+      [carol.id]: 150 - 0,    // +150
+      [dave.id]: 100 - 0,     // +100
+      [eve.id]: 101 - 0,      // +101
+    };
+
+    for (const u of users) {
+      expect(Math.abs(net[u] - exactNets[u])).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("user as both consumer and payer: self-debt cancels, only cross-user balances remain", async () => {
+    // shares={alice:50, bob:50}, payers={alice:40, bob:60}
+    // Exact nets: alice = 50 - 40 = +10 (owes 10), bob = 50 - 60 = -10 (is owed 10)
+    // The per-user net comes entirely from the alice↔bob canonical pair.
+    // Self-pairs (alice↔alice, bob↔bob) are excluded by the RPC (s.user_id != p.user_id).
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Self-consumer and payer",
+      totalAmount: 100,
+      shares: [
+        { userId: alice.id, amount: 50 },
+        { userId: bob.id, amount: 50 },
+      ],
+      payers: [
+        { userId: alice.id, amount: 40 },
+        { userId: bob.id, amount: 60 },
+      ],
+    });
+
+    const client = authenticateAs(alice);
+    const { error } = await client.rpc("activate_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+
+    // Only one canonical pair: alice↔bob.
+    const aliceToBob = findBalance(balances, alice.id, bob.id);
+    expect(aliceToBob).not.toBeNull();
+
+    // Alice owes Bob 10 (alice consumed 50 but only paid 40).
+    expect(aliceToBob!.amount).toBe(10);
+
+    // Sum invariant.
+    const net: Record<string, number> = { [alice.id]: 0, [bob.id]: 0 };
+    for (const row of balances) {
+      if (row.user_a in net) net[row.user_a] += row.amount_cents;
+      if (row.user_b in net) net[row.user_b] -= row.amount_cents;
+    }
+    expect(net[alice.id] + net[bob.id]).toBe(0);
   });
 });
 

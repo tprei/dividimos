@@ -16,6 +16,17 @@
 --      (smallest (user_a, user_b) in lex order) to keep the
 --      total-balance invariant exact.
 --
+-- Algorithm guarantees:
+--   • Sum-of-pairs invariant exact: the sum of all rounded balance row
+--     amount_cents exactly equals ROUND(sum of exact per-pair deltas).
+--   • Per-pair error bounded ±1 cent: each rounded pair value differs
+--     from its exact value by at most 1 cent (before residual correction).
+--   • Per-user error bounded by their pair count: a user appearing in
+--     K canonical pairs can accumulate up to ±K cents of error versus
+--     their exact net. The residual correction lands on the single
+--     lexicographically-first pair, so per-user accuracy is not exact
+--     and is UUID-ordering-dependent.
+--
 -- New DECLARE variables (vs. the previous definition):
 --   v_delta_exact    numeric  — exact (unrounded) delta for a pair
 --   v_delta_rounded  integer  — ROUND(v_delta_exact)
