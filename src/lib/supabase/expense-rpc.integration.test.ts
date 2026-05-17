@@ -506,6 +506,129 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     expect(bobToAlice!.amount).toBe(3334);
     expect(carolToAlice!.amount).toBe(3333);
   });
+
+  it("rounding-residual case: each user net matches exact value", async () => {
+    // total=200, shares={alice:10, bob:10, carol:180}, payers={alice:10, bob:100, carol:90}
+    // Exact net per user = consumed - paid:
+    //   alice: 10 - 10 = 0
+    //   bob:   10 - 100 = -90  (bob is owed 90 net)
+    //   carol: 180 - 90 = +90  (carol owes 90 net)
+    // Old code (round-before-sum) produces off-by-1 errors on at least two users.
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Rounding residual",
+      totalAmount: 200,
+      shares: [
+        { userId: alice.id, amount: 10 },
+        { userId: bob.id, amount: 10 },
+        { userId: carol.id, amount: 180 },
+      ],
+      payers: [
+        { userId: alice.id, amount: 10 },
+        { userId: bob.id, amount: 100 },
+        { userId: carol.id, amount: 90 },
+      ],
+    });
+
+    const client = authenticateAs(alice);
+    const { error } = await client.rpc("activate_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+
+    // Compute per-user net from balance rows (UUID-ordering-agnostic).
+    // net[u] = SUM of signed deltas oriented toward u:
+    //   for rows where user_a = u: net[u] += -amount_cents (u owes user_b; positive = u owes)
+    //   for rows where user_b = u: net[u] += +amount_cents (positive = user_a owes u)
+    // Positive net means the user owes others; negative means others owe the user.
+    const net: Record<string, number> = {
+      [alice.id]: 0,
+      [bob.id]: 0,
+      [carol.id]: 0,
+    };
+    for (const row of balances) {
+      if (row.user_a in net) net[row.user_a] += row.amount_cents;
+      if (row.user_b in net) net[row.user_b] -= row.amount_cents;
+    }
+
+    expect(net[alice.id]).toBe(0);
+    expect(net[bob.id]).toBe(-90);
+    expect(net[carol.id]).toBe(90);
+  });
+
+  it("rounding-residual case: sum of all balance deltas is exact", async () => {
+    // Same scenario. The signed sum of amount_cents across all balance rows for this
+    // expense must equal the exact mathematical sum of (consumed - paid) for all users,
+    // which is 0 + (-90) + 90 = 0 — i.e., the books balance.
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Rounding residual sum",
+      totalAmount: 200,
+      shares: [
+        { userId: alice.id, amount: 10 },
+        { userId: bob.id, amount: 10 },
+        { userId: carol.id, amount: 180 },
+      ],
+      payers: [
+        { userId: alice.id, amount: 10 },
+        { userId: bob.id, amount: 100 },
+        { userId: carol.id, amount: 90 },
+      ],
+    });
+
+    const client = authenticateAs(alice);
+    await client.rpc("activate_expense", { p_expense_id: expenseId });
+
+    const balances = await getBalances(groupId);
+
+    // Compute net for each user and verify the sum across all users is zero.
+    const users = [alice.id, bob.id, carol.id];
+    const net: Record<string, number> = Object.fromEntries(users.map((u) => [u, 0]));
+    for (const row of balances) {
+      if (row.user_a in net) net[row.user_a] += row.amount_cents;
+      if (row.user_b in net) net[row.user_b] -= row.amount_cents;
+    }
+
+    const totalNet = users.reduce((acc, u) => acc + net[u], 0);
+    expect(totalNet).toBe(0);
+  });
+
+  it("trivial even split: no rounding error with exact division", async () => {
+    // 2-user, amount divisible — residual must be zero and balances exact.
+    const expenseId = await createDraftExpense({
+      groupId,
+      creatorId: alice.id,
+      title: "Even two-way split",
+      totalAmount: 1000,
+      shares: [
+        { userId: alice.id, amount: 500 },
+        { userId: bob.id, amount: 500 },
+      ],
+      payers: [{ userId: alice.id, amount: 1000 }],
+    });
+
+    const client = authenticateAs(alice);
+    const { error } = await client.rpc("activate_expense", {
+      p_expense_id: expenseId,
+    });
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+    const bobToAlice = findBalance(balances, bob.id, alice.id);
+    expect(bobToAlice!.amount).toBe(500);
+
+    const net: Record<string, number> = { [alice.id]: 0, [bob.id]: 0 };
+    for (const row of balances) {
+      if (row.user_a in net) net[row.user_a] += row.amount_cents;
+      if (row.user_b in net) net[row.user_b] -= row.amount_cents;
+    }
+    const totalNet = Object.values(net).reduce((a, b) => a + b, 0);
+    expect(totalNet).toBe(0);
+  });
 });
 
 describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
