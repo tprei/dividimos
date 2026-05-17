@@ -42,8 +42,6 @@ interface ExpenseState {
   splits: ItemSplit[];
   /** Whole-expense split assignments (single_amount wizard). */
   billSplits: BillSplit[];
-  /** Client-side preview of debts (computed by computeLedger). */
-  previewDebts: DebtEdge[];
 
   setCurrentUser: (user: User) => void;
 
@@ -80,12 +78,6 @@ interface ExpenseState {
 
   getGrandTotal: () => number;
   /**
-   * Computes client-side preview debts from current splits and payers.
-   * Stores result in `previewDebts` as DebtEdge[].
-   * Updates expense status to "active" if debts exist, "settled" if none.
-   */
-  computeLedger: () => void;
-  /**
    * Computes final ExpenseShare[] from current splits/billSplits.
    * Used when activating an expense to send to the server.
    */
@@ -108,6 +100,23 @@ interface ExpenseState {
    * Pre-fills title, amount, type, items, and participants for wizard editing.
    */
   hydrateFromChatDraft: (result: ChatExpenseResult, groupId: string, counterparty: User) => void;
+  /**
+   * Hydrates the store from a server-loaded expense snapshot.
+   * Clears all wizard state before applying the new data to prevent zombie
+   * state from a prior session.
+   */
+  hydrateFromServer: (input: {
+    expense: Expense;
+    items: ExpenseItem[];
+    participants?: User[];
+    payers?: ExpensePayer[];
+    billSplits?: BillSplit[];
+  }) => void;
+  /**
+   * Patches only the server-derived status fields from a realtime event.
+   * Does not reload — only touches status and updatedAt on the expense.
+   */
+  patchExpenseFromRealtime: (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => void;
   reset: () => void;
 }
 
@@ -118,7 +127,7 @@ function generateId(): string {
 
 /**
  * Pure function that computes each participant's consumption in centavos.
- * Shared by computeLedger, getExpenseShares, wouldProduceNoEdges, and getParticipantTotal.
+ * Shared by selectPreviewDebts, getExpenseShares, wouldProduceNoEdges, and getParticipantTotal.
  */
 function computeConsumption(
   expense: Expense,
@@ -160,52 +169,119 @@ function computeConsumption(
   return consumption;
 }
 
-/** Memoized wrapper around computeConsumption using reference equality. */
-let _cachedConsumption: Map<string, number> | null = null;
-let _cacheKeys: {
-  expense: Expense;
+/**
+ * Memoized wrapper around computeConsumption.
+ *
+ * Outer key: the expense object reference (WeakMap invalidates automatically
+ * when expense is replaced via createExpense / hydrateFromServer / reset).
+ * Inner key: reference tuple of the five mutable slices so mutations to
+ * participants/guests/items/splits/billSplits also bust the cache.
+ */
+type InnerCacheKey = {
   participants: User[];
   guests: Guest[];
   items: ExpenseItem[];
   splits: ItemSplit[];
   billSplits: BillSplit[];
-} | null = null;
+};
+type CacheEntry = { key: InnerCacheKey; result: Map<string, number> };
+const _consumptionCache = new WeakMap<Expense, CacheEntry>();
 
 function getCachedConsumption(state: ExpenseState): Map<string, number> | null {
   const { expense, participants, guests, items, splits, billSplits } = state;
   if (!expense) return null;
 
-  if (
-    _cacheKeys &&
-    _cachedConsumption &&
-    _cacheKeys.expense === expense &&
-    _cacheKeys.participants === participants &&
-    _cacheKeys.guests === guests &&
-    _cacheKeys.items === items &&
-    _cacheKeys.splits === splits &&
-    _cacheKeys.billSplits === billSplits
-  ) {
-    return _cachedConsumption;
-  }
-
   const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
   if (allPersonIds.length === 0) return null;
 
+  const existing = _consumptionCache.get(expense);
+  if (
+    existing &&
+    existing.key.participants === participants &&
+    existing.key.guests === guests &&
+    existing.key.items === items &&
+    existing.key.splits === splits &&
+    existing.key.billSplits === billSplits
+  ) {
+    return existing.result;
+  }
+
   const result = computeConsumption(expense, allPersonIds, items, splits, billSplits);
-  _cacheKeys = { expense, participants, guests, items, splits, billSplits };
-  _cachedConsumption = result;
+  _consumptionCache.set(expense, { key: { participants, guests, items, splits, billSplits }, result });
   return result;
 }
 
-/** Invalidate the consumption cache (called on store reset). */
-function invalidateConsumptionCache() {
-  _cachedConsumption = null;
-  _cacheKeys = null;
+/** Exported for testing — returns true when cache holds a valid entry for the current expense. */
+export function _testGetCacheState() {
+  const expense = useBillStore.getState().expense;
+  return { hasCachedResult: expense !== null && _consumptionCache.has(expense) };
 }
 
-/** Exported for testing — returns true when cache holds a valid entry. */
-export function _testGetCacheState() {
-  return { hasCachedResult: _cachedConsumption !== null };
+/**
+ * Pure selector: computes preview debts from store state without mutating anything.
+ * Replaces the old computeLedger action.
+ */
+export function selectPreviewDebts(state: ExpenseState): DebtEdge[] {
+  const { expense, participants, guests, payers } = state;
+  const consumption = getCachedConsumption(state);
+  if (!expense || !consumption) return [];
+
+  const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
+  const payment = new Map<string, number>();
+  for (const id of allPersonIds) {
+    payment.set(id, 0);
+  }
+
+  const grandTotal = participants.length + guests.length > 0
+    ? (state.expense?.expenseType === "single_amount"
+        ? state.totalAmountInput
+        : state.items.reduce((sum, i) => sum + i.totalPriceCents, 0) +
+          Math.round((state.items.reduce((sum, i) => sum + i.totalPriceCents, 0) * (state.expense?.serviceFeePercent ?? 0)) / 100) +
+          (state.expense?.fixedFees ?? 0))
+    : 0;
+
+  const effectivePayers = payers.length > 0
+    ? payers
+    : [{ expenseId: expense.id, userId: expense.creatorId, amountCents: grandTotal }];
+
+  for (const payer of effectivePayers) {
+    payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
+  }
+
+  const debtors: { id: string; amount: number }[] = [];
+  const creditors: { id: string; amount: number }[] = [];
+
+  for (const id of allPersonIds) {
+    const net = (payment.get(id) || 0) - (consumption.get(id) || 0);
+    if (net < -1) debtors.push({ id, amount: Math.abs(net) });
+    if (net > 1) creditors.push({ id, amount: net });
+  }
+
+  debtors.sort((a, b) => b.amount - a.amount);
+  creditors.sort((a, b) => b.amount - a.amount);
+
+  const debts: DebtEdge[] = [];
+  let di = 0;
+  let ci = 0;
+
+  while (di < debtors.length && ci < creditors.length) {
+    const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
+    if (transfer <= 0) break;
+
+    debts.push({
+      fromUserId: debtors[di].id,
+      toUserId: creditors[ci].id,
+      amountCents: transfer,
+    });
+
+    debtors[di].amount -= transfer;
+    creditors[ci].amount -= transfer;
+
+    if (debtors[di].amount <= 1) di++;
+    if (creditors[ci].amount <= 1) ci++;
+  }
+
+  return debts;
 }
 
 export const useBillStore = create<ExpenseState>((set, get) => ({
@@ -218,7 +294,6 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   payers: [],
   splits: [],
   billSplits: [],
-  previewDebts: [],
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -248,7 +323,6 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
-      previewDebts: [],
     });
   },
 
@@ -506,67 +580,6 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     );
   },
 
-  computeLedger: () => {
-    const state = get();
-    const { expense, participants, guests, payers } = state;
-    const consumption = getCachedConsumption(state);
-    if (!expense || !consumption) return;
-
-    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
-    const payment = new Map<string, number>();
-    for (const id of allPersonIds) {
-      payment.set(id, 0);
-    }
-
-    const effectivePayers = payers.length > 0
-      ? payers
-      : [{ expenseId: expense.id, userId: expense.creatorId, amountCents: get().getGrandTotal() }];
-
-    for (const payer of effectivePayers) {
-      payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
-    }
-
-    const debtors: { id: string; amount: number }[] = [];
-    const creditors: { id: string; amount: number }[] = [];
-
-    for (const id of allPersonIds) {
-      const net = (payment.get(id) || 0) - (consumption.get(id) || 0);
-      if (net < -1) debtors.push({ id, amount: Math.abs(net) });
-      if (net > 1) creditors.push({ id, amount: net });
-    }
-
-    debtors.sort((a, b) => b.amount - a.amount);
-    creditors.sort((a, b) => b.amount - a.amount);
-
-    const debts: DebtEdge[] = [];
-    let di = 0;
-    let ci = 0;
-
-    while (di < debtors.length && ci < creditors.length) {
-      const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
-      if (transfer <= 0) break;
-
-      debts.push({
-        fromUserId: debtors[di].id,
-        toUserId: creditors[ci].id,
-        amountCents: transfer,
-      });
-
-      debtors[di].amount -= transfer;
-      creditors[ci].amount -= transfer;
-
-      if (debtors[di].amount <= 1) di++;
-      if (creditors[ci].amount <= 1) ci++;
-    }
-
-    const newStatus: ExpenseStatus = debts.length === 0 ? "settled" : "active";
-
-    set({
-      previewDebts: debts,
-      expense: { ...expense, status: newStatus, updatedAt: new Date().toISOString() },
-    });
-  },
-
   wouldProduceNoEdges: () => {
     const state = get();
     const { expense, participants, guests, payers } = state;
@@ -660,7 +673,6 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
-      previewDebts: [],
     });
   },
 
@@ -692,7 +704,6 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
-      previewDebts: [],
     });
   },
 
@@ -752,12 +763,31 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers,
       splits: [],
       billSplits: [],
-      previewDebts: [],
     });
   },
 
+  hydrateFromServer: ({ expense, items, participants, payers, billSplits }) => {
+    set({
+      expense,
+      items,
+      totalAmountInput: expense.expenseType === "single_amount" ? expense.totalAmount : 0,
+      participants: participants ?? [],
+      guests: [],
+      payers: payers ?? [],
+      splits: [],
+      billSplits: billSplits ?? [],
+    });
+  },
+
+  patchExpenseFromRealtime: (updated) => {
+    set((state) => ({
+      expense: state.expense
+        ? { ...state.expense, status: updated.status, updatedAt: updated.updatedAt }
+        : null,
+    }));
+  },
+
   reset: () => {
-    invalidateConsumptionCache();
     set({
       expense: null,
       totalAmountInput: 0,
@@ -767,7 +797,6 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
-      previewDebts: [],
     });
   },
 }));

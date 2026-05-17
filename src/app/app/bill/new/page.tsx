@@ -463,16 +463,14 @@ function NewBillPageContent() {
       };
 
       store.setCurrentUser(authUser);
-      useBillStore.setState({
+      useBillStore.getState().hydrateFromServer({
         expense: expenseForStore,
-        totalAmountInput: loaded.expenseType === "single_amount" ? loaded.totalAmount : 0,
-        participants,
         items: loaded.items.map((item) => ({
           ...item,
           expenseId: loaded.id,
         })),
+        participants,
         payers: loaded.payers.map((p) => ({ expenseId: loaded.id, userId: p.userId, amountCents: p.amountCents })),
-        splits: [],
         billSplits: loaded.expenseType === "single_amount"
           ? loaded.shares.map((s) => ({
               userId: s.userId,
@@ -770,7 +768,7 @@ function NewBillPageContent() {
 
           if (!rpcError) {
             notifyExpenseActivated(expenseId).catch(() => {});
-            useBillStore.setState({ expense: null, items: [], splits: [], billSplits: [], payers: [] });
+            useBillStore.getState().reset();
             router.push(`/app/bill/${expenseId}`);
             return;
           }

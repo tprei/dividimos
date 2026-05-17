@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, selectPreviewDebts } from "@/stores/bill-store";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
 import type { User } from "@/types";
 
@@ -30,13 +30,12 @@ describe("Edge cases", () => {
 
     store.splitBillByFixed([{ userId: "user-bob", amountCents: 5000 }]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
-    expect(previewDebts[0].fromUserId).toBe("user-bob");
-    expect(previewDebts[0].toUserId).toBe("user-alice");
-    expect(previewDebts[0].amountCents).toBe(5000);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
+    expect(debts[0].fromUserId).toBe("user-bob");
+    expect(debts[0].toUserId).toBe("user-alice");
+    expect(debts[0].amountCents).toBe(5000);
   });
 
   it("everyone consumed and paid equally → no debts", () => {
@@ -49,11 +48,9 @@ describe("Edge cases", () => {
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
     store.splitPaymentEqually(["user-alice", "user-bob", "user-carlos"]);
-    store.computeLedger();
 
-    const { previewDebts, expense } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(0);
-    expect(expense!.status).toBe("settled");
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(0);
   });
 
   it("R$0.01 between 3 people → handles sub-cent gracefully", () => {
@@ -71,10 +68,9 @@ describe("Edge cases", () => {
     expect(total).toBe(1);
 
     store.setPayerFull("user-alice");
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts.length).toBeLessThanOrEqual(1);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts.length).toBeLessThanOrEqual(1);
   });
 
   it("switching expense type clears data properly", () => {
@@ -96,11 +92,10 @@ describe("Edge cases", () => {
     store.updateExpense({ totalAmountInput: 10000 });
     store.splitBillEqually(["user-alice", "user-bob"]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
-    expect(previewDebts[0].amountCents).toBe(5000);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
+    expect(debts[0].amountCents).toBe(5000);
   });
 
   it("switching from single_amount to itemized clears billSplits", () => {
@@ -131,11 +126,10 @@ describe("Edge cases", () => {
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos", "dave", "eve"]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(4);
-    const total = previewDebts.reduce((s, e) => s + e.amountCents, 0);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(4);
+    const total = debts.reduce((s, e) => s + e.amountCents, 0);
     expect(total).toBe(800000);
   });
 
@@ -148,11 +142,10 @@ describe("Edge cases", () => {
     store.addParticipant(userCarlos);
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(2);
-    expect(previewDebts.every((e) => e.toUserId === "user-alice")).toBe(true);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(2);
+    expect(debts.every((e) => e.toUserId === "user-alice")).toBe(true);
   });
 
   it("rounding: 3-way split totals match", () => {
@@ -206,6 +199,6 @@ describe("Edge cases", () => {
     expect(state.items).toHaveLength(0);
     expect(state.splits).toHaveLength(0);
     expect(state.billSplits).toHaveLength(0);
-    expect(state.previewDebts).toHaveLength(0);
+    expect(selectPreviewDebts(state)).toHaveLength(0);
   });
 });

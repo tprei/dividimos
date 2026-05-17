@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, selectPreviewDebts } from "@/stores/bill-store";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
 import type { User } from "@/types";
 
@@ -53,13 +53,12 @@ describe("Itemized expense flows", () => {
     store.setPayerFull("user-alice");
     expect(useBillStore.getState().payers[0].amountCents).toBe(15510);
 
-    store.computeLedger();
-    const { previewDebts } = useBillStore.getState();
+    const debts = selectPreviewDebts(useBillStore.getState());
 
-    expect(previewDebts.length).toBeGreaterThanOrEqual(1);
-    expect(previewDebts.every((e) => e.toUserId === "user-alice")).toBe(true);
+    expect(debts.length).toBeGreaterThanOrEqual(1);
+    expect(debts.every((e) => e.toUserId === "user-alice")).toBe(true);
 
-    const totalOwed = previewDebts.reduce((s, e) => s + e.amountCents, 0);
+    const totalOwed = debts.reduce((s, e) => s + e.amountCents, 0);
     const bobTotal = useBillStore.getState().getParticipantTotal("user-bob");
     const carlosTotal = useBillStore.getState().getParticipantTotal("user-carlos");
     expect(Math.abs(totalOwed - (bobTotal + carlosTotal))).toBeLessThanOrEqual(2);
@@ -90,12 +89,10 @@ describe("Itemized expense flows", () => {
     store.setPayerAmount("user-alice", Math.ceil(grandTotal * 0.6));
     store.setPayerAmount("user-bob", grandTotal - Math.ceil(grandTotal * 0.6));
 
-    store.computeLedger();
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts.length).toBeGreaterThan(0);
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts.length).toBeGreaterThan(0);
-
-    const totalDebts = previewDebts.reduce((s, e) => s + e.amountCents, 0);
+    const totalDebts = debts.reduce((s, e) => s + e.amountCents, 0);
     expect(totalDebts).toBeGreaterThan(0);
   });
 

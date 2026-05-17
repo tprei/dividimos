@@ -54,7 +54,7 @@ export function CreatorDraftView({
     notifyExpenseActivated(expense.id).catch(() => {});
     const fresh = await loadExpense(expense.id);
     if (fresh) {
-      useBillStore.setState({
+      useBillStore.getState().hydrateFromServer({
         expense: {
           id: fresh.id,
           groupId: fresh.groupId,
@@ -69,6 +69,7 @@ export function CreatorDraftView({
           createdAt: fresh.createdAt,
           updatedAt: fresh.updatedAt,
         },
+        items: [],
       });
     }
     setFinalizing(false);
