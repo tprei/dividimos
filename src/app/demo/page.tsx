@@ -22,35 +22,55 @@ import { formatBRL } from "@/lib/currency";
 import { DEMO_ITEMS, DEMO_PIX_KEYS, DEMO_USERS } from "@/lib/demo-data";
 import { springs } from "@/lib/animations";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
-import type { Bill, BillItem, ItemSplit, LedgerEntry } from "@/types";
 
 type DemoDebtStatus = "pending" | "partially_paid" | "settled";
 
-const BILL_ID = "demo_bill";
+interface DemoItem {
+  id: string;
+  expenseId: string;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  totalPriceCents: number;
+  createdAt: string;
+}
+
+interface DemoItemAssignment {
+  id: string;
+  itemId: string;
+  userId: string;
+  splitType: string;
+  value: number;
+  computedAmountCents: number;
+}
+
+interface DemoDebt {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
+  paidAmountCents: number;
+  status: DemoDebtStatus;
+  createdAt: string;
+}
+
+interface DemoExpenseInput {
+  expenseType: "itemized" | "single_amount";
+  serviceFeePercent: number;
+  fixedFees: number;
+  creatorId: string;
+  payers: { userId: string; amountCents: number }[];
+}
+
+const EXPENSE_ID = "demo_expense";
 
 function buildDemoData() {
   const now = new Date().toISOString();
 
-  const bill: Bill = {
-    id: BILL_ID,
-    creatorId: "user_self",
-    billType: "itemized",
-    title: "Churrascaria Fogo de Chao",
-    merchantName: "Fogo de Chao - Jardins",
-    status: "active",
-    serviceFeePercent: 10,
-    fixedFees: 0,
-    totalAmount: 0,
-    totalAmountInput: 0,
-    payers: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  const items: BillItem[] = DEMO_ITEMS.map((item, idx) => ({
+  const items: DemoItem[] = DEMO_ITEMS.map((item, idx) => ({
     ...item,
     id: `item_${idx}`,
-    billId: BILL_ID,
+    expenseId: EXPENSE_ID,
     createdAt: now,
   }));
 
@@ -70,7 +90,7 @@ function buildDemoData() {
   ];
 
   let splitIdCounter = 0;
-  const splits: ItemSplit[] = [];
+  const splits: DemoItemAssignment[] = [];
   for (const [itemIdx, userIds] of splitAssignments) {
     const item = items[itemIdx];
     const perPerson = Math.floor(item.totalPriceCents / userIds.length);
@@ -91,10 +111,11 @@ function buildDemoData() {
   const serviceFee = Math.round((itemsTotal * 10) / 100);
   const grandTotal = itemsTotal + serviceFee;
 
-  const billedWithPayer: Bill = {
-    ...bill,
-    totalAmount: grandTotal,
-    totalAmountInput: grandTotal,
+  const expense: DemoExpenseInput = {
+    expenseType: "itemized",
+    serviceFeePercent: 10,
+    fixedFees: 0,
+    creatorId: "user_self",
     payers: [
       { userId: "user_self", amountCents: Math.round(grandTotal * 0.40) },
       { userId: "user_ana", amountCents: Math.round(grandTotal * 0.35) },
@@ -112,15 +133,9 @@ function buildDemoData() {
     consumption.set(userId, (consumption.get(userId) || 0) + fee);
   }
 
-  const payerAmounts = [
-    { userId: "user_self", amountCents: Math.round(grandTotal * 0.40) },
-    { userId: "user_ana", amountCents: Math.round(grandTotal * 0.35) },
-    { userId: "user_marcos", amountCents: grandTotal - Math.round(grandTotal * 0.40) - Math.round(grandTotal * 0.35) },
-  ];
-
   const payment = new Map<string, number>();
   for (const p of DEMO_USERS) payment.set(p.id, 0);
-  for (const pa of payerAmounts) payment.set(pa.userId, pa.amountCents);
+  for (const pa of expense.payers) payment.set(pa.userId, pa.amountCents);
 
   const netBalance = new Map<string, number>();
   for (const p of DEMO_USERS) {
@@ -136,7 +151,7 @@ function buildDemoData() {
   debtors.sort((a, b) => b.amount - a.amount);
   creditors.sort((a, b) => b.amount - a.amount);
 
-  const ledger: LedgerEntry[] = [];
+  const ledger: DemoDebt[] = [];
   let di = 0;
   let ci = 0;
   let entryId = 0;
@@ -145,8 +160,6 @@ function buildDemoData() {
     if (transfer <= 0) break;
     ledger.push({
       id: `ledger_${entryId++}`,
-      billId: BILL_ID,
-      entryType: "debt",
       fromUserId: debtors[di].id,
       toUserId: creditors[ci].id,
       amountCents: transfer,
@@ -160,7 +173,7 @@ function buildDemoData() {
     if (creditors[ci].amount <= 1) ci++;
   }
 
-  return { bill: billedWithPayer, items, splits, ledger, grandTotal };
+  return { expense, items, splits, ledger, grandTotal };
 }
 
 export default function DemoPage() {
@@ -185,13 +198,13 @@ export default function DemoPage() {
     paidAmountCents: 0,
   });
 
-  const { bill, items, splits, ledger, grandTotal } = useMemo(() => buildDemoData(), []);
+  const { expense, items, splits, ledger, grandTotal } = useMemo(() => buildDemoData(), []);
 
   const simplificationResult = useMemo(() => {
-    const rawEdges = computeRawEdges(bill, DEMO_USERS, splits, [], items);
+    const rawEdges = computeRawEdges(expense, DEMO_USERS, splits, [], items);
     if (rawEdges.length < 2) return null;
     return simplifyDebts(rawEdges, DEMO_USERS);
-  }, [bill, splits, items]);
+  }, [expense, splits, items]);
 
   const ledgerWithStatus = useMemo(
     () =>
@@ -215,13 +228,11 @@ export default function DemoPage() {
     if (simplifyEnabled && simplificationResult) {
       return simplificationResult.simplifiedEdges.map((edge, idx) => ({
         id: `edge_${idx}`,
-        billId: BILL_ID,
-        entryType: "debt" as const,
         fromUserId: edge.fromUserId,
         toUserId: edge.toUserId,
         amountCents: edge.amountCents,
         paidAmountCents: debtPaidAmounts.get(`edge_${idx}`) ?? 0,
-        status: debtStatuses.get(`edge_${idx}`) ?? "pending",
+        status: debtStatuses.get(`edge_${idx}`) ?? ("pending" as DemoDebtStatus),
         createdAt: new Date().toISOString(),
       }));
     }
@@ -348,10 +359,10 @@ export default function DemoPage() {
             >
               <BillSummary
                 expense={{
-                  expenseType: bill.billType,
-                  totalAmount: bill.totalAmount || items.reduce((s, i) => s + i.totalPriceCents, 0),
-                  serviceFeePercent: bill.serviceFeePercent,
-                  fixedFees: bill.fixedFees,
+                  expenseType: expense.expenseType,
+                  totalAmount: items.reduce((s, i) => s + i.totalPriceCents, 0),
+                  serviceFeePercent: expense.serviceFeePercent,
+                  fixedFees: expense.fixedFees,
                 }}
                 items={items}
                 itemSplits={splits}

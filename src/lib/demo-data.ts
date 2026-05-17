@@ -1,4 +1,4 @@
-import type { User, BillItem } from "@/types";
+import type { User, ExpenseItem } from "@/types";
 
 export const DEMO_USERS: User[] = [
   {
@@ -78,7 +78,7 @@ export const DEMO_PIX_KEYS: Record<string, string> = {
   user_rafael: "rafael.costa@gmail.com",
 };
 
-export const DEMO_ITEMS: Omit<BillItem, "id" | "billId" | "createdAt">[] = [
+export const DEMO_ITEMS: Omit<ExpenseItem, "id" | "expenseId" | "createdAt">[] = [
   {
     description: "Picanha na brasa 400g",
     quantity: 1,
