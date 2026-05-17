@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton } from "./profile-actions";
 
 export default async function PublicProfilePage({
