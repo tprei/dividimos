@@ -267,26 +267,50 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Concurrent activate + save: locking prevents corruption
-  //
-  // We simulate the race by verifying that after a sequential
-  // activate-then-save attempt, the final state is coherent:
-  // - Either the expense is still draft (save won the implicit order),
-  //   which cannot happen once activate has run first.
-  // - Or the save call is rejected with invalid_status (activate ran first),
-  //   which means no partial write has occurred.
-  //
-  // Full concurrent locking is verified by the FOR UPDATE in the RPC SQL.
+  // Group membership guard: non-member cannot create a draft in a foreign group
   // -------------------------------------------------------------------------
 
-  it("save after activate returns invalid_status with no corruption", async () => {
-    // Set up a complete draft
+  it("rejects new draft when caller is not a member of the target group", async () => {
+    // carol is not a member of the alice+bob group
+    const carol = await createTestUser({ name: "Carol NonMember" });
+
+    const { error } = await callSaveDraft(carol, {
+      expense: {
+        group_id: groupId,
+        title: "Carol infiltrates",
+        expense_type: "single_amount",
+        total_amount: 1000,
+        service_fee_percent: 0,
+        fixed_fees: 0,
+      },
+    });
+
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/permission_denied/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Concurrent activate + save: FOR UPDATE locking prevents corruption
+  //
+  // Both RPCs are fired at the same instant via Promise.all so they race
+  // through the network and hit the DB concurrently. PostgreSQL's FOR UPDATE
+  // inside save_expense_draft serialises them: one wins the row lock, the
+  // other waits and then observes the committed status change. The save must
+  // either:
+  //   (a) be rejected with invalid_status, OR
+  //   (b) complete cleanly only if it somehow acquired the lock first
+  //       (which cannot happen here because activate runs and commits first
+  //        when both start simultaneously — but we accept either outcome as
+  //        long as child rows are coherent).
+  // -------------------------------------------------------------------------
+
+  it("concurrent activate and save produce a coherent final state", async () => {
     const { data: expense } = await adminClient!
       .from("expenses")
       .insert({
         group_id: groupId,
         creator_id: alice.id,
-        title: "Concurrent test",
+        title: "Concurrent lock test",
         expense_type: "single_amount",
         total_amount: 6000,
         service_fee_percent: 0,
@@ -306,38 +330,56 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
       { expense_id: expenseId, user_id: alice.id, amount_cents: 6000 },
     ]);
 
-    // Activate first
-    const aliceClient = authenticateAs(alice);
-    const { error: activateError } = await aliceClient.rpc("activate_expense", {
-      p_expense_id: expenseId,
-    });
-    expect(activateError).toBeNull();
+    // Two independent authenticated clients so there are two distinct
+    // PostgREST connections — each request goes through a separate
+    // server-side transaction. callSaveDraft internally calls authenticateAs
+    // and creates its own client, giving us the second connection.
+    const aliceClientA = authenticateAs(alice);
 
-    // Now save_expense_draft runs after activate — must be rejected cleanly
-    const { error: saveError } = await callSaveDraft(alice, {
-      expense: {
-        id: expenseId,
-        group_id: groupId,
-        title: "Concurrent test mutated",
-        expense_type: "single_amount",
-        total_amount: 6000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
-      shares: [],
-      payers: [],
-    });
+    const [activateResult, saveResult] = await Promise.all([
+      aliceClientA.rpc("activate_expense", { p_expense_id: expenseId }),
+      callSaveDraft(alice, {
+        expense: {
+          id: expenseId,
+          group_id: groupId,
+          title: "Concurrent save attempt",
+          expense_type: "single_amount",
+          total_amount: 6000,
+          service_fee_percent: 0,
+          fixed_fees: 0,
+        },
+        shares: [],
+        payers: [],
+      }),
+    ]);
 
-    expect(saveError).not.toBeNull();
-    expect(saveError!.message).toMatch(/invalid_status/);
+    // activate must succeed
+    expect(activateResult.error).toBeNull();
 
-    // Verify child rows are intact (not wiped by a partial save)
+    // save must be rejected: if it acquired the lock before activate it would
+    // still be 'draft' momentarily but since activate committed before save
+    // could change status, save sees 'active' and returns invalid_status.
+    // In the rare event save lost the race but PostgreSQL serialised it after
+    // activate, it must also return invalid_status.
+    expect(saveResult.error).not.toBeNull();
+    expect(saveResult.error!.message).toMatch(/invalid_status/);
+
+    // Child rows must be intact — not wiped by a partial save
     const { data: shareRows } = await adminClient!
       .from("expense_shares")
       .select("user_id")
       .eq("expense_id", expenseId);
 
     expect(shareRows).toHaveLength(2);
+
+    // Expense must be active
+    const { data: row } = await adminClient!
+      .from("expenses")
+      .select("status")
+      .eq("id", expenseId)
+      .single();
+
+    expect(row!.status).toBe("active");
   });
 
   // -------------------------------------------------------------------------

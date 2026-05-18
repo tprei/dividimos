@@ -44,6 +44,19 @@ BEGIN
   v_expense_id := (p_expense->>'id')::uuid;
 
   IF v_expense_id IS NULL THEN
+    -- Verify caller is an accepted member of the target group.
+    -- SECURITY DEFINER bypasses RLS, so this check replaces the
+    -- expenses_insert policy that previously guarded group membership.
+    IF NOT EXISTS (
+      SELECT 1 FROM public.group_members
+       WHERE group_id = (p_expense->>'group_id')::uuid
+         AND user_id = v_caller
+         AND status = 'accepted'
+    ) THEN
+      RAISE EXCEPTION 'permission_denied: not a member of group %',
+        (p_expense->>'group_id')::uuid;
+    END IF;
+
     -- New draft: insert and return the generated id.
     INSERT INTO public.expenses (
       group_id,
@@ -154,6 +167,27 @@ BEGIN
 
   -- Insert guests and their shares in two passes (FK dependency).
   IF p_guests IS NOT NULL AND jsonb_array_length(p_guests) > 0 THEN
+    -- Reject duplicate local_id values within either array.
+    IF EXISTS (
+      SELECT g->>'local_id'
+        FROM jsonb_array_elements(p_guests) g
+       GROUP BY g->>'local_id'
+      HAVING COUNT(*) > 1
+    ) THEN
+      RAISE EXCEPTION 'invalid_input: duplicate local_id in guests';
+    END IF;
+
+    IF p_guest_shares IS NOT NULL AND jsonb_array_length(p_guest_shares) > 0 THEN
+      IF EXISTS (
+        SELECT gs->>'local_id'
+          FROM jsonb_array_elements(p_guest_shares) gs
+         GROUP BY gs->>'local_id'
+        HAVING COUNT(*) > 1
+      ) THEN
+        RAISE EXCEPTION 'invalid_input: duplicate local_id in guest_shares';
+      END IF;
+    END IF;
+
     FOR v_guest IN SELECT * FROM jsonb_array_elements(p_guests)
     LOOP
       INSERT INTO public.expense_guests (
