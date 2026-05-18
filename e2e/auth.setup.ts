@@ -9,7 +9,7 @@ const authFile = (name: string) => `e2e/.auth/${name}.json`;
  * Stores session cookies in e2e/.auth/ directory for reuse across tests.
  *
  * Prerequisites:
- * - Dev server running with NEXT_PUBLIC_DEV_LOGIN_ENABLED=true
+ * - Dev server running with DEV_LOGIN_ENABLED=true and NODE_ENV=development
  * - Remote Supabase or local Supabase available
  */
 
@@ -46,7 +46,8 @@ for (const user of testUsers) {
  * This is the main setup used by flow tests.
  */
 setup("setup alice browser session", async ({ page }) => {
-  // Use dev login API via fetch, then navigate to set cookies
+  // Use dev login API via fetch — session cookies are set via Set-Cookie headers
+  // and stored automatically in Playwright's cookie jar
   const response = await page.request.post("/api/dev/login", {
     data: { email: "alice_test@test.dividimos.local", name: "Alice Test", handle: "alice_test" },
   });
@@ -55,18 +56,6 @@ setup("setup alice browser session", async ({ page }) => {
 
   if (!body.success) {
     throw new Error(`Failed to login alice: ${body.error}`);
-  }
-
-  // Apply cookies from response to page context
-  if (body.cookies) {
-    await page.context().addCookies(
-      body.cookies.map((c: { name: string; value: string }) => ({
-        name: c.name,
-        value: c.value,
-        domain: "localhost",
-        path: "/",
-      })),
-    );
   }
 
   // Navigate to app to verify session and complete any needed setup
@@ -101,17 +90,6 @@ setup("setup bob browser session", async ({ page }) => {
     throw new Error(`Failed to login bob: ${body.error}`);
   }
 
-  if (body.cookies) {
-    await page.context().addCookies(
-      body.cookies.map((c: { name: string; value: string }) => ({
-        name: c.name,
-        value: c.value,
-        domain: "localhost",
-        path: "/",
-      })),
-    );
-  }
-
   await page.goto("/app");
   await page.waitForLoadState("networkidle");
 
@@ -134,17 +112,6 @@ setup("setup carol browser session", async ({ page }) => {
 
   if (!body.success) {
     throw new Error(`Failed to login carol: ${body.error}`);
-  }
-
-  if (body.cookies) {
-    await page.context().addCookies(
-      body.cookies.map((c: { name: string; value: string }) => ({
-        name: c.name,
-        value: c.value,
-        domain: "localhost",
-        path: "/",
-      })),
-    );
   }
 
   await page.goto("/app");

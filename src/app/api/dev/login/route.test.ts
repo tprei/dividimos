@@ -52,7 +52,7 @@ function makeRequest(body: Record<string, unknown>) {
 }
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED = "true";
+  process.env.DEV_LOGIN_ENABLED = "true";
   ssrMock = createMockSupabase();
   mockSsrClient.from = (table: string) => ssrMock.client.from(table);
   adminMock.reset();
@@ -76,12 +76,24 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED;
+  delete process.env.DEV_LOGIN_ENABLED;
 });
 
 describe("POST /api/dev/login", () => {
-  it("returns 403 when dev login is not enabled", async () => {
-    delete process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED;
+  it("returns 404 in production regardless of env flag", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    const response = await POST(makeRequest({ email: "alice@test.dividimos.local" }));
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    expect(body.error).toBe("Not found");
+
+    vi.unstubAllEnvs();
+  });
+
+  it("returns 403 when dev login flag is not set", async () => {
+    delete process.env.DEV_LOGIN_ENABLED;
 
     const response = await POST(makeRequest({ email: "alice@test.dividimos.local" }));
 
@@ -96,6 +108,20 @@ describe("POST /api/dev/login", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Provide 'email'");
+  });
+
+  it("returns 400 for non-@test.dividimos.local email", async () => {
+    const response = await POST(makeRequest({ email: "attacker@evil.com" }));
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("Only @test.dividimos.local emails are allowed");
+  });
+
+  it("rejects email that merely contains but does not end with the allowed domain", async () => {
+    const response = await POST(makeRequest({ email: "attacker@evil.com@test.dividimos.local.evil.org" }));
+
+    expect(response.status).toBe(400);
   });
 
   it("auto-creates user when email is not found in listUsers", async () => {
@@ -149,7 +175,8 @@ describe("POST /api/dev/login", () => {
 
     expect(response.status).toBe(500);
     const body = await response.json();
-    expect(body.error).toContain("Failed to generate session");
+    expect(body.error).toBe("Failed to generate session");
+    expect(body.error).not.toContain("link generation failed");
   });
 
   it("returns redirect /app for onboarded user and /auth/onboard for new user", async () => {
@@ -178,5 +205,34 @@ describe("POST /api/dev/login", () => {
     expect(newUserResponse.status).toBe(200);
     const newUserBody = await newUserResponse.json();
     expect(newUserBody.redirect).toBe("/auth/onboard");
+  });
+
+  it("response body does not contain a cookies field", async () => {
+    adminAuthMethods.listUsers.mockResolvedValue({
+      data: { users: [{ id: "user-alice", email: "alice@test.dividimos.local" }] },
+      error: null,
+    });
+    ssrMock.onTable("users", { data: { onboarded: true } });
+
+    const response = await POST(makeRequest({ email: "alice@test.dividimos.local" }));
+    const body = await response.json();
+
+    expect(body).not.toHaveProperty("cookies");
+  });
+
+  it("500 response body does not leak raw error messages", async () => {
+    adminAuthMethods.listUsers.mockResolvedValue({
+      data: { users: [{ id: "user-alice", email: "alice@test.dividimos.local" }] },
+      error: null,
+    });
+    adminAuthMethods.generateLink.mockResolvedValue({
+      data: null,
+      error: { message: "internal supabase admin secret details" },
+    });
+
+    const response = await POST(makeRequest({ email: "alice@test.dividimos.local" }));
+    const body = await response.json();
+
+    expect(body.error).not.toContain("internal supabase admin secret details");
   });
 });

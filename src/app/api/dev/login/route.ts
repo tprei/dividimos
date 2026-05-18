@@ -9,24 +9,26 @@ import { createServerClient } from "@supabase/ssr";
  * Programmatic login for development/testing — agents can authenticate
  * with a single HTTP request instead of navigating the UI.
  *
- * Only available when NEXT_PUBLIC_DEV_LOGIN_ENABLED=true.
+ * Only available when NODE_ENV === "development" and DEV_LOGIN_ENABLED=true.
+ * Only accepts @test.dividimos.local email addresses.
  *
  * Body: { email: string, name?: string, handle?: string }
  *   - email: creates user if not found, then signs in (e.g. "alice@test.dividimos.local")
  *   - name: optional display name to set on the user profile
  *   - handle: optional @handle to set on the user profile
  *
- * Returns: { success, userId, redirect, cookies }
+ * Returns: { success, userId, redirect }
  */
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production") {
+  const env = process.env.NODE_ENV;
+  if (env !== "development" && env !== "test") {
     return NextResponse.json(
-      { error: "Dev login is disabled in production" },
+      { error: "Not found" },
       { status: 404 },
     );
   }
 
-  if (process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED !== "true") {
+  if (process.env.DEV_LOGIN_ENABLED !== "true") {
     return NextResponse.json(
       { error: "Dev login is only available in test mode" },
       { status: 403 },
@@ -43,6 +45,13 @@ export async function POST(request: Request) {
   if (!email) {
     return NextResponse.json(
       { error: "Provide 'email'" },
+      { status: 400 },
+    );
+  }
+
+  if (!email.endsWith("@test.dividimos.local")) {
+    return NextResponse.json(
+      { error: "Only @test.dividimos.local emails are allowed" },
       { status: 400 },
     );
   }
@@ -66,8 +75,9 @@ export async function POST(request: Request) {
         });
 
       if (createError || !created.user) {
+        console.error("[dev/login] createUser error:", createError);
         return NextResponse.json(
-          { error: `Failed to create user: ${createError?.message}` },
+          { error: "Failed to create dev user" },
           { status: 500 },
         );
       }
@@ -82,8 +92,9 @@ export async function POST(request: Request) {
       });
 
     if (linkError || !linkData) {
+      console.error("[dev/login] generateLink error:", linkError);
       return NextResponse.json(
-        { error: `Failed to generate session: ${linkError?.message}` },
+        { error: "Failed to generate session" },
         { status: 500 },
       );
     }
@@ -101,11 +112,6 @@ export async function POST(request: Request) {
 
     // Create a server client that can set cookies on the response
     const cookieStore = await cookies();
-    const responseCookies: Array<{
-      name: string;
-      value: string;
-      options: Record<string, unknown>;
-    }> = [];
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -118,7 +124,6 @@ export async function POST(request: Request) {
           setAll(cookiesToSet) {
             for (const { name, value, options } of cookiesToSet) {
               cookieStore.set(name, value, options);
-              responseCookies.push({ name, value, options });
             }
           },
         },
@@ -131,8 +136,9 @@ export async function POST(request: Request) {
     });
 
     if (verifyError) {
+      console.error("[dev/login] verifyOtp error:", verifyError);
       return NextResponse.json(
-        { error: `Session verification failed: ${verifyError.message}` },
+        { error: "Failed to authenticate dev user" },
         { status: 500 },
       );
     }
@@ -163,8 +169,9 @@ export async function POST(request: Request) {
           });
 
       if (upsertError) {
+        console.error("[dev/login] profile upsert error:", upsertError);
         return NextResponse.json(
-          { error: `Profile setup failed: ${upsertError.message}` },
+          { error: "Failed to set up dev user profile" },
           { status: 500 },
         );
       }
@@ -183,14 +190,11 @@ export async function POST(request: Request) {
       success: true,
       userId,
       redirect,
-      cookies: responseCookies.map((c) => ({
-        name: c.name,
-        value: c.value,
-      })),
     });
   } catch (err) {
+    console.error("[dev/login] unexpected error:", err);
     return NextResponse.json(
-      { error: `Unexpected error: ${err instanceof Error ? err.message : String(err)}` },
+      { error: "Failed to authenticate dev user" },
       { status: 500 },
     );
   }
