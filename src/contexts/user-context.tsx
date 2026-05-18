@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@/types";
 import type { Database } from "@/types/database";
@@ -11,7 +11,7 @@ interface UserContextValue {
   user: User | null;
 }
 
-const UserContext = createContext<UserContextValue>({ user: null });
+export const UserContext = createContext<UserContextValue>({ user: null });
 
 export function UserProvider({
   initialUser,
@@ -70,7 +70,8 @@ export function UserProvider({
     return () => subscription.unsubscribe();
   }, []);
 
-  return <UserContext.Provider value={{ user }}>{children}</UserContext.Provider>;
+  const value = useMemo(() => ({ user }), [user]);
+  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
 
 export function useUser() {

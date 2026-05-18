@@ -1,6 +1,7 @@
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, renderHook } from "@testing-library/react";
+import { useContext } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { UserProvider, useUser } from "./user-context";
+import { UserProvider, useUser, UserContext } from "./user-context";
 
 type AuthCallback = (event: string, session: { user: { id: string } } | null) => void;
 
@@ -177,5 +178,21 @@ describe("UserProvider", () => {
     );
     unmount();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("context value object identity is stable across re-renders when user is unchanged", () => {
+    const fixedUser = { id: "u1", email: "b@b.com", handle: "bob", name: "Bob", pixKeyType: "email" as const, pixKeyHint: "b***@b.com", onboarded: true, createdAt: "", notificationPreferences: {} };
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <UserProvider initialUser={fixedUser}>{children}</UserProvider>
+    );
+
+    const { result, rerender } = renderHook(() => useContext(UserContext), { wrapper });
+
+    const first = result.current;
+    rerender();
+    const second = result.current;
+
+    expect(second).toBe(first);
   });
 });
