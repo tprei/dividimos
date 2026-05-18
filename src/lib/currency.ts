@@ -14,12 +14,18 @@ export function centsToDecimal(cents: number): string {
 }
 
 export function decimalToCents(value: number): number {
-  return Math.round(value * 100);
+  return Math.round(value * 100 + 0.0001);
 }
 
 export function parseBRLInput(input: string): number {
-  const cleaned = input.replace(/[^\d,.-]/g, "").replace(",", ".");
-  const parsed = parseFloat(cleaned);
+  const stripped = input.replace(/[^\d,.-]/g, "");
+  let normalized: string;
+  if (stripped.includes(",")) {
+    normalized = stripped.replace(/\./g, "").replace(",", ".");
+  } else {
+    normalized = stripped;
+  }
+  const parsed = parseFloat(normalized);
   return isNaN(parsed) ? 0 : decimalToCents(parsed);
 }
 
