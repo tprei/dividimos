@@ -16,6 +16,7 @@ import type { Expense, BillSplit, ItemSplit } from "@/types";
 describe("Edit Draft Flow", () => {
   beforeEach(() => {
     useBillStore.getState().reset();
+    useBillStore.setState({ currentUser: userAlice });
   });
 
   it("restores an itemized draft expense into the store", () => {
@@ -28,28 +29,13 @@ describe("Edit Draft Flow", () => {
     const items = [
       makeExpenseItem({ id: "item-1", description: "Pizza", totalPriceCents: 5000 }),
     ];
-    const splits: ItemSplit[] = [
-      {
-        id: "split-1",
-        itemId: "item-1",
-        userId: "user-bob",
-        splitType: "equal",
-        value: 1,
-        computedAmountCents: 5000,
-      },
-    ];
+    const payers = [{ expenseId: "draft-1", userId: "user-alice", amountCents: 5500 }];
 
-    // Simulate what the edit draft useEffect does
-    useBillStore.setState({
-      currentUser: userAlice,
+    useBillStore.getState().hydrateFromServer({
       expense,
-      totalAmountInput: 0,
-      participants: [userAlice, userBob],
       items,
-      payers: [{ expenseId: "draft-1", userId: "user-alice", amountCents: 5500 }],
-      splits,
-      billSplits: [],
-      previewDebts: [],
+      participants: [userAlice, userBob],
+      payers,
     });
 
     const state = useBillStore.getState();
@@ -57,7 +43,6 @@ describe("Edit Draft Flow", () => {
     expect(state.expense?.title).toBe("Jantar editavel");
     expect(state.participants).toHaveLength(2);
     expect(state.items).toHaveLength(1);
-    expect(state.splits).toHaveLength(1);
     expect(state.payers).toHaveLength(1);
   });
 
@@ -65,43 +50,34 @@ describe("Edit Draft Flow", () => {
     const expense = makeSingleAmountExpense({
       id: "draft-2",
       title: "Aluguel editavel",
+      totalAmount: 200000,
     });
     const billSplits: BillSplit[] = [
       { userId: "user-alice", splitType: "equal", value: 1, computedAmountCents: 100000 },
       { userId: "user-bob", splitType: "equal", value: 1, computedAmountCents: 100000 },
     ];
 
-    useBillStore.setState({
-      currentUser: userAlice,
+    useBillStore.getState().hydrateFromServer({
       expense,
-      totalAmountInput: 200000,
-      participants: [userAlice, userBob],
       items: [],
-      payers: [],
-      splits: [],
+      participants: [userAlice, userBob],
       billSplits,
-      previewDebts: [],
     });
 
     const state = useBillStore.getState();
     expect(state.expense?.expenseType).toBe("single_amount");
     expect(state.billSplits).toHaveLength(2);
     expect(state.items).toHaveLength(0);
+    expect(state.totalAmountInput).toBe(200000);
   });
 
   it("allows updating expense metadata after restoring a draft", () => {
     const expense = makeExpense({ id: "draft-3", title: "Titulo antigo" });
 
-    useBillStore.setState({
-      currentUser: userAlice,
+    useBillStore.getState().hydrateFromServer({
       expense,
-      totalAmountInput: 0,
-      participants: [userAlice, userBob],
       items: [],
-      payers: [],
-      splits: [],
-      billSplits: [],
-      previewDebts: [],
+      participants: [userAlice, userBob],
     });
 
     useBillStore.getState().updateExpense({
@@ -123,16 +99,10 @@ describe("Edit Draft Flow", () => {
   it("preserves existing participants when modifying expense metadata", () => {
     const expense = makeExpense({ id: "draft-4" });
 
-    useBillStore.setState({
-      currentUser: userAlice,
+    useBillStore.getState().hydrateFromServer({
       expense,
-      totalAmountInput: 0,
-      participants: [userAlice, userBob],
       items: [],
-      payers: [],
-      splits: [],
-      billSplits: [],
-      previewDebts: [],
+      participants: [userAlice, userBob],
     });
 
     useBillStore.getState().updateExpense({ title: "Updated" });
@@ -142,36 +112,19 @@ describe("Edit Draft Flow", () => {
     expect(useBillStore.getState().participants[1].id).toBe("user-bob");
   });
 
-  it("preserves items and splits when modifying expense metadata", () => {
+  it("preserves items when modifying expense metadata", () => {
     const expense = makeExpense({ id: "draft-5" });
     const items = [makeExpenseItem({ id: "item-1" })];
-    const splits: ItemSplit[] = [
-      {
-        id: "split-1",
-        itemId: "item-1",
-        userId: "user-bob",
-        splitType: "equal",
-        value: 1,
-        computedAmountCents: 5000,
-      },
-    ];
 
-    useBillStore.setState({
-      currentUser: userAlice,
+    useBillStore.getState().hydrateFromServer({
       expense,
-      totalAmountInput: 0,
-      participants: [userAlice, userBob],
       items,
-      payers: [],
-      splits,
-      billSplits: [],
-      previewDebts: [],
+      participants: [userAlice, userBob],
     });
 
     useBillStore.getState().updateExpense({ title: "Modified" });
 
     expect(useBillStore.getState().items).toHaveLength(1);
-    expect(useBillStore.getState().splits).toHaveLength(1);
     expect(useBillStore.getState().items[0].description).toBe("Pizza");
   });
 
@@ -179,16 +132,10 @@ describe("Edit Draft Flow", () => {
     const expense = makeExpense({ id: "draft-6" });
     const items = [makeExpenseItem({ id: "item-1", description: "Pizza" })];
 
-    useBillStore.setState({
-      currentUser: userAlice,
+    useBillStore.getState().hydrateFromServer({
       expense,
-      totalAmountInput: 0,
-      participants: [userAlice, userBob],
       items,
-      payers: [],
-      splits: [],
-      billSplits: [],
-      previewDebts: [],
+      participants: [userAlice, userBob],
     });
 
     useBillStore.getState().addItem({
@@ -200,6 +147,30 @@ describe("Edit Draft Flow", () => {
 
     expect(useBillStore.getState().items).toHaveLength(2);
     expect(useBillStore.getState().items[1].description).toBe("Bebida");
+  });
+
+  it("clears zombie state from a prior wizard session on hydrate", () => {
+    const oldExpense = makeExpense({ id: "old-1" });
+    useBillStore.getState().hydrateFromServer({
+      expense: oldExpense,
+      items: [makeExpenseItem({ id: "old-item" })],
+      participants: [userAlice, userBob],
+    });
+    useBillStore.getState().addGuest("Ghost");
+    expect(useBillStore.getState().guests).toHaveLength(1);
+
+    const newExpense = makeExpense({ id: "new-1" });
+    useBillStore.getState().hydrateFromServer({
+      expense: newExpense,
+      items: [],
+      participants: [userAlice],
+    });
+
+    const state = useBillStore.getState();
+    expect(state.guests).toHaveLength(0);
+    expect(state.splits).toHaveLength(0);
+    expect(state.billSplits).toHaveLength(0);
+    expect(state.payers).toHaveLength(0);
   });
 
   it("determines correct starting step based on draft data", () => {

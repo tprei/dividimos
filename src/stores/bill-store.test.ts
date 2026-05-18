@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
-import { useBillStore, _testGetCacheState } from "./bill-store";
+import { useBillStore, _testGetCacheState, selectPreviewDebts } from "./bill-store";
 
 function setup() {
   const s = useBillStore.getState();
@@ -296,35 +296,33 @@ describe("getParticipantTotal", () => {
   });
 });
 
-describe("computeLedger", () => {
+describe("selectPreviewDebts", () => {
   it("produces one debt edge for two participants with one payer", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
-    const { addItem, splitItemEqually, setPayerFull, computeLedger } = useBillStore.getState();
+    const { addItem, splitItemEqually, setPayerFull } = useBillStore.getState();
     addItem({ description: "X", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     splitItemEqually(itemId, ["user-alice", "user-bob"]);
     setPayerFull("user-alice");
-    computeLedger();
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
     // 5000 item split + 10% service fee (500) = 5500 owed by Bob
-    expect(previewDebts[0]).toMatchObject({ fromUserId: "user-bob", toUserId: "user-alice", amountCents: 5500 });
+    expect(debts[0]).toMatchObject({ fromUserId: "user-bob", toUserId: "user-alice", amountCents: 5500 });
   });
 
   it("produces no debts when payer consumed everything", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
-    const { addItem, assignItem, setPayerFull, computeLedger } = useBillStore.getState();
+    const { addItem, assignItem, setPayerFull } = useBillStore.getState();
     addItem({ description: "X", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     assignItem(itemId, "user-alice", "fixed", 10000);
     setPayerFull("user-alice");
-    computeLedger();
-    const { previewDebts, expense } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(0);
-    expect(expense?.status).toBe("settled");
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(0);
+    expect(useBillStore.getState().expense?.status).toBe("draft");
   });
 
   it("uses creator as fallback payer when payers array is empty", () => {
@@ -334,23 +332,21 @@ describe("computeLedger", () => {
     useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
     useBillStore.getState().splitBillEqually(["user-alice", "user-bob"]);
     // Don't set payers — should fall back to creator (alice)
-    useBillStore.getState().computeLedger();
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
-    expect(previewDebts[0].toUserId).toBe("user-alice");
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
+    expect(debts[0].toUserId).toBe("user-alice");
   });
 
-  it("previewDebts are DebtEdge[] without payment tracking fields", () => {
+  it("returned edges are DebtEdge[] without payment tracking fields", () => {
     const s = setup();
     s.createExpense("Test", "single_amount");
     useBillStore.getState().addParticipant(userBob);
     useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
     useBillStore.getState().splitBillEqually(["user-alice", "user-bob"]);
     useBillStore.getState().setPayerFull("user-alice");
-    useBillStore.getState().computeLedger();
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
-    const debt = previewDebts[0];
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
+    const debt = debts[0];
     expect(debt).toHaveProperty("fromUserId");
     expect(debt).toHaveProperty("toUserId");
     expect(debt).toHaveProperty("amountCents");
@@ -467,7 +463,7 @@ describe("reset", () => {
     expect(state.payers).toHaveLength(0);
     expect(state.splits).toHaveLength(0);
     expect(state.billSplits).toHaveLength(0);
-    expect(state.previewDebts).toHaveLength(0);
+    expect(selectPreviewDebts(state)).toHaveLength(0);
   });
 });
 
@@ -695,23 +691,22 @@ describe("guests in splits and ledger", () => {
     expect(splits.reduce((sum, s) => sum + s.computedAmountCents, 0)).toBe(9000);
   });
 
-  it("computeLedger includes guest debt edges", () => {
+  it("selectPreviewDebts includes guest debt edges", () => {
     setup().createExpense("Test", "single_amount");
     useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
     const guestId = useBillStore.getState().addGuest("Diana");
     useBillStore.getState().splitBillEqually(["user-alice", guestId]);
     useBillStore.getState().setPayerFull("user-alice");
-    useBillStore.getState().computeLedger();
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
-    expect(previewDebts[0]).toMatchObject({
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
+    expect(debts[0]).toMatchObject({
       fromUserId: guestId,
       toUserId: "user-alice",
       amountCents: 5000,
     });
   });
 
-  it("computeLedger handles mix of participants and guests (itemized)", () => {
+  it("selectPreviewDebts handles mix of participants and guests (itemized)", () => {
     setup().createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
     const guestId = useBillStore.getState().addGuest("Diana");
@@ -719,11 +714,10 @@ describe("guests in splits and ledger", () => {
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", guestId]);
     useBillStore.getState().setPayerFull("user-alice");
-    useBillStore.getState().computeLedger();
-    const { previewDebts } = useBillStore.getState();
+    const debts = selectPreviewDebts(useBillStore.getState());
     // Bob and guest each owe alice for their share + service fee
-    expect(previewDebts.length).toBeGreaterThanOrEqual(1);
-    const guestDebt = previewDebts.find((d) => d.fromUserId === guestId);
+    expect(debts.length).toBeGreaterThanOrEqual(1);
+    const guestDebt = debts.find((d) => d.fromUserId === guestId);
     expect(guestDebt).toBeDefined();
     expect(guestDebt!.toUserId).toBe("user-alice");
   });
@@ -861,7 +855,7 @@ describe("participant and guest removal flows", () => {
     expect(carlosSplit!.computedAmountCents).toBe(3000);
   });
 
-  it("computeLedger after participant removal reflects the remaining participant set", () => {
+  it("selectPreviewDebts after participant removal reflects the remaining participant set", () => {
     setup().createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
     useBillStore.getState().addParticipant(userCarlos);
@@ -871,14 +865,14 @@ describe("participant and guest removal flows", () => {
     useBillStore.getState().setPayerFull("user-alice");
 
     useBillStore.getState().removeParticipant("user-carlos");
-    useBillStore.getState().computeLedger();
+    const debts = selectPreviewDebts(useBillStore.getState());
 
-    const { previewDebts, participants } = useBillStore.getState();
+    const { participants } = useBillStore.getState();
     expect(participants.find((p) => p.id === "user-carlos")).toBeUndefined();
-    expect(previewDebts.find((d) => d.fromUserId === "user-carlos")).toBeUndefined();
-    expect(previewDebts.find((d) => d.toUserId === "user-carlos")).toBeUndefined();
-    expect(previewDebts).toHaveLength(1);
-    expect(previewDebts[0]).toMatchObject({ fromUserId: "user-bob", toUserId: "user-alice" });
+    expect(debts.find((d) => d.fromUserId === "user-carlos")).toBeUndefined();
+    expect(debts.find((d) => d.toUserId === "user-carlos")).toBeUndefined();
+    expect(debts).toHaveLength(1);
+    expect(debts[0]).toMatchObject({ fromUserId: "user-bob", toUserId: "user-alice" });
   });
 
   it("removing all non-creator participants leaves only the creator", () => {
@@ -954,7 +948,7 @@ describe("createExpenseFromDm", () => {
     expect(state.payers).toHaveLength(0);
     expect(state.splits).toHaveLength(0);
     expect(state.billSplits).toHaveLength(0);
-    expect(state.previewDebts).toHaveLength(0);
+    expect(selectPreviewDebts(state)).toHaveLength(0);
     expect(state.totalAmountInput).toBe(0);
   });
   it("supports auto-title via updateExpense after creation", () => {
@@ -1141,7 +1135,7 @@ describe("hydrateFromChatDraft", () => {
     expect(state.guests).toHaveLength(0);
     expect(state.splits).toHaveLength(0);
     expect(state.billSplits).toHaveLength(0);
-    expect(state.previewDebts).toHaveLength(0);
+    expect(selectPreviewDebts(state)).toHaveLength(0);
   });
 
   it("defaults title to empty string when not provided", () => {
@@ -1167,7 +1161,7 @@ describe("hydrateFromChatDraft", () => {
 });
 
 describe("consumption memoization", () => {
-  it("caches consumption across computeLedger and getExpenseShares calls", () => {
+  it("caches consumption across selectPreviewDebts and getExpenseShares calls", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     s.addParticipant(userBob);
@@ -1176,7 +1170,7 @@ describe("consumption memoization", () => {
     s.splitItemEqually(itemId, ["user-alice", "user-bob"]);
     s.setPayerFull("user-alice");
 
-    s.computeLedger();
+    selectPreviewDebts(useBillStore.getState());
     expect(_testGetCacheState().hasCachedResult).toBe(true);
 
     const shares = useBillStore.getState().getExpenseShares();
@@ -1197,12 +1191,12 @@ describe("consumption memoization", () => {
     s.splitBillEqually(["user-alice", "user-bob"]);
     s.setPayerFull("user-alice");
 
-    s.computeLedger();
+    selectPreviewDebts(useBillStore.getState());
     expect(_testGetCacheState().hasCachedResult).toBe(true);
 
     s.splitBillEqually(["user-alice", "user-bob"]);
 
-    s.computeLedger();
+    selectPreviewDebts(useBillStore.getState());
     expect(_testGetCacheState().hasCachedResult).toBe(true);
   });
 
@@ -1214,7 +1208,7 @@ describe("consumption memoization", () => {
     s.splitBillEqually(["user-alice", "user-bob"]);
     s.setPayerFull("user-alice");
 
-    s.computeLedger();
+    selectPreviewDebts(useBillStore.getState());
     expect(_testGetCacheState().hasCachedResult).toBe(true);
 
     useBillStore.getState().reset();
@@ -1236,7 +1230,7 @@ describe("consumption memoization", () => {
     }
   });
 
-  it("computeLedger and getExpenseShares agree on consumption for itemized with fees", () => {
+  it("selectPreviewDebts and getExpenseShares agree on consumption for itemized with fees", () => {
     const s = setup();
     s.createExpense("Jantar", "itemized");
     s.addParticipant(userBob);
@@ -1249,8 +1243,7 @@ describe("consumption memoization", () => {
     s.splitItemEqually(items[1].id, ["user-alice", "user-bob"]);
     s.setPayerFull("user-alice");
 
-    s.computeLedger();
-    const debts = useBillStore.getState().previewDebts;
+    const debts = selectPreviewDebts(useBillStore.getState());
     const shares = useBillStore.getState().getExpenseShares();
 
     const totalShares = shares.reduce((sum, sh) => sum + sh.shareAmountCents, 0);
@@ -1270,7 +1263,7 @@ describe("consumption memoization", () => {
     s.splitBillEqually(["user-alice", "user-bob"]);
     s.splitPaymentEqually(["user-alice", "user-bob"]);
 
-    expect(useBillStore.getState().wouldProduceNoEdges()).toBe(true);
+    expect(s.wouldProduceNoEdges()).toBe(true);
     expect(_testGetCacheState().hasCachedResult).toBe(true);
   });
 });

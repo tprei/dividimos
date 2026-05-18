@@ -162,7 +162,7 @@ export default function BillDetailPage({
     const data = await loadExpense(expenseId);
     if (data) {
       setExpenseData(data);
-      useBillStore.setState({
+      useBillStore.getState().hydrateFromServer({
         expense: {
           id: data.id,
           groupId: data.groupId,
@@ -250,11 +250,7 @@ export default function BillDetailPage({
         if (!prev || prev.id !== updated.id) return prev;
         return { ...prev, status: updated.status, updatedAt: updated.updatedAt };
       });
-      useBillStore.setState((state) => ({
-        expense: state.expense
-          ? { ...state.expense, status: updated.status, updatedAt: updated.updatedAt }
-          : null,
-      }));
+      useBillStore.getState().patchExpenseFromRealtime(updated);
     },
     [],
   );

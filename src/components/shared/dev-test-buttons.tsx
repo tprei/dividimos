@@ -74,8 +74,6 @@ export function DevTestButtons() {
     const gt = useBillStore.getState().getGrandTotal();
     store.setPayerAmount(pIds[1], Math.floor(gt * 0.45));
     store.setPayerAmount(pIds[3], gt - Math.floor(gt * 0.45));
-
-    store.computeLedger();
   };
 
   return (

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, selectPreviewDebts } from "@/stores/bill-store";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
 
 /**
@@ -23,15 +23,14 @@ describe("Settlement preview flows", () => {
     store.addParticipant(userCarlos);
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
   });
 
   it("computes preview debts with correct amounts", () => {
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(2);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(2);
 
-    const bobDebt = previewDebts.find((e) => e.fromUserId === "user-bob")!;
-    const carlosDebt = previewDebts.find((e) => e.fromUserId === "user-carlos")!;
+    const bobDebt = debts.find((e) => e.fromUserId === "user-bob")!;
+    const carlosDebt = debts.find((e) => e.fromUserId === "user-carlos")!;
 
     expect(bobDebt.amountCents).toBe(3000);
     expect(carlosDebt.amountCents).toBe(3000);
@@ -39,14 +38,14 @@ describe("Settlement preview flows", () => {
     expect(carlosDebt.toUserId).toBe("user-alice");
   });
 
-  it("expense status is active when debts exist", () => {
+  it("expense status remains draft (server-authoritative)", () => {
     const { expense } = useBillStore.getState();
-    expect(expense!.status).toBe("active");
+    expect(expense!.status).toBe("draft");
   });
 
   it("preview debts are DebtEdge[] without payment tracking", () => {
-    const { previewDebts } = useBillStore.getState();
-    for (const debt of previewDebts) {
+    const debts = selectPreviewDebts(useBillStore.getState());
+    for (const debt of debts) {
       expect(debt).toHaveProperty("fromUserId");
       expect(debt).toHaveProperty("toUserId");
       expect(debt).toHaveProperty("amountCents");
@@ -58,8 +57,8 @@ describe("Settlement preview flows", () => {
   });
 
   it("total debt equals total consumption by non-payers", () => {
-    const { previewDebts } = useBillStore.getState();
-    const totalDebt = previewDebts.reduce((s, e) => s + e.amountCents, 0);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    const totalDebt = debts.reduce((s, e) => s + e.amountCents, 0);
     // 9000 total, alice paid all, each consumed 3000
     // bob owes 3000, carlos owes 3000 = 6000 total debt
     expect(totalDebt).toBe(6000);

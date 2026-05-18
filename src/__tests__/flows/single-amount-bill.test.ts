@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, selectPreviewDebts } from "@/stores/bill-store";
 import { userAlice, userBob, userCarlos } from "@/test/fixtures";
 
 describe("Single amount expense flows", () => {
@@ -17,13 +17,12 @@ describe("Single amount expense flows", () => {
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(2);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(2);
 
-    const bobEntry = previewDebts.find((e) => e.fromUserId === "user-bob");
-    const carlosEntry = previewDebts.find((e) => e.fromUserId === "user-carlos");
+    const bobEntry = debts.find((e) => e.fromUserId === "user-bob");
+    const carlosEntry = debts.find((e) => e.fromUserId === "user-carlos");
     expect(bobEntry!.amountCents).toBe(10000);
     expect(carlosEntry!.amountCents).toBe(10000);
   });
@@ -40,13 +39,12 @@ describe("Single amount expense flows", () => {
       { userId: "user-bob", percentage: 40 },
     ]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
-    expect(previewDebts[0].fromUserId).toBe("user-bob");
-    expect(previewDebts[0].toUserId).toBe("user-alice");
-    expect(previewDebts[0].amountCents).toBe(4000);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
+    expect(debts[0].fromUserId).toBe("user-bob");
+    expect(debts[0].toUserId).toBe("user-alice");
+    expect(debts[0].amountCents).toBe(4000);
   });
 
   it("Flow 3: fixed split with unequal amounts", () => {
@@ -63,11 +61,10 @@ describe("Single amount expense flows", () => {
       { userId: "user-carlos", amountCents: 3000 },
     ]);
     store.setPayerFull("user-alice");
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(2);
-    const totalOwed = previewDebts.reduce((s, e) => s + e.amountCents, 0);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(2);
+    const totalOwed = debts.reduce((s, e) => s + e.amountCents, 0);
     expect(totalOwed).toBe(6000);
   });
 
@@ -82,13 +79,12 @@ describe("Single amount expense flows", () => {
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
     store.setPayerAmount("user-alice", 4000);
     store.setPayerAmount("user-bob", 2000);
-    store.computeLedger();
 
-    const { previewDebts } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(1);
-    expect(previewDebts[0].fromUserId).toBe("user-carlos");
-    expect(previewDebts[0].toUserId).toBe("user-alice");
-    expect(previewDebts[0].amountCents).toBe(2000);
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(1);
+    expect(debts[0].fromUserId).toBe("user-carlos");
+    expect(debts[0].toUserId).toBe("user-alice");
+    expect(debts[0].amountCents).toBe(2000);
   });
 
   it("Flow 5: everyone paid their share → no debts, settled", () => {
@@ -101,10 +97,8 @@ describe("Single amount expense flows", () => {
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
     store.splitPaymentEqually(["user-alice", "user-bob", "user-carlos"]);
-    store.computeLedger();
 
-    const { previewDebts, expense } = useBillStore.getState();
-    expect(previewDebts).toHaveLength(0);
-    expect(expense!.status).toBe("settled");
+    const debts = selectPreviewDebts(useBillStore.getState());
+    expect(debts).toHaveLength(0);
   });
 });
