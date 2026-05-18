@@ -919,6 +919,17 @@ export type Database = {
     }
     Functions: {
       activate_expense: { Args: { p_expense_id: string }; Returns: undefined }
+      save_expense_draft: {
+        Args: {
+          p_expense: Json
+          p_items: Json
+          p_shares: Json
+          p_payers: Json
+          p_guests: Json
+          p_guest_shares: Json
+        }
+        Returns: Json
+      }
       claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
       confirm_settlement: {
         Args: { p_settlement_id: string }

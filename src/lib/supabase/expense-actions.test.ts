@@ -35,40 +35,22 @@ describe("saveExpenseDraft", () => {
     fixedFees: 0,
   };
 
-  it("creates a new draft expense", async () => {
-    // expenses.insert
-    mock.onTable("expenses", { data: { id: "expense-1" } });
-    // expense_guest_shares.delete (runs first)
-    mock.onTable("expense_guest_shares", { error: null });
-    // expense_items.delete, expense_shares.delete, expense_payers.delete, expense_guests.delete (parallel)
-    mock.onTable("expense_items", { error: null });
-    mock.onTable("expense_shares", { error: null });
-    mock.onTable("expense_payers", { error: null });
-    mock.onTable("expense_guests", { error: null });
+  it("creates a new draft expense via RPC", async () => {
+    mock.onRpc("save_expense_draft", { data: { id: "expense-1" } });
 
     const result = await saveExpenseDraft(baseDraftParams);
 
     expect(result).toEqual({ expenseId: "expense-1" });
 
-    const inserts = mock.findCalls("expenses", "insert");
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0].args[0]).toMatchObject({
-      status: "draft",
-      title: "Jantar",
-      group_id: "group-1",
-    });
+    const rpcCalls = mock.findCalls("rpc:save_expense_draft", "rpc");
+    expect(rpcCalls).toHaveLength(1);
+    const args = rpcCalls[0].args[1] as Record<string, unknown>;
+    expect((args.p_expense as Record<string, unknown>).title).toBe("Jantar");
+    expect((args.p_expense as Record<string, unknown>).group_id).toBe("group-1");
   });
 
-  it("updates an existing draft expense", async () => {
-    // expenses.update
-    mock.onTable("expenses", { error: null });
-    // guest shares delete first
-    mock.onTable("expense_guest_shares", { error: null });
-    // child data deletes
-    mock.onTable("expense_items", { error: null });
-    mock.onTable("expense_shares", { error: null });
-    mock.onTable("expense_payers", { error: null });
-    mock.onTable("expense_guests", { error: null });
+  it("sends existing expense id in p_expense when updating", async () => {
+    mock.onRpc("save_expense_draft", { data: { id: "expense-existing" } });
 
     const result = await saveExpenseDraft({
       ...baseDraftParams,
@@ -76,23 +58,15 @@ describe("saveExpenseDraft", () => {
     });
 
     expect(result).toEqual({ expenseId: "expense-existing" });
-    expect(mock.findCalls("expenses", "update")).toHaveLength(1);
-    expect(mock.findCalls("expenses", "insert")).toHaveLength(0);
+
+    const rpcCalls = mock.findCalls("rpc:save_expense_draft", "rpc");
+    expect(rpcCalls).toHaveLength(1);
+    const args = rpcCalls[0].args[1] as Record<string, unknown>;
+    expect((args.p_expense as Record<string, unknown>).id).toBe("expense-existing");
   });
 
-  it("persists child data (items, shares, payers)", async () => {
-    mock.onTable("expenses", { data: { id: "expense-1" } });
-    // guest shares delete first
-    mock.onTable("expense_guest_shares", { error: null });
-    // deletes
-    mock.onTable("expense_items", { error: null });
-    mock.onTable("expense_shares", { error: null });
-    mock.onTable("expense_payers", { error: null });
-    mock.onTable("expense_guests", { error: null });
-    // inserts
-    mock.onTable("expense_items", { error: null });
-    mock.onTable("expense_shares", { error: null });
-    mock.onTable("expense_payers", { error: null });
+  it("maps items, shares, and payers into RPC payload", async () => {
+    mock.onRpc("save_expense_draft", { data: { id: "expense-1" } });
 
     await saveExpenseDraft({
       ...baseDraftParams,
@@ -106,33 +80,17 @@ describe("saveExpenseDraft", () => {
       payers: [{ userId: "user-alice", amountCents: 10000 }],
     });
 
-    expect(mock.findCalls("expense_items", "insert")).toHaveLength(1);
-    expect(mock.findCalls("expense_shares", "insert")).toHaveLength(1);
-    expect(mock.findCalls("expense_payers", "insert")).toHaveLength(1);
+    const args = mock.findCalls("rpc:save_expense_draft", "rpc")[0].args[1] as Record<string, unknown>;
+    expect((args.p_items as unknown[]).length).toBe(1);
+    expect((args.p_shares as unknown[]).length).toBe(2);
+    expect((args.p_payers as unknown[]).length).toBe(1);
   });
 
-  it("persists guest data alongside regular child data", async () => {
-    mock.onTable("expenses", { data: { id: "expense-1" } });
-    // guest shares delete
-    mock.onTable("expense_guest_shares", { error: null });
-    // deletes
-    mock.onTable("expense_items", { error: null });
-    mock.onTable("expense_shares", { error: null });
-    mock.onTable("expense_payers", { error: null });
-    mock.onTable("expense_guests", { error: null });
-    // share insert
-    mock.onTable("expense_shares", { error: null });
-    // payer insert
-    mock.onTable("expense_payers", { error: null });
-    // guest insert returns server IDs
-    mock.onTable("expense_guests", { data: [{ id: "server-guest-1" }, { id: "server-guest-2" }] });
-    // guest share insert
-    mock.onTable("expense_guest_shares", { error: null });
+  it("maps guests and guest shares into RPC payload", async () => {
+    mock.onRpc("save_expense_draft", { data: { id: "expense-1" } });
 
     await saveExpenseDraft({
       ...baseDraftParams,
-      shares: [{ userId: "user-alice", shareAmountCents: 5000 }],
-      payers: [{ userId: "user-alice", amountCents: 10000 }],
       guests: [
         { localId: "guest_local_1", displayName: "Maria" },
         { localId: "guest_local_2", displayName: "Joao" },
@@ -143,50 +101,25 @@ describe("saveExpenseDraft", () => {
       ],
     });
 
-    expect(mock.findCalls("expense_guests", "insert")).toHaveLength(1);
-    expect(mock.findCalls("expense_guest_shares", "insert")).toHaveLength(1);
+    const args = mock.findCalls("rpc:save_expense_draft", "rpc")[0].args[1] as Record<string, unknown>;
+    expect((args.p_guests as unknown[]).length).toBe(2);
+    expect((args.p_guest_shares as unknown[]).length).toBe(2);
   });
 
-  it("returns error when expense insert fails", async () => {
-    mock.onTable("expenses", {
-      data: null,
-      error: { message: "Insert failed" },
-    });
+  it("returns error when RPC fails", async () => {
+    mock.onRpc("save_expense_draft", { data: null, error: { message: "RPC failed" } });
 
     const result = await saveExpenseDraft(baseDraftParams);
 
-    expect(result).toEqual({ error: "Insert failed" });
+    expect(result).toEqual({ error: "RPC failed" });
   });
 
-  it("returns error when expense update fails", async () => {
-    mock.onTable("expenses", { error: { message: "Update failed" } });
+  it("returns error when RPC returns no id", async () => {
+    mock.onRpc("save_expense_draft", { data: null });
 
-    const result = await saveExpenseDraft({
-      ...baseDraftParams,
-      existingExpenseId: "expense-1",
-    });
+    const result = await saveExpenseDraft(baseDraftParams);
 
-    expect(result).toEqual({ error: "Update failed" });
-  });
-
-  it("returns error when child data insert fails", async () => {
-    mock.onTable("expenses", { data: { id: "expense-1" } });
-    // guest shares delete
-    mock.onTable("expense_guest_shares", { error: null });
-    // deletes succeed
-    mock.onTable("expense_items", { error: null });
-    mock.onTable("expense_shares", { error: null });
-    mock.onTable("expense_payers", { error: null });
-    mock.onTable("expense_guests", { error: null });
-    // shares insert fails
-    mock.onTable("expense_shares", { error: { message: "Share insert failed" } });
-
-    const result = await saveExpenseDraft({
-      ...baseDraftParams,
-      shares: [{ userId: "user-alice", shareAmountCents: 10000 }],
-    });
-
-    expect(result).toEqual({ error: "Share insert failed" });
+    expect(result).toEqual({ error: "Erro ao salvar rascunho" });
   });
 });
 
