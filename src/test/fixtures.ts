@@ -1,4 +1,4 @@
-import type { Expense, ExpenseItem, User, Bill, BillItem, LedgerEntry } from "@/types";
+import type { Expense, ExpenseItem, User } from "@/types";
 
 export const userAlice: User = {
   id: "user-alice",
@@ -80,71 +80,3 @@ export function makeExpenseItem(overrides: Partial<ExpenseItem> = {}): ExpenseIt
   };
 }
 
-// Legacy aliases for gradual migration of other test files
-/** @deprecated Use makeExpense instead */
-export function makeItemizedBill(overrides: Partial<Bill> = {}): Bill {
-  return {
-    id: "bill-1",
-    creatorId: "user-alice",
-    billType: "itemized",
-    title: "Jantar",
-    status: "draft",
-    serviceFeePercent: 10,
-    fixedFees: 0,
-    totalAmount: 0,
-    totalAmountInput: 0,
-    payers: [],
-    createdAt: "2024-01-01T00:00:00Z",
-    updatedAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-/** @deprecated Use makeSingleAmountExpense instead */
-export function makeSingleAmountBill(overrides: Partial<Bill> = {}): Bill {
-  return {
-    id: "bill-1",
-    creatorId: "user-alice",
-    billType: "single_amount",
-    title: "Aluguel",
-    status: "draft",
-    serviceFeePercent: 0,
-    fixedFees: 0,
-    totalAmount: 0,
-    totalAmountInput: 10000,
-    payers: [],
-    createdAt: "2024-01-01T00:00:00Z",
-    updatedAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-/** @deprecated Use makeExpenseItem instead */
-export function makeBillItem(overrides: Partial<BillItem> = {}): BillItem {
-  return {
-    id: "item-1",
-    billId: "bill-1",
-    description: "Pizza",
-    quantity: 1,
-    unitPriceCents: 5000,
-    totalPriceCents: 5000,
-    createdAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
-
-/** @deprecated Use DebtEdge instead */
-export function makeLedgerEntry(overrides: Partial<LedgerEntry> = {}): LedgerEntry {
-  return {
-    id: "ledger-1",
-    billId: "bill-1",
-    entryType: "debt",
-    fromUserId: "user-bob",
-    toUserId: "user-alice",
-    amountCents: 5000,
-    paidAmountCents: 0,
-    status: "pending",
-    createdAt: "2024-01-01T00:00:00Z",
-    ...overrides,
-  };
-}
