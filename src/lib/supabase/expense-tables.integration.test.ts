@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
+  createTestGroupWithMembers,
   authenticateAs,
   createTestGroup,
+  createAndActivateExpense,
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
@@ -385,6 +387,105 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
         .eq("group_id", groupId);
 
       expect(data).toHaveLength(0);
+    });
+  });
+
+  describe("expense child-table draft guards (Chain C)", () => {
+    it("rejects UPDATE on expense_shares of an active expense", async () => {
+      const [alice2, bob2] = await createTestUsers(2);
+      const group2 = await createTestGroupWithMembers(alice2, [bob2]);
+
+      const expenseId = await createAndActivateExpense({
+        creator: alice2,
+        groupId: group2.id,
+        shares: [
+          { userId: alice2.id, amount: 5000 },
+          { userId: bob2.id, amount: 5000 },
+        ],
+        payers: [{ userId: alice2.id, amount: 10000 }],
+      });
+
+      const aliceClient = authenticateAs(alice2);
+      const { data } = await aliceClient
+        .from("expense_shares")
+        .update({ share_amount_cents: 1 })
+        .eq("expense_id", expenseId)
+        .select();
+
+      expect(data).toHaveLength(0);
+    });
+
+    it("rejects DELETE on expense_shares of an active expense", async () => {
+      const [alice3, bob3] = await createTestUsers(2);
+      const group3 = await createTestGroupWithMembers(alice3, [bob3]);
+
+      const expenseId = await createAndActivateExpense({
+        creator: alice3,
+        groupId: group3.id,
+        shares: [
+          { userId: alice3.id, amount: 5000 },
+          { userId: bob3.id, amount: 5000 },
+        ],
+        payers: [{ userId: alice3.id, amount: 10000 }],
+      });
+
+      const aliceClient = authenticateAs(alice3);
+      const { data } = await aliceClient
+        .from("expense_shares")
+        .delete()
+        .eq("expense_id", expenseId)
+        .select();
+
+      expect(data).toHaveLength(0);
+    });
+
+    it("rejects UPDATE on expense_payers of an active expense", async () => {
+      const [alice4, bob4] = await createTestUsers(2);
+      const group4 = await createTestGroupWithMembers(alice4, [bob4]);
+
+      const expenseId = await createAndActivateExpense({
+        creator: alice4,
+        groupId: group4.id,
+        shares: [
+          { userId: alice4.id, amount: 5000 },
+          { userId: bob4.id, amount: 5000 },
+        ],
+        payers: [{ userId: alice4.id, amount: 10000 }],
+      });
+
+      const aliceClient = authenticateAs(alice4);
+      const { data } = await aliceClient
+        .from("expense_payers")
+        .update({ amount_cents: 1 })
+        .eq("expense_id", expenseId)
+        .select();
+
+      expect(data).toHaveLength(0);
+    });
+
+    it("rejects INSERT on expense_items of an active expense", async () => {
+      const [alice5, bob5] = await createTestUsers(2);
+      const group5 = await createTestGroupWithMembers(alice5, [bob5]);
+
+      const expenseId = await createAndActivateExpense({
+        creator: alice5,
+        groupId: group5.id,
+        shares: [
+          { userId: alice5.id, amount: 5000 },
+          { userId: bob5.id, amount: 5000 },
+        ],
+        payers: [{ userId: alice5.id, amount: 10000 }],
+      });
+
+      const aliceClient = authenticateAs(alice5);
+      const { error } = await aliceClient.from("expense_items").insert({
+        expense_id: expenseId,
+        description: "Forged item",
+        unit_price_cents: 100,
+        total_price_cents: 100,
+      });
+
+      expect(error).toBeTruthy();
     });
   });
 
