@@ -1,6 +1,7 @@
 import { test as setup, expect } from "@playwright/test";
 
 const authFile = (name: string) => `e2e/.auth/${name}.json`;
+const devLoginSecret = process.env.DEV_LOGIN_SECRET ?? "";
 
 /**
  * Authentication setup for E2E tests.
@@ -9,7 +10,7 @@ const authFile = (name: string) => `e2e/.auth/${name}.json`;
  * Stores session cookies in e2e/.auth/ directory for reuse across tests.
  *
  * Prerequisites:
- * - Dev server running with DEV_LOGIN_ENABLED=true and NODE_ENV=development
+ * - Dev server running with DEV_LOGIN_SECRET set and NODE_ENV=development
  * - Remote Supabase or local Supabase available
  */
 
@@ -28,6 +29,7 @@ for (const user of testUsers) {
         name: user.displayName,
         handle: user.handle,
       },
+      headers: { "x-dev-login-secret": devLoginSecret },
     });
 
     expect(response.ok()).toBeTruthy();
@@ -50,6 +52,7 @@ setup("setup alice browser session", async ({ page }) => {
   // and stored automatically in Playwright's cookie jar
   const response = await page.request.post("/api/dev/login", {
     data: { email: "alice_test@test.dividimos.local", name: "Alice Test", handle: "alice_test" },
+    headers: { "x-dev-login-secret": devLoginSecret },
   });
 
   const body = await response.json();
@@ -82,6 +85,7 @@ setup("setup alice browser session", async ({ page }) => {
 setup("setup bob browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
     data: { email: "bob_test@test.dividimos.local", name: "Bob Test", handle: "bob_test" },
+    headers: { "x-dev-login-secret": devLoginSecret },
   });
 
   const body = await response.json();
@@ -106,6 +110,7 @@ setup("setup bob browser session", async ({ page }) => {
 setup("setup carol browser session", async ({ page }) => {
   const response = await page.request.post("/api/dev/login", {
     data: { email: "carol_test@test.dividimos.local", name: "Carol Test", handle: "carol_test" },
+    headers: { "x-dev-login-secret": devLoginSecret },
   });
 
   const body = await response.json();

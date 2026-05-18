@@ -85,7 +85,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-          DEV_LOGIN_ENABLED: "true"
+          DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
 
       - name: Start server (Turbopack dev)
         if: github.event_name == 'pull_request'
@@ -93,7 +93,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-          DEV_LOGIN_ENABLED: "true"
+          DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
 
       - name: Wait for server
         run: |
@@ -111,6 +111,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
           SUPABASE_JWT_SECRET: ${{ steps.supabase.outputs.jwt_secret }}
           E2E_BASE_URL: http://localhost:3000
+          DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
 
       - name: Upload test artifacts
         if: always()

@@ -9,7 +9,10 @@ import { createServerClient } from "@supabase/ssr";
  * Programmatic login for development/testing — agents can authenticate
  * with a single HTTP request instead of navigating the UI.
  *
- * Only available when NODE_ENV === "development" and DEV_LOGIN_ENABLED=true.
+ * Only available when:
+ *   - NODE_ENV === "development" or "test"
+ *   - DEV_LOGIN_SECRET env var is set
+ *   - Request carries x-dev-login-secret header matching DEV_LOGIN_SECRET
  * Only accepts @test.dividimos.local email addresses.
  *
  * Body: { email: string, name?: string, handle?: string }
@@ -23,20 +26,31 @@ export async function POST(request: Request) {
   const env = process.env.NODE_ENV;
   if (env !== "development" && env !== "test") {
     return NextResponse.json(
-      { error: "Not found" },
+      { error: "not_available" },
       { status: 404 },
     );
   }
 
-  if (process.env.DEV_LOGIN_ENABLED !== "true") {
+  const secret = process.env.DEV_LOGIN_SECRET;
+  if (!secret) {
     return NextResponse.json(
-      { error: "Dev login is only available in test mode" },
-      { status: 403 },
+      { error: "not_available" },
+      { status: 404 },
+    );
+  }
+
+  const provided = request.headers.get("x-dev-login-secret");
+  if (provided !== secret) {
+    return NextResponse.json(
+      { error: "unauthorized" },
+      { status: 401 },
     );
   }
 
   const body = await request.json().catch(() => ({}));
-  const { email, name: profileName, handle: profileHandle } = body as {
+  const rawEmail = (body as { email?: string; name?: string; handle?: string }).email ?? "";
+  const email = rawEmail.toLowerCase().trim();
+  const { name: profileName, handle: profileHandle } = body as {
     email?: string;
     name?: string;
     handle?: string;
@@ -61,11 +75,15 @@ export async function POST(request: Request) {
   try {
     let userId: string;
 
-    const { data: existing } = await admin.auth.admin.listUsers();
-    const user = existing?.users.find((u) => u.email === email);
+    const { data: existingRow } = await admin
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+    const user = existingRow ?? null;
 
     if (user) {
-      userId = user.id;
+      userId = user.id as string;
     } else {
       const { data: created, error: createError } =
         await admin.auth.admin.createUser({
