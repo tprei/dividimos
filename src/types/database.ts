@@ -939,6 +939,10 @@ export type Database = {
       }
     }
     Functions: {
+      cleanup_expired_rate_limit_counters: {
+        Args: Record<string, never>
+        Returns: number
+      }
       increment_rate_limit: {
         Args: {
           p_bucket: string

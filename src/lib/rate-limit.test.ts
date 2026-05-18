@@ -17,19 +17,30 @@ describe("enforceRateLimit", () => {
   });
 
   afterEach(() => {
-    delete process.env.RATE_LIMIT_DISABLED;
+    vi.unstubAllEnvs();
   });
 
-  it("is a no-op when RATE_LIMIT_DISABLED=1", async () => {
-    process.env.RATE_LIMIT_DISABLED = "1";
+  it("is a no-op when RATE_LIMIT_DISABLED=1 outside production", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+    vi.stubEnv("NODE_ENV", "test");
     const { enforceRateLimit } = await import("@/lib/rate-limit");
 
     await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
+  it("still calls the RPC when RATE_LIMIT_DISABLED=1 but NODE_ENV=production", async () => {
+    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+    vi.stubEnv("NODE_ENV", "production");
+    mockRpc.mockResolvedValue({ data: 1, error: null });
+
+    const { enforceRateLimit } = await import("@/lib/rate-limit");
+    await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
+    expect(mockRpc).toHaveBeenCalledOnce();
+  });
+
   it("calls increment_rate_limit RPC and returns void on success", async () => {
-    delete process.env.RATE_LIMIT_DISABLED;
+    vi.stubEnv("RATE_LIMIT_DISABLED", "");
     mockRpc.mockResolvedValue({ data: 1, error: null });
 
     const { enforceRateLimit } = await import("@/lib/rate-limit");
@@ -45,7 +56,7 @@ describe("enforceRateLimit", () => {
   });
 
   it("throws RateLimitExceeded (AppError RATE_LIMIT_EXCEEDED) when RPC raises rate_limited", async () => {
-    delete process.env.RATE_LIMIT_DISABLED;
+    vi.stubEnv("RATE_LIMIT_DISABLED", "");
     mockRpc.mockResolvedValue({
       data: null,
       error: { message: "rate_limited: 30 per 60 seconds exceeded" },
@@ -62,7 +73,7 @@ describe("enforceRateLimit", () => {
   });
 
   it("throws INTERNAL_ERROR on non-rate-limit RPC failure", async () => {
-    delete process.env.RATE_LIMIT_DISABLED;
+    vi.stubEnv("RATE_LIMIT_DISABLED", "");
     mockRpc.mockResolvedValue({
       data: null,
       error: { message: "connection timeout" },
@@ -78,7 +89,7 @@ describe("enforceRateLimit", () => {
   });
 
   it("passes correct config for pix.generate-self bucket", async () => {
-    delete process.env.RATE_LIMIT_DISABLED;
+    vi.stubEnv("RATE_LIMIT_DISABLED", "");
     mockRpc.mockResolvedValue({ data: 1, error: null });
 
     const { enforceRateLimit } = await import("@/lib/rate-limit");
@@ -93,7 +104,7 @@ describe("enforceRateLimit", () => {
   });
 
   it("passes correct config for receipt.sefaz bucket (lower limit)", async () => {
-    delete process.env.RATE_LIMIT_DISABLED;
+    vi.stubEnv("RATE_LIMIT_DISABLED", "");
     mockRpc.mockResolvedValue({ data: 1, error: null });
 
     const { enforceRateLimit } = await import("@/lib/rate-limit");
@@ -108,7 +119,7 @@ describe("enforceRateLimit", () => {
   });
 
   it("passes correct config for push.send-pair bucket", async () => {
-    delete process.env.RATE_LIMIT_DISABLED;
+    vi.stubEnv("RATE_LIMIT_DISABLED", "");
     mockRpc.mockResolvedValue({ data: 1, error: null });
 
     const { enforceRateLimit } = await import("@/lib/rate-limit");

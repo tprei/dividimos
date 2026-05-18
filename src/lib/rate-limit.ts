@@ -30,9 +30,11 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "push.send-pair":     { limit: 5,   windowSeconds: 60 },
 };
 
-const BYPASS = process.env.RATE_LIMIT_DISABLED === "1";
+const BYPASS =
+  process.env.RATE_LIMIT_DISABLED === "1" &&
+  process.env.NODE_ENV !== "production";
 
-if (BYPASS && process.env.NODE_ENV !== "production") {
+if (BYPASS) {
   console.warn(
     "[rate-limit] RATE_LIMIT_DISABLED=1 — rate limiting is OFF. " +
       "This is for integration tests only. NEVER set this in production.",
