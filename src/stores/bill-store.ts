@@ -10,11 +10,25 @@ import type {
   ExpenseShare,
   ExpenseStatus,
   ExpenseType,
-  ItemSplit,
-  BillSplit,
   SplitType,
   User,
 } from "@/types";
+
+export interface ExpenseSplit {
+  id: string;
+  itemId: string;
+  userId: string;
+  splitType: SplitType;
+  value: number;
+  computedAmountCents: number;
+}
+
+export interface AmountSplit {
+  userId: string;
+  splitType: SplitType;
+  value: number;
+  computedAmountCents: number;
+}
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
@@ -39,9 +53,9 @@ interface ExpenseState {
   items: ExpenseItem[];
   payers: ExpensePayer[];
   /** Per-item split assignments (itemized wizard). */
-  splits: ItemSplit[];
+  splits: ExpenseSplit[];
   /** Whole-expense split assignments (single_amount wizard). */
-  billSplits: BillSplit[];
+  billSplits: AmountSplit[];
 
   setCurrentUser: (user: User) => void;
 
@@ -110,7 +124,7 @@ interface ExpenseState {
     items: ExpenseItem[];
     participants?: User[];
     payers?: ExpensePayer[];
-    billSplits?: BillSplit[];
+    billSplits?: AmountSplit[];
   }) => void;
   /**
    * Patches only the server-derived status fields from a realtime event.
@@ -133,8 +147,8 @@ function computeConsumption(
   expense: Expense,
   allPersonIds: string[],
   items: ExpenseItem[],
-  splits: ItemSplit[],
-  billSplits: BillSplit[],
+  splits: ExpenseSplit[],
+  billSplits: AmountSplit[],
 ): Map<string, number> {
   const consumption = new Map<string, number>();
   for (const id of allPersonIds) {
@@ -181,8 +195,8 @@ type InnerCacheKey = {
   participants: User[];
   guests: Guest[];
   items: ExpenseItem[];
-  splits: ItemSplit[];
-  billSplits: BillSplit[];
+  splits: ExpenseSplit[];
+  billSplits: AmountSplit[];
 };
 type CacheEntry = { key: InnerCacheKey; result: Map<string, number> };
 const _consumptionCache = new WeakMap<Expense, CacheEntry>();
@@ -441,7 +455,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
         ),
       });
     } else {
-      const split: ItemSplit = {
+      const split: ExpenseSplit = {
         id: generateId(),
         itemId,
         userId,
@@ -469,7 +483,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     const remainder = item.totalPriceCents - perPerson * userIds.length;
 
     const existingOther = get().splits.filter((s) => s.itemId !== itemId);
-    const newSplits: ItemSplit[] = userIds.map((userId, idx) => ({
+    const newSplits: ExpenseSplit[] = userIds.map((userId, idx) => ({
       id: generateId(),
       itemId,
       userId,
@@ -533,7 +547,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     const total = get().totalAmountInput;
     const perPerson = Math.floor(total / userIds.length);
     const remainder = total - perPerson * userIds.length;
-    const billSplits: BillSplit[] = userIds.map((userId, idx) => ({
+    const billSplits: AmountSplit[] = userIds.map((userId, idx) => ({
       userId,
       splitType: "equal" as SplitType,
       value: 100 / userIds.length,
@@ -547,7 +561,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     const sum = assignments.reduce((s, a) => s + a.percentage, 0);
     if (Math.abs(sum - 100) > 0.01) return;
     const total = get().totalAmountInput;
-    const billSplits: BillSplit[] = assignments.map((a) => ({
+    const billSplits: AmountSplit[] = assignments.map((a) => ({
       userId: a.userId,
       splitType: "percentage" as SplitType,
       value: a.percentage,
@@ -557,7 +571,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   splitBillByFixed: (assignments) => {
-    const billSplits: BillSplit[] = assignments.map((a) => ({
+    const billSplits: AmountSplit[] = assignments.map((a) => ({
       userId: a.userId,
       splitType: "fixed" as SplitType,
       value: a.amountCents,
