@@ -590,6 +590,9 @@ export default function DemoPage() {
           </SheetContent>
         </Sheet>
       )}
+      <div className="pointer-events-none fixed bottom-4 right-4 z-50 rounded-full border border-border/60 bg-card/80 px-3 py-1 text-[11px] font-semibold text-muted-foreground backdrop-blur-sm">
+        DEMO — dados fictícios
+      </div>
     </div>
   );
 }
