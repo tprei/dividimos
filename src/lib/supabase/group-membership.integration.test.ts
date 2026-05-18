@@ -809,18 +809,11 @@ describe.skipIf(!isIntegrationTestReady)(
           p_amount_cents: 1000,
         });
 
-        // NOTE: record_and_settle uses my_group_ids() which includes invited
-        // members. This means invited members CAN call this RPC — this is a
-        // known inconsistency with other policies that use
-        // my_accepted_group_ids(). This test documents the current behavior
-        // rather than asserting it should fail.
-        if (error) {
-          // If this fails, the inconsistency may have been fixed
-          expect(error.message).toContain("permission_denied");
-        } else {
-          // Current behavior: invited member CAN settle
-          expect(data).toBeDefined();
-        }
+        // record_and_settle uses my_group_ids() which includes invited members,
+        // so invited members CAN call this RPC.  This is an acknowledged
+        // tradeoff that supports the ad-hoc bill flow (CLAUDE.md).
+        expect(error).toBeNull();
+        expect(data).toBeDefined();
 
         // Cleanup
         await adminClient!

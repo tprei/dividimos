@@ -219,6 +219,71 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     // ──────────────────────────────────────────────
+    // leave_group cleans up pending settlements (Chain J.2)
+    // ──────────────────────────────────────────────
+    describe("pending settlement cleanup on leave", () => {
+      let alice: TestUser;
+      let bob: TestUser;
+      let groupId: string;
+      let settlementId: string;
+
+      beforeAll(async () => {
+        [alice, bob] = await createTestUsers(2);
+        const group = await createTestGroupWithMembers(alice, [bob]);
+        groupId = group.id;
+
+        const bobClient = authenticateAs(bob);
+        const { data: settlement } = await bobClient
+          .from("settlements")
+          .insert({
+            group_id: groupId,
+            from_user_id: bob.id,
+            to_user_id: alice.id,
+            amount_cents: 1000,
+          })
+          .select("id")
+          .single();
+        settlementId = settlement!.id;
+
+        await adminClient!
+          .from("chat_messages")
+          .insert({
+            group_id: groupId,
+            sender_id: bob.id,
+            message_type: "text",
+            content: "",
+            settlement_id: settlementId,
+          });
+      });
+
+      it("leave_group succeeds and the pending settlement is deleted", async () => {
+        const bobClient = authenticateAs(bob);
+        const { error } = await bobClient.rpc("leave_group", {
+          p_group_id: groupId,
+        });
+        expect(error).toBeNull();
+
+        const { data: rows } = await adminClient!
+          .from("settlements")
+          .select("id")
+          .eq("id", settlementId);
+
+        expect(rows).toHaveLength(0);
+      });
+
+      it("chat_message that referenced the deleted settlement still exists with settlement_id NULL", async () => {
+        const { data: msgs } = await adminClient!
+          .from("chat_messages")
+          .select("id, settlement_id")
+          .eq("group_id", groupId)
+          .eq("sender_id", bob.id);
+
+        expect(msgs).not.toHaveLength(0);
+        expect(msgs![0].settlement_id).toBeNull();
+      });
+    });
+
+    // ──────────────────────────────────────────────
     // Double leave is idempotent (second call fails gracefully)
     // ──────────────────────────────────────────────
     describe("double leave", () => {
