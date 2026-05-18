@@ -11,21 +11,25 @@
 --   1. Aggregate exact NUMERIC values per canonical pair first.
 --   2. ROUND once at the pair level to produce integer cents.
 --   3. Track the cumulative rounding residual across all pairs.
---   4. After the loop, if the residual is non-zero, subtract
---      ROUND(residual) from the deterministic first pair
---      (smallest (user_a, user_b) in lex order) to keep the
---      total-balance invariant exact.
+--   4. After the loop, if ROUND(residual) is non-zero, subtract it
+--      from the deterministic first pair (smallest (user_a, user_b)
+--      in lex order) to keep the total-balance invariant exact.
+--      If ROUND(residual) = 0 (e.g. residual = 0.3), no correction
+--      write is emitted — skipping a no-op UPSERT that would otherwise
+--      pollute change feeds and realtime subscriptions.
 --
 -- Algorithm guarantees:
 --   • Sum-of-pairs invariant exact: the sum of all rounded balance row
 --     amount_cents exactly equals ROUND(sum of exact per-pair deltas).
 --   • Per-pair error bounded ±1 cent: each rounded pair value differs
---     from its exact value by at most 1 cent (before residual correction).
---   • Per-user error bounded by their pair count: a user appearing in
---     K canonical pairs can accumulate up to ±K cents of error versus
---     their exact net. The residual correction lands on the single
---     lexicographically-first pair, so per-user accuracy is not exact
---     and is UUID-ordering-dependent.
+--     from its exact value by at most 0.5 cents before the residual
+--     correction (ROUND half-away-from-zero), so at most 1 cent after.
+--   • Per-user error bounded by (K + 1) cents: a user appearing in K
+--     canonical pairs accumulates at most K × 0.5 cents of rounding
+--     error from the pair loop, plus at most 1 cent if the residual
+--     correction lands on one of their pairs. Upper bound: K + 1 cents.
+--     The correction always lands on the lexicographically-first pair,
+--     so per-user error is UUID-ordering-dependent but bounded.
 --
 -- New DECLARE variables (vs. the previous definition):
 --   v_delta_exact    numeric  — exact (unrounded) delta for a pair
@@ -191,7 +195,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  IF v_total_residual != 0 AND v_first_pair_a IS NOT NULL THEN
+  IF v_total_residual != 0 AND ROUND(v_total_residual)::integer != 0 AND v_first_pair_a IS NOT NULL THEN
     INSERT INTO public.balances (group_id, user_a, user_b, amount_cents)
     VALUES (v_expense.group_id, v_first_pair_a, v_first_pair_b, -(ROUND(v_total_residual)::integer))
     ON CONFLICT (group_id, user_a, user_b)
