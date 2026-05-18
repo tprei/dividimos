@@ -1,3 +1,4 @@
+import "server-only";
 import { SignJWT, importPKCS8 } from "jose";
 import type { PushPayload } from "./web-push";
 
