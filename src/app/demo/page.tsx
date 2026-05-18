@@ -22,8 +22,9 @@ import { formatBRL } from "@/lib/currency";
 import { DEMO_ITEMS, DEMO_PIX_KEYS, DEMO_USERS } from "@/lib/demo-data";
 import { springs } from "@/lib/animations";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
-import { coerceDebtStatus } from "@/lib/type-guards";
-import type { Bill, BillItem, DebtStatus, ItemSplit, LedgerEntry } from "@/types";
+import type { Bill, BillItem, ItemSplit, LedgerEntry } from "@/types";
+
+type DemoDebtStatus = "pending" | "partially_paid" | "settled";
 
 const BILL_ID = "demo_bill";
 
@@ -166,7 +167,7 @@ export default function DemoPage() {
   const [activeTab, setActiveTab] = useState<"items" | "split" | "payment">("payment");
   const [simplifyEnabled, setSimplifyEnabled] = useState(true);
   const [showSimplifySteps, setShowSimplifySteps] = useState(false);
-  const [debtStatuses, setDebtStatuses] = useState<Map<string, DebtStatus>>(new Map());
+  const [debtStatuses, setDebtStatuses] = useState<Map<string, DemoDebtStatus>>(new Map());
   const [debtPaidAmounts, setDebtPaidAmounts] = useState<Map<string, number>>(new Map());
   const [pixModal, setPixModal] = useState<{
     open: boolean;
@@ -205,7 +206,7 @@ export default function DemoPage() {
   function markPaid(entryId: string, amountCents: number, totalAmountCents: number) {
     const prevPaid = debtPaidAmounts.get(entryId) ?? 0;
     const newPaid = Math.min(prevPaid + amountCents, totalAmountCents);
-    const newStatus: DebtStatus = newPaid >= totalAmountCents ? "settled" : "partially_paid";
+    const newStatus: DemoDebtStatus = newPaid >= totalAmountCents ? "settled" : "partially_paid";
     setDebtPaidAmounts((prev) => new Map(prev).set(entryId, newPaid));
     setDebtStatuses((prev) => new Map(prev).set(entryId, newStatus));
   }
@@ -220,7 +221,7 @@ export default function DemoPage() {
         toUserId: edge.toUserId,
         amountCents: edge.amountCents,
         paidAmountCents: debtPaidAmounts.get(`edge_${idx}`) ?? 0,
-        status: coerceDebtStatus(debtStatuses.get(`edge_${idx}`), "pending"),
+        status: debtStatuses.get(`edge_${idx}`) ?? "pending",
         createdAt: new Date().toISOString(),
       }));
     }
