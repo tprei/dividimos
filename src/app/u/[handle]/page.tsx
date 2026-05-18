@@ -1,9 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { UserCircle } from "lucide-react";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton } from "./profile-actions";
@@ -16,21 +14,23 @@ export default async function PublicProfilePage({
   const { handle } = await params;
   const normalizedHandle = handle.toLowerCase().trim();
 
-  const admin = createAdminClient();
-  const { data: profile, error } = await admin
-    .from("user_profiles")
-    .select("id, handle, name, avatar_url")
-    .eq("handle", normalizedHandle)
-    .single();
-
-  if (error || !profile) notFound();
-
-  const typedProfile = userProfileRowToUserProfile(profile);
-
   const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
+  const [profileResult, authResult] = await Promise.all([
+    supabase.rpc("lookup_user_by_handle", { p_handle: normalizedHandle }),
+    supabase.auth.getUser(),
+  ]);
+
+  const profile = profileResult.data?.[0] ?? null;
+  if (!profile) notFound();
+
+  const typedProfile = {
+    id: profile.id,
+    handle: profile.handle,
+    name: profile.name,
+    avatarUrl: profile.avatar_url ?? undefined,
+  };
+
+  const authUser = authResult.data.user;
 
   const isSelf = authUser?.id === typedProfile.id;
 
