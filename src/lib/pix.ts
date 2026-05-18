@@ -1,11 +1,14 @@
 import type { PixKeyType } from "@/types";
 
+const encoder = new TextEncoder();
+
 function crc16CCITT(payload: string): string {
   const polynomial = 0x1021;
   let crc = 0xffff;
 
-  for (let i = 0; i < payload.length; i++) {
-    crc ^= payload.charCodeAt(i) << 8;
+  const bytes = encoder.encode(payload);
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i] << 8;
     for (let j = 0; j < 8; j++) {
       if (crc & 0x8000) {
         crc = ((crc << 1) ^ polynomial) & 0xffff;
@@ -18,8 +21,12 @@ function crc16CCITT(payload: string): string {
   return crc.toString(16).toUpperCase().padStart(4, "0");
 }
 
-function tlv(id: string, value: string): string {
-  const length = value.length.toString().padStart(2, "0");
+export function tlv(id: string, value: string): string {
+  const byteLength = encoder.encode(value).length;
+  if (byteLength > 99) {
+    throw new Error("TLV value too long for 2-digit length field");
+  }
+  const length = byteLength.toString().padStart(2, "0");
   return `${id}${length}${value}`;
 }
 
@@ -68,13 +75,23 @@ export function generatePixCopiaECola(payload: PixPayload): string {
 export function validatePixKey(key: string, type: PixKeyType): boolean {
   switch (type) {
     case "phone":
-      return /^\+55\d{10,11}$/.test(key);
+      return (
+        encoder.encode(key).length <= 77 && /^\+55\d{10,11}$/.test(key)
+      );
     case "cpf":
       return /^\d{11}$/.test(key);
     case "email":
-      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key);
+      return (
+        encoder.encode(key).length <= 77 &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)
+      );
     case "random":
-      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key);
+      return (
+        encoder.encode(key).length <= 77 &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          key,
+        )
+      );
     default:
       return false;
   }
