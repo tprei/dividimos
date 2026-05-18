@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 import { useBackHandler } from "@/hooks/use-back-handler"
 
-function Dialog({ onOpenChange, ...props }: DialogPrimitive.Root.Props) {
+function Dialog({
+  onOpenChange,
+  dismissable = true,
+  ...props
+}: DialogPrimitive.Root.Props & { dismissable?: boolean }) {
   const handleHardwareBack = React.useCallback(() => {
     onOpenChange?.(false, {
       reason: "escape-key",
@@ -21,8 +25,23 @@ function Dialog({ onOpenChange, ...props }: DialogPrimitive.Root.Props) {
       preventUnmountOnClose: () => {},
     });
   }, [onOpenChange]);
-  useBackHandler(props.open ?? false, handleHardwareBack);
-  return <DialogPrimitive.Root data-slot="dialog" onOpenChange={onOpenChange} {...props} />
+  useBackHandler((props.open ?? false) && dismissable, handleHardwareBack);
+
+  const handleOpenChange = React.useCallback(
+    (open: boolean, event: Parameters<NonNullable<DialogPrimitive.Root.Props["onOpenChange"]>>[1]) => {
+      if (!open && !dismissable) return;
+      onOpenChange?.(open, event);
+    },
+    [onOpenChange, dismissable],
+  );
+
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {

@@ -6,9 +6,23 @@ import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { useBackHandler } from "@/hooks/use-back-handler"
 
-function Sheet({ ...props }: SheetPrimitive.Root.Props) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+function Sheet({ onOpenChange, ...props }: SheetPrimitive.Root.Props) {
+  const handleHardwareBack = React.useCallback(() => {
+    onOpenChange?.(false, {
+      reason: "escape-key",
+      event: new KeyboardEvent("keydown", { key: "Escape" }),
+      cancel: () => {},
+      allowPropagation: () => {},
+      isCanceled: false,
+      isPropagationAllowed: false,
+      trigger: undefined,
+      preventUnmountOnClose: () => {},
+    });
+  }, [onOpenChange]);
+  useBackHandler(props.open ?? false, handleHardwareBack);
+  return <SheetPrimitive.Root data-slot="sheet" onOpenChange={onOpenChange} {...props} />
 }
 
 function SheetTrigger({ ...props }: SheetPrimitive.Trigger.Props) {
