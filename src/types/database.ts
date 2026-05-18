@@ -893,6 +893,27 @@ export type Database = {
           },
         ]
       }
+      rate_limit_counters: {
+        Row: {
+          bucket: string
+          subject: string
+          window_start: string
+          count: number
+        }
+        Insert: {
+          bucket: string
+          subject: string
+          window_start: string
+          count: number
+        }
+        Update: {
+          bucket?: string
+          subject?: string
+          window_start?: string
+          count?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       user_profiles: {
@@ -918,6 +939,19 @@ export type Database = {
       }
     }
     Functions: {
+      cleanup_expired_rate_limit_counters: {
+        Args: Record<string, never>
+        Returns: number
+      }
+      increment_rate_limit: {
+        Args: {
+          p_bucket: string
+          p_subject: string
+          p_limit: number
+          p_window_seconds: number
+        }
+        Returns: number
+      }
       activate_expense: { Args: { p_expense_id: string }; Returns: undefined }
       claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
       confirm_settlement: {
