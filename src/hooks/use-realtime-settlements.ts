@@ -3,10 +3,20 @@
 import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { settlementRowToSettlement } from "@/lib/supabase/expense-mappers";
+import { validateRealtimeRow } from "./realtime-payload";
 import type { Settlement } from "@/types";
 import type { Database } from "@/types/database";
 
 type SettlementRow = Database["public"]["Tables"]["settlements"]["Row"];
+
+const SETTLEMENT_STRING_KEYS = [
+  "id",
+  "group_id",
+  "from_user_id",
+  "to_user_id",
+  "status",
+] as const;
+const SETTLEMENT_NUMBER_KEYS = ["amount_cents"] as const;
 
 export type SettlementEvent =
   | { type: "inserted"; settlement: Settlement }
@@ -42,10 +52,17 @@ export function useRealtimeSettlements(
           filter: `group_id=eq.${groupId}`,
         },
         (payload) => {
-          callbackRef.current({
-            type: "inserted",
-            settlement: settlementRowToSettlement(payload.new as SettlementRow),
-          });
+          const row = validateRealtimeRow<SettlementRow>(
+            payload.new,
+            SETTLEMENT_STRING_KEYS,
+            SETTLEMENT_NUMBER_KEYS,
+          );
+          if (row) {
+            callbackRef.current({
+              type: "inserted",
+              settlement: settlementRowToSettlement(row),
+            });
+          }
         },
       )
       .on(
@@ -57,10 +74,17 @@ export function useRealtimeSettlements(
           filter: `group_id=eq.${groupId}`,
         },
         (payload) => {
-          callbackRef.current({
-            type: "updated",
-            settlement: settlementRowToSettlement(payload.new as SettlementRow),
-          });
+          const row = validateRealtimeRow<SettlementRow>(
+            payload.new,
+            SETTLEMENT_STRING_KEYS,
+            SETTLEMENT_NUMBER_KEYS,
+          );
+          if (row) {
+            callbackRef.current({
+              type: "updated",
+              settlement: settlementRowToSettlement(row),
+            });
+          }
         },
       )
       .subscribe();
