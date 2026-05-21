@@ -39,8 +39,9 @@ const MAX_SEFAZ_REDIRECTS = 5;
  * Whether a URL is an allowed SEFAZ portal endpoint. Enforces http(s) and an
  * allowlisted government hostname. Used both to validate the inbound URL and to
  * re-validate every redirect hop, so a SEFAZ open-redirect cannot pivot the
- * server to an internal host (the `.gov.br` suffix excludes IP literals and
- * private hosts).
+ * server to an internal host. The `.gov.br` suffix excludes IP literals; it does
+ * not defend against DNS rebinding of an allowlisted name (out of scope — the
+ * threat closed here is the open-redirect pivot, not DNS-level SSRF).
  */
 export function isAllowedSefazUrl(url: string): boolean {
   let parsed: URL;
