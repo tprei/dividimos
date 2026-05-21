@@ -133,7 +133,7 @@ export async function saveExpenseDraft(
 
   if (error) {
     console.error("Failed to save expense draft:", error);
-    return { error: error.message };
+    return { error: "Erro ao salvar rascunho" };
   }
 
   const result = data as { id: string } | null;
@@ -266,7 +266,7 @@ export async function deleteExpense(
 
   if (error) {
     console.error("Failed to delete expense:", error);
-    return { error: error.message };
+    return { error: "Erro ao excluir rascunho" };
   }
 
   return {};
