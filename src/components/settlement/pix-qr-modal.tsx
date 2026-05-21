@@ -249,6 +249,7 @@ export function PixQrModal({
       onOpenChange={(o) => {
         if (!o) onClose();
       }}
+      dismissable={!isSettling}
       modal
     >
       <DialogContent

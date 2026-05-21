@@ -6,9 +6,42 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { useBackHandler } from "@/hooks/use-back-handler"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog({
+  onOpenChange,
+  dismissable = true,
+  ...props
+}: DialogPrimitive.Root.Props & { dismissable?: boolean }) {
+  const handleHardwareBack = React.useCallback(() => {
+    onOpenChange?.(false, {
+      reason: "escape-key",
+      event: new KeyboardEvent("keydown", { key: "Escape" }),
+      cancel: () => {},
+      allowPropagation: () => {},
+      isCanceled: false,
+      isPropagationAllowed: false,
+      trigger: undefined,
+      preventUnmountOnClose: () => {},
+    });
+  }, [onOpenChange]);
+  useBackHandler((props.open ?? false) && dismissable, handleHardwareBack);
+
+  const handleOpenChange = React.useCallback(
+    (open: boolean, event: Parameters<NonNullable<DialogPrimitive.Root.Props["onOpenChange"]>>[1]) => {
+      if (!open && !dismissable) return;
+      onOpenChange?.(open, event);
+    },
+    [onOpenChange, dismissable],
+  );
+
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {

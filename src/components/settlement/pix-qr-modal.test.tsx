@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { useState } from "react";
+import {
+  runBackHandlers,
+  __resetBackHandlerStackForTests,
+} from "@/lib/capacitor/back-handler";
 
 // Mock framer-motion to render children directly
 vi.mock("framer-motion", () => ({
@@ -36,6 +40,14 @@ vi.mock("@/hooks/use-haptics", () => ({
   },
 }));
 
+vi.mock("@/components/shared/animated-checkmark", () => ({
+  AnimatedCheckmark: () => null,
+}));
+
+vi.mock("@/components/shared/confetti-burst", () => ({
+  ConfettiBurst: () => null,
+}));
+
 import { haptics } from "@/hooks/use-haptics";
 import { PixQrModal } from "./pix-qr-modal";
 
@@ -49,6 +61,7 @@ const defaultProps = {
 };
 
 beforeEach(() => {
+  __resetBackHandlerStackForTests();
   vi.restoreAllMocks();
   vi.mocked(haptics.success).mockClear();
   vi.mocked(haptics.error).mockClear();
@@ -255,5 +268,36 @@ describe("PixQrModal", () => {
     });
 
     expect(document.activeElement).toBe(triggerButton);
+  });
+
+  it("hardware back does NOT close modal while RPC is in flight (isSettling=true)", async () => {
+    const onClose = vi.fn();
+    const onSettlementComplete = vi.fn();
+
+    const onMarkPaid = vi.fn(() => new Promise<void>(() => {}));
+
+    render(
+      <PixQrModal
+        {...defaultProps}
+        onClose={onClose}
+        onSettlementComplete={onSettlementComplete}
+        onMarkPaid={onMarkPaid}
+        pixKey="key@test.com"
+      />,
+    );
+
+    const payButton = screen.getByRole("button", { name: /Já paguei/i });
+    act(() => { payButton.click(); });
+
+    await waitFor(() => {
+      expect(onMarkPaid).toHaveBeenCalled();
+    });
+
+    act(() => {
+      runBackHandlers();
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onSettlementComplete).not.toHaveBeenCalled();
   });
 });

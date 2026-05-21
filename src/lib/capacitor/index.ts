@@ -3,6 +3,7 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { App } from "@capacitor/app";
 import { configureStatusBar } from "./status-bar";
 import { resolveDeepLinkTarget } from "./deep-link";
+import { runBackHandlers } from "./back-handler";
 
 export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
@@ -14,6 +15,7 @@ export async function initCapacitor(): Promise<void> {
   await configureStatusBar();
 
   App.addListener("backButton", ({ canGoBack }) => {
+    if (runBackHandlers()) return;
     if (canGoBack) {
       window.history.back();
     } else {
