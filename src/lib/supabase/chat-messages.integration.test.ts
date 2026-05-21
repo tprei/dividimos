@@ -80,21 +80,32 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(error).toBeTruthy();
       });
 
-      it("allows system_expense message with expense_id", async () => {
+      it("rejects direct insert of system_settlement message_type", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data, error } = await aliceClient
+        const { error } = await aliceClient
+          .from("chat_messages")
+          .insert({
+            group_id: dmGroupId,
+            sender_id: alice.id,
+            message_type: "system_settlement",
+            content: "fake",
+          });
+
+        expect(error).toBeTruthy();
+      });
+
+      it("rejects direct insert of system_expense message_type", async () => {
+        const aliceClient = authenticateAs(alice);
+        const { error } = await aliceClient
           .from("chat_messages")
           .insert({
             group_id: dmGroupId,
             sender_id: alice.id,
             message_type: "system_expense",
-            content: "Nova conta: Uber R$25,00",
-          })
-          .select()
-          .single();
+            content: "forged expense",
+          });
 
-        expect(error).toBeNull();
-        expect(data!.message_type).toBe("system_expense");
+        expect(error).toBeTruthy();
       });
     });
 

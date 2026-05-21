@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
+  createTestGroupWithMembers,
   authenticateAs,
   createTestGroup,
   type TestUser,
@@ -382,6 +383,45 @@ describe.skipIf(!isIntegrationTestReady)(
           .single();
 
         expect(balanceAfter!.amount_cents).toBe(amountBefore);
+      });
+
+      it("rejects confirm_settlement when the debtor has been removed from the group", async () => {
+        const [debtor, creditor] = await createTestUsers(2);
+        const group = await createTestGroupWithMembers(creditor, [debtor]);
+
+        await adminClient!.from("balances").upsert({
+          group_id: group.id,
+          user_a: debtor.id < creditor.id ? debtor.id : creditor.id,
+          user_b: debtor.id < creditor.id ? creditor.id : debtor.id,
+          amount_cents: debtor.id < creditor.id ? 3000 : -3000,
+        });
+
+        const debtorClient = authenticateAs(debtor);
+        const { data: settlement } = await debtorClient
+          .from("settlements")
+          .insert({
+            group_id: group.id,
+            from_user_id: debtor.id,
+            to_user_id: creditor.id,
+            amount_cents: 3000,
+          })
+          .select()
+          .single();
+
+        await adminClient!
+          .from("group_members")
+          .delete()
+          .eq("group_id", group.id)
+          .eq("user_id", debtor.id);
+
+        const creditorClient = authenticateAs(creditor);
+        const { error: confirmError } = await creditorClient.rpc(
+          "confirm_settlement" as never,
+          { p_settlement_id: settlement!.id } as never,
+        );
+
+        expect(confirmError).not.toBeNull();
+        expect(confirmError!.message).toMatch(/permission_denied.*debtor/);
       });
     });
   },
