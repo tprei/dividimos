@@ -4,11 +4,12 @@ import { AnimatePresence } from "framer-motion";
 import { Receipt, Users } from "lucide-react";
 import { ItemCard } from "@/components/bill/item-card";
 import { Button } from "@/components/ui/button";
-import type { ExpenseItem, ItemSplit, User, UserProfile } from "@/types";
+import type { ExpenseItem, User, UserProfile } from "@/types";
+import type { ExpenseSplit } from "@/stores/bill-store";
 
 export interface SplitStepProps {
   items: ExpenseItem[];
-  splits: ItemSplit[];
+  splits: ExpenseSplit[];
   participants: User[];
   guests: { id: string; name: string }[];
   onAssign: (itemId: string, userId: string) => void;

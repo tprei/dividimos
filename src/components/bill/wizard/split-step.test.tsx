@@ -2,7 +2,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SplitStep } from "./split-step";
-import type { ExpenseItem, ItemSplit, User } from "@/types";
+import type { ExpenseItem, User } from "@/types";
+import type { ExpenseSplit } from "@/stores/bill-store";
 
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: {
@@ -106,7 +107,7 @@ describe("SplitStep", () => {
   });
 
   it("does not show bulk-assign when all items are assigned", () => {
-    const splits: ItemSplit[] = [
+    const splits: ExpenseSplit[] = [
       { id: "s1", itemId: "item-1", userId: "user-1", splitType: "equal", value: 1, computedAmountCents: 5000 },
       { id: "s2", itemId: "item-2", userId: "user-2", splitType: "equal", value: 1, computedAmountCents: 3000 },
     ];
