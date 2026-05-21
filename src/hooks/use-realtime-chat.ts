@@ -12,7 +12,14 @@ import type { Database } from "@/types/database";
 
 type ChatMessageRow = Database["public"]["Tables"]["chat_messages"]["Row"];
 
-const CHAT_MESSAGE_STRING_KEYS = ["id", "sender_id"] as const;
+const CHAT_MESSAGE_STRING_KEYS = [
+  "id",
+  "group_id",
+  "sender_id",
+  "message_type",
+  "content",
+  "created_at",
+] as const;
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 /**

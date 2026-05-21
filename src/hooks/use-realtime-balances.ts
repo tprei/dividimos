@@ -9,7 +9,7 @@ import type { Database } from "@/types/database";
 
 type BalanceRow = Database["public"]["Tables"]["balances"]["Row"];
 
-const BALANCE_STRING_KEYS = ["group_id", "user_a", "user_b"] as const;
+const BALANCE_STRING_KEYS = ["group_id", "user_a", "user_b", "updated_at"] as const;
 const BALANCE_NUMBER_KEYS = ["amount_cents"] as const;
 
 /**

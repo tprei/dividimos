@@ -15,6 +15,7 @@ const SETTLEMENT_STRING_KEYS = [
   "from_user_id",
   "to_user_id",
   "status",
+  "created_at",
 ] as const;
 const SETTLEMENT_NUMBER_KEYS = ["amount_cents"] as const;
 
