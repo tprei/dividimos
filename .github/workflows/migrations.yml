@@ -6,14 +6,19 @@ on:
       - 'supabase/migrations/**'
       - '.github/workflows/migrations.yml'
 
+permissions:
+  contents: read
+
 jobs:
   replay:
     name: Replay on fresh database
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
 
       - name: Start Supabase (applies every migration in order)
         run: |
@@ -35,9 +40,10 @@ jobs:
     name: No renamed or deleted migrations
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Reject renames or deletions under supabase/migrations
         run: |
