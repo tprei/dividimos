@@ -3,17 +3,14 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Loader2, QrCode } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useState, useTransition } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import toast from "react-hot-toast";
 import { parseClaimQrCode } from "@/lib/claim-qr";
-
-const IS_DEV_LOGIN = process.env.NEXT_PUBLIC_DEV_LOGIN_ENABLED === "true";
 
 type AuthMode = "choose" | "scan";
 
@@ -23,9 +20,6 @@ function AuthPageContent() {
   const next = safeRedirect(searchParams.get("next"));
   const supabase = createClient();
   const [mode, setMode] = useState<AuthMode>("choose");
-  const [devEmail, setDevEmail] = useState("");
-  const [devError, setDevError] = useState("");
-  const [isPending, startTransition] = useTransition();
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const handleScanDecode = useCallback(
@@ -37,29 +31,6 @@ function AuthPageContent() {
     },
     [router],
   );
-
-  const handleDevLogin = () => {
-    if (!devEmail.trim()) return;
-    setDevError("");
-    startTransition(async () => {
-      try {
-        const res = await fetch("/api/dev/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: devEmail.trim() }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setDevError(data.error ?? "Erro ao entrar");
-          return;
-        }
-        router.push(data.redirect ?? next);
-        router.refresh();
-      } catch {
-        setDevError("Erro de rede");
-      }
-    });
-  };
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
@@ -132,42 +103,6 @@ function AuthPageContent() {
                   </p>
 
                   <div className="mt-8 space-y-3">
-                    {IS_DEV_LOGIN && (
-                      <>
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            handleDevLogin();
-                          }}
-                          className="space-y-2"
-                        >
-                          <Input
-                            type="email"
-                            placeholder="Email (dev login)"
-                            value={devEmail}
-                            onChange={(e) => setDevEmail(e.target.value)}
-                            className="h-11 rounded-xl"
-                          />
-                          <Button
-                            type="submit"
-                            disabled={isPending || !devEmail.trim()}
-                            className="h-11 w-full rounded-xl"
-                          >
-                            {isPending ? "Entrando..." : "Entrar com email"}
-                          </Button>
-                          {devError && (
-                            <p className="text-center text-sm text-destructive">
-                              {devError}
-                            </p>
-                          )}
-                        </form>
-                        <div className="flex items-center gap-3">
-                          <div className="h-px flex-1 bg-border" />
-                          <span className="text-xs text-muted-foreground">ou</span>
-                          <div className="h-px flex-1 bg-border" />
-                        </div>
-                      </>
-                    )}
                     <Button
                       onClick={handleGoogleSignIn}
                       disabled={isGoogleLoading}

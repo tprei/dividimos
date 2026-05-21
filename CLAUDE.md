@@ -58,15 +58,16 @@ These can also be provided as Fly secrets if running on Fly.io — the script re
 
 ### Programmatic login (dev only)
 
-When `NEXT_PUBLIC_DEV_LOGIN_ENABLED=true`, you can authenticate via API:
+Requires two conditions: `NODE_ENV=development` (or `test`) **and** `DEV_LOGIN_SECRET` set to a non-empty string. The caller must pass the same value in the `x-dev-login-secret` header.
 
 ```bash
 curl -X POST http://localhost:3000/api/dev/login \
   -H 'Content-Type: application/json' \
+  -H 'x-dev-login-secret: your-local-secret' \
   -d '{"email": "alice@test.dividimos.local"}'
 ```
 
-The endpoint auto-creates the user if not found. The response sets session cookies.
+The endpoint auto-creates the user if not found. The response sets session cookies. Production never sets `DEV_LOGIN_SECRET`, so the route returns 404 even if `NODE_ENV` is somehow misconfigured.
 
 ## Commands
 
