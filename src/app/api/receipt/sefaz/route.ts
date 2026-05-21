@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchSefazPage, parseSefazPage } from "@/lib/nfce";
+import {
+  fetchSefazPage,
+  parseSefazPage,
+  SEFAZ_DOMAIN_PATTERN,
+} from "@/lib/nfce";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -25,8 +29,8 @@ export async function POST(request: Request) {
 
   const url = body.url.trim();
 
-  // Validate URL points to a known SEFAZ domain
-  const SEFAZ_DOMAIN_PATTERN = /\.(fazenda|sefaz|sef)\.[a-z]{2}\.gov\.br$/i;
+  // Validate URL points to a known SEFAZ domain. fetchSefazPage re-validates
+  // every redirect hop against the same allowlist.
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
