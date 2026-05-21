@@ -1,3 +1,5 @@
+process.env.RATE_LIMIT_DISABLED = "1";
+
 import { afterAll, beforeAll, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
