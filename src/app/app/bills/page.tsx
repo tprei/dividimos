@@ -1,6 +1,7 @@
 import { BillsListContent } from "@/components/bills/bills-list-content";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { formatBrazilianDate } from "@/lib/datetime";
 import type { ExpenseStatus } from "@/types";
 
 export default async function BillsPage() {
@@ -44,11 +45,7 @@ export default async function BillsPage() {
       bills.push({
         id: expense.id,
         title: expense.title,
-        date: new Date(expense.created_at).toLocaleDateString("pt-BR", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
+        date: formatBrazilianDate(expense.created_at),
         total: expense.total_amount,
         participants: countMap.get(expense.id)?.size ?? 0,
         status: expense.status as ExpenseStatus,
