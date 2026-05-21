@@ -107,10 +107,18 @@ self.addEventListener("push", (event) => {
 });
 
 // ── Notification Click ────────────────────────────────────────────────
+function isSafeUrl(url) {
+  try {
+    const u = new URL(url, self.location.origin);
+    return u.origin === self.location.origin;
+  } catch { return false; }
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || "/";
+  const raw = event.notification.data?.url;
+  const targetUrl = raw && isSafeUrl(raw) ? raw : "/";
 
   event.waitUntil(
     self.clients

@@ -206,5 +206,56 @@ describe("Service Worker — push events", () => {
 
       expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
     });
+
+    it("falls back to / for javascript: URLs", async () => {
+      sw.clients.matchAll.mockResolvedValue([]);
+
+      const event = {
+        ...makeExtendableEvent(),
+        notification: {
+          close: vi.fn(),
+          data: { url: "javascript:alert(1)" },
+        },
+      };
+
+      sw.listeners["notificationclick"]![0]!(event);
+      await Promise.all(event._promises);
+
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
+    });
+
+    it("falls back to / for cross-origin URLs", async () => {
+      sw.clients.matchAll.mockResolvedValue([]);
+
+      const event = {
+        ...makeExtendableEvent(),
+        notification: {
+          close: vi.fn(),
+          data: { url: "https://evil.example.com/steal" },
+        },
+      };
+
+      sw.listeners["notificationclick"]![0]!(event);
+      await Promise.all(event._promises);
+
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
+    });
+
+    it("falls back to / for malformed URLs that cannot be parsed", async () => {
+      sw.clients.matchAll.mockResolvedValue([]);
+
+      const event = {
+        ...makeExtendableEvent(),
+        notification: {
+          close: vi.fn(),
+          data: { url: "http://[::bad" },
+        },
+      };
+
+      sw.listeners["notificationclick"]![0]!(event);
+      await Promise.all(event._promises);
+
+      expect(sw.clients.openWindow).toHaveBeenCalledWith("/");
+    });
   });
 });
