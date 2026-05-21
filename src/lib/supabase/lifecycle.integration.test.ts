@@ -422,15 +422,12 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
       // Expense 1: Total 6000
       //   Shares: Alice 2000, Bob 2000, Carol 2000
       //   Payers: Alice 4000, Bob 2000
-      // Debts from activation:
-      //   Bob consumed 2000: paid 2000 → net Bob contribution 0 from Alice's payer share
-      //     Bob's share paid by Alice: round(2000 * 4000 / 6000) = 1333 → Bob owes Alice 1333
-      //     Bob's share paid by Bob: round(2000 * 2000 / 6000) = 667 → self, no debt
-      //   Carol consumed 2000:
-      //     Carol's share paid by Alice: round(2000 * 4000 / 6000) = 1333 → Carol owes Alice 1333
-      //     Carol's share paid by Bob: round(2000 * 2000 / 6000) = 667 → Carol owes Bob 667
-      //   Alice consumed 2000:
-      //     Alice's share paid by Bob: round(2000 * 2000 / 6000) = 667 → Alice owes Bob 667
+      // New algorithm: aggregate exact NUMERIC per canonical pair, then ROUND once.
+      //   Pair(alice,bob) exact = +(2000*2000/6000) - (2000*4000/6000) = +666.667 - 1333.333 = -666.667
+      //     → ROUND(-666.667) = -667 → Bob owes Alice 667
+      //   Pair(alice,carol) exact = -(2000*4000/6000) = -1333.333 → ROUND = -1333 → Carol owes Alice 1333
+      //   Pair(bob,carol) exact = -(2000*2000/6000) = -666.667 → ROUND = -667 → Carol owes Bob 667
+      //   Residual = 0 (no correction applied)
       await createAndActivateExpense({
         creator: alice,
         groupId: freshGroupId,
@@ -446,10 +443,12 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         title: "Multi-payer expense 1",
       });
 
-      // Bob→Alice: 1333 - 667 = 666 (Bob owes Alice net)
+      // activate_expense rounds exact-numeric per-pair sum then reconciles residual onto first pair.
+      // Pair(alice,bob) exact = ±(2000*2000/6000 - 2000*4000/6000) = ±2/3 cents → ROUND(±666.667) = ±667.
+      // Residual across all pairs = 0 (no correction applied). Net Bob→Alice = 667.
       // Carol→Alice: 1333
       // Carol→Bob: 667
-      expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(666);
+      expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(667);
       expect(await getBalanceBetween(freshGroupId, carol.id, alice.id)).toBe(1333);
       expect(await getBalanceBetween(freshGroupId, carol.id, bob.id)).toBe(667);
 
@@ -472,8 +471,8 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
       expect(await getBalanceBetween(freshGroupId, carol.id, alice.id)).toBe(1333 - 1500);
       // Carol→Bob unchanged
       expect(await getBalanceBetween(freshGroupId, carol.id, bob.id)).toBe(667);
-      // Bob→Alice unchanged
-      expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(666);
+      // Bob→Alice unchanged (667 from expense 1, unaffected by expense 2)
+      expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(667);
     });
   });
 

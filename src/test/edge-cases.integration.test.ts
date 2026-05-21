@@ -203,15 +203,12 @@ describe.skipIf(!isIntegrationTestReady)("Edge cases & rounding", () => {
     expect(carolOwesAlice).toBe(34);
   });
 
-  // 6.8 — Rounding asymmetry: 3 cents split among 3 consumers, 2 payers
+  // 6.8 — Rounding: 3 cents split among 3 consumers, 2 payers
   // shares: A=1, B=1, C=1; payers: A=2, B=1. Total=3
-  // B→A: ROUND(1*2/3) = ROUND(0.667) = 1
-  // C→A: ROUND(1*2/3) = ROUND(0.667) = 1
-  // A→B: ROUND(1*1/3) = ROUND(0.333) = 0
-  // C→B: ROUND(1*1/3) = ROUND(0.333) = 0
-  // Net A↔B: B owes A 1, A owes B 0 → B owes A 1
-  // Net A↔C: C owes A 1
-  // Net B↔C: C owes B 0
+  // New algorithm aggregates exact NUMERIC per canonical pair, then ROUNDs once:
+  //   Pair(A,B) exact = ±(1*1/3 - 1*2/3) = ±(-1/3) → ROUND(±0.333) = 0 → no debt
+  //   Pair(A,C) exact = -(1*2/3) = -2/3 → ROUND(-0.667) = -1 → C owes A 1
+  //   Pair(B,C) exact = -(1*1/3) = -1/3 → ROUND(-0.333) = 0 → no debt
   it("6.8: tiny amounts with rounding to zero on some pairs", async () => {
     const [alice, bob, carol] = await createTestUsers(3);
     const group = await createTestGroupWithMembers(alice, [bob, carol]);
@@ -230,9 +227,10 @@ describe.skipIf(!isIntegrationTestReady)("Edge cases & rounding", () => {
       ],
     });
 
-    // B owes A: ROUND(1*2/3)=1, A owes B: ROUND(1*1/3)=0. Net = 1
+    // activate_expense rounds exact-numeric per-pair sum then reconciles residual onto first pair.
+    // Pair(alice,bob) exact = (1*2/3) - (1*1/3) signed = ±1/3 → ROUND(±0.333) = 0. Net = 0.
     const bobOwesAlice = await getBalanceBetween(group.id, bob.id, alice.id);
-    expect(bobOwesAlice).toBe(1);
+    expect(bobOwesAlice).toBe(0);
 
     // C owes A: ROUND(1*2/3)=1
     const carolOwesAlice = await getBalanceBetween(
