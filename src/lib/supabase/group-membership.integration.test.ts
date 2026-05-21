@@ -809,11 +809,14 @@ describe.skipIf(!isIntegrationTestReady)(
           p_amount_cents: 1000,
         });
 
-        // record_and_settle uses my_group_ids() which includes invited members,
-        // so invited members CAN call this RPC.  This is an acknowledged
-        // tradeoff that supports the ad-hoc bill flow (CLAUDE.md).
-        expect(error).toBeNull();
-        expect(data).toBeDefined();
+        // record_and_settle was tightened to my_accepted_group_ids() in
+        // 20260418200000_rls_audit_hardening.sql: the CALLER must be an
+        // accepted member. An invited-but-not-accepted caller is rejected.
+        // (The acknowledged ad-hoc-bill tradeoff is about the COUNTERPARTY
+        // being invited, not the caller.)
+        expect(error).not.toBeNull();
+        expect(error?.message).toMatch(/permission_denied|not a group member/);
+        expect(data).toBeNull();
 
         // Cleanup
         await adminClient!
