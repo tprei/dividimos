@@ -1,4 +1,4 @@
-import { describe, expect, it, test } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   centsToDecimal,
   decimalToCents,
@@ -71,8 +71,12 @@ describe("decimalToCents", () => {
     expect(decimalToCents(0.1 + 0.2)).toBe(30);
   });
 
-  it("1.005 rounds to 100 due to floating point (1.005 * 100 = 100.4999...)", () => {
-    expect(decimalToCents(1.005)).toBe(100);
+  it("rounds 1.005 to 101 cents", () => {
+    expect(decimalToCents(1.005)).toBe(101);
+  });
+
+  it("rounds 0.105 to 11 cents", () => {
+    expect(decimalToCents(0.105)).toBe(11);
   });
 });
 
@@ -105,12 +109,16 @@ describe("parseBRLInput", () => {
     expect(parseBRLInput("12345,67")).toBe(1234567);
   });
 
-  // Known limitation: parseBRLInput does not handle thousands-separated Brazilian format.
-  // "1.234,56" (meaning R$ 1,234.56 = 123456 cents) is incorrectly parsed as 123 cents
-  // because the implementation strips the period, replaces only the first comma with a dot,
-  // yielding "1.234.56" → parseFloat returns 1.234 → Math.round(1.234 * 100) = 123.
-  test.fails("parses thousands-separated Brazilian format (known limitation)", () => {
+  it("parses thousands-separated Brazilian format", () => {
     expect(parseBRLInput("1.234,56")).toBe(123456);
+  });
+
+  it("parses thousands-separated with currency symbol", () => {
+    expect(parseBRLInput("R$ 1.234,56")).toBe(123456);
+  });
+
+  it("parses 0,99", () => {
+    expect(parseBRLInput("0,99")).toBe(99);
   });
 });
 

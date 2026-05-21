@@ -22,10 +22,16 @@ function formatCentsDisplay(cents: number): string {
 }
 
 function parseBrazilianToCents(value: string): number | null {
-  const cleaned = value.replace(/[^\d,.\-]/g, "").replace(",", ".");
-  const parsed = parseFloat(cleaned);
+  const stripped = value.replace(/[^\d,.\-]/g, "");
+  let normalized: string;
+  if (stripped.includes(",")) {
+    normalized = stripped.replace(/\./g, "").replace(",", ".");
+  } else {
+    normalized = stripped;
+  }
+  const parsed = parseFloat(normalized);
   if (isNaN(parsed) || parsed < 0) return null;
-  return Math.round(parsed * 100);
+  return Math.round(parsed * 100 + 0.0001);
 }
 
 export function CurrencyInput({
