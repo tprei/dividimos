@@ -17,8 +17,6 @@ import type {
 } from "@/types";
 import type { Database } from "@/types/database";
 
-type ExpenseInsert = Database["public"]["Tables"]["expenses"]["Insert"];
-type ExpenseUpdate = Database["public"]["Tables"]["expenses"]["Update"];
 type ExpenseRow = Database["public"]["Tables"]["expenses"]["Row"];
 type ExpenseItemRow = Database["public"]["Tables"]["expense_items"]["Row"];
 type ExpenseShareRow = Database["public"]["Tables"]["expense_shares"]["Row"];
@@ -72,7 +70,6 @@ export async function saveExpenseDraft(
   const supabase = createClient();
   const {
     groupId,
-    creatorId,
     title,
     merchantName,
     expenseType,
@@ -80,174 +77,71 @@ export async function saveExpenseDraft(
     serviceFeePercent,
     fixedFees,
     existingExpenseId,
+    items,
+    shares,
+    payers,
+    guests,
+    guestShares,
   } = params;
 
-  let expenseId = existingExpenseId;
+  const pExpense = {
+    ...(existingExpenseId ? { id: existingExpenseId } : {}),
+    group_id: groupId,
+    title,
+    merchant_name: merchantName ?? "",
+    expense_type: expenseType,
+    total_amount: totalAmount,
+    service_fee_percent: serviceFeePercent,
+    fixed_fees: fixedFees,
+  };
 
-  if (expenseId) {
-    // Update existing draft
-    const updatePayload: ExpenseUpdate = {
-      title,
-      merchant_name: merchantName || null,
-      expense_type: expenseType,
-      total_amount: totalAmount,
-      service_fee_percent: serviceFeePercent,
-      fixed_fees: fixedFees,
-    };
+  const pItems = (items ?? []).map((item) => ({
+    description: item.description,
+    quantity: item.quantity,
+    unit_price_cents: item.unitPriceCents,
+    total_price_cents: item.totalPriceCents,
+  }));
 
-    const { error } = await supabase
-      .from("expenses")
-      .update(updatePayload)
-      .eq("id", expenseId)
-      .eq("status", "draft");
+  const pShares = (shares ?? []).map((s) => ({
+    user_id: s.userId,
+    share_amount_cents: s.shareAmountCents,
+  }));
 
-    if (error) {
-      console.error("Failed to update expense draft:", error);
-      return { error: error.message };
-    }
-  } else {
-    // Insert new draft
-    const insertPayload: ExpenseInsert = {
-      group_id: groupId,
-      creator_id: creatorId,
-      title,
-      merchant_name: merchantName || null,
-      expense_type: expenseType,
-      total_amount: totalAmount,
-      service_fee_percent: serviceFeePercent,
-      fixed_fees: fixedFees,
-      status: "draft",
-    };
+  const pPayers = (payers ?? []).map((p) => ({
+    user_id: p.userId,
+    amount_cents: p.amountCents,
+  }));
 
-    const { data: inserted, error } = await supabase
-      .from("expenses")
-      .insert(insertPayload)
-      .select("id")
-      .single();
+  const pGuests = (guests ?? []).map((g) => ({
+    local_id: g.localId,
+    display_name: g.displayName,
+  }));
 
-    if (error || !inserted) {
-      console.error("Failed to insert expense draft:", error);
-      return { error: error?.message ?? "Erro ao salvar rascunho" };
-    }
-    expenseId = inserted.id;
+  const pGuestShares = (guestShares ?? []).map((gs) => ({
+    local_id: gs.guestLocalId,
+    share_amount_cents: gs.shareAmountCents,
+  }));
+
+  const { data, error } = await supabase.rpc("save_expense_draft", {
+    p_expense: pExpense,
+    p_items: pItems,
+    p_shares: pShares,
+    p_payers: pPayers,
+    p_guests: pGuests,
+    p_guest_shares: pGuestShares,
+  });
+
+  if (error) {
+    console.error("Failed to save expense draft:", error);
+    return { error: error.message };
   }
 
-  // Persist child data (items, shares, payers) so drafts are fully resumable
-  const childError = await saveExpenseChildData(supabase, expenseId!, params);
-  if (childError) {
-    return { error: childError };
+  const result = data as { id: string } | null;
+  if (!result?.id) {
+    return { error: "Erro ao salvar rascunho" };
   }
 
-  return { expenseId: expenseId! };
-}
-
-async function saveExpenseChildData(
-  supabase: ReturnType<typeof createClient>,
-  expenseId: string,
-  params: SaveExpenseDraftParams,
-): Promise<string | null> {
-  const { items, shares, payers, guests, guestShares } = params;
-
-  // Delete-and-reinsert for simplicity (draft only, no concurrent access concerns)
-  // Guest shares must be deleted before guests due to FK constraint
-  await supabase.from("expense_guest_shares").delete().eq("expense_id", expenseId);
-  await Promise.all([
-    supabase.from("expense_items").delete().eq("expense_id", expenseId),
-    supabase.from("expense_shares").delete().eq("expense_id", expenseId),
-    supabase.from("expense_payers").delete().eq("expense_id", expenseId),
-    supabase.from("expense_guests").delete().eq("expense_id", expenseId),
-  ]);
-
-  const inserts: PromiseLike<{ error: { message: string } | null }>[] = [];
-
-  // Insert items
-  if (items && items.length > 0) {
-    const itemRows = items.map((item) => ({
-      expense_id: expenseId,
-      description: item.description,
-      quantity: item.quantity,
-      unit_price_cents: item.unitPriceCents,
-      total_price_cents: item.totalPriceCents,
-    }));
-    inserts.push(supabase.from("expense_items").insert(itemRows).then(({ error }) => ({ error })));
-  }
-
-  // Insert shares (real users only)
-  if (shares && shares.length > 0) {
-    const shareRows = shares.map((s) => ({
-      expense_id: expenseId,
-      user_id: s.userId,
-      share_amount_cents: s.shareAmountCents,
-    }));
-    inserts.push(supabase.from("expense_shares").insert(shareRows).then(({ error }) => ({ error })));
-  }
-
-  // Insert payers
-  if (payers && payers.length > 0) {
-    const payerRows = payers.map((p) => ({
-      expense_id: expenseId,
-      user_id: p.userId,
-      amount_cents: p.amountCents,
-    }));
-    inserts.push(supabase.from("expense_payers").insert(payerRows).then(({ error }) => ({ error })));
-  }
-
-  // Insert guests and their shares
-  if (guests && guests.length > 0) {
-    const guestInsertRows = guests.map((g) => ({
-      expense_id: expenseId,
-      display_name: g.displayName,
-    }));
-
-    const guestInsertPromise = (async (): Promise<{ error: { message: string } | null }> => {
-      const { data: insertedGuests, error: guestError } = await supabase
-        .from("expense_guests")
-        .insert(guestInsertRows)
-        .select("id");
-
-      if (guestError) return { error: guestError };
-
-      if (insertedGuests && guestShares && guestShares.length > 0) {
-        const localToServer = new Map<string, string>();
-        guests.forEach((g, i) => {
-          if (insertedGuests[i]) localToServer.set(g.localId, insertedGuests[i].id);
-        });
-
-        const guestShareRows = guestShares
-          .map((gs) => {
-            const serverId = localToServer.get(gs.guestLocalId);
-            if (!serverId) return null;
-            return {
-              expense_id: expenseId,
-              guest_id: serverId,
-              share_amount_cents: gs.shareAmountCents,
-            };
-          })
-          .filter((r): r is NonNullable<typeof r> => r !== null);
-
-        if (guestShareRows.length > 0) {
-          const { error: shareError } = await supabase
-            .from("expense_guest_shares")
-            .insert(guestShareRows);
-          if (shareError) return { error: shareError };
-        }
-      }
-
-      return { error: null };
-    })();
-
-    inserts.push(guestInsertPromise);
-  }
-
-  // Run all inserts in parallel
-  const results = await Promise.all(inserts);
-  const firstError = results.find((r) => r.error);
-  if (firstError?.error) {
-    console.error("Failed to save expense child data:", firstError.error);
-    return firstError.error.message;
-  }
-
-  return null;
+  return { expenseId: result.id };
 }
 
 // ============================================================
