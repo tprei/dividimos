@@ -104,6 +104,19 @@ describe("useRealtimeSettlements", () => {
     });
   });
 
+  it("skips malformed payloads instead of mapping garbage", () => {
+    const onEvent = vi.fn();
+    renderHook(() => useRealtimeSettlements("group-1", onEvent));
+
+    // Missing the numeric amount_cents → must be skipped.
+    mockChannel.emit("INSERT", {
+      id: "s9", group_id: "group-1", from_user_id: "a", to_user_id: "b",
+      status: "pending", created_at: "2026-03-28T12:00:00Z",
+    } as unknown as Record<string, unknown>);
+
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it("removes the channel on unmount", () => {
     const { unmount } = renderHook(() => useRealtimeSettlements("group-1", vi.fn()));
     unmount();

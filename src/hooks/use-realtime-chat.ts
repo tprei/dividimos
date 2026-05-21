@@ -6,10 +6,20 @@ import { chatMessageRowToMessage } from "@/lib/supabase/chat-actions";
 import {
   userProfileRowToUserProfile,
 } from "@/lib/supabase/expense-mappers";
+import { validateRealtimeRow } from "./realtime-payload";
 import type { ChatMessageWithSender } from "@/types";
 import type { Database } from "@/types/database";
 
 type ChatMessageRow = Database["public"]["Tables"]["chat_messages"]["Row"];
+
+const CHAT_MESSAGE_STRING_KEYS = [
+  "id",
+  "group_id",
+  "sender_id",
+  "message_type",
+  "content",
+  "created_at",
+] as const;
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
 /**
@@ -45,7 +55,11 @@ export function useRealtimeChat(
           filter: `group_id=eq.${groupId}`,
         },
         async (payload) => {
-          const row = payload.new as ChatMessageRow;
+          const row = validateRealtimeRow<ChatMessageRow>(
+            payload.new,
+            CHAT_MESSAGE_STRING_KEYS,
+          );
+          if (!row) return;
           const message = chatMessageRowToMessage(row);
 
           // Resolve sender profile

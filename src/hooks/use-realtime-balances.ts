@@ -3,10 +3,14 @@
 import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { balanceRowToBalance } from "@/lib/supabase/expense-mappers";
+import { validateRealtimeRow } from "./realtime-payload";
 import type { Balance } from "@/types";
 import type { Database } from "@/types/database";
 
 type BalanceRow = Database["public"]["Tables"]["balances"]["Row"];
+
+const BALANCE_STRING_KEYS = ["group_id", "user_a", "user_b", "updated_at"] as const;
+const BALANCE_NUMBER_KEYS = ["amount_cents"] as const;
 
 /**
  * Subscribe to realtime changes on the `balances` table for a group.
@@ -42,7 +46,12 @@ export function useRealtimeBalances(
           filter: `group_id=eq.${groupId}`,
         },
         (payload) => {
-          callbackRef.current(balanceRowToBalance(payload.new as BalanceRow));
+          const row = validateRealtimeRow<BalanceRow>(
+            payload.new,
+            BALANCE_STRING_KEYS,
+            BALANCE_NUMBER_KEYS,
+          );
+          if (row) callbackRef.current(balanceRowToBalance(row));
         },
       )
       .on(
@@ -54,7 +63,12 @@ export function useRealtimeBalances(
           filter: `group_id=eq.${groupId}`,
         },
         (payload) => {
-          callbackRef.current(balanceRowToBalance(payload.new as BalanceRow));
+          const row = validateRealtimeRow<BalanceRow>(
+            payload.new,
+            BALANCE_STRING_KEYS,
+            BALANCE_NUMBER_KEYS,
+          );
+          if (row) callbackRef.current(balanceRowToBalance(row));
         },
       )
       .subscribe();

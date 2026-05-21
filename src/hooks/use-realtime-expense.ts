@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { validateRealtimeRow } from "./realtime-payload";
 import type { ExpenseStatus } from "@/types";
+
+type ExpenseUpdateRow = {
+  id: string;
+  status: ExpenseStatus;
+  updated_at: string;
+};
+
+const EXPENSE_STRING_KEYS = ["id", "status", "updated_at"] as const;
 
 /**
  * Subscribe to realtime changes on a specific expense row.
@@ -13,6 +22,12 @@ export function useRealtimeExpense(
   expenseId: string | undefined,
   onUpdate: (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => void,
 ) {
+  // Stabilize callback ref to avoid channel churn on every render.
+  const callbackRef = useRef(onUpdate);
+  useEffect(() => {
+    callbackRef.current = onUpdate;
+  });
+
   useEffect(() => {
     if (!expenseId || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
 
@@ -29,13 +44,13 @@ export function useRealtimeExpense(
           filter: `id=eq.${expenseId}`,
         },
         (payload) => {
-          const row = payload.new as {
-            id: string;
-            status: ExpenseStatus;
-            updated_at: string;
-          };
+          const row = validateRealtimeRow<ExpenseUpdateRow>(
+            payload.new,
+            EXPENSE_STRING_KEYS,
+          );
+          if (!row) return;
 
-          onUpdate({
+          callbackRef.current({
             id: row.id,
             status: row.status,
             updatedAt: row.updated_at,
@@ -47,5 +62,5 @@ export function useRealtimeExpense(
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [expenseId, onUpdate]);
+  }, [expenseId]);
 }

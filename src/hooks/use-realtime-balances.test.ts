@@ -94,6 +94,21 @@ describe("useRealtimeBalances", () => {
     });
   });
 
+  it("skips malformed payloads instead of calling back with garbage", () => {
+    const cb = vi.fn();
+    renderHook(() => useRealtimeBalances("group-1", cb));
+
+    // Missing the numeric amount_cents → must be skipped, not mapped.
+    mockChannel.emit("INSERT", {
+      group_id: "group-1",
+      user_a: "alice",
+      user_b: "bob",
+      updated_at: "2026-03-28T12:00:00Z",
+    } as unknown as Record<string, unknown>);
+
+    expect(cb).not.toHaveBeenCalled();
+  });
+
   it("removes the channel on unmount", () => {
     const { unmount } = renderHook(() => useRealtimeBalances("group-1", vi.fn()));
     unmount();

@@ -74,6 +74,40 @@ describe("useRealtimeExpense", () => {
     expect(onUpdate).toHaveBeenCalledWith({ id: "exp-1", status: "active", updatedAt: "2026-03-28T12:00:00Z" });
   });
 
+  it("skips malformed payloads instead of calling onUpdate", () => {
+    const onUpdate = vi.fn();
+    renderHook(() => useRealtimeExpense("exp-1", onUpdate));
+
+    mockChannel.emit("UPDATE", { id: "exp-1" }); // missing status / updated_at
+    mockChannel.emit("UPDATE", {} as Record<string, unknown>);
+
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not re-subscribe when only the callback identity changes", () => {
+    const cb1 = vi.fn();
+    const cb2 = vi.fn();
+    const { rerender } = renderHook(({ cb }) => useRealtimeExpense("exp-1", cb), {
+      initialProps: { cb: cb1 },
+    });
+    const firstChannel = mockChannel;
+    rerender({ cb: cb2 });
+
+    // Same channel, no teardown — and the latest callback receives the event.
+    expect(removeChannelSpy).not.toHaveBeenCalled();
+    firstChannel.emit("UPDATE", {
+      id: "exp-1",
+      status: "active",
+      updated_at: "2026-03-28T12:00:00Z",
+    });
+    expect(cb1).not.toHaveBeenCalled();
+    expect(cb2).toHaveBeenCalledWith({
+      id: "exp-1",
+      status: "active",
+      updatedAt: "2026-03-28T12:00:00Z",
+    });
+  });
+
   it("removes the channel on unmount", () => {
     const onUpdate = vi.fn();
     const { unmount } = renderHook(() => useRealtimeExpense("exp-1", onUpdate));
