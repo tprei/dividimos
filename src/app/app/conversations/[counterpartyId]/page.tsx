@@ -33,6 +33,9 @@ export default async function ConversationPage({
   );
 
   if (rpcError || !groupId) {
+    if (rpcError) {
+      console.error("[conversations] get_or_create_dm_group failed:", rpcError);
+    }
     return (
       <ConversationPageClient
         initialData={{
@@ -43,7 +46,7 @@ export default async function ConversationPage({
             name: user.name,
             avatarUrl: user.avatarUrl,
           },
-          error: rpcError?.message ?? "Erro ao criar conversa",
+          error: "Erro ao criar conversa",
           groupId: null,
           counterparty: null,
           thread: null,

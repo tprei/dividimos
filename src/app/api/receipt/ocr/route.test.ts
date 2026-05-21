@@ -173,15 +173,18 @@ describe("POST /api/receipt/ocr", () => {
     expect(body.error).toContain("4MB");
   });
 
-  it("returns 500 when parseReceiptImage throws", async () => {
-    mockParseReceiptImage.mockRejectedValue(new Error("Gemini API error"));
+  it("returns 500 with a generic message without leaking the thrown error", async () => {
+    mockParseReceiptImage.mockRejectedValue(
+      new Error("Gemini API error: leaked internal detail"),
+    );
 
     const base64 = Buffer.from("fake").toString("base64");
     const res = await POST(jsonRequest({ image: base64 }));
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe("Gemini API error");
+    expect(body.error).toBe("Erro ao processar imagem");
+    expect(JSON.stringify(body)).not.toContain("leaked internal detail");
   });
 
   it("returns generic error message for non-Error throws", async () => {

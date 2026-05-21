@@ -38,7 +38,8 @@ export async function updatePixKey(formData: FormData) {
     .eq("id", user.id);
 
   if (error) {
-    return { error: `Erro ao salvar: ${error.message}` };
+    console.error("[profile] Failed to update Pix key:", error);
+    return { error: "Erro ao salvar. Tente novamente." };
   }
 
   return { success: true, hint };

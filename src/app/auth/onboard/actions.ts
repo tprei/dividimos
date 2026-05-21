@@ -54,7 +54,8 @@ export async function completeOnboarding(formData: FormData) {
     if (error.code === "23505") {
       return { error: "Handle ja em uso. Escolha outro." };
     }
-    return { error: `Erro ao salvar: ${error.message}` };
+    console.error("[onboard] Failed to save profile:", error);
+    return { error: "Erro ao salvar. Tente novamente." };
   }
 
   redirect(next);

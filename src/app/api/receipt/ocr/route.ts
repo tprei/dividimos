@@ -76,11 +76,12 @@ export async function POST(request: Request) {
     const isTimeout =
       error instanceof Error &&
       (error.name === "TimeoutError" || error.name === "AbortError");
+    if (!isTimeout) {
+      console.error("[receipt/ocr] parse failed:", error);
+    }
     const message = isTimeout
       ? "Não foi possível processar. Tente novamente ou adicione manualmente."
-      : error instanceof Error
-        ? error.message
-        : "Erro ao processar imagem";
+      : "Erro ao processar imagem";
     return NextResponse.json(
       { error: message, timeout: isTimeout },
       { status: isTimeout ? 504 : 500 },

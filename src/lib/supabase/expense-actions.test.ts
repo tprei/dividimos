@@ -106,12 +106,16 @@ describe("saveExpenseDraft", () => {
     expect((args.p_guest_shares as unknown[]).length).toBe(2);
   });
 
-  it("returns error when RPC fails", async () => {
-    mock.onRpc("save_expense_draft", { data: null, error: { message: "RPC failed" } });
+  it("returns a generic error without leaking the raw RPC message", async () => {
+    mock.onRpc("save_expense_draft", {
+      data: null,
+      error: { message: 'permission denied for table "expenses"' },
+    });
 
     const result = await saveExpenseDraft(baseDraftParams);
 
-    expect(result).toEqual({ error: "RPC failed" });
+    expect(result).toEqual({ error: "Erro ao salvar rascunho" });
+    expect(JSON.stringify(result)).not.toContain("permission denied");
   });
 
   it("returns error when RPC returns no id", async () => {
@@ -277,12 +281,15 @@ describe("deleteExpense", () => {
     expect(deleteCalls).toHaveLength(1);
   });
 
-  it("returns error when delete fails", async () => {
-    mock.onTable("expenses", { error: { message: "Delete failed" } });
+  it("returns a generic error without leaking the raw delete message", async () => {
+    mock.onTable("expenses", {
+      error: { message: 'permission denied for table "expenses"' },
+    });
 
     const result = await deleteExpense("expense-1");
 
-    expect(result).toEqual({ error: "Delete failed" });
+    expect(result).toEqual({ error: "Erro ao excluir rascunho" });
+    expect(JSON.stringify(result)).not.toContain("permission denied");
   });
 });
 

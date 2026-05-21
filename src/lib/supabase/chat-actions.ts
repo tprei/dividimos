@@ -205,7 +205,10 @@ export async function sendChatMessage(
     .select()
     .single();
 
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[chat] Failed to send message:", error);
+    return { error: "Não foi possível enviar a mensagem." };
+  }
   return chatMessageRowToMessage(data);
 }
 
@@ -240,7 +243,10 @@ export async function loadConversationMessages(
   }
 
   const { data: rows, error } = await query;
-  if (error) return { error: error.message };
+  if (error) {
+    console.error("[chat] Failed to load messages:", error);
+    return { error: "Não foi possível carregar as mensagens." };
+  }
   if (!rows || rows.length === 0) {
     return {
       messages: [],
