@@ -14,6 +14,7 @@ const mockParseSefazPage = vi.fn();
 vi.mock("@/lib/nfce", () => ({
   fetchSefazPage: (...args: unknown[]) => mockFetchSefazPage(...args),
   parseSefazPage: (...args: unknown[]) => mockParseSefazPage(...args),
+  SEFAZ_DOMAIN_PATTERN: /\.(fazenda|sefaz|sef|svrs)\.[a-z]{2}\.gov\.br$/i,
 }));
 
 const { POST, runtime, maxDuration } = await import("./route");
@@ -128,6 +129,21 @@ describe("POST /api/receipt/sefaz", () => {
     });
 
     const res = await POST(jsonRequest({ url: "https://nfce.fazenda.rs.gov.br/consulta" }));
+
+    expect(res.status).toBe(200);
+    expect(mockFetchSefazPage).toHaveBeenCalled();
+  });
+
+  it("accepts SVRS (Sefaz Virtual RS) domain used by ~10 states", async () => {
+    mockFetchSefazPage.mockResolvedValue({ ok: true, html: "<html>...</html>" });
+    mockParseSefazPage.mockReturnValue({
+      merchant: "Loja",
+      items: [{ description: "Item", quantity: 1, unitPriceCents: 100, totalCents: 100 }],
+      serviceFeePercent: 0,
+      totalCents: 100,
+    });
+
+    const res = await POST(jsonRequest({ url: "https://nfe.svrs.rs.gov.br/NFCE/consulta" }));
 
     expect(res.status).toBe(200);
     expect(mockFetchSefazPage).toHaveBeenCalled();

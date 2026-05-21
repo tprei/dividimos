@@ -25,6 +25,37 @@ export interface SefazFetchResult {
 }
 
 /**
+ * Hostname allowlist for SEFAZ NFC-e portals. Matches `<sub>.<token>.<uf>.gov.br`
+ * where token is a state tax-authority label. `svrs` is the Sefaz Virtual do RS,
+ * which serves NFC-e consultation for ~10 states (e.g. `nfe.svrs.rs.gov.br`).
+ */
+export const SEFAZ_DOMAIN_PATTERN =
+  /\.(fazenda|sefaz|sef|svrs)\.[a-z]{2}\.gov\.br$/i;
+
+/** Maximum number of redirects to follow when fetching a SEFAZ page. */
+const MAX_SEFAZ_REDIRECTS = 5;
+
+/**
+ * Whether a URL is an allowed SEFAZ portal endpoint. Enforces http(s) and an
+ * allowlisted government hostname. Used both to validate the inbound URL and to
+ * re-validate every redirect hop, so a SEFAZ open-redirect cannot pivot the
+ * server to an internal host (the `.gov.br` suffix excludes IP literals and
+ * private hosts).
+ */
+export function isAllowedSefazUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+  return SEFAZ_DOMAIN_PATTERN.test(parsed.hostname);
+}
+
+/**
  * Parse a Brazilian currency string into integer centavos.
  * Handles formats like "12,50", "1.234,56", "12.50" (dot as decimal).
  * Returns 0 if the string cannot be parsed.
@@ -555,16 +586,41 @@ export async function fetchSefazPage(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
-        "Accept-Language": "pt-BR,pt;q=0.9",
-      },
-      redirect: "follow",
-    });
+    let currentUrl = url;
+    let response: Response;
+
+    // Follow redirects manually so each hop is re-validated against the SEFAZ
+    // allowlist. With `redirect: "follow"`, a SEFAZ open-redirect could pivot the
+    // request to an internal host (cloud metadata, RFC1918) — an SSRF vector.
+    for (let hop = 0; ; hop++) {
+      if (!isAllowedSefazUrl(currentUrl)) {
+        return { ok: false, error: "URL fora do domínio SEFAZ permitido" };
+      }
+
+      response = await fetch(currentUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "pt-BR,pt;q=0.9",
+        },
+        redirect: "manual",
+      });
+
+      if (response.status < 300 || response.status >= 400) {
+        break;
+      }
+
+      const location = response.headers.get("location");
+      if (!location) {
+        break;
+      }
+      if (hop >= MAX_SEFAZ_REDIRECTS) {
+        return { ok: false, error: "Excesso de redirecionamentos" };
+      }
+      currentUrl = new URL(location, currentUrl).toString();
+    }
 
     if (!response.ok) {
       return {

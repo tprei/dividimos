@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { parseSefazPage, parseBrlToCents } from "./nfce";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  parseSefazPage,
+  parseBrlToCents,
+  isAllowedSefazUrl,
+  fetchSefazPage,
+} from "./nfce";
 
 describe("parseBrlToCents", () => {
   it("parses Brazilian format with comma decimal", () => {
@@ -303,5 +308,131 @@ describe("parseSefazPage", () => {
     const result = parseSefazPage(html);
     expect(result).not.toBeNull();
     expect(result!.serviceFeePercent).toBe(10);
+  });
+});
+
+describe("isAllowedSefazUrl", () => {
+  it("accepts standard state SEFAZ portals", () => {
+    expect(
+      isAllowedSefazUrl("https://www.nfce.fazenda.sp.gov.br/consulta?p=x"),
+    ).toBe(true);
+    expect(isAllowedSefazUrl("https://nfce.sefaz.go.gov.br/consulta")).toBe(
+      true,
+    );
+    expect(isAllowedSefazUrl("https://sat.sef.sc.gov.br/consulta")).toBe(true);
+  });
+
+  it("accepts SVRS (Sefaz Virtual RS) hosts used by ~10 states", () => {
+    expect(isAllowedSefazUrl("https://nfe.svrs.rs.gov.br/consulta?p=x")).toBe(
+      true,
+    );
+    expect(isAllowedSefazUrl("https://www.svrs.rs.gov.br/")).toBe(true);
+  });
+
+  it("rejects cloud metadata and private addresses", () => {
+    expect(isAllowedSefazUrl("http://169.254.169.254/latest/meta-data")).toBe(
+      false,
+    );
+    expect(isAllowedSefazUrl("http://127.0.0.1/")).toBe(false);
+    expect(isAllowedSefazUrl("http://10.0.0.5/")).toBe(false);
+  });
+
+  it("rejects look-alike and suffix-attack domains", () => {
+    expect(isAllowedSefazUrl("https://evil.com")).toBe(false);
+    expect(isAllowedSefazUrl("https://nfe.svrs.rs.gov.br.evil.com/")).toBe(
+      false,
+    );
+    expect(isAllowedSefazUrl("https://sefaz.sp.gov.br.attacker.io/")).toBe(
+      false,
+    );
+  });
+
+  it("rejects non-http(s) schemes and unparseable URLs", () => {
+    expect(isAllowedSefazUrl("ftp://nfe.svrs.rs.gov.br/x")).toBe(false);
+    expect(isAllowedSefazUrl("file:///etc/passwd")).toBe(false);
+    expect(isAllowedSefazUrl("not a url")).toBe(false);
+  });
+});
+
+describe("fetchSefazPage SSRF guards", () => {
+  function htmlResponse(html: string, contentType = "text/html"): Response {
+    return {
+      ok: true,
+      status: 200,
+      headers: {
+        get: (k: string) =>
+          k.toLowerCase() === "content-type" ? contentType : null,
+      },
+      text: async () => html,
+    } as unknown as Response;
+  }
+
+  function redirectResponse(location: string | null, status = 302): Response {
+    return {
+      ok: false,
+      status,
+      headers: {
+        get: (k: string) => (k.toLowerCase() === "location" ? location : null),
+      },
+      text: async () => "",
+    } as unknown as Response;
+  }
+
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("follows a redirect to an allowed SEFAZ host", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        redirectResponse("https://nfce.sefaz.go.gov.br/final"),
+      )
+      .mockResolvedValueOnce(htmlResponse("<table><tr><td>item</td></tr></table>"));
+
+    const result = await fetchSefazPage("https://nfe.svrs.rs.gov.br/start");
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe("https://nfce.sefaz.go.gov.br/final");
+    // Redirects are followed manually, not by the fetch layer.
+    expect(fetchMock.mock.calls[0][1].redirect).toBe("manual");
+  });
+
+  it("refuses to follow a redirect to a non-SEFAZ host (SSRF)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      redirectResponse("http://169.254.169.254/latest/meta-data"),
+    );
+
+    const result = await fetchSefazPage("https://nfe.svrs.rs.gov.br/start");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("SEFAZ");
+    // Crucially, the metadata endpoint was never fetched.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps the number of redirects", async () => {
+    fetchMock.mockResolvedValue(
+      redirectResponse("https://nfe.svrs.rs.gov.br/loop"),
+    );
+
+    const result = await fetchSefazPage("https://nfe.svrs.rs.gov.br/start");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("redirecionamentos");
+  });
+
+  it("rejects an initial URL outside the allowlist without fetching", async () => {
+    const result = await fetchSefazPage("http://169.254.169.254/");
+
+    expect(result.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
