@@ -4,17 +4,31 @@ const MAX_MEMBER_FIELD_LENGTH = 80;
 /** Maximum length of free-text user input forwarded to the LLM as data. */
 const MAX_USER_TEXT_LENGTH = 2000;
 
-/** Zero-width and bidirectional formatting characters: U+200B-200F, U+202A-202E, U+2066-2069, U+FEFF. Dropped entirely. */
-const REMOVE_CHARS = new RegExp(
-  "[\\u200B-\\u200F\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]",
-  "g",
-);
+/**
+ * Unicode format characters (category Cf): zero-width spaces/joiners, bidi marks,
+ * embeddings, overrides and isolates, the BOM, and the tag block (U+E0000-E007F).
+ * Dropped entirely — these are invisible and can smuggle hidden instructions.
+ */
+const REMOVE_CHARS = /\p{Cf}/gu;
 
-/** C0/C1 control characters and line/paragraph separators: U+0000-001F, U+007F-009F, U+2028-2029. Replaced with a space. */
-const TO_SPACE_CHARS = new RegExp(
-  "[\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]",
-  "g",
-);
+/**
+ * Control characters (category Cc, covers C0/C1 incl. newline, tab, NEL) and
+ * line/paragraph separators. Replaced with a space so the value cannot fabricate
+ * new prompt lines while still keeping word boundaries.
+ */
+const TO_SPACE_CHARS = /[\p{Cc}\p{Zl}\p{Zp}]/gu;
+
+/** Cap to `max` UTF-16 code units without splitting a trailing surrogate pair. */
+function capLength(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const sliced = value.slice(0, max);
+  const lastCode = sliced.charCodeAt(sliced.length - 1);
+  // A lone high surrogate at the end would serialize to invalid JSON.
+  if (lastCode >= 0xd800 && lastCode <= 0xdbff) {
+    return sliced.slice(0, -1);
+  }
+  return sliced;
+}
 
 function neutralize(value: string): string {
   return value
@@ -30,7 +44,7 @@ function neutralize(value: string): string {
  * fabricate new prompt lines or hide injected instructions, then caps the length.
  */
 export function sanitizeMemberField(value: string): string {
-  return neutralize(value).slice(0, MAX_MEMBER_FIELD_LENGTH);
+  return capLength(neutralize(value), MAX_MEMBER_FIELD_LENGTH);
 }
 
 /**
@@ -39,5 +53,5 @@ export function sanitizeMemberField(value: string): string {
  * drops invisible/bidi characters, and caps the length.
  */
 export function sanitizeUserText(value: string): string {
-  return neutralize(value).slice(0, MAX_USER_TEXT_LENGTH);
+  return capLength(neutralize(value), MAX_USER_TEXT_LENGTH);
 }

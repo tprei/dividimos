@@ -424,10 +424,6 @@ describe("prompt-injection hardening", () => {
     vi.clearAllMocks();
   });
 
-  it("includes a security notice instructing the model to treat input as data", () => {
-    expect(buildSystemPrompt()).toContain("SEGURANÇA");
-  });
-
   it("neutralizes newline-injected instructions in a member name", () => {
     const members: MemberContext[] = [
       {

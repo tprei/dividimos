@@ -4,9 +4,12 @@ import { sanitizeMemberField, sanitizeUserText } from "./llm-prompt-safety";
 const NEWLINE = "\n";
 const TAB = "\t";
 const NUL = String.fromCharCode(0);
+const NEL = String.fromCharCode(0x85); // C1 next-line control
 const RLO = String.fromCharCode(0x202e); // right-to-left override (bidi)
 const ZWSP = String.fromCharCode(0x200b); // zero-width space
 const LSEP = String.fromCharCode(0x2028); // line separator
+const TAG = String.fromCodePoint(0xe0041, 0xe0042); // Unicode tag chars (invisible)
+const EMOJI = "😀"; // U+1F600, a surrogate pair
 
 describe("sanitizeMemberField", () => {
   it("preserves normal accented handles and names", () => {
@@ -23,6 +26,21 @@ describe("sanitizeMemberField", () => {
 
   it("strips bidi override and zero-width characters", () => {
     expect(sanitizeMemberField(`a${RLO}b${ZWSP}c`)).toBe("abc");
+  });
+
+  it("strips invisible Unicode tag characters used to smuggle instructions", () => {
+    expect(sanitizeMemberField(`Bob${TAG}`)).toBe("Bob");
+  });
+
+  it("turns the NEL control char into a space", () => {
+    expect(sanitizeMemberField(`a${NEL}b`)).toBe("a b");
+  });
+
+  it("does not emit a lone surrogate when the cap splits an astral char", () => {
+    const out = sanitizeMemberField("x".repeat(79) + EMOJI);
+    const lastCode = out.charCodeAt(out.length - 1);
+    expect(lastCode >= 0xd800 && lastCode <= 0xdbff).toBe(false);
+    expect(JSON.parse(JSON.stringify(out))).toBe(out);
   });
 
   it("replaces NUL and tabs with spaces and collapses", () => {
@@ -59,6 +77,10 @@ describe("sanitizeUserText", () => {
 
   it("drops zero-width characters and turns control chars into spaces", () => {
     expect(sanitizeUserText(`uber${ZWSP}25${NUL}reais`)).toBe("uber25 reais");
+  });
+
+  it("strips invisible Unicode tag characters", () => {
+    expect(sanitizeUserText(`uber 25${TAG}reais`)).toBe("uber 25reais");
   });
 
   it("caps length at 2000 characters", () => {
