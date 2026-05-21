@@ -107,13 +107,17 @@ describe("ConversationPage (server component)", () => {
     expect(props.initialData.error).toBeNull();
   });
 
-  it("passes error when DM group RPC fails", async () => {
-    mockRpcResult = { data: null, error: { message: "Grupo não encontrado" } };
+  it("passes a generic error without leaking the raw RPC message when DM group RPC fails", async () => {
+    mockRpcResult = {
+      data: null,
+      error: { message: 'permission denied for table "groups"' },
+    };
 
     await renderPage();
 
     const props = mockClientComponent.mock.calls[0][0];
-    expect(props.initialData.error).toBe("Grupo não encontrado");
+    expect(props.initialData.error).toBe("Erro ao criar conversa");
+    expect(props.initialData.error).not.toContain("permission denied");
     expect(props.initialData.groupId).toBeNull();
   });
 
