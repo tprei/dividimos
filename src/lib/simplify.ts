@@ -1,5 +1,29 @@
 import { formatBRL, distributeProportionally, distributeEvenly } from "./currency";
-import type { Bill, BillSplit, ItemSplit, User } from "@/types";
+import type { User } from "@/types";
+
+interface ExpenseInput {
+  expenseType: "itemized" | "single_amount";
+  serviceFeePercent: number;
+  fixedFees: number;
+  creatorId: string;
+  payers: { userId: string; amountCents: number }[];
+}
+
+interface ItemAssignment {
+  id: string;
+  itemId: string;
+  userId: string;
+  splitType: string;
+  value: number;
+  computedAmountCents: number;
+}
+
+interface AmountSplit {
+  userId: string;
+  splitType: string;
+  value: number;
+  computedAmountCents: number;
+}
 
 export interface DebtEdge {
   fromUserId: string;
@@ -79,10 +103,10 @@ export function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
 }
 
 export function computeRawEdges(
-  bill: Bill,
+  expense: ExpenseInput,
   participants: User[],
-  itemSplits: ItemSplit[],
-  billSplits: BillSplit[],
+  itemSplits: ItemAssignment[],
+  amountSplits: AmountSplit[],
   items: { totalPriceCents: number }[],
 ): DebtEdge[] {
   const consumption = new Map<string, number>();
@@ -90,8 +114,8 @@ export function computeRawEdges(
     consumption.set(p.id, 0);
   }
 
-  if (bill.billType === "single_amount") {
-    for (const bs of billSplits) {
+  if (expense.expenseType === "single_amount") {
+    for (const bs of amountSplits) {
       consumption.set(bs.userId, (consumption.get(bs.userId) || 0) + bs.computedAmountCents);
     }
   } else {
@@ -99,25 +123,25 @@ export function computeRawEdges(
     for (const split of itemSplits) {
       consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
     }
-    if (bill.serviceFeePercent > 0 && itemsTotal > 0) {
-      const totalFee = Math.round((itemsTotal * bill.serviceFeePercent) / 100);
+    if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
+      const totalFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
       const weights = participants.map((p) => consumption.get(p.id) || 0);
       const fees = distributeProportionally(totalFee, weights);
       participants.forEach((p, i) => {
         consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
       });
     }
-    if (bill.fixedFees > 0) {
-      const fees = distributeEvenly(bill.fixedFees, participants.length);
+    if (expense.fixedFees > 0) {
+      const fees = distributeEvenly(expense.fixedFees, participants.length);
       participants.forEach((p, i) => {
         consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
       });
     }
   }
 
-  const payers = bill.payers.length > 0
-    ? bill.payers
-    : [{ userId: bill.creatorId, amountCents: participants.reduce((s, p) => s + (consumption.get(p.id) || 0), 0) }];
+  const payers = expense.payers.length > 0
+    ? expense.payers
+    : [{ userId: expense.creatorId, amountCents: participants.reduce((s, p) => s + (consumption.get(p.id) || 0), 0) }];
 
   const totalPaid = payers.reduce((s, p) => s + p.amountCents, 0);
   if (totalPaid <= 0) return [];

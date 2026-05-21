@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { makeItemizedBill, makeSingleAmountBill, userAlice, userBob, userCarlos } from "@/test/fixtures";
-import type { BillSplit, ItemSplit, User } from "@/types";
+import { userAlice, userBob, userCarlos } from "@/test/fixtures";
+import type { User } from "@/types";
 import type { DebtEdge } from "./simplify";
 import { computeRawEdges, consolidateEdges, netAndMinimize, simplifyDebts } from "./simplify";
 
@@ -46,11 +46,41 @@ function assertNoSelfEdges(edges: DebtEdge[]) {
   }
 }
 
-function makeItemSplit(userId: string, amountCents: number, itemId = "item-1"): ItemSplit {
+interface ExpenseInput {
+  expenseType: "itemized" | "single_amount";
+  serviceFeePercent: number;
+  fixedFees: number;
+  creatorId: string;
+  payers: { userId: string; amountCents: number }[];
+}
+
+function makeExpenseInput(overrides: Partial<ExpenseInput> = {}): ExpenseInput {
+  return {
+    expenseType: "itemized",
+    serviceFeePercent: 10,
+    fixedFees: 0,
+    creatorId: "user-alice",
+    payers: [],
+    ...overrides,
+  };
+}
+
+function makeSingleAmountInput(overrides: Partial<ExpenseInput> = {}): ExpenseInput {
+  return {
+    expenseType: "single_amount",
+    serviceFeePercent: 0,
+    fixedFees: 0,
+    creatorId: "user-alice",
+    payers: [],
+    ...overrides,
+  };
+}
+
+function makeItemSplit(userId: string, amountCents: number, itemId = "item-1") {
   return { id: `split-${userId}-${itemId}`, itemId, userId, splitType: "fixed", value: amountCents, computedAmountCents: amountCents };
 }
 
-function makeBillSplit(userId: string, amountCents: number): BillSplit {
+function makeBillSplit(userId: string, amountCents: number) {
   return { userId, splitType: "fixed", value: amountCents, computedAmountCents: amountCents };
 }
 
@@ -64,7 +94,7 @@ function assertEdgeSumInvariant(edges: DebtEdge[], expectedTotal: number) {
 
 describe("computeRawEdges", () => {
   it("two people, one payer, equal consumption", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       payers: [{ userId: "user-alice", amountCents: 10000 }],
@@ -77,7 +107,7 @@ describe("computeRawEdges", () => {
   });
 
   it("excludes self-payment edges", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       payers: [{ userId: "user-alice", amountCents: 10000 }],
@@ -93,7 +123,7 @@ describe("computeRawEdges", () => {
   });
 
   it("splits proportionally across multiple payers", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       payers: [
@@ -113,7 +143,7 @@ describe("computeRawEdges", () => {
   });
 
   it("applies service fee proportionally to consumption", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 10,
       payers: [{ userId: "user-alice", amountCents: 11000 }],
@@ -127,7 +157,7 @@ describe("computeRawEdges", () => {
   });
 
   it("splits fixed fees equally among participants", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       fixedFees: 1000,
@@ -142,7 +172,7 @@ describe("computeRawEdges", () => {
   });
 
   it("uses billSplits for single_amount bill type", () => {
-    const bill = makeSingleAmountBill({
+    const bill = makeSingleAmountInput({
       creatorId: "user-alice",
       payers: [{ userId: "user-alice", amountCents: 10000 }],
     });
@@ -153,7 +183,7 @@ describe("computeRawEdges", () => {
   });
 
   it("falls back to creator as payer when payers array is empty", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       payers: [],
@@ -166,13 +196,13 @@ describe("computeRawEdges", () => {
   });
 
   it("returns empty array when total paid is zero", () => {
-    const bill = makeItemizedBill({ creatorId: "user-alice", serviceFeePercent: 0, payers: [] });
+    const bill = makeExpenseInput({ creatorId: "user-alice", serviceFeePercent: 0, payers: [] });
     const edges = computeRawEdges(bill, twoParticipants, [], [], []);
     expect(edges).toEqual([]);
   });
 
   it("generates no edges for zero-consumption participants", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       payers: [{ userId: "user-alice", amountCents: 5000 }],
@@ -185,7 +215,7 @@ describe("computeRawEdges", () => {
   });
 
   it("edges sum exactly to total consumption across multiple payers (no rounding residue)", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       payers: [
@@ -207,7 +237,7 @@ describe("computeRawEdges", () => {
   });
 
   it("edges sum exactly to total consumption with uneven multi-payer split", () => {
-    const bill = makeItemizedBill({
+    const bill = makeExpenseInput({
       creatorId: "user-alice",
       serviceFeePercent: 0,
       payers: [
@@ -225,7 +255,7 @@ describe("computeRawEdges", () => {
 
   describe("multi-item scenarios", () => {
     it("two items with different consumers produce separate edges", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [{ userId: "user-alice", amountCents: 8000 }],
@@ -246,7 +276,7 @@ describe("computeRawEdges", () => {
 
     it("three items shared unevenly across four people", () => {
       const allFour = [userAlice, userBob, userCarlos, userDave];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [{ userId: "user-alice", amountCents: 15000 }],
@@ -269,7 +299,7 @@ describe("computeRawEdges", () => {
 
     it("one item split among all participants consolidates edges per payer", () => {
       const fiveUsers = [userAlice, userBob, userCarlos, userDave, userEve];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
@@ -293,7 +323,7 @@ describe("computeRawEdges", () => {
 
   describe("service fee + fixed fee combinations", () => {
     it("service fee and fixed fee together distribute correctly", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 10,
         fixedFees: 600,
@@ -315,7 +345,7 @@ describe("computeRawEdges", () => {
     });
 
     it("service fee on unequal consumption distributes proportionally", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 10,
         fixedFees: 0,
@@ -336,7 +366,7 @@ describe("computeRawEdges", () => {
     });
 
     it("fixed fee distributes evenly regardless of consumption", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         fixedFees: 900,
@@ -358,7 +388,7 @@ describe("computeRawEdges", () => {
 
     it("high service fee (25%) with odd fixed fee on 7 participants", () => {
       const sevenUsers = [userAlice, userBob, userCarlos, userDave, userEve, userFrank, userGrace];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 25,
         fixedFees: 999,
@@ -393,7 +423,7 @@ describe("computeRawEdges", () => {
   describe("multi-payer proportional distribution", () => {
     it("three payers with equal amounts produce edges proportional to 1/3 each", () => {
       const fourUsers = [userAlice, userBob, userCarlos, userDave];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
@@ -414,7 +444,7 @@ describe("computeRawEdges", () => {
     });
 
     it("two payers with 70/30 split produce proportional edges", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
@@ -432,7 +462,7 @@ describe("computeRawEdges", () => {
     });
 
     it("payer who is also consumer gets reduced edges", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
@@ -462,7 +492,7 @@ describe("computeRawEdges", () => {
 
     it("uneven three-payer split [3333, 3333, 3334] sums to exactly 10000", () => {
       const fourUsers = [userAlice, userBob, userCarlos, userDave];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
@@ -482,7 +512,7 @@ describe("computeRawEdges", () => {
   describe("single_amount expense type", () => {
     it("single_amount with 5 people and 3 payers distributes proportionally", () => {
       const fiveUsers = [userAlice, userBob, userCarlos, userDave, userEve];
-      const bill = makeSingleAmountBill({
+      const bill = makeSingleAmountInput({
         creatorId: "user-alice",
         payers: [
           { userId: "user-alice", amountCents: 5000 },
@@ -511,7 +541,7 @@ describe("computeRawEdges", () => {
     });
 
     it("single_amount ignores service fee and fixed fee", () => {
-      const bill = makeSingleAmountBill({
+      const bill = makeSingleAmountInput({
         creatorId: "user-alice",
         serviceFeePercent: 15,
         fixedFees: 500,
@@ -531,7 +561,7 @@ describe("computeRawEdges", () => {
   describe("edge sum invariants under rounding stress", () => {
     it("prime total (10007) split among 3 payers and 1 consumer", () => {
       const fourUsers = [userAlice, userBob, userCarlos, userDave];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
@@ -547,7 +577,7 @@ describe("computeRawEdges", () => {
     });
 
     it("1 centavo total produces exactly 1 edge of 1 centavo", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [{ userId: "user-alice", amountCents: 1 }],
@@ -562,7 +592,7 @@ describe("computeRawEdges", () => {
     it("large bill (R$99,999.99) with 5 payers and 5 consumers", () => {
       const tenUsers = [userAlice, userBob, userCarlos, userDave, userEve,
         userFrank, userGrace, makeUser("user-h", "H"), makeUser("user-i", "I"), makeUser("user-j", "J")];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
@@ -589,7 +619,7 @@ describe("computeRawEdges", () => {
 
     it("service fee + fixed fee + multi-payer: total edges = total consumption minus payer self-shares", () => {
       const fourUsers = [userAlice, userBob, userCarlos, userDave];
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 10,
         fixedFees: 400,
@@ -620,7 +650,7 @@ describe("computeRawEdges", () => {
     });
 
     it("consumer who consumed zero with fees still owes fixed fee portion", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 10,
         fixedFees: 300,
@@ -637,7 +667,7 @@ describe("computeRawEdges", () => {
     });
 
     it("all consumers are also all payers — only cross-debts remain", () => {
-      const bill = makeItemizedBill({
+      const bill = makeExpenseInput({
         creatorId: "user-alice",
         serviceFeePercent: 0,
         payers: [
