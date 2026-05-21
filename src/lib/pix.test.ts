@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { generatePixCopiaECola, maskPixKey, validatePixKey } from "./pix";
+import {
+  generatePixCopiaECola,
+  maskPixKey,
+  tlv,
+  validatePixKey,
+} from "./pix";
+
+function recomputeCrc16CCITT(payload: string): string {
+  const polynomial = 0x1021;
+  let crc = 0xffff;
+  const bytes = new TextEncoder().encode(payload);
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i] << 8;
+    for (let j = 0; j < 8; j++) {
+      if (crc & 0x8000) {
+        crc = ((crc << 1) ^ polynomial) & 0xffff;
+      } else {
+        crc = (crc << 1) & 0xffff;
+      }
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
 
 describe("generatePixCopiaECola", () => {
   const basePayload = {
@@ -140,6 +162,122 @@ describe("validatePixKey", () => {
     it("rejects UUID without dashes", () => {
       expect(validatePixKey("550e8400e29b41d4a716446655440000", "random")).toBe(false);
     });
+  });
+});
+
+describe("TLV length encoding — UTF-8 byte count boundary", () => {
+  it("accepts a value whose UTF-8 byte count is exactly 99", () => {
+    const value = "a".repeat(99);
+    expect(() => tlv("99", value)).not.toThrow();
+    expect(tlv("99", value)).toBe("99" + "99" + value);
+  });
+
+  it("throws for a value whose UTF-8 byte count is 100", () => {
+    const value = "a".repeat(100);
+    expect(() => tlv("99", value)).toThrow(
+      "TLV value too long for 2-digit length field",
+    );
+  });
+
+  it("throws when generatePixCopiaECola is called with a 100-byte ASCII Pix key", () => {
+    const key = "a".repeat(100);
+    expect(() =>
+      generatePixCopiaECola({
+        pixKey: key,
+        merchantName: "Teste",
+        merchantCity: "Cidade",
+        amountCents: 100,
+      }),
+    ).toThrow("TLV value too long for 2-digit length field");
+  });
+});
+
+describe("TLV length encoding — UTF-8 byte count vs UTF-16 code-unit count", () => {
+  it("counts multi-byte UTF-8 characters by byte length, not string length", () => {
+    const value = "ã".repeat(50);
+    expect(new TextEncoder().encode(value).length).toBe(100);
+    expect(value.length).toBe(50);
+    expect(() => tlv("99", value)).toThrow(
+      "TLV value too long for 2-digit length field",
+    );
+  });
+
+  it("accepts a 2-byte-per-char value that fits within 99 bytes", () => {
+    const value = "ã".repeat(49);
+    expect(new TextEncoder().encode(value).length).toBe(98);
+    expect(() => tlv("99", value)).not.toThrow();
+    expect(tlv("99", value)).toBe("99" + "98" + value);
+  });
+});
+
+describe("CRC16-CCITT — byte-based computation", () => {
+  it("CRC in generated BR Code matches byte-based CRC16 recomputed from the payload prefix", () => {
+    const result = generatePixCopiaECola({
+      pixKey: "user@example.com",
+      merchantName: "Teste",
+      merchantCity: "Cidade",
+      amountCents: 500,
+    });
+    const payloadWithoutCrc = result.slice(0, -4);
+    const crc = result.slice(-4);
+    expect(crc).toBe(recomputeCrc16CCITT(payloadWithoutCrc));
+  });
+
+  it("CRC over a payload with a 2-byte UTF-8 character in the Pix key matches byte-based recomputation", () => {
+    const key = "ã".repeat(10);
+    const result = generatePixCopiaECola({
+      pixKey: key,
+      merchantName: "Teste",
+      merchantCity: "Cidade",
+      amountCents: 500,
+    });
+    const payloadWithoutCrc = result.slice(0, -4);
+    const crc = result.slice(-4);
+    expect(crc).toBe(recomputeCrc16CCITT(payloadWithoutCrc));
+  });
+
+  it("byte-based and char-code-based CRCs differ for a payload containing non-ASCII bytes", () => {
+    function charCodeCrc(payload: string): string {
+      const polynomial = 0x1021;
+      let crc = 0xffff;
+      for (let i = 0; i < payload.length; i++) {
+        crc ^= payload.charCodeAt(i) << 8;
+        for (let j = 0; j < 8; j++) {
+          if (crc & 0x8000) {
+            crc = ((crc << 1) ^ polynomial) & 0xffff;
+          } else {
+            crc = (crc << 1) & 0xffff;
+          }
+        }
+      }
+      return crc.toString(16).toUpperCase().padStart(4, "0");
+    }
+
+    const nonAsciiPayload = "ã".repeat(10) + "6304";
+    const byteCrc = recomputeCrc16CCITT(nonAsciiPayload);
+    const charCrc = charCodeCrc(nonAsciiPayload);
+    expect(byteCrc).not.toBe(charCrc);
+  });
+});
+
+describe("validatePixKey — 77-byte EMV BR Code spec limit", () => {
+  it("rejects an email key whose UTF-8 byte count is 78", () => {
+    const localPart = "a".repeat(78 - "@b.co".length);
+    const key = `${localPart}@b.co`;
+    expect(new TextEncoder().encode(key).length).toBe(78);
+    expect(validatePixKey(key, "email")).toBe(false);
+  });
+
+  it("accepts an email key whose UTF-8 byte count is exactly 77", () => {
+    const localPart = "a".repeat(77 - "@b.co".length);
+    const key = `${localPart}@b.co`;
+    expect(new TextEncoder().encode(key).length).toBe(77);
+    expect(validatePixKey(key, "email")).toBe(true);
+  });
+
+  it("rejects a random (UUID) key that somehow exceeds 77 bytes (padded)", () => {
+    const oversized = "a".repeat(78);
+    expect(validatePixKey(oversized, "random")).toBe(false);
   });
 });
 
