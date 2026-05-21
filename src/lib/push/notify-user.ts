@@ -1,3 +1,4 @@
+import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptPixKey as decrypt } from "@/lib/crypto";
 import { sendPushNotification, type PushPayload } from "./web-push";
