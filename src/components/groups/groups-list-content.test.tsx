@@ -31,7 +31,7 @@ function chainable(resolveValue: unknown) {
   return chain;
 }
 
-const mockFromFn = vi.fn((_table: string) => {
+const mockFromFn = vi.fn(() => {
   return chainable({ data: [], error: null });
 });
 
