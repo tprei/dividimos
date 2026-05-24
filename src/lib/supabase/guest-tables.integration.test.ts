@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   createTestUsers,
-  createTestGroup,
   createTestGroupWithMembers,
   authenticateAs,
   getBalanceBetween,
