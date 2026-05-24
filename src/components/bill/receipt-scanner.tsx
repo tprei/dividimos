@@ -250,7 +250,6 @@ export function ReceiptScanner({
             className="space-y-3"
           >
             <div className="relative overflow-hidden rounded-2xl border bg-muted">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={preview}
                 alt="Foto da nota fiscal"
