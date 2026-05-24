@@ -6,7 +6,6 @@ import {
   Bell,
   Check,
   Clock,
-  Loader2,
   QrCode,
   Receipt,
   Users,
@@ -38,7 +37,6 @@ import {
 import { getGroupNavUrl } from "@/lib/group-nav";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
-import { haptics } from "@/hooks/use-haptics";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import toast from "react-hot-toast";
