@@ -256,10 +256,9 @@ describe("sanitizeChatResult", () => {
   });
 
   it("defaults undefined amountCents to 0", () => {
-    const raw = makeResult();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (raw as any).amountCents;
-    const result = sanitizeChatResult(raw);
+    const result = sanitizeChatResult(
+      makeResult({ amountCents: undefined as unknown as number }),
+    );
 
     expect(result.amountCents).toBe(0);
   });
