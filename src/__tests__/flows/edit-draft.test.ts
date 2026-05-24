@@ -8,7 +8,7 @@ import {
   makeExpenseItem,
 } from "@/test/fixtures";
 import type { Expense } from "@/types";
-import type { AmountSplit, ExpenseSplit } from "@/stores/bill-store";
+import type { AmountSplit } from "@/stores/bill-store";
 
 /**
  * Tests for the draft editing flow — verifying that store state
@@ -31,16 +31,6 @@ describe("Edit Draft Flow", () => {
       makeExpenseItem({ id: "item-1", description: "Pizza", totalPriceCents: 5000 }),
     ];
     const payers = [{ expenseId: "draft-1", userId: "user-alice", amountCents: 5500 }];
-    const splits: ExpenseSplit[] = [
-      {
-        id: "split-1",
-        itemId: "item-1",
-        userId: "user-bob",
-        splitType: "equal",
-        value: 1,
-        computedAmountCents: 5000,
-      },
-    ];
 
     useBillStore.getState().hydrateFromServer({
       expense,
@@ -126,16 +116,6 @@ describe("Edit Draft Flow", () => {
   it("preserves items when modifying expense metadata", () => {
     const expense = makeExpense({ id: "draft-5" });
     const items = [makeExpenseItem({ id: "item-1" })];
-    const splits: ExpenseSplit[] = [
-      {
-        id: "split-1",
-        itemId: "item-1",
-        userId: "user-bob",
-        splitType: "equal",
-        value: 1,
-        computedAmountCents: 5000,
-      },
-    ];
 
     useBillStore.getState().hydrateFromServer({
       expense,
