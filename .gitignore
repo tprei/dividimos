@@ -75,3 +75,6 @@ session-log.json
 android/app/build/
 android/.gradle/
 android/build/
+
+# Local planning notes and reports
+docs/
