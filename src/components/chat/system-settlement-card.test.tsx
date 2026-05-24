@@ -4,7 +4,7 @@ import { SystemSettlementCard } from "./system-settlement-card";
 import type { Settlement, UserProfile } from "@/types";
 
 vi.mock("next/image", () => ({
-  default: (props: Record<string, unknown>) => <img {...props} />,
+  default: (props: Record<string, unknown>) => <img alt="" {...props} />,
 }));
 
 const fromUser: UserProfile = {

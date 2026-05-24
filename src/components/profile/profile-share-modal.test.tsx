@@ -13,7 +13,7 @@ vi.mock("react-hot-toast", () => ({
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
     const { fill, ...rest } = props;
-    return <img {...rest} data-fill={fill ? "true" : undefined} />;
+    return <img alt="" {...rest} data-fill={fill ? "true" : undefined} />;
   },
 }));
 

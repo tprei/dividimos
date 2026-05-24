@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("next/image", () => ({
-  default: (props: Record<string, unknown>) => <img {...props} />,
+  default: (props: Record<string, unknown>) => <img alt="" {...props} />,
 }));
 
 const counterparty: UserProfile = {

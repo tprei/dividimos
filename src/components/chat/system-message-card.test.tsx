@@ -10,7 +10,7 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("next/image", () => ({
-  default: (props: Record<string, unknown>) => <img {...props} />,
+  default: (props: Record<string, unknown>) => <img alt="" {...props} />,
 }));
 
 const user1: UserProfile = { id: "u1", handle: "alice", name: "Alice", avatarUrl: undefined };
