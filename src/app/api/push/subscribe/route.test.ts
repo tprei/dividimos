@@ -11,8 +11,8 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => adminMock.client),
 }));
 
-const mockEncrypt = vi.fn((_val: string) => "encrypted-blob");
-const mockDecrypt = vi.fn((_val: string) => "decrypted");
+const mockEncrypt = vi.fn<(value: string) => string>(() => "encrypted-blob");
+const mockDecrypt = vi.fn<(value: string) => string>(() => "decrypted");
 vi.mock("@/lib/crypto", () => ({
   encryptPixKey: (val: string) => mockEncrypt(val),
   decryptPixKey: (val: string) => mockDecrypt(val),
