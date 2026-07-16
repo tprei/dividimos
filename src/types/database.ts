@@ -969,6 +969,7 @@ export type Database = {
         Args: { p_settlement_id: string }
         Returns: undefined
       }
+      delete_group: { Args: { p_group_id: string }; Returns: undefined }
       confirm_vendor_charge: {
         Args: { p_charge_id: string }
         Returns: undefined
