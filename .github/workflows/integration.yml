@@ -41,8 +41,10 @@ jobs:
           done
           ANON_KEY=$(supabase status --output json | jq -r '.ANON_KEY')
           SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.SERVICE_ROLE_KEY')
+          DB_URL=$(supabase status --output json | jq -r '.DB_URL')
           echo "anon_key=${ANON_KEY}" >> $GITHUB_OUTPUT
           echo "service_role_key=${SERVICE_ROLE_KEY}" >> $GITHUB_OUTPUT
+          echo "db_url=${DB_URL}" >> $GITHUB_OUTPUT
 
       - name: Run integration tests
         run: npm run test:integration
@@ -51,3 +53,4 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
           PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          SUPABASE_DB_URL: ${{ steps.supabase.outputs.db_url }}
