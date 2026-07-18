@@ -6,13 +6,13 @@ import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
+import { queryBalancesBetweenUsers } from "@/lib/supabase/settlement-actions";
 import {
-  queryBalancesBetweenUsers,
-  recordSettlement,
-} from "@/lib/supabase/settlement-actions";
-import { notifySettlementRecorded } from "@/lib/push/push-notify";
+  settlementEdgeKey,
+  useSettlementSubmission,
+} from "@/contexts/settlement-submission-context";
 import { computeGroupDebts } from "./group-settlement-sheet";
-import type { Balance } from "@/types";
+import type { Balance, SettlementAllocation } from "@/types";
 
 import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
 
@@ -49,7 +49,7 @@ export function distributeSettlement(
   counterpartyId: string,
   totalCents: number,
   direction: "pay" | "collect",
-): { groupId: string; fromUserId: string; toUserId: string; amountCents: number }[] {
+): SettlementAllocation[] {
   const directedDebts: { groupId: string; debtCents: number }[] = [];
 
   for (const b of balances) {
@@ -72,7 +72,7 @@ export function distributeSettlement(
   // Sort largest debt first
   directedDebts.sort((a, b) => b.debtCents - a.debtCents);
 
-  const settlements: { groupId: string; fromUserId: string; toUserId: string; amountCents: number }[] = [];
+  const settlements: SettlementAllocation[] = [];
   let remaining = totalCents;
 
   for (const debt of directedDebts) {
@@ -101,6 +101,7 @@ export function ConversationPayButton({
   const [showPix, setShowPix] = useState(false);
   const [selectedBalances, setSelectedBalances] = useState<Balance[]>([]);
   const [settling, setSettling] = useState(false);
+  const submission = useSettlementSubmission();
 
   const fetchBalances = useCallback(async () => {
     try {
@@ -143,6 +144,7 @@ export function ConversationPayButton({
   const relevantGroupCount = computeGroupDebts(balances, currentUserId, mode).length;
 
   const handleButtonClick = () => {
+    if (!submission.ready) return;
     if (relevantGroupCount > 1) {
       setShowGroupSheet(true);
     } else {
@@ -163,29 +165,26 @@ export function ConversationPayButton({
     mode,
   ).reduce((sum, g) => sum + g.debtCents, 0);
 
+  const hasReservedSettlement = distributeSettlement(
+    selectedBalances.length > 0 ? selectedBalances : balances,
+    currentUserId,
+    counterpartyId,
+    selectedTotal || absAmount,
+    mode,
+  ).some((allocation) => submission.reservedEdgeKeys.has(settlementEdgeKey(allocation)));
+
   const handleMarkPaid = async (amountCents: number) => {
     setSettling(true);
     try {
       const source = selectedBalances.length > 0 ? selectedBalances : balances;
-      const settlements = distributeSettlement(
+      const allocations = distributeSettlement(
         source,
         currentUserId,
         counterpartyId,
         amountCents,
         mode,
       );
-
-      await Promise.all(
-        settlements.map(async (s) => {
-          await recordSettlement(s.groupId, s.fromUserId, s.toUserId, s.amountCents);
-          notifySettlementRecorded(
-            s.groupId,
-            s.fromUserId,
-            s.toUserId,
-            s.amountCents,
-          ).catch(() => {});
-        }),
-      );
+      return await submission.submit(allocations);
     } finally {
       setSettling(false);
     }
@@ -209,7 +208,7 @@ export function ConversationPayButton({
           size="sm"
           className="gap-1.5 rounded-full text-xs"
           onClick={handleButtonClick}
-          disabled={settling}
+          disabled={settling || !submission.ready || hasReservedSettlement}
         >
           {mode === "pay" ? (
             <ArrowUpRight className="h-3.5 w-3.5" />
@@ -247,6 +246,7 @@ export function ConversationPayButton({
           groupId={selectedBalances[0]?.groupId ?? balances[0]?.groupId}
           mode={mode}
           onMarkPaid={handleMarkPaid}
+          submission={submission}
           onSettlementComplete={handleSettlementComplete}
         />
       )}

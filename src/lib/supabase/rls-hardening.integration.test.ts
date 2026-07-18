@@ -357,9 +357,9 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
   });
 
   // ────────────────────────────────────────────────────────
-  // record_and_settle: phantom counterparty is rejected
+  // record_settlements: phantom counterparty is rejected
   // ────────────────────────────────────────────────────────
-  describe("record_and_settle validates counterparty membership", () => {
+  describe("record_settlements validates counterparty membership", () => {
     let alice: TestUser;
     let bob: TestUser;
     let unrelated: TestUser;
@@ -373,11 +373,14 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
 
     it("rejects settlement against a non-member counterparty", async () => {
       const client = authenticateAs(alice);
-      const { error } = await client.rpc("record_and_settle", {
-        p_group_id: groupId,
-        p_from_user_id: alice.id,
-        p_to_user_id: unrelated.id,
-        p_amount_cents: 1000,
+      const { error } = await client.rpc("record_settlements", {
+        p_allocations: [{
+          group_id: groupId,
+          from_user_id: alice.id,
+          to_user_id: unrelated.id,
+          amount_cents: 1000,
+        }],
+        p_operation_id: crypto.randomUUID(),
       });
 
       expect(error).not.toBeNull();
@@ -404,11 +407,14 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
       });
 
       const client = authenticateAs(alice);
-      const { error } = await client.rpc("record_and_settle", {
-        p_group_id: groupId,
-        p_from_user_id: invited.id,
-        p_to_user_id: alice.id,
-        p_amount_cents: 2500,
+      const { error } = await client.rpc("record_settlements", {
+        p_allocations: [{
+          group_id: groupId,
+          from_user_id: invited.id,
+          to_user_id: alice.id,
+          amount_cents: 2500,
+        }],
+        p_operation_id: crypto.randomUUID(),
       });
 
       expect(error).toBeNull();

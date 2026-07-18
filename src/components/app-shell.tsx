@@ -11,6 +11,7 @@ import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
 import { cn } from "@/lib/utils";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { UserProvider } from "@/contexts/user-context";
+import { SettlementSubmissionProvider } from "@/contexts/settlement-submission-context";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
 import { useUnreadConversations } from "@/hooks/use-unread-conversations";
@@ -208,6 +209,7 @@ export function AppShell({
 
   return (
     <UserProvider initialUser={initialUser}>
+      <SettlementSubmissionProvider>
       <div className="flex h-dvh flex-col overflow-hidden bg-background">
         <header className="sticky top-0 z-40 glass border-b border-border/50">
           <div className="flex h-14 items-center justify-between px-4">
@@ -268,6 +270,7 @@ export function AppShell({
 
         <NavBar />
       </div>
+      </SettlementSubmissionProvider>
     </UserProvider>
   );
 }

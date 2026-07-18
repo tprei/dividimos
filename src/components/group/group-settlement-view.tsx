@@ -18,11 +18,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { formatBRL } from "@/lib/currency";
 import { consolidateEdges, simplifyDebts } from "@/lib/simplify";
 import type { DebtEdge } from "@/lib/simplify";
+import { queryBalances } from "@/lib/supabase/settlement-actions";
+import { notifyPaymentNudge } from "@/lib/push/push-notify";
 import {
-  queryBalances,
-  recordSettlement,
-} from "@/lib/supabase/settlement-actions";
-import { notifySettlementRecorded, notifyPaymentNudge } from "@/lib/push/push-notify";
+  settlementEdgeKey,
+  useSettlementSubmission,
+} from "@/contexts/settlement-submission-context";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import { createClient } from "@/lib/supabase/client";
 import type { Balance, User } from "@/types";
@@ -68,6 +69,7 @@ export function GroupSettlementView({
     mode: "pay" | "collect";
   } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const submission = useSettlementSubmission();
   const [nudgeSent, setNudgeSent] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
     const stored = localStorage.getItem("nudge-cooldowns");
@@ -217,10 +219,18 @@ export function GroupSettlementView({
     toUserId: string,
     amountCents: number,
   ) {
-    setActing(`${fromUserId}-${toUserId}`);
-    await recordSettlement(groupId, fromUserId, toUserId, amountCents);
-    notifySettlementRecorded(groupId, fromUserId, toUserId, amountCents).catch(() => {});
-    setActing(null);
+    const edgeKey = settlementEdgeKey({ groupId, fromUserId, toUserId });
+    setActing(edgeKey);
+    try {
+      return await submission.submit([{
+        groupId,
+        fromUserId,
+        toUserId,
+        amountCents,
+      }]);
+    } finally {
+      setActing(null);
+    }
   }
 
   async function handleNudge(debtorId: string, amountCents: number) {
@@ -327,8 +337,13 @@ export function GroupSettlementView({
             const to = getParticipant(edge.toUserId);
             const isDebtor = edge.fromUserId === currentUserId;
             const isCreditor = edge.toUserId === currentUserId;
-            const edgeKey = `${edge.fromUserId}-${edge.toUserId}`;
-            const isActing = acting === edgeKey;
+            const edgeKey = settlementEdgeKey({
+              groupId,
+              fromUserId: edge.fromUserId,
+              toUserId: edge.toUserId,
+            });
+            const isActing =
+              acting === edgeKey || submission.reservedEdgeKeys.has(edgeKey);
 
             return (
               <motion.div
@@ -357,15 +372,16 @@ export function GroupSettlementView({
                     <Button
                       className="flex-1"
                       size="sm"
-                      onClick={() =>
+                      onClick={() => {
+                        if (!submission.ready || isActing) return;
                         setPixModal({
                           recipientId: edge.toUserId,
                           recipientName: to.name,
                           amountCents: edge.amountCents,
                           mode: "pay",
-                        })
-                      }
-                      disabled={isActing}
+                        });
+                      }}
+                      disabled={!submission.ready || isActing}
                     >
                       Pagar via Pix
                     </Button>
@@ -377,15 +393,16 @@ export function GroupSettlementView({
                         variant="outline"
                         className="flex-1"
                         size="sm"
-                        onClick={() =>
+                        onClick={() => {
+                          if (!submission.ready || isActing) return;
                           setPixModal({
                             recipientId: edge.fromUserId,
                             recipientName: from.name,
                             amountCents: edge.amountCents,
                             mode: "collect",
-                          })
-                        }
-                        disabled={isActing}
+                          });
+                        }}
+                        disabled={!submission.ready || isActing}
                       >
                         Gerar cobranca
                       </Button>
@@ -438,17 +455,25 @@ export function GroupSettlementView({
           recipientUserId={pixModal.mode === "collect" ? currentUserId : pixModal.recipientId}
           groupId={groupId}
           mode={pixModal.mode}
-          onMarkPaid={async (amountCents: number) => {
+          onMarkPaid={(amountCents: number) => {
             if (pixModal.mode === "collect") {
-              await handleRecordSettlement(pixModal.recipientId, currentUserId, amountCents);
-            } else {
-              await handleRecordSettlement(currentUserId, pixModal.recipientId, amountCents);
+              return handleRecordSettlement(
+                pixModal.recipientId,
+                currentUserId,
+                amountCents,
+              );
             }
+            return handleRecordSettlement(
+              currentUserId,
+              pixModal.recipientId,
+              amountCents,
+            );
           }}
           onSettlementComplete={() => {
             setPixModal(null);
             window.dispatchEvent(new CustomEvent("app-refresh"));
           }}
+          submission={submission}
         />
       )}
     </div>

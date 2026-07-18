@@ -2,6 +2,18 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DashboardContent } from "./dashboard-content";
 import type { DebtSummary } from "@/types";
+const submission = vi.hoisted(() => ({
+  error: null,
+  finish: vi.fn(),
+  phase: "idle",
+  ready: true,
+  reconcile: vi.fn(),
+  request: null,
+  reservedEdgeKeys: new Set<string>(),
+  result: null,
+  submit: vi.fn(),
+}));
+
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }),
@@ -21,8 +33,17 @@ vi.mock("@/lib/supabase/debt-actions", () => ({
   fetchUserDebts: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("@/lib/supabase/settlement-actions", () => ({
-  recordSettlement: vi.fn().mockResolvedValue({}),
+vi.mock("@/contexts/settlement-submission-context", () => ({
+  settlementEdgeKey: ({
+    groupId,
+    fromUserId,
+    toUserId,
+  }: {
+    groupId: string;
+    fromUserId: string;
+    toUserId: string;
+  }) => `${groupId}:${fromUserId}:${toUserId}`,
+  useSettlementSubmission: () => submission,
 }));
 
 vi.mock("@/lib/supabase/dm-actions", () => ({

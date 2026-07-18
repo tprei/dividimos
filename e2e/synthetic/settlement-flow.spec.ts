@@ -80,11 +80,14 @@ test.describe("Settlement Flow", () => {
         const toUser = amount > 0 ? userB : userA;
 
         if (fromUser === bob.id) {
-          await bobClient.rpc("record_and_settle", {
-            p_group_id: group.id,
-            p_from_user_id: bob.id,
-            p_to_user_id: toUser,
-            p_amount_cents: Math.abs(amount),
+          await bobClient.rpc("record_settlements", {
+            p_allocations: [{
+              group_id: group.id,
+              from_user_id: bob.id,
+              to_user_id: toUser,
+              amount_cents: Math.abs(amount),
+            }],
+            p_operation_id: crypto.randomUUID(),
           });
         }
       }
@@ -118,11 +121,14 @@ test.describe("Settlement Flow", () => {
         const toUser = amount > 0 ? userB : userA;
 
         if (fromUser === carol.id) {
-          await carolClient.rpc("record_and_settle", {
-            p_group_id: group.id,
-            p_from_user_id: carol.id,
-            p_to_user_id: toUser,
-            p_amount_cents: Math.abs(amount),
+          await carolClient.rpc("record_settlements", {
+            p_allocations: [{
+              group_id: group.id,
+              from_user_id: carol.id,
+              to_user_id: toUser,
+              amount_cents: Math.abs(amount),
+            }],
+            p_operation_id: crypto.randomUUID(),
           });
         }
       }

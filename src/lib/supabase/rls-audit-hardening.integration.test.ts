@@ -353,9 +353,9 @@ describe.skipIf(!isIntegrationTestReady)("RLS audit hardening", () => {
   });
 
   // ────────────────────────────────────────────────────────
-  // settlements_insert — status/confirmed_at pinned
+  // settlements_insert — authenticated writes are closed
   // ────────────────────────────────────────────────────────
-  describe("settlements_insert blocks pre-confirmed rows", () => {
+  describe("settlements_insert denies authenticated writes", () => {
     let alice: TestUser;
     let bob: TestUser;
     let groupId: string;
@@ -366,7 +366,7 @@ describe.skipIf(!isIntegrationTestReady)("RLS audit hardening", () => {
       groupId = group.id;
     });
 
-    it("allows a pending settlement to be inserted by the debtor", async () => {
+    it("denies a pending settlement inserted by the debtor", async () => {
       const client = authenticateAs(alice);
       const { error } = await client.from("settlements").insert({
         group_id: groupId,
@@ -375,10 +375,10 @@ describe.skipIf(!isIntegrationTestReady)("RLS audit hardening", () => {
         amount_cents: 1000,
       });
 
-      expect(error).toBeNull();
+      expectRlsFailure(error);
     });
 
-    it("rejects insertion of a pre-confirmed settlement", async () => {
+    it("denies a pre-confirmed settlement insert", async () => {
       const client = authenticateAs(alice);
       const { error } = await client.from("settlements").insert({
         group_id: groupId,
@@ -392,7 +392,7 @@ describe.skipIf(!isIntegrationTestReady)("RLS audit hardening", () => {
       expectRlsFailure(error);
     });
 
-    it("rejects insertion with confirmed_at populated but status=pending", async () => {
+    it("denies a settlement insert with confirmed_at populated", async () => {
       const client = authenticateAs(alice);
       const { error } = await client.from("settlements").insert({
         group_id: groupId,

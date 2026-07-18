@@ -2,9 +2,8 @@
  * Suite 5 — Concurrency integration tests
  *
  * Validates that concurrent operations on balances produce correct results.
- * The `record_and_settle` RPC relies on PostgreSQL's `INSERT ... ON CONFLICT
- * DO UPDATE` atomicity (no explicit `FOR UPDATE` lock). These tests confirm
- * that this is sufficient under concurrent load.
+ * The batch settlement RPC locks groups in a stable order and records one
+ * immutable operation. These tests confirm it remains correct under load.
  *
  * Tests cover:
  *  5.1 — Concurrent expense activation + settlement on the same user pair
@@ -107,11 +106,14 @@ describe.skipIf(!isIntegrationTestReady)(
 
         const [activationResult, settlementResult] = await Promise.allSettled([
           aliceClient.rpc("activate_expense", { p_expense_id: expenseId }),
-          bobClient.rpc("record_and_settle", {
-            p_group_id: groupId,
-            p_from_user_id: bob.id,
-            p_to_user_id: alice.id,
-            p_amount_cents: 2000,
+          bobClient.rpc("record_settlements", {
+            p_allocations: [{
+              group_id: groupId,
+              from_user_id: bob.id,
+              to_user_id: alice.id,
+              amount_cents: 2000,
+            }],
+            p_operation_id: crypto.randomUUID(),
           }),
         ]);
 

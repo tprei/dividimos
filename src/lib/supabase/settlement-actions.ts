@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Balance, Settlement } from "@/types";
+import type {
+  Balance,
+  RecordSettlementsRequest,
+  RecordSettlementsResult,
+  Settlement,
+  SettlementAllocation,
+} from "@/types";
 
 type SettlementRow = {
   id: string;
@@ -100,52 +106,367 @@ export async function queryBalanceBetween(
   return mapBalanceRow(data as BalanceRow);
 }
 
-// ============================================================
-// Settlement operations
-// ============================================================
+export type SettlementDatabaseErrorCategory =
+  | "settlement_operation_conflict"
+  | "invalid_settlement_batch"
+  | "settlement_operation_corrupt"
+  | "invalid_amount"
+  | "invalid_users"
+  | "database_rejection";
 
-/**
- * Record a settlement and update balances atomically.
- * Either the debtor or creditor can call this.
- * Uses the record_and_settle RPC which inserts a confirmed settlement
- * and updates the running balance in one transaction.
- */
-export async function recordSettlement(
-  groupId: string,
-  fromUserId: string,
-  toUserId: string,
-  amountCents: number,
-): Promise<Settlement> {
-  if (amountCents <= 0) {
-    throw new Error("Settlement amount must be positive");
+export class SettlementDatabaseRejectionError extends Error {
+  readonly category: SettlementDatabaseErrorCategory;
+  readonly sqlstate: string;
+
+  constructor(
+    category: SettlementDatabaseErrorCategory,
+    sqlstate: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SettlementDatabaseRejectionError";
+    this.category = category;
+    this.sqlstate = sqlstate;
   }
-  if (fromUserId === toUserId) {
-    throw new Error("Cannot settle with yourself");
+}
+
+export class SettlementOperationConflictError extends SettlementDatabaseRejectionError {
+  constructor(message: string) {
+    super("settlement_operation_conflict", "PST10", message);
+    this.name = "SettlementOperationConflictError";
+  }
+}
+
+export class SettlementOperationCorruptError extends SettlementDatabaseRejectionError {
+  constructor(message: string) {
+    super("settlement_operation_corrupt", "PST12", message);
+    this.name = "SettlementOperationCorruptError";
+  }
+}
+
+export class SettlementOutcomeUnknownError extends Error {
+  constructor(message = "The settlement outcome is unknown") {
+    super(message);
+    this.name = "SettlementOutcomeUnknownError";
+  }
+}
+
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const POSTGRES_SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
+
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+function settlementAllocationCompare(
+  first: SettlementAllocation,
+  second: SettlementAllocation,
+): number {
+  const firstFields = [
+    first.groupId,
+    first.fromUserId,
+    first.toUserId,
+    String(first.amountCents),
+  ];
+  const secondFields = [
+    second.groupId,
+    second.fromUserId,
+    second.toUserId,
+    String(second.amountCents),
+  ];
+
+  for (let index = 0; index < firstFields.length; index += 1) {
+    if (firstFields[index] < secondFields[index]) return -1;
+    if (firstFields[index] > secondFields[index]) return 1;
+  }
+
+  return 0;
+}
+
+function validateSettlementRequest(request: RecordSettlementsRequest): void {
+  if (!isUuid(request.operationId)) {
+    throw new Error("Settlement operation ID must be a UUID");
+  }
+
+  if (request.allocations.length === 0) {
+    throw new Error("Settlement request must contain at least one allocation");
+  }
+
+  const edges = new Set<string>();
+  for (const allocation of request.allocations) {
+    if (
+      !isUuid(allocation.groupId) ||
+      !isUuid(allocation.fromUserId) ||
+      !isUuid(allocation.toUserId)
+    ) {
+      throw new Error("Settlement allocation IDs must be UUIDs");
+    }
+
+    if (allocation.fromUserId === allocation.toUserId) {
+      throw new Error("Cannot settle with yourself");
+    }
+
+    if (!Number.isSafeInteger(allocation.amountCents) || allocation.amountCents <= 0) {
+      throw new Error("Settlement amount must be a positive safe integer");
+    }
+
+    const edge = `${allocation.groupId}:${allocation.fromUserId}:${allocation.toUserId}`;
+    if (edges.has(edge)) {
+      throw new Error("Settlement request cannot contain duplicate directed edges");
+    }
+    edges.add(edge);
+  }
+}
+
+function isTrustworthyPostgresSqlstate(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    POSTGRES_SQLSTATE_PATTERN.test(value) &&
+    !value.startsWith("PGRST")
+  );
+}
+
+function settlementDatabaseRejection(
+  error: Record<string, unknown>,
+  sqlstate: string,
+): SettlementDatabaseRejectionError {
+  const message = isNonEmptyString(error.message)
+    ? error.message
+    : "Settlement operation was rejected by the database";
+
+  if (sqlstate === "PST10") {
+    return new SettlementOperationConflictError(message);
+  }
+  if (sqlstate === "PST12") {
+    return new SettlementOperationCorruptError(message);
+  }
+
+  let category: SettlementDatabaseErrorCategory = "database_rejection";
+  if (sqlstate === "PST11") {
+    category = "invalid_settlement_batch";
+  } else if (sqlstate === "PST13") {
+    category = "invalid_amount";
+  } else if (sqlstate === "PST14") {
+    category = "invalid_users";
+  }
+
+  return new SettlementDatabaseRejectionError(category, sqlstate, message);
+}
+
+function mapSettlementOperationRows(
+  rows: unknown,
+  allocations: readonly SettlementAllocation[],
+  requireReplayFlag: boolean,
+): { settlements: Settlement[]; replayed: boolean } {
+  if (!Array.isArray(rows) || rows.length !== allocations.length) {
+    throw new SettlementOutcomeUnknownError("Settlement RPC returned an incomplete response");
+  }
+
+  const canonicalAllocations = [...allocations].sort(settlementAllocationCompare);
+  const settlements: Settlement[] = [];
+  let replayed: boolean | undefined;
+
+  for (const rowValue of rows) {
+    if (!isRecord(rowValue)) {
+      throw new SettlementOutcomeUnknownError("Settlement RPC returned an invalid row");
+    }
+
+    const row = rowValue;
+    if (
+      !isSafeInteger(row.allocation_index) ||
+      row.allocation_index < 0 ||
+      row.allocation_index >= canonicalAllocations.length
+    ) {
+      throw new SettlementOutcomeUnknownError("Settlement RPC returned an invalid allocation index");
+    }
+
+    const allocation = canonicalAllocations[row.allocation_index];
+    if (
+      !isNonEmptyString(row.group_id) ||
+      !isNonEmptyString(row.from_user_id) ||
+      !isNonEmptyString(row.to_user_id) ||
+      !isSafeInteger(row.amount_cents) ||
+      row.amount_cents <= 0 ||
+      !isNonEmptyString(row.settlement_id) ||
+      !isUuid(row.settlement_id) ||
+      row.status !== "confirmed" ||
+      !isNonEmptyString(row.created_at) ||
+      !isNonEmptyString(row.confirmed_at)
+    ) {
+      throw new SettlementOutcomeUnknownError("Settlement RPC returned malformed settlement data");
+    }
+
+    if (
+      row.group_id !== allocation.groupId ||
+      row.from_user_id !== allocation.fromUserId ||
+      row.to_user_id !== allocation.toUserId ||
+      row.amount_cents !== allocation.amountCents
+    ) {
+      throw new SettlementOutcomeUnknownError("Settlement RPC returned mismatched settlement data");
+    }
+
+    if (requireReplayFlag) {
+      if (typeof row.was_replay !== "boolean") {
+        throw new SettlementOutcomeUnknownError("Settlement RPC omitted replay state");
+      }
+      if (replayed !== undefined && replayed !== row.was_replay) {
+        throw new SettlementOutcomeUnknownError("Settlement RPC returned mixed replay state");
+      }
+      replayed = row.was_replay;
+    }
+
+    settlements[row.allocation_index] = {
+      id: row.settlement_id,
+      groupId: row.group_id,
+      fromUserId: row.from_user_id,
+      toUserId: row.to_user_id,
+      amountCents: row.amount_cents,
+      status: "confirmed",
+      createdAt: row.created_at,
+      confirmedAt: row.confirmed_at,
+    };
+  }
+
+  for (let index = 0; index < canonicalAllocations.length; index += 1) {
+    if (!settlements[index]) {
+      throw new SettlementOutcomeUnknownError("Settlement RPC returned non-contiguous allocation indexes");
+    }
+  }
+
+  return { settlements, replayed: replayed ?? false };
+}
+
+function isOutcomeError(error: unknown): error is SettlementOutcomeUnknownError {
+  return error instanceof SettlementOutcomeUnknownError;
+}
+
+function isDatabaseRejection(
+  error: unknown,
+): error is SettlementDatabaseRejectionError {
+  return error instanceof SettlementDatabaseRejectionError;
+}
+
+function toRpcFailure(error: unknown): SettlementDatabaseRejectionError | SettlementOutcomeUnknownError {
+  if (isRecord(error) && isTrustworthyPostgresSqlstate(error.code)) {
+    return settlementDatabaseRejection(error, error.code);
+  }
+
+  return new SettlementOutcomeUnknownError();
+}
+
+export async function recordSettlements(
+  request: RecordSettlementsRequest,
+): Promise<RecordSettlementsResult> {
+  validateSettlementRequest(request);
+
+  const supabase = createClient();
+  let response;
+  try {
+    response = await supabase.rpc("record_settlements", {
+      p_operation_id: request.operationId,
+      p_allocations: request.allocations.map((allocation) => ({
+        group_id: allocation.groupId,
+        from_user_id: allocation.fromUserId,
+        to_user_id: allocation.toUserId,
+        amount_cents: allocation.amountCents,
+      })),
+    });
+  } catch (error) {
+    throw toRpcFailure(error);
+  }
+
+  if (response.error) {
+    throw toRpcFailure(response.error);
+  }
+
+  try {
+    const mapped = mapSettlementOperationRows(response.data, request.allocations, true);
+    return {
+      operationId: request.operationId,
+      settlements: mapped.settlements,
+      replayed: mapped.replayed,
+    };
+  } catch (error) {
+    if (isOutcomeError(error) || isDatabaseRejection(error)) {
+      throw error;
+    }
+    throw new SettlementOutcomeUnknownError();
+  }
+}
+
+export async function getSettlementOperation(
+  operationId: string,
+): Promise<Settlement[] | null> {
+  if (!isUuid(operationId)) {
+    throw new Error("Settlement operation ID must be a UUID");
   }
 
   const supabase = createClient();
-
-  const { data, error } = await supabase.rpc("record_and_settle", {
-    p_group_id: groupId,
-    p_from_user_id: fromUserId,
-    p_to_user_id: toUserId,
-    p_amount_cents: amountCents,
-  });
-
-  if (error) {
-    throw new Error(`Failed to record settlement: ${error.message}`);
+  let response;
+  try {
+    response = await supabase.rpc("get_settlement_operation", {
+      p_operation_id: operationId,
+    });
+  } catch (error) {
+    throw toRpcFailure(error);
   }
 
-  return {
-    id: data as string,
-    groupId,
-    fromUserId,
-    toUserId,
-    amountCents,
-    status: "confirmed",
-    createdAt: new Date().toISOString(),
-    confirmedAt: new Date().toISOString(),
-  };
+  if (response.error) {
+    throw toRpcFailure(response.error);
+  }
+
+  try {
+    if (!Array.isArray(response.data)) {
+      throw new SettlementOutcomeUnknownError("Settlement RPC returned an invalid response");
+    }
+    if (response.data.length === 0) {
+      return null;
+    }
+
+    const settlements = mapSettlementOperationRows(
+      response.data,
+      response.data.map((row) => {
+        if (
+          !isRecord(row) ||
+          !isNonEmptyString(row.group_id) ||
+          !isNonEmptyString(row.from_user_id) ||
+          !isNonEmptyString(row.to_user_id) ||
+          !isSafeInteger(row.amount_cents)
+        ) {
+          throw new SettlementOutcomeUnknownError("Settlement RPC returned an invalid row");
+        }
+
+        return {
+          groupId: row.group_id,
+          fromUserId: row.from_user_id,
+          toUserId: row.to_user_id,
+          amountCents: row.amount_cents,
+        };
+      }),
+      false,
+    ).settlements;
+
+    return settlements;
+  } catch (error) {
+    if (isOutcomeError(error) || isDatabaseRejection(error)) {
+      throw error;
+    }
+    throw new SettlementOutcomeUnknownError();
+  }
 }
 
 // ============================================================

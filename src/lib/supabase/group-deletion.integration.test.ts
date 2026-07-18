@@ -31,6 +31,27 @@ type SnapshotQuery = {
   sql: string;
 };
 
+function batchSettlementSql(): string {
+  return "SELECT * FROM public.record_settlements($1, $2::jsonb)";
+}
+
+function batchSettlementParameters(
+  groupId: string,
+  fromUserId: string,
+  toUserId: string,
+  amountCents: number,
+): [string, string] {
+  return [
+    crypto.randomUUID(),
+    JSON.stringify([{
+      group_id: groupId,
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      amount_cents: amountCents,
+    }]),
+  ];
+}
+
 const snapshotQueries: SnapshotQuery[] = [
   {
     name: "groups",
@@ -713,13 +734,13 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     expect(deletedByWrongOwner).toEqual([]);
   });
 
-  it("serializes writer-first record_and_settle before deletion", async () => {
+  it("serializes writer-first batch settlement before deletion", async () => {
     const groupId = await createRegularGroup(alice, [bob]);
     const writer = await openSubject(bob);
     const writerResult = await dispatchQuery(
       writer.client,
-      "SELECT public.record_and_settle($1, $2, $3, $4)",
-      [groupId, bob.id, alice.id, 200],
+      batchSettlementSql(),
+      batchSettlementParameters(groupId, bob.id, alice.id, 200),
     );
     expect("error" in writerResult).toBe(false);
 
@@ -1007,7 +1028,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     expectSqlError(await settlementDeletePromise, "PST08");
     await finishSubject(settlementDelete, false);
   });
-  it("deletes first and rejects a later record_and_settle call", async () => {
+  it("deletes first and rejects a later batch settlement call", async () => {
     const groupId = await createRegularGroup(alice, [bob]);
     const deletion = await openSubject(alice);
     await lockGroup(deletion, groupId);
@@ -1023,8 +1044,8 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     expectSqlError(
       await dispatchQuery(
         writer.client,
-        "SELECT public.record_and_settle($1, $2, $3, $4)",
-        [groupId, bob.id, alice.id, 200],
+        batchSettlementSql(),
+        batchSettlementParameters(groupId, bob.id, alice.id, 200),
       ),
       "PST08",
     );
@@ -1121,7 +1142,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     await finishSubject(writer, true);
   });
 
-  it("allows a successful deletion before a later record_and_settle call", async () => {
+  it("allows a successful deletion before a later batch settlement call", async () => {
     const groupId = await createRegularGroup(alice, [bob]);
     const deletion = await openSubject(alice);
     const deletionResult = await dispatchQuery(
@@ -1136,8 +1157,8 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     expectSqlError(
       await dispatchQuery(
         writer.client,
-        "SELECT public.record_and_settle($1, $2, $3, $4)",
-        [groupId, bob.id, alice.id, 200],
+        batchSettlementSql(),
+        batchSettlementParameters(groupId, bob.id, alice.id, 200),
       ),
       "PST08",
     );

@@ -327,11 +327,14 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("bob cannot settle in group A after removal", async () => {
         const client = authenticateAs(bob);
-        const { error } = await client.rpc("record_and_settle", {
-          p_group_id: groupAId,
-          p_from_user_id: bob.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
+        const { error } = await client.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: groupAId,
+            from_user_id: bob.id,
+            to_user_id: alice.id,
+            amount_cents: 1000,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
         expect(error).not.toBeNull();

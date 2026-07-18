@@ -11,18 +11,26 @@ import {
 } from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 
-/**
- * Integration tests for the record_and_settle RPC.
- *
- * This RPC is the atomic single-operation settlement path:
- * it inserts a confirmed settlement and updates balances in one transaction.
- *
- * Existing settlement-actions tests cover the two-step flow (pending → confirm_settlement).
- * These tests focus exclusively on record_and_settle behavior, validation, and edge cases.
- */
+function singleSettlementInput(
+  groupId: string,
+  fromUserId: string,
+  toUserId: string,
+  amountCents: number,
+  operationId = crypto.randomUUID(),
+) {
+  return {
+    p_allocations: [{
+      group_id: groupId,
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      amount_cents: amountCents,
+    }],
+    p_operation_id: operationId,
+  };
+}
 
 describe.skipIf(!isIntegrationTestReady)(
-  "record_and_settle RPC",
+  "record_settlements RPC",
   () => {
     let alice: TestUser;
     let bob: TestUser;
@@ -160,6 +168,106 @@ describe.skipIf(!isIntegrationTestReady)(
       });
     });
 
+    describe("replay-safe operations", () => {
+      it("replays exactly once, reconciles for the owner, and survives membership removal", async () => {
+        await createAndActivateExpense({
+          creator: alice,
+          groupId,
+          shares: [
+            { userId: alice.id, amount: 1000 },
+            { userId: bob.id, amount: 1000 },
+          ],
+          payers: [{ userId: alice.id, amount: 2000 }],
+        });
+
+        const bobClient = authenticateAs(bob);
+        const operationId = crypto.randomUUID();
+        const input = singleSettlementInput(
+          groupId,
+          bob.id,
+          alice.id,
+          1000,
+          operationId,
+        );
+        const { data: first, error: firstError } = await bobClient.rpc(
+          "record_settlements",
+          input,
+        );
+
+        expect(firstError).toBeNull();
+        expect(first).toHaveLength(1);
+        expect(first![0].was_replay).toBe(false);
+
+        const { data: replay, error: replayError } = await bobClient.rpc(
+          "record_settlements",
+          input,
+        );
+
+        expect(replayError).toBeNull();
+        expect(replay).toHaveLength(1);
+        expect(replay![0]).toMatchObject({
+          settlement_id: first![0].settlement_id,
+          was_replay: true,
+        });
+        expect(await getBalanceBetween(groupId, bob.id, alice.id)).toBe(0);
+
+        const { data: reconciliation, error: reconciliationError } = await bobClient.rpc(
+          "get_settlement_operation",
+          { p_operation_id: operationId },
+        );
+
+        expect(reconciliationError).toBeNull();
+        expect(reconciliation).toHaveLength(1);
+        expect(reconciliation![0].settlement_id).toBe(first![0].settlement_id);
+
+        const aliceClient = authenticateAs(alice);
+        const { data: foreignOperation } = await aliceClient.rpc(
+          "get_settlement_operation",
+          { p_operation_id: operationId },
+        );
+        expect(foreignOperation).toHaveLength(0);
+
+        const { error: removalError } = await aliceClient.rpc("remove_group_member", {
+          p_group_id: groupId,
+          p_user_id: bob.id,
+        });
+        expect(removalError).toBeNull();
+
+        const { data: afterRemoval, error: afterRemovalError } = await bobClient.rpc(
+          "get_settlement_operation",
+          { p_operation_id: operationId },
+        );
+        expect(afterRemovalError).toBeNull();
+        expect(afterRemoval).toHaveLength(1);
+        expect(afterRemoval![0].settlement_id).toBe(first![0].settlement_id);
+      });
+
+      it("rejects a distinct canonical request reusing an operation ID", async () => {
+        const bobClient = authenticateAs(bob);
+        const operationId = crypto.randomUUID();
+        const firstInput = singleSettlementInput(
+          groupId,
+          bob.id,
+          alice.id,
+          1000,
+          operationId,
+        );
+        const { error: firstError } = await bobClient.rpc(
+          "record_settlements",
+          firstInput,
+        );
+        expect(firstError).toBeNull();
+
+        const { error: conflictError } = await bobClient.rpc(
+          "record_settlements",
+          singleSettlementInput(groupId, bob.id, alice.id, 2000, operationId),
+        );
+
+        expect(conflictError).not.toBeNull();
+        expect(conflictError!.code).toBe("PST10");
+      });
+    });
+
     // -----------------------------------------------------------------------
     // 1.2 Creditor can also call the RPC
     // -----------------------------------------------------------------------
@@ -201,12 +309,10 @@ describe.skipIf(!isIntegrationTestReady)(
 
         // Carol tries to settle between Alice and Bob — should fail
         const carolClient = authenticateAs(carol);
-        const { error } = await carolClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: bob.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 2000,
-        });
+        const { error } = await carolClient.rpc(
+          "record_settlements",
+          singleSettlementInput(groupId, bob.id, alice.id, 2000),
+        );
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("permission_denied");
@@ -219,12 +325,10 @@ describe.skipIf(!isIntegrationTestReady)(
     describe("amount validation", () => {
       it("rejects zero amount", async () => {
         const bobClient = authenticateAs(bob);
-        const { error } = await bobClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: bob.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 0,
-        });
+        const { error } = await bobClient.rpc(
+          "record_settlements",
+          singleSettlementInput(groupId, bob.id, alice.id, 0),
+        );
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("invalid_amount");
@@ -232,12 +336,10 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("rejects negative amount", async () => {
         const bobClient = authenticateAs(bob);
-        const { error } = await bobClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: bob.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: -500,
-        });
+        const { error } = await bobClient.rpc(
+          "record_settlements",
+          singleSettlementInput(groupId, bob.id, alice.id, -500),
+        );
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("invalid_amount");
@@ -250,12 +352,10 @@ describe.skipIf(!isIntegrationTestReady)(
     describe("self-settlement validation", () => {
       it("rejects settling with yourself", async () => {
         const aliceClient = authenticateAs(alice);
-        const { error } = await aliceClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: alice.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
-        });
+        const { error } = await aliceClient.rpc(
+          "record_settlements",
+          singleSettlementInput(groupId, alice.id, alice.id, 1000),
+        );
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("invalid_users");
@@ -270,12 +370,10 @@ describe.skipIf(!isIntegrationTestReady)(
         const [outsider] = await createTestUsers(1);
 
         const outsiderClient = authenticateAs(outsider);
-        const { error } = await outsiderClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: outsider.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
-        });
+        const { error } = await outsiderClient.rpc(
+          "record_settlements",
+          singleSettlementInput(groupId, outsider.id, alice.id, 1000),
+        );
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("permission_denied");
@@ -285,12 +383,10 @@ describe.skipIf(!isIntegrationTestReady)(
         const [outsider] = await createTestUsers(1);
 
         const aliceClient = authenticateAs(alice);
-        const { error } = await aliceClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: outsider.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
-        });
+        const { error } = await aliceClient.rpc(
+          "record_settlements",
+          singleSettlementInput(groupId, outsider.id, alice.id, 1000),
+        );
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("permission_denied");
@@ -301,12 +397,10 @@ describe.skipIf(!isIntegrationTestReady)(
         const group2 = await createTestGroup(alice.id, [dave.id]);
 
         const daveClient = authenticateAs(dave);
-        const { error } = await daveClient.rpc("record_and_settle", {
-          p_group_id: group2.id,
-          p_from_user_id: dave.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 500,
-        });
+        const { error } = await daveClient.rpc(
+          "record_settlements",
+          singleSettlementInput(group2.id, dave.id, alice.id, 500),
+        );
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("permission_denied");

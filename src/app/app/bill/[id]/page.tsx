@@ -30,17 +30,18 @@ const PixQrModal = dynamic(
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { loadExpense } from "@/lib/supabase/expense-actions";
-import {
-  queryBalanceBetween,
-  recordSettlement,
-} from "@/lib/supabase/settlement-actions";
+import { queryBalanceBetween } from "@/lib/supabase/settlement-actions";
 import { getGroupNavUrl } from "@/lib/group-nav";
 import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
+import {
+  settlementEdgeKey,
+  useSettlementSubmission,
+} from "@/contexts/settlement-submission-context";
 import toast from "react-hot-toast";
-import { notifyPaymentNudge, notifySettlementRecorded } from "@/lib/push/push-notify";
+import { notifyPaymentNudge } from "@/lib/push/push-notify";
 import type {
   Balance,
   DebtEdge,
@@ -126,6 +127,11 @@ export default function BillDetailPage({
     debtFromUserId: "",
     debtToUserId: "",
   });
+  const submission = useSettlementSubmission();
+  const [postCommitEdgeKeys, setPostCommitEdgeKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [settlementRefreshError, setSettlementRefreshError] = useState<string | null>(null);
 
   const [guestShareModal, setGuestShareModal] = useState<{
     open: boolean;
@@ -269,6 +275,81 @@ export default function BillDetailPage({
     if (!isDmGroup || !currentUserId) return undefined;
     return allParticipants.find((p) => p.id !== currentUserId);
   }, [isDmGroup, currentUserId, allParticipants]);
+  const isSettlementReserved = (fromUserId: string, toUserId: string): boolean => {
+    if (!expense?.groupId) return false;
+    const edgeKey = settlementEdgeKey({
+      groupId: expense.groupId,
+      fromUserId,
+      toUserId,
+    });
+    return (
+      submission.reservedEdgeKeys.has(edgeKey) ||
+      postCommitEdgeKeys.has(edgeKey)
+    );
+  };
+
+  const openPixModal = (modal: typeof pixModal) => {
+    if (
+      !submission.ready ||
+      !expense?.groupId ||
+      isSettlementReserved(modal.debtFromUserId, modal.debtToUserId)
+    ) {
+      return;
+    }
+    setPixModal(modal);
+  };
+
+  const handleMarkPaid = (amountCents: number) => {
+    if (!expense?.groupId) {
+      throw new Error("A group is required to record a settlement");
+    }
+    return submission.submit([{
+      groupId: expense.groupId,
+      fromUserId: pixModal.debtFromUserId,
+      toUserId: pixModal.debtToUserId,
+      amountCents,
+    }]);
+  };
+
+  const handleSettlementComplete = () => {
+    const groupId = expense?.groupId;
+    if (!groupId) return;
+    const edgeKey = settlementEdgeKey({
+      groupId,
+      fromUserId: pixModal.debtFromUserId,
+      toUserId: pixModal.debtToUserId,
+    });
+    setPixModal((current) => ({ ...current, open: false }));
+    setPostCommitEdgeKeys((current) => new Set(current).add(edgeKey));
+    window.dispatchEvent(new CustomEvent("app-refresh"));
+
+    if (!isDmGroup || !currentUserId || !counterparty?.id) {
+      setPostCommitEdgeKeys((current) => {
+        const next = new Set(current);
+        next.delete(edgeKey);
+        return next;
+      });
+      return;
+    }
+
+    void queryBalanceBetween(groupId, currentUserId, counterparty.id)
+      .then((balance) => {
+        setDmBalance(balance);
+        setDmBalanceLoaded(true);
+        setPostCommitEdgeKeys((current) => {
+          const next = new Set(current);
+          next.delete(edgeKey);
+          return next;
+        });
+      })
+      .catch((error) => {
+        if (error instanceof Error) {
+          setSettlementRefreshError(error.message);
+          return;
+        }
+        setSettlementRefreshError("Não foi possível atualizar os saldos.");
+      });
+  };
 
   useEffect(() => {
     if (!isDmGroup || !expense?.groupId || !currentUserId || !counterparty?.id) return;
@@ -812,6 +893,10 @@ export default function BillDetailPage({
                 const creditor = allParticipants.find((p) => p.id === debt.toUserId);
                 const isDebtor = currentUser?.id === debt.fromUserId;
                 const isCreditor = currentUser?.id === debt.toUserId;
+                const isReserved = isSettlementReserved(
+                  debt.fromUserId,
+                  debt.toUserId,
+                );
 
                 const entryLabel = isDebtor
                   ? `Você deve para ${creditor?.name.split(" ")[0] || "?"}`
@@ -849,7 +934,7 @@ export default function BillDetailPage({
                             size="sm"
                             className="w-full gap-1.5 bg-success text-success-foreground hover:bg-success/90"
                             onClick={() =>
-                              setPixModal({
+                              openPixModal({
                                 open: true,
                                 recipientUserId: creditor?.id || "",
                                 name: creditor?.name || "",
@@ -859,6 +944,7 @@ export default function BillDetailPage({
                                 debtToUserId: debt.toUserId,
                               })
                             }
+                            disabled={!submission.ready || isReserved}
                           >
                             <QrCode className="h-4 w-4" />
                             Pagar {formatBRL(debt.amountCents)} para {creditor?.name.split(" ")[0]}
@@ -873,7 +959,7 @@ export default function BillDetailPage({
                             variant="outline"
                             className="flex-1 gap-1.5"
                             onClick={() =>
-                              setPixModal({
+                              openPixModal({
                                 open: true,
                                 recipientUserId: currentUser?.id || "",
                                 name: debtor?.name || "",
@@ -883,6 +969,7 @@ export default function BillDetailPage({
                                 debtToUserId: debt.toUserId,
                               })
                             }
+                            disabled={!submission.ready || isReserved}
                           >
                             <QrCode className="h-4 w-4" />
                             Cobrar via Pix
@@ -951,6 +1038,10 @@ export default function BillDetailPage({
                 const creditor = allParticipants.find((p) => p.id === debt.toUserId);
                 const isDebtor = currentUser?.id === debt.fromUserId;
                 const isCreditor = currentUser?.id === debt.toUserId;
+                const isReserved = isSettlementReserved(
+                  debt.fromUserId,
+                  debt.toUserId,
+                );
 
                 const entryLabel = isDebtor
                   ? `Você deve para ${creditor?.name.split(" ")[0] || "?"}`
@@ -988,7 +1079,7 @@ export default function BillDetailPage({
                             size="sm"
                             className="w-full gap-1.5 bg-success text-success-foreground hover:bg-success/90"
                             onClick={() =>
-                              setPixModal({
+                              openPixModal({
                                 open: true,
                                 recipientUserId: creditor?.id || "",
                                 name: creditor?.name || "",
@@ -998,6 +1089,7 @@ export default function BillDetailPage({
                                 debtToUserId: debt.toUserId,
                               })
                             }
+                            disabled={!submission.ready || !expense.groupId || isReserved}
                           >
                             <QrCode className="h-4 w-4" />
                             Pagar {formatBRL(debt.amountCents)} para {creditor?.name.split(" ")[0]}
@@ -1012,7 +1104,7 @@ export default function BillDetailPage({
                             variant="outline"
                             className="flex-1 gap-1.5"
                             onClick={() =>
-                              setPixModal({
+                              openPixModal({
                                 open: true,
                                 recipientUserId: currentUser?.id || "",
                                 name: debtor?.name || "",
@@ -1022,6 +1114,7 @@ export default function BillDetailPage({
                                 debtToUserId: debt.toUserId,
                               })
                             }
+                            disabled={!submission.ready || !expense.groupId || isReserved}
                           >
                             <QrCode className="h-4 w-4" />
                             Cobrar via Pix
@@ -1059,29 +1152,23 @@ export default function BillDetailPage({
           </p>
         </motion.div>
       )}
+      {settlementRefreshError && (
+        <p className="mt-3 text-sm text-warning" role="status">
+          {settlementRefreshError}
+        </p>
+      )}
 
       <PixQrModal
         open={pixModal.open}
-        onClose={() => setPixModal({ ...pixModal, open: false })}
+        onClose={() => setPixModal((current) => ({ ...current, open: false }))}
         recipientUserId={pixModal.recipientUserId}
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
         mode={pixModal.mode}
         groupId={expense.groupId}
-        onMarkPaid={async (amountCents: number) => {
-          if (!expense.groupId) return;
-          await recordSettlement(expense.groupId, pixModal.debtFromUserId, pixModal.debtToUserId, amountCents);
-          notifySettlementRecorded(expense.groupId, pixModal.debtFromUserId, pixModal.debtToUserId, amountCents).catch(() => {});
-          if (isDmGroup && currentUserId && counterparty?.id) {
-            const balance = await queryBalanceBetween(expense.groupId, currentUserId, counterparty.id);
-            setDmBalance(balance);
-            setDmBalanceLoaded(true);
-          }
-        }}
-        onSettlementComplete={() => {
-          setPixModal({ ...pixModal, open: false });
-          window.dispatchEvent(new CustomEvent("app-refresh"));
-        }}
+        onMarkPaid={handleMarkPaid}
+        onSettlementComplete={handleSettlementComplete}
+        submission={submission}
       />
 
       <GuestClaimShareModal

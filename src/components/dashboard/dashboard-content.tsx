@@ -23,9 +23,12 @@ import { formatBRL } from "@/lib/currency";
 import { useUser } from "@/hooks/use-auth";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
-import { recordSettlement } from "@/lib/supabase/settlement-actions";
-import { notifySettlementRecorded, notifyPaymentNudge } from "@/lib/push/push-notify";
+import { notifyPaymentNudge } from "@/lib/push/push-notify";
 import { fetchUserDebts } from "@/lib/supabase/debt-actions";
+import {
+  settlementEdgeKey,
+  useSettlementSubmission,
+} from "@/contexts/settlement-submission-context";
 import type { DebtSummary } from "@/types";
 
 import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
@@ -74,6 +77,8 @@ export function DashboardContent({
     mode: "pay" | "collect";
   } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [settlementRefreshError, setSettlementRefreshError] = useState<string | null>(null);
+  const submission = useSettlementSubmission();
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
   const [nudgeSent, setNudgeSent] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
@@ -121,15 +126,29 @@ export function DashboardContent({
     debt: DebtSummary,
     amountCents: number,
   ) => {
-    const fromUserId =
-      debt.direction === "owes" ? user!.id : debt.counterpartyId;
-    const toUserId =
-      debt.direction === "owes" ? debt.counterpartyId : user!.id;
+    if (!user) throw new Error("An authenticated account is required to record a settlement");
 
-    setActing(debt.groupId + debt.counterpartyId);
-    await recordSettlement(debt.groupId, fromUserId, toUserId, amountCents);
-    notifySettlementRecorded(debt.groupId, fromUserId, toUserId, amountCents).catch(() => {});
-    setActing(null);
+    const fromUserId =
+      debt.direction === "owes" ? user.id : debt.counterpartyId;
+    const toUserId =
+      debt.direction === "owes" ? debt.counterpartyId : user.id;
+    const edgeKey = settlementEdgeKey({
+      groupId: debt.groupId,
+      fromUserId,
+      toUserId,
+    });
+
+    setActing(edgeKey);
+    try {
+      return await submission.submit([{
+        groupId: debt.groupId,
+        fromUserId,
+        toUserId,
+        amountCents,
+      }]);
+    } finally {
+      setActing(null);
+    }
   };
 
   const handleNudge = useCallback((debt: DebtSummary) => {
@@ -201,6 +220,11 @@ export function DashboardContent({
             style={{ transform: `rotate(${pullDistance * 3}deg)` }}
           />
         </div>
+      )}
+      {settlementRefreshError && (
+        <p className="mt-3 text-sm text-warning" role="status">
+          {settlementRefreshError}
+        </p>
       )}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -412,13 +436,34 @@ export function DashboardContent({
         >
           {filteredDebts.map((debt) => {
             const debtKey = `${debt.groupId}-${debt.counterpartyId}`;
-            const isActingOnThis = acting === debtKey;
+            const fromUserId =
+              debt.direction === "owes" ? user?.id : debt.counterpartyId;
+            const toUserId =
+              debt.direction === "owes" ? debt.counterpartyId : user?.id;
+            const settlementKey =
+              fromUserId && toUserId
+                ? settlementEdgeKey({
+                  groupId: debt.groupId,
+                  fromUserId,
+                  toUserId,
+                })
+                : null;
+            const isActingOnThis =
+              settlementKey !== null &&
+              (acting === settlementKey ||
+                submission.reservedEdgeKeys.has(settlementKey));
             return (
               <motion.div key={debtKey} variants={staggerItem}>
                 <DebtCard
                   debt={debt}
-                  onPay={(d) => setPixModal({ debt: d, mode: "pay" })}
-                  onCollect={(d) => setPixModal({ debt: d, mode: "collect" })}
+                  onPay={(debtToPay) => {
+                    if (!submission.ready || isActingOnThis) return;
+                    setPixModal({ debt: debtToPay, mode: "pay" });
+                  }}
+                  onCollect={(debtToCollect) => {
+                    if (!submission.ready || isActingOnThis) return;
+                    setPixModal({ debt: debtToCollect, mode: "collect" });
+                  }}
                   onNudge={handleNudge}
                   isActing={isActingOnThis}
                   nudgeCooldown={nudgeSent.has(`${debt.groupId}-${debt.counterpartyId}`)}
@@ -447,13 +492,20 @@ export function DashboardContent({
           recipientUserId={pixModal.debt.counterpartyId}
           groupId={pixModal.debt.groupId}
           mode={pixModal.mode}
-          onMarkPaid={async (amountCents: number) => {
-            await handleRecordSettlement(pixModal!.debt, amountCents);
-          }}
+          onMarkPaid={(amountCents: number) =>
+            handleRecordSettlement(pixModal.debt, amountCents)
+          }
           onSettlementComplete={() => {
             setPixModal(null);
-            fetchDashboard();
+            void fetchDashboard().catch((error) => {
+              if (error instanceof Error) {
+                setSettlementRefreshError(error.message);
+                return;
+              }
+              setSettlementRefreshError("Não foi possível atualizar os saldos.");
+            });
           }}
+          submission={submission}
         />
       )}
     </div>

@@ -7,11 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.4"
-  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -737,6 +732,96 @@ export type Database = {
           },
         ]
       }
+      rate_limit_counters: {
+        Row: {
+          bucket: string
+          count: number
+          subject: string
+          window_start: string
+        }
+        Insert: {
+          bucket: string
+          count: number
+          subject: string
+          window_start: string
+        }
+        Update: {
+          bucket?: string
+          count?: number
+          subject?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
+      settlement_operation_items: {
+        Row: {
+          allocation_index: number
+          operation_id: string
+          settlement_id: string
+        }
+        Insert: {
+          allocation_index: number
+          operation_id: string
+          settlement_id: string
+        }
+        Update: {
+          allocation_index?: number
+          operation_id?: string
+          settlement_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settlement_operation_items_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "settlement_operations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "settlement_operation_items_settlement_id_fkey"
+            columns: ["settlement_id"]
+            isOneToOne: true
+            referencedRelation: "settlements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settlement_operations: {
+        Row: {
+          canonical_request: Json
+          created_at: string
+          id: string
+          initiated_by: string
+        }
+        Insert: {
+          canonical_request: Json
+          created_at?: string
+          id: string
+          initiated_by: string
+        }
+        Update: {
+          canonical_request?: Json
+          created_at?: string
+          id?: string
+          initiated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settlement_operations_initiated_by_fkey"
+            columns: ["initiated_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "settlement_operations_initiated_by_fkey"
+            columns: ["initiated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       settlements: {
         Row: {
           amount_cents: number
@@ -893,27 +978,6 @@ export type Database = {
           },
         ]
       }
-      rate_limit_counters: {
-        Row: {
-          bucket: string
-          subject: string
-          window_start: string
-          count: number
-        }
-        Insert: {
-          bucket: string
-          subject: string
-          window_start: string
-          count: number
-        }
-        Update: {
-          bucket?: string
-          subject?: string
-          window_start?: string
-          count?: number
-        }
-        Relationships: []
-      }
     }
     Views: {
       user_profiles: {
@@ -939,53 +1003,44 @@ export type Database = {
       }
     }
     Functions: {
-      cleanup_expired_rate_limit_counters: {
-        Args: Record<string, never>
-        Returns: number
-      }
-      increment_rate_limit: {
-        Args: {
-          p_bucket: string
-          p_subject: string
-          p_limit: number
-          p_window_seconds: number
-        }
-        Returns: number
-      }
       activate_expense: { Args: { p_expense_id: string }; Returns: undefined }
-      save_expense_draft: {
-        Args: {
-          p_expense: Json
-          p_items: Json
-          p_shares: Json
-          p_payers: Json
-          p_guests: Json
-          p_guest_shares: Json
-        }
-        Returns: Json
-      }
       claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
+      cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       confirm_settlement: {
         Args: { p_settlement_id: string }
         Returns: undefined
       }
-      delete_group: { Args: { p_group_id: string }; Returns: undefined }
       confirm_vendor_charge: {
         Args: { p_charge_id: string }
         Returns: undefined
       }
+      delete_group: { Args: { p_group_id: string }; Returns: undefined }
       get_dm_previews: {
         Args: { p_group_ids: string[] }
         Returns: {
-          group_id: string
           content: string
-          message_type: string
           created_at: string
+          group_id: string
+          message_type: string
         }[]
       }
       get_or_create_dm_group: {
         Args: { p_other_user_id: string }
         Returns: string
+      }
+      get_settlement_operation: {
+        Args: { p_operation_id: string }
+        Returns: {
+          allocation_index: number
+          amount_cents: number
+          confirmed_at: string
+          created_at: string
+          from_user_id: string
+          group_id: string
+          settlement_id: string
+          status: Database["public"]["Enums"]["settlement_status"]
+          to_user_id: string
+        }[]
       }
       get_unread_counts: {
         Args: { p_group_ids: string[] }
@@ -997,6 +1052,15 @@ export type Database = {
       has_outstanding_balance: {
         Args: { p_group_id: string; p_user_id: string }
         Returns: boolean
+      }
+      increment_rate_limit: {
+        Args: {
+          p_bucket: string
+          p_limit: number
+          p_subject: string
+          p_window_seconds: number
+        }
+        Returns: number
       }
       join_group_via_link: { Args: { p_token: string }; Returns: Json }
       leave_group: { Args: { p_group_id: string }; Returns: undefined }
@@ -1011,18 +1075,35 @@ export type Database = {
       }
       my_accepted_group_ids: { Args: never; Returns: string[] }
       my_group_ids: { Args: never; Returns: string[] }
-      record_and_settle: {
-        Args: {
-          p_amount_cents: number
-          p_from_user_id: string
-          p_group_id: string
-          p_to_user_id: string
-        }
-        Returns: string
+      record_settlements: {
+        Args: { p_allocations: Json; p_operation_id: string }
+        Returns: {
+          allocation_index: number
+          amount_cents: number
+          confirmed_at: string
+          created_at: string
+          from_user_id: string
+          group_id: string
+          settlement_id: string
+          status: Database["public"]["Enums"]["settlement_status"]
+          to_user_id: string
+          was_replay: boolean
+        }[]
       }
       remove_group_member: {
         Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
+      }
+      save_expense_draft: {
+        Args: {
+          p_expense: Json
+          p_guest_shares: Json
+          p_guests: Json
+          p_items: Json
+          p_payers: Json
+          p_shares: Json
+        }
+        Returns: Json
       }
     }
     Enums: {
@@ -1171,3 +1252,4 @@ export const Constants = {
     },
   },
 } as const
+

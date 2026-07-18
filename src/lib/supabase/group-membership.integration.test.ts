@@ -434,11 +434,14 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("after removal, bob cannot settle debts via RPC", async () => {
         const client = authenticateAs(bob);
-        const { error } = await client.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: bob.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
+        const { error } = await client.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: groupId,
+            from_user_id: bob.id,
+            to_user_id: alice.id,
+            amount_cents: 1000,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
         expect(error).not.toBeNull();
@@ -749,20 +752,23 @@ describe.skipIf(!isIntegrationTestReady)(
         await adminClient!.from("expenses").delete().eq("id", expense!.id);
       });
 
-      it("outsider cannot call record_and_settle", async () => {
+      it("outsider cannot call record_settlements", async () => {
         const client = authenticateAs(outsider);
-        const { error } = await client.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: outsider.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
+        const { error } = await client.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: groupId,
+            from_user_id: outsider.id,
+            to_user_id: alice.id,
+            amount_cents: 1000,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("permission_denied");
       });
 
-      it("accepted member can call record_and_settle", async () => {
+      it("accepted member can call record_settlements", async () => {
         const settlementId = await settleDebt({
           caller: bob,
           groupId,
@@ -775,10 +781,7 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(typeof settlementId).toBe("string");
       });
 
-      it("invited-but-not-accepted member and record_and_settle", async () => {
-        // This tests the known inconsistency: record_and_settle uses
-        // my_group_ids() which includes invited members, not
-        // my_accepted_group_ids(). Document the actual behavior.
+      it("invited-but-not-accepted member cannot call record_settlements", async () => {
         const invitee = await createTestUser({ name: "Invitee RPC" });
 
         await adminClient!.from("group_members").insert({
@@ -802,18 +805,18 @@ describe.skipIf(!isIntegrationTestReady)(
         });
 
         const client = authenticateAs(invitee);
-        const { data, error } = await client.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: invitee.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
+        const { data, error } = await client.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: groupId,
+            from_user_id: invitee.id,
+            to_user_id: alice.id,
+            amount_cents: 1000,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
-        // record_and_settle was tightened to my_accepted_group_ids() in
-        // 20260418200000_rls_audit_hardening.sql: the CALLER must be an
-        // accepted member. An invited-but-not-accepted caller is rejected.
-        // (The acknowledged ad-hoc-bill tradeoff is about the COUNTERPARTY
-        // being invited, not the caller.)
+        // The batch settlement RPC requires the caller to be an accepted
+        // member. The counterparty authorization is validated separately.
         expect(error).not.toBeNull();
         expect(error?.message).toMatch(/permission_denied|not a group member/);
         expect(data).toBeNull();
@@ -991,11 +994,14 @@ describe.skipIf(!isIntegrationTestReady)(
 
       it("bob cannot settle debts in group 2", async () => {
         const client = authenticateAs(bob);
-        const { error } = await client.rpc("record_and_settle", {
-          p_group_id: group2Id,
-          p_from_user_id: bob.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
+        const { error } = await client.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: group2Id,
+            from_user_id: bob.id,
+            to_user_id: alice.id,
+            amount_cents: 1000,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
         expect(error).not.toBeNull();

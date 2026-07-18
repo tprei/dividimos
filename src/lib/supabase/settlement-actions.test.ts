@@ -37,11 +37,15 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 import {
-  queryBalances,
+  getSettlementOperation,
   queryBalanceBetween,
-  recordSettlement,
-  querySettlements,
+  queryBalances,
   querySettlementHistoryForBalance,
+  querySettlements,
+  recordSettlements,
+  SettlementOperationConflictError,
+  SettlementOperationCorruptError,
+  SettlementOutcomeUnknownError,
 } from "./settlement-actions";
 
 describe("settlement-actions", () => {
@@ -137,49 +141,194 @@ describe("settlement-actions", () => {
     });
   });
 
-  describe("recordSettlement", () => {
-    it("calls record_and_settle RPC and returns settlement", async () => {
-      mockRpc.mockResolvedValue({ data: "s1", error: null });
+  describe("settlement operation RPCs", () => {
+    const operationId = "11111111-1111-1111-1111-111111111111";
+    const groupId = "22222222-2222-2222-2222-222222222222";
+    const debtorId = "33333333-3333-3333-3333-333333333333";
+    const creditorId = "44444444-4444-4444-4444-444444444444";
+    const settlementId = "55555555-5555-5555-5555-555555555555";
+    const allocation = {
+      groupId,
+      fromUserId: debtorId,
+      toUserId: creditorId,
+      amountCents: 5000,
+    };
+    const responseRow = {
+      allocation_index: 0,
+      settlement_id: settlementId,
+      group_id: groupId,
+      from_user_id: debtorId,
+      to_user_id: creditorId,
+      amount_cents: 5000,
+      status: "confirmed",
+      created_at: "2026-07-16T00:00:00Z",
+      confirmed_at: "2026-07-16T00:00:01Z",
+      was_replay: false,
+    };
 
-      const result = await recordSettlement("g1", "u1", "u2", 5000);
+    it("calls record_settlements once with exact snake-case arguments", async () => {
+      mockRpc.mockResolvedValue({ data: [responseRow], error: null });
 
-      expect(mockRpc).toHaveBeenCalledWith("record_and_settle", {
-        p_group_id: "g1",
-        p_from_user_id: "u1",
-        p_to_user_id: "u2",
-        p_amount_cents: 5000,
+      const result = await recordSettlements({ operationId, allocations: [allocation] });
+
+      expect(mockRpc).toHaveBeenCalledTimes(1);
+      expect(mockRpc).toHaveBeenCalledWith("record_settlements", {
+        p_operation_id: operationId,
+        p_allocations: [
+          {
+            group_id: groupId,
+            from_user_id: debtorId,
+            to_user_id: creditorId,
+            amount_cents: 5000,
+          },
+        ],
       });
-      expect(result.id).toBe("s1");
-      expect(result.status).toBe("confirmed");
-      expect(result.amountCents).toBe(5000);
+      expect(result).toEqual({
+        operationId,
+        settlements: [
+          {
+            id: settlementId,
+            groupId,
+            fromUserId: debtorId,
+            toUserId: creditorId,
+            amountCents: 5000,
+            status: "confirmed",
+            createdAt: "2026-07-16T00:00:00Z",
+            confirmedAt: "2026-07-16T00:00:01Z",
+          },
+        ],
+        replayed: false,
+      });
     });
 
-    it("rejects zero amount", async () => {
-      await expect(recordSettlement("g1", "u1", "u2", 0)).rejects.toThrow(
-        "Settlement amount must be positive",
-      );
+    it("orders canonical response rows by allocation index", async () => {
+      const lowerDebtorId = "22222222-1111-1111-1111-111111111111";
+      const lowerSettlementId = "66666666-6666-6666-6666-666666666666";
+      const lowerAllocation = {
+        groupId,
+        fromUserId: lowerDebtorId,
+        toUserId: creditorId,
+        amountCents: 2500,
+      };
+      mockRpc.mockResolvedValue({
+        data: [
+          {
+            ...responseRow,
+            from_user_id: lowerDebtorId,
+            amount_cents: 2500,
+            settlement_id: lowerSettlementId,
+          },
+          { ...responseRow, allocation_index: 1 },
+        ],
+        error: null,
+      });
+
+      const result = await recordSettlements({
+        operationId,
+        allocations: [allocation, lowerAllocation],
+      });
+
+      expect(result.settlements.map((settlement) => settlement.id)).toEqual([
+        lowerSettlementId,
+        settlementId,
+      ]);
     });
 
-    it("rejects negative amount", async () => {
-      await expect(recordSettlement("g1", "u1", "u2", -100)).rejects.toThrow(
-        "Settlement amount must be positive",
-      );
+    it("rejects invalid local requests before RPC invocation", async () => {
+      await expect(
+        recordSettlements({ operationId, allocations: [] }),
+      ).rejects.toThrow("at least one allocation");
+      await expect(
+        recordSettlements({
+          operationId,
+          allocations: [{ ...allocation, fromUserId: creditorId }],
+        }),
+      ).rejects.toThrow("Cannot settle with yourself");
+      await expect(
+        recordSettlements({
+          operationId,
+          allocations: [allocation, { ...allocation, amountCents: 6000 }],
+        }),
+      ).rejects.toThrow("duplicate directed edges");
+      await expect(
+        recordSettlements({
+          operationId,
+          allocations: [{ ...allocation, amountCents: Number.MAX_SAFE_INTEGER + 1 }],
+        }),
+      ).rejects.toThrow("positive safe integer");
+      expect(mockRpc).not.toHaveBeenCalled();
     });
 
-    it("rejects self-settlement", async () => {
-      await expect(recordSettlement("g1", "u1", "u1", 5000)).rejects.toThrow(
-        "Cannot settle with yourself",
-      );
-    });
-
-    it("throws on RPC error", async () => {
+    it("maps stable database rejections without message matching", async () => {
       mockRpc.mockResolvedValue({
         data: null,
-        error: { message: "Not authorized" },
+        error: { code: "PST10", message: "different payload" },
       });
 
-      await expect(recordSettlement("g1", "u1", "u2", 5000)).rejects.toThrow(
-        "Failed to record settlement: Not authorized",
+      await expect(
+        recordSettlements({ operationId, allocations: [allocation] }),
+      ).rejects.toBeInstanceOf(SettlementOperationConflictError);
+    });
+
+    it("maps other SQLSTATE failures to definitive database rejections", async () => {
+      mockRpc.mockResolvedValue({
+        data: null,
+        error: { code: "PST13", message: "invalid amount" },
+      });
+
+      await expect(
+        recordSettlements({ operationId, allocations: [allocation] }),
+      ).rejects.toMatchObject({
+        sqlstate: "PST13",
+        category: "invalid_amount",
+      });
+    });
+
+    it("treats transport and gateway failures as outcome unknown", async () => {
+      mockRpc.mockRejectedValueOnce(new Error("network unavailable"));
+
+      await expect(
+        recordSettlements({ operationId, allocations: [allocation] }),
+      ).rejects.toBeInstanceOf(SettlementOutcomeUnknownError);
+
+      mockRpc.mockResolvedValueOnce({
+        data: null,
+        error: { code: "PGRST301", message: "gateway failure" },
+      });
+
+      await expect(
+        recordSettlements({ operationId, allocations: [allocation] }),
+      ).rejects.toBeInstanceOf(SettlementOutcomeUnknownError);
+    });
+
+    it("treats malformed success rows as outcome unknown", async () => {
+      mockRpc.mockResolvedValue({
+        data: [{ ...responseRow, was_replay: "false" }],
+        error: null,
+      });
+
+      await expect(
+        recordSettlements({ operationId, allocations: [allocation] }),
+      ).rejects.toBeInstanceOf(SettlementOutcomeUnknownError);
+    });
+
+    it("maps zero-row operation reconciliation to null", async () => {
+      mockRpc.mockResolvedValue({ data: [], error: null });
+
+      await expect(getSettlementOperation(operationId)).resolves.toBeNull();
+      expect(mockRpc).toHaveBeenCalledWith("get_settlement_operation", {
+        p_operation_id: operationId,
+      });
+    });
+
+    it("propagates operation corruption from reconciliation", async () => {
+      mockRpc.mockResolvedValue({
+        data: null,
+        error: { code: "PST12", message: "operation is corrupt" },
+      });
+
+      await expect(getSettlementOperation(operationId)).rejects.toBeInstanceOf(
+        SettlementOperationCorruptError,
       );
     });
   });

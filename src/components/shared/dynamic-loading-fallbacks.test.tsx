@@ -25,13 +25,12 @@ vi.mock("next/dynamic", () => ({
 vi.mock("@/lib/supabase/settlement-actions", () => ({
   queryBalancesBetweenUsers: vi.fn(),
   queryBalances: vi.fn(),
-  recordSettlement: vi.fn(),
 }));
 vi.mock("@/lib/supabase/expense-actions", () => ({ loadExpense: vi.fn() }));
 vi.mock("@/lib/supabase/expense-rpc", () => ({ activateExpense: vi.fn() }));
 vi.mock("@/lib/push/push-notify", () => ({
-  notifySettlementRecorded: vi.fn().mockResolvedValue(undefined),
   notifyExpenseActivated: vi.fn().mockResolvedValue(undefined),
+  notifyPaymentNudge: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: { id: "u1", name: "Test", email: "t@t.com", handle: "test" } }),

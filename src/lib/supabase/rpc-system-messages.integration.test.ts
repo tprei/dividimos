@@ -119,7 +119,7 @@ describe.skipIf(!isIntegrationTestReady)(
       });
     });
 
-    describe("record_and_settle", () => {
+    describe("record_settlements", () => {
       it("inserts a system_settlement message for DM groups", async () => {
         // First create an expense so there's a balance to settle
         await createAndActivateExpense({
@@ -133,13 +133,35 @@ describe.skipIf(!isIntegrationTestReady)(
           title: "Pre-settlement expense",
         });
 
-        const settlementId = await settleDebt({
-          caller: bob,
-          groupId: dmGroupId,
-          fromUserId: bob.id,
-          toUserId: alice.id,
-          amountCents: 3000,
+        const bobClient = authenticateAs(bob);
+        const operationId = crypto.randomUUID();
+        const input = {
+          p_allocations: [{
+            group_id: dmGroupId,
+            from_user_id: bob.id,
+            to_user_id: alice.id,
+            amount_cents: 3000,
+          }],
+          p_operation_id: operationId,
+        };
+        const { data: first, error: firstError } = await bobClient.rpc(
+          "record_settlements",
+          input,
+        );
+        const { data: replay, error: replayError } = await bobClient.rpc(
+          "record_settlements",
+          input,
+        );
+
+        expect(firstError).toBeNull();
+        expect(replayError).toBeNull();
+        expect(first).toHaveLength(1);
+        expect(replay).toHaveLength(1);
+        expect(replay![0]).toMatchObject({
+          settlement_id: first![0].settlement_id,
+          was_replay: true,
         });
+        const settlementId = first![0].settlement_id;
 
         const messages = await getChatMessages(dmGroupId);
         const systemMsg = messages.find(
@@ -149,6 +171,7 @@ describe.skipIf(!isIntegrationTestReady)(
         );
 
         expect(systemMsg).toBeTruthy();
+        expect(messages.filter((message) => message.settlement_id === settlementId)).toHaveLength(1);
         expect(systemMsg!.sender_id).toBe(bob.id);
         expect(systemMsg!.group_id).toBe(dmGroupId);
         expect(systemMsg!.expense_id).toBeNull();

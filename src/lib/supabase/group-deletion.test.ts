@@ -7,6 +7,13 @@ const migrationPath = join(
   "../../../supabase/migrations/20260716000000_protect_group_financial_history.sql",
 );
 const sql = readFileSync(migrationPath, "utf8");
+const operationSql = readFileSync(
+  join(
+    __dirname,
+    "../../../supabase/migrations/20260716100000_replay_safe_settlement_operations.sql",
+  ),
+  "utf8",
+);
 const integrationWorkflow = readFileSync(
   join(__dirname, "../../../.github/workflows/integration.yml"),
   "utf8",
@@ -112,12 +119,16 @@ describe("protect group financial history migration", () => {
       ),
     );
 
-    const record = functionBody("record_and_settle");
+    expect(operationSql).toContain(
+      "CREATE FUNCTION public.record_settlements",
+    );
+    expect(operationSql).toContain(
+      "ORDER BY group_id",
+    );
     expect(
-      record.indexOf(
-        "FROM public.groups g\n   WHERE g.id = p_group_id\n     FOR UPDATE",
-      ),
-    ).toBeLessThan(record.indexOf("INSERT INTO public.settlements"));
+      operationSql.indexOf("FOR UPDATE") <
+        operationSql.indexOf("INSERT INTO public.settlements"),
+    ).toBe(true);
 
     const confirm = functionBody("confirm_settlement");
     expect(

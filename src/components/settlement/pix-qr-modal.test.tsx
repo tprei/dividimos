@@ -5,6 +5,8 @@ import {
   runBackHandlers,
   __resetBackHandlerStackForTests,
 } from "@/lib/capacitor/back-handler";
+import { SettlementOutcomeUnknownError } from "@/lib/supabase/settlement-actions";
+import type { SettlementSubmissionView } from "@/contexts/settlement-submission-context";
 
 // Mock framer-motion to render children directly
 vi.mock("framer-motion", () => ({
@@ -66,6 +68,25 @@ beforeEach(() => {
   vi.mocked(haptics.success).mockClear();
   vi.mocked(haptics.error).mockClear();
 });
+
+function unresolvedSubmission(): SettlementSubmissionView {
+  return {
+    error: new SettlementOutcomeUnknownError(),
+    finish: vi.fn(),
+    phase: "unresolved",
+    reconcile: vi.fn().mockResolvedValue(null),
+    request: {
+      allocations: [{
+        amountCents: 2500,
+        fromUserId: "user-alice",
+        groupId: "group-1",
+        toUserId: "user-bob",
+      }],
+      operationId: "11111111-1111-1111-1111-111111111111",
+    },
+    result: null,
+  };
+}
 
 describe("PixQrModal", () => {
   it("shows inline error message when API returns error", async () => {
@@ -269,6 +290,42 @@ describe("PixQrModal", () => {
 
     expect(document.activeElement).toBe(triggerButton);
   });
+  it("freezes the reserved operation amount and reconciles before allowing another payment", async () => {
+    const submission = unresolvedSubmission();
+    const { rerender } = render(
+      <PixQrModal
+        {...defaultProps}
+        amountCents={10000}
+        pixKey="key@test.com"
+        submission={submission}
+      />,
+    );
+
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i });
+    expect(slider).toHaveValue("2500");
+    expect(slider).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Já paguei/i })).toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Verificar pagamento/i }));
+    });
+
+    expect(submission.reconcile).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+    );
+
+    rerender(
+      <PixQrModal
+        {...defaultProps}
+        amountCents={500}
+        pixKey="key@test.com"
+        submission={submission}
+      />,
+    );
+
+    expect(screen.getByRole("slider", { name: /Valor do pagamento/i })).toHaveValue("2500");
+  });
+
 
   it("hardware back does NOT close modal while RPC is in flight (isSettling=true)", async () => {
     const onClose = vi.fn();

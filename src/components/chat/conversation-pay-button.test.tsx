@@ -2,14 +2,34 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { distributeSettlement, ConversationPayButton } from "./conversation-pay-button";
 import type { Balance } from "@/types";
+const submission = vi.hoisted(() => ({
+  error: null,
+  finish: vi.fn(),
+  phase: "idle",
+  ready: true,
+  reconcile: vi.fn(),
+  request: null,
+  reservedEdgeKeys: new Set<string>(),
+  result: null,
+  submit: vi.fn(),
+}));
+
 
 vi.mock("@/lib/supabase/settlement-actions", () => ({
   queryBalancesBetweenUsers: vi.fn(),
-  recordSettlement: vi.fn(),
 }));
 
-vi.mock("@/lib/push/push-notify", () => ({
-  notifySettlementRecorded: vi.fn().mockResolvedValue(undefined),
+vi.mock("@/contexts/settlement-submission-context", () => ({
+  settlementEdgeKey: ({
+    groupId,
+    fromUserId,
+    toUserId,
+  }: {
+    groupId: string;
+    fromUserId: string;
+    toUserId: string;
+  }) => `${groupId}:${fromUserId}:${toUserId}`,
+  useSettlementSubmission: () => submission,
 }));
 
 vi.mock("@/hooks/use-haptics", () => ({
