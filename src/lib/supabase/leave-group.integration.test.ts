@@ -232,8 +232,7 @@ describe.skipIf(!isIntegrationTestReady)(
         const group = await createTestGroupWithMembers(alice, [bob]);
         groupId = group.id;
 
-        const bobClient = authenticateAs(bob);
-        const { data: settlement } = await bobClient
+        const { data: settlement } = await adminClient!
           .from("settlements")
           .insert({
             group_id: groupId,

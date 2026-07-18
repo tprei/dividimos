@@ -440,7 +440,7 @@ describe.skipIf(!isIntegrationTestReady)("Expense RLS policies", () => {
   });
 
   // ──────────────────────────────────────────────
-  // SETTLEMENTS: SELECT + INSERT
+  // SETTLEMENTS: SELECT + direct INSERT denial
   // ──────────────────────────────────────────────
 
   describe("settlements SELECT", () => {
@@ -467,67 +467,22 @@ describe.skipIf(!isIntegrationTestReady)("Expense RLS policies", () => {
     });
   });
 
-  describe("settlements INSERT", () => {
-    it("accepted member can create settlement as from_user", async () => {
+  describe("settlements direct INSERT", () => {
+    it("accepted member cannot create settlement directly", async () => {
       const client = authenticateAs(bob);
-      const { data, error } = await client
+      const { error } = await client
         .from("settlements")
         .insert({
           group_id: groupId,
           from_user_id: bob.id,
           to_user_id: alice.id,
           amount_cents: 1000,
-        })
-        .select()
-        .single();
-
-      expect(error).toBeNull();
-      expect(data!.from_user_id).toBe(bob.id);
-
-      // Cleanup
-      await adminClient!.from("settlements").delete().eq("id", data!.id);
-    });
-
-    it("cannot create settlement impersonating from_user", async () => {
-      const client = authenticateAs(bob);
-      const { error } = await client
-        .from("settlements")
-        .insert({
-          group_id: groupId,
-          from_user_id: alice.id, // impersonation
-          to_user_id: bob.id,
-          amount_cents: 1000,
         });
 
       expect(error).not.toBeNull();
+      expect(error!.code).toBe("42501");
+      expect(error!.message).toMatch(/row-level security/i);
     });
 
-    it("invited member cannot create settlement", async () => {
-      const client = authenticateAs(carol);
-      const { error } = await client
-        .from("settlements")
-        .insert({
-          group_id: groupId,
-          from_user_id: carol.id,
-          to_user_id: alice.id,
-          amount_cents: 1000,
-        });
-
-      expect(error).not.toBeNull();
-    });
-
-    it("non-member cannot create settlement", async () => {
-      const client = authenticateAs(dave);
-      const { error } = await client
-        .from("settlements")
-        .insert({
-          group_id: groupId,
-          from_user_id: dave.id,
-          to_user_id: alice.id,
-          amount_cents: 1000,
-        });
-
-      expect(error).not.toBeNull();
-    });
   });
 });

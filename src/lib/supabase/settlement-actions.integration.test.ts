@@ -149,25 +149,6 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     describe("settlements table operations", () => {
-      it("inserts a pending settlement", async () => {
-        const bobClient = authenticateAs(bob);
-        const { data: settlement, error } = await bobClient
-          .from("settlements")
-          .insert({
-            group_id: groupId,
-            from_user_id: bob.id,
-            to_user_id: alice.id,
-            amount_cents: 3000,
-          })
-          .select()
-          .single();
-
-        expect(error).toBeNull();
-        expect(settlement!.status).toBe("pending");
-        expect(settlement!.from_user_id).toBe(bob.id);
-        expect(settlement!.to_user_id).toBe(alice.id);
-        expect(settlement!.amount_cents).toBe(3000);
-      });
 
       it("queries settlement history between two users", async () => {
         // Create settlements in both directions
@@ -260,9 +241,8 @@ describe.skipIf(!isIntegrationTestReady)(
           payers: [{ userId: alice.id, amount: 8000 }],
         });
 
-        // Bob records a settlement of 4000
-        const bobClient = authenticateAs(bob);
-        const { data: settlement } = await bobClient
+        // Seed Bob's historical pending settlement of 4000.
+        const { data: settlement } = await adminClient!
           .from("settlements")
           .insert({
             group_id: groupId,
@@ -342,9 +322,8 @@ describe.skipIf(!isIntegrationTestReady)(
           .single();
         const amountBefore = balanceBefore!.amount_cents;
 
-        // Bob records a pending settlement to alice
-        const bobClient = authenticateAs(bob);
-        const { data: settlement } = await bobClient
+        // Seed Bob's historical pending settlement to Alice.
+        const { data: settlement } = await adminClient!
           .from("settlements")
           .insert({
             group_id: isolatedGroupId,
@@ -396,8 +375,7 @@ describe.skipIf(!isIntegrationTestReady)(
           amount_cents: debtor.id < creditor.id ? 3000 : -3000,
         });
 
-        const debtorClient = authenticateAs(debtor);
-        const { data: settlement } = await debtorClient
+        const { data: settlement } = await adminClient!
           .from("settlements")
           .insert({
             group_id: group.id,
