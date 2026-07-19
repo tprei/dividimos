@@ -43,6 +43,7 @@ import {
 } from "./settlement-submission-context";
 
 const operationId = "22222222-2222-2222-2222-222222222222";
+const secondOperationId = "77777777-7777-7777-7777-777777777777";
 const groupId = "33333333-3333-3333-3333-333333333333";
 const debtorId = "44444444-4444-4444-4444-444444444444";
 const creditorId = "55555555-5555-5555-5555-555555555555";
@@ -345,6 +346,51 @@ describe("SettlementSubmissionProvider", () => {
       { operationId, allocations: [allocation] },
     );
     expect(second.result.current.phase).toBe("committed");
+  });
+
+  it("does not mint a fresh operation after a queued sibling submission commits", async () => {
+    vi.mocked(crypto.randomUUID)
+      .mockReturnValueOnce(operationId)
+      .mockReturnValueOnce(secondOperationId);
+    const firstResponse = createDeferred<RecordSettlementsResult>();
+    mocks.recordSettlements
+      .mockReturnValueOnce(firstResponse.promise)
+      .mockResolvedValueOnce({
+        ...freshResult,
+        operationId: secondOperationId,
+      });
+    mocks.getSettlementOperation.mockResolvedValue(freshResult.settlements);
+    const first = renderHook(() => useSettlementSubmission(), { wrapper });
+    const second = renderHook(() => useSettlementSubmission(), { wrapper });
+
+    let firstSubmission: Promise<RecordSettlementsResult>;
+    act(() => {
+      firstSubmission = first.result.current.submit([allocation]);
+    });
+    await waitFor(() => expect(mocks.recordSettlements).toHaveBeenCalledTimes(1));
+
+    let queuedSubmission: Promise<RecordSettlementsResult>;
+    act(() => {
+      queuedSubmission = second.result.current.submit([allocation]);
+    });
+    const key = "dividimos:settlement-operation:11111111-1111-1111-1111-111111111111";
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", {
+        key,
+        newValue: window.localStorage.getItem(key),
+        storageArea: window.localStorage,
+      }));
+    });
+
+    await act(async () => {
+      firstResponse.resolve(freshResult);
+      await expect(firstSubmission!).resolves.toEqual(freshResult);
+      await expect(queuedSubmission!).rejects.toThrow("already active");
+    });
+
+    expect(crypto.randomUUID).toHaveBeenCalledTimes(1);
+    expect(mocks.recordSettlements).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(second.result.current.phase).toBe("idle"));
   });
 
   it("reconciles a request reserved by another tab", async () => {

@@ -690,6 +690,18 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
           return result;
         }
 
+        const currentAfterLock = stateRef.current;
+        const hasReservedEdge = allocations.some((allocation) =>
+          currentAfterLock.reservedEdgeKeys.has(settlementEdgeKey(allocation))
+        );
+        if (
+          (currentAfterLock.phase !== "idle" &&
+            currentAfterLock.phase !== "storage_error") ||
+          hasReservedEdge
+        ) {
+          throw new Error("A settlement operation is already active");
+        }
+
         const request = freezeRequest(crypto.randomUUID(), allocations);
         try {
           persistRequest(ownerId, request);
