@@ -26,6 +26,7 @@ import type {
 } from "@/types";
 
 const STORAGE_PREFIX = "dividimos:settlement-operation:";
+const LOCK_PREFIX = "dividimos:settlement-operation-lock:";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -126,6 +127,26 @@ const SettlementSubmissionContext =
 
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
+}
+
+
+function operationLockManager(): LockManager | null {
+  if (typeof navigator === "undefined" || !("locks" in navigator)) {
+    return null;
+  }
+  return navigator.locks ?? null;
+}
+
+
+async function withOperationLock<T>(
+  userId: string,
+  callback: () => Promise<T>,
+): Promise<T> {
+  const locks = operationLockManager();
+  if (!locks) {
+    throw new SettlementStorageError("Settlement operation coordination is unavailable");
+  }
+  return locks.request(`${LOCK_PREFIX}${userId}`, { mode: "exclusive" }, callback);
 }
 
 export function settlementEdgeKey({
@@ -237,6 +258,48 @@ function parseStoredRequest(serialized: string): RecordSettlementsRequest {
   return freezeRequest(parsed.operationId, allocations);
 }
 
+function readStoredRequest(userId: string): RecordSettlementsRequest | null {
+  let serialized: string | null;
+  try {
+    serialized = window.localStorage.getItem(storageKey(userId));
+  } catch {
+    throw new SettlementStorageCorruptionError("Stored settlement operation could not be read");
+  }
+  return serialized === null ? null : parseStoredRequest(serialized);
+}
+
+function persistRequest(userId: string, request: RecordSettlementsRequest): void {
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(request));
+  } catch {
+    throw new SettlementStorageError("Settlement operation could not be persisted");
+  }
+}
+
+function removeStoredRequest(userId: string): boolean {
+  try {
+    window.localStorage.removeItem(storageKey(userId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function requestsMatch(
+  first: RecordSettlementsRequest,
+  second: RecordSettlementsRequest,
+): boolean {
+  return first.operationId === second.operationId
+    && first.allocations.length === second.allocations.length
+    && first.allocations.every((allocation, index) => {
+      const other = second.allocations[index];
+      return allocation.groupId === other.groupId
+        && allocation.fromUserId === other.fromUserId
+        && allocation.toUserId === other.toUserId
+        && allocation.amountCents === other.amountCents;
+    });
+}
+
 function emptyState(
   phase: InactiveSubmissionState["phase"],
   error: SettlementStorageError | null = null,
@@ -315,7 +378,10 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
   const userIdRef = useRef<string | null>(userId);
   const generationRef = useRef(0);
   const submitGuardRef = useRef(false);
-  const reconcilePromiseRef = useRef<Promise<RecordSettlementsResult | null> | null>(null);
+  const reconcilePromiseRef = useRef<{
+    operationId: string;
+    promise: Promise<RecordSettlementsResult | null>;
+  } | null>(null);
 
   const updateState = useCallback((next: SettlementSubmissionState) => {
     stateRef.current = next;
@@ -328,15 +394,6 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
       generationRef.current === generation &&
       stateRef.current.request?.operationId === request.operationId
     );
-  }, []);
-
-  const removeStoredRequest = useCallback((ownerId: string): boolean => {
-    try {
-      window.sessionStorage.removeItem(storageKey(ownerId));
-      return true;
-    } catch {
-      return false;
-    }
   }, []);
 
   const recordRequest = useCallback(async (
@@ -391,87 +448,189 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
       updateState(activeState("unresolved", request, unknown));
       throw unknown;
     }
-  }, [isCurrent, removeStoredRequest, updateState]);
+  }, [isCurrent, updateState]);
 
-  const reconcile = useCallback((operationId: string): Promise<RecordSettlementsResult | null> => {
-    const request = stateRef.current.request;
-    const ownerId = userIdRef.current;
-    if (!request || !ownerId || request.operationId !== operationId) {
-      return Promise.resolve(null);
+  const reconcileStoredRequest = useCallback(async (
+    request: RecordSettlementsRequest,
+    ownerId: string,
+    generation: number,
+    canReplay: boolean,
+  ): Promise<RecordSettlementsResult | null> => {
+    if (!isCurrent(request, ownerId, generation)) {
+      throw new SettlementOutcomeUnknownError();
     }
 
-    if (reconcilePromiseRef.current) {
-      return reconcilePromiseRef.current;
-    }
-
-    const generation = generationRef.current;
     updateState(activeState("reconciling", request));
-    const promise = (async () => {
-      let settlements: Settlement[] | null;
-      try {
-        settlements = await getSettlementOperation(operationId);
-      } catch (error) {
-        if (!isCurrent(request, ownerId, generation)) {
-          throw new SettlementOutcomeUnknownError();
-        }
-
-        if (error instanceof SettlementOperationCorruptError) {
-          updateState(blockedState(request, error));
-          throw error;
-        }
-        if (error instanceof SettlementDatabaseRejectionError) {
-          if (!removeStoredRequest(ownerId)) {
-            const storageError = new SettlementStorageCorruptionError(
-              "Rejected settlement operation could not be cleared from storage",
-            );
-            updateState(blockedState(request, storageError));
-            throw storageError;
-          }
-          updateState(rejectedState(request, error));
-          throw error;
-        }
-
-        const unknown = error instanceof SettlementOutcomeUnknownError
-          ? error
-          : new SettlementOutcomeUnknownError();
-        updateState(activeState("unresolved", request, unknown));
-        throw unknown;
-      }
-
+    let settlements: Settlement[] | null;
+    try {
+      settlements = await getSettlementOperation(request.operationId);
+    } catch (error) {
       if (!isCurrent(request, ownerId, generation)) {
         throw new SettlementOutcomeUnknownError();
       }
 
-      if (settlements) {
-        const result = freezeResult({
-          operationId,
-          settlements,
-          replayed: true,
-        });
-        removeStoredRequest(ownerId);
-        updateState(committedState(request, result));
-        return result;
+      if (error instanceof SettlementOperationCorruptError) {
+        updateState(blockedState(request, error));
+        throw error;
+      }
+      if (error instanceof SettlementDatabaseRejectionError) {
+        if (!removeStoredRequest(ownerId)) {
+          const storageError = new SettlementStorageCorruptionError(
+            "Rejected settlement operation could not be cleared from storage",
+          );
+          updateState(blockedState(request, storageError));
+          throw storageError;
+        }
+        updateState(rejectedState(request, error));
+        throw error;
       }
 
-      updateState(activeState("submitting", request));
-      return recordRequest(request, ownerId, generation);
-    })();
+      const unknown = error instanceof SettlementOutcomeUnknownError
+        ? error
+        : new SettlementOutcomeUnknownError();
+      updateState(activeState("unresolved", request, unknown));
+      throw unknown;
+    }
 
-    reconcilePromiseRef.current = promise;
+    if (!isCurrent(request, ownerId, generation)) {
+      throw new SettlementOutcomeUnknownError();
+    }
+
+    if (settlements) {
+      const result = freezeResult({
+        operationId: request.operationId,
+        settlements,
+        replayed: true,
+      });
+      removeStoredRequest(ownerId);
+      updateState(committedState(request, result));
+      return result;
+    }
+
+    if (!canReplay) {
+      updateState(emptyState("idle"));
+      return null;
+    }
+
+    updateState(activeState("submitting", request));
+    return recordRequest(request, ownerId, generation);
+  }, [isCurrent, recordRequest, updateState]);
+
+  const reconcile = useCallback((operationId: string): Promise<RecordSettlementsResult | null> => {
+    const initialRequest = stateRef.current.request;
+    const ownerId = userIdRef.current;
+    if (!initialRequest || !ownerId || initialRequest.operationId !== operationId) {
+      return Promise.resolve(null);
+    }
+
+    const inFlight = reconcilePromiseRef.current;
+    if (inFlight?.operationId === operationId) {
+      return inFlight.promise;
+    }
+
+    if (!operationLockManager()) {
+      const storageError = new SettlementStorageError(
+        "Settlement operation coordination is unavailable",
+      );
+      updateState(emptyState("storage_error", storageError));
+      return Promise.reject(storageError);
+    }
+
+    const generation = generationRef.current;
+    const promise = withOperationLock(ownerId, async (): Promise<RecordSettlementsResult | null> => {
+      if (!isCurrent(initialRequest, ownerId, generation)) {
+        throw new SettlementOutcomeUnknownError();
+      }
+
+      let storedRequest: RecordSettlementsRequest | null;
+      try {
+        storedRequest = readStoredRequest(ownerId);
+      } catch (error) {
+        const storageError = error instanceof SettlementStorageCorruptionError
+          ? error
+          : new SettlementStorageCorruptionError("Stored settlement operation is invalid");
+        updateState(blockedState(initialRequest, storageError));
+        throw storageError;
+      }
+
+      let request = initialRequest;
+      if (storedRequest) {
+        if (
+          storedRequest.operationId === initialRequest.operationId &&
+          !requestsMatch(storedRequest, initialRequest)
+        ) {
+          const storageError = new SettlementStorageCorruptionError(
+            "Stored settlement operation differs from the active request",
+          );
+          updateState(blockedState(initialRequest, storageError));
+          throw storageError;
+        }
+        request = storedRequest;
+        if (storedRequest.operationId !== initialRequest.operationId) {
+          updateState(activeState("reconciling", storedRequest));
+        }
+      }
+
+      return reconcileStoredRequest(
+        request,
+        ownerId,
+        generation,
+        storedRequest !== null,
+      );
+    });
+
+    reconcilePromiseRef.current = { operationId, promise };
     promise.then(
       () => {
-        if (reconcilePromiseRef.current === promise) {
+        if (reconcilePromiseRef.current?.promise === promise) {
           reconcilePromiseRef.current = null;
         }
       },
       () => {
-        if (reconcilePromiseRef.current === promise) {
+        if (reconcilePromiseRef.current?.promise === promise) {
           reconcilePromiseRef.current = null;
         }
       },
     );
     return promise;
-  }, [isCurrent, recordRequest, removeStoredRequest, updateState]);
+  }, [isCurrent, reconcileStoredRequest, updateState]);
+
+  const finishRestoredOperation = useCallback((
+    request: RecordSettlementsRequest,
+    ownerId: string,
+    generation: number,
+  ): void => {
+    void reconcile(request.operationId).then(
+      () => {
+        if (
+          userIdRef.current !== ownerId ||
+          generationRef.current !== generation ||
+          stateRef.current.request?.operationId !== request.operationId
+        ) {
+          return;
+        }
+        if (
+          stateRef.current.phase === "committed" ||
+          stateRef.current.phase === "rejected"
+        ) {
+          updateState(emptyState("idle"));
+        }
+      },
+      (error) => {
+        if (
+          !(error instanceof SettlementDatabaseRejectionError) ||
+          error instanceof SettlementOperationCorruptError ||
+          userIdRef.current !== ownerId ||
+          generationRef.current !== generation ||
+          stateRef.current.request?.operationId !== request.operationId ||
+          stateRef.current.phase !== "rejected"
+        ) {
+          return;
+        }
+        updateState(emptyState("idle"));
+      },
+    );
+  }, [reconcile, updateState]);
 
   const submit = useCallback(async (
     allocations: readonly SettlementAllocation[],
@@ -487,66 +646,83 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
     if (submitGuardRef.current) {
       throw new Error("A settlement operation is already active");
     }
-
-    submitGuardRef.current = true;
-    const generation = generationRef.current;
-    const key = storageKey(ownerId);
-    let existing: string | null;
-    try {
-      existing = window.sessionStorage.getItem(key);
-    } catch {
-      submitGuardRef.current = false;
-      const storageError = new SettlementStorageCorruptionError(
-        "Stored settlement operation could not be read",
+    if (!operationLockManager()) {
+      const storageError = new SettlementStorageError(
+        "Settlement operation coordination is unavailable",
       );
-      updateState(blockedState(null, storageError));
-      throw storageError;
-    }
-
-    if (existing !== null) {
-      let storedRequest: RecordSettlementsRequest;
-      try {
-        storedRequest = parseStoredRequest(existing);
-      } catch (error) {
-        submitGuardRef.current = false;
-        const storageError = error instanceof SettlementStorageCorruptionError
-          ? error
-          : new SettlementStorageCorruptionError("Stored settlement operation is invalid");
-        updateState(blockedState(null, storageError));
-        throw storageError;
-      }
-
-      updateState(activeState("reconciling", storedRequest));
-      submitGuardRef.current = false;
-      const result = await reconcile(storedRequest.operationId);
-      if (!result) {
-        throw new SettlementOutcomeUnknownError();
-      }
-      return result;
-    }
-
-    const request = freezeRequest(crypto.randomUUID(), allocations);
-    try {
-      window.sessionStorage.setItem(key, JSON.stringify(request));
-    } catch {
-      submitGuardRef.current = false;
-      const storageError = new SettlementStorageError("Settlement operation could not be persisted");
       updateState(emptyState("storage_error", storageError));
       throw storageError;
     }
 
-    if (
-      userIdRef.current !== ownerId ||
-      generationRef.current !== generation
-    ) {
-      submitGuardRef.current = false;
-      throw new SettlementOutcomeUnknownError();
-    }
+    submitGuardRef.current = true;
+    const generation = generationRef.current;
+    try {
+      return await withOperationLock(ownerId, async () => {
+        if (
+          userIdRef.current !== ownerId ||
+          generationRef.current !== generation
+        ) {
+          throw new SettlementOutcomeUnknownError();
+        }
 
-    updateState(activeState("submitting", request));
-    submitGuardRef.current = false;
-    return recordRequest(request, ownerId, generation);
-  }, [reconcile, recordRequest, updateState]);
+        let storedRequest: RecordSettlementsRequest | null;
+        try {
+          storedRequest = readStoredRequest(ownerId);
+        } catch (error) {
+          const storageError = error instanceof SettlementStorageCorruptionError
+            ? error
+            : new SettlementStorageCorruptionError("Stored settlement operation is invalid");
+          updateState(blockedState(null, storageError));
+          throw storageError;
+        }
+
+        if (storedRequest) {
+          updateState(activeState("reconciling", storedRequest));
+          const result = await reconcileStoredRequest(
+            storedRequest,
+            ownerId,
+            generation,
+            true,
+          );
+          if (!result) {
+            throw new SettlementOutcomeUnknownError();
+          }
+          return result;
+        }
+
+        const request = freezeRequest(crypto.randomUUID(), allocations);
+        try {
+          persistRequest(ownerId, request);
+        } catch (error) {
+          const storageError = error instanceof SettlementStorageError
+            ? error
+            : new SettlementStorageError("Settlement operation could not be persisted");
+          updateState(emptyState("storage_error", storageError));
+          throw storageError;
+        }
+
+        if (
+          userIdRef.current !== ownerId ||
+          generationRef.current !== generation
+        ) {
+          throw new SettlementOutcomeUnknownError();
+        }
+
+        updateState(activeState("submitting", request));
+        return recordRequest(request, ownerId, generation);
+      });
+    } catch (error) {
+      if (
+        error instanceof SettlementStorageError &&
+        stateRef.current.phase === "idle"
+      ) {
+        updateState(emptyState("storage_error", error));
+      }
+      throw error;
+    } finally {
+      submitGuardRef.current = false;
+    }
+  }, [recordRequest, reconcileStoredRequest, updateState]);
 
   const finish = useCallback((operationId: string): void => {
     const current = stateRef.current;
@@ -566,11 +742,12 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
     }
 
     updateState(emptyState("idle"));
-  }, [removeStoredRequest, updateState]);
+  }, [updateState]);
 
   useLayoutEffect(() => {
     userIdRef.current = userId;
     generationRef.current += 1;
+    const generation = generationRef.current;
     submitGuardRef.current = false;
     reconcilePromiseRef.current = null;
     updateState(emptyState("restoring"));
@@ -579,27 +756,9 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
       return;
     }
 
-    let serialized: string | null;
+    let request: RecordSettlementsRequest | null;
     try {
-      serialized = window.sessionStorage.getItem(storageKey(userId));
-    } catch {
-      updateState(
-        blockedState(
-          null,
-          new SettlementStorageCorruptionError("Stored settlement operation could not be read"),
-        ),
-      );
-      return;
-    }
-
-    if (serialized === null) {
-      updateState(emptyState("idle"));
-      return;
-    }
-
-    let request: RecordSettlementsRequest;
-    try {
-      request = parseStoredRequest(serialized);
+      request = readStoredRequest(userId);
     } catch (error) {
       const storageError = error instanceof SettlementStorageCorruptionError
         ? error
@@ -608,9 +767,57 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
       return;
     }
 
+    if (!request) {
+      updateState(emptyState("idle"));
+      return;
+    }
+
     updateState(activeState("reconciling", request));
-    void reconcile(request.operationId);
-  }, [reconcile, updateState, userId]);
+    finishRestoredOperation(request, userId, generation);
+  }, [finishRestoredOperation, updateState, userId]);
+
+  useLayoutEffect(() => {
+    if (!userId) {
+      return;
+    }
+
+    const ownerId = userId;
+    const key = storageKey(ownerId);
+    const synchronize = (event: StorageEvent) => {
+      if (event.key !== key && event.key !== null) {
+        return;
+      }
+      if (userIdRef.current !== ownerId) {
+        return;
+      }
+
+      const generation = generationRef.current;
+      if (event.newValue === null) {
+        const request = stateRef.current.request;
+        if (request) {
+          finishRestoredOperation(request, ownerId, generation);
+        }
+        return;
+      }
+
+      let request: RecordSettlementsRequest;
+      try {
+        request = parseStoredRequest(event.newValue);
+      } catch (error) {
+        const storageError = error instanceof SettlementStorageCorruptionError
+          ? error
+          : new SettlementStorageCorruptionError("Stored settlement operation is invalid");
+        updateState(blockedState(null, storageError));
+        return;
+      }
+
+      updateState(activeState("reconciling", request));
+      finishRestoredOperation(request, ownerId, generation);
+    };
+
+    window.addEventListener("storage", synchronize);
+    return () => window.removeEventListener("storage", synchronize);
+  }, [finishRestoredOperation, updateState, userId]);
 
   const value = useMemo<SettlementSubmissionContextValue>(() => ({
     phase: state.phase,

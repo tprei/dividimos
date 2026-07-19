@@ -1,6 +1,6 @@
 CREATE TABLE public.settlement_operations (
   id uuid PRIMARY KEY,
-  initiated_by uuid NOT NULL REFERENCES public.users(id),
+  initiated_by uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   canonical_request jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -191,9 +191,9 @@ BEGIN
     v_is_replay := true;
   ELSE
     FOR v_group_id IN
-      SELECT DISTINCT (element.value ->> 'group_id')::uuid
+      SELECT DISTINCT (element.value ->> 'group_id')::uuid AS group_id
         FROM jsonb_array_elements(v_canonical_request) AS element(value)
-       ORDER BY 1
+       ORDER BY group_id
     LOOP
       SELECT g.id, g.is_dm
         INTO v_locked_group

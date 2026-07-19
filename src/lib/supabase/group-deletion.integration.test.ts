@@ -977,7 +977,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     await finishSubject(claim, false);
   });
 
-  it("serializes real foreign-key expense and settlement inserts", async () => {
+  it("serializes expense inserts and batch settlements", async () => {
     const expenseFirstGroup = await createRegularGroup(alice, [bob]);
     const expenseInsert = await openSubject(alice);
     const expenseInsertResult = await dispatchQuery(
@@ -1005,8 +1005,8 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const settlementInsert = await openSubject(bob);
     const settlementInsertResult = await dispatchQuery(
       settlementInsert.client,
-      "INSERT INTO public.settlements (group_id, from_user_id, to_user_id, amount_cents, status) VALUES ($1, $2, $3, 1, 'pending') RETURNING id",
-      [settlementFirstGroup, bob.id, alice.id],
+      batchSettlementSql(),
+      batchSettlementParameters(settlementFirstGroup, bob.id, alice.id, 1),
     );
     expect("error" in settlementInsertResult).toBe(false);
 
@@ -1223,7 +1223,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
       ),
     ).toEqual([{ count: "0" }]);
   });
-  it("rejects direct expense and settlement inserts after delete-first commit", async () => {
+  it("rejects direct expense inserts and batch settlements after delete-first commit", async () => {
     const expenseGroup = await createRegularGroup(alice, [bob]);
     const deletion = await openSubject(alice);
     await lockGroup(deletion, expenseGroup);
@@ -1258,23 +1258,23 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     );
     expect("error" in settlementDeletionResult).toBe(false);
 
-    const settlementInsert = await openSubject(bob);
-    let settlementInsertDone = false;
-    const settlementInsertPromise = dispatchQuery(
-      settlementInsert.client,
-      "INSERT INTO public.settlements (group_id, from_user_id, to_user_id, amount_cents, status) VALUES ($1, $2, $3, 1, 'pending') RETURNING id",
-      [settlementGroup, bob.id, alice.id],
+    const settlementWriter = await openSubject(bob);
+    let settlementDone = false;
+    const settlementPromise = dispatchQuery(
+      settlementWriter.client,
+      batchSettlementSql(),
+      batchSettlementParameters(settlementGroup, bob.id, alice.id, 1),
     ).finally(() => {
-      settlementInsertDone = true;
+      settlementDone = true;
     });
     await waitForLock(
-      settlementInsert.pid,
+      settlementWriter.pid,
       settlementDeletion.pid,
-      () => settlementInsertDone,
+      () => settlementDone,
     );
     await finishSubject(settlementDeletion, true);
-    expectSqlError(await settlementInsertPromise, "23503");
-    await finishSubject(settlementInsert, false);
+    expectSqlError(await settlementPromise, "PST08");
+    await finishSubject(settlementWriter, false);
   });
 
   it("keeps concurrent DM creation canonical without leaked candidates", async () => {

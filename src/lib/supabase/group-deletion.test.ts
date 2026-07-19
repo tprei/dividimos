@@ -80,6 +80,12 @@ describe("protect group financial history migration", () => {
     );
   });
 
+  it("cascades settlement operation ownership when an account is deleted", () => {
+    expect(operationSql).toContain(
+      "initiated_by uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,",
+    );
+  });
+
   it("defines a lock-first void deletion RPC with the protected predicate", () => {
     const body = functionBody("delete_group");
     expect(body).toContain("RETURNS void");
