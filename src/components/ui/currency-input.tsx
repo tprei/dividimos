@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
+import { MAX_EXPENSE_CENTS } from "@/lib/expense-money";
 import { cn } from "@/lib/utils";
 
 interface CurrencyInputProps {
@@ -14,24 +15,42 @@ interface CurrencyInputProps {
   "data-testid"?: string;
 }
 
-const MAX_SAFE_CENTS = 999_999_99;
+const minorUnitsPerReal = BigInt(100);
 
+/** Exact cents → "reais,cents" display (no float, no clamp, no cent loss). */
 function formatCentsDisplay(cents: number): string {
-  const clamped = Math.min(Math.max(0, Math.round(cents)), MAX_SAFE_CENTS);
-  return (clamped / 100).toFixed(2).replace(".", ",");
+  const big = BigInt(cents);
+  const reais = big / minorUnitsPerReal;
+  const remainder = big % minorUnitsPerReal;
+  return `${reais.toString()},${remainder.toString().padStart(2, "0")}`;
 }
 
+/**
+ * Lenient as-you-type parse to integer cents without float arithmetic.
+ * Accepts optional thousands dots and a comma decimal separator; returns null
+ * for empty or non-numeric input. Final validation against the product cap and
+ * grammar happens through the shared `parseExpenseCentsText` parser at the
+ * owning form boundary.
+ */
 function parseBrazilianToCents(value: string): number | null {
-  const stripped = value.replace(/[^\d,.\-]/g, "");
-  let normalized: string;
-  if (stripped.includes(",")) {
-    normalized = stripped.replace(/\./g, "").replace(",", ".");
-  } else {
-    normalized = stripped;
+  const stripped = value.replace(/[^\d,]/g, "");
+  if (stripped === "" || stripped === ",") return null;
+  const commaIndex = stripped.indexOf(",");
+  if (commaIndex === -1) {
+    const intPart = parseInt(stripped, 10);
+    if (!Number.isSafeInteger(intPart)) return null;
+    const cents = intPart * 100;
+    return Number.isSafeInteger(cents) ? cents : null;
   }
-  const parsed = parseFloat(normalized);
-  if (isNaN(parsed) || parsed < 0) return null;
-  return Math.round(parsed * 100 + 0.0001);
+  const intRaw = stripped.slice(0, commaIndex).replace(/\./g, "");
+  const fracRaw = stripped.slice(commaIndex + 1);
+  const intPart = intRaw === "" ? 0 : parseInt(intRaw, 10);
+  if (!Number.isSafeInteger(intPart)) return null;
+  const intCents = intPart * 100;
+  if (!Number.isSafeInteger(intCents)) return null;
+  const frac = parseInt(fracRaw.slice(0, 2).padEnd(2, "0"), 10);
+  if (!Number.isSafeInteger(frac)) return null;
+  return intCents + frac;
 }
 
 export function CurrencyInput({
@@ -47,7 +66,7 @@ export function CurrencyInput({
 
   const clamp = useCallback(
     (cents: number) => {
-      const upper = maxCents != null ? Math.min(maxCents, MAX_SAFE_CENTS) : MAX_SAFE_CENTS;
+      const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
       return Math.min(Math.max(0, cents), upper);
     },
     [maxCents],

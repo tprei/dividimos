@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { distributeProportionally, distributeEvenly } from "@/lib/currency";
+import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
 import type {
   DebtEdge,
   Expense,
@@ -167,13 +167,17 @@ function computeConsumption(
     if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
       const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
       const weights = allPersonIds.map((id) => consumption.get(id) || 0);
-      const fees = distributeProportionally(totalServiceFee, weights);
+      const feesRes = allocateByWeights(totalServiceFee, weights);
+      if (!feesRes.ok) return consumption;
+      const fees = feesRes.value;
       allPersonIds.forEach((id, i) => {
         consumption.set(id, (consumption.get(id) || 0) + fees[i]);
       });
     }
     if (expense.fixedFees > 0) {
-      const fees = distributeEvenly(expense.fixedFees, allPersonIds.length);
+      const feesRes = allocateEvenly(expense.fixedFees, allPersonIds.length);
+      if (!feesRes.ok) return consumption;
+      const fees = feesRes.value;
       allPersonIds.forEach((id, i) => {
         consumption.set(id, (consumption.get(id) || 0) + fees[i]);
       });

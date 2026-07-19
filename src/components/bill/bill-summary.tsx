@@ -2,7 +2,8 @@
 
 import { motion } from "framer-motion";
 import { Calculator, Receipt } from "lucide-react";
-import { formatBRL, distributeProportionally, distributeEvenly } from "@/lib/currency";
+import { formatBRL } from "@/lib/currency";
+import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
 import type { ExpenseType, UserProfile } from "@/types";
 
 /** Fields the summary reads from the expense config. */
@@ -80,9 +81,10 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
       const userSplits = itemSplits.filter((s) => s.userId === person.id);
       return userSplits.reduce((sum, s) => sum + s.computedAmountCents, 0);
     });
-
-    const serviceFees = distributeProportionally(serviceFee, itemTotals);
-    const fixedFees = distributeEvenly(expense.fixedFees, allPersons.length);
+    const serviceFeesRes = allocateByWeights(serviceFee, itemTotals);
+    const fixedFeesRes = allocateEvenly(expense.fixedFees, allPersons.length);
+    const serviceFees = serviceFeesRes.ok ? serviceFeesRes.value : itemTotals.map(() => 0);
+    const fixedFees = fixedFeesRes.ok ? fixedFeesRes.value : allPersons.map(() => 0);
 
     return allPersons.map((person, i) => ({
       person,
