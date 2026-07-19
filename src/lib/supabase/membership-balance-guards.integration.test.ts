@@ -283,9 +283,9 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     // ──────────────────────────────────────────────────────
-    // record_and_settle — invited member is now blocked
+    // record_settlements — invited member is now blocked
     // ──────────────────────────────────────────────────────
-    describe("record_and_settle requires accepted membership", () => {
+    describe("record_settlements requires accepted membership", () => {
       let alice: TestUser;
       let bob: TestUser;
       let invitee: TestUser;
@@ -313,7 +313,7 @@ describe.skipIf(!isIntegrationTestReady)(
         });
       });
 
-      it("invited member cannot call record_and_settle", async () => {
+      it("invited member cannot call record_settlements", async () => {
         // Seed a balance row for invitee via admin so the only blocker is membership
         const [a, b] =
           invitee.id < alice.id
@@ -327,25 +327,31 @@ describe.skipIf(!isIntegrationTestReady)(
         });
 
         const client = authenticateAs(invitee);
-        const { error } = await client.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: invitee.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 1000,
+        const { error } = await client.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: groupId,
+            from_user_id: invitee.id,
+            to_user_id: alice.id,
+            amount_cents: 1000,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
         expect(error).not.toBeNull();
         expect(error!.message).toContain("permission_denied");
       });
 
-      it("accepted member can call record_and_settle", async () => {
+      it("accepted member can call record_settlements", async () => {
         const { data, error } = await authenticateAs(bob).rpc(
-          "record_and_settle",
+          "record_settlements",
           {
-            p_group_id: groupId,
-            p_from_user_id: bob.id,
-            p_to_user_id: alice.id,
-            p_amount_cents: 1000,
+            p_allocations: [{
+              group_id: groupId,
+              from_user_id: bob.id,
+              to_user_id: alice.id,
+              amount_cents: 1000,
+            }],
+            p_operation_id: crypto.randomUUID(),
           },
         );
 
@@ -353,7 +359,7 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(data).toBeDefined();
       });
 
-      it("removed member cannot call record_and_settle", async () => {
+      it("removed member cannot call record_settlements", async () => {
         // Create a fresh group to test removal
         const [creator, member] = await createTestUsers(2);
         const group = await createTestGroupWithMembers(creator, [member]);
@@ -395,11 +401,14 @@ describe.skipIf(!isIntegrationTestReady)(
         });
 
         const memberClient = authenticateAs(member);
-        const { error } = await memberClient.rpc("record_and_settle", {
-          p_group_id: group.id,
-          p_from_user_id: member.id,
-          p_to_user_id: creator.id,
-          p_amount_cents: 1000,
+        const { error } = await memberClient.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: group.id,
+            from_user_id: member.id,
+            to_user_id: creator.id,
+            amount_cents: 1000,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
         expect(error).not.toBeNull();
@@ -630,7 +639,7 @@ describe.skipIf(!isIntegrationTestReady)(
         // in my_accepted_group_ids()
         expect(expenses).toBeDefined();
 
-        // Creator can still call record_and_settle
+        // Creator can still call record_settlements
         // First create a debt
         await createAndActivateExpense({
           creator: alice,
@@ -639,11 +648,14 @@ describe.skipIf(!isIntegrationTestReady)(
           payers: [{ userId: alice.id, amount: 2000 }],
         });
 
-        const { error } = await aliceClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: bob.id,
-          p_to_user_id: alice.id,
-          p_amount_cents: 500,
+        const { error } = await aliceClient.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: groupId,
+            from_user_id: bob.id,
+            to_user_id: alice.id,
+            amount_cents: 500,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
         // If the fallback works, this should succeed (alice is caller = to_user)

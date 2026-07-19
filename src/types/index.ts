@@ -247,33 +247,22 @@ export interface ClaimGuestSpotResult {
   alreadyClaimed: boolean;
 }
 
-/** Request payload for the record_settlement RPC function. */
-export interface RecordSettlementRequest {
-  /** The group this settlement belongs to. */
-  group_id: string;
-  /** The user making the payment. */
-  from_user_id: string;
-  /** The user receiving the payment. */
-  to_user_id: string;
-  /** Amount in centavos. Must be positive. */
-  amount_cents: number;
+export interface SettlementAllocation {
+  groupId: string;
+  fromUserId: string;
+  toUserId: string;
+  amountCents: number;
 }
 
-/**
- * Result returned by the record_settlement RPC function.
- * The RPC creates a settlement record and atomically updates
- * the balances table.
- */
-export interface RecordSettlementResult {
-  /** The created settlement record. */
-  settlement: Settlement;
-  /** The updated balance between the two users after the settlement. */
-  updatedBalance: {
-    groupId: string;
-    userA: string;
-    userB: string;
-    newAmountCents: number;
-  };
+export interface RecordSettlementsRequest {
+  operationId: string;
+  allocations: readonly SettlementAllocation[];
+}
+
+export interface RecordSettlementsResult {
+  operationId: string;
+  settlements: Settlement[];
+  replayed: boolean;
 }
 
 // ============================================================

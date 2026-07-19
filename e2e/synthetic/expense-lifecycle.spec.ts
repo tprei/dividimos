@@ -76,11 +76,14 @@ test.describe("Expense Lifecycle", () => {
 
     // Settle the debt via RPC
     const bobClient = await seed.authenticateAs(bob.id);
-    await bobClient.rpc("record_and_settle", {
-      p_group_id: group.id,
-      p_from_user_id: bob.id,
-      p_to_user_id: alice.id,
-      p_amount_cents: 5000,
+    await bobClient.rpc("record_settlements", {
+      p_allocations: [{
+        group_id: group.id,
+        from_user_id: bob.id,
+        to_user_id: alice.id,
+        amount_cents: 5000,
+      }],
+      p_operation_id: crypto.randomUUID(),
     });
 
     // Group settlement tab reflects zero balances

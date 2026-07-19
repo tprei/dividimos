@@ -36,7 +36,7 @@ test.describe("DM settlements", () => {
     ).not.toBeVisible();
   });
 
-  test("RPC record_and_settle atualiza saldo e insere mensagem de sistema", async ({
+  test("batch settlement RPC updates the balance and inserts a system message", async ({
     seed,
     adminClient,
     page,
@@ -60,11 +60,14 @@ test.describe("DM settlements", () => {
     );
 
     const aliceClient = await seed.authenticateAs(alice.id);
-    const { error: rpcError } = await aliceClient.rpc("record_and_settle", {
-      p_group_id: dm.id,
-      p_from_user_id: alice.id,
-      p_to_user_id: bob.id,
-      p_amount_cents: 2500,
+    const { error: rpcError } = await aliceClient.rpc("record_settlements", {
+      p_allocations: [{
+        group_id: dm.id,
+        from_user_id: alice.id,
+        to_user_id: bob.id,
+        amount_cents: 2500,
+      }],
+      p_operation_id: crypto.randomUUID(),
     });
     expect(rpcError).toBeNull();
 
@@ -100,6 +103,81 @@ test.describe("DM settlements", () => {
     await expect(
       page.getByText(/R\$\s*25,00/).first(),
     ).toBeVisible({ timeout: 10000 });
+  });
+
+  test("reconciles a committed payment after the first batch response is lost", async ({
+    page,
+    seed,
+    adminClient,
+    loginAs,
+  }) => {
+    const alice = await seed.createUser({ name: "Alice DM Response Loss" });
+    const bob = await seed.createUser({ name: "Bob DM Response Loss" });
+    const dm = await seed.createDmGroup(alice, bob);
+
+    await seed.createActiveExpense(
+      dm.id,
+      bob.id,
+      [alice.id, bob.id],
+      {
+        title: "Resposta perdida",
+        totalAmount: 5000,
+        expenseType: "single_amount",
+        payers: { [bob.id]: 5000 },
+      },
+    );
+
+    let lostResponse = false;
+    await page.route("**/rest/v1/rpc/record_settlements", async (route) => {
+      if (lostResponse) {
+        await route.continue();
+        return;
+      }
+
+      lostResponse = true;
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.fulfill({
+        body: JSON.stringify({ message: "simulated response loss" }),
+        contentType: "application/json",
+        status: 503,
+      });
+    });
+
+    await loginAs(alice);
+    await page.goto(`/app/conversations/${bob.id}`);
+    await page.waitForLoadState("networkidle");
+
+    await page.getByRole("button", { name: /^Pagar R\$\s*25,00$/i }).click();
+    await page.getByRole("button", { name: /^Pagar R\$\s*25,00$/i }).last().click();
+    await page.getByRole("button", { name: /Já paguei/i }).click();
+
+    await expect(
+      page.getByRole("button", { name: "Verificar pagamento" }),
+    ).toBeVisible({ timeout: 10000 });
+
+    await page.getByRole("button", { name: "Verificar pagamento" }).click();
+    await expect(page.getByText("Pagamento registrado!")).toBeVisible({
+      timeout: 10000,
+    });
+
+    const { data: settlements, error: settlementsError } = await adminClient
+      .from("settlements")
+      .select("id")
+      .eq("group_id", dm.id)
+      .eq("from_user_id", alice.id)
+      .eq("to_user_id", bob.id)
+      .eq("amount_cents", 2500);
+    expect(settlementsError).toBeNull();
+    expect(settlements).toHaveLength(1);
+
+    const { data: messages, error: messagesError } = await adminClient
+      .from("chat_messages")
+      .select("id")
+      .eq("group_id", dm.id)
+      .eq("message_type", "system_settlement");
+    expect(messagesError).toBeNull();
+    expect(messages).toHaveLength(1);
   });
 
   test("botão Cobrar visível quando contraparte deve dinheiro", async ({
@@ -160,11 +238,14 @@ test.describe("DM settlements", () => {
     );
 
     const aliceClient = await seed.authenticateAs(alice.id);
-    await aliceClient.rpc("record_and_settle", {
-      p_group_id: dm.id,
-      p_from_user_id: alice.id,
-      p_to_user_id: bob.id,
-      p_amount_cents: 5000,
+    await aliceClient.rpc("record_settlements", {
+      p_allocations: [{
+        group_id: dm.id,
+        from_user_id: alice.id,
+        to_user_id: bob.id,
+        amount_cents: 5000,
+      }],
+      p_operation_id: crypto.randomUUID(),
     });
 
     await loginAs(alice);

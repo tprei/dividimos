@@ -295,7 +295,7 @@ export async function notifyExpenseActivated(
 
 /**
  * Notify the other party when a settlement is recorded.
- * Called after a successful record_and_settle RPC.
+ * Called after a fresh replay-safe settlement operation commits.
  *
  * Two directions, depending on who initiated:
  *   - Pay mode    (caller = debtor/fromUser): notify the creditor

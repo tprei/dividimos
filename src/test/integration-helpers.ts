@@ -315,32 +315,45 @@ export interface SettleDebtOptions {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
+  operationId?: string;
 }
 
 /**
- * Calls the record_and_settle RPC to atomically create a confirmed settlement
- * and update balances. Returns the settlement id.
+ * Calls the replay-safe batch settlement RPC and returns its one settlement ID.
  */
 export async function settleDebt(options: SettleDebtOptions): Promise<string> {
   if (!isIntegrationTestReady) {
     throw new Error("Integration tests require Supabase environment variables.");
   }
 
-  const { caller, groupId, fromUserId, toUserId, amountCents } = options;
+  const {
+    caller,
+    groupId,
+    fromUserId,
+    toUserId,
+    amountCents,
+    operationId = crypto.randomUUID(),
+  } = options;
   const callerClient = authenticateAs(caller);
 
-  const { data, error } = await callerClient.rpc("record_and_settle", {
-    p_group_id: groupId,
-    p_from_user_id: fromUserId,
-    p_to_user_id: toUserId,
-    p_amount_cents: amountCents,
+  const { data, error } = await callerClient.rpc("record_settlements", {
+    p_allocations: [{
+      group_id: groupId,
+      from_user_id: fromUserId,
+      to_user_id: toUserId,
+      amount_cents: amountCents,
+    }],
+    p_operation_id: operationId,
   });
 
   if (error) {
-    throw new Error(`record_and_settle failed: ${error.message}`);
+    throw new Error(`record_settlements failed: ${error.message}`);
+  }
+  if (!data || data.length !== 1 || typeof data[0].settlement_id !== "string") {
+    throw new Error("record_settlements did not return exactly one settlement.");
   }
 
-  return data as string;
+  return data[0].settlement_id;
 }
 
 // ---------------------------------------------------------------------------

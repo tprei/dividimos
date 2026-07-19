@@ -119,11 +119,14 @@ describe.skipIf(!isIntegrationTestReady)(
 
     it("settling via RPC zeroes out the DM balance", async () => {
       const bobClient = authenticateAs(bob);
-      const { error } = await bobClient.rpc("record_and_settle", {
-        p_group_id: dmGroupId,
-        p_from_user_id: bob.id,
-        p_to_user_id: alice.id,
-        p_amount_cents: 3000,
+      const { error } = await bobClient.rpc("record_settlements", {
+        p_allocations: [{
+          group_id: dmGroupId,
+          from_user_id: bob.id,
+          to_user_id: alice.id,
+          amount_cents: 3000,
+        }],
+        p_operation_id: crypto.randomUUID(),
       });
       expect(error).toBeNull();
 

@@ -16,8 +16,9 @@ import type {
   ActivateExpenseRequest,
   ActivateExpenseResult,
   ActivateExpenseBalanceUpdate,
-  RecordSettlementRequest,
-  RecordSettlementResult,
+  SettlementAllocation,
+  RecordSettlementsRequest,
+  RecordSettlementsResult,
   GroupInviteLink,
   JoinGroupViaLinkResult,
   // Legacy aliases
@@ -289,66 +290,43 @@ describe("RPC request/result types", () => {
     ).toBe(true);
   });
 
-  it("RecordSettlementRequest has all required fields", () => {
-    const req: RecordSettlementRequest = {
-      group_id: "group-1",
-      from_user_id: "user-debtor",
-      to_user_id: "user-creditor",
-      amount_cents: 5000,
+  it("RecordSettlementsRequest contains one immutable batch operation", () => {
+    const allocation: SettlementAllocation = {
+      groupId: "group-1",
+      fromUserId: "user-debtor",
+      toUserId: "user-creditor",
+      amountCents: 5000,
     };
-    expect(req.group_id).toBe("group-1");
-    expect(req.from_user_id).toBe("user-debtor");
-    expect(req.to_user_id).toBe("user-creditor");
-    expect(req.amount_cents).toBe(5000);
-    expect(req.amount_cents).toBeGreaterThan(0);
+    const request: RecordSettlementsRequest = {
+      operationId: "operation-1",
+      allocations: [allocation],
+    };
+
+    expect(request.operationId).toBe("operation-1");
+    expect(request.allocations).toEqual([allocation]);
   });
 
-  it("RecordSettlementResult contains settlement and updated balance", () => {
-    const result: RecordSettlementResult = {
-      settlement: {
-        id: "settlement-1",
-        groupId: "group-1",
-        fromUserId: "user-debtor",
-        toUserId: "user-creditor",
-        amountCents: 5000,
-        status: "pending",
-        createdAt: "2026-03-28T00:00:00Z",
-      },
-      updatedBalance: {
-        groupId: "group-1",
-        userA: "user-creditor",
-        userB: "user-debtor",
-        newAmountCents: -2000,
-      },
+  it("RecordSettlementsResult contains canonical committed settlements", () => {
+    const result: RecordSettlementsResult = {
+      operationId: "operation-1",
+      settlements: [
+        {
+          id: "settlement-1",
+          groupId: "group-1",
+          fromUserId: "user-debtor",
+          toUserId: "user-creditor",
+          amountCents: 5000,
+          status: "confirmed",
+          createdAt: "2026-07-16T00:00:00Z",
+          confirmedAt: "2026-07-16T00:00:00Z",
+        },
+      ],
+      replayed: false,
     };
-    expect(result.settlement.status).toBe("pending");
-    expect(result.settlement.amountCents).toBe(5000);
-    expect(result.updatedBalance.newAmountCents).toBe(-2000);
-  });
 
-  it("RecordSettlementResult settlement can be confirmed", () => {
-    const result: RecordSettlementResult = {
-      settlement: {
-        id: "settlement-1",
-        groupId: "group-1",
-        fromUserId: "user-1",
-        toUserId: "user-2",
-        amountCents: 10000,
-        status: "confirmed",
-        createdAt: "2026-03-28T00:00:00Z",
-        confirmedAt: "2026-03-28T01:00:00Z",
-      },
-      updatedBalance: {
-        groupId: "group-1",
-        userA: "user-1",
-        userB: "user-2",
-        newAmountCents: 0,
-      },
-    };
-    expect(result.settlement.status).toBe("confirmed");
-    expect(result.settlement.confirmedAt).toBeDefined();
-    // Balance of 0 = fully settled
-    expect(result.updatedBalance.newAmountCents).toBe(0);
+    expect(result.settlements).toHaveLength(1);
+    expect(result.settlements[0].status).toBe("confirmed");
+    expect(result.replayed).toBe(false);
   });
 });
 

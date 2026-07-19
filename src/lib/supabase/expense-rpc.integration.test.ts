@@ -921,9 +921,8 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     const aliceClient = authenticateAs(alice);
     await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
 
-    // Bob owes Alice 5000. Bob creates a settlement.
-    const bobClient = authenticateAs(bob);
-    const { data: settlement } = await bobClient
+    // Seed the historical pending settlement that Alice will confirm.
+    const { data: settlement } = await adminClient!
       .from("settlements")
       .insert({
         group_id: groupId,
@@ -974,9 +973,8 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     const aliceClient = authenticateAs(alice);
     await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
 
-    // Bob pays only 2000 of the 5000 owed
-    const bobClient = authenticateAs(bob);
-    const { data: settlement } = await bobClient
+    // Seed the historical pending settlement that Alice will confirm.
+    const { data: settlement } = await adminClient!
       .from("settlements")
       .insert({
         group_id: groupId,
@@ -1046,9 +1044,8 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
   });
 
   it("creates balance row if none exists before settlement", async () => {
-    // No prior expense — just a direct settlement
-    const bobClient = authenticateAs(bob);
-    const { data: settlement } = await bobClient
+    // No prior expense — seed a historical pending settlement.
+    const { data: settlement } = await adminClient!
       .from("settlements")
       .insert({
         group_id: groupId,
@@ -1088,9 +1085,8 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     const aliceClient = authenticateAs(alice);
     await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
 
-    // Bob pays 5000 (overshoots by 3000)
-    const bobClient = authenticateAs(bob);
-    const { data: settlement } = await bobClient
+    // Seed Bob's historical payment of 5000 (overshooting by 3000).
+    const { data: settlement } = await adminClient!
       .from("settlements")
       .insert({
         group_id: groupId,
@@ -1112,8 +1108,8 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
   });
 
   it("concurrent settlement confirmation — only one succeeds", async () => {
-    const bobClient = authenticateAs(bob);
-    const { data: settlement } = await bobClient
+    // Seed the pending settlement that both confirmation attempts race over.
+    const { data: settlement } = await adminClient!
       .from("settlements")
       .insert({
         group_id: groupId,

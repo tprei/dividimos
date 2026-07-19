@@ -490,9 +490,9 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
   });
 
   describe("settlements", () => {
-    it("from_user can insert a settlement", async () => {
+    it("denies authenticated settlement inserts", async () => {
       const client = authenticateAs(alice);
-      const { data, error } = await client
+      const { error } = await client
         .from("settlements")
         .insert({
           group_id: groupId,
@@ -503,9 +503,7 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
         .select()
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.status).toBe("pending");
-      expect(data!.amount_cents).toBe(5000);
+      expect(error).not.toBeNull();
     });
 
     it("cannot insert settlement as someone else", async () => {

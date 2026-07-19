@@ -17,8 +17,16 @@ vi.mock("@/lib/activity-badge", () => ({
 }));
 
 vi.mock("@/contexts/user-context", () => ({
-  UserProvider: ({ children }: { children: React.ReactNode }) => children,
+  UserProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="user-provider">{children}</div>
+  ),
   useUser: () => null,
+}));
+
+vi.mock("@/contexts/settlement-submission-context", () => ({
+  SettlementSubmissionProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="settlement-submission-provider">{children}</div>
+  ),
 }));
 
 vi.mock("@/hooks/use-unread-conversations", () => ({
@@ -52,6 +60,18 @@ vi.mock("@/hooks/use-haptics", () => ({
 import { haptics } from "@/hooks/use-haptics";
 import { AppShell } from "./app-shell";
 
+
+describe("AppShell providers", () => {
+  it("mounts settlement submission inside the authenticated user boundary", () => {
+    render(<AppShell initialUser={null}><div>content</div></AppShell>);
+
+    expect(
+      screen.getByTestId("user-provider").contains(
+        screen.getByTestId("settlement-submission-provider"),
+      ),
+    ).toBe(true);
+  });
+});
 describe("AppShell header", () => {
   it("renders a search icon linking to /app/search", () => {
     render(<AppShell initialUser={null}><div>content</div></AppShell>);

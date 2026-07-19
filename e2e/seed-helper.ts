@@ -522,12 +522,15 @@ export class SeedHelper {
       const absAmount = Math.abs(amountCents);
 
       const debtorClient = await this.authenticateAs(fromUserId);
-      const { data: settlementId, error: settleError } =
-        await debtorClient.rpc("record_and_settle", {
-          p_group_id: groupId,
-          p_from_user_id: fromUserId,
-          p_to_user_id: toUserId,
-          p_amount_cents: absAmount,
+      const { data, error: settleError } =
+        await debtorClient.rpc("record_settlements", {
+          p_allocations: [{
+            group_id: groupId,
+            from_user_id: fromUserId,
+            to_user_id: toUserId,
+            amount_cents: absAmount,
+          }],
+          p_operation_id: crypto.randomUUID(),
         });
 
       if (settleError) {
@@ -536,8 +539,13 @@ export class SeedHelper {
         );
       }
 
+      if (!data || data.length !== 1 || typeof data[0].settlement_id !== "string") {
+        throw new Error(
+          "SeedHelper.createSettledExpense: batch settlement did not return one settlement.",
+        );
+      }
       const settlement: SeededSettlement = {
-        id: settlementId as string,
+        id: data[0].settlement_id,
         groupId,
         fromUserId,
         toUserId,
@@ -579,6 +587,17 @@ export class SeedHelper {
   // -----------------------------------------------------------------------
 
   async cleanup(): Promise<void> {
+    if (this.userIds.length > 0) {
+      const { error } = await this.admin
+        .from("settlement_operations")
+        .delete()
+        .in("initiated_by", this.userIds);
+      if (error) {
+        throw new Error(
+          `SeedHelper.cleanup: operation cleanup failed: ${error.message}`,
+        );
+      }
+    }
     if (this.settlementIds.length > 0) {
       await this.admin
         .from("settlements")

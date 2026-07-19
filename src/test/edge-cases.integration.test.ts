@@ -302,7 +302,7 @@ describe.skipIf(!isIntegrationTestReady)("Settlement interactions", () => {
   });
 
   // 7.2 — Settlement called by creditor (the to_user)
-  it("7.2: creditor can also call record_and_settle", async () => {
+  it("7.2: creditor can also call record_settlements", async () => {
     const [alice, bob] = await createTestUsers(2);
     const group = await createTestGroupWithMembers(alice, [bob]);
 

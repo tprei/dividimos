@@ -222,6 +222,7 @@ describe("SeedHelper", () => {
       await helper.cleanup();
 
       expect(deleteCalls).toEqual([
+        "settlement_operations",
         "settlements",
         "expense_payers",
         "expense_shares",

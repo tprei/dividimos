@@ -4,6 +4,18 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 
 // --- Mocks ---
+const submission = vi.hoisted(() => ({
+  error: null,
+  finish: vi.fn(),
+  phase: "idle",
+  ready: true,
+  reconcile: vi.fn(),
+  request: null,
+  reservedEdgeKeys: new Set<string>(),
+  result: null,
+  submit: vi.fn(),
+}));
+
 
 // Capture what recipientUserId the PixQrModal receives
 let capturedPixModalProps: Record<string, unknown> | null = null;
@@ -33,7 +45,19 @@ vi.mock("next/dynamic", () => ({
 const mockQueryBalances = vi.fn();
 vi.mock("@/lib/supabase/settlement-actions", () => ({
   queryBalances: (...args: unknown[]) => mockQueryBalances(...args),
-  recordSettlement: vi.fn(),
+}));
+
+vi.mock("@/contexts/settlement-submission-context", () => ({
+  settlementEdgeKey: ({
+    groupId,
+    fromUserId,
+    toUserId,
+  }: {
+    groupId: string;
+    fromUserId: string;
+    toUserId: string;
+  }) => `${groupId}:${fromUserId}:${toUserId}`,
+  useSettlementSubmission: () => submission,
 }));
 
 // Mock Supabase client for profile fetching
@@ -49,7 +73,7 @@ vi.mock("@/lib/supabase/client", () => ({
 
 // Mock push notifications
 vi.mock("@/lib/push/push-notify", () => ({
-  notifySettlementRecorded: vi.fn().mockResolvedValue(undefined),
+  notifyPaymentNudge: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock realtime balances hook (no-op)

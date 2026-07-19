@@ -57,6 +57,18 @@ afterAll(async () => {
 
   const userIds = Array.from(testUserIds);
 
+  const { error: operationError } = await adminClient!
+    .from("settlement_operations")
+    .delete()
+    .in("initiated_by", userIds);
+
+  if (operationError) {
+    console.error(
+      "[integration-setup] Failed to clean up settlement operations:",
+      operationError.message,
+    );
+  }
+
   const { error: publicError } = await adminClient!
     .from("users")
     .delete()

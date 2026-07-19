@@ -23,6 +23,13 @@ import {
   getSnapRadius,
   getSnapStep,
 } from "@/lib/slider-snap";
+import {
+  SettlementDatabaseRejectionError,
+  SettlementOperationCorruptError,
+  SettlementOutcomeUnknownError,
+} from "@/lib/supabase/settlement-actions";
+import type { SettlementSubmissionView } from "@/contexts/settlement-submission-context";
+import type { RecordSettlementsResult } from "@/types";
 
 interface PixQrModalProps {
   open: boolean;
@@ -30,8 +37,9 @@ interface PixQrModalProps {
   recipientName: string;
   amountCents: number;
   paidAmountCents?: number;
-  onMarkPaid: (amountCents: number) => Promise<void>;
+  onMarkPaid: (amountCents: number) => Promise<RecordSettlementsResult | void>;
   onSettlementComplete?: () => void;
+  submission?: SettlementSubmissionView;
   pixKey?: string;
   recipientUserId?: string;
   billId?: string;
@@ -52,6 +60,7 @@ export function PixQrModal({
   billId,
   groupId,
   mode = "pay",
+  submission,
 }: PixQrModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -65,19 +74,36 @@ export function PixQrModal({
   const [isSettling, setIsSettling] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [settledAmountCents, setSettledAmountCents] = useState(0);
-
   const remainingCents = amountCents - paidAmountCents;
   const [paymentCents, setPaymentCents] = useState(remainingCents);
-  const isFullPayment = paymentCents >= remainingCents;
-  const isValidAmount = paymentCents > 0 && paymentCents <= remainingCents;
-  const halfCents = Math.ceil(remainingCents / 2);
+
+  const operationAmountCents = submission?.request?.allocations.reduce(
+    (sum, allocation) => sum + allocation.amountCents,
+    0,
+  );
+  const displayRemainingCents = operationAmountCents ?? remainingCents;
+  const displayPaymentCents = operationAmountCents ?? paymentCents;
+  const isPaymentFrozen = operationAmountCents !== undefined;
+  const isFullPayment = displayPaymentCents >= displayRemainingCents;
+  const isValidAmount =
+    displayPaymentCents > 0 && displayPaymentCents <= displayRemainingCents;
+  const halfCents = Math.ceil(displayRemainingCents / 2);
+  const isReconciling = submission?.phase === "reconciling";
+  const isSubmissionLocked =
+    submission?.phase === "submitting" ||
+    submission?.phase === "unresolved" ||
+    isReconciling ||
+    submission?.phase === "committed" ||
+    submission?.phase === "rejected" ||
+    submission?.phase === "blocked";
+  const areFinancialControlsDisabled = isSettling || isSubmissionLocked;
 
   const lastSnapRef = useRef<number | null>(null);
-  const sliderMin = remainingCents < 100 ? 1 : 100;
-  const range = remainingCents - sliderMin;
+  const sliderMin = displayRemainingCents < 100 ? 1 : 100;
+  const range = displayRemainingCents - sliderMin;
   const sliderStep = getSliderStep(range);
   const snapStep = getSnapStep(range);
-  const snapPoints = getSnapPoints(sliderMin, remainingCents);
+  const snapPoints = getSnapPoints(sliderMin, displayRemainingCents);
   const snapRadius = getSnapRadius(snapStep, sliderStep);
 
   const handleSliderChange = useCallback(
@@ -110,13 +136,12 @@ export function PixQrModal({
   );
 
   useEffect(() => {
-    if (open) {
+    if (open && !isPaymentFrozen && !isSettling) {
       setPaymentCents(remainingCents);
-      setIsSettling(false);
       setShowSuccess(false);
       setSettledAmountCents(0);
     }
-  }, [open, remainingCents]);
+  }, [isPaymentFrozen, isSettling, open, remainingCents]);
 
   useEffect(() => {
     return () => {
@@ -124,7 +149,9 @@ export function PixQrModal({
     };
   }, []);
 
-  const qrAmountCents = isValidAmount ? paymentCents : remainingCents;
+  const qrAmountCents = isValidAmount
+    ? displayPaymentCents
+    : displayRemainingCents;
 
   const [debouncedAmountCents, setDebouncedAmountCents] = useState(qrAmountCents);
 
@@ -214,24 +241,6 @@ export function PixQrModal({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handlePayment = async () => {
-    if (!isValidAmount || isSettling) return;
-    setIsSettling(true);
-    setSettledAmountCents(paymentCents);
-    try {
-      await onMarkPaid(paymentCents);
-      haptics.success();
-      setShowSuccess(true);
-      autoCloseRef.current = setTimeout(() => {
-        handleSuccessClose();
-      }, 2500);
-    } catch {
-      setIsSettling(false);
-      toast.error("Erro ao registrar pagamento. Tente novamente.");
-      haptics.error();
-    }
-  };
-
   const handleSuccessClose = () => {
     if (autoCloseRef.current) {
       clearTimeout(autoCloseRef.current);
@@ -239,17 +248,78 @@ export function PixQrModal({
     }
     setShowSuccess(false);
     setIsSettling(false);
+    try {
+      onSettlementComplete?.();
+    } finally {
+      const operationId = submission?.request?.operationId;
+      if (operationId) submission.finish(operationId);
+      onClose();
+    }
+  };
+
+  const showCommittedPayment = (amountCents: number) => {
+    setSettledAmountCents(amountCents);
+    haptics.success();
+    setShowSuccess(true);
+    autoCloseRef.current = setTimeout(() => {
+      handleSuccessClose();
+    }, 2500);
+  };
+
+  const handlePayment = async () => {
+    if (!isValidAmount || areFinancialControlsDisabled) return;
+    setIsSettling(true);
+    try {
+      await onMarkPaid(displayPaymentCents);
+      showCommittedPayment(displayPaymentCents);
+    } catch {
+      setIsSettling(false);
+      if (!submission) {
+        toast.error("Erro ao registrar pagamento. Tente novamente.");
+        haptics.error();
+      }
+    }
+  };
+
+  const handleReconcile = async () => {
+    const operationId = submission?.request?.operationId;
+    if (
+      !submission ||
+      !operationId ||
+      (submission.phase !== "unresolved" && submission.phase !== "reconciling")
+    ) {
+      return;
+    }
+    try {
+      const result = await submission.reconcile(operationId);
+      if (result) showCommittedPayment(operationAmountCents ?? displayPaymentCents);
+    } catch (error) {
+      if (
+        error instanceof SettlementOutcomeUnknownError ||
+        error instanceof SettlementDatabaseRejectionError ||
+        error instanceof SettlementOperationCorruptError
+      ) {
+        return;
+      }
+      throw error;
+    }
+  };
+
+  const handleDismiss = () => {
+    const operationId = submission?.request?.operationId;
+    if (submission?.phase === "rejected" && operationId) {
+      submission.finish(operationId);
+    }
     onClose();
-    onSettlementComplete?.();
   };
 
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => {
-        if (!o) onClose();
+      onOpenChange={(isOpen) => {
+        if (!isOpen) handleDismiss();
       }}
-      dismissable={!isSettling}
+      dismissable={!isSettling && !showSuccess && submission?.phase !== "submitting"}
       modal
     >
       <DialogContent
@@ -345,27 +415,27 @@ export function PixQrModal({
                     </p>
                   )}
                   <p className="text-3xl font-bold tabular-nums text-primary">
-                    {formatBRL(paymentCents)}
+                    {formatBRL(displayPaymentCents)}
                   </p>
                   <input
                     type="range"
                     min={sliderMin}
-                    max={remainingCents}
+                    max={displayRemainingCents}
                     step={sliderStep}
-                    value={paymentCents}
+                    value={displayPaymentCents}
                     onChange={handleSliderChange}
-                    disabled={isSettling}
+                    disabled={areFinancialControlsDisabled}
                     className="mt-3 w-full"
                     aria-label="Valor do pagamento"
                   />
-                  {snapPoints.length > 0 && remainingCents > sliderMin && (
+                  {snapPoints.length > 0 && displayRemainingCents > sliderMin && (
                     <div className="relative mx-[11px] h-2">
                       {snapPoints.map((v) => (
                         <div
                           key={v}
                           className="absolute top-0 w-0.5 h-1.5 rounded-full bg-muted-foreground/30"
                           style={{
-                            left: `${((v - sliderMin) / (remainingCents - sliderMin)) * 100}%`,
+                            left: `${((v - sliderMin) / (displayRemainingCents - sliderMin)) * 100}%`,
                           }}
                         />
                       ))}
@@ -375,23 +445,23 @@ export function PixQrModal({
                   <div className="mt-2 flex justify-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setPaymentCents(remainingCents)}
-                      disabled={isSettling || paymentCents === remainingCents}
+                      onClick={() => setPaymentCents(displayRemainingCents)}
+                      disabled={areFinancialControlsDisabled || displayPaymentCents === displayRemainingCents}
                       className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                        paymentCents === remainingCents
+                        displayPaymentCents === displayRemainingCents
                           ? "bg-primary/15 text-primary ring-1 ring-primary/30"
                           : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
                       } disabled:opacity-50`}
                     >
-                      Tudo: {formatBRL(remainingCents)}
+                      Tudo: {formatBRL(displayRemainingCents)}
                     </button>
-                    {halfCents !== remainingCents && (
+                    {halfCents !== displayRemainingCents && (
                       <button
                         type="button"
                         onClick={() => setPaymentCents(halfCents)}
-                        disabled={isSettling || paymentCents === halfCents}
+                        disabled={areFinancialControlsDisabled || displayPaymentCents === halfCents}
                         className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                          paymentCents === halfCents
+                          displayPaymentCents === halfCents
                             ? "bg-primary/15 text-primary ring-1 ring-primary/30"
                             : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
                         } disabled:opacity-50`}
@@ -403,11 +473,39 @@ export function PixQrModal({
 
                   {!isFullPayment && isValidAmount && (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Resta depois do Pix: {formatBRL(remainingCents - paymentCents)}
+                      Resta depois do Pix: {formatBRL(displayRemainingCents - displayPaymentCents)}
                     </p>
                   )}
                 </div>
               </div>
+              {(submission?.phase === "unresolved" || isReconciling) && (
+                <div className="mt-4 space-y-2 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm">
+                  <p role="status">
+                    {isReconciling
+                      ? "Verificando o pagamento registrado..."
+                      : "Não foi possível confirmar este pagamento ainda."}
+                  </p>
+                  <Button
+                    className="w-full"
+                    disabled={isReconciling}
+                    onClick={handleReconcile}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {isReconciling ? "Verificando..." : "Verificar pagamento"}
+                  </Button>
+                </div>
+              )}
+              {submission?.phase === "rejected" && (
+                <p className="mt-4 text-sm text-destructive" role="alert">
+                  {submission.error?.message}
+                </p>
+              )}
+              {submission?.phase === "blocked" && (
+                <p className="mt-4 text-sm text-destructive" role="alert">
+                  {submission.error?.message}
+                </p>
+              )}
 
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
@@ -435,7 +533,7 @@ export function PixQrModal({
                   variant="outline"
                   className="w-full gap-2"
                   size="lg"
-                  disabled={!copiaECola || isSettling}
+                  disabled={!copiaECola || areFinancialControlsDisabled}
                 >
                   {copied ? (
                     <>
@@ -459,7 +557,7 @@ export function PixQrModal({
                   onClick={handlePayment}
                   className="w-full gap-2"
                   size="lg"
-                  disabled={!isValidAmount || isSettling}
+                  disabled={!isValidAmount || areFinancialControlsDisabled}
                 >
                   {isSettling ? (
                     <>
@@ -470,8 +568,8 @@ export function PixQrModal({
                     <>
                       <Check className="h-4 w-4" />
                       {mode === "collect"
-                        ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(paymentCents)}`
-                        : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(paymentCents)}`}
+                        ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(displayPaymentCents)}`
+                        : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(displayPaymentCents)}`}
                     </>
                   )}
                 </Button>
