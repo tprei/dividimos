@@ -25,7 +25,6 @@ export const MAX_EXPENSE_QUANTITY_MILLIUNITS = 999_999_999 as const;
 export const EXPENSE_QUANTITY_DECIMAL_PLACES = 3 as const;
 const MILLIUNITS_PER_UNIT = BigInt(1000);
 const HALF_UP_BIAS = BigInt(500);
-const MAX_EXPENSE_CENTS_BIG = BigInt(MAX_EXPENSE_CENTS as number);
 
 declare const expenseQuantityBrand: unique symbol;
 
@@ -129,7 +128,7 @@ export function computeExpenseLineTotalCents(
   const quantityBig = BigInt(quantity as number);
   const unitBig = BigInt(unitPriceCents as number);
   const total = (quantityBig * unitBig + HALF_UP_BIAS) / MILLIUNITS_PER_UNIT;
-  if (total > MAX_EXPENSE_CENTS_BIG) {
+  if (total > BigInt(MAX_EXPENSE_CENTS as number)) {
     return { ok: false, issue: { code: "line_total_out_of_range" } };
   }
   return { ok: true, value: brandExpenseCents(Number(total)) };
