@@ -73,7 +73,7 @@ describe.skipIf(!isIntegrationTestReady)("Expense RLS policies", () => {
       .insert({
         expense_id: expenseId,
         description: "Pizza",
-        quantity: 1,
+        quantity: 1000,
         unit_price_cents: 5000,
         total_price_cents: 5000,
       })

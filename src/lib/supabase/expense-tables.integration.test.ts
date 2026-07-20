@@ -159,7 +159,7 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
         .insert({
           expense_id: expense!.id,
           description: "Rice",
-          quantity: 2,
+          quantity: 2000,
           unit_price_cents: 500,
           total_price_cents: 1000,
         })

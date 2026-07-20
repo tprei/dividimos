@@ -72,7 +72,7 @@ export function makeExpenseItem(overrides: Partial<ExpenseItem> = {}): ExpenseIt
     id: "item-1",
     expenseId: "expense-1",
     description: "Pizza",
-    quantity: 1,
+    quantity: 1000,
     unitPriceCents: 5000,
     totalPriceCents: 5000,
     createdAt: "2024-01-01T00:00:00Z",

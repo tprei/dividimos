@@ -14,11 +14,11 @@ const TEST_USERS: User[] = [
 ];
 
 const RESTAURANT_ITEMS = [
-  { description: "Picanha 400g", quantity: 1, unitPriceCents: 8900, totalPriceCents: 8900 },
-  { description: "Costela no bafo", quantity: 1, unitPriceCents: 6700, totalPriceCents: 6700 },
-  { description: "Cerveja 600ml", quantity: 3, unitPriceCents: 1400, totalPriceCents: 4200 },
-  { description: "Coca-Cola 600ml", quantity: 2, unitPriceCents: 1200, totalPriceCents: 2400 },
-  { description: "Batata frita", quantity: 1, unitPriceCents: 3200, totalPriceCents: 3200 },
+  { description: "Picanha 400g", quantity: 1000, unitPriceCents: 8900, totalPriceCents: 8900 },
+  { description: "Costela no bafo", quantity: 1000, unitPriceCents: 6700, totalPriceCents: 6700 },
+  { description: "Cerveja 600ml", quantity: 3000, unitPriceCents: 1400, totalPriceCents: 4200 },
+  { description: "Coca-Cola 600ml", quantity: 2000, unitPriceCents: 1200, totalPriceCents: 2400 },
+  { description: "Batata frita", quantity: 1000, unitPriceCents: 3200, totalPriceCents: 3200 },
 ];
 
 export function DevTestButtons() {

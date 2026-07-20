@@ -28,9 +28,9 @@ describe("Itemized expense flows", () => {
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
-    store.addItem({ description: "Picanha", quantity: 1, unitPriceCents: 8000, totalPriceCents: 8000 });
-    store.addItem({ description: "Cerveja x3", quantity: 3, unitPriceCents: 1200, totalPriceCents: 3600 });
-    store.addItem({ description: "Sobremesa", quantity: 1, unitPriceCents: 2500, totalPriceCents: 2500 });
+    store.addItem({ description: "Picanha", quantity: 1000, unitPriceCents: 8000, totalPriceCents: 8000 });
+    store.addItem({ description: "Cerveja x3", quantity: 3000, unitPriceCents: 1200, totalPriceCents: 3600 });
+    store.addItem({ description: "Sobremesa", quantity: 1000, unitPriceCents: 2500, totalPriceCents: 2500 });
 
     const items = useBillStore.getState().items;
     expect(items).toHaveLength(3);
@@ -75,8 +75,8 @@ describe("Itemized expense flows", () => {
     store.addParticipant(dave);
     store.addParticipant(eve);
 
-    store.addItem({ description: "Entrada", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
-    store.addItem({ description: "Prato principal", quantity: 5, unitPriceCents: 4000, totalPriceCents: 20000 });
+    store.addItem({ description: "Entrada", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
+    store.addItem({ description: "Prato principal", quantity: 5000, unitPriceCents: 4000, totalPriceCents: 20000 });
 
     const items = useBillStore.getState().items;
 
@@ -102,8 +102,8 @@ describe("Itemized expense flows", () => {
     store.createExpense("Test", "itemized");
     store.addParticipant(userBob);
 
-    store.addItem({ description: "Item1", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
-    store.addItem({ description: "Item2", quantity: 1, unitPriceCents: 3000, totalPriceCents: 3000 });
+    store.addItem({ description: "Item1", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
+    store.addItem({ description: "Item2", quantity: 1000, unitPriceCents: 3000, totalPriceCents: 3000 });
 
     const items = useBillStore.getState().items;
     store.splitItemEqually(items[0].id, ["user-alice", "user-bob"]);
@@ -116,7 +116,7 @@ describe("Itemized expense flows", () => {
     expect(useBillStore.getState().splits).toHaveLength(2);
     expect(useBillStore.getState().expense!.totalAmount).toBe(3000);
 
-    store.addItem({ description: "Item3", quantity: 2, unitPriceCents: 2000, totalPriceCents: 4000 });
+    store.addItem({ description: "Item3", quantity: 2000, unitPriceCents: 2000, totalPriceCents: 4000 });
     expect(useBillStore.getState().expense!.totalAmount).toBe(7000);
   });
 });

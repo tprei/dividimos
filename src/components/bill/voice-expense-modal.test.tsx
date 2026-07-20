@@ -20,8 +20,8 @@ const itemizedResult: VoiceExpenseResult = {
   amountCents: 5500,
   expenseType: "itemized",
   items: [
-    { description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
-    { description: "Pizza", quantity: 1, unitPriceCents: 2500, totalCents: 2500 },
+    { description: "Cerveja", quantity: 2000, unitPriceCents: 1500, totalCents: 3000 },
+    { description: "Pizza", quantity: 1000, unitPriceCents: 2500, totalCents: 2500 },
   ],
   participants: [],
   merchantName: "Bar do Zé",

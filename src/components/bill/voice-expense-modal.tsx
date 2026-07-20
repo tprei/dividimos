@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
+import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import type { UserProfile } from "@/types";
 
@@ -219,9 +220,9 @@ export function VoiceExpenseModal({
             >
               <div>
                 <p className="font-medium">{item.description}</p>
-                {item.quantity > 1 && (
+                {item.quantity > 1000 && (
                   <p className="text-xs text-muted-foreground">
-                    {item.quantity}x {formatBRL(item.unitPriceCents)} un.
+                    {formatExpenseQuantity(item.quantity as ExpenseQuantity)}x {formatBRL(item.unitPriceCents)} un.
                   </p>
                 )}
               </div>

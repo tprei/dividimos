@@ -27,7 +27,7 @@ const bob = makeUser("bob", "Bob Lima");
 const item = {
   id: "item-1",
   description: "Picanha 400g",
-  quantity: 2,
+  quantity: 2000,
   unitPriceCents: 4500,
   totalPriceCents: 9000,
 };
