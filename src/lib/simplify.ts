@@ -1,4 +1,5 @@
-import { formatBRL, distributeProportionally, distributeEvenly } from "./currency";
+import { formatBRL } from "./currency";
+import { allocateByWeights, allocateEvenly } from "./expense-money";
 import type { User } from "@/types";
 
 interface ExpenseInput {
@@ -126,13 +127,17 @@ export function computeRawEdges(
     if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
       const totalFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
       const weights = participants.map((p) => consumption.get(p.id) || 0);
-      const fees = distributeProportionally(totalFee, weights);
+      const feesRes = allocateByWeights(totalFee, weights);
+      if (!feesRes.ok) return [];
+      const fees = feesRes.value;
       participants.forEach((p, i) => {
         consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
       });
     }
     if (expense.fixedFees > 0) {
-      const fees = distributeEvenly(expense.fixedFees, participants.length);
+      const feesRes = allocateEvenly(expense.fixedFees, participants.length);
+      if (!feesRes.ok) return [];
+      const fees = feesRes.value;
       participants.forEach((p, i) => {
         consumption.set(p.id, (consumption.get(p.id) || 0) + fees[i]);
       });
@@ -152,7 +157,9 @@ export function computeRawEdges(
     if (consumed <= 0) continue;
 
     const payerWeights = payers.map((payer) => payer.amountCents);
-    const shares = distributeProportionally(consumed, payerWeights);
+    const sharesRes = allocateByWeights(consumed, payerWeights);
+    if (!sharesRes.ok) continue;
+    const shares = sharesRes.value;
 
     for (let i = 0; i < payers.length; i++) {
       if (payers[i].userId === p.id) continue;

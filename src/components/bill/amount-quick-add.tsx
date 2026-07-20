@@ -22,12 +22,28 @@ interface AmountQuickAddStringProps {
 
 type AmountQuickAddProps = AmountQuickAddCentsProps | AmountQuickAddStringProps;
 
-function parseCurrentValue(value: string): number {
-  return parseFloat(value.replace(",", ".")) || 0;
+function parseCurrentValueToCents(value: string): number {
+  const normalized = value.replace(",", ".");
+  const dotIndex = normalized.indexOf(".");
+  if (dotIndex === -1) {
+    const n = parseInt(normalized, 10);
+    return Number.isSafeInteger(n) ? n * 100 : 0;
+  }
+  const intPart = normalized.slice(0, dotIndex);
+  const frac = normalized.slice(dotIndex + 1, dotIndex + 3).padEnd(2, "0");
+  const intN = intPart === "" ? 0 : parseInt(intPart, 10);
+  const fracN = parseInt(frac, 10);
+  if (!Number.isSafeInteger(intN) || !Number.isSafeInteger(fracN)) return 0;
+  return intN * 100 + fracN;
 }
 
-function formatBrazilian(value: number): string {
-  return value.toFixed(2).replace(".", ",");
+const minorUnitsPerReal = BigInt(100);
+
+function formatCentsToBrazilian(cents: number): string {
+  const big = BigInt(cents);
+  const reais = big / minorUnitsPerReal;
+  const rem = big % minorUnitsPerReal;
+  return `${reais.toString()},${rem.toString().padStart(2, "0")}`;
 }
 
 export function AmountQuickAdd(props: AmountQuickAddProps) {
@@ -49,8 +65,8 @@ export function AmountQuickAdd(props: AmountQuickAddProps) {
         const p = props as AmountQuickAddStringProps;
         stringHistoryRef.current.push(p.currentValue);
         setCanUndo(true);
-        const current = parseCurrentValue(p.currentValue);
-        p.onChange(formatBrazilian(current + increment));
+        const currentCents = parseCurrentValueToCents(p.currentValue);
+        p.onChange(formatCentsToBrazilian(currentCents + increment * 100));
       }
     },
     [props, isCentsMode],

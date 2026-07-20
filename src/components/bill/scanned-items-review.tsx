@@ -11,7 +11,6 @@ import { staggerContainer, staggerItem } from "@/lib/animations";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
   formatBRL,
-  sanitizeDecimalInput,
 } from "@/lib/currency";
 import type { ReceiptOcrResult, ReceiptItem } from "@/lib/receipt-ocr";
 
@@ -372,7 +371,7 @@ export function ScannedItemsReview({
           inputMode="decimal"
           placeholder="0"
           value={serviceFee}
-          onChange={(e) => setServiceFee(sanitizeDecimalInput(e.target.value))}
+          onChange={(e) => setServiceFee(e.target.value.replace(/[^\d,]/g, ""))}
         />
       </div>
 

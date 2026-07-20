@@ -14,12 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
-import {
-  distributeEvenly,
-  distributeProportionally,
-  formatBRL,
-  sanitizeDecimalInput,
-} from "@/lib/currency";
+import { formatBRL } from "@/lib/currency";
+import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
 import type { SplitType, UserProfile } from "@/types";
 
 export type QuickSplitStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -79,7 +75,9 @@ export function QuickSplitSheet({
     if (totalCents <= 0) return null;
 
     if (splitMethod === "equal") {
-      const amounts = distributeEvenly(totalCents, participants.length);
+      const amountsRes = allocateEvenly(totalCents, participants.length);
+      if (!amountsRes.ok) return null;
+      const amounts = amountsRes.value;
       return participants.map((p, i) => ({
         userId: p.id,
         shareAmountCents: amounts[i],
@@ -90,7 +88,9 @@ export function QuickSplitSheet({
       const myPct = parseFloat(myPercentage.replace(",", ".")) || 0;
       const otherPct = 100 - myPct;
       if (myPct < 0 || myPct > 100) return null;
-      const amounts = distributeProportionally(totalCents, [myPct, otherPct]);
+      const amountsRes = allocateByWeights(totalCents, [myPct, otherPct]);
+      if (!amountsRes.ok) return null;
+      const amounts = amountsRes.value;
       return [
         { userId: currentUserId, shareAmountCents: amounts[0] },
         { userId: counterparty.id, shareAmountCents: amounts[1] },
@@ -279,7 +279,7 @@ export function QuickSplitSheet({
                           inputMode="decimal"
                           placeholder="50"
                           value={myPercentage}
-                          onChange={(e) => setMyPercentage(sanitizeDecimalInput(e.target.value))}
+                          onChange={(e) => setMyPercentage(e.target.value.replace(/[^\d,]/g, ""))}
                           disabled={isDisabled}
                           className="h-8 text-right text-sm"
                           data-testid="quick-split-my-percentage"
