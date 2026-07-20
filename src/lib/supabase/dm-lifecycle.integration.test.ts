@@ -116,7 +116,6 @@ describe.skipIf(!isIntegrationTestReady)(
         (m) =>
           m.message_type === "system_expense" && m.expense_id === expenseId,
       );
-
       expect(expenseMsg).toBeTruthy();
       expect(expenseMsg!.sender_id).toBe(alice.id);
 

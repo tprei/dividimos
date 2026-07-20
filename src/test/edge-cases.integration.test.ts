@@ -15,17 +15,17 @@ import {
 // ============================================================
 
 describe.skipIf(!isIntegrationTestReady)("Edge cases & rounding", () => {
-  // 6.1 — Rounding asymmetry with multiple payers
-  // Three-way split of 100 cents: each share = 33, 33, 34
-  // Two payers: Alice 60, Bob 40. Carol consumed 34.
-  // Carol→Alice: ROUND(34 * 60 / 100) = ROUND(20.4) = 20
-  // Carol→Bob:   ROUND(34 * 40 / 100) = ROUND(13.6) = 14
-  // Bob→Alice:   ROUND(33 * 60 / 100) = ROUND(19.8) = 20
-  // Alice→Bob:   ROUND(33 * 40 / 100) = ROUND(13.2) = 13
-  // Net Alice↔Bob: Bob owes Alice 20 - 13 = 7
-  // Net Alice↔Carol: Carol owes Alice 20
-  // Net Bob↔Carol: Carol owes Bob 14
-  it("6.1: rounding with multiple payers produces correct per-pair balances", async () => {
+  // 6.1 — Multiple payers, exact integer allocation (#468)
+  // Three-way split of 100 cents: shares = 33, 33, 34
+  // Two payers: Alice 60, Bob 40.
+  // Per-user net = share − paid:
+  //   Alice = 33 − 60 = −27 (creditor)
+  //   Bob   = 33 − 40 = −7  (creditor)
+  //   Carol = 34 − 0  = +34 (debtor)
+  // Carol's 34 debt covers both creditors: Carol→Alice 27, Carol→Bob 7.
+  // No Alice↔Bob edge. (The old per-pair ROUND() body produced
+  // Bob→Alice 7, Carol→Alice 20, Carol→Bob 14 — the buggy residual.)
+  it("6.1: multiple payers produce exact per-user incidence", async () => {
     const [alice, bob, carol] = await createTestUsers(3);
     const group = await createTestGroupWithMembers(alice, [bob, carol]);
 
@@ -43,21 +43,21 @@ describe.skipIf(!isIntegrationTestReady)("Edge cases & rounding", () => {
       ],
     });
 
-    // Bob owes Alice net = ROUND(33*60/100) - ROUND(33*40/100) = 20 - 13 = 7
+    // No Alice↔Bob edge (both are creditors).
     const bobOwesAlice = await getBalanceBetween(group.id, bob.id, alice.id);
-    expect(bobOwesAlice).toBe(7);
+    expect(bobOwesAlice).toBe(0);
 
-    // Carol owes Alice = ROUND(34*60/100) = 20
+    // Carol owes Alice 27.
     const carolOwesAlice = await getBalanceBetween(
       group.id,
       carol.id,
       alice.id,
     );
-    expect(carolOwesAlice).toBe(20);
+    expect(carolOwesAlice).toBe(27);
 
-    // Carol owes Bob = ROUND(34*40/100) = 14
+    // Carol owes Bob 7.
     const carolOwesBob = await getBalanceBetween(group.id, carol.id, bob.id);
-    expect(carolOwesBob).toBe(14);
+    expect(carolOwesBob).toBe(7);
   });
 
   // 6.2 — Minimum amount: 1 cent expense
