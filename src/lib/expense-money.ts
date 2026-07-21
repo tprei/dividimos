@@ -1781,3 +1781,138 @@ export function summarizeExpenseAllocations(
   deepFreeze(summary);
   return { ok: true, value: summary };
 }
+
+// ---------------------------------------------------------------------------
+// Graph-mutation RPC result decoders. These are the sole client boundary for
+// save / save-reconciliation / activation raw results; each requires exact
+// snake-case wire keys and returns the camel-case branded types. (#477)
+// ---------------------------------------------------------------------------
+
+export type ExpenseGraphMutationResultIssue = Readonly<{
+  code: "invalid_graph_mutation_result";
+  path: readonly (string | number)[];
+}>;
+
+export type ExpenseGraphSaveResult = Readonly<{
+  expenseId: string;
+  graphRevision: GraphRevision;
+}>;
+
+export type ExpenseActivationResult = Readonly<{
+  expenseId: string;
+  status: "active";
+  graphRevision: GraphRevision;
+}>;
+
+export type ExpenseGraphSaveLookupResult = Readonly<
+  | { outcome: "retired" }
+  | { outcome: "committed"; expenseId: string; graphRevision: GraphRevision }
+>;
+
+function isStringRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function exactKeysIssue(path: string): ExpenseGraphMutationResultIssue {
+  return { code: "invalid_graph_mutation_result", path: [path] };
+}
+
+function mutationErr(
+  issue: ExpenseGraphMutationResultIssue,
+): ValidationResult<never, ExpenseGraphMutationResultIssue> {
+  return { ok: false, issue };
+}
+
+/**
+ * Decode `save_expense_draft_graph`'s raw result `{ id, graph_revision }`.
+ * Requires exactly those keys; `id` a uuid-shaped string; `graph_revision` a
+ * valid revision.
+ */
+export function decodeExpenseGraphSaveResult(
+  raw: unknown,
+): ValidationResult<ExpenseGraphSaveResult, ExpenseGraphMutationResultIssue> {
+  if (!isStringRecord(raw)) return mutationErr(exactKeysIssue("save_result"));
+  const keys = Object.keys(raw);
+  if (keys.length !== 2 || !keys.includes("id") || !keys.includes("graph_revision")) {
+    return mutationErr(exactKeysIssue("save_result"));
+  }
+  const id = raw.id;
+  if (typeof id !== "string" || id.length === 0) {
+    return mutationErr({ code: "invalid_graph_mutation_result", path: ["id"] });
+  }
+  const revision = parseGraphRevision(raw.graph_revision);
+  if (!revision.ok) {
+    return mutationErr({ code: "invalid_graph_mutation_result", path: ["graph_revision"] });
+  }
+  return { ok: true, value: { expenseId: id, graphRevision: revision.value } };
+}
+
+/**
+ * Decode `resolve_expense_graph_save_result`'s raw result: either
+ * `{ outcome: "retired" }` or `{ outcome: "committed", id, graph_revision }`.
+ */
+export function decodeExpenseGraphSaveLookupResult(
+  raw: unknown,
+): ValidationResult<ExpenseGraphSaveLookupResult, ExpenseGraphMutationResultIssue> {
+  if (!isStringRecord(raw)) return mutationErr(exactKeysIssue("lookup_result"));
+  const outcome = raw.outcome;
+  if (outcome === "retired") {
+    if (Object.keys(raw).length !== 1) {
+      return mutationErr(exactKeysIssue("lookup_result"));
+    }
+    return { ok: true, value: { outcome: "retired" } };
+  }
+  if (outcome === "committed") {
+    const keys = Object.keys(raw);
+    if (keys.length !== 3 || !keys.includes("id") || !keys.includes("graph_revision")) {
+      return mutationErr(exactKeysIssue("lookup_result"));
+    }
+    const id = raw.id;
+    if (typeof id !== "string" || id.length === 0) {
+      return mutationErr({ code: "invalid_graph_mutation_result", path: ["id"] });
+    }
+    const revision = parseGraphRevision(raw.graph_revision);
+    if (!revision.ok) {
+      return mutationErr({ code: "invalid_graph_mutation_result", path: ["graph_revision"] });
+    }
+    return {
+      ok: true,
+      value: { outcome: "committed", expenseId: id, graphRevision: revision.value },
+    };
+  }
+  return mutationErr({ code: "invalid_graph_mutation_result", path: ["outcome"] });
+}
+
+/**
+ * Decode `activate_saved_expense`'s raw result `{ id, status, graph_revision }`
+ * where status is exactly `"active"`.
+ */
+export function decodeExpenseActivationResult(
+  raw: unknown,
+): ValidationResult<ExpenseActivationResult, ExpenseGraphMutationResultIssue> {
+  if (!isStringRecord(raw)) return mutationErr(exactKeysIssue("activation_result"));
+  const keys = Object.keys(raw);
+  if (
+    keys.length !== 3 ||
+    !keys.includes("id") ||
+    !keys.includes("status") ||
+    !keys.includes("graph_revision")
+  ) {
+    return mutationErr(exactKeysIssue("activation_result"));
+  }
+  const id = raw.id;
+  if (typeof id !== "string" || id.length === 0) {
+    return mutationErr({ code: "invalid_graph_mutation_result", path: ["id"] });
+  }
+  if (raw.status !== "active") {
+    return mutationErr({ code: "invalid_graph_mutation_result", path: ["status"] });
+  }
+  const revision = parseGraphRevision(raw.graph_revision);
+  if (!revision.ok) {
+    return mutationErr({ code: "invalid_graph_mutation_result", path: ["graph_revision"] });
+  }
+  return {
+    ok: true,
+    value: { expenseId: id, status: "active", graphRevision: revision.value },
+  };
+}
