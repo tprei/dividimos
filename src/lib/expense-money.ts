@@ -1916,3 +1916,694 @@ export function decodeExpenseActivationResult(
     value: { expenseId: id, status: "active", graphRevision: revision.value },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Issue #477 snapshot decoder. `decodeExpenseGraphSnapshot` is the sole
+// loader/client boundary for the complete expense graph: it validates the
+// snake_case wire shape, builds money through `validateExpenseMoney`, strips
+// item ids, validates participant identity/order/payer-reachability through
+// `summarizeExpenseAllocations`, validates guest claim nullness pairing, and
+// produces the claim-aware participantOrder projection. Every cent field is
+// branded at this boundary; no float math, no raw fragment leaks past it.
+// ---------------------------------------------------------------------------
+
+/** Exact wire root keys for the expense graph snapshot, in declaration order. */
+const SNAPSHOT_ROOT_KEYS = [
+  "expense_id",
+  "group_id",
+  "graph_revision",
+  "title",
+  "merchant_name",
+  "expense_type",
+  "total_amount",
+  "service_fee_basis_points",
+  "fixed_fees",
+  "items",
+  "item_ids",
+  "draft_claim_protected_user_ids",
+  "status",
+  "participant_order",
+  "shares",
+  "guest_shares",
+  "payers",
+  "guests",
+] as const;
+
+/** Exact key set for one wire itemized-line row: the graph item id plus the
+ * money fields (snake_case). The decoder strips `id` and feeds the rest to
+ * `validateExpenseMoney`. */
+const SNAPSHOT_ITEM_KEYS = [
+  "id",
+  "description",
+  "quantity",
+  "unit_price_cents",
+  "total_price_cents",
+] as const;
+
+/** Exact key set for one wire guest audit row. */
+const SNAPSHOT_GUEST_KEYS = [
+  "local_id",
+  "display_name",
+  "original_share_amount_cents",
+  "claimed_by_user_id",
+  "claimed_at",
+] as const;
+
+export type ExpenseGraphSnapshotIssue =
+  | ExpenseMoneyIssue
+  | Readonly<{
+      code: "invalid_graph_snapshot";
+      path: readonly (string | number)[];
+      reason: "structure" | "identity" | "revision" | "status" | "allocation";
+    }>;
+
+export type ExpenseGuestSnapshotRow = Readonly<{
+  guestLocalId: string;
+  displayName: string;
+  originalShareAmountCents: ExpenseCents;
+}> &
+  (
+    | Readonly<{ claimedByUserId: null; claimedAt: null }>
+    | Readonly<{ claimedByUserId: string; claimedAt: string }>
+  );
+
+export type ExpenseGraphSnapshotBase<M extends PersistableDraftExpenseMoney> =
+  Readonly<{
+    expenseId: string;
+    groupId: string;
+    graphRevision: GraphRevision;
+    title: string;
+    merchantName: string | null;
+    money: M;
+    itemIds: readonly string[];
+    draftClaimProtectedUserIds: readonly string[];
+    participantOrder: readonly ParticipantOrderEntry[];
+    shares: readonly CanonicalShareRow[];
+    guestShares: readonly CanonicalGuestShareRow[];
+    payers: readonly CanonicalPayerRow[];
+    guests: readonly ExpenseGuestSnapshotRow[];
+    allocations: ExpenseAllocationSummary;
+  }>;
+
+export type DecodedExpenseGraphSnapshot =
+  | (ExpenseGraphSnapshotBase<PersistableDraftExpenseMoney> &
+      Readonly<{ status: "draft" }>)
+  | (ExpenseGraphSnapshotBase<CompleteExpenseMoney> &
+      Readonly<{ status: "active" | "settled" }>);
+
+function snapshotErr(
+  issue: ExpenseGraphSnapshotIssue,
+): ValidationResult<DecodedExpenseGraphSnapshot, ExpenseGraphSnapshotIssue> {
+  return { ok: false, issue };
+}
+
+function snapshotStructure(
+  path: readonly (string | number)[],
+): ExpenseGraphSnapshotIssue {
+  return { code: "invalid_graph_snapshot", path, reason: "structure" };
+}
+
+function snapshotIdentity(
+  path: readonly (string | number)[],
+): ExpenseGraphSnapshotIssue {
+  return { code: "invalid_graph_snapshot", path, reason: "identity" };
+}
+
+/**
+ * Map an allocation-summary failure to a snapshot issue. The closed
+ * `ExpenseGraphSnapshotIssue` union carries no `ineligible_payer` member, so it
+ * cannot be passed through verbatim; payer eligibility and the participant /
+ * share bijection defects surface as `identity` (preserving their path), while
+ * every cent-total / item-assignment defect becomes `allocation`.
+ */
+function mapAllocationIssue(
+  issue: ExpenseAllocationIssue,
+): ExpenseGraphSnapshotIssue {
+  if (issue.code === "ineligible_payer") {
+    return {
+      code: "invalid_graph_snapshot",
+      path: ["payers", issue.payerIndex],
+      reason: "identity",
+    };
+  }
+  if (issue.code === "invalid_allocation_identity") {
+    return {
+      code: "invalid_graph_snapshot",
+      path: issue.path,
+      reason: "identity",
+    };
+  }
+  return { code: "invalid_graph_snapshot", path: [], reason: "allocation" };
+}
+
+/**
+ * Claim-aware participant-order projection. Walks the persisted order and, for
+ * each post-activation claimed guest (case 2), replaces it with the claimant at
+ * the guest's position — or folds the guest into the claimant's earlier user
+ * position when the claimant already appears. Unclaimed guests and users are
+ * retained in participant-index order. A claimant reached only via a claim
+ * takes the guest's slot; a later claimant user entity is then dropped (it is
+ * already represented). Draft snapshots pass an empty claim map, so this is a
+ * pure identity projection there.
+ *
+ * Implemented cases (verified): draft identity; active/settled unclaimed guests
+ * retained; case-2 claimed guest replaced by a new claimant; case-2 claimed
+ * guest folded into / deduped against a claimant that already holds (earlier or
+ * later) a user slot. The "claimant was already a participant with its own
+ * share before claiming" merge semantics depend on loader bookkeeping that is
+ * not observable from the wire alone; the projection keeps a single claimant
+ * slot either way, and the cent total is enforced separately by
+ * `summarizeExpenseAllocations`.
+ */
+function projectClaimAwareParticipantOrder(
+  participantOrder: readonly ParticipantOrderEntry[],
+  guestClaimByLocalId: ReadonlyMap<string, string>,
+): ParticipantOrderEntry[] {
+  const projected: ParticipantOrderEntry[] = [];
+  const emittedUserIds = new Set<string>();
+  for (const entry of participantOrder) {
+    if (entry.kind === "user") {
+      if (emittedUserIds.has(entry.userId)) {
+        continue;
+      }
+      projected.push({ kind: "user", userId: entry.userId });
+      emittedUserIds.add(entry.userId);
+      continue;
+    }
+    const claimantId = guestClaimByLocalId.get(entry.guestLocalId);
+    if (claimantId === undefined) {
+      projected.push({ kind: "guest", guestLocalId: entry.guestLocalId });
+      continue;
+    }
+    if (emittedUserIds.has(claimantId)) {
+      continue;
+    }
+    projected.push({ kind: "user", userId: claimantId });
+    emittedUserIds.add(claimantId);
+  }
+  return projected;
+}
+
+function decodeSnapshotParticipantOrder(
+  raw: unknown,
+): ValidationResult<ParticipantOrderEntry[], ExpenseGraphSnapshotIssue> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, issue: snapshotStructure(["participant_order"]) };
+  }
+  const out: ParticipantOrderEntry[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const entry = raw[i];
+    if (!isStringRecord(entry) || Object.keys(entry).length !== 2) {
+      return { ok: false, issue: snapshotStructure(["participant_order", i]) };
+    }
+    if (entry.kind === "user") {
+      const userId = entry.user_id;
+      if (typeof userId !== "string" || userId.length === 0) {
+        return {
+          ok: false,
+          issue: snapshotStructure(["participant_order", i, "user_id"]),
+        };
+      }
+      out.push({ kind: "user", userId });
+    } else if (entry.kind === "guest") {
+      const guestLocalId = entry.guest_local_id;
+      if (typeof guestLocalId !== "string" || guestLocalId.length === 0) {
+        return {
+          ok: false,
+          issue: snapshotStructure(["participant_order", i, "guest_local_id"]),
+        };
+      }
+      out.push({ kind: "guest", guestLocalId });
+    } else {
+      return {
+        ok: false,
+        issue: snapshotStructure(["participant_order", i, "kind"]),
+      };
+    }
+  }
+  return { ok: true, value: out };
+}
+
+function decodeSnapshotShares(
+  raw: unknown,
+): ValidationResult<CanonicalShareRow[], ExpenseGraphSnapshotIssue> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, issue: snapshotStructure(["shares"]) };
+  }
+  const out: CanonicalShareRow[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const row = raw[i];
+    if (!isStringRecord(row) || Object.keys(row).length !== 2) {
+      return { ok: false, issue: snapshotStructure(["shares", i]) };
+    }
+    const userId = row.user_id;
+    if (typeof userId !== "string" || userId.length === 0) {
+      return { ok: false, issue: snapshotStructure(["shares", i, "user_id"]) };
+    }
+    const centsResult = parseExpenseCents(row.share_amount_cents, "allow");
+    if (!centsResult.ok) {
+      return {
+        ok: false,
+        issue: snapshotStructure(["shares", i, "share_amount_cents"]),
+      };
+    }
+    out.push({ userId, shareAmountCents: centsResult.value });
+  }
+  return { ok: true, value: out };
+}
+
+function decodeSnapshotGuestShares(
+  raw: unknown,
+): ValidationResult<CanonicalGuestShareRow[], ExpenseGraphSnapshotIssue> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, issue: snapshotStructure(["guest_shares"]) };
+  }
+  const out: CanonicalGuestShareRow[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const row = raw[i];
+    if (!isStringRecord(row) || Object.keys(row).length !== 2) {
+      return { ok: false, issue: snapshotStructure(["guest_shares", i]) };
+    }
+    const guestLocalId = row.guest_local_id;
+    if (typeof guestLocalId !== "string" || guestLocalId.length === 0) {
+      return {
+        ok: false,
+        issue: snapshotStructure(["guest_shares", i, "guest_local_id"]),
+      };
+    }
+    const centsResult = parseExpenseCents(row.share_amount_cents, "allow");
+    if (!centsResult.ok) {
+      return {
+        ok: false,
+        issue: snapshotStructure(["guest_shares", i, "share_amount_cents"]),
+      };
+    }
+    out.push({ guestLocalId, shareAmountCents: centsResult.value });
+  }
+  return { ok: true, value: out };
+}
+
+function decodeSnapshotPayers(
+  raw: unknown,
+): ValidationResult<CanonicalPayerRow[], ExpenseGraphSnapshotIssue> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, issue: snapshotStructure(["payers"]) };
+  }
+  const out: CanonicalPayerRow[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const row = raw[i];
+    if (!isStringRecord(row) || Object.keys(row).length !== 2) {
+      return { ok: false, issue: snapshotStructure(["payers", i]) };
+    }
+    const userId = row.user_id;
+    if (typeof userId !== "string" || userId.length === 0) {
+      return { ok: false, issue: snapshotStructure(["payers", i, "user_id"]) };
+    }
+    const centsResult = parseExpenseCents(row.amount_cents, "positive");
+    if (!centsResult.ok) {
+      return {
+        ok: false,
+        issue: snapshotStructure(["payers", i, "amount_cents"]),
+      };
+    }
+    out.push({ userId, amountCents: centsResult.value });
+  }
+  return { ok: true, value: out };
+}
+
+function decodeSnapshotGuests(
+  raw: unknown,
+): ValidationResult<ExpenseGuestSnapshotRow[], ExpenseGraphSnapshotIssue> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, issue: snapshotStructure(["guests"]) };
+  }
+  const out: ExpenseGuestSnapshotRow[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const row = raw[i];
+    if (!isStringRecord(row)) {
+      return { ok: false, issue: snapshotStructure(["guests", i]) };
+    }
+    const keys = Object.keys(row);
+    let hasAll = keys.length === SNAPSHOT_GUEST_KEYS.length;
+    if (hasAll) {
+      for (const key of SNAPSHOT_GUEST_KEYS) {
+        if (!(key in row)) {
+          hasAll = false;
+          break;
+        }
+      }
+    }
+    if (!hasAll) {
+      return { ok: false, issue: snapshotStructure(["guests", i]) };
+    }
+    const guestLocalId = row.local_id;
+    if (typeof guestLocalId !== "string" || guestLocalId.length === 0) {
+      return { ok: false, issue: snapshotStructure(["guests", i, "local_id"]) };
+    }
+    const displayName = row.display_name;
+    if (
+      typeof displayName !== "string" ||
+      displayName.trim().length === 0 ||
+      countCodePoints(displayName) > MAX_EXPENSE_SOURCE_MERCHANT_NAME_CODE_POINTS
+    ) {
+      return {
+        ok: false,
+        issue: snapshotStructure(["guests", i, "display_name"]),
+      };
+    }
+    const centsResult = parseExpenseCents(
+      row.original_share_amount_cents,
+      "allow",
+    );
+    if (!centsResult.ok) {
+      return {
+        ok: false,
+        issue: snapshotStructure([
+          "guests",
+          i,
+          "original_share_amount_cents",
+        ]),
+      };
+    }
+    const claimedBy = row.claimed_by_user_id;
+    const claimedAt = row.claimed_at;
+    if (claimedBy === null && claimedAt === null) {
+      out.push({
+        guestLocalId,
+        displayName,
+        originalShareAmountCents: centsResult.value,
+        claimedByUserId: null,
+        claimedAt: null,
+      });
+    } else if (
+      typeof claimedBy === "string" &&
+      claimedBy.length > 0 &&
+      typeof claimedAt === "string" &&
+      claimedAt.length > 0
+    ) {
+      out.push({
+        guestLocalId,
+        displayName,
+        originalShareAmountCents: centsResult.value,
+        claimedByUserId: claimedBy,
+        claimedAt,
+      });
+    } else {
+      return {
+        ok: false,
+        issue: snapshotStructure(["guests", i, "claimed_by_user_id"]),
+      };
+    }
+  }
+  return { ok: true, value: out };
+}
+
+/**
+ * Decode the complete expense graph snapshot loaded from the server. This is
+ * the sole loader/client boundary: every cent is branded here, item ids are
+ * stripped from `money.items`, participant identity/order/payer-reachability is
+ * validated through `summarizeExpenseAllocations` (aggregate_only), guest claim
+ * nullness is validated, and the claim-aware participantOrder projection is
+ * produced. The decoded value is recursively frozen and never aliases input.
+ */
+export function decodeExpenseGraphSnapshot(
+  raw: unknown,
+): ValidationResult<DecodedExpenseGraphSnapshot, ExpenseGraphSnapshotIssue> {
+  // 1. Exact root key set (rejects extra keys such as `service_fee_percent`).
+  if (!isStringRecord(raw)) {
+    return snapshotErr(snapshotStructure([]));
+  }
+  const rootKeys = Object.keys(raw);
+  for (const key of SNAPSHOT_ROOT_KEYS) {
+    if (!(key in raw)) {
+      return snapshotErr(snapshotStructure([key]));
+    }
+  }
+  if (rootKeys.length !== SNAPSHOT_ROOT_KEYS.length) {
+    return snapshotErr(snapshotStructure([]));
+  }
+
+  // 2. status.
+  const statusRaw = raw.status;
+  if (
+    statusRaw !== "draft" &&
+    statusRaw !== "active" &&
+    statusRaw !== "settled"
+  ) {
+    return snapshotErr({
+      code: "invalid_graph_snapshot",
+      path: ["status"],
+      reason: "status",
+    });
+  }
+  const status: "draft" | "active" | "settled" = statusRaw;
+
+  // 3. graph_revision.
+  const revisionResult = parseGraphRevision(raw.graph_revision);
+  if (!revisionResult.ok) {
+    return snapshotErr({
+      code: "invalid_graph_snapshot",
+      path: ["graph_revision"],
+      reason: "revision",
+    });
+  }
+
+  // 4. Scalar identity fields.
+  const expenseId = raw.expense_id;
+  if (typeof expenseId !== "string" || expenseId.length === 0) {
+    return snapshotErr(snapshotStructure(["expense_id"]));
+  }
+  const groupId = raw.group_id;
+  if (typeof groupId !== "string" || groupId.length === 0) {
+    return snapshotErr(snapshotStructure(["group_id"]));
+  }
+  const title = raw.title;
+  if (typeof title !== "string" || title.length === 0) {
+    return snapshotErr(snapshotStructure(["title"]));
+  }
+  const merchantName = raw.merchant_name;
+  if (merchantName !== null && typeof merchantName !== "string") {
+    return snapshotErr(snapshotStructure(["merchant_name"]));
+  }
+
+  // 5. items + item_ids: strip id from each wire item, require root item_ids
+  // to equal the stripped ids in order, nonblank and unique.
+  const itemsField = raw.items;
+  if (!Array.isArray(itemsField)) {
+    return snapshotErr(snapshotStructure(["items"]));
+  }
+  const itemIdsField = raw.item_ids;
+  if (!Array.isArray(itemIdsField)) {
+    return snapshotErr(snapshotStructure(["item_ids"]));
+  }
+  const strippedItems: unknown[] = [];
+  const extractedItemIds: string[] = [];
+  for (let i = 0; i < itemsField.length; i += 1) {
+    const row = itemsField[i];
+    if (!isStringRecord(row)) {
+      return snapshotErr(snapshotStructure(["items", i]));
+    }
+    const itemKeys = Object.keys(row);
+    if (itemKeys.length !== SNAPSHOT_ITEM_KEYS.length) {
+      return snapshotErr(snapshotStructure(["items", i]));
+    }
+    for (const key of SNAPSHOT_ITEM_KEYS) {
+      if (!(key in row)) {
+        return snapshotErr(snapshotStructure(["items", i, key]));
+      }
+    }
+    const id = row.id;
+    if (typeof id !== "string" || id.length === 0) {
+      return snapshotErr(snapshotStructure(["items", i, "id"]));
+    }
+    extractedItemIds.push(id);
+    strippedItems.push({
+      description: row.description,
+      quantity: row.quantity,
+      unitPriceCents: row.unit_price_cents,
+      totalPriceCents: row.total_price_cents,
+    });
+  }
+  if (itemIdsField.length !== extractedItemIds.length) {
+    return snapshotErr(snapshotStructure(["item_ids"]));
+  }
+  for (let i = 0; i < extractedItemIds.length; i += 1) {
+    if (itemIdsField[i] !== extractedItemIds[i]) {
+      return snapshotErr(snapshotStructure(["item_ids", i]));
+    }
+  }
+  const itemIdSeen = new Set<string>();
+  for (let i = 0; i < extractedItemIds.length; i += 1) {
+    if (itemIdSeen.has(extractedItemIds[i])) {
+      return snapshotErr(snapshotStructure(["item_ids", i]));
+    }
+    itemIdSeen.add(extractedItemIds[i]);
+  }
+
+  // 6. money via validateExpenseMoney (draft | activation). The wire fee key is
+  // service_fee_basis_points; service_fee_percent is never accepted (step 1).
+  const moneyInput: ExpenseMoneyInput = {
+    expenseType: raw.expense_type,
+    totalAmountCents: raw.total_amount,
+    serviceFeeBasisPoints: raw.service_fee_basis_points,
+    fixedFeesCents: raw.fixed_fees,
+    items: strippedItems,
+  };
+  let moneyOutcome:
+    | Readonly<{ status: "draft"; money: PersistableDraftExpenseMoney }>
+    | Readonly<{ status: "active" | "settled"; money: CompleteExpenseMoney }>;
+  if (status === "draft") {
+    const moneyResult = validateExpenseMoney(moneyInput, "draft");
+    if (!moneyResult.ok) {
+      return { ok: false, issue: moneyResult.issue };
+    }
+    moneyOutcome = { status: "draft", money: moneyResult.value };
+  } else {
+    const moneyResult = validateExpenseMoney(moneyInput, "activation");
+    if (!moneyResult.ok) {
+      return { ok: false, issue: moneyResult.issue };
+    }
+    moneyOutcome = { status, money: moneyResult.value };
+  }
+  const money = moneyOutcome.money;
+
+  // 7. itemIds alignment with the reconciled money shape.
+  if (money.expenseType === "single_amount" && extractedItemIds.length !== 0) {
+    return snapshotErr(snapshotStructure(["item_ids"]));
+  }
+
+  // 8. decode the identity collections into canonical types.
+  const orderResult = decodeSnapshotParticipantOrder(raw.participant_order);
+  if (!orderResult.ok) {
+    return snapshotErr(orderResult.issue);
+  }
+  const sharesResult = decodeSnapshotShares(raw.shares);
+  if (!sharesResult.ok) {
+    return snapshotErr(sharesResult.issue);
+  }
+  const guestSharesResult = decodeSnapshotGuestShares(raw.guest_shares);
+  if (!guestSharesResult.ok) {
+    return snapshotErr(guestSharesResult.issue);
+  }
+  const payersResult = decodeSnapshotPayers(raw.payers);
+  if (!payersResult.ok) {
+    return snapshotErr(payersResult.issue);
+  }
+  const guestsResult = decodeSnapshotGuests(raw.guests);
+  if (!guestsResult.ok) {
+    return snapshotErr(guestsResult.issue);
+  }
+
+  // 9. claim map; draft guests must be unclaimed (case 1 is hidden). Project.
+  const guestClaimByLocalId = new Map<string, string>();
+  for (const guest of guestsResult.value) {
+    if (guest.claimedByUserId !== null) {
+      guestClaimByLocalId.set(guest.guestLocalId, guest.claimedByUserId);
+    }
+  }
+  if (status === "draft" && guestClaimByLocalId.size > 0) {
+    return snapshotErr(snapshotIdentity(["guests"]));
+  }
+  const projectedOrder = projectClaimAwareParticipantOrder(
+    orderResult.value,
+    guestClaimByLocalId,
+  );
+
+  // 10. identity/order/reachability through summarize (aggregate_only; item
+  // assignment provenance is not persisted). Guests can never pay: a payer
+  // that is not a current user participant is `ineligible_payer` (identity).
+  const summaryResult = summarizeExpenseAllocations({
+    money,
+    participantOrder: projectedOrder,
+    shares: sharesResult.value,
+    guestShares: guestSharesResult.value,
+    payers: payersResult.value,
+    itemAssignments: { kind: "aggregate_only" },
+  });
+  if (!summaryResult.ok) {
+    return snapshotErr(mapAllocationIssue(summaryResult.issue));
+  }
+
+  // 11. draft_claim_protected_user_ids: nonblank unique ids; draft requires
+  // each to be a current user participant (case-1 claimant), active/settled [].
+  const protectedField = raw.draft_claim_protected_user_ids;
+  if (!Array.isArray(protectedField)) {
+    return snapshotErr(snapshotStructure(["draft_claim_protected_user_ids"]));
+  }
+  const protectedIds: string[] = [];
+  const protectedSeen = new Set<string>();
+  for (let i = 0; i < protectedField.length; i += 1) {
+    const id = protectedField[i];
+    if (typeof id !== "string" || id.length === 0) {
+      return snapshotErr(
+        snapshotStructure(["draft_claim_protected_user_ids", i]),
+      );
+    }
+    if (protectedSeen.has(id)) {
+      return snapshotErr(
+        snapshotStructure(["draft_claim_protected_user_ids", i]),
+      );
+    }
+    protectedSeen.add(id);
+    protectedIds.push(id);
+  }
+  if (status === "draft") {
+    const userParticipantIds = new Set<string>();
+    for (const entry of projectedOrder) {
+      if (entry.kind === "user") {
+        userParticipantIds.add(entry.userId);
+      }
+    }
+    for (const id of protectedIds) {
+      if (!userParticipantIds.has(id)) {
+        return snapshotErr(
+          snapshotIdentity(["draft_claim_protected_user_ids"]),
+        );
+      }
+    }
+  } else if (protectedIds.length !== 0) {
+    return snapshotErr(snapshotIdentity(["draft_claim_protected_user_ids"]));
+  }
+
+  // 12. assemble + deep-freeze. money's status-tagged type picks the arm.
+  if (moneyOutcome.status === "draft") {
+    const snapshot: DecodedExpenseGraphSnapshot = {
+      expenseId,
+      groupId,
+      graphRevision: revisionResult.value,
+      title,
+      merchantName,
+      money: moneyOutcome.money,
+      itemIds: extractedItemIds,
+      draftClaimProtectedUserIds: protectedIds,
+      participantOrder: projectedOrder,
+      shares: sharesResult.value,
+      guestShares: guestSharesResult.value,
+      payers: payersResult.value,
+      guests: guestsResult.value,
+      allocations: summaryResult.value,
+      status: "draft",
+    };
+    deepFreeze(snapshot);
+    return { ok: true, value: snapshot };
+  }
+  const snapshot: DecodedExpenseGraphSnapshot = {
+    expenseId,
+    groupId,
+    graphRevision: revisionResult.value,
+    title,
+    merchantName,
+    money: moneyOutcome.money,
+    itemIds: extractedItemIds,
+    draftClaimProtectedUserIds: protectedIds,
+    participantOrder: projectedOrder,
+    shares: sharesResult.value,
+    guestShares: guestSharesResult.value,
+    payers: payersResult.value,
+    guests: guestsResult.value,
+    allocations: summaryResult.value,
+    status: moneyOutcome.status,
+  };
+  deepFreeze(snapshot);
+  return { ok: true, value: snapshot };
+}
