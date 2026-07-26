@@ -6,7 +6,6 @@ import {
   registerTestUser,
 } from "@/test/integration-setup";
 import {
-  createAndActivateExpense,
   createTestGroupWithMembers,
   createTestUsers,
   type TestUser,
@@ -28,12 +27,16 @@ describe.skipIf(!canRun)("allocation plan schema (#468)", () => {
     for (const u of users) registerTestUser(u.id);
     const group = await createTestGroupWithMembers(users[0], [users[1]]);
     groupId = group.id;
-    expenseId = await createAndActivateExpense({
-      creator: users[0],
-      groupId,
-      shares: [{ userId: users[0].id, amount: 50 }, { userId: users[1].id, amount: 50 }],
-      payers: [{ userId: users[0].id, amount: 100 }],
-    });
+    // Draft (NOT activated): activate_expense now populates these
+    // allocation tables (#468), but these tests manually insert
+    // participant/plan/edge rows to exercise the CHECK constraints,
+    // so the expense must carry no allocation rows yet.
+    const ins = await pg.query<{ id: string }>(
+      "insert into expenses(group_id, creator_id, title, expense_type, total_amount, status) " +
+        "values ($1, $2, 'alloc-schema-468', 'single_amount', 100, 'draft') returning id",
+      [groupId, users[0].id],
+    );
+    expenseId = ins.rows[0].id;
   });
 
   afterAll(async () => {

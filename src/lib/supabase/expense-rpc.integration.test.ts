@@ -147,14 +147,14 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
   it("handles multiple payers correctly", async () => {
     // Alice pays 6000, Bob pays 4000. Total 10000.
     // Shares: Alice 3000, Bob 3000, Carol 4000
-    // Expected debts:
-    //   Carol→Alice: ROUND(4000*6000/10000) = 2400
-    //   Carol→Bob:   ROUND(4000*4000/10000) = 1600
-    //   Bob→Alice:   ROUND(3000*6000/10000) = 1800
-    //   Alice→Bob:   ROUND(3000*4000/10000) = 1200
-    //   Net Alice↔Bob: Bob owes Alice 1800-1200 = 600
-    //   Net Carol→Alice: 2400
-    //   Net Carol→Bob: 1600
+    // #468 exact integer allocation: per-user net = share - paid.
+    //   Alice net = 3000 - 6000 = -3000 (creditor)
+    //   Bob   net = 3000 - 4000 = -1000 (creditor)
+    //   Carol net = 4000 -    0 = +4000 (debtor)
+    // Carol's 4000 debt fully covers both creditors:
+    //   Carol→Alice 3000, Carol→Bob 1000. No Alice↔Bob edge.
+    // (The old per-pair ROUND() body produced Bob→Alice 600,
+    //  Carol→Alice 2400, Carol→Bob 1600 — that was the buggy residual.)
     const expenseId = await createDraftExpense({
       groupId,
       creatorId: alice.id,
@@ -182,12 +182,12 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     const carolToAlice = findBalance(balances, carol.id, alice.id);
     const carolToBob = findBalance(balances, carol.id, bob.id);
 
-    expect(bobToAlice).not.toBeNull();
-    expect(bobToAlice!.amount).toBe(600);
+    // Bob↔Alice: no edge (Bob is a creditor, Alice is a creditor).
+    expect(bobToAlice).toBeNull();
     expect(carolToAlice).not.toBeNull();
-    expect(carolToAlice!.amount).toBe(2400);
+    expect(carolToAlice!.amount).toBe(3000);
     expect(carolToBob).not.toBeNull();
-    expect(carolToBob!.amount).toBe(1600);
+    expect(carolToBob!.amount).toBe(1000);
   });
 
   it("accumulates balances across multiple expenses", async () => {
@@ -507,41 +507,21 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     expect(carolToAlice!.amount).toBe(3333);
   });
 
-  it("rounding-residual case: sum invariant + bounded per-user error + lex-first correction pinned", async () => {
-    // Sort the three users by UUID so we can predict which canonical pair receives
-    // the residual correction (the lexicographically-first (user_a, user_b) pair).
+  it("#468 exact allocation: residual fixture settles with one edge and zero error", async () => {
+    // This scenario was the rounding-residual regression under the old per-pair
+    // ROUND() + residual-reassignment body. Under #468 the allocation is exact
+    // integer incidence: per-user net == share - paid exactly, one edge.
     const [smallest, middle, largest] = [alice, bob, carol].sort((x, y) =>
       x.id < y.id ? -1 : 1,
     );
 
-    // Assign scenario roles by sorted position, not by creation order.
     // total=200, shares={smallest:10, middle:10, largest:180}
     //            payers={smallest:10, middle:100, largest:90}
-    //
-    // Exact per-user net (consumed − paid):
-    //   smallest: 10 − 10 = 0
-    //   middle:   10 − 100 = −90  (net creditor)
-    //   largest:  180 − 90 = +90  (net debtor)
-    //
-    // Exact delta per canonical pair (s=smallest, m=middle, l=largest; s < m < l):
-    //
-    //   (s, m): share=s/payer=m → +(10×100/200)=+5.0
-    //           share=m/payer=s → −(10×10/200) =−0.5
-    //           sum = +4.5  → ROUND(+4.5) = +5  residual contrib = +0.5
-    //
-    //   (s, l): share=s/payer=l → +(10×90/200) =+4.5
-    //           share=l/payer=s → −(180×10/200)=−9.0
-    //           sum = −4.5  → ROUND(−4.5) = −5  residual contrib = −0.5
-    //
-    //   (m, l): share=m/payer=l → +(10×90/200) =+4.5
-    //           share=l/payer=m → −(180×100/200)=−90.0
-    //           sum = −85.5 → ROUND(−85.5) = −86  residual contrib = −0.5
-    //
-    // Total residual = 0.5 − 0.5 − 0.5 = −0.5
-    // ROUND(−0.5) = −1  (PostgreSQL rounds half away from zero)
-    // Correction applied to lex-first pair (s, m): −(ROUND(−0.5)) = +1
-    //
-    // Final amount_cents: (s,m)=5+1=6, (s,l)=−5, (m,l)=−86
+    // Exact per-user net (share − paid):
+    //   smallest: 10 − 10   =   0  (no edge)
+    //   middle:   10 − 100  = −90  (creditor)
+    //   largest:  180 − 90  = +90  (debtor)
+    // Single edge: largest owes middle 90. smallest is untouched.
     const expenseId = await createDraftExpense({
       groupId,
       creatorId: alice.id,
@@ -567,28 +547,24 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
 
     const balances = await getBalances(groupId);
 
-    // Pin the lex-first pair correction: (smallest, middle) should have amount_cents = 6.
-    const smRow = balances.find(
-      (r) => r.user_a === smallest.id && r.user_b === middle.id,
-    );
-    expect(smRow).toBeDefined();
-    expect(smRow!.amount_cents).toBe(6);
-
-    // Verify (smallest, largest) = −5.
-    const slRow = balances.find(
-      (r) => r.user_a === smallest.id && r.user_b === largest.id,
-    );
-    expect(slRow).toBeDefined();
-    expect(slRow!.amount_cents).toBe(-5);
-
-    // Verify (middle, largest) = −86.
-    const mlRow = balances.find(
+    // Exactly one nonzero balance row: (middle, largest) = −90
+    // (largest owes middle 90; positive = user_a owes user_b → negative here).
+    const nonzero = balances.filter((r) => r.amount_cents !== 0);
+    expect(nonzero).toHaveLength(1);
+    const mlRow = nonzero.find(
       (r) => r.user_a === middle.id && r.user_b === largest.id,
     );
     expect(mlRow).toBeDefined();
-    expect(mlRow!.amount_cents).toBe(-86);
+    expect(mlRow!.amount_cents).toBe(-90);
 
-    // Compute per-user net from balance rows (UUID-ordering-agnostic).
+    // smallest must not appear in any balance row (net 0 → no edge).
+    expect(
+      balances.some(
+        (r) => r.user_a === smallest.id || r.user_b === smallest.id,
+      ),
+    ).toBe(false);
+
+    // Per-user net from balance rows (UUID-ordering-agnostic) == exact.
     const net: Record<string, number> = {
       [smallest.id]: 0,
       [middle.id]: 0,
@@ -598,24 +574,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
       if (row.user_a in net) net[row.user_a] += row.amount_cents;
       if (row.user_b in net) net[row.user_b] -= row.amount_cents;
     }
-
-    // Sum invariant: all nets sum to zero.
-    const totalNet = net[smallest.id] + net[middle.id] + net[largest.id];
-    expect(totalNet).toBe(0);
-
-    // Per-user error bounded by (pairCount + 1) cents.
-    // Each user appears in 2 canonical pairs (K=2), so bound = 2 + 1 = 3 cents.
-    // Exact: smallest=0, middle=−90, largest=+90.
-    const users = [smallest, middle, largest];
-    const exactNets: Record<string, number> = {
-      [smallest.id]: 0,
-      [middle.id]: -90,
-      [largest.id]: 90,
-    };
-    for (const u of users) {
-      const pairCount = 2;
-      expect(Math.abs(net[u.id] - exactNets[u.id])).toBeLessThanOrEqual(pairCount + 1);
-    }
+    expect(net[smallest.id]).toBe(0);
+    expect(net[middle.id]).toBe(-90);
+    expect(net[largest.id]).toBe(90);
   });
 
   it("rounding-residual case: sum of all balance deltas is exact", async () => {
