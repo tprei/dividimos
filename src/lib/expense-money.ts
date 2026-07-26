@@ -29,6 +29,12 @@ import {
   type ExpenseQuantity,
   type QuantityValidationIssue,
 } from "./expense-quantity";
+import type {
+  CanonicalGuestShareRow,
+  CanonicalPayerRow,
+  CanonicalShareRow,
+  ParticipantOrderEntry,
+} from "./expense-graph";
 
 // ---------------------------------------------------------------------------
 // Structural limits shared by every raw/canonical source decoder.
@@ -1175,4 +1181,603 @@ export function validateExpenseMoney(
   }
   // scan_review / activation / chat_confirmation reject an empty/zero expense.
   return err({ code: "incomplete_expense" });
+}
+
+// ---------------------------------------------------------------------------
+// Issue #477 part 4: canonical allocation summary. Validates participant
+// identity/order against the share, guest-share, and payer rows; computes
+// overflow-proof cent-exact share/payer totals, signed deltas, exact/
+// underallocated/overallocated states, completeness, and the aggregate_only /
+// detailed item-assignment breakdown. Every sum is bigint; no float, no
+// tolerance, equality is cent-exact.
+// ---------------------------------------------------------------------------
+
+/**
+ * One item-level assignment of an expense item to a consumer participant.
+ * `amountCents` is the portion of that item's `totalPriceCents` consumed.
+ */
+export type CanonicalItemAssignment = Readonly<{
+  itemId: string;
+  participant: ParticipantOrderEntry;
+  amountCents: ExpenseCents;
+}>;
+
+/** Per-person breakdown of item subtotal, fees, and grand total. */
+export type PerPersonExpenseBreakdown = Readonly<{
+  participant: ParticipantOrderEntry;
+  itemSubtotalCents: ExpenseCents;
+  serviceFeeCents: ExpenseCents;
+  fixedFeesCents: ExpenseCents;
+  totalAmountCents: ExpenseCents;
+}>;
+
+/**
+ * Item-assignment envelope. `aggregate_only` defers to the authoritative share
+ * rows (a rehydrated graph); `detailed` supplies per-item consumer assignments
+ * that must reconcile to each identity's share row.
+ */
+export type ExpenseItemAssignmentInput =
+  | Readonly<{ kind: "aggregate_only" }>
+  | Readonly<{
+      kind: "detailed";
+      itemIds: readonly string[];
+      rows: readonly CanonicalItemAssignment[];
+    }>;
+
+/**
+ * Allocation-summary issue. Extends the money issue set with allocation
+ * identity/order defects, detailed item-assignment defects, the per-person
+ * share reconciliation failure, and the #495 payer-reachability failure.
+ */
+export type ExpenseAllocationIssue =
+  | ExpenseMoneyIssue
+  | Readonly<{
+      code: "invalid_allocation_identity";
+      path: readonly (string | number)[];
+      reason: "participant_order" | "share" | "guest_share" | "payer";
+    }>
+  | Readonly<{
+      code: "invalid_item_assignment";
+      path: readonly (string | number)[];
+      reason:
+        | "item_ids"
+        | "unknown_item"
+        | "participant_identity"
+        | "duplicate_pair"
+        | "nonpositive_amount"
+        | "item_overallocated";
+    }>
+  | Readonly<{ code: "item_assignment_share_mismatch"; participantIndex: number }>
+  | Readonly<{ code: "ineligible_payer"; payerIndex: number }>;
+
+/** Recursively immutable canonical allocation summary. */
+export type ExpenseAllocationSummary = Readonly<{
+  participantOrder: readonly ParticipantOrderEntry[];
+  shareRows: readonly CanonicalShareRow[];
+  guestShareRows: readonly CanonicalGuestShareRow[];
+  payerRows: readonly CanonicalPayerRow[];
+  userShareTotalCents: ExpenseCents;
+  guestShareTotalCents: ExpenseCents;
+  shareTotalCents: ExpenseCents;
+  payerTotalCents: ExpenseCents;
+  shareDeltaCents: SignedExpenseCents;
+  payerDeltaCents: SignedExpenseCents;
+  shareState: "exact" | "underallocated" | "overallocated";
+  payerState: "exact" | "underallocated" | "overallocated";
+  completeness: "complete" | "incomplete" | "invalid";
+  itemAssignmentState:
+    | Readonly<{ kind: "aggregate_only" }>
+    | Readonly<{
+        kind: "detailed";
+        rows: readonly PerPersonExpenseBreakdown[];
+        unassignedItemCents: ExpenseCents;
+      }>;
+}>;
+
+const MAX_SAFE_CENTS_BIG = BigInt(Number.MAX_SAFE_INTEGER);
+
+/** Fail with an allocation issue, narrowed to the summary result type. */
+function allocationIssue(
+  issue: ExpenseAllocationIssue,
+): ValidationResult<ExpenseAllocationSummary, ExpenseAllocationIssue> {
+  return { ok: false, issue };
+}
+
+/**
+ * Validate and clean one participant-order entry: exact key set, nonempty id,
+ * known kind. Returns the cleaned entry or `null` for any structural defect
+ * (unknown kind/keys, empty id, non-object).
+ */
+function validateParticipantOrderEntry(
+  entry: unknown,
+): ParticipantOrderEntry | null {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+  const obj = entry as Record<string, unknown>;
+  const kind = obj.kind;
+  if (kind === "user") {
+    const keys = Object.keys(obj);
+ const userId = obj.userId;
+    if (keys.length !== 2 || typeof userId !== "string" || userId.length === 0) {
+      return null;
+    }
+    return { kind: "user", userId };
+  }
+  if (kind === "guest") {
+    const keys = Object.keys(obj);
+ const guestLocalId = obj.guestLocalId;
+    if (
+      keys.length !== 2 ||
+      typeof guestLocalId !== "string" ||
+      guestLocalId.length === 0
+    ) {
+      return null;
+    }
+    return { kind: "guest", guestLocalId };
+  }
+  return null;
+}
+
+/** Stable identity key for a participant, or `null` if the shape is malformed. */
+function participantKeyOf(entry: unknown): string | null {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+  const obj = entry as Record<string, unknown>;
+  const kind = obj.kind;
+  if (kind === "user") {
+    const userId = obj.userId;
+    if (typeof userId !== "string" || userId.length === 0) return null;
+    return "user:" + userId;
+  }
+  if (kind === "guest") {
+    const guestLocalId = obj.guestLocalId;
+    if (typeof guestLocalId !== "string" || guestLocalId.length === 0) return null;
+    return "guest:" + guestLocalId;
+  }
+  return null;
+}
+
+/** Structural copy of a participant entry so freezing never touches input. */
+function copyParticipant(entry: ParticipantOrderEntry): ParticipantOrderEntry {
+  return entry.kind === "user"
+    ? { kind: "user", userId: entry.userId }
+    : { kind: "guest", guestLocalId: entry.guestLocalId };
+}
+
+/**
+ * Summarize a canonical expense allocation. Pure, overflow-proof, cent-exact.
+ *
+ * Phase 1 validates the participant order and the share/guest-share/payer
+ * bijection (each user participant has exactly one share row and vice versa;
+ * each entity-backed guest has exactly one guest share; each payer is a
+ * registered user with a share row). Phase 2 computes the share/payer totals,
+ * signed deltas, and exact/under/over states in `bigint`. Phase 3 builds the
+ * item-assignment state — `aggregate_only` echoes the authoritative shares;
+ * `detailed` reconciles per-item consumer assignments, distributes the single
+ * service fee by consumption weights and the fixed fee evenly across reviewed
+ * consumer identities, and requires each per-person total to equal that
+ * identity's authoritative share row.
+ */
+export function summarizeExpenseAllocations(
+  input: Readonly<{
+    money: PersistableDraftExpenseMoney;
+    participantOrder: readonly ParticipantOrderEntry[];
+    shares: readonly CanonicalShareRow[];
+    guestShares: readonly CanonicalGuestShareRow[];
+    payers: readonly CanonicalPayerRow[];
+    itemAssignments: ExpenseItemAssignmentInput;
+  }>,
+): ValidationResult<ExpenseAllocationSummary, ExpenseAllocationIssue> {
+  // -- Phase 1: participant order identity & determinism --------------------
+  const participantIndexByKey = new Map<string, number>();
+  const userParticipantIds: string[] = [];
+  const guestParticipantIds: string[] = [];
+  const userParticipantIndex = new Map<string, number>();
+  const guestParticipantIndex = new Map<string, number>();
+
+  for (let i = 0; i < input.participantOrder.length; i += 1) {
+    const entry = validateParticipantOrderEntry(input.participantOrder[i]);
+    if (entry === null) {
+      return allocationIssue({
+        code: "invalid_allocation_identity",
+        path: ["participantOrder", i],
+        reason: "participant_order",
+      });
+    }
+    const key =
+      entry.kind === "user" ? "user:" + entry.userId : "guest:" + entry.guestLocalId;
+    if (participantIndexByKey.has(key)) {
+      return allocationIssue({
+        code: "invalid_allocation_identity",
+        path: ["participantOrder", i],
+        reason: "participant_order",
+      });
+    }
+    participantIndexByKey.set(key, i);
+    if (entry.kind === "user") {
+      userParticipantIds.push(entry.userId);
+      userParticipantIndex.set(entry.userId, i);
+    } else {
+      guestParticipantIds.push(entry.guestLocalId);
+      guestParticipantIndex.set(entry.guestLocalId, i);
+    }
+  }
+
+  // -- Phase 1b: user share bijection (zero rows are identity-bearing) ------
+  const userShareAmounts: ExpenseCents[] = new Array(userParticipantIds.length);
+  {
+    const seen = new Map<string, CanonicalShareRow>();
+    for (let i = 0; i < input.shares.length; i += 1) {
+      const userId = input.shares[i].userId;
+      if (!userParticipantIndex.has(userId) || seen.has(userId)) {
+        return allocationIssue({
+          code: "invalid_allocation_identity",
+          path: ["shares", i],
+          reason: "share",
+        });
+      }
+      seen.set(userId, input.shares[i]);
+    }
+    for (let p = 0; p < userParticipantIds.length; p += 1) {
+      const userId = userParticipantIds[p];
+      const row = seen.get(userId);
+      if (row === undefined) {
+        return allocationIssue({
+          code: "invalid_allocation_identity",
+          path: ["participantOrder", userParticipantIndex.get(userId) as number],
+          reason: "share",
+        });
+      }
+      userShareAmounts[p] = row.shareAmountCents;
+    }
+  }
+
+  // -- Phase 1c: guest share bijection -------------------------------------
+  const guestShareAmounts: ExpenseCents[] = new Array(
+    guestParticipantIds.length,
+  );
+  {
+    const seen = new Map<string, CanonicalGuestShareRow>();
+    for (let i = 0; i < input.guestShares.length; i += 1) {
+      const guestLocalId = input.guestShares[i].guestLocalId;
+      if (!guestParticipantIndex.has(guestLocalId) || seen.has(guestLocalId)) {
+        return allocationIssue({
+          code: "invalid_allocation_identity",
+          path: ["guestShares", i],
+          reason: "guest_share",
+        });
+      }
+      seen.set(guestLocalId, input.guestShares[i]);
+    }
+    for (let p = 0; p < guestParticipantIds.length; p += 1) {
+      const guestLocalId = guestParticipantIds[p];
+      const row = seen.get(guestLocalId);
+      if (row === undefined) {
+        return allocationIssue({
+          code: "invalid_allocation_identity",
+          path: [
+            "participantOrder",
+            guestParticipantIndex.get(guestLocalId) as number,
+          ],
+          reason: "guest_share",
+        });
+      }
+      guestShareAmounts[p] = row.shareAmountCents;
+    }
+  }
+
+  // -- Phase 1d: payer reachability (#495) ---------------------------------
+  for (let i = 0; i < input.payers.length; i += 1) {
+    const userId = input.payers[i].userId;
+    if (typeof userId !== "string" || userId.length === 0) {
+      return allocationIssue({
+        code: "invalid_allocation_identity",
+        path: ["payers", i],
+        reason: "payer",
+      });
+    }
+    if (!userParticipantIndex.has(userId)) {
+      return allocationIssue({ code: "ineligible_payer", payerIndex: i });
+    }
+  }
+
+  // -- Phase 2: overflow-checked bigint totals & states --------------------
+  const userShareBig = bigSum(userShareAmounts);
+  const guestShareBig = bigSum(guestShareAmounts);
+  const payerBig = bigSum(input.payers.map((row) => row.amountCents));
+
+  if (userShareBig > MAX_SAFE_CENTS_BIG) {
+    return allocationIssue({
+      code: "derived_amount_out_of_range",
+      field: "user_share_total",
+    });
+  }
+  if (guestShareBig > MAX_SAFE_CENTS_BIG) {
+    return allocationIssue({
+      code: "derived_amount_out_of_range",
+      field: "guest_share_total",
+    });
+  }
+  const shareBig = userShareBig + guestShareBig;
+  if (shareBig > MAX_SAFE_CENTS_BIG) {
+    return allocationIssue({
+      code: "derived_amount_out_of_range",
+      field: "user_share_total",
+    });
+  }
+  if (payerBig > MAX_SAFE_CENTS_BIG) {
+    return allocationIssue({
+      code: "derived_amount_out_of_range",
+      field: "payer_total",
+    });
+  }
+
+  const totalBig = BigInt(input.money.totalAmountCents as number);
+  const shareDeltaBig = shareBig - totalBig;
+  const payerDeltaBig = payerBig - totalBig;
+
+  const shareState: ExpenseAllocationSummary["shareState"] =
+    shareBig === totalBig
+      ? "exact"
+      : shareBig < totalBig
+        ? "underallocated"
+        : "overallocated";
+  const payerState: ExpenseAllocationSummary["payerState"] =
+    payerBig === totalBig
+      ? "exact"
+      : payerBig < totalBig
+        ? "underallocated"
+        : "overallocated";
+
+  // -- Phase 3: item-assignment state & completeness -----------------------
+  const money = input.money;
+  const isCompleteMoney = money.outcome === "complete";
+  const moneyItems: readonly NormalizedExpenseItem[] = money.items;
+  const serviceFeeCents: ExpenseCents = isCompleteMoney
+    ? money.summary.serviceFeeCents
+    : ZERO_EXPENSE_CENTS;
+  const fixedFeesCents: ExpenseCents = money.fixedFeesCents;
+
+  // Authoritative share per participant-order slot (for detailed reconciliation).
+  const authoritativeShareByOrder: ExpenseCents[] = new Array(
+    input.participantOrder.length,
+  );
+  for (let p = 0; p < input.participantOrder.length; p += 1) {
+    const participant = input.participantOrder[p];
+    if (participant.kind === "user") {
+      authoritativeShareByOrder[p] =
+        userShareAmounts[userParticipantIndex.get(participant.userId) as number];
+    } else {
+      authoritativeShareByOrder[p] =
+        guestShareAmounts[guestParticipantIndex.get(participant.guestLocalId) as number];
+    }
+  }
+
+  let itemAssignmentState: ExpenseAllocationSummary["itemAssignmentState"];
+  // `true` for aggregate_only (no per-item residual to check); detailed sets it.
+  let detailedUnassignedIsZero = true;
+
+  if (input.itemAssignments.kind === "aggregate_only") {
+    itemAssignmentState = { kind: "aggregate_only" };
+  } else {
+    const ia = input.itemAssignments;
+    const itemIds = ia.itemIds;
+
+    // itemIds: exactly one nonempty unique id per money.items entry, in order.
+    // single_amount has items []; detailed itemIds must be empty there.
+    if (itemIds.length !== moneyItems.length) {
+      return allocationIssue({
+        code: "invalid_item_assignment",
+        path: ["itemAssignments", "itemIds"],
+        reason: "item_ids",
+      });
+    }
+    const itemIdSet = new Set<string>();
+    const itemIdToItemIndex = new Map<string, number>();
+    for (let idx = 0; idx < itemIds.length; idx += 1) {
+      const id = itemIds[idx];
+      if (typeof id !== "string" || id.length === 0 || itemIdSet.has(id)) {
+        return allocationIssue({
+          code: "invalid_item_assignment",
+          path: ["itemAssignments", "itemIds", idx],
+          reason: "item_ids",
+        });
+      }
+      itemIdSet.add(id);
+      itemIdToItemIndex.set(id, idx);
+    }
+
+    const pairSeen = new Set<string>();
+    const perItemAssigned: bigint[] = itemIds.map(() => BigInt(0));
+    const perParticipantSubtotal: bigint[] = input.participantOrder.map(
+      () => BigInt(0),
+    );
+
+    for (let r = 0; r < ia.rows.length; r += 1) {
+      const rowObj = ia.rows[r] as Record<string, unknown>;
+      const itemId = rowObj.itemId;
+      if (typeof itemId !== "string" || itemId.length === 0 || !itemIdSet.has(itemId)) {
+        return allocationIssue({
+          code: "invalid_item_assignment",
+          path: ["itemAssignments", "rows", r],
+          reason: "unknown_item",
+        });
+      }
+      const pKey = participantKeyOf(ia.rows[r].participant);
+      if (pKey === null || !participantIndexByKey.has(pKey)) {
+        return allocationIssue({
+          code: "invalid_item_assignment",
+          path: ["itemAssignments", "rows", r],
+          reason: "participant_identity",
+        });
+      }
+      const pairKey = itemId + "|" + pKey;
+      if (pairSeen.has(pairKey)) {
+        return allocationIssue({
+          code: "invalid_item_assignment",
+          path: ["itemAssignments", "rows", r],
+          reason: "duplicate_pair",
+        });
+      }
+      pairSeen.add(pairKey);
+      const amount = ia.rows[r].amountCents;
+      if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+        return allocationIssue({
+          code: "invalid_item_assignment",
+          path: ["itemAssignments", "rows", r],
+          reason: "nonpositive_amount",
+        });
+      }
+      perItemAssigned[itemIdToItemIndex.get(itemId) as number] += BigInt(amount);
+      perParticipantSubtotal[participantIndexByKey.get(pKey) as number] += BigInt(amount);
+    }
+
+    // Per-item overallocation (checked before any residual so a one-cent
+    // per-item excess hidden by another line's slack is still caught).
+    let unassignedBig = BigInt(0);
+    for (let idx = 0; idx < moneyItems.length; idx += 1) {
+      const itemTotal = BigInt(moneyItems[idx].totalPriceCents as number);
+      const assigned = perItemAssigned[idx];
+      if (assigned > itemTotal) {
+        return allocationIssue({
+          code: "invalid_item_assignment",
+          path: ["items", idx],
+          reason: "item_overallocated",
+        });
+      }
+      unassignedBig += itemTotal - assigned;
+    }
+    if (unassignedBig > MAX_SAFE_CENTS_BIG) {
+      return allocationIssue({
+        code: "derived_amount_out_of_range",
+        field: "subtotal",
+      });
+    }
+    const unassignedItemCents = brandExpenseCents(Number(unassignedBig));
+    detailedUnassignedIsZero = unassignedItemCents === ZERO_EXPENSE_CENTS;
+
+    // Distribute the single service fee by item-consumption weights, and the
+    // fixed fee evenly, across the reviewed consumer identities (the whole
+    // participant order: user-share + guest-share identities, zero-share
+    // consumers included; there are no payer-only identities since every payer
+    // is a registered user with a share row).
+    const consumerCount = input.participantOrder.length;
+    const consumptionWeights = perParticipantSubtotal.map((b) =>
+      brandExpenseCents(Number(b)),
+    );
+
+    let serviceFeePerConsumer: readonly ExpenseCents[];
+    if (serviceFeeCents === ZERO_EXPENSE_CENTS) {
+      serviceFeePerConsumer = input.participantOrder.map(() => ZERO_EXPENSE_CENTS);
+    } else {
+      let totalConsumption = BigInt(0);
+      for (const c of perParticipantSubtotal) totalConsumption += c;
+      if (totalConsumption === BigInt(0)) {
+        serviceFeePerConsumer = input.participantOrder.map(
+          () => ZERO_EXPENSE_CENTS,
+        );
+      } else {
+        const alloc = allocateByWeights(serviceFeeCents, consumptionWeights);
+        if (!alloc.ok) {
+          return allocationIssue(alloc.issue);
+        }
+        serviceFeePerConsumer = alloc.value;
+      }
+    }
+
+    let fixedFeePerConsumer: readonly ExpenseCents[];
+    if (fixedFeesCents === ZERO_EXPENSE_CENTS) {
+      fixedFeePerConsumer = input.participantOrder.map(() => ZERO_EXPENSE_CENTS);
+    } else {
+      const alloc = allocateEvenly(fixedFeesCents, consumerCount);
+      if (!alloc.ok) {
+        return allocationIssue(alloc.issue);
+      }
+      fixedFeePerConsumer = alloc.value;
+    }
+
+    const breakdowns: PerPersonExpenseBreakdown[] = [];
+    for (let p = 0; p < input.participantOrder.length; p += 1) {
+      const participant = input.participantOrder[p];
+      const itemSubtotalCents = brandExpenseCents(
+        Number(perParticipantSubtotal[p]),
+      );
+      const serviceFee = serviceFeePerConsumer[p];
+      const fixedFee = fixedFeePerConsumer[p];
+      const personTotalBig =
+        BigInt(itemSubtotalCents as number) +
+        BigInt(serviceFee as number) +
+        BigInt(fixedFee as number);
+      if (personTotalBig > MAX_SAFE_CENTS_BIG) {
+        return allocationIssue({
+          code: "derived_amount_out_of_range",
+          field: "grand_total",
+        });
+      }
+      const totalAmountCents = brandExpenseCents(Number(personTotalBig));
+      if (totalAmountCents !== authoritativeShareByOrder[p]) {
+        return allocationIssue({
+          code: "item_assignment_share_mismatch",
+          participantIndex: p,
+        });
+      }
+      breakdowns.push({
+        participant: copyParticipant(participant),
+        itemSubtotalCents,
+        serviceFeeCents: serviceFee,
+        fixedFeesCents: fixedFee,
+        totalAmountCents,
+      });
+    }
+
+    itemAssignmentState = {
+      kind: "detailed",
+      rows: breakdowns,
+      unassignedItemCents,
+    };
+  }
+
+  let completeness: ExpenseAllocationSummary["completeness"];
+  if (shareState === "overallocated" || payerState === "overallocated") {
+    completeness = "invalid";
+  } else if (
+    isCompleteMoney &&
+    shareState === "exact" &&
+    payerState === "exact" &&
+    detailedUnassignedIsZero
+  ) {
+    completeness = "complete";
+  } else {
+    completeness = "incomplete";
+  }
+
+  const summary: ExpenseAllocationSummary = {
+    participantOrder: input.participantOrder.map(copyParticipant),
+    shareRows: input.shares.map((s) => ({
+      userId: s.userId,
+      shareAmountCents: s.shareAmountCents,
+    })),
+    guestShareRows: input.guestShares.map((g) => ({
+      guestLocalId: g.guestLocalId,
+      shareAmountCents: g.shareAmountCents,
+    })),
+    payerRows: input.payers.map((py) => ({
+      userId: py.userId,
+      amountCents: py.amountCents,
+    })),
+    userShareTotalCents: brandExpenseCents(Number(userShareBig)),
+    guestShareTotalCents: brandExpenseCents(Number(guestShareBig)),
+    shareTotalCents: brandExpenseCents(Number(shareBig)),
+    payerTotalCents: brandExpenseCents(Number(payerBig)),
+    shareDeltaCents: brandSignedExpenseCents(Number(shareDeltaBig)),
+    payerDeltaCents: brandSignedExpenseCents(Number(payerDeltaBig)),
+    shareState,
+    payerState,
+    completeness,
+    itemAssignmentState,
+  };
+  deepFreeze(summary);
+  return { ok: true, value: summary };
 }
