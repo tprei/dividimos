@@ -10,9 +10,22 @@ import { Input } from "@/components/ui/input";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import {
+  computeExpenseLineTotalCents,
+  formatExpenseQuantity,
+  parseExpenseQuantity,
+  type ExpenseQuantity,
+} from "@/lib/expense-quantity";
+import { brandExpenseCents } from "@/lib/expense-money";
+import {
   formatBRL,
 } from "@/lib/currency";
 import type { ReceiptOcrResult, ReceiptItem } from "@/lib/receipt-ocr";
+
+/** Convert a raw model quantity (e.g. 0.5, 2) into integer milliunits. */
+function quantityToMilliunits(raw: number): number {
+  const parsed = parseExpenseQuantity(raw);
+  return parsed.ok ? (parsed.value as number) : 1000;
+}
 
 interface EditingState {
   index: number;
@@ -32,7 +45,12 @@ export function ScannedItemsReview({
   onConfirm,
   onCancel,
 }: ScannedItemsReviewProps) {
-  const [items, setItems] = useState<ReceiptItem[]>(() => [...result.items]);
+  const [items, setItems] = useState<ReceiptItem[]>(() =>
+    result.items.map((item) => ({
+      ...item,
+      quantity: quantityToMilliunits(item.quantity),
+    })),
+  );
   const [merchant, setMerchant] = useState(result.merchant ?? "");
   const [serviceFee, setServiceFee] = useState(
     result.serviceFeePercent.toString(),
@@ -51,7 +69,7 @@ export function ScannedItemsReview({
       setEditing({
         index,
         description: item.description,
-        quantity: item.quantity.toString(),
+        quantity: formatExpenseQuantity(item.quantity as ExpenseQuantity),
         unitPriceCents: item.unitPriceCents,
       });
     },
@@ -60,19 +78,23 @@ export function ScannedItemsReview({
 
   const saveEdit = useCallback(() => {
     if (!editing) return;
-    const qty = Math.max(0.001, parseFloat(editing.quantity) || 1);
+    const parsed = parseExpenseQuantity(editing.quantity);
     setItems((prev) =>
-      prev.map((item, i) =>
-        i === editing.index
-          ? {
-              ...item,
-              description: editing.description.trim() || item.description,
-              quantity: qty,
-              unitPriceCents: editing.unitPriceCents,
-              totalCents: editing.unitPriceCents * qty,
-            }
-          : item,
-      ),
+      prev.map((item, i) => {
+        if (i !== editing.index) return item;
+        const quantity = parsed.ok ? (parsed.value as number) : item.quantity;
+        const total = computeExpenseLineTotalCents(
+          quantity as ExpenseQuantity,
+          brandExpenseCents(editing.unitPriceCents),
+        );
+        return {
+          ...item,
+          description: editing.description.trim() || item.description,
+          quantity,
+          unitPriceCents: editing.unitPriceCents,
+          totalCents: total.ok ? (total.value as number) : item.totalCents,
+        };
+      }),
     );
     setEditing(null);
   }, [editing]);
@@ -90,14 +112,19 @@ export function ScannedItemsReview({
   const addItem = useCallback(() => {
     const desc = newDescription.trim();
     if (!desc || newPriceCents <= 0) return;
-    const qty = Math.max(0.001, parseFloat(newQuantity) || 1);
+    const parsed = parseExpenseQuantity(newQuantity);
+    const quantity = parsed.ok ? (parsed.value as number) : 1000;
+    const total = computeExpenseLineTotalCents(
+      quantity as ExpenseQuantity,
+      brandExpenseCents(newPriceCents),
+    );
     setItems((prev) => [
       ...prev,
       {
         description: desc,
-        quantity: qty,
+        quantity,
         unitPriceCents: newPriceCents,
-        totalCents: newPriceCents * qty,
+        totalCents: total.ok ? (total.value as number) : newPriceCents,
       },
     ]);
     setNewDescription("");
@@ -242,8 +269,12 @@ export function ScannedItemsReview({
                   >
                     <p className="font-medium">{item.description}</p>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                      {item.quantity > 1 && <span>{item.quantity}x</span>}
-                      {item.quantity > 1 && (
+                      {item.quantity > 1000 && (
+                        <span>
+                          {formatExpenseQuantity(item.quantity as ExpenseQuantity)}x
+                        </span>
+                      )}
+                      {item.quantity > 1000 && (
                         <span>{formatBRL(item.unitPriceCents)} un.</span>
                       )}
                       <span className="font-semibold tabular-nums text-foreground">

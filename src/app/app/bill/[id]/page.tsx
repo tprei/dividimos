@@ -29,6 +29,7 @@ const PixQrModal = dynamic(
 );
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
+import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import { loadExpense } from "@/lib/supabase/expense-actions";
 import { queryBalanceBetween } from "@/lib/supabase/settlement-actions";
 import { getGroupNavUrl } from "@/lib/group-nav";
@@ -690,7 +691,7 @@ export default function BillDetailPage({
               <div>
                 <p className="text-sm font-medium">{item.description}</p>
                 <p className="text-xs text-muted-foreground">
-                  {item.quantity > 1 ? `${item.quantity}x ` : ""}
+                  {item.quantity > 1000 ? `${formatExpenseQuantity(item.quantity as ExpenseQuantity)}x ` : ""}
                   {formatBRL(item.unitPriceCents)}/un
                 </p>
               </div>

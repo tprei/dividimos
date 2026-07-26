@@ -12,7 +12,7 @@ const mockItem: ExpenseItem = {
   id: "item-1",
   expenseId: "exp-1",
   description: "Pizza Margherita",
-  quantity: 2,
+  quantity: 2000,
   unitPriceCents: 3500,
   totalPriceCents: 7000,
   createdAt: "",

@@ -79,7 +79,7 @@ describe("Edge cases", () => {
     store.createExpense("Test", "itemized");
     store.addParticipant(userBob);
 
-    store.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
+    store.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
     const itemId = useBillStore.getState().items[0].id;
     store.splitItemEqually(itemId, ["user-alice", "user-bob"]);
     store.setPayerFull("user-alice");
@@ -170,7 +170,7 @@ describe("Edge cases", () => {
     store.addParticipant(userBob);
     store.addParticipant(userCarlos);
 
-    store.addItem({ description: "Shared", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    store.addItem({ description: "Shared", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     store.splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
 
@@ -189,7 +189,7 @@ describe("Edge cases", () => {
     store.setCurrentUser(userAlice);
     store.createExpense("Test", "itemized");
     store.addParticipant(userBob);
-    store.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
+    store.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
 
     store.reset();
 

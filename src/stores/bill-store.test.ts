@@ -58,7 +58,7 @@ describe("splitItemEqually", () => {
   function setupItemizedExpense() {
     const s = setup();
     s.createExpense("Test", "itemized");
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     return useBillStore.getState();
   }
 
@@ -226,7 +226,7 @@ describe("getGrandTotal", () => {
 
   it("returns items + service fee + fixed fees for itemized expense", () => {
     setup().createExpense("Test", "itemized");
-    useBillStore.getState().addItem({ description: "X", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    useBillStore.getState().addItem({ description: "X", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     useBillStore.getState().updateExpense({ fixedFees: 500 });
     // 10000 items + 10% service fee (1000) + 500 fixed = 11500
     expect(useBillStore.getState().getGrandTotal()).toBe(11500);
@@ -255,7 +255,7 @@ describe("getParticipantTotal", () => {
     setup().createExpense("Test", "itemized");
     const { addParticipant, addItem, splitItemEqually, getGrandTotal, getParticipantTotal } = useBillStore.getState();
     addParticipant(userBob);
-    addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     splitItemEqually(itemId, ["user-alice", "user-bob"]);
     const grandTotal = getGrandTotal();
@@ -269,7 +269,7 @@ describe("getParticipantTotal", () => {
     const { addParticipant, addItem, splitItemEqually, getGrandTotal, getParticipantTotal } = useBillStore.getState();
     addParticipant(userBob);
     addParticipant(userCarlos);
-    addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
     const grandTotal = getGrandTotal();
@@ -285,7 +285,7 @@ describe("getParticipantTotal", () => {
     useBillStore.getState().updateExpense({ fixedFees: 100 });
     const { addParticipant, addItem, splitItemEqually, getGrandTotal, getParticipantTotal } = useBillStore.getState();
     addParticipant(userBob);
-    addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     splitItemEqually(itemId, ["user-alice", "user-bob"]);
     const grandTotal = getGrandTotal();
@@ -302,7 +302,7 @@ describe("selectPreviewDebts", () => {
     s.createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
     const { addItem, splitItemEqually, setPayerFull } = useBillStore.getState();
-    addItem({ description: "X", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    addItem({ description: "X", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     splitItemEqually(itemId, ["user-alice", "user-bob"]);
     setPayerFull("user-alice");
@@ -316,7 +316,7 @@ describe("selectPreviewDebts", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     const { addItem, assignItem, setPayerFull } = useBillStore.getState();
-    addItem({ description: "X", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    addItem({ description: "X", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     assignItem(itemId, "user-alice", "fixed", 10000);
     setPayerFull("user-alice");
@@ -374,7 +374,7 @@ describe("getExpenseShares", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     s.addParticipant(userBob);
-    s.addItem({ description: "X", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "X", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     s.splitItemEqually(itemId, ["user-alice", "user-bob"]);
     const shares = useBillStore.getState().getExpenseShares();
@@ -388,7 +388,7 @@ describe("getExpenseShares", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     s.addParticipant(userBob);
-    s.addItem({ description: "X", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "X", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     // Only assign to alice, not bob
     s.assignItem(itemId, "user-alice", "fixed", 10000);
@@ -449,7 +449,7 @@ describe("reset", () => {
     s.createExpense("Test", "itemized");
     s.addParticipant(userBob);
     s.addGuest("Diana");
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
     s.setPayerFull("user-alice");
 
     s.reset();
@@ -502,8 +502,8 @@ describe("hydrateFromVoice", () => {
         amountCents: 5500,
         expenseType: "itemized",
         items: [
-          { description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
-          { description: "Pizza", quantity: 1, unitPriceCents: 2500, totalCents: 2500 },
+          { description: "Cerveja", quantity: 2000, unitPriceCents: 1500, totalCents: 3000 },
+          { description: "Pizza", quantity: 1000, unitPriceCents: 2500, totalCents: 2500 },
         ],
         participants: [],
         merchantName: "Bar do Zé",
@@ -529,7 +529,7 @@ describe("hydrateFromVoice", () => {
     useBillStore.getState().createExpense("Old", "itemized");
     useBillStore.getState().addItem({
       description: "Old item",
-      quantity: 1,
+      quantity: 1000,
       unitPriceCents: 1000,
       totalPriceCents: 1000,
     });
@@ -631,7 +631,7 @@ describe("guest management", () => {
   it("removeGuest cascades to splits", () => {
     setup().createExpense("Test", "itemized");
     const s = useBillStore.getState();
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     const guestId = useBillStore.getState().addGuest("Diana");
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", guestId]);
@@ -672,7 +672,7 @@ describe("guests in splits and ledger", () => {
   it("splitItemEqually works with mix of participants and guests", () => {
     setup().createExpense("Test", "itemized");
     const s = useBillStore.getState();
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     const guestId = useBillStore.getState().addGuest("Diana");
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", guestId]);
@@ -710,7 +710,7 @@ describe("guests in splits and ledger", () => {
     setup().createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
     const guestId = useBillStore.getState().addGuest("Diana");
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 9000, totalPriceCents: 9000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 9000, totalPriceCents: 9000 });
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", guestId]);
     useBillStore.getState().setPayerFull("user-alice");
@@ -737,7 +737,7 @@ describe("guests in splits and ledger", () => {
   it("getParticipantTotal works for guest IDs", () => {
     setup().createExpense("Test", "itemized");
     const guestId = useBillStore.getState().addGuest("Diana");
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", guestId]);
     const guestTotal = useBillStore.getState().getParticipantTotal(guestId);
@@ -751,7 +751,7 @@ describe("guests in splits and ledger", () => {
     useBillStore.getState().updateExpense({ fixedFees: 300 });
     useBillStore.getState().addParticipant(userBob);
     const guestId = useBillStore.getState().addGuest("Diana");
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", guestId]);
     const grandTotal = useBillStore.getState().getGrandTotal();
@@ -765,7 +765,7 @@ describe("guests in splits and ledger", () => {
 describe("participant and guest removal flows", () => {
   it("guest removal after itemized split shrinks splits to remaining participants", () => {
     setup().createExpense("Test", "itemized");
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     const guestId = useBillStore.getState().addGuest("Diana");
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", guestId]);
@@ -808,7 +808,7 @@ describe("participant and guest removal flows", () => {
   it("participant removal after itemized split removes that participant's splits", () => {
     setup().createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob"]);
     expect(useBillStore.getState().splits).toHaveLength(2);
@@ -837,7 +837,7 @@ describe("participant and guest removal flows", () => {
     setup().createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
     useBillStore.getState().addParticipant(userCarlos);
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 9000, totalPriceCents: 9000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 9000, totalPriceCents: 9000 });
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
     expect(useBillStore.getState().splits).toHaveLength(3);
@@ -859,7 +859,7 @@ describe("participant and guest removal flows", () => {
     setup().createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
     useBillStore.getState().addParticipant(userCarlos);
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 9000, totalPriceCents: 9000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 9000, totalPriceCents: 9000 });
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
     useBillStore.getState().setPayerFull("user-alice");
@@ -879,7 +879,7 @@ describe("participant and guest removal flows", () => {
     setup().createExpense("Test", "itemized");
     useBillStore.getState().addParticipant(userBob);
     useBillStore.getState().addParticipant(userCarlos);
-    useBillStore.getState().addItem({ description: "Pizza", quantity: 1, unitPriceCents: 9000, totalPriceCents: 9000 });
+    useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 9000, totalPriceCents: 9000 });
     const itemId = useBillStore.getState().items[0].id;
     useBillStore.getState().splitItemEqually(itemId, ["user-alice", "user-bob", "user-carlos"]);
 
@@ -937,7 +937,7 @@ describe("createExpenseFromDm", () => {
   it("resets items, payers, splits, and guests", () => {
     const s = setup();
     s.createExpense("Old", "itemized");
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
     s.addGuest("Guest");
 
     s.createExpenseFromDm("dm-group-1", userBob);
@@ -1017,8 +1017,8 @@ describe("hydrateFromChatDraft", () => {
         expenseType: "itemized",
         splitType: "custom",
         items: [
-          { description: "Arroz", quantity: 1, unitPriceCents: 2000, totalCents: 2000 },
-          { description: "Feijão", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
+          { description: "Arroz", quantity: 1000, unitPriceCents: 2000, totalCents: 2000 },
+          { description: "Feijão", quantity: 2000, unitPriceCents: 1500, totalCents: 3000 },
         ],
         participants: [],
         payerHandle: null,
@@ -1036,7 +1036,7 @@ describe("hydrateFromChatDraft", () => {
     expect(items[0].description).toBe("Arroz");
     expect(items[0].totalPriceCents).toBe(2000);
     expect(items[1].description).toBe("Feijão");
-    expect(items[1].quantity).toBe(2);
+    expect(items[1].quantity).toBe(2000);
     expect(items[1].totalPriceCents).toBe(3000);
     expect(payers).toHaveLength(0);
     expect(totalAmountInput).toBe(0);
@@ -1110,7 +1110,7 @@ describe("hydrateFromChatDraft", () => {
   it("resets previous state before hydrating", () => {
     const s = setup();
     s.createExpense("Old", "itemized");
-    s.addItem({ description: "Old item", quantity: 1, unitPriceCents: 1000, totalPriceCents: 1000 });
+    s.addItem({ description: "Old item", quantity: 1000, unitPriceCents: 1000, totalPriceCents: 1000 });
     s.addGuest("Guest");
 
     s.hydrateFromChatDraft(
@@ -1165,7 +1165,7 @@ describe("consumption memoization", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     s.addParticipant(userBob);
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     s.splitItemEqually(itemId, ["user-alice", "user-bob"]);
     s.setPayerFull("user-alice");
@@ -1219,7 +1219,7 @@ describe("consumption memoization", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     s.addParticipant(userBob);
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
     s.splitItemEqually(itemId, ["user-alice", "user-bob"]);
 
@@ -1236,8 +1236,8 @@ describe("consumption memoization", () => {
     s.addParticipant(userBob);
     s.addParticipant(userCarlos);
     s.updateExpense({ serviceFeePercent: 10, fixedFees: 300 });
-    s.addItem({ description: "Pizza", quantity: 1, unitPriceCents: 6000, totalPriceCents: 6000 });
-    s.addItem({ description: "Drinks", quantity: 1, unitPriceCents: 3000, totalPriceCents: 3000 });
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 6000, totalPriceCents: 6000 });
+    s.addItem({ description: "Drinks", quantity: 1000, unitPriceCents: 3000, totalPriceCents: 3000 });
     const items = useBillStore.getState().items;
     s.splitItemEqually(items[0].id, ["user-alice", "user-bob", "user-carlos"]);
     s.splitItemEqually(items[1].id, ["user-alice", "user-bob"]);

@@ -85,8 +85,8 @@ describe("ChatDraftCard", () => {
     const result = makeResult({
       expenseType: "itemized",
       items: [
-        { description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
-        { description: "Batata", quantity: 1, unitPriceCents: 2000, totalCents: 2000 },
+        { description: "Cerveja", quantity: 2000, unitPriceCents: 1500, totalCents: 3000 },
+        { description: "Batata", quantity: 1000, unitPriceCents: 2000, totalCents: 2000 },
       ],
       amountCents: 5000,
     });

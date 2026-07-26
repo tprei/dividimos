@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import type { MemberContext } from "./voice-expense-parser";
 import { sanitizeMemberField, sanitizeUserText } from "./llm-prompt-safety";
+import { parseExpenseQuantity } from "./expense-quantity";
 
 export type { MemberContext } from "./voice-expense-parser";
 
@@ -266,7 +267,8 @@ export function sanitizeChatResult(parsed: ChatExpenseResult): ChatExpenseResult
   for (const item of parsed.items) {
     item.unitPriceCents = Math.round(Math.max(0, item.unitPriceCents ?? 0));
     item.totalCents = Math.round(Math.max(0, item.totalCents ?? 0));
-    item.quantity = Math.max(0, item.quantity ?? 0);
+    const quantityParsed = parseExpenseQuantity(item.quantity);
+    item.quantity = quantityParsed.ok ? (quantityParsed.value as number) : 0;
   }
 
   if (

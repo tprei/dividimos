@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AddItemForm } from "@/components/bill/add-item-form";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
+import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import type { ExpenseItem } from "@/types";
 
 interface Expense {
@@ -46,7 +47,7 @@ export function ItemsStep({
           <motion.div key={item.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -100 }} className="flex items-center justify-between rounded-xl border bg-card p-3">
             <div>
               <p className="text-sm font-medium">{item.description}</p>
-              <p className="text-xs text-muted-foreground">{item.quantity}x {formatBRL(item.unitPriceCents)}</p>
+              <p className="text-xs text-muted-foreground">{formatExpenseQuantity(item.quantity as ExpenseQuantity)}x {formatBRL(item.unitPriceCents)}</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="font-semibold tabular-nums text-sm">{formatBRL(item.totalPriceCents)}</span>

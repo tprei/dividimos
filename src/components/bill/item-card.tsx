@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Trash2, Users, UsersRound } from "lucide-react";
 import { formatBRL } from "@/lib/currency";
+import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import { haptics } from "@/hooks/use-haptics";
 import type { UserProfile } from "@/types";
 
@@ -79,7 +80,7 @@ export function ItemCard({
         <div className="min-w-0 flex-1">
           <p className="font-medium">{item.description}</p>
           <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-            {item.quantity > 1 && <span>{item.quantity}x</span>}
+            {item.quantity > 1000 && (<span>{formatExpenseQuantity(item.quantity as ExpenseQuantity)}x</span>)}
             <span className="font-semibold tabular-nums text-foreground">
               {formatBRL(item.totalPriceCents)}
             </span>

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { sanitizeMemberField, sanitizeUserText } from "./llm-prompt-safety";
+import { parseExpenseQuantity } from "./expense-quantity";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -224,7 +225,8 @@ export async function parseVoiceExpense(
   for (const item of parsed.items) {
     item.unitPriceCents = Math.round(Math.max(0, item.unitPriceCents ?? 0));
     item.totalCents = Math.round(Math.max(0, item.totalCents ?? 0));
-    item.quantity = Math.max(0, item.quantity ?? 0);
+    const quantityParsed = parseExpenseQuantity(item.quantity);
+    item.quantity = quantityParsed.ok ? (quantityParsed.value as number) : 0;
   }
 
   // If itemized with items but amountCents is 0, compute from items

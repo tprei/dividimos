@@ -19,6 +19,7 @@ import { SimplificationViewer } from "@/components/settlement/simplification-vie
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
+import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import { DEMO_ITEMS, DEMO_PIX_KEYS, DEMO_USERS } from "@/lib/demo-data";
 import { springs } from "@/lib/animations";
 import { computeRawEdges, simplifyDebts } from "@/lib/simplify";
@@ -337,7 +338,7 @@ export default function DemoPage() {
                   <div>
                     <p className="text-sm font-medium">{item.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {item.quantity > 1 ? `${item.quantity}x ` : ""}
+                      {item.quantity > 1000 ? `${formatExpenseQuantity(item.quantity as ExpenseQuantity)}x ` : ""}
                       {formatBRL(item.unitPriceCents)}/un
                     </p>
                   </div>

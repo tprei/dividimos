@@ -221,8 +221,8 @@ describe("confirmChatDraft", () => {
       expenseType: "itemized",
       amountCents: 5000,
       items: [
-        { description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
-        { description: "Batata", quantity: 1, unitPriceCents: 2000, totalCents: 2000 },
+        { description: "Cerveja", quantity: 2000, unitPriceCents: 1500, totalCents: 3000 },
+        { description: "Batata", quantity: 1000, unitPriceCents: 2000, totalCents: 2000 },
       ],
     });
 
@@ -232,7 +232,7 @@ describe("confirmChatDraft", () => {
     expect(draftArgs.items).toHaveLength(2);
     expect(draftArgs.items[0]).toEqual({
       description: "Cerveja",
-      quantity: 2,
+      quantity: 2000,
       unitPriceCents: 1500,
       totalPriceCents: 3000,
     });

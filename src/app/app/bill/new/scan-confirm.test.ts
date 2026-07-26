@@ -37,13 +37,13 @@ const sampleResult: ReceiptOcrResult = {
   items: [
     {
       description: "Cerveja Brahma 600ml",
-      quantity: 2,
+      quantity: 2000,
       unitPriceCents: 1200,
       totalCents: 2400,
     },
     {
       description: "Picanha 400g",
-      quantity: 1,
+      quantity: 1000,
       unitPriceCents: 4500,
       totalCents: 4500,
     },
@@ -83,11 +83,11 @@ describe("scan confirm → bill store integration", () => {
     const { items } = useBillStore.getState();
     expect(items).toHaveLength(2);
     expect(items[0].description).toBe("Cerveja Brahma 600ml");
-    expect(items[0].quantity).toBe(2);
+    expect(items[0].quantity).toBe(2000);
     expect(items[0].unitPriceCents).toBe(1200);
     expect(items[0].totalPriceCents).toBe(2400);
     expect(items[1].description).toBe("Picanha 400g");
-    expect(items[1].quantity).toBe(1);
+    expect(items[1].quantity).toBe(1000);
     expect(items[1].unitPriceCents).toBe(4500);
     expect(items[1].totalPriceCents).toBe(4500);
   });
@@ -124,7 +124,7 @@ describe("scan confirm → bill store integration", () => {
       items: [
         {
           description: "Pão francês",
-          quantity: 10,
+          quantity: 10000,
           unitPriceCents: 50,
           totalCents: 500,
         },
@@ -135,7 +135,7 @@ describe("scan confirm → bill store integration", () => {
     const { items } = useBillStore.getState();
     expect(items).toHaveLength(1);
     expect(items[0].description).toBe("Pão francês");
-    expect(items[0].quantity).toBe(10);
+    expect(items[0].quantity).toBe(10000);
     expect(items[0].totalPriceCents).toBe(500);
   });
 

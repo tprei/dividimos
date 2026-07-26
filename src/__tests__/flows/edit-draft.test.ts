@@ -141,7 +141,7 @@ describe("Edit Draft Flow", () => {
 
     useBillStore.getState().addItem({
       description: "Bebida",
-      quantity: 2,
+      quantity: 2000,
       unitPriceCents: 1500,
       totalPriceCents: 3000,
     });

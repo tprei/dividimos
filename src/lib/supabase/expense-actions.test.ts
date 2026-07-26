@@ -71,7 +71,7 @@ describe("saveExpenseDraft", () => {
     await saveExpenseDraft({
       ...baseDraftParams,
       items: [
-        { description: "Pizza", quantity: 1, unitPriceCents: 5000, totalPriceCents: 5000 },
+        { description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 },
       ],
       shares: [
         { userId: "user-alice", shareAmountCents: 5000 },
@@ -150,7 +150,7 @@ describe("loadExpense", () => {
         id: "item-1",
         expense_id: "expense-1",
         description: "Pizza",
-        quantity: 1,
+        quantity: 1000,
         unit_price_cents: 5000,
         total_price_cents: 5000,
         created_at: "2024-01-01T00:00:00Z",

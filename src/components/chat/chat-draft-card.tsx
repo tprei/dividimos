@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatBRL } from "@/lib/currency";
+import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export type ChatDraftStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -113,7 +114,7 @@ export function ChatDraftCard({
                 className="flex items-center justify-between text-sm"
               >
                 <span className="text-muted-foreground">
-                  {item.quantity > 1 ? `${item.quantity}x ` : ""}
+                  {item.quantity > 1000 ? `${formatExpenseQuantity(item.quantity as ExpenseQuantity)}x ` : ""}
                   {item.description}
                 </span>
                 <span className="tabular-nums">{formatBRL(item.totalCents)}</span>

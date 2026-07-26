@@ -8,6 +8,12 @@ import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { haptics } from "@/hooks/use-haptics";
+import {
+  computeExpenseLineTotalCents,
+  formatExpenseQuantity,
+  type ExpenseQuantity,
+} from "@/lib/expense-quantity";
+import { brandExpenseCents } from "@/lib/expense-money";
 
 interface AddItemFormProps {
   onAdd: (item: {
@@ -21,37 +27,44 @@ interface AddItemFormProps {
 
 export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
   const [description, setDescription] = useState("");
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(1000);
   const [priceCents, setPriceCents] = useState(0);
 
   const decrement = useCallback(() => {
     setQuantity((q) => {
-      if (q <= 1) return q;
+      if (q <= 1000) return q;
       haptics.selectionChanged();
-      return q - 1;
+      return q - 1000;
     });
   }, []);
 
   const increment = useCallback(() => {
     haptics.selectionChanged();
-    setQuantity((q) => q + 1);
+    setQuantity((q) => q + 1000);
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!description.trim() || priceCents <= 0) return;
 
+    const total = computeExpenseLineTotalCents(
+      quantity as ExpenseQuantity,
+      brandExpenseCents(priceCents),
+    );
+    if (!total.ok) return;
+
     onAdd({
       description: description.trim(),
       quantity,
       unitPriceCents: priceCents,
-      totalPriceCents: priceCents * quantity,
+      totalPriceCents: total.value as number,
     });
 
     setDescription("");
-    setQuantity(1);
+    setQuantity(1000);
     setPriceCents(0);
   };
+
 
   return (
     <motion.form
@@ -86,14 +99,14 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
             <button
               type="button"
               onClick={decrement}
-              disabled={quantity <= 1}
+              disabled={quantity <= 1000}
               aria-label="Diminuir quantidade"
               className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted disabled:opacity-30"
             >
               <Minus className="h-3 w-3" />
             </button>
             <span className="min-w-[1.5rem] text-center text-xs font-medium tabular-nums">
-              {quantity}x
+              {formatExpenseQuantity(quantity as ExpenseQuantity)}x
             </span>
             <button
               type="button"
