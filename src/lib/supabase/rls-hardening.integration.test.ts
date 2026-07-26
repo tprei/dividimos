@@ -161,17 +161,15 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
 
       draftId = draft!.id;
 
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: draftId, user_id: alice.id, share_amount_cents: 1000 },
-          { expense_id: draftId, user_id: bob.id, share_amount_cents: 1000 },
-        ]),
-        adminClient!.from("expense_payers").insert({
-          expense_id: draftId,
-          user_id: alice.id,
-          amount_cents: 2000,
-        }),
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: draftId, user_id: alice.id, share_amount_cents: 1000 },
+        { expense_id: draftId, user_id: bob.id, share_amount_cents: 1000 },
       ]);
+      await adminClient!.from("expense_payers").insert({
+        expense_id: draftId,
+        user_id: alice.id,
+        amount_cents: 2000,
+      });
     });
 
     it("creator cannot flip status from draft to active via direct UPDATE", async () => {
@@ -243,18 +241,15 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
         .select("id")
         .single();
 
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
-          { expense_id: expense!.id, user_id: unrelated.id, share_amount_cents: 3000 },
-        ]),
-        adminClient!.from("expense_payers").insert({
-          expense_id: expense!.id,
-          user_id: alice.id,
-          amount_cents: 6000,
-        }),
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
+        { expense_id: expense!.id, user_id: unrelated.id, share_amount_cents: 3000 },
       ]);
-
+      await adminClient!.from("expense_payers").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        amount_cents: 6000,
+      });
       const client = authenticateAs(alice);
       const { error } = await client.rpc("activate_expense", {
         p_expense_id: expense!.id,
@@ -283,25 +278,22 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
         .select("id")
         .single();
 
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 2000 },
-          { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 2000 },
-        ]),
-        adminClient!.from("expense_payers").insert({
-          expense_id: expense!.id,
-          user_id: unrelated.id,
-          amount_cents: 4000,
-        }),
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 2000 },
+        { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 2000 },
+        { expense_id: expense!.id, user_id: unrelated.id, share_amount_cents: 0 },
       ]);
-
+      await adminClient!.from("expense_payers").insert({
+        expense_id: expense!.id,
+        user_id: unrelated.id,
+        amount_cents: 4000,
+      });
       const client = authenticateAs(alice);
       const { error } = await client.rpc("activate_expense", {
         p_expense_id: expense!.id,
       });
-
       expect(error).not.toBeNull();
-      expect(error!.message).toContain("non_member_payer");
+      expect(error!.message).toContain("non_member_share");
 
       await adminClient!.from("expenses").delete().eq("id", expense!.id);
     });
@@ -328,17 +320,15 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
         .select("id")
         .single();
 
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 4000 },
-          { expense_id: expense!.id, user_id: invited.id, share_amount_cents: 4000 },
-        ]),
-        adminClient!.from("expense_payers").insert({
-          expense_id: expense!.id,
-          user_id: alice.id,
-          amount_cents: 8000,
-        }),
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 4000 },
+        { expense_id: expense!.id, user_id: invited.id, share_amount_cents: 4000 },
       ]);
+      await adminClient!.from("expense_payers").insert({
+        expense_id: expense!.id,
+        user_id: alice.id,
+        amount_cents: 8000,
+      });
 
       const client = authenticateAs(alice);
       const { error } = await client.rpc("activate_expense", {

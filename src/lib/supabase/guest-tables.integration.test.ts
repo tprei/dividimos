@@ -279,11 +279,12 @@ describe.skipIf(!isIntegrationTestReady)(
         .single();
 
       // Alice share: 5000, Bob share: 2000, Guest share: 3000 = 10000
+      const sharesResult = await adminClient!.from("expense_shares").insert([
+        { expense_id: expenseId, user_id: alice.id, share_amount_cents: 5000 },
+        { expense_id: expenseId, user_id: bob.id, share_amount_cents: 2000 },
+      ]);
+      expect(sharesResult.error).toBeNull();
       await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: expenseId, user_id: alice.id, share_amount_cents: 5000 },
-          { expense_id: expenseId, user_id: bob.id, share_amount_cents: 2000 },
-        ]),
         adminClient!.from("expense_guest_shares").insert({
           expense_id: expenseId,
           guest_id: guest!.id,
@@ -333,14 +334,14 @@ describe.skipIf(!isIntegrationTestReady)(
         .insert({ expense_id: expenseId, display_name: "Guest" })
         .select("id")
         .single();
-
       // Alice: 5000, Guest: 3000 = 8000 != 10000
+      const sharesResult = await adminClient!.from("expense_shares").insert({
+        expense_id: expenseId,
+        user_id: alice.id,
+        share_amount_cents: 5000,
+      });
+      expect(sharesResult.error).toBeNull();
       await Promise.all([
-        adminClient!.from("expense_shares").insert({
-          expense_id: expenseId,
-          user_id: alice.id,
-          share_amount_cents: 5000,
-        }),
         adminClient!.from("expense_guest_shares").insert({
           expense_id: expenseId,
           guest_id: guest!.id,
@@ -530,12 +531,11 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
       .select()
       .single();
 
+    await adminClient!.from("expense_shares").insert([
+      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 0 },
+      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 5000 },
+    ]);
     await Promise.all([
-      adminClient!.from("expense_shares").insert({
-        expense_id: expense!.id,
-        user_id: bob.id,
-        share_amount_cents: 5000,
-      }),
       adminClient!.from("expense_guest_shares").insert({
         expense_id: expense!.id,
         guest_id: guest!.id,
@@ -854,12 +854,12 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
       .select()
       .single();
 
+    await adminClient!.from("expense_shares").insert({
+      expense_id: expense!.id,
+      user_id: alice.id,
+      share_amount_cents: 5000,
+    });
     await Promise.all([
-      adminClient!.from("expense_shares").insert({
-        expense_id: expense!.id,
-        user_id: alice.id,
-        share_amount_cents: 5000,
-      }),
       adminClient!.from("expense_guest_shares").insert({
         expense_id: expense!.id,
         guest_id: guest!.id,
@@ -973,11 +973,11 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
       .select()
       .single();
 
+    await adminClient!.from("expense_shares").insert([
+      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
+      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 1000 },
+    ]);
     await Promise.all([
-      adminClient!.from("expense_shares").insert([
-        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
-        { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 1000 },
-      ]),
       adminClient!.from("expense_guest_shares").insert({
         expense_id: expense!.id,
         guest_id: guest!.id,

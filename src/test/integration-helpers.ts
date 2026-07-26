@@ -267,30 +267,37 @@ export async function createAndActivateExpense(
 
   const expenseId = expense.id;
 
-  // Insert shares and payers in parallel
-  const [sharesResult, payersResult] = await Promise.all([
-    adminClient.from("expense_shares").insert(
-      shares.map((s) => ({
-        expense_id: expenseId,
-        user_id: s.userId,
-        share_amount_cents: s.amount,
-      })),
-    ),
-    adminClient.from("expense_payers").insert(
-      payers.map((p) => ({
-        expense_id: expenseId,
-        user_id: p.userId,
-        amount_cents: p.amount,
-      })),
-    ),
-  ]);
+  // Payers are participant rows. Preserve payer-only fixtures as explicit
+  // zero-share registered users rather than creating unreachable payers.
+  const reachableShares = new Map(shares.map((share) => [share.userId, share.amount]));
+  for (const payer of payers) {
+    if (!reachableShares.has(payer.userId)) {
+      reachableShares.set(payer.userId, 0);
+    }
+  }
 
+  const sharesResult = await adminClient.from("expense_shares").insert(
+    [...reachableShares].map(([userId, amount]) => ({
+      expense_id: expenseId,
+      user_id: userId,
+      share_amount_cents: amount,
+    })),
+  );
   if (sharesResult.error) {
     throw new Error(`Failed to insert shares: ${sharesResult.error.message}`);
   }
+
+  const payersResult = await adminClient.from("expense_payers").insert(
+    payers.map((p) => ({
+      expense_id: expenseId,
+      user_id: p.userId,
+      amount_cents: p.amount,
+    })),
+  );
   if (payersResult.error) {
     throw new Error(`Failed to insert payers: ${payersResult.error.message}`);
   }
+
 
   // Activate via RPC as the creator
   const creatorClient = authenticateAs(creator);

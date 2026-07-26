@@ -106,11 +106,12 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
     if (guestError || !guest) throw new Error(`create guest: ${guestError?.message}`);
     guestId = guest.id;
 
-    // alice: share 1 + pays 1. bob: pays 1 only (no share). guest: share 1.
-    const [sharesRes, guestShareRes, payersRes] = await Promise.all([
-      adminClient!.from("expense_shares").insert([
-        { expense_id: expenseId, user_id: alice.id, share_amount_cents: 1 },
-      ]),
+    // alice: share 1 + pays 1. bob: zero share + pays 1. guest: share 1.
+    const sharesRes = await adminClient!.from("expense_shares").insert([
+      { expense_id: expenseId, user_id: alice.id, share_amount_cents: 1 },
+      { expense_id: expenseId, user_id: bob.id, share_amount_cents: 0 },
+    ]);
+    const [guestShareRes, payersRes] = await Promise.all([
       adminClient!.from("expense_guest_shares").insert([
         { expense_id: expenseId, guest_id: guestId, share_amount_cents: 1 },
       ]),

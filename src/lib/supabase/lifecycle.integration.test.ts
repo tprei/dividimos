@@ -273,14 +273,12 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         .select("id")
         .single();
 
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: draft!.id, user_id: alice.id, share_amount_cents: 5000 },
-          { expense_id: draft!.id, user_id: bob.id, share_amount_cents: 5000 },
-        ]),
-        adminClient!.from("expense_payers").insert([
-          { expense_id: draft!.id, user_id: alice.id, amount_cents: 10000 },
-        ]),
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: draft!.id, user_id: alice.id, share_amount_cents: 5000 },
+        { expense_id: draft!.id, user_id: bob.id, share_amount_cents: 5000 },
+      ]);
+      await adminClient!.from("expense_payers").insert([
+        { expense_id: draft!.id, user_id: alice.id, amount_cents: 10000 },
       ]);
 
       // Edit: change total to 6000, update shares and payers
@@ -295,17 +293,13 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         adminClient!.from("expense_payers").delete().eq("expense_id", draft!.id),
       ]);
 
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: draft!.id, user_id: alice.id, share_amount_cents: 3000 },
-          { expense_id: draft!.id, user_id: bob.id, share_amount_cents: 3000 },
-        ]),
-        adminClient!.from("expense_payers").insert([
-          { expense_id: draft!.id, user_id: alice.id, amount_cents: 6000 },
-        ]),
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: draft!.id, user_id: alice.id, share_amount_cents: 3000 },
+        { expense_id: draft!.id, user_id: bob.id, share_amount_cents: 3000 },
       ]);
-
-      // Activate — should use the edited 6000 values
+      await adminClient!.from("expense_payers").insert([
+        { expense_id: draft!.id, user_id: alice.id, amount_cents: 6000 },
+      ]);
       const aliceClient = authenticateAs(alice);
       const { error } = await aliceClient.rpc("activate_expense", {
         p_expense_id: draft!.id,
@@ -518,22 +512,20 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
           .single(),
       ]);
 
-      // Set up child data for both
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: draft1!.id, user_id: alice.id, share_amount_cents: 4000 },
-          { expense_id: draft1!.id, user_id: bob.id, share_amount_cents: 4000 },
-        ]),
-        adminClient!.from("expense_payers").insert([
-          { expense_id: draft1!.id, user_id: alice.id, amount_cents: 8000 },
-        ]),
-        adminClient!.from("expense_shares").insert([
-          { expense_id: draft2!.id, user_id: alice.id, share_amount_cents: 2000 },
-          { expense_id: draft2!.id, user_id: bob.id, share_amount_cents: 2000 },
-        ]),
-        adminClient!.from("expense_payers").insert([
-          { expense_id: draft2!.id, user_id: alice.id, amount_cents: 4000 },
-        ]),
+      // Set up child data for both drafts without racing each payer's FK.
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: draft1!.id, user_id: alice.id, share_amount_cents: 4000 },
+        { expense_id: draft1!.id, user_id: bob.id, share_amount_cents: 4000 },
+      ]);
+      await adminClient!.from("expense_payers").insert([
+        { expense_id: draft1!.id, user_id: alice.id, amount_cents: 8000 },
+      ]);
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: draft2!.id, user_id: alice.id, share_amount_cents: 2000 },
+        { expense_id: draft2!.id, user_id: bob.id, share_amount_cents: 2000 },
+      ]);
+      await adminClient!.from("expense_payers").insert([
+        { expense_id: draft2!.id, user_id: alice.id, amount_cents: 4000 },
       ]);
 
       // Delete draft1
