@@ -560,8 +560,11 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
       p_claim_token: guest!.claim_token,
     });
 
-    // Carol should now owe Alice 5000 (guest_share=5000, alice paid 10000,
-    // delta = ROUND(5000 * 10000 / 10000) = 5000)
+    // Carol should now owe Alice 5000. alice is the sole creditor, so the
+    // guest's single pending plan edge is guest->alice = 5000; the claim
+    // (#468) applies that stored edge directly (old per-payer ROUND body
+    // computed ROUND(5000 * 10000 / 10000) = 5000 — same value for a single
+    // payer, but the function no longer rounds; it consumes the edge).
     const [userA, userB] =
       carol.id < alice.id ? [carol.id, alice.id] : [alice.id, carol.id];
 
