@@ -30,10 +30,14 @@ export function ChatDateSeparator({ date }: ChatDateSeparatorProps) {
   );
 }
 
+function calendarDateUtc(dateStr: string): string {
+  return new Date(dateStr).toISOString().slice(0, 10);
+}
+
 export function shouldShowDateSeparator(
   currentDate: string,
   previousDate: string | undefined,
 ): boolean {
   if (!previousDate) return true;
-  return new Date(currentDate).toDateString() !== new Date(previousDate).toDateString();
+  return calendarDateUtc(currentDate) !== calendarDateUtc(previousDate);
 }
