@@ -290,18 +290,15 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Concurrent activate + save: FOR UPDATE locking prevents corruption
+  // Concurrent activate + save: row locking preserves the active graph
   //
   // Both RPCs are fired at the same instant via Promise.all so they race
   // through the network and hit the DB concurrently. PostgreSQL's FOR UPDATE
-  // inside save_expense_draft serialises them: one wins the row lock, the
-  // other waits and then observes the committed status change. The save must
-  // either:
-  //   (a) be rejected with invalid_status, OR
-  //   (b) complete cleanly only if it somehow acquired the lock first
-  //       (which cannot happen here because activate runs and commits first
-  //        when both start simultaneously — but we accept either outcome as
-  //        long as child rows are coherent).
+  // inside save_expense_draft serialises them. The save supplies a valid
+  // replacement graph, so either legal lock order must leave an active expense
+  // with the exact shares and payer amount:
+  //   (a) activation locks first, so save returns invalid_status; or
+  //   (b) save locks first, returns the same expense id, and activation follows.
   // -------------------------------------------------------------------------
 
   it("concurrent activate and save produce a coherent final state", async () => {
@@ -348,38 +345,58 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
           service_fee_percent: 0,
           fixed_fees: 0,
         },
-        shares: [],
-        payers: [],
+        shares: [
+          { user_id: alice.id, share_amount_cents: 3000 },
+          { user_id: bob.id, share_amount_cents: 3000 },
+        ],
+        payers: [{ user_id: alice.id, amount_cents: 6000 }],
       }),
     ]);
 
-    // activate must succeed
     expect(activateResult.error).toBeNull();
+    if (saveResult.error) {
+      expect(saveResult.error.message).toMatch(/invalid_status/);
+    } else {
+      expect(saveResult.data?.id).toBe(expenseId);
+    }
 
-    // save must be rejected: if it acquired the lock before activate it would
-    // still be 'draft' momentarily but since activate committed before save
-    // could change status, save sees 'active' and returns invalid_status.
-    // In the rare event save lost the race but PostgreSQL serialised it after
-    // activate, it must also return invalid_status.
-    expect(saveResult.error).not.toBeNull();
-    expect(saveResult.error!.message).toMatch(/invalid_status/);
+    const [
+      { data: shareRows, error: sharesError },
+      { data: payerRows, error: payersError },
+      { data: expenseRow, error: expenseError },
+    ] = await Promise.all([
+      adminClient!
+        .from("expense_shares")
+        .select("user_id, share_amount_cents")
+        .eq("expense_id", expenseId),
+      adminClient!
+        .from("expense_payers")
+        .select("amount_cents")
+        .eq("expense_id", expenseId),
+      adminClient!
+        .from("expenses")
+        .select("status")
+        .eq("id", expenseId)
+        .single(),
+    ]);
 
-    // Child rows must be intact — not wiped by a partial save
-    const { data: shareRows } = await adminClient!
-      .from("expense_shares")
-      .select("user_id")
-      .eq("expense_id", expenseId);
-
+    expect(sharesError).toBeNull();
+    expect(payersError).toBeNull();
+    expect(expenseError).toBeNull();
     expect(shareRows).toHaveLength(2);
-
-    // Expense must be active
-    const { data: row } = await adminClient!
-      .from("expenses")
-      .select("status")
-      .eq("id", expenseId)
-      .single();
-
-    expect(row!.status).toBe("active");
+    expect(shareRows).toEqual(
+      expect.arrayContaining([
+        { user_id: alice.id, share_amount_cents: 3000 },
+        { user_id: bob.id, share_amount_cents: 3000 },
+      ]),
+    );
+    expect(payerRows).toHaveLength(1);
+    const payerTotal = payerRows!.reduce(
+      (total, payer) => total + payer.amount_cents,
+      0,
+    );
+    expect(payerTotal).toBe(6000);
+    expect(expenseRow?.status).toBe("active");
   });
 
   // -------------------------------------------------------------------------
