@@ -264,6 +264,10 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
         .select()
         .single();
 
+      await adminClient!.from("expense_shares").insert([
+        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 5000 },
+        { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 5000 },
+      ]);
       const { error } = await adminClient!.from("expense_payers").insert([
         { expense_id: expense!.id, user_id: alice.id, amount_cents: 7000 },
         { expense_id: expense!.id, user_id: bob.id, amount_cents: 3000 },

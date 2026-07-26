@@ -90,14 +90,12 @@ describe.skipIf(!isIntegrationTestReady)(
 
         const expenseId = expense!.id;
 
-        await Promise.all([
-          adminClient!.from("expense_shares").insert([
-            { expense_id: expenseId, user_id: alice.id, share_amount_cents: 3000 },
-            { expense_id: expenseId, user_id: bob.id, share_amount_cents: 3000 },
-          ]),
-          adminClient!.from("expense_payers").insert([
-            { expense_id: expenseId, user_id: alice.id, amount_cents: 6000 },
-          ]),
+        await adminClient!.from("expense_shares").insert([
+          { expense_id: expenseId, user_id: alice.id, share_amount_cents: 3000 },
+          { expense_id: expenseId, user_id: bob.id, share_amount_cents: 3000 },
+        ]);
+        await adminClient!.from("expense_payers").insert([
+          { expense_id: expenseId, user_id: alice.id, amount_cents: 6000 },
         ]);
 
         // Fire both concurrently
@@ -300,14 +298,12 @@ describe.skipIf(!isIntegrationTestReady)(
           .select("id")
           .single();
 
-        await Promise.all([
-          adminClient!.from("expense_shares").insert([
-            { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 2000 },
-            { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 2000 },
-          ]),
-          adminClient!.from("expense_payers").insert([
-            { expense_id: expense!.id, user_id: alice.id, amount_cents: 4000 },
-          ]),
+        await adminClient!.from("expense_shares").insert([
+          { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 2000 },
+          { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 2000 },
+        ]);
+        await adminClient!.from("expense_payers").insert([
+          { expense_id: expense!.id, user_id: alice.id, amount_cents: 4000 },
         ]);
 
         const [expenseResult, settlementResult] = await Promise.allSettled([
@@ -361,17 +357,14 @@ describe.skipIf(!isIntegrationTestReady)(
           .select("id")
           .single();
 
-        await Promise.all([
-          adminClient!.from("expense_shares").insert([
-            { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
-            { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 3000 },
-            { expense_id: expense!.id, user_id: carol.id, share_amount_cents: 3000 },
-          ]),
-          adminClient!.from("expense_payers").insert([
-            { expense_id: expense!.id, user_id: alice.id, amount_cents: 9000 },
-          ]),
+        await adminClient!.from("expense_shares").insert([
+          { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
+          { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 3000 },
+          { expense_id: expense!.id, user_id: carol.id, share_amount_cents: 3000 },
         ]);
-
+        await adminClient!.from("expense_payers").insert([
+          { expense_id: expense!.id, user_id: alice.id, amount_cents: 9000 },
+        ]);
         const [expResult, settleResult] = await Promise.allSettled([
           authenticateAs(alice).rpc("activate_expense", {
             p_expense_id: expense!.id,
@@ -490,21 +483,19 @@ describe.skipIf(!isIntegrationTestReady)(
             .single(),
         ]);
 
-        await Promise.all([
-          adminClient!.from("expense_shares").insert([
-            { expense_id: exp1!.id, user_id: alice.id, share_amount_cents: 1000 },
-            { expense_id: exp1!.id, user_id: bob.id, share_amount_cents: 1000 },
-          ]),
-          adminClient!.from("expense_payers").insert([
-            { expense_id: exp1!.id, user_id: alice.id, amount_cents: 2000 },
-          ]),
-          adminClient!.from("expense_shares").insert([
-            { expense_id: exp2!.id, user_id: alice.id, share_amount_cents: 1500 },
-            { expense_id: exp2!.id, user_id: bob.id, share_amount_cents: 1500 },
-          ]),
-          adminClient!.from("expense_payers").insert([
-            { expense_id: exp2!.id, user_id: alice.id, amount_cents: 3000 },
-          ]),
+        await adminClient!.from("expense_shares").insert([
+          { expense_id: exp1!.id, user_id: alice.id, share_amount_cents: 1000 },
+          { expense_id: exp1!.id, user_id: bob.id, share_amount_cents: 1000 },
+        ]);
+        await adminClient!.from("expense_payers").insert([
+          { expense_id: exp1!.id, user_id: alice.id, amount_cents: 2000 },
+        ]);
+        await adminClient!.from("expense_shares").insert([
+          { expense_id: exp2!.id, user_id: alice.id, share_amount_cents: 1500 },
+          { expense_id: exp2!.id, user_id: bob.id, share_amount_cents: 1500 },
+        ]);
+        await adminClient!.from("expense_payers").insert([
+          { expense_id: exp2!.id, user_id: alice.id, amount_cents: 3000 },
         ]);
 
         // Activate both concurrently
