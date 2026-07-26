@@ -1,6 +1,17 @@
 import { createClient } from "@/lib/supabase/client";
 import { saveExpenseDraft } from "@/lib/supabase/expense-actions";
 import { activateExpense } from "@/lib/supabase/expense-rpc";
+import {
+  parseExpenseCents,
+  ZERO_EXPENSE_CENTS,
+  ZERO_GRAPH_REVISION,
+  ZERO_SERVICE_FEE_BASIS_POINTS,
+  type ExpenseCents,
+} from "@/lib/expense-money";
+import {
+  computeExpenseLineTotalCents,
+  parseExpenseQuantity,
+} from "@/lib/expense-quantity";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import type { UserProfile, ActivateExpenseResult } from "@/types";
 
@@ -84,78 +95,112 @@ function resolvePayerId(
 }
 
 /**
- * Converts a ChatExpenseResult into draft params, saves it, and immediately
- * activates the expense. The activate_expense RPC atomically updates balances
- * and inserts a system_expense message in the DM group's chat.
+ * Converts a validated ChatExpenseResult into a graph draft, saves it, and
+ * activates it using the returned graph revision.
  *
- * This is the "one-tap confirm" flow for AI-parsed expenses in DM conversations.
+ * This is the "one-tap confirm" flow for AI-parsed expenses in DM
+ * conversations.
  */
 export async function confirmChatDraft(
   params: ConfirmChatDraftParams,
 ): Promise<ConfirmChatDraftResult> {
   const { result, groupId, currentUserId, members, precomputedShares } = params;
 
-  // Resolve participant user IDs
+  const amount = parseExpenseCents(result.amountCents, "positive");
+  if (!amount.ok) {
+    return { error: "A despesa reconhecida não tem um valor válido." };
+  }
+
   const participantIds = resolveParticipantIds(result, currentUserId, members);
   const payerId = resolvePayerId(result, currentUserId, members);
+  if (participantIds.length === 0 || !participantIds.includes(payerId)) {
+    return { error: "Não foi possível identificar os participantes da despesa." };
+  }
 
-  // Use precomputed shares when provided (non-equal splits), otherwise distribute evenly
-  let shares: Array<{ userId: string; shareAmountCents: number }>;
+  let shares: Array<{ userId: string; shareAmountCents: ExpenseCents }>;
   if (precomputedShares && precomputedShares.length > 0) {
-    shares = precomputedShares;
+    shares = [];
+    for (const share of precomputedShares) {
+      const parsed = parseExpenseCents(share.shareAmountCents, "allow");
+      if (!parsed.ok) {
+        return { error: "A divisão reconhecida não é válida." };
+      }
+      shares.push({ userId: share.userId, shareAmountCents: parsed.value });
+    }
   } else {
     const perPersonCents = Math.floor(result.amountCents / participantIds.length);
     const remainder = result.amountCents - perPersonCents * participantIds.length;
-    shares = participantIds.map((userId, i) => ({
-      userId,
-      shareAmountCents: perPersonCents + (i === 0 ? remainder : 0),
-    }));
+    shares = [];
+    for (const [index, userId] of participantIds.entries()) {
+      const parsed = parseExpenseCents(
+        perPersonCents + (index === 0 ? remainder : 0),
+        "allow",
+      );
+      if (!parsed.ok) {
+        return { error: "A divisão reconhecida não é válida." };
+      }
+      shares.push({ userId, shareAmountCents: parsed.value });
+    }
   }
 
-  // Build items for itemized expenses
-  const items =
-    result.expenseType === "itemized"
-      ? result.items.map((item) => ({
-          description: item.description,
-          quantity: item.quantity,
-          unitPriceCents: item.unitPriceCents,
-          totalPriceCents: item.totalCents,
-        }))
-      : undefined;
+  const items = [];
+  if (result.expenseType === "itemized") {
+    for (const item of result.items) {
+      const quantity = parseExpenseQuantity(item.quantity);
+      const unitPriceCents = parseExpenseCents(item.unitPriceCents, "positive");
+      const totalPriceCents = parseExpenseCents(item.totalCents, "positive");
+      if (!quantity.ok || !unitPriceCents.ok || !totalPriceCents.ok) {
+        return { error: "Os itens reconhecidos não são válidos." };
+      }
+      const computed = computeExpenseLineTotalCents(quantity.value, unitPriceCents.value);
+      if (!computed.ok || computed.value !== totalPriceCents.value) {
+        return { error: "Os itens reconhecidos não fecham a conta." };
+      }
+      items.push({
+        description: item.description,
+        quantity: quantity.value,
+        unitPriceCents: unitPriceCents.value,
+        totalPriceCents: totalPriceCents.value,
+      });
+    }
+  }
 
-  // Step 1: Save draft
+  const payerAmount = parseExpenseCents(amount.value, "positive");
+  if (!payerAmount.ok) {
+    return { error: "O pagador reconhecido não é válido." };
+  }
+
   const draftResult = await saveExpenseDraft({
     groupId,
-    creatorId: currentUserId,
     title: result.title || "Despesa via IA",
-    merchantName: result.merchantName ?? undefined,
+    merchantName: result.merchantName,
     expenseType: result.expenseType,
-    totalAmount: result.amountCents,
-    serviceFeePercent: 0,
-    fixedFees: 0,
+    totalAmountCents: amount.value,
+    serviceFeeBasisPoints: ZERO_SERVICE_FEE_BASIS_POINTS,
+    fixedFeesCents: ZERO_EXPENSE_CENTS,
     items,
     shares,
-    payers: [{ userId: payerId, amountCents: result.amountCents }],
+    payers: [{ userId: payerId, amountCents: payerAmount.value }],
+    participantOrder: participantIds.map((userId) => ({ kind: "user", userId })),
+    expectedGraphRevision: ZERO_GRAPH_REVISION,
+    saveOperationId: crypto.randomUUID(),
   });
 
   if ("error" in draftResult) {
     return { error: draftResult.error };
   }
-
-  // Step 2: Activate (atomically updates balances + inserts system message)
   const activateResult = await activateExpense({
     expense_id: draftResult.expenseId,
+    expectedGraphRevision: draftResult.graphRevision,
   });
 
   if ("error" in activateResult) {
-    // Draft was saved but activation failed — clean up the orphaned draft
     const supabase = createClient();
     await supabase
       .from("expenses")
       .delete()
       .eq("id", draftResult.expenseId)
       .eq("status", "draft");
-
     return { error: activateResult.error };
   }
 

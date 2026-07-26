@@ -11,7 +11,14 @@ import {
   loadExpense,
   deleteExpense,
   listGroupExpenses,
+  type SaveExpenseDraftParams,
 } from "./expense-actions";
+import {
+  brandExpenseCents,
+  parseGraphRevision,
+  parseServiceFeeBasisPoints,
+} from "@/lib/expense-money";
+import { parseExpenseQuantity } from "@/lib/expense-quantity";
 
 let mock: MockSupabase;
 
@@ -24,102 +31,199 @@ beforeEach(() => {
 // saveExpenseDraft
 // ============================================================
 
+function basisPoints(value: number) {
+  const result = parseServiceFeeBasisPoints(value);
+  if (!result.ok) throw new Error("Invalid service fee basis points fixture");
+  return result.value;
+}
+
+function graphRevision(value: number) {
+  const result = parseGraphRevision(value);
+  if (!result.ok) throw new Error("Invalid graph revision fixture");
+  return result.value;
+}
+
+function quantity(value: number) {
+  const result = parseExpenseQuantity(value);
+  if (!result.ok) throw new Error("Invalid quantity fixture");
+  return result.value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function graphSaveArgs(): Record<string, unknown> {
+  const [call] = mock.findCalls("rpc:save_expense_draft_graph", "rpc");
+  if (!call || !isRecord(call.args[1])) {
+    throw new Error("Expected graph-save RPC arguments");
+  }
+  return call.args[1];
+}
+
 describe("saveExpenseDraft", () => {
-  const baseDraftParams = {
+  const baseDraftParams: SaveExpenseDraftParams = {
     groupId: "group-1",
-    creatorId: "user-alice",
     title: "Jantar",
-    expenseType: "itemized" as const,
-    totalAmount: 10000,
-    serviceFeePercent: 10,
-    fixedFees: 0,
+    merchantName: null,
+    expenseType: "itemized",
+    totalAmountCents: brandExpenseCents(10000),
+    serviceFeeBasisPoints: basisPoints(1000),
+    fixedFeesCents: brandExpenseCents(0),
+    items: [],
+    shares: [],
+    payers: [],
+    guests: [],
+    guestShares: [],
+    participantOrder: [],
+    expectedGraphRevision: graphRevision(0),
+    saveOperationId: "00000000-0000-0000-0000-000000000001",
   };
 
-  it("creates a new draft expense via RPC", async () => {
-    mock.onRpc("save_expense_draft", { data: { id: "expense-1" } });
+  it("encodes the exact nine-argument graph-save payload", async () => {
+    mock.onRpc("save_expense_draft_graph", {
+      data: { id: "expense-1", graph_revision: 1 },
+    });
+    const input: SaveExpenseDraftParams = {
+      ...baseDraftParams,
+      items: [
+        {
+          description: "Pizza",
+          quantity: quantity(1),
+          unitPriceCents: brandExpenseCents(5000),
+          totalPriceCents: brandExpenseCents(5000),
+        },
+      ],
+      shares: [
+        { userId: "user-alice", shareAmountCents: brandExpenseCents(5000) },
+        { userId: "user-bob", shareAmountCents: brandExpenseCents(0) },
+      ],
+      payers: [
+        { userId: "user-alice", amountCents: brandExpenseCents(10000) },
+        { userId: "user-bob", amountCents: brandExpenseCents(0) },
+      ],
+      guests: [
+        { localId: "g:1", displayName: "Maria" },
+        { localId: "g:2", displayName: "João" },
+      ],
+      guestShares: [
+        { guestLocalId: "g:1", shareAmountCents: brandExpenseCents(0) },
+        { guestLocalId: "g:2", shareAmountCents: brandExpenseCents(5000) },
+      ],
+      participantOrder: [
+        { kind: "user", userId: "user-alice" },
+        { kind: "user", userId: "user-bob" },
+        { kind: "guest", guestLocalId: "g:1" },
+        { kind: "guest", guestLocalId: "g:2" },
+      ],
+    };
 
-    const result = await saveExpenseDraft(baseDraftParams);
+    const result = await saveExpenseDraft(input);
 
-    expect(result).toEqual({ expenseId: "expense-1" });
-
-    const rpcCalls = mock.findCalls("rpc:save_expense_draft", "rpc");
-    expect(rpcCalls).toHaveLength(1);
-    const args = rpcCalls[0].args[1] as Record<string, unknown>;
-    expect((args.p_expense as Record<string, unknown>).title).toBe("Jantar");
-    expect((args.p_expense as Record<string, unknown>).group_id).toBe("group-1");
+    expect(result).toEqual({ expenseId: "expense-1", graphRevision: 1 });
+    expect(mock.findCalls("rpc:save_expense_draft_graph", "rpc")).toHaveLength(1);
+    expect(graphSaveArgs()).toEqual({
+      p_expense: {
+        group_id: "group-1",
+        title: "Jantar",
+        merchant_name: null,
+        expense_type: "itemized",
+        total_amount: 10000,
+        service_fee_basis_points: 1000,
+        fixed_fees: 0,
+      },
+      p_items: [
+        {
+          description: "Pizza",
+          quantity: 1000,
+          unit_price_cents: 5000,
+          total_price_cents: 5000,
+        },
+      ],
+      p_shares: [
+        { user_id: "user-alice", share_amount_cents: 5000 },
+        { user_id: "user-bob", share_amount_cents: 0 },
+      ],
+      p_payers: [{ user_id: "user-alice", amount_cents: 10000 }],
+      p_guests: [
+        { local_id: "g:1", display_name: "Maria" },
+        { local_id: "g:2", display_name: "João" },
+      ],
+      p_guest_shares: [
+        { local_id: "g:1", share_amount_cents: 0 },
+        { local_id: "g:2", share_amount_cents: 5000 },
+      ],
+      p_participant_order: [
+        { kind: "user", user_id: "user-alice" },
+        { kind: "user", user_id: "user-bob" },
+        { kind: "guest", guest_local_id: "g:1" },
+        { kind: "guest", guest_local_id: "g:2" },
+      ],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: "00000000-0000-0000-0000-000000000001",
+    });
+    const args = graphSaveArgs();
+    expect(args.p_items).not.toBe(input.items);
+    expect(args.p_shares).not.toBe(input.shares);
+    expect(args.p_payers).not.toBe(input.payers);
+    expect(args.p_guests).not.toBe(input.guests);
+    expect(args.p_guest_shares).not.toBe(input.guestShares);
+    expect(args.p_participant_order).not.toBe(input.participantOrder);
   });
 
-  it("sends existing expense id in p_expense when updating", async () => {
-    mock.onRpc("save_expense_draft", { data: { id: "expense-existing" } });
+  it("adds only the routing id for a replacement save", async () => {
+    mock.onRpc("save_expense_draft_graph", {
+      data: { id: "expense-existing", graph_revision: 4 },
+    });
 
     const result = await saveExpenseDraft({
       ...baseDraftParams,
       existingExpenseId: "expense-existing",
+      expectedGraphRevision: graphRevision(3),
     });
 
-    expect(result).toEqual({ expenseId: "expense-existing" });
-
-    const rpcCalls = mock.findCalls("rpc:save_expense_draft", "rpc");
-    expect(rpcCalls).toHaveLength(1);
-    const args = rpcCalls[0].args[1] as Record<string, unknown>;
-    expect((args.p_expense as Record<string, unknown>).id).toBe("expense-existing");
-  });
-
-  it("maps items, shares, and payers into RPC payload", async () => {
-    mock.onRpc("save_expense_draft", { data: { id: "expense-1" } });
-
-    await saveExpenseDraft({
-      ...baseDraftParams,
-      items: [
-        { description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 },
-      ],
-      shares: [
-        { userId: "user-alice", shareAmountCents: 5000 },
-        { userId: "user-bob", shareAmountCents: 5000 },
-      ],
-      payers: [{ userId: "user-alice", amountCents: 10000 }],
+    expect(result).toEqual({ expenseId: "expense-existing", graphRevision: 4 });
+    expect(graphSaveArgs().p_expense).toEqual({
+      id: "expense-existing",
+      group_id: "group-1",
+      title: "Jantar",
+      merchant_name: null,
+      expense_type: "itemized",
+      total_amount: 10000,
+      service_fee_basis_points: 1000,
+      fixed_fees: 0,
     });
-
-    const args = mock.findCalls("rpc:save_expense_draft", "rpc")[0].args[1] as Record<string, unknown>;
-    expect((args.p_items as unknown[]).length).toBe(1);
-    expect((args.p_shares as unknown[]).length).toBe(2);
-    expect((args.p_payers as unknown[]).length).toBe(1);
   });
 
-  it("maps guests and guest shares into RPC payload", async () => {
-    mock.onRpc("save_expense_draft", { data: { id: "expense-1" } });
-
-    await saveExpenseDraft({
-      ...baseDraftParams,
-      guests: [
-        { localId: "guest_local_1", displayName: "Maria" },
-        { localId: "guest_local_2", displayName: "Joao" },
-      ],
-      guestShares: [
-        { guestLocalId: "guest_local_1", shareAmountCents: 3000 },
-        { guestLocalId: "guest_local_2", shareAmountCents: 2000 },
-      ],
-    });
-
-    const args = mock.findCalls("rpc:save_expense_draft", "rpc")[0].args[1] as Record<string, unknown>;
-    expect((args.p_guests as unknown[]).length).toBe(2);
-    expect((args.p_guest_shares as unknown[]).length).toBe(2);
-  });
-
-  it("returns a generic error without leaking the raw RPC message", async () => {
-    mock.onRpc("save_expense_draft", {
+  it("maps known RPC codes to safe PT-BR messages", async () => {
+    mock.onRpc("save_expense_draft_graph", {
       data: null,
-      error: { message: 'permission denied for table "expenses"' },
+      error: { code: "PST08", message: "stale_graph_revision" },
+    });
+
+    const result = await saveExpenseDraft(baseDraftParams);
+
+    expect(result).toEqual({
+      error: "Este rascunho foi alterado. Atualize antes de salvar.",
+    });
+  });
+
+  it("does not expose unknown RPC messages", async () => {
+    mock.onRpc("save_expense_draft_graph", {
+      data: null,
+      error: { code: "XX000", message: "internal database detail" },
     });
 
     const result = await saveExpenseDraft(baseDraftParams);
 
     expect(result).toEqual({ error: "Erro ao salvar rascunho" });
-    expect(JSON.stringify(result)).not.toContain("permission denied");
+    expect(JSON.stringify(result)).not.toContain("internal database detail");
   });
 
-  it("returns error when RPC returns no id", async () => {
-    mock.onRpc("save_expense_draft", { data: null });
+  it("rejects malformed graph-save results", async () => {
+    mock.onRpc("save_expense_draft_graph", {
+      data: { id: "expense-1", graph_revision: 1, unexpected: true },
+    });
 
     const result = await saveExpenseDraft(baseDraftParams);
 

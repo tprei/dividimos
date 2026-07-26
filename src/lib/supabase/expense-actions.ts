@@ -1,4 +1,19 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import {
+  decodeExpenseGraphSaveResult,
+  type ExpenseCents,
+  type ExpenseGraphSaveResult,
+  type GraphRevision,
+  type NormalizedExpenseItem,
+  type ServiceFeeBasisPoints,
+} from "@/lib/expense-money";
+import type {
+  CanonicalGuestShareRow,
+  CanonicalPayerRow,
+  CanonicalShareRow,
+  ParticipantOrderEntry,
+} from "@/lib/expense-graph";
 import {
   expenseRowToExpense,
   expenseItemRowToExpenseItem,
@@ -29,119 +44,195 @@ type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 // Save / Update draft expense
 // ============================================================
 
-export interface SaveExpenseDraftParams {
-  groupId: string;
-  creatorId: string;
+type GraphSaveExpenseWire = Readonly<{
+  group_id: string;
   title: string;
-  merchantName?: string;
-  expenseType: ExpenseType;
-  totalAmount: number;
-  serviceFeePercent: number;
-  fixedFees: number;
-  existingExpenseId?: string;
-  items?: Array<{
-    id?: string;
-    description: string;
-    quantity: number;
-    unitPriceCents: number;
-    totalPriceCents: number;
+  merchant_name: string | null;
+  expense_type: ExpenseType;
+  total_amount: ExpenseCents;
+  service_fee_basis_points: ServiceFeeBasisPoints;
+  fixed_fees: ExpenseCents;
+}>;
+
+type GraphSaveItemWire = Readonly<{
+  description: string;
+  quantity: number;
+  unit_price_cents: ExpenseCents;
+  total_price_cents: ExpenseCents;
+}>;
+
+type GraphSaveShareWire = Readonly<{
+  user_id: string;
+  share_amount_cents: ExpenseCents;
+}>;
+
+type GraphSavePayerWire = Readonly<{
+  user_id: string;
+  amount_cents: ExpenseCents;
+}>;
+
+type GraphSaveGuestWire = Readonly<{
+  local_id: string;
+  display_name: string;
+}>;
+
+type GraphSaveGuestShareWire = Readonly<{
+  local_id: string;
+  share_amount_cents: ExpenseCents;
+}>;
+
+type GraphSaveParticipantOrderWire =
+  | Readonly<{ kind: "user"; user_id: string }>
+  | Readonly<{ kind: "guest"; guest_local_id: string }>;
+
+type GraphSaveRpcArgs = Record<string, unknown> &
+  Readonly<{
+    p_expense: GraphSaveExpenseWire | (GraphSaveExpenseWire & Readonly<{ id: string }>);
+    p_items: readonly GraphSaveItemWire[];
+    p_shares: readonly GraphSaveShareWire[];
+    p_payers: readonly GraphSavePayerWire[];
+    p_guests: readonly GraphSaveGuestWire[];
+    p_guest_shares: readonly GraphSaveGuestShareWire[];
+    p_participant_order: readonly GraphSaveParticipantOrderWire[];
+    p_expected_graph_revision: GraphRevision;
+    p_save_operation_id: string;
   }>;
-  shares?: Array<{
-    userId: string;
-    shareAmountCents: number;
-  }>;
-  payers?: Array<{
-    userId: string;
-    amountCents: number;
-  }>;
-  guests?: Array<{
-    localId: string;
-    displayName: string;
-  }>;
-  guestShares?: Array<{
-    guestLocalId: string;
-    shareAmountCents: number;
-  }>;
+
+type ExpenseGraphSaveDatabase = Omit<Database, "public"> & {
+  public: Omit<Database["public"], "Functions"> & {
+    Functions: Database["public"]["Functions"] & {
+      save_expense_draft_graph: {
+        Args: GraphSaveRpcArgs;
+        Returns: unknown;
+      };
+    };
+  };
+};
+
+type ExpenseGraphSaveClient = SupabaseClient<ExpenseGraphSaveDatabase>;
+
+export type SaveExpenseDraftGuest = Readonly<{
+  localId: string;
+  displayName: string;
+}>;
+
+export interface SaveExpenseDraftParams {
+  readonly groupId: string;
+  readonly title: string;
+  readonly merchantName?: string | null;
+  readonly expenseType: ExpenseType;
+  readonly totalAmountCents: ExpenseCents;
+  readonly serviceFeeBasisPoints: ServiceFeeBasisPoints;
+  readonly fixedFeesCents: ExpenseCents;
+  readonly existingExpenseId?: string;
+  readonly items?: readonly NormalizedExpenseItem[];
+  readonly shares?: readonly CanonicalShareRow[];
+  readonly payers?: readonly CanonicalPayerRow[];
+  readonly guests?: readonly SaveExpenseDraftGuest[];
+  readonly guestShares?: readonly CanonicalGuestShareRow[];
+  readonly participantOrder: readonly ParticipantOrderEntry[];
+  readonly expectedGraphRevision: GraphRevision;
+  readonly saveOperationId: string;
+}
+
+function graphSaveErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case "PST01":
+      return "Faça login para salvar o rascunho.";
+    case "PST02":
+      return "Os dados do rascunho são inválidos.";
+    case "PST03":
+      return "Os valores da despesa são inválidos.";
+    case "PST04":
+      return "Os pagadores precisam participar da despesa.";
+    case "PST05":
+      return "Você não tem permissão para salvar este rascunho.";
+    case "PST06":
+      return "Esta operação de salvamento entrou em conflito.";
+    case "PST07":
+      return "Não foi possível salvar este rascunho.";
+    case "PST08":
+      return "Este rascunho foi alterado. Atualize antes de salvar.";
+    default:
+      return "Erro ao salvar rascunho";
+  }
 }
 
 export async function saveExpenseDraft(
   params: SaveExpenseDraftParams,
-): Promise<{ expenseId: string } | { error: string }> {
-  const supabase = createClient();
-  const {
-    groupId,
-    title,
-    merchantName,
-    expenseType,
-    totalAmount,
-    serviceFeePercent,
-    fixedFees,
-    existingExpenseId,
-    items,
-    shares,
-    payers,
-    guests,
-    guestShares,
-  } = params;
-
-  const pExpense = {
-    ...(existingExpenseId ? { id: existingExpenseId } : {}),
-    group_id: groupId,
-    title,
-    merchant_name: merchantName ?? "",
-    expense_type: expenseType,
-    total_amount: totalAmount,
-    service_fee_percent: serviceFeePercent,
-    fixed_fees: fixedFees,
+): Promise<ExpenseGraphSaveResult | { error: string }> {
+  const pExpenseBase: GraphSaveExpenseWire = {
+    group_id: params.groupId,
+    title: params.title,
+    merchant_name: params.merchantName ?? null,
+    expense_type: params.expenseType,
+    total_amount: params.totalAmountCents,
+    service_fee_basis_points: params.serviceFeeBasisPoints,
+    fixed_fees: params.fixedFeesCents,
   };
-
-  const pItems = (items ?? []).map((item) => ({
+  const pExpense =
+    params.existingExpenseId === undefined
+      ? pExpenseBase
+      : { id: params.existingExpenseId, ...pExpenseBase };
+  const pItems = (params.items ?? []).map<GraphSaveItemWire>((item) => ({
     description: item.description,
     quantity: item.quantity,
     unit_price_cents: item.unitPriceCents,
     total_price_cents: item.totalPriceCents,
   }));
-
-  const pShares = (shares ?? []).map((s) => ({
-    user_id: s.userId,
-    share_amount_cents: s.shareAmountCents,
+  const pShares = (params.shares ?? []).map<GraphSaveShareWire>((share) => ({
+    user_id: share.userId,
+    share_amount_cents: share.shareAmountCents,
   }));
-
-  const pPayers = (payers ?? []).map((p) => ({
-    user_id: p.userId,
-    amount_cents: p.amountCents,
+  const pPayers: GraphSavePayerWire[] = [];
+  for (const payer of params.payers ?? []) {
+    if (payer.amountCents > 0) {
+      pPayers.push({ user_id: payer.userId, amount_cents: payer.amountCents });
+    }
+  }
+  const pGuests = (params.guests ?? []).map<GraphSaveGuestWire>((guest) => ({
+    local_id: guest.localId,
+    display_name: guest.displayName,
   }));
-
-  const pGuests = (guests ?? []).map((g) => ({
-    local_id: g.localId,
-    display_name: g.displayName,
-  }));
-
-  const pGuestShares = (guestShares ?? []).map((gs) => ({
-    local_id: gs.guestLocalId,
-    share_amount_cents: gs.shareAmountCents,
-  }));
-
-  const { data, error } = await supabase.rpc("save_expense_draft", {
+  const pGuestShares = (params.guestShares ?? []).map<GraphSaveGuestShareWire>(
+    (guestShare) => ({
+      local_id: guestShare.guestLocalId,
+      share_amount_cents: guestShare.shareAmountCents,
+    }),
+  );
+  const pParticipantOrder = params.participantOrder.map<GraphSaveParticipantOrderWire>(
+    (participant) =>
+      participant.kind === "user"
+        ? { kind: "user", user_id: participant.userId }
+        : { kind: "guest", guest_local_id: participant.guestLocalId },
+  );
+  const rpcArgs: GraphSaveRpcArgs = {
     p_expense: pExpense,
     p_items: pItems,
     p_shares: pShares,
     p_payers: pPayers,
     p_guests: pGuests,
     p_guest_shares: pGuestShares,
-  });
+    p_participant_order: pParticipantOrder,
+    p_expected_graph_revision: params.expectedGraphRevision,
+    p_save_operation_id: params.saveOperationId,
+  };
+
+  // Generated database types intentionally lag this forward-only RPC migration.
+  // Its result stays unknown until the strict decoder accepts it.
+  const supabase = createClient() as unknown as ExpenseGraphSaveClient;
+  const { data, error } = await supabase.rpc("save_expense_draft_graph", rpcArgs);
 
   if (error) {
-    console.error("Failed to save expense draft:", error);
+    return { error: graphSaveErrorMessage(error.code) };
+  }
+
+  const result = decodeExpenseGraphSaveResult(data);
+  if (!result.ok) {
     return { error: "Erro ao salvar rascunho" };
   }
 
-  const result = data as { id: string } | null;
-  if (!result?.id) {
-    return { error: "Erro ao salvar rascunho" };
-  }
-
-  return { expenseId: result.id };
+  return result.value;
 }
 
 // ============================================================
@@ -157,7 +248,6 @@ interface ExpenseWithRelations {
   merchant_name: string | null;
   expense_type: "itemized" | "single_amount";
   total_amount: number;
-  service_fee_percent: number;
   fixed_fees: number;
   status: "draft" | "active" | "settled";
   created_at: string;

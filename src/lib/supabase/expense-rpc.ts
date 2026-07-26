@@ -1,12 +1,25 @@
 import { createClient } from "@/lib/supabase/client";
 import { createLogger, logError } from "@/lib/logger";
-import type {
-  ActivateExpenseRequest,
-  ActivateExpenseResult,
-  ActivateExpenseBalanceUpdate,
-} from "@/types";
+import {
+  decodeExpenseActivationResult,
+  type GraphRevision,
+} from "@/lib/expense-money";
+import type { ActivateExpenseRequest, ActivateExpenseResult } from "@/types";
 
 const logger = createLogger("expense-rpc");
+
+type ActivateSavedExpenseRpcResponse = Readonly<{
+  data: unknown;
+  error: Readonly<{ message: string; code?: string }> | null;
+}>;
+
+type ActivateSavedExpenseRpc = (
+  name: "activate_saved_expense",
+  args: Readonly<{
+    p_expense_id: string;
+    p_expected_graph_revision: GraphRevision;
+  }>,
+) => PromiseLike<ActivateSavedExpenseRpcResponse>;
 
 /**
  * Parses a Supabase RPC error message into a structured error code and detail.
@@ -21,21 +34,35 @@ function parseRpcError(message: string): { code: string; detail: string } {
 }
 
 /**
- * Calls the activate_expense RPC to transition a draft expense to active
- * and atomically update the group balances table.
+ * Activation requires the graph revision that was observed when the draft was
+ * last persisted. It is intentionally separate from the legacy request type
+ * until its remaining callers migrate to the revisioned graph contract.
+ */
+export type RevisionedActivateExpenseRequest = ActivateExpenseRequest &
+  Readonly<{
+    expectedGraphRevision: GraphRevision;
+  }>;
+
+export type RevisionedActivateExpenseResult = ActivateExpenseResult &
+  Readonly<{
+    graphRevision: GraphRevision;
+  }>;
+
+export type ActivateExpenseError = Readonly<{
+  error: string;
+  code: string;
+}>;
+
+/**
+ * Calls `activate_saved_expense` to atomically activate a current draft graph.
  *
- * The RPC validates:
- * - Caller is the expense creator
- * - Expense is in draft status
- * - Shares sum to total_amount
- * - Payers sum to total_amount
- *
- * On success, returns the activated expense ID, new status, and
- * the balance updates that were applied.
+ * The expected graph revision makes activation a compare-and-swap mutation.
+ * A stale revision is normalized to a stable client conflict while preserving
+ * the provider's parsed error detail for display and diagnostics.
  */
 export async function activateExpense(
-  request: ActivateExpenseRequest,
-): Promise<ActivateExpenseResult | { error: string; code: string }> {
+  request: RevisionedActivateExpenseRequest,
+): Promise<RevisionedActivateExpenseResult | ActivateExpenseError> {
   const supabase = createClient();
 
   const {
@@ -46,64 +73,44 @@ export async function activateExpense(
     return { error: "Não autenticado", code: "not_authenticated" };
   }
 
-  // Call the RPC (returns void on success, throws on error)
-  const { error: rpcError } = await supabase.rpc("activate_expense", {
-    p_expense_id: request.expense_id,
-  });
+  const activateSavedExpenseRpc = supabase.rpc as unknown as ActivateSavedExpenseRpc;
+  const { data, error: rpcError } = await activateSavedExpenseRpc(
+    "activate_saved_expense",
+    {
+      p_expense_id: request.expense_id,
+      p_expected_graph_revision: request.expectedGraphRevision,
+    },
+  );
 
   if (rpcError) {
     const parsed = parseRpcError(rpcError.message);
-    logError(logger, "activate_expense RPC failed", {
+    logError(logger, "activate_saved_expense RPC failed", {
       operation: "activateExpense",
       expenseId: request.expense_id,
-      code: parsed.code,
+      code: rpcError.code ?? parsed.code,
       detail: parsed.detail,
     });
+    if (rpcError.code === "PST08") {
+      return { error: parsed.detail, code: "stale_graph_revision" };
+    }
     return { error: parsed.detail, code: parsed.code };
   }
 
-  // RPC succeeded — fetch the updated balances for the caller.
-  // We need the expense's group_id to query balances.
-  const { data: expense, error: expenseError } = await supabase
-    .from("expenses")
-    .select("group_id")
-    .eq("id", request.expense_id)
-    .single();
-
-  if (expenseError || !expense) {
-    // RPC succeeded but we can't fetch the result — non-fatal
-    logger.warn(
-      { expenseId: request.expense_id, error: expenseError?.message },
-      "Expense activated but failed to fetch result details",
-    );
-    return {
+  const decoded = decodeExpenseActivationResult(data);
+  if (!decoded.ok) {
+    logError(logger, "activate_saved_expense returned an invalid result", {
+      operation: "activateExpense",
       expenseId: request.expense_id,
-      status: "active",
-      updatedBalances: [],
+      issue: decoded.issue,
+    });
+    return {
+      error: "Resposta de ativação inválida",
+      code: decoded.issue.code,
     };
   }
 
-  // Fetch all balances for this group to return the current state
-  const { data: balances } = await supabase
-    .from("balances")
-    .select("group_id, user_a, user_b, amount_cents")
-    .eq("group_id", expense.group_id);
-
-  const updatedBalances: ActivateExpenseBalanceUpdate[] = (balances ?? []).map(
-    (b) => ({
-      groupId: b.group_id,
-      userA: b.user_a,
-      userB: b.user_b,
-      newAmountCents: b.amount_cents,
-      // We don't have the delta from the RPC, so we report the current balance.
-      // Callers needing the delta should diff against their previous state.
-      deltaCents: 0,
-    }),
-  );
-
   return {
-    expenseId: request.expense_id,
-    status: "active",
-    updatedBalances,
+    ...decoded.value,
+    updatedBalances: [],
   };
 }
