@@ -91,6 +91,44 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
     expect(rows![1].share_amount_cents).toBe(5000);
   });
 
+  it("allows a group creator without a group_members row to create a guest expense", async () => {
+    const { data: creatorOnlyGroup, error: creatorOnlyGroupError } = await adminClient!
+      .from("groups")
+      .insert({ name: "Creator only group", creator_id: alice.id })
+      .select("id")
+      .single();
+
+    expect(creatorOnlyGroupError).toBeNull();
+    expect(creatorOnlyGroup).not.toBeNull();
+
+    const { data: creatorMemberships, error: creatorMembershipsError } = await adminClient!
+      .from("group_members")
+      .select("user_id")
+      .eq("group_id", creatorOnlyGroup!.id)
+      .eq("user_id", alice.id);
+
+    expect(creatorMembershipsError).toBeNull();
+    expect(creatorMemberships).toHaveLength(0);
+
+    const { data, error } = await callSaveDraft(alice, {
+      expense: {
+        group_id: creatorOnlyGroup!.id,
+        title: "Dinner with guest",
+        expense_type: "single_amount",
+        total_amount: 10000,
+        service_fee_percent: 0,
+        fixed_fees: 0,
+      },
+      shares: [{ user_id: alice.id, share_amount_cents: 5000 }],
+      payers: [{ user_id: alice.id, amount_cents: 10000 }],
+      guests: [{ local_id: "guest-1", display_name: "Maria" }],
+      guestShares: [{ local_id: "guest-1", share_amount_cents: 5000 }],
+    });
+
+    expect(error).toBeNull();
+    expect(data?.id).toBeTruthy();
+  });
+
   // -------------------------------------------------------------------------
   // Happy path: update replaces child rows atomically
   // -------------------------------------------------------------------------
