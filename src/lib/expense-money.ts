@@ -70,7 +70,7 @@ export type GraphRevision = number & {
   readonly [graphRevisionBrand]: true;
 };
 
-function brandExpenseCents(value: number): ExpenseCents {
+export function brandExpenseCents(value: number): ExpenseCents {
   return value as ExpenseCents;
 }
 function brandSignedExpenseCents(value: number): SignedExpenseCents {
