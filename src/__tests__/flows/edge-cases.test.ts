@@ -133,7 +133,7 @@ describe("Edge cases", () => {
     expect(total).toBe(800000);
   });
 
-  it("no payers set → defaults to creator", () => {
+  it("no payers set → produces no preview debts", () => {
     const store = useBillStore.getState();
     store.setCurrentUser(userAlice);
     store.createExpense("Test", "single_amount");
@@ -143,9 +143,7 @@ describe("Edge cases", () => {
 
     store.splitBillEqually(["user-alice", "user-bob", "user-carlos"]);
 
-    const debts = selectPreviewDebts(useBillStore.getState());
-    expect(debts).toHaveLength(2);
-    expect(debts.every((e) => e.toUserId === "user-alice")).toBe(true);
+    expect(selectPreviewDebts(useBillStore.getState())).toEqual([]);
   });
 
   it("rounding: 3-way split totals match", () => {
