@@ -26,6 +26,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import { ReceiptScanner } from "@/components/bill/receipt-scanner";
+import {
+  parseExpenseCents,
+  parseServiceFeeBasisPointsText,
+  ZERO_EXPENSE_CENTS,
+  ZERO_GRAPH_REVISION,
+} from "@/lib/expense-money";
+import { computeExpenseLineTotalCents, parseExpenseQuantity } from "@/lib/expense-quantity";
 import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
@@ -38,6 +45,7 @@ import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
+import { activateExpense } from "@/lib/supabase/expense-rpc";
 import { useBillStore } from "@/stores/bill-store";
 import { useShallow } from "zustand/react/shallow";
 import { createClient } from "@/lib/supabase/client";
@@ -143,6 +151,8 @@ function NewBillPageContent() {
   const dmLoadedRef = useRef(false);
   const draftEditLoadedRef = useRef(false);
   const lastPageQrResultRef = useRef<NfceQrResult | null>(null);
+  const draftRevisionRef = useRef(ZERO_GRAPH_REVISION);
+  const saveOperationIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     setHasContactPicker(isContactPickerSupported());
@@ -598,58 +608,99 @@ function NewBillPageContent() {
     }
   }, [searchParams]);
 
-  const computeShares = useCallback(() => {
-    const state = useBillStore.getState();
-    return state.participants.map((p) => ({
-      userId: p.id,
-      shareAmountCents: state.getParticipantTotal(p.id),
-    }));
-  }, []);
-
   const buildDraftParams = useCallback((existingId?: string, groupIdOverride?: string) => {
     const state = useBillStore.getState();
     const effectiveGroupId = groupIdOverride ?? selectedGroupId;
     if (!state.expense || !authUser || !effectiveGroupId) return null;
 
-    const guestData = state.guests.length > 0
-      ? {
-          guests: state.guests.map((g) => ({ localId: g.id, displayName: g.name })),
-          guestShares: state.guests
-            .map((g) => ({
-              guestLocalId: g.id,
-              shareAmountCents: state.getParticipantTotal(g.id),
-            }))
-            .filter((gs) => gs.shareAmountCents > 0),
-        }
-      : {};
+    const serviceFeeResult = parseServiceFeeBasisPointsText(
+      state.expense.expenseType === "itemized"
+        ? serviceFee || String(state.expense.serviceFeePercent).replace(".", ",")
+        : "0",
+    );
+    const fixedFeeResult =
+      state.expense.expenseType === "itemized"
+        ? parseExpenseCents(state.expense.fixedFees, "allow")
+        : { ok: true as const, value: ZERO_EXPENSE_CENTS };
+    const totalResult = parseExpenseCents(state.getGrandTotal(), "allow");
+    if (!serviceFeeResult.ok || !fixedFeeResult.ok || !totalResult.ok) return null;
+
+    const normalizedItems = [];
+    if (state.expense.expenseType === "itemized") {
+      for (const item of state.items) {
+        const quantity = parseExpenseQuantity(item.quantity);
+        const unitPriceCents = parseExpenseCents(item.unitPriceCents, "positive");
+        const suppliedTotal = parseExpenseCents(item.totalPriceCents, "positive");
+        if (!quantity.ok || !unitPriceCents.ok || !suppliedTotal.ok) return null;
+        const computedTotal = computeExpenseLineTotalCents(quantity.value, unitPriceCents.value);
+        if (!computedTotal.ok || computedTotal.value !== suppliedTotal.value) return null;
+        normalizedItems.push({
+          description: item.description,
+          quantity: quantity.value,
+          unitPriceCents: unitPriceCents.value,
+          totalPriceCents: suppliedTotal.value,
+        });
+      }
+    }
+
+    const shares = [];
+    for (const participant of state.participants) {
+      const shareAmountCents = parseExpenseCents(
+        state.getParticipantTotal(participant.id),
+        "allow",
+      );
+      if (!shareAmountCents.ok) return null;
+      shares.push({ userId: participant.id, shareAmountCents: shareAmountCents.value });
+    }
+
+    const payers = [];
+    for (const payer of state.payers) {
+      const amountCents = parseExpenseCents(payer.amountCents, "positive");
+      if (!amountCents.ok) return null;
+      payers.push({ userId: payer.userId, amountCents: amountCents.value });
+    }
+
+    const guests = state.guests.map((guest) => ({
+      localId: guest.id,
+      displayName: guest.name,
+    }));
+    const guestShares = [];
+    for (const guest of state.guests) {
+      const shareAmountCents = parseExpenseCents(
+        state.getParticipantTotal(guest.id),
+        "allow",
+      );
+      if (!shareAmountCents.ok) return null;
+      guestShares.push({ guestLocalId: guest.id, shareAmountCents: shareAmountCents.value });
+    }
+
+    if (saveOperationIdRef.current === null) {
+      saveOperationIdRef.current = crypto.randomUUID();
+    }
+    const participantOrder = [
+      ...state.participants.map((participant) => ({ kind: "user" as const, userId: participant.id })),
+      ...state.guests.map((guest) => ({ kind: "guest" as const, guestLocalId: guest.id })),
+    ];
 
     return {
       groupId: effectiveGroupId,
-      creatorId: authUser.id,
       title: state.expense.title,
       merchantName: state.expense.merchantName,
       expenseType: state.expense.expenseType,
-      totalAmount: state.payers.length > 0
-        ? state.payers.reduce((s, p) => s + p.amountCents, 0)
-        : state.getGrandTotal(),
-      serviceFeePercent: state.expense.serviceFeePercent,
-      fixedFees: state.expense.fixedFees,
+      totalAmountCents: totalResult.value,
+      serviceFeeBasisPoints: serviceFeeResult.value,
+      fixedFeesCents: fixedFeeResult.value,
       existingExpenseId: existingId,
-      items: state.expense.expenseType === "itemized"
-        ? state.items.map((i) => ({
-            description: i.description,
-            quantity: i.quantity,
-            unitPriceCents: i.unitPriceCents,
-            totalPriceCents: i.totalPriceCents,
-          }))
-        : undefined,
-      shares: computeShares(),
-      payers: state.payers.length > 0
-        ? state.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))
-        : undefined,
-      ...guestData,
+      items: normalizedItems,
+      shares,
+      payers,
+      guests,
+      guestShares,
+      participantOrder,
+      expectedGraphRevision: draftRevisionRef.current,
+      saveOperationId: saveOperationIdRef.current,
     };
-  }, [authUser, selectedGroupId, computeShares]);
+  }, [authUser, selectedGroupId, serviceFee]);
 
   const goNext = useCallback(async () => {
     if (step === "info") {
@@ -725,6 +776,7 @@ function NewBillPageContent() {
             const result = await saveExpenseDraft(params);
             if ("expenseId" in result) {
               setRemoteBillId(result.expenseId);
+              draftRevisionRef.current = result.graphRevision;
             }
           }
         }
@@ -734,7 +786,10 @@ function NewBillPageContent() {
       if (remoteBillId) {
         const params = buildDraftParams(remoteBillId);
         if (params) {
-          await saveExpenseDraft(params);
+          const result = await saveExpenseDraft(params);
+          if ("expenseId" in result) {
+            draftRevisionRef.current = result.graphRevision;
+          }
         }
       } else if (isDmMode && selectedGroupId) {
         const params = buildDraftParams(undefined, selectedGroupId);
@@ -742,6 +797,7 @@ function NewBillPageContent() {
           const result = await saveExpenseDraft(params);
           if ("expenseId" in result) {
             setRemoteBillId(result.expenseId);
+            draftRevisionRef.current = result.graphRevision;
           }
         }
       }
@@ -758,21 +814,23 @@ function NewBillPageContent() {
         const expenseId = "expenseId" in saveResult
           ? saveResult.expenseId
           : remoteBillId;
+        if ("expenseId" in saveResult) {
+          draftRevisionRef.current = saveResult.graphRevision;
+        }
 
         if (expenseId) {
-          const supabase = createClient();
-          const { error: rpcError } = await (supabase.rpc as unknown as (fn: string, params: Record<string, unknown>) => Promise<{ error: { message: string } | null }>)(
-            "activate_expense",
-            { p_expense_id: expenseId },
-          );
+          const activationResult = await activateExpense({
+            expense_id: expenseId,
+            expectedGraphRevision: draftRevisionRef.current,
+          });
 
-          if (!rpcError) {
+          if (!("error" in activationResult)) {
             notifyExpenseActivated(expenseId).catch(() => {});
             useBillStore.getState().reset();
             router.push(`/app/bill/${expenseId}`);
             return;
           }
-          console.error("Activation failed:", rpcError.message);
+          console.error("Activation failed:", activationResult.error);
         }
       }
       router.push(`/app/bill/${remoteBillId || "new"}`);

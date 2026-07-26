@@ -325,16 +325,15 @@ describe("selectPreviewDebts", () => {
     expect(useBillStore.getState().expense?.status).toBe("draft");
   });
 
-  it("uses creator as fallback payer when payers array is empty", () => {
+  it("does not synthesize the creator as a payer when no payer was selected", () => {
     const s = setup();
     s.createExpense("Test", "single_amount");
     useBillStore.getState().addParticipant(userBob);
     useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
     useBillStore.getState().splitBillEqually(["user-alice", "user-bob"]);
-    // Don't set payers — should fall back to creator (alice)
-    const debts = selectPreviewDebts(useBillStore.getState());
-    expect(debts).toHaveLength(1);
-    expect(debts[0].toUserId).toBe("user-alice");
+
+    expect(useBillStore.getState().payers).toEqual([]);
+    expect(selectPreviewDebts(useBillStore.getState())).toEqual([]);
   });
 
   it("returned edges are DebtEdge[] without payment tracking fields", () => {
@@ -384,18 +383,26 @@ describe("getExpenseShares", () => {
     expect(totalShares).toBe(11000);
   });
 
-  it("excludes participants with zero consumption", () => {
+  it("retains zero-share participant identity and allows that user to pay", () => {
     const s = setup();
     s.createExpense("Test", "itemized");
     s.addParticipant(userBob);
     s.addItem({ description: "X", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
     const itemId = useBillStore.getState().items[0].id;
-    // Only assign to alice, not bob
     s.assignItem(itemId, "user-alice", "fixed", 10000);
+
     const shares = useBillStore.getState().getExpenseShares();
-    // Alice gets the item + service fee, bob has no consumption
-    expect(shares).toHaveLength(1);
-    expect(shares[0].userId).toBe("user-alice");
+    expect(shares).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ userId: "user-alice", shareAmountCents: 11000 }),
+        expect.objectContaining({ userId: "user-bob", shareAmountCents: 0 }),
+      ]),
+    );
+
+    expect(s.setPayerFull("user-bob")).toBeNull();
+    expect(useBillStore.getState().payers).toEqual([
+      expect.objectContaining({ userId: "user-bob", amountCents: 11000 }),
+    ]);
   });
 });
 
@@ -415,6 +422,7 @@ describe("payers as top-level state", () => {
   it("setPayerAmount adds or updates payer", () => {
     const s = setup();
     s.createExpense("Test", "single_amount");
+    s.addParticipant(userBob);
     s.setPayerAmount("user-alice", 3000);
     s.setPayerAmount("user-bob", 2000);
     expect(useBillStore.getState().payers).toHaveLength(2);
@@ -427,6 +435,7 @@ describe("payers as top-level state", () => {
   it("removePayerEntry removes payer", () => {
     const s = setup();
     s.createExpense("Test", "single_amount");
+    s.addParticipant(userBob);
     s.setPayerAmount("user-alice", 3000);
     s.setPayerAmount("user-bob", 2000);
     s.removePayerEntry("user-alice");
@@ -440,6 +449,65 @@ describe("payers as top-level state", () => {
     s.setPayerFull("user-alice");
     s.reset();
     expect(useBillStore.getState().payers).toHaveLength(0);
+  });
+
+  it("clears payers only when the authoritative total changes", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 5000 });
+    s.addParticipant(userBob);
+    s.setPayerAmount("user-alice", 5000);
+    const payer = useBillStore.getState().payers[0];
+
+    s.splitBillByFixed([
+      { userId: "user-alice", amountCents: 2500 },
+      { userId: "user-bob", amountCents: 2500 },
+    ]);
+    expect(useBillStore.getState().payers).toEqual([payer]);
+    expect(useBillStore.getState().payers[0]).toBe(payer);
+
+    s.updateExpense({ title: "Mesmo total" });
+    expect(useBillStore.getState().payers[0]).toBe(payer);
+
+    s.updateExpense({ totalAmountInput: 6000 });
+    expect(useBillStore.getState().payers).toEqual([]);
+  });
+
+  it("clears payers when an itemized total changes", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "X", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
+    s.setPayerFull("user-alice");
+
+    s.updateItem(useBillStore.getState().items[0].id, {
+      unitPriceCents: 12000,
+      totalPriceCents: 12000,
+    });
+
+    expect(useBillStore.getState().payers).toEqual([]);
+  });
+
+  it("rejects ineligible user and guest payer candidates without mutation", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 5000 });
+    const guestId = s.addGuest("Diana");
+    s.setPayerFull("user-alice");
+    const payers = useBillStore.getState().payers;
+
+    expect(s.setPayerFull("user-bob")).toEqual({
+      code: "ineligible_payer",
+      payerIndex: 0,
+    });
+    expect(s.setPayerAmount(guestId, 1000)).toEqual({
+      code: "ineligible_payer",
+      payerIndex: 0,
+    });
+    expect(s.splitPaymentEqually(["user-alice", guestId])).toEqual({
+      code: "ineligible_payer",
+      payerIndex: 1,
+    });
+    expect(useBillStore.getState().payers).toBe(payers);
   });
 });
 
@@ -792,17 +860,26 @@ describe("participant and guest removal flows", () => {
     expect(billSplits[0].userId).toBe("user-alice");
   });
 
-  it("does not cascade guest removal to payers (documents current behavior)", () => {
-    setup().createExpense("Test", "single_amount");
-    useBillStore.getState().updateExpense({ totalAmountInput: 6000 });
-    const guestId = useBillStore.getState().addGuest("Diana");
-    useBillStore.getState().setPayerAmount(guestId, 3000);
-    expect(useBillStore.getState().payers).toHaveLength(1);
+  it("removes a stale guest-key payer without touching registered-user payers", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 6000 });
+    const guestId = s.addGuest("Diana");
+    s.setPayerFull("user-alice");
+    const registeredUserPayer = useBillStore.getState().payers[0];
+    const expenseId = useBillStore.getState().expense!.id;
+    useBillStore.setState((state) => ({
+      payers: [
+        ...state.payers,
+        { expenseId, userId: guestId, amountCents: 3000 },
+      ],
+    }));
 
-    useBillStore.getState().removeGuest(guestId);
+    s.removeGuest(guestId);
 
     const { payers } = useBillStore.getState();
-    expect(payers.find((p) => p.userId === guestId)).toBeDefined();
+    expect(payers).toEqual([registeredUserPayer]);
+    expect(payers[0]).toBe(registeredUserPayer);
   });
 
   it("participant removal after itemized split removes that participant's splits", () => {
@@ -820,17 +897,24 @@ describe("participant and guest removal flows", () => {
     expect(splits[0].userId).toBe("user-alice");
   });
 
-  it("does not cascade participant removal to payers (documents current behavior)", () => {
-    setup().createExpense("Test", "single_amount");
-    useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
-    useBillStore.getState().addParticipant(userBob);
-    useBillStore.getState().setPayerAmount("user-bob", 10000);
-    expect(useBillStore.getState().payers).toHaveLength(1);
+  it("atomically removes a departing participant's payer and allocations", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.addParticipant(userBob);
+    s.splitBillEqually(["user-alice", "user-bob"]);
+    s.setPayerAmount("user-alice", 5000);
+    s.setPayerAmount("user-bob", 5000);
+    const alicePayer = useBillStore.getState().payers[0];
 
-    useBillStore.getState().removeParticipant("user-bob");
+    s.removeParticipant("user-bob");
 
-    const { payers } = useBillStore.getState();
-    expect(payers.find((p) => p.userId === "user-bob")).toBeDefined();
+    const state = useBillStore.getState();
+    expect(state.participants.map((participant) => participant.id)).toEqual(["user-alice"]);
+    expect(state.billSplits.map((split) => split.userId)).toEqual(["user-alice"]);
+    expect(state.getExpenseShares().map((share) => share.userId)).toEqual(["user-alice"]);
+    expect(state.payers).toEqual([alicePayer]);
+    expect(state.payers[0]).toBe(alicePayer);
   });
 
   it("participant removal preserves other participants' splits with correct amounts", () => {
