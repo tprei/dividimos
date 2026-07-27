@@ -1248,7 +1248,8 @@ export type ExpenseAllocationIssue =
         | "item_overallocated";
     }>
   | Readonly<{ code: "item_assignment_share_mismatch"; participantIndex: number }>
-  | Readonly<{ code: "ineligible_payer"; payerIndex: number }>;
+  | Readonly<{ code: "ineligible_payer"; payerIndex: number }>
+  | Readonly<{ code: "duplicate_payer"; payerIndex: number }>;
 
 /** Recursively immutable canonical allocation summary. */
 export type ExpenseAllocationSummary = Readonly<{
@@ -1351,8 +1352,9 @@ function copyParticipant(entry: ParticipantOrderEntry): ParticipantOrderEntry {
  *
  * Phase 1 validates the participant order and the share/guest-share/payer
  * bijection (each user participant has exactly one share row and vice versa;
- * each entity-backed guest has exactly one guest share; each payer is a
- * registered user with a share row). Phase 2 computes the share/payer totals,
+ * each entity-backed guest has exactly one guest share; each payer is one
+ * distinct registered user with a share row). Phase 2 computes the share/payer
+ * totals,
  * signed deltas, and exact/under/over states in `bigint`. Phase 3 builds the
  * item-assignment state — `aggregate_only` echoes the authoritative shares;
  * `detailed` reconciles per-item consumer assignments, distributes the single
@@ -1468,7 +1470,8 @@ export function summarizeExpenseAllocations(
     }
   }
 
-  // -- Phase 1d: payer reachability (#495) ---------------------------------
+  // -- Phase 1d: payer reachability and uniqueness (#495) ------------------
+  const seenPayerUserIds = new Set<string>();
   for (let i = 0; i < input.payers.length; i += 1) {
     const userId = input.payers[i].userId;
     if (typeof userId !== "string" || userId.length === 0) {
@@ -1481,6 +1484,10 @@ export function summarizeExpenseAllocations(
     if (!userParticipantIndex.has(userId)) {
       return allocationIssue({ code: "ineligible_payer", payerIndex: i });
     }
+    if (seenPayerUserIds.has(userId)) {
+      return allocationIssue({ code: "duplicate_payer", payerIndex: i });
+    }
+    seenPayerUserIds.add(userId);
   }
 
   // -- Phase 2: overflow-checked bigint totals & states --------------------
@@ -2031,15 +2038,15 @@ function snapshotIdentity(
 
 /**
  * Map an allocation-summary failure to a snapshot issue. The closed
- * `ExpenseGraphSnapshotIssue` union carries no `ineligible_payer` member, so it
- * cannot be passed through verbatim; payer eligibility and the participant /
- * share bijection defects surface as `identity` (preserving their path), while
- * every cent-total / item-assignment defect becomes `allocation`.
+ * `ExpenseGraphSnapshotIssue` union carries no payer eligibility or duplicate
+ * member, so payer defects and the participant/share bijection defects surface
+ * as `identity` (preserving their path), while every cent-total /
+ * item-assignment defect becomes `allocation`.
  */
 function mapAllocationIssue(
   issue: ExpenseAllocationIssue,
 ): ExpenseGraphSnapshotIssue {
-  if (issue.code === "ineligible_payer") {
+  if (issue.code === "ineligible_payer" || issue.code === "duplicate_payer") {
     return {
       code: "invalid_graph_snapshot",
       path: ["payers", issue.payerIndex],

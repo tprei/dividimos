@@ -95,6 +95,36 @@ describe("summarizeExpenseAllocations — identity/order", () => {
       expect(r.issue).toMatchObject({ code: "ineligible_payer", payerIndex: 0 });
     }
   });
+
+  it("rejects duplicate payer rows before their amounts are aggregated", () => {
+    const r = summarizeExpenseAllocations({
+      money: singleAmount(100),
+      participantOrder: [userEntry("a"), userEntry("b")],
+      shares: [share("a", 60), share("b", 40)],
+      guestShares: [],
+      payers: [payer("a", 40), payer("a", 60)],
+      itemAssignments: { kind: "aggregate_only" },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.issue).toMatchObject({ code: "duplicate_payer", payerIndex: 1 });
+    }
+  });
+
+  it("rejects a guest identity as an ineligible payer", () => {
+    const r = summarizeExpenseAllocations({
+      money: singleAmount(100),
+      participantOrder: [userEntry("a"), guestEntry("g1")],
+      shares: [share("a", 0)],
+      guestShares: [guestShare("g1", 100)],
+      payers: [payer("g1", 100)],
+      itemAssignments: { kind: "aggregate_only" },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.issue).toMatchObject({ code: "ineligible_payer", payerIndex: 0 });
+    }
+  });
 });
 
 describe("summarizeExpenseAllocations — aggregate_only completeness", () => {
