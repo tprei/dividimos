@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
+import type { ExpenseAllocationIssue } from "@/lib/expense-money";
 import type {
   DebtEdge,
   Expense,
@@ -81,9 +82,9 @@ interface ExpenseState {
   unassignItem: (itemId: string, userId: string) => void;
   splitItemEqually: (itemId: string, userIds: string[]) => void;
 
-  setPayerFull: (userId: string) => void;
-  splitPaymentEqually: (userIds: string[]) => void;
-  setPayerAmount: (userId: string, amountCents: number) => void;
+  setPayerFull: (userId: string) => PayerMutationResult;
+  splitPaymentEqually: (userIds: string[]) => PayerMutationResult;
+  setPayerAmount: (userId: string, amountCents: number) => PayerMutationResult;
   removePayerEntry: (userId: string) => void;
 
   splitBillEqually: (userIds: string[]) => void;
@@ -137,6 +138,59 @@ interface ExpenseState {
 let nextId = 1;
 function generateId(): string {
   return `local_${Date.now()}_${nextId++}`;
+}
+
+type PayerMutationResult = ExpenseAllocationIssue | null;
+
+function getGrandTotalFor(
+  expense: Expense | null,
+  items: readonly ExpenseItem[],
+  totalAmountInput: number,
+): number {
+  if (!expense) return 0;
+  if (expense.expenseType === "single_amount") return totalAmountInput;
+
+  const itemsTotal = items.reduce((sum, item) => sum + item.totalPriceCents, 0);
+  return (
+    itemsTotal +
+    Math.round((itemsTotal * expense.serviceFeePercent) / 100) +
+    expense.fixedFees
+  );
+}
+
+function recalculateItemizedExpense(
+  expense: Expense | null,
+  items: readonly ExpenseItem[],
+  updatedAt: string,
+): Expense | null {
+  if (!expense || expense.expenseType === "single_amount") return expense;
+
+  return {
+    ...expense,
+    totalAmount: items.reduce((sum, item) => sum + item.totalPriceCents, 0),
+    updatedAt,
+  };
+}
+
+function validatePayerCandidates(
+  state: Pick<ExpenseState, "participants">,
+  userIds: readonly string[],
+): PayerMutationResult {
+  const eligibleUserIds = new Set(state.participants.map((participant) => participant.id));
+  const seenUserIds = new Set<string>();
+
+  for (let payerIndex = 0; payerIndex < userIds.length; payerIndex += 1) {
+    const userId = userIds[payerIndex];
+    if (!eligibleUserIds.has(userId)) {
+      return { code: "ineligible_payer", payerIndex };
+    }
+    if (seenUserIds.has(userId)) {
+      return { code: "duplicate_payer", payerIndex };
+    }
+    seenUserIds.add(userId);
+  }
+
+  return null;
 }
 
 /**
@@ -250,19 +304,7 @@ export function selectPreviewDebts(state: ExpenseState): DebtEdge[] {
     payment.set(id, 0);
   }
 
-  const grandTotal = participants.length + guests.length > 0
-    ? (state.expense?.expenseType === "single_amount"
-        ? state.totalAmountInput
-        : state.items.reduce((sum, i) => sum + i.totalPriceCents, 0) +
-          Math.round((state.items.reduce((sum, i) => sum + i.totalPriceCents, 0) * (state.expense?.serviceFeePercent ?? 0)) / 100) +
-          (state.expense?.fixedFees ?? 0))
-    : 0;
-
-  const effectivePayers = payers.length > 0
-    ? payers
-    : [{ expenseId: expense.id, userId: expense.creatorId, amountCents: grandTotal }];
-
-  for (const payer of effectivePayers) {
+  for (const payer of payers) {
     payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
   }
 
@@ -271,8 +313,8 @@ export function selectPreviewDebts(state: ExpenseState): DebtEdge[] {
 
   for (const id of allPersonIds) {
     const net = (payment.get(id) || 0) - (consumption.get(id) || 0);
-    if (net < -1) debtors.push({ id, amount: Math.abs(net) });
-    if (net > 1) creditors.push({ id, amount: net });
+    if (net < 0) debtors.push({ id, amount: Math.abs(net) });
+    if (net > 0) creditors.push({ id, amount: net });
   }
 
   debtors.sort((a, b) => b.amount - a.amount);
@@ -295,8 +337,8 @@ export function selectPreviewDebts(state: ExpenseState): DebtEdge[] {
     debtors[di].amount -= transfer;
     creditors[ci].amount -= transfer;
 
-    if (debtors[di].amount <= 1) di++;
-    if (creditors[ci].amount <= 1) ci++;
+    if (debtors[di].amount <= 0) di++;
+    if (creditors[ci].amount <= 0) ci++;
   }
 
   return debts;
@@ -345,63 +387,104 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   updateExpense: (updates) => {
-    const expense = get().expense;
-    if (!expense) return;
-    const { totalAmountInput, ...expenseUpdates } = updates;
-    const newState: Partial<ExpenseState> = {
-      expense: { ...expense, ...expenseUpdates, updatedAt: new Date().toISOString() },
-    };
-    if (totalAmountInput !== undefined) {
-      newState.totalAmountInput = totalAmountInput;
-    }
-    set(newState);
+    set((state) => {
+      const expense = state.expense;
+      if (!expense) return {};
+
+      const { totalAmountInput, ...expenseUpdates } = updates;
+      const nextExpense: Expense = {
+        ...expense,
+        ...expenseUpdates,
+        updatedAt: new Date().toISOString(),
+      };
+      const nextTotalAmountInput =
+        totalAmountInput === undefined ? state.totalAmountInput : totalAmountInput;
+      const totalChanged =
+        nextExpense.expenseType !== expense.expenseType ||
+        getGrandTotalFor(expense, state.items, state.totalAmountInput) !==
+          getGrandTotalFor(nextExpense, state.items, nextTotalAmountInput);
+
+      return {
+        expense: nextExpense,
+        ...(totalAmountInput === undefined ? {} : { totalAmountInput }),
+        ...(totalChanged ? { payers: [] } : {}),
+      };
+    });
   },
 
   setExpenseType: (expenseType) => {
-    const expense = get().expense;
-    if (!expense) return;
-    if (expenseType === "single_amount") {
-      set({
-        expense: { ...expense, expenseType, serviceFeePercent: 0, fixedFees: 0, updatedAt: new Date().toISOString() },
-        items: [],
-        splits: [],
-      });
-    } else {
-      set({
-        expense: { ...expense, expenseType, serviceFeePercent: 10, updatedAt: new Date().toISOString() },
+    set((state) => {
+      const expense = state.expense;
+      if (!expense || expense.expenseType === expenseType) return {};
+
+      const updatedAt = new Date().toISOString();
+      if (expenseType === "single_amount") {
+        return {
+          expense: {
+            ...expense,
+            expenseType,
+            serviceFeePercent: 0,
+            fixedFees: 0,
+            updatedAt,
+          },
+          items: [],
+          splits: [],
+          payers: [],
+        };
+      }
+
+      return {
+        expense: {
+          ...expense,
+          expenseType,
+          serviceFeePercent: 10,
+          updatedAt,
+        },
         totalAmountInput: 0,
         billSplits: [],
-      });
-    }
+        payers: [],
+      };
+    });
   },
 
   addParticipant: (user) => {
-    const existing = get().participants.find((p) => p.id === user.id);
-    if (existing) return;
-    set({ participants: [...get().participants, user] });
+    set((state) => {
+      if (state.participants.some((participant) => participant.id === user.id)) {
+        return {};
+      }
+      return { participants: [...state.participants, user] };
+    });
   },
 
   removeParticipant: (userId) => {
-    set({
-      participants: get().participants.filter((p) => p.id !== userId),
-      splits: get().splits.filter((s) => s.userId !== userId),
-      billSplits: get().billSplits.filter((s) => s.userId !== userId),
+    set((state) => {
+      if (!state.participants.some((participant) => participant.id === userId)) {
+        return {};
+      }
+
+      return {
+        participants: state.participants.filter((participant) => participant.id !== userId),
+        splits: state.splits.filter((split) => split.userId !== userId),
+        billSplits: state.billSplits.filter((split) => split.userId !== userId),
+        payers: state.payers.filter((payer) => payer.userId !== userId),
+      };
     });
   },
 
   addGuest: (name, phone) => {
     const id = `guest_${generateId()}`;
     const guest: Guest = { id, name, phone };
-    set({ guests: [...get().guests, guest] });
+    set((state) => ({ guests: [...state.guests, guest] }));
     return id;
   },
 
   removeGuest: (guestId) => {
-    set({
-      guests: get().guests.filter((g) => g.id !== guestId),
-      splits: get().splits.filter((s) => s.userId !== guestId),
-      billSplits: get().billSplits.filter((s) => s.userId !== guestId),
-    });
+    set((state) => ({
+      guests: state.guests.filter((guest) => guest.id !== guestId),
+      splits: state.splits.filter((split) => split.userId !== guestId),
+      billSplits: state.billSplits.filter((split) => split.userId !== guestId),
+      payers: state.payers.filter((payer) => payer.userId !== guestId),
+    }));
   },
 
   updateGuest: (guestId, name) => {
@@ -411,29 +494,73 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   addItem: (item) => {
-    const expenseItem: ExpenseItem = {
-      ...item,
-      id: generateId(),
-      expenseId: get().expense?.id || "",
-      createdAt: new Date().toISOString(),
-    };
-    set({ items: [...get().items, expenseItem] });
-    recalcTotal(get, set);
+    set((state) => {
+      const now = new Date().toISOString();
+      const expenseItem: ExpenseItem = {
+        ...item,
+        id: generateId(),
+        expenseId: state.expense?.id || "",
+        createdAt: now,
+      };
+      const items = [...state.items, expenseItem];
+      const expense = recalculateItemizedExpense(state.expense, items, now);
+      const totalChanged =
+        getGrandTotalFor(state.expense, state.items, state.totalAmountInput) !==
+        getGrandTotalFor(expense, items, state.totalAmountInput);
+
+      return {
+        items,
+        expense,
+        ...(totalChanged ? { payers: [] } : {}),
+      };
+    });
   },
 
   updateItem: (itemId, updates) => {
-    set({
-      items: get().items.map((i) => (i.id === itemId ? { ...i, ...updates } : i)),
+    set((state) => {
+      if (!state.items.some((item) => item.id === itemId)) return {};
+
+      const items = state.items.map((item) =>
+        item.id === itemId ? { ...item, ...updates } : item,
+      );
+      const expense = recalculateItemizedExpense(
+        state.expense,
+        items,
+        new Date().toISOString(),
+      );
+      const totalChanged =
+        getGrandTotalFor(state.expense, state.items, state.totalAmountInput) !==
+        getGrandTotalFor(expense, items, state.totalAmountInput);
+
+      return {
+        items,
+        expense,
+        ...(totalChanged ? { payers: [] } : {}),
+      };
     });
-    recalcTotal(get, set);
   },
 
   removeItem: (itemId) => {
-    set({
-      items: get().items.filter((i) => i.id !== itemId),
-      splits: get().splits.filter((s) => s.itemId !== itemId),
+    set((state) => {
+      if (!state.items.some((item) => item.id === itemId)) return {};
+
+      const items = state.items.filter((item) => item.id !== itemId);
+      const expense = recalculateItemizedExpense(
+        state.expense,
+        items,
+        new Date().toISOString(),
+      );
+      const totalChanged =
+        getGrandTotalFor(state.expense, state.items, state.totalAmountInput) !==
+        getGrandTotalFor(expense, items, state.totalAmountInput);
+
+      return {
+        items,
+        expense,
+        splits: state.splits.filter((split) => split.itemId !== itemId),
+        ...(totalChanged ? { payers: [] } : {}),
+      };
     });
-    recalcTotal(get, set);
   },
 
   assignItem: (itemId, userId, splitType, value) => {
@@ -500,49 +627,70 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   },
 
   setPayerFull: (userId) => {
-    const grandTotal = get().getGrandTotal();
-    const expense = get().expense;
-    if (!expense) return;
+    const state = get();
+    const expense = state.expense;
+    if (!expense) return null;
+
+    const issue = validatePayerCandidates(state, [userId]);
+    if (issue) return issue;
+
     set({
-      payers: [{ expenseId: expense.id, userId, amountCents: grandTotal }],
+      payers: [{
+        expenseId: expense.id,
+        userId,
+        amountCents: state.getGrandTotal(),
+      }],
     });
+    return null;
   },
 
   splitPaymentEqually: (userIds) => {
-    const grandTotal = get().getGrandTotal();
-    const expense = get().expense;
-    if (!expense || userIds.length === 0) return;
+    const state = get();
+    const expense = state.expense;
+    if (!expense || userIds.length === 0) return null;
+
+    const issue = validatePayerCandidates(state, userIds);
+    if (issue) return issue;
+
+    const grandTotal = state.getGrandTotal();
     const perPerson = Math.floor(grandTotal / userIds.length);
     const remainder = grandTotal - perPerson * userIds.length;
-    const newPayers: ExpensePayer[] = userIds.map((userId, idx) => ({
+    const payers: ExpensePayer[] = userIds.map((userId, index) => ({
       expenseId: expense.id,
       userId,
-      amountCents: perPerson + (idx < remainder ? 1 : 0),
+      amountCents: perPerson + (index < remainder ? 1 : 0),
     }));
-    set({ payers: newPayers });
+    set({ payers });
+    return null;
   },
 
   setPayerAmount: (userId, amountCents) => {
-    const expense = get().expense;
-    if (!expense) return;
-    const existing = get().payers.find((p) => p.userId === userId);
+    const state = get();
+    const expense = state.expense;
+    if (!expense) return null;
+
+    const issue = validatePayerCandidates(state, [userId]);
+    if (issue) return issue;
+
+    const existing = state.payers.find((payer) => payer.userId === userId);
     if (existing) {
       set({
-        payers: get().payers.map((p) =>
-          p.userId === userId ? { ...p, amountCents } : p,
+        payers: state.payers.map((payer) =>
+          payer.userId === userId ? { ...payer, amountCents } : payer,
         ),
       });
     } else {
       set({
-        payers: [...get().payers, { expenseId: expense.id, userId, amountCents }],
+        payers: [...state.payers, { expenseId: expense.id, userId, amountCents }],
       });
     }
+    return null;
   },
 
   removePayerEntry: (userId) => {
-    set({
-      payers: get().payers.filter((p) => p.userId !== userId),
-    });
+    set((state) => ({
+      payers: state.payers.filter((payer) => payer.userId !== userId),
+    }));
   },
 
   splitBillEqually: (userIds) => {
@@ -586,16 +734,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
 
   getGrandTotal: () => {
     const { expense, items, totalAmountInput } = get();
-    if (!expense) return 0;
-    if (expense.expenseType === "single_amount") {
-      return totalAmountInput;
-    }
-    const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-    return (
-      itemsTotal +
-      Math.round((itemsTotal * expense.serviceFeePercent) / 100) +
-      expense.fixedFees
-    );
+    return getGrandTotalFor(expense, items, totalAmountInput);
   },
 
   wouldProduceNoEdges: () => {
@@ -610,16 +749,13 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payment.set(id, 0);
     }
 
-    const effectivePayers = payers.length > 0
-      ? payers
-      : [{ expenseId: expense.id, userId: expense.creatorId, amountCents: get().getGrandTotal() }];
-    for (const payer of effectivePayers) {
+    for (const payer of payers) {
       payment.set(payer.userId, (payment.get(payer.userId) || 0) + payer.amountCents);
     }
 
     for (const id of allPersonIds) {
       const net = (payment.get(id) || 0) - (consumption.get(id) || 0);
-      if (Math.abs(net) > 1) return false;
+      if (net !== 0) return false;
     }
     return true;
   },
@@ -631,17 +767,17 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
 
     const consumption = getCachedConsumption(state);
     if (!consumption) return [];
+    const allPersonIds = [
+      ...participants.map((participant) => participant.id),
+      ...guests.map((guest) => guest.id),
+    ];
 
-    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
-
-    return allPersonIds
-      .filter((id) => (consumption.get(id) || 0) > 0)
-      .map((id) => ({
-        id: generateId(),
-        expenseId: expense.id,
-        userId: id,
-        shareAmountCents: consumption.get(id) || 0,
-      }));
+    return allPersonIds.map((id) => ({
+      id: generateId(),
+      expenseId: expense.id,
+      userId: id,
+      shareAmountCents: consumption.get(id) || 0,
+    }));
   },
 
   getParticipantTotal: (userId) => {
@@ -818,13 +954,3 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     });
   },
 }));
-
-function recalcTotal(
-  get: () => ExpenseState,
-  set: (state: Partial<ExpenseState>) => void,
-) {
-  const { expense, items } = get();
-  if (!expense || expense.expenseType === "single_amount") return;
-  const totalAmount = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-  set({ expense: { ...expense, totalAmount, updatedAt: new Date().toISOString() } });
-}

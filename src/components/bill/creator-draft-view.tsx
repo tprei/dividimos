@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { loadExpense } from "@/lib/supabase/expense-actions";
 import { activateExpense } from "@/lib/supabase/expense-rpc";
+import { ZERO_GRAPH_REVISION } from "@/lib/expense-money";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
 import { useBillStore } from "@/stores/bill-store";
 import { haptics } from "@/hooks/use-haptics";
@@ -43,7 +44,10 @@ export function CreatorDraftView({
 
   const handleFinalize = async () => {
     setFinalizing(true);
-    const result = await activateExpense({ expense_id: expense.id });
+    const result = await activateExpense({
+      expense_id: expense.id,
+      expectedGraphRevision: ZERO_GRAPH_REVISION,
+    });
     if ("error" in result) {
       haptics.error();
       toast.error(result.error);

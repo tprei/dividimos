@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { parseGraphRevision } from "@/lib/expense-money";
 import { createMockSupabase, type MockSupabase } from "@/test/mock-supabase";
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -10,6 +11,12 @@ import { activateExpense } from "./expense-rpc";
 
 let mock: MockSupabase;
 
+function graphRevision(value: number) {
+  const parsed = parseGraphRevision(value);
+  if (!parsed.ok) throw new Error(`Invalid graph revision fixture: ${value}`);
+  return parsed.value;
+}
+
 beforeEach(() => {
   mock = createMockSupabase();
   vi.mocked(createClient).mockReturnValue(mock.client);
@@ -17,7 +24,10 @@ beforeEach(() => {
 
 describe("activateExpense", () => {
   it("returns error when not authenticated", async () => {
-    const result = await activateExpense({ expense_id: "exp-1" });
+    const result = await activateExpense({
+      expense_id: "exp-1",
+      expectedGraphRevision: graphRevision(4),
+    });
 
     expect(result).toEqual({
       error: "Não autenticado",
@@ -25,62 +35,51 @@ describe("activateExpense", () => {
     });
   });
 
-  it("calls the RPC and returns result on success", async () => {
+  it("calls the revisioned RPC, strictly decodes its result, and does not fetch tables", async () => {
     mock.setUser({ id: "user-alice" });
-
-    // RPC returns void (no data, no error)
-    mock.onRpc("activate_expense", { data: null, error: null });
-
-    // After RPC, wrapper fetches expense to get group_id
-    mock.onTable("expenses", {
-      data: { group_id: "group-1" },
+    mock.onRpc("activate_saved_expense", {
+      data: { id: "exp-1", status: "active", graph_revision: 5 },
+      error: null,
     });
 
-    // Then fetches balances for the group
-    mock.onTable("balances", {
-      data: [
-        {
-          group_id: "group-1",
-          user_a: "user-alice",
-          user_b: "user-bob",
-          amount_cents: -3000,
-        },
-      ],
+    const result = await activateExpense({
+      expense_id: "exp-1",
+      expectedGraphRevision: graphRevision(4),
     });
-
-    const result = await activateExpense({ expense_id: "exp-1" });
 
     expect(result).toEqual({
       expenseId: "exp-1",
       status: "active",
-      updatedBalances: [
-        {
-          groupId: "group-1",
-          userA: "user-alice",
-          userB: "user-bob",
-          newAmountCents: -3000,
-          deltaCents: 0,
-        },
-      ],
+      graphRevision: graphRevision(5),
+      updatedBalances: [],
     });
-
-    // Verify RPC was called with correct args
-    const rpcCalls = mock.findCalls("rpc:activate_expense", "rpc");
-    expect(rpcCalls).toHaveLength(1);
-    expect(rpcCalls[0].args).toEqual([
-      "activate_expense",
-      { p_expense_id: "exp-1" },
+    expect(mock.findCalls("rpc:activate_saved_expense", "rpc")).toEqual([
+      {
+        table: "rpc:activate_saved_expense",
+        method: "rpc",
+        args: [
+          "activate_saved_expense",
+          {
+            p_expense_id: "exp-1",
+            p_expected_graph_revision: graphRevision(4),
+          },
+        ],
+      },
     ]);
+    expect(mock.findCalls("expenses")).toHaveLength(0);
+    expect(mock.findCalls("balances")).toHaveLength(0);
   });
 
-  it("returns typed error when RPC fails with permission_denied", async () => {
+  it("returns typed errors from non-conflict RPC failures", async () => {
     mock.setUser({ id: "user-bob" });
-
-    mock.onRpc("activate_expense", {
+    mock.onRpc("activate_saved_expense", {
       error: { message: "permission_denied: only the creator can activate" },
     });
 
-    const result = await activateExpense({ expense_id: "exp-1" });
+    const result = await activateExpense({
+      expense_id: "exp-1",
+      expectedGraphRevision: graphRevision(4),
+    });
 
     expect(result).toEqual({
       error: "only the creator can activate",
@@ -88,69 +87,47 @@ describe("activateExpense", () => {
     });
   });
 
-  it("returns typed error when RPC fails with invalid_status", async () => {
+  it("maps the stable stale-revision SQLSTATE to a conflict without losing provider detail", async () => {
     mock.setUser({ id: "user-alice" });
-
-    mock.onRpc("activate_expense", {
-      error: { message: "invalid_status: expense is active, expected draft" },
+    mock.onRpc("activate_saved_expense", {
+      error: {
+        code: "PST08",
+        message: "stale_graph_revision: expected revision 5",
+        details: "The draft graph changed before activation.",
+      },
     });
 
-    const result = await activateExpense({ expense_id: "exp-1" });
+    const result = await activateExpense({
+      expense_id: "exp-1",
+      expectedGraphRevision: graphRevision(4),
+    });
 
     expect(result).toEqual({
-      error: "expense is active, expected draft",
-      code: "invalid_status",
+      error: "expected revision 5",
+      code: "stale_graph_revision",
     });
   });
 
-  it("returns typed error when RPC fails with shares_mismatch", async () => {
+  it("rejects malformed successful RPC data", async () => {
     mock.setUser({ id: "user-alice" });
-
-    mock.onRpc("activate_expense", {
-      error: { message: "shares_mismatch: shares sum to 6000, expected 10000" },
+    mock.onRpc("activate_saved_expense", {
+      data: {
+        id: "exp-1",
+        status: "active",
+        graph_revision: 5,
+        unexpected: true,
+      },
+      error: null,
     });
 
-    const result = await activateExpense({ expense_id: "exp-1" });
+    const result = await activateExpense({
+      expense_id: "exp-1",
+      expectedGraphRevision: graphRevision(4),
+    });
 
     expect(result).toEqual({
-      error: "shares sum to 6000, expected 10000",
-      code: "shares_mismatch",
-    });
-  });
-
-  it("returns result with empty balances when expense fetch fails", async () => {
-    mock.setUser({ id: "user-alice" });
-
-    mock.onRpc("activate_expense", { data: null, error: null });
-
-    // Expense fetch fails
-    mock.onTable("expenses", {
-      data: null,
-      error: { message: "not found" },
-    });
-
-    const result = await activateExpense({ expense_id: "exp-1" });
-
-    expect(result).toEqual({
-      expenseId: "exp-1",
-      status: "active",
-      updatedBalances: [],
-    });
-  });
-
-  it("returns result with empty balances when balances fetch returns null", async () => {
-    mock.setUser({ id: "user-alice" });
-
-    mock.onRpc("activate_expense", { data: null, error: null });
-    mock.onTable("expenses", { data: { group_id: "group-1" } });
-    mock.onTable("balances", { data: null });
-
-    const result = await activateExpense({ expense_id: "exp-1" });
-
-    expect(result).toEqual({
-      expenseId: "exp-1",
-      status: "active",
-      updatedBalances: [],
+      error: "Resposta de ativação inválida",
+      code: "invalid_graph_mutation_result",
     });
   });
 });

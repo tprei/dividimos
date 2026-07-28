@@ -59,10 +59,11 @@ describe("confirmChatDraft", () => {
   });
 
   it("saves draft and activates expense on success", async () => {
-    mockSaveExpenseDraft.mockResolvedValue({ expenseId: "exp-1" });
+    mockSaveExpenseDraft.mockResolvedValue({ expenseId: "exp-1", graphRevision: 1 });
     mockActivateExpense.mockResolvedValue({
       expenseId: "exp-1",
       status: "active",
+      graphRevision: 2,
       updatedBalances: [],
     });
 
@@ -74,18 +75,19 @@ describe("confirmChatDraft", () => {
       updatedBalances: [],
     });
 
-    // Verify draft was saved with correct params
     expect(mockSaveExpenseDraft).toHaveBeenCalledOnce();
     const draftArgs = mockSaveExpenseDraft.mock.calls[0][0];
     expect(draftArgs.groupId).toBe("group-dm-1");
-    expect(draftArgs.creatorId).toBe("user-alice");
     expect(draftArgs.title).toBe("Uber");
-    expect(draftArgs.totalAmount).toBe(2500);
-    expect(draftArgs.expenseType).toBe("single_amount");
+    expect(draftArgs.totalAmountCents).toBe(2500);
+    expect(draftArgs.serviceFeeBasisPoints).toBe(0);
+    expect(draftArgs.fixedFeesCents).toBe(0);
 
-    // Verify activate was called with the draft ID
     expect(mockActivateExpense).toHaveBeenCalledOnce();
-    expect(mockActivateExpense).toHaveBeenCalledWith({ expense_id: "exp-1" });
+    expect(mockActivateExpense).toHaveBeenCalledWith({
+      expense_id: "exp-1",
+      expectedGraphRevision: 1,
+    });
   });
 
   it("returns error when draft save fails", async () => {
@@ -98,8 +100,11 @@ describe("confirmChatDraft", () => {
   });
 
   it("cleans up draft and returns error when activation fails", async () => {
-    mockSaveExpenseDraft.mockResolvedValue({ expenseId: "exp-2" });
-    mockActivateExpense.mockResolvedValue({ error: "Shares do not sum to total", code: "INVALID_SHARES" });
+    mockSaveExpenseDraft.mockResolvedValue({ expenseId: "exp-2", graphRevision: 1 });
+    mockActivateExpense.mockResolvedValue({
+      error: "Shares do not sum to total",
+      code: "INVALID_SHARES",
+    });
 
     const result = await confirmChatDraft(makeParams());
 
@@ -221,8 +226,8 @@ describe("confirmChatDraft", () => {
       expenseType: "itemized",
       amountCents: 5000,
       items: [
-        { description: "Cerveja", quantity: 2000, unitPriceCents: 1500, totalCents: 3000 },
-        { description: "Batata", quantity: 1000, unitPriceCents: 2000, totalCents: 2000 },
+        { description: "Cerveja", quantity: 2, unitPriceCents: 1500, totalCents: 3000 },
+        { description: "Batata", quantity: 1, unitPriceCents: 2000, totalCents: 2000 },
       ],
     });
 
