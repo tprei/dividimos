@@ -85,19 +85,18 @@ describe.skipIf(!canRun)("activate_expense allocation plan (#468)", () => {
     if (expError || !expense) throw new Error(`create expense: ${expError?.message}`);
     expenseId = expense.id;
 
-    const [sharesRes, payersRes] = await Promise.all([
-      adminClient!.from("expense_shares").insert([
-        { expense_id: expenseId, user_id: alice.id, share_amount_cents: 1 },
-        { expense_id: expenseId, user_id: bob.id, share_amount_cents: 1 },
-        { expense_id: expenseId, user_id: carol.id, share_amount_cents: 4 },
-      ]),
-      adminClient!.from("expense_payers").insert([
-        { expense_id: expenseId, user_id: alice.id, amount_cents: 1 },
-        { expense_id: expenseId, user_id: bob.id, amount_cents: 4 },
-        { expense_id: expenseId, user_id: carol.id, amount_cents: 1 },
-      ]),
+    const sharesRes = await adminClient!.from("expense_shares").insert([
+      { expense_id: expenseId, user_id: alice.id, share_amount_cents: 1 },
+      { expense_id: expenseId, user_id: bob.id, share_amount_cents: 1 },
+      { expense_id: expenseId, user_id: carol.id, share_amount_cents: 4 },
     ]);
     if (sharesRes.error) throw new Error(`shares: ${sharesRes.error.message}`);
+
+    const payersRes = await adminClient!.from("expense_payers").insert([
+      { expense_id: expenseId, user_id: alice.id, amount_cents: 1 },
+      { expense_id: expenseId, user_id: bob.id, amount_cents: 4 },
+      { expense_id: expenseId, user_id: carol.id, amount_cents: 1 },
+    ]);
     if (payersRes.error) throw new Error(`payers: ${payersRes.error.message}`);
 
     const creatorClient = authenticateAs(alice);
