@@ -22,6 +22,7 @@ import {
   getBalanceBetween,
   authenticateAs,
 } from "@/test/integration-helpers";
+import { forceLockContentionRace } from "@/test/db-race-barrier";
 
 describe.skipIf(!isIntegrationTestReady)(
   "Concurrency — race conditions on balances",
@@ -98,22 +99,46 @@ describe.skipIf(!isIntegrationTestReady)(
           { expense_id: expenseId, user_id: alice.id, amount_cents: 6000 },
         ]);
 
-        // Fire both concurrently
+        // Fire both concurrently, and prove — by holding the exact `groups`
+        // row lock both RPCs take, on an independent connection, until both
+        // racing backends are observed genuinely queued behind it — that
+        // the two writers actually contended inside PostgreSQL. Blind
+        // client-side polling cannot reliably catch this: these RPC bodies
+        // execute in well under a millisecond locally, so a bare
+        // `Promise.allSettled` plus a hopeful poll would intermittently
+        // report "no contention" even for a correctly atomic
+        // implementation (issue #519). Forcing the lock guarantees the
+        // observation window regardless of RPC execution speed, and a
+        // purely sequential implementation still fails this proof: only one
+        // backend would ever be dispatched while the lock is held.
         const aliceClient = authenticateAs(alice);
         const bobClient = authenticateAs(bob);
 
-        const [activationResult, settlementResult] = await Promise.allSettled([
-          aliceClient.rpc("activate_expense", { p_expense_id: expenseId }),
-          bobClient.rpc("record_settlements", {
-            p_allocations: [{
-              group_id: groupId,
-              from_user_id: bob.id,
-              to_user_id: alice.id,
-              amount_cents: 2000,
-            }],
-            p_operation_id: crypto.randomUUID(),
-          }),
-        ]);
+        const { result: [activationResult, settlementResult], contention } =
+          await forceLockContentionRace(
+            process.env.SUPABASE_DB_URL!,
+            {
+              lockSql: "select id from groups where id = $1 for update",
+              lockParams: [groupId],
+              queryContains: ["activate_expense", "record_settlements"],
+              expectedRacers: 2,
+            },
+            () =>
+              Promise.allSettled([
+                aliceClient.rpc("activate_expense", { p_expense_id: expenseId }),
+                bobClient.rpc("record_settlements", {
+                  p_allocations: [{
+                    group_id: groupId,
+                    from_user_id: bob.id,
+                    to_user_id: alice.id,
+                    amount_cents: 2000,
+                  }],
+                  p_operation_id: crypto.randomUUID(),
+                }),
+              ]),
+          );
+
+        expect(contention.observed).toBe(true);
 
         // Both should succeed
         expect(activationResult.status).toBe("fulfilled");
