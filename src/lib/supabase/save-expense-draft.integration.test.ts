@@ -403,7 +403,10 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft_graph RPC", () => {
 
     // Either legal lock order is coherent: whichever request loses the row
     // lock observes the other's committed effect and fails accordingly, but
-    // the two writers can never BOTH lose — at least one must succeed.
+    // the two writers can never BOTH lose — exactly one must succeed. Only
+    // activation can flip status; if save alone wins, its racing activation
+    // call still carries the now-stale pre-race revision and legitimately
+    // fails, leaving the expense draft with save's replacement graph.
     if (activateResult.error) {
       expect(activateResult.error.message).toMatch(/stale_graph_revision/);
     }

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'supabase/migrations/**'
+      - 'supabase/tests/**'
       - '.github/workflows/migrations.yml'
 
 permissions:
@@ -35,6 +36,9 @@ jobs:
 
       - name: Reset and replay migrations
         run: supabase db reset --local
+
+      - name: Run pgTAP catalog tests
+        run: supabase test db
 
   filename-immutability:
     name: No renamed or deleted migrations
