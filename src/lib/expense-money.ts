@@ -2874,24 +2874,28 @@ function decodeChatAllocations(
   return { ok: true, value: [rows[0], rows[1]] as const };
 }
 
-/**
- * Decode a raw chat provider result: exact root/item/participant/allocation
- * keys, #578 quantity, and #477 cent/line arithmetic delegated to
- * `validateExpenseMoney`. Chat has no fee fields; the adapter supplies
- * canonical zero basis points/fixed fees. Never repairs a defect - #476's
- * malformed-custom-allocation-collapses-to-`[]` rule is the sole documented
- * exception, and it never rejects otherwise-valid base money for it.
- */
-export function decodeExpenseResult(
-  source: "chat",
-  mode: "source_parse",
-  raw: unknown,
-  context: ExpenseSourceDecodeContext,
-): ValidationResult<DecodedChatExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue> {
-  void source;
-  void mode;
-  void context;
+/** Chat/voice source result types and the shared `decodeExpenseResult` entrypoint. */
+export type DecodedVoiceExpense<M extends UntrustedParsedExpenseMoney> =
+  Readonly<{
+    source: "voice";
+    title: string;
+    merchantName: string | null;
+    participants: readonly SourceParticipantMatch[];
+    money: M;
+  }>;
 
+const VOICE_ROOT_KEYS = [
+  "title",
+  "amountCents",
+  "expenseType",
+  "items",
+  "participants",
+  "merchantName",
+] as const;
+
+function decodeChatExpenseResult(
+  raw: unknown,
+): ValidationResult<DecodedChatExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue> {
   if (!isStringRecord(raw)) {
     return { ok: false, issue: structureIssue("chat", [], "null") };
   }
@@ -2905,10 +2909,11 @@ export function decodeExpenseResult(
     return { ok: false, issue: structureIssue("chat", [], "unknown_key") };
   }
 
-  const title = raw.title;
-  if (typeof title !== "string" || title.trim().length === 0) {
+  const titleRaw = raw.title;
+  if (typeof titleRaw !== "string" || titleRaw.trim().length === 0) {
     return { ok: false, issue: contractIssue("chat", "metadata") };
   }
+  const title = titleRaw.trim();
   if (countCodePoints(title) > MAX_EXPENSE_SOURCE_TITLE_CODE_POINTS) {
     return { ok: false, issue: contractIssue("chat", "metadata") };
   }
@@ -3006,4 +3011,138 @@ export function decodeExpenseResult(
       : { ...base, splitType: "custom", allocations: allocationsResult.value };
   deepFreeze(result);
   return { ok: true, value: result };
+}
+
+/**
+ * Decode a raw voice provider result. Same #578/#477 delegation as chat, but
+ * voice has no confidence, payer, or split fields - it exposes no confirm/
+ * store callback for a low-confidence or ambiguous result at all.
+ */
+function decodeVoiceExpenseResult(
+  raw: unknown,
+): ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue> {
+  if (!isStringRecord(raw)) {
+    return { ok: false, issue: structureIssue("voice", [], "null") };
+  }
+  const rootKeys = Object.keys(raw);
+  for (const key of VOICE_ROOT_KEYS) {
+    if (!(key in raw)) {
+      return { ok: false, issue: structureIssue("voice", [key], "missing_key") };
+    }
+  }
+  if (rootKeys.length !== VOICE_ROOT_KEYS.length) {
+    return { ok: false, issue: structureIssue("voice", [], "unknown_key") };
+  }
+
+  const titleRaw = raw.title;
+  if (typeof titleRaw !== "string" || titleRaw.trim().length === 0) {
+    return { ok: false, issue: contractIssue("voice", "metadata") };
+  }
+  const title = titleRaw.trim();
+  if (countCodePoints(title) > MAX_EXPENSE_SOURCE_TITLE_CODE_POINTS) {
+    return { ok: false, issue: contractIssue("voice", "metadata") };
+  }
+
+  const merchantNameRaw = raw.merchantName;
+  if (merchantNameRaw !== null) {
+    if (typeof merchantNameRaw !== "string" || merchantNameRaw.trim().length === 0) {
+      return { ok: false, issue: contractIssue("voice", "metadata") };
+    }
+    if (countCodePoints(merchantNameRaw) > MAX_EXPENSE_SOURCE_MERCHANT_NAME_CODE_POINTS) {
+      return { ok: false, issue: contractIssue("voice", "metadata") };
+    }
+  }
+  const merchantName: string | null = merchantNameRaw;
+
+  const expenseType = raw.expenseType;
+  if (expenseType !== "single_amount" && expenseType !== "itemized") {
+    return { ok: false, issue: contractIssue("voice", "expense_type") };
+  }
+
+  if (!Array.isArray(raw.items)) {
+    return { ok: false, issue: structureIssue("voice", ["items"], "wrong_type") };
+  }
+  const canonicalItems: unknown[] = [];
+  for (let i = 0; i < raw.items.length; i += 1) {
+    const item = raw.items[i];
+    if (!isStringRecord(item)) {
+      return { ok: false, issue: structureIssue("voice", ["items", i], "wrong_type") };
+    }
+    const itemKeys = Object.keys(item);
+    if (itemKeys.length !== SOURCE_ITEM_KEYS.length || !SOURCE_ITEM_KEYS.every((k) => k in item)) {
+      return {
+        ok: false,
+        issue: structureIssue(
+          "voice",
+          ["items", i],
+          itemKeys.length > SOURCE_ITEM_KEYS.length ? "unknown_key" : "missing_key",
+        ),
+      };
+    }
+    canonicalItems.push({
+      description: item.description,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents,
+      totalPriceCents: item.totalCents,
+    });
+  }
+
+  const participantsResult = decodeSourceParticipants(raw.participants, "voice");
+  if (!participantsResult.ok) return participantsResult;
+
+  const moneyInput: ExpenseMoneyInput = {
+    expenseType,
+    totalAmountCents: raw.amountCents,
+    serviceFeeBasisPoints: ZERO_SERVICE_FEE_BASIS_POINTS,
+    fixedFeesCents: ZERO_EXPENSE_CENTS,
+    items: canonicalItems,
+  };
+  const moneyResult = validateExpenseMoney(moneyInput, "source_parse");
+  if (!moneyResult.ok) {
+    return { ok: false, issue: moneyResult.issue };
+  }
+
+  const result: DecodedVoiceExpense<UntrustedParsedExpenseMoney> = {
+    source: "voice",
+    title,
+    merchantName,
+    participants: participantsResult.value,
+    money: moneyResult.value,
+  };
+  deepFreeze(result);
+  return { ok: true, value: result };
+}
+
+/**
+ * Decode a raw chat or voice provider result: exact root/item/participant
+ * (/allocation, for chat) keys, #578 quantity, and #477 cent/line arithmetic
+ * delegated to `validateExpenseMoney`. Neither source has fee fields; the
+ * adapter supplies canonical zero basis points/fixed fees. Never repairs a
+ * defect - #476's malformed-custom-allocation-collapses-to-`[]` rule is the
+ * sole documented exception, and it never rejects otherwise-valid base money
+ * for it.
+ */
+export function decodeExpenseResult(
+  source: "chat",
+  mode: "source_parse",
+  raw: unknown,
+  context: ExpenseSourceDecodeContext,
+): ValidationResult<DecodedChatExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>;
+export function decodeExpenseResult(
+  source: "voice",
+  mode: "source_parse",
+  raw: unknown,
+  context: ExpenseSourceDecodeContext,
+): ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>;
+export function decodeExpenseResult(
+  source: "chat" | "voice",
+  mode: "source_parse",
+  raw: unknown,
+  context: ExpenseSourceDecodeContext,
+):
+  | ValidationResult<DecodedChatExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>
+  | ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue> {
+  void mode;
+  void context;
+  return source === "chat" ? decodeChatExpenseResult(raw) : decodeVoiceExpenseResult(raw);
 }

@@ -163,7 +163,7 @@ describe("parseVoiceExpense", () => {
     expect(result.merchantName).toBe("Bar do Zé");
   });
 
-  it("computes amountCents from items when Gemini returns 0", async () => {
+  it("rejects nonempty itemized items with zero top-level amount instead of summing them", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Compras",
@@ -188,12 +188,12 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("item A dez e item B vinte", fakeApiKey);
-
-    expect(result.amountCents).toBe(3000);
+    await expect(
+      parseVoiceExpense("item A dez e item B vinte", fakeApiKey),
+    ).rejects.toThrow("Gemini returned invalid expense data");
   });
 
-  it("rounds float cents to integers", async () => {
+  it("rejects float cents instead of rounding them", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
@@ -205,13 +205,12 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.amountCents).toBe(2534);
-    expect(Number.isInteger(result.amountCents)).toBe(true);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("clamps negative amountCents to 0", async () => {
+  it("rejects negative amountCents instead of clamping to 0", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
@@ -223,12 +222,12 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.amountCents).toBe(0);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("handles missing participants gracefully", async () => {
+  it("rejects null participants instead of defaulting to an empty array", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Mercado",
@@ -240,12 +239,12 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("mercado cento e vinte", fakeApiKey);
-
-    expect(result.participants).toEqual([]);
+    await expect(
+      parseVoiceExpense("mercado cento e vinte", fakeApiKey),
+    ).rejects.toThrow("Gemini returned invalid expense data");
   });
 
-  it("handles missing items gracefully", async () => {
+  it("rejects null items instead of defaulting to an empty array", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
@@ -257,9 +256,9 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste dez reais", fakeApiKey);
-
-    expect(result.items).toEqual([]);
+    await expect(
+      parseVoiceExpense("teste dez reais", fakeApiKey),
+    ).rejects.toThrow("Gemini returned invalid expense data");
   });
 
   it("trims whitespace from title", async () => {
@@ -321,7 +320,7 @@ describe("parseVoiceExpense", () => {
     );
   });
 
-  it("defaults null amountCents to 0", async () => {
+  it("rejects null amountCents instead of defaulting to 0", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
@@ -333,12 +332,12 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.amountCents).toBe(0);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("defaults undefined amountCents to 0", async () => {
+  it("rejects a response missing amountCents entirely instead of defaulting to 0", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
@@ -349,12 +348,12 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.amountCents).toBe(0);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("defaults null title to empty string", async () => {
+  it("rejects null title instead of defaulting to empty string", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: null,
@@ -366,12 +365,12 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.title).toBe("");
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("defaults undefined title to empty string", async () => {
+  it("rejects a response missing title entirely instead of defaulting to empty string", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         amountCents: 1000,
@@ -382,16 +381,16 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.title).toBe("");
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("clamps negative item quantity to 0", async () => {
+  it("rejects a negative item quantity instead of clamping to 0", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
-        amountCents: 1000,
+        amountCents: 500,
         expenseType: "itemized",
         items: [
           {
@@ -406,16 +405,16 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.items[0].quantity).toBe(0);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("clamps negative item unitPriceCents to 0", async () => {
+  it("rejects a negative item unitPriceCents instead of clamping to 0", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
-        amountCents: 1000,
+        amountCents: 500,
         expenseType: "itemized",
         items: [
           {
@@ -430,16 +429,16 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.items[0].unitPriceCents).toBe(0);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("clamps negative item totalCents to 0", async () => {
+  it("rejects a negative item totalCents instead of clamping to 0", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
-        amountCents: 1000,
+        amountCents: 500,
         expenseType: "itemized",
         items: [
           {
@@ -454,16 +453,16 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.items[0].totalCents).toBe(0);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("does not override amountCents when itemized with non-zero amount", async () => {
+  it("accepts a reconciled nonzero itemized amount without recomputing it", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Compras",
-        amountCents: 5000,
+        amountCents: 3000,
         expenseType: "itemized",
         items: [
           {
@@ -486,7 +485,7 @@ describe("parseVoiceExpense", () => {
 
     const result = await parseVoiceExpense("compras", fakeApiKey);
 
-    expect(result.amountCents).toBe(5000);
+    expect(result.amountCents).toBe(3000);
   });
 
   it("uses no-member prompt when members parameter is undefined", async () => {
@@ -583,7 +582,7 @@ describe("parseVoiceExpense", () => {
     expect(callArgs.contents[0].parts[0].text).toContain(longText);
   });
 
-  it("handles null item fields with nullish coalescing defaults", async () => {
+  it("rejects null item fields instead of defaulting them to 0", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
@@ -602,18 +601,16 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(result.items[0].quantity).toBe(0);
-    expect(result.items[0].unitPriceCents).toBe(0);
-    expect(result.items[0].totalCents).toBe(0);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
 
-  it("rounds item cents to integers", async () => {
+  it("rejects fractional item cents instead of rounding them", async () => {
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify({
         title: "Test",
-        amountCents: 3000,
+        amountCents: 2999,
         expenseType: "itemized",
         items: [
           {
@@ -628,13 +625,11 @@ describe("parseVoiceExpense", () => {
       }),
     });
 
-    const result = await parseVoiceExpense("teste", fakeApiKey);
-
-    expect(Number.isInteger(result.items[0].unitPriceCents)).toBe(true);
-    expect(Number.isInteger(result.items[0].totalCents)).toBe(true);
-    expect(result.items[0].unitPriceCents).toBe(1000);
-    expect(result.items[0].totalCents).toBe(2999);
+    await expect(parseVoiceExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
+    );
   });
+
 });
 
 describe("prompt-injection hardening", () => {
