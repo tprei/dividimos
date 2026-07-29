@@ -363,6 +363,45 @@ export function buildChatExpenseConfirmationRequest(
       }
       shares.push({ userId: share.userId, shareAmountCents: parsed.value });
     }
+  } else if (result.splitType === "custom") {
+    // #476: a custom split must never silently become an equal split.
+    // sanitizeChatResult already collapsed any structurally malformed
+    // allocation to `[]` - a length other than 2 here means the parser
+    // could not determine exact cents, so this must fail loudly and
+    // send the user to manual editing instead of guessing a division.
+    if (result.allocations.length !== 2) {
+      return {
+        error: "Não foi possível determinar a divisão exata. Edite a despesa para ajustar os valores.",
+      };
+    }
+
+    const resolveAllocationUserId = (handle: string): string | null => {
+      if (handle === "SELF") return currentUserId;
+      return members.find((m) => m.handle === handle)?.id ?? null;
+    };
+
+    shares = [];
+    const seenUserIds = new Set<string>();
+    let allocatedTotal = 0;
+    for (const allocation of result.allocations) {
+      const userId = resolveAllocationUserId(allocation.participantHandle);
+      if (!userId || seenUserIds.has(userId)) {
+        return {
+          error: "Não foi possível determinar a divisão exata. Edite a despesa para ajustar os valores.",
+        };
+      }
+      seenUserIds.add(userId);
+      const parsed = parseExpenseCents(allocation.shareAmountCents, "allow");
+      if (!parsed.ok) {
+        return { error: "A divisão reconhecida não é válida." };
+      }
+      allocatedTotal += parsed.value;
+      shares.push({ userId, shareAmountCents: parsed.value });
+    }
+
+    if (allocatedTotal !== amount.value) {
+      return { error: "A divisão personalizada não soma o valor total da despesa." };
+    }
   } else {
     const perPersonCents = Math.floor(result.amountCents / participantIds.length);
     const remainder = result.amountCents - perPersonCents * participantIds.length;

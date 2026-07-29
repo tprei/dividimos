@@ -9,6 +9,7 @@ const mockResult: ChatExpenseResult = {
   amountCents: 2500,
   expenseType: "single_amount",
   splitType: "equal",
+  allocations: [],
   items: [],
   participants: [],
   payerHandle: "SELF",

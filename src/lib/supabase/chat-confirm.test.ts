@@ -252,6 +252,7 @@ function makeResult(overrides: Partial<ChatExpenseResult> = {}): ChatExpenseResu
     amountCents: 10000,
     expenseType: "single_amount",
     splitType: "equal",
+    allocations: [],
     items: [],
     participants: [],
     payerHandle: null,
@@ -431,6 +432,104 @@ describe("buildChatExpenseConfirmationRequest", () => {
     });
 
     expect("error" in built).toBe(true);
+  });
+
+  it("#476: uses exact custom allocations instead of computing an equal split", () => {
+    const built = buildChatExpenseConfirmationRequest({
+      result: makeResult({
+        amountCents: 10000,
+        splitType: "custom",
+        allocations: [
+          { participantHandle: "SELF", shareAmountCents: 6000 },
+          { participantHandle: "bob", shareAmountCents: 4000 },
+        ],
+      }),
+      groupId: "group-1",
+      currentUserId: ALICE.id,
+      members: [ALICE, BOB],
+    });
+
+    if ("error" in built) throw new Error(built.error);
+    expect(built.shares).toEqual([
+      { userId: ALICE.id, shareAmountCents: 6000 },
+      { userId: BOB.id, shareAmountCents: 4000 },
+    ]);
+  });
+
+  it("#476: rejects (never silently equalizes) a custom split whose allocations were not determined", () => {
+    const built = buildChatExpenseConfirmationRequest({
+      result: makeResult({
+        amountCents: 10000,
+        splitType: "custom",
+        allocations: [],
+      }),
+      groupId: "group-1",
+      currentUserId: ALICE.id,
+      members: [ALICE, BOB],
+    });
+
+    expect("error" in built).toBe(true);
+  });
+
+  it("#476: rejects a custom split whose allocations reference a handle outside the DM", () => {
+    const built = buildChatExpenseConfirmationRequest({
+      result: makeResult({
+        amountCents: 10000,
+        splitType: "custom",
+        allocations: [
+          { participantHandle: "SELF", shareAmountCents: 6000 },
+          { participantHandle: "someone-else", shareAmountCents: 4000 },
+        ],
+      }),
+      groupId: "group-1",
+      currentUserId: ALICE.id,
+      members: [ALICE, BOB],
+    });
+
+    expect("error" in built).toBe(true);
+  });
+
+  it("#476: rejects a custom split whose allocations do not sum to the total amount", () => {
+    const built = buildChatExpenseConfirmationRequest({
+      result: makeResult({
+        amountCents: 10000,
+        splitType: "custom",
+        allocations: [
+          { participantHandle: "SELF", shareAmountCents: 6000 },
+          { participantHandle: "bob", shareAmountCents: 3000 },
+        ],
+      }),
+      groupId: "group-1",
+      currentUserId: ALICE.id,
+      members: [ALICE, BOB],
+    });
+
+    expect("error" in built).toBe(true);
+  });
+
+  it("#476: precomputedShares still take priority over a custom split's allocations (Quick Charge/Quick Split paths)", () => {
+    const built = buildChatExpenseConfirmationRequest({
+      result: makeResult({
+        amountCents: 10000,
+        splitType: "custom",
+        // A malformed/incomplete allocations array must not matter here -
+        // precomputedShares (Quick Charge/Quick Split) always wins.
+        allocations: [{ participantHandle: "SELF", shareAmountCents: 1 }],
+      }),
+      groupId: "group-1",
+      currentUserId: ALICE.id,
+      members: [ALICE, BOB],
+      precomputedShares: [
+        { userId: ALICE.id, shareAmountCents: 6000 },
+        { userId: BOB.id, shareAmountCents: 4000 },
+      ],
+    });
+
+    if ("error" in built) throw new Error(built.error);
+    expect(built.shares).toEqual([
+      { userId: ALICE.id, shareAmountCents: 6000 },
+      { userId: BOB.id, shareAmountCents: 4000 },
+    ]);
   });
 });
 

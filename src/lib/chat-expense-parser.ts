@@ -26,6 +26,16 @@ export interface ChatExpenseItem {
   totalCents: number;
 }
 
+/**
+ * One participant's exact share of a custom split, keyed by handle
+ * ("SELF" for the sender, or an exact conversation-member handle).
+ * Never a percentage, ratio, or decimal amount.
+ */
+export interface ChatExpenseAllocation {
+  participantHandle: string;
+  shareAmountCents: number;
+}
+
 /** Structured result from chat expense parsing. */
 export interface ChatExpenseResult {
   /** Expense title / description. */
@@ -36,6 +46,15 @@ export interface ChatExpenseResult {
   expenseType: "single_amount" | "itemized";
   /** How to split the expense. */
   splitType: "equal" | "custom";
+  /**
+   * Exact per-participant cent shares. Always `[]` for "equal" — equal
+   * splits are computed from amountCents, never from this array. For
+   * "custom", either exactly two structurally valid rows (one per DM
+   * participant) or `[]` when the provider could not determine exact
+   * cents; an empty custom array is edit-only and must never be silently
+   * treated as an equal split by any downstream consumer.
+   */
+  allocations: ChatExpenseAllocation[];
   /** Line items (only for itemized expenses). */
   items: ChatExpenseItem[];
   /** Participants mentioned by name. */
@@ -72,6 +91,27 @@ const CHAT_EXPENSE_SCHEMA = {
       enum: ["equal", "custom"],
       description:
         "equal se dividido igualmente ou não especificado, custom se proporções diferentes foram mencionadas.",
+    },
+    allocations: {
+      type: "array",
+      description:
+        "Divisão exata em centavos por pessoa. VAZIO se splitType for 'equal'. Se splitType for 'custom', exatamente DUAS linhas (remetente e a outra pessoa da conversa), cada uma com o quanto essa pessoa DEVE (não quem pagou). Se não for possível determinar os centavos exatos, deixe VAZIO mesmo com splitType 'custom' — nunca invente uma divisão igual aqui.",
+      maxItems: "2",
+      items: {
+        type: "object",
+        properties: {
+          participantHandle: {
+            type: "string",
+            description:
+              "\"SELF\" para o remetente, ou o handle exato (sem @) da outra pessoa da lista de membros.",
+          },
+          shareAmountCents: {
+            type: "integer",
+            description: "Quanto essa pessoa deve, em centavos inteiros (não percentual, não o que ela pagou).",
+          },
+        },
+        required: ["participantHandle", "shareAmountCents"],
+      },
     },
     items: {
       type: "array",
@@ -143,6 +183,7 @@ const CHAT_EXPENSE_SCHEMA = {
     "amountCents",
     "expenseType",
     "splitType",
+    "allocations",
     "items",
     "participants",
     "payerHandle",
@@ -167,6 +208,7 @@ Regras:
 - Se apenas um valor total foi mencionado, use expenseType "single_amount" e items vazio.
 - Se múltiplos itens com preços foram mencionados, use "itemized".
 - splitType: "equal" se dividido igualmente ou não especificado. "custom" se proporções diferentes foram mencionadas (ex: "eu paguei 60 e ele 40").
+- allocations: divisão exata em centavos. Se splitType "equal", allocations DEVE ser []. Se splitType "custom", allocations DEVE ter exatamente DUAS linhas: uma para "SELF" (o remetente) e uma para o handle exato da outra pessoa da conversa, cada uma com quanto essa pessoa DEVE (não quem pagou; isso é payerHandle). Inclua uma linha com 0 centavos se uma pessoa não deve nada. As duas linhas devem somar exatamente amountCents. Se o texto não permitir determinar os centavos exatos de cada pessoa, mantenha splitType "custom" mas deixe allocations []; NUNCA mude para "equal" nem invente uma divisão.
 - payerHandle: handle de quem pagou. Identifique de frases como "eu paguei", "paguei eu", "foi eu", "eu que paguei", "conta minha". Se o remetente diz "eu paguei", payerHandle é "SELF" (será resolvido pelo caller). Null se ambíguo.
 - merchantName: nome do estabelecimento se mencionado (ex: "no iFood", "do Mercado Livre"). Null se não mencionado.
 - participants: pessoas mencionadas pelo nome.
@@ -175,8 +217,9 @@ Regras:
 - confidence: "high" se título e valor são claros. "medium" se algum dado está implícito. "low" se a mensagem é muito vaga.
 
 Exemplos de mensagens comuns:
-- "pegamos uber 25 reais eu paguei" → title: "Uber", amountCents: 2500, payerHandle: "SELF", confidence: "high"
-- "pizza 60 conto rachei com maria" → title: "Pizza", amountCents: 6000, splitType: "equal", confidence: "high"
+- "pegamos uber 25 reais eu paguei" → title: "Uber", amountCents: 2500, payerHandle: "SELF", splitType: "equal", allocations: [], confidence: "high"
+- "pizza 60 conto rachei com maria" → title: "Pizza", amountCents: 6000, splitType: "equal", allocations: [], confidence: "high"
+- "paguei a conta de 100, minha parte é 60 e a do bob 40" → title: "Conta", amountCents: 10000, splitType: "custom", allocations: [{"participantHandle":"SELF","shareAmountCents":6000},{"participantHandle":"bob","shareAmountCents":4000}], payerHandle: "SELF", confidence: "high"
 - "almoco" → title: "Almoço", amountCents: 0, confidence: "low"
 - "2 cervejas 15 e 1 batata 20 no bar do ze" → itemized, merchantName: "Bar do Zé", confidence: "high"`;
 
@@ -251,6 +294,36 @@ export async function parseChatExpense(
   return sanitizeChatResult(parsed);
 }
 
+/**
+ * Validates and normalizes the raw provider `allocations` array. Never
+ * repairs a malformed row (no trimming, coercion, rounding, or partial
+ * retention) — any structural failure collapses the whole array to `[]`,
+ * the edit-only sentinel. `[]` is always the correct result for "equal";
+ * for "custom" it means the provider could not determine exact cents and
+ * the caller must route to manual editing instead of ever computing an
+ * equal split from it.
+ */
+function decodeAllocations(raw: unknown): ChatExpenseAllocation[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  if (raw.length !== 2) return [];
+
+  const rows: ChatExpenseAllocation[] = [];
+  for (const row of raw) {
+    if (typeof row !== "object" || row === null) return [];
+    const { participantHandle, shareAmountCents } = row as Record<string, unknown>;
+    if (typeof participantHandle !== "string" || participantHandle.length === 0) return [];
+    if (
+      typeof shareAmountCents !== "number" ||
+      !Number.isSafeInteger(shareAmountCents) ||
+      shareAmountCents < 0
+    ) {
+      return [];
+    }
+    rows.push({ participantHandle, shareAmountCents });
+  }
+  return rows;
+}
+
 /** Sanitize and normalize the raw Gemini response. Exported for testing. */
 export function sanitizeChatResult(parsed: ChatExpenseResult): ChatExpenseResult {
   parsed.amountCents = Math.round(Math.max(0, parsed.amountCents ?? 0));
@@ -263,6 +336,15 @@ export function sanitizeChatResult(parsed: ChatExpenseResult): ChatExpenseResult
   parsed.merchantName = parsed.merchantName ?? null;
   parsed.confidence = parsed.confidence ?? "low";
   parsed.splitType = parsed.splitType ?? "equal";
+
+  // #476: a custom split must never be interpreted as equal. "equal"
+  // always carries an empty allocation array (equal shares are computed
+  // from amountCents, never from this field); "custom" keeps only a
+  // structurally exact two-row allocation or the empty edit-only
+  // sentinel — it is never defaulted, repaired, or discarded in favor of
+  // an equal split by this function or any downstream caller.
+  parsed.allocations =
+    parsed.splitType === "custom" ? decodeAllocations(parsed.allocations) : [];
 
   for (const item of parsed.items) {
     item.unitPriceCents = Math.round(Math.max(0, item.unitPriceCents ?? 0));
