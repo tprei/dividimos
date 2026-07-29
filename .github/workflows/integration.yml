@@ -54,3 +54,4 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
           PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
           SUPABASE_DB_URL: ${{ steps.supabase.outputs.db_url }}
+          RATE_LIMIT_DISABLED: "0"

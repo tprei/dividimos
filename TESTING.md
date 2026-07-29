@@ -191,5 +191,7 @@ All test layers need these (set by `./scripts/dev-setup.sh` or `supabase start`)
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Integration, Synthetic |
 | `SUPABASE_SERVICE_ROLE_KEY` | Integration, Synthetic |
 | `PIX_ENCRYPTION_KEY` | Integration |
+| `SUPABASE_DB_URL` | Integration (test-runner Postgres credential for direct `pg` connections in deterministic lock/race tests; not an application environment setting) |
+| `RATE_LIMIT_DISABLED` | Integration (set to `0` in CI; the limiter wrapper's non-production Vitest-only bypass reads this, but a suite-wide `1` would make rate-limit enforcement tests false-green) |
 | `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE` | Synthetic (set to `true`) |
 | `E2E_BASE_URL` | Synthetic (defaults to `http://localhost:3000`) |
