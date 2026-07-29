@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { Client } from "pg";
 import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUsers,
@@ -6,10 +7,22 @@ import {
   createAndActivateExpense,
   settleDebt,
   getBalanceBetween,
+  deleteTestExpenses,
   authenticateAs,
   acceptGroupInvite,
   type TestUser,
 } from "@/test/integration-helpers";
+
+// Lazy raw pg connection for deleteTestExpenses (draft deletion must open a
+// direct mutation token; an authenticated PostgREST delete is guard-rejected).
+let lifecyclePg: Client | undefined;
+async function pg(): Promise<Client> {
+  if (!lifecyclePg) {
+    lifecyclePg = new Client(process.env.SUPABASE_DB_URL!);
+    await lifecyclePg.connect();
+  }
+  return lifecyclePg;
+}
 
 /**
  * Issue #477: creates (or, when `id` is provided, edits) a draft expense
@@ -197,15 +210,9 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
       // No balance exists yet
       expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(0);
 
-      // Delete the draft
-      const aliceClient = authenticateAs(alice);
-      const { error: delError } = await aliceClient
-        .from("expenses")
-        .delete()
-        .eq("id", draft.id)
-        .eq("status", "draft");
-
-      expect(delError).toBeNull();
+      // Delete the draft via the raw direct-mutation-token path: an
+      // authenticated PostgREST DELETE on expenses is now guard-rejected.
+      await deleteTestExpenses(await pg(), [draft.id]);
 
       // Still no balance
       expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(0);
@@ -532,13 +539,9 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         }),
       ]);
 
-      // Delete draft1
-      const aliceClient = authenticateAs(alice);
-      await aliceClient
-        .from("expenses")
-        .delete()
-        .eq("id", draft1.id)
-        .eq("status", "draft");
+      // Delete draft1 via the direct-mutation-token path (an
+      // authenticated PostgREST DELETE is now guard-rejected).
+      await deleteTestExpenses(await pg(), [draft1.id]);
 
       // Verify draft1 is gone
       const { data: deleted } = await adminClient!
