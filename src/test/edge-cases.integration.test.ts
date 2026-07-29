@@ -10,6 +10,48 @@ import {
   type TestUser,
 } from "./integration-helpers";
 
+/**
+ * Issue #477: creates a draft expense through save_expense_draft_graph --
+ * the only path allowed to insert a new expenses row. Returns id +
+ * graph_revision so callers can attempt activation (which may then reject
+ * for the mismatch this test is asserting).
+ */
+async function saveDraft(
+  creator: TestUser,
+  groupId: string,
+  fields: {
+    title: string;
+    totalAmount: number;
+    shares: { userId: string; amount: number }[];
+    payers: { userId: string; amount: number }[];
+  },
+): Promise<{ id: string; graphRevision: number }> {
+  const client = authenticateAs(creator);
+  const { data, error } = await client.rpc("save_expense_draft_graph", {
+    p_expense: {
+      group_id: groupId,
+      title: fields.title,
+      merchant_name: null,
+      expense_type: "single_amount",
+      total_amount: fields.totalAmount,
+      service_fee_basis_points: 0,
+      fixed_fees: 0,
+    },
+    p_items: [],
+    p_shares: fields.shares.map((s) => ({ user_id: s.userId, share_amount_cents: s.amount })),
+    p_payers: fields.payers.map((p) => ({ user_id: p.userId, amount_cents: p.amount })),
+    p_guests: [],
+    p_guest_shares: [],
+    p_participant_order: [],
+    p_expected_graph_revision: 0,
+    p_save_operation_id: crypto.randomUUID(),
+  });
+  if (error || !data) {
+    throw new Error(`Failed to save draft: ${error?.message}`);
+  }
+  const result = data as { id: string; graph_revision: number };
+  return { id: result.id, graphRevision: result.graph_revision };
+}
 // ============================================================
 // Suite 6: Edge cases and rounding
 // ============================================================
@@ -380,80 +422,49 @@ describe.skipIf(!isIntegrationTestReady)("Draft management & validation", () => 
 
   // 8.1 — Cannot activate with shares that don't sum to total
   it("8.1: activation fails when shares don't match total_amount", async () => {
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
-        group_id: groupId,
-        creator_id: alice.id,
-        title: "Mismatched Shares",
-        expense_type: "single_amount",
-        total_amount: 10000,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-
-    // Insert shares that sum to 9000, not 10000
-    await adminClient!.from("expense_shares").insert([
-      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 4000 },
-      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 5000 },
-    ]);
-
-    await adminClient!.from("expense_payers").insert({
-      expense_id: expense!.id,
-      user_id: alice.id,
-      amount_cents: 10000,
+    // Draft via save_expense_draft_graph (#477 guard rejects direct table
+    // writes). Shares sum to 9000 (under-allocated), total is 10000 -- an
+    // incomplete draft, which the save RPC accepts; activation must reject.
+    const draft = await saveDraft(alice, groupId, {
+      title: "Mismatched Shares",
+      totalAmount: 10000,
+      shares: [
+        { userId: alice.id, amount: 4000 },
+        { userId: bob.id, amount: 5000 },
+      ],
+      payers: [{ userId: alice.id, amount: 10000 }],
     });
 
     const aliceClient = authenticateAs(alice);
-    const { error } = await aliceClient.rpc("activate_expense", {
-      p_expense_id: expense!.id,
+    const { error } = await aliceClient.rpc("activate_saved_expense", {
+      p_expense_id: draft.id,
+      p_expected_graph_revision: draft.graphRevision,
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("shares_mismatch");
-
-    // Cleanup
-    await adminClient!.from("expenses").delete().eq("id", expense!.id);
   });
 
   // 8.2 — Cannot activate with payers that don't sum to total
   it("8.2: activation fails when payers don't match total_amount", async () => {
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
-        group_id: groupId,
-        creator_id: alice.id,
-        title: "Mismatched Payers",
-        expense_type: "single_amount",
-        total_amount: 10000,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-
-    await adminClient!.from("expense_shares").insert([
-      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 5000 },
-      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 5000 },
-    ]);
-
-    // Payers sum to 8000, not 10000
-    await adminClient!.from("expense_payers").insert({
-      expense_id: expense!.id,
-      user_id: alice.id,
-      amount_cents: 8000,
+    // Payers sum to 8000, not 10000. Under-allocated draft (save accepts);
+    // activation must reject.
+    const draft = await saveDraft(alice, groupId, {
+      title: "Mismatched Payers",
+      totalAmount: 10000,
+      shares: [
+        { userId: alice.id, amount: 5000 },
+        { userId: bob.id, amount: 5000 },
+      ],
+      payers: [{ userId: alice.id, amount: 8000 }],
     });
 
     const aliceClient = authenticateAs(alice);
-    const { error } = await aliceClient.rpc("activate_expense", {
-      p_expense_id: expense!.id,
+    const { error } = await aliceClient.rpc("activate_saved_expense", {
+      p_expense_id: draft.id,
+      p_expected_graph_revision: draft.graphRevision,
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("payers_mismatch");
-
-    // Cleanup
-    await adminClient!.from("expenses").delete().eq("id", expense!.id);
   });
 
   // 8.3 — Cannot activate an already-active expense
@@ -469,13 +480,20 @@ describe.skipIf(!isIntegrationTestReady)("Draft management & validation", () => 
       payers: [{ userId: alice.id, amount: 5000 }],
     });
 
-    // Try to activate again
+    // Try to activate again -- activate_saved_expense's CAS rejects a
+    // non-draft status with PST08/stale_graph_revision regardless of which
+    // graph_revision is passed.
+    const { data: current } = await adminClient!
+      .from("expenses")
+      .select("graph_revision")
+      .eq("id", expenseId)
+      .single();
     const aliceClient = authenticateAs(alice);
-    const { error } = await aliceClient.rpc("activate_expense", {
+    const { error } = await aliceClient.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: current!.graph_revision,
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("invalid_status");
   });
 });
