@@ -1,6 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { sanitizeMemberField, sanitizeUserText } from "./llm-prompt-safety";
-import { parseExpenseQuantity } from "./expense-quantity";
+import {
+  decodeExpenseResult,
+  toModelContractIssue,
+  type DecodedVoiceExpense,
+  type UntrustedParsedExpenseMoney,
+} from "./expense-money";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -211,32 +216,58 @@ export async function parseVoiceExpense(
     throw new Error("Gemini returned empty response");
   }
 
-  const parsed = JSON.parse(responseText) as VoiceExpenseResult;
-
-  // Sanitize
-  parsed.amountCents = Math.round(Math.max(0, parsed.amountCents ?? 0));
-  parsed.title = (parsed.title ?? "").trim();
-  parsed.items = Array.isArray(parsed.items) ? parsed.items : [];
-  parsed.participants = Array.isArray(parsed.participants)
-    ? parsed.participants
-    : [];
-
-  // Round item cents
-  for (const item of parsed.items) {
-    item.unitPriceCents = Math.round(Math.max(0, item.unitPriceCents ?? 0));
-    item.totalCents = Math.round(Math.max(0, item.totalCents ?? 0));
-    const quantityParsed = parseExpenseQuantity(item.quantity);
-    item.quantity = quantityParsed.ok ? (quantityParsed.value as number) : 0;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    throw new Error("Gemini returned invalid JSON");
   }
 
-  // If itemized with items but amountCents is 0, compute from items
-  if (
-    parsed.expenseType === "itemized" &&
-    parsed.items.length > 0 &&
-    parsed.amountCents === 0
-  ) {
-    parsed.amountCents = parsed.items.reduce((sum, i) => sum + i.totalCents, 0);
+  const decoded = decodeExpenseResult("voice", "source_parse", parsed, {
+    members: (members ?? []).map((m) => ({ handle: m.handle, name: m.name })),
+  });
+  if (!decoded.ok) {
+    // #477: invalid model money/item/fee/structure output is rejected
+    // before it ever reaches review - never repaired, never defaulted.
+    throw new Error(
+      `Gemini returned invalid expense data: ${JSON.stringify(toModelContractIssue(decoded.issue))}`,
+    );
   }
 
-  return parsed;
+  return toLegacyVoiceExpenseResult(decoded.value);
+}
+
+/**
+ * Adapts the strict #477 decoder result back to the legacy
+ * `VoiceExpenseResult` shape every existing caller still consumes.
+ * `items[].quantity` stays branded milliunits, matching the prior inline
+ * sanitizer's contract exactly - only the validation is stricter.
+ */
+function toLegacyVoiceExpenseResult(
+  decoded: DecodedVoiceExpense<UntrustedParsedExpenseMoney>,
+): VoiceExpenseResult {
+  const money = decoded.money;
+  const amountCents = money.outcome === "complete" ? money.totalAmountCents : 0;
+  const items: VoiceExpenseItem[] =
+    money.outcome === "complete"
+      ? money.items.map((item) => ({
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          totalCents: item.totalPriceCents,
+        }))
+      : [];
+
+  return {
+    title: decoded.title,
+    amountCents,
+    expenseType: money.expenseType,
+    items,
+    participants: decoded.participants.map((p) => ({
+      spokenName: p.spokenName,
+      matchedHandle: p.matchedHandle,
+      confidence: p.confidence,
+    })),
+    merchantName: decoded.merchantName,
+  };
 }
