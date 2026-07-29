@@ -25,6 +25,7 @@ describe("expenseRowToExpense", () => {
       fixed_fees: 200,
       status: "active" as const,
       graph_revision: 1,
+      activation_notified_at: null,
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-02T00:00:00Z",
     };
@@ -60,6 +61,7 @@ describe("expenseRowToExpense", () => {
       fixed_fees: 0,
       status: "draft" as const,
       graph_revision: 0,
+      activation_notified_at: null,
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-01T00:00:00Z",
     };

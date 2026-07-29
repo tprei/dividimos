@@ -421,6 +421,21 @@ describe("push-notify", () => {
   });
 
   describe("notifyExpenseActivated", () => {
+    // Mocks the admin.from("expenses").update({...}).eq().eq().eq().is()
+    // .select().maybeSingle() atomic claim chain used by the one-shot
+    // activation-notification guard (#534).
+    function mockClaimChain(result: { data: unknown; error: unknown }) {
+      const claimTail = { maybeSingle: () => Promise.resolve(result) };
+      const claimChain: Record<string, unknown> = {
+        select: () => claimTail,
+      };
+      claimChain.is = () => claimChain;
+      const eqChain: Record<string, unknown> = { eq: () => eqChain, is: () => claimChain };
+      return {
+        update: () => eqChain,
+      };
+    }
+
     it("skips when web push is not configured", async () => {
       vi.mocked(isWebPushConfigured).mockReturnValue(false);
 
@@ -429,28 +444,13 @@ describe("push-notify", () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it("skips when caller is not the expense creator", async () => {
+    it("skips when the claim finds no matching row (draft, settled, noncreator, nonexistent, or replay)", async () => {
       mockCaller("not-the-creator");
 
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "expenses") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: {
-                      group_id: "group-1",
-                      creator_id: "creator-1",
-                      title: "Pizza",
-                      total_amount: 5000,
-                    },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
+          return mockClaimChain({ data: null, error: null });
         }
         if (table === "expense_shares") {
           return {
@@ -472,28 +472,21 @@ describe("push-notify", () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it("notifies affected users excluding creator", async () => {
+    it("notifies affected users excluding creator on the first successful claim", async () => {
       mockCaller("creator-1");
 
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "expenses") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: {
-                      group_id: "group-1",
-                      creator_id: "creator-1",
-                      title: "Pizza",
-                      total_amount: 5000,
-                    },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
+          return mockClaimChain({
+            data: {
+              group_id: "group-1",
+              creator_id: "creator-1",
+              title: "Pizza",
+              total_amount: 5000,
+            },
+            error: null,
+          });
         }
         if (table === "expense_shares") {
           return {
@@ -554,37 +547,6 @@ describe("push-notify", () => {
       }));
     });
 
-    it("skips when expense is not found", async () => {
-      mockCaller("creator-1");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "expenses") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: null, error: null }),
-              }),
-            }),
-          };
-        }
-        if (table === "expense_shares") {
-          return {
-            select: () => ({
-              eq: () => Promise.resolve({ data: [], error: null }),
-            }),
-          };
-        }
-        return chain;
-      });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
-
-      await notifyExpenseActivated("expense-1");
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
     it("omits group name and deep-links to the conversation in a DM", async () => {
       // DM groups have no meaningful `name` — using it verbatim produced
       // titles like 'Nova despesa em ""'. For DMs we should omit the group
@@ -594,22 +556,15 @@ describe("push-notify", () => {
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "expenses") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: {
-                      group_id: "dm-group-1",
-                      creator_id: "creator-1",
-                      title: "Almoço",
-                      total_amount: 4500,
-                    },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
+          return mockClaimChain({
+            data: {
+              group_id: "dm-group-1",
+              creator_id: "creator-1",
+              title: "Almoço",
+              total_amount: 4500,
+            },
+            error: null,
+          });
         }
         if (table === "expense_shares") {
           return {
