@@ -5,6 +5,7 @@ import {
   authenticateAs,
   createTestGroupWithMembers,
   createTestUser,
+  deleteTestExpenses,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -59,11 +60,15 @@ describe.skipIf(!isIntegrationTestReady)("revisioned graph-save prerequisite", (
     if (!databaseUrl || !alice || !bob || !outsider) return;
     const pg = new Client(databaseUrl);
     await pg.connect();
+    const { rows } = await pg.query<{ id: string }>(
+      "SELECT id FROM public.expenses WHERE group_id = $1",
+      [groupId],
+    );
+    await deleteTestExpenses(pg, rows.map((r) => r.id));
     await pg.query(
       "DELETE FROM public.expense_graph_save_operations WHERE caller_id = ANY($1::uuid[])",
       [[alice.id, bob.id, outsider.id]],
     );
-    await pg.query("DELETE FROM public.expenses WHERE group_id = $1", [groupId]);
     await pg.query("DELETE FROM public.groups WHERE id = $1", [groupId]);
     await pg.end();
   });
