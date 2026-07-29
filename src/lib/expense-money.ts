@@ -2614,3 +2614,397 @@ export function decodeExpenseGraphSnapshot(
   deepFreeze(snapshot);
   return { ok: true, value: snapshot };
 }
+
+// ---------------------------------------------------------------------------
+// Issue #477 part 2 / #476: source decoders. `decodeExpenseResult` is the
+// sole unknown-root entrypoint for a chat/voice/OCR/SEFAZ provider result.
+// This slice implements the "chat" source; "voice"/"ocr"/"sefaz" are added
+// in their own follow-up slices, so the exported signature is chat-only for
+// now and TypeScript rejects any other source at the call site.
+// ---------------------------------------------------------------------------
+
+export type ExpenseSource = "chat" | "voice" | "ocr" | "sefaz";
+
+export type ExpenseSourceMemberContext = Readonly<{
+  handle: string;
+  name: string;
+}>;
+
+/**
+ * Known conversation members for a source parse. Reserved for this decoder's
+ * signature parity with the full #477 contract; handle resolution against
+ * real DM members is #476's adapter's job (`buildChatExpenseConfirmationRequest`),
+ * not this structural decoder's — the decoder only proves the wire shape.
+ */
+export type ExpenseSourceDecodeContext = Readonly<{
+  members: readonly ExpenseSourceMemberContext[];
+}>;
+
+export type ExpenseDecodeIssue =
+  | ExpenseMoneyIssue
+  | Readonly<{
+      code: "invalid_structure";
+      source: ExpenseSource;
+      path: readonly (string | number)[];
+      reason: "missing_key" | "unknown_key" | "wrong_type" | "null" | "array_bound";
+    }>
+  | Readonly<{
+      code: "invalid_source_contract";
+      source: ExpenseSource;
+      reason:
+        | "mode"
+        | "metadata"
+        | "expense_type"
+        | "fee_fields"
+        | "fee_evidence"
+        | "participant"
+        | "payer"
+        | "allocations";
+    }>;
+
+export type SourceParticipantMatch = Readonly<{
+  spokenName: string;
+  matchedHandle: string | null;
+  confidence: "high" | "medium" | "low";
+}>;
+
+/** One participant's exact custom-split share, keyed by handle ("SELF" for the sender). */
+export type CanonicalChatAllocation = Readonly<{
+  participantHandle: string;
+  shareAmountCents: ExpenseCents;
+}>;
+
+export type DecodedChatExpense<M extends UntrustedParsedExpenseMoney> =
+  Readonly<{
+    source: "chat";
+    title: string;
+    merchantName: string | null;
+    participants: readonly SourceParticipantMatch[];
+    payerHandle: string | null;
+    confidence: "high" | "medium" | "low";
+    money: M;
+  }> &
+    (
+      | Readonly<{ splitType: "equal"; allocations: readonly [] }>
+      | Readonly<{
+          splitType: "custom";
+          allocations:
+            | readonly []
+            | readonly [CanonicalChatAllocation, CanonicalChatAllocation];
+        }>
+    );
+
+export type ModelContractIssue = Readonly<{
+  code: "MODEL_CONTRACT_INVALID";
+  category: "structure" | "money" | "item" | "fee";
+  path: readonly (string | number)[];
+}>;
+
+function structureIssue(
+  source: ExpenseSource,
+  path: readonly (string | number)[],
+  reason: "missing_key" | "unknown_key" | "wrong_type" | "null" | "array_bound",
+): ExpenseDecodeIssue {
+  return { code: "invalid_structure", source, path, reason };
+}
+
+function contractIssue(
+  source: ExpenseSource,
+  reason:
+    | "mode"
+    | "metadata"
+    | "expense_type"
+    | "fee_fields"
+    | "fee_evidence"
+    | "participant"
+    | "payer"
+    | "allocations",
+): ExpenseDecodeIssue {
+  return { code: "invalid_source_contract", source, reason };
+}
+
+/**
+ * Maps every closed `ExpenseDecodeIssue` code to one `ModelContractIssue`
+ * category. Exhaustive: adding an issue code without extending this switch
+ * fails TypeScript (`checkNever` below), by design (issue #477 part 2).
+ */
+export function toModelContractIssue(issue: ExpenseDecodeIssue): ModelContractIssue {
+  const path = "path" in issue ? issue.path : [];
+  switch (issue.code) {
+    case "invalid_structure":
+      return { code: "MODEL_CONTRACT_INVALID", category: "structure", path };
+    case "invalid_source_contract":
+      return {
+        code: "MODEL_CONTRACT_INVALID",
+        category: issue.reason === "fee_fields" || issue.reason === "fee_evidence" ? "fee" : "structure",
+        path: [],
+      };
+    case "invalid_item_collection":
+    case "invalid_item_structure":
+    case "invalid_quantity":
+    case "invalid_item_cents":
+    case "line_total_mismatch":
+    case "itemized_shape_mismatch":
+    case "invalid_expense_shape":
+      return { code: "MODEL_CONTRACT_INVALID", category: "item", path };
+    case "invalid_service_fee":
+    case "invalid_fee_configuration":
+      return { code: "MODEL_CONTRACT_INVALID", category: "fee", path };
+    case "derived_amount_out_of_range":
+      return {
+        code: "MODEL_CONTRACT_INVALID",
+        category: issue.field === "service_fee" ? "fee" : issue.field === "line_total" ? "item" : "money",
+        path,
+      };
+    case "invalid_cents":
+    case "amount_out_of_range":
+    case "invalid_signed_cents":
+    case "invalid_graph_revision":
+    case "allocation_exceeds_total":
+    case "invalid_allocation_weights":
+    case "share_total_mismatch":
+    case "payer_total_mismatch":
+    case "itemized_total_mismatch":
+    case "incomplete_expense":
+      return { code: "MODEL_CONTRACT_INVALID", category: "money", path };
+    default: {
+      const checkNever: never = issue;
+      throw new Error(`unreachable expense decode issue: ${JSON.stringify(checkNever)}`);
+    }
+  }
+}
+
+const CHAT_ROOT_KEYS = [
+  "title",
+  "amountCents",
+  "expenseType",
+  "splitType",
+  "items",
+  "participants",
+  "payerHandle",
+  "merchantName",
+  "confidence",
+  "allocations",
+] as const;
+const SOURCE_ITEM_KEYS = ["description", "quantity", "unitPriceCents", "totalCents"] as const;
+const PARTICIPANT_KEYS = ["spokenName", "matchedHandle", "confidence"] as const;
+const ALLOCATION_KEYS = ["participantHandle", "shareAmountCents"] as const;
+
+function decodeSourceConfidence(value: unknown): "high" | "medium" | "low" | null {
+  return value === "high" || value === "medium" || value === "low" ? value : null;
+}
+
+function decodeSourceParticipants(
+  raw: unknown,
+  source: ExpenseSource,
+): ValidationResult<SourceParticipantMatch[], ExpenseDecodeIssue> {
+  if (!Array.isArray(raw)) {
+    return { ok: false, issue: structureIssue(source, ["participants"], "wrong_type") };
+  }
+  const out: SourceParticipantMatch[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    const row = raw[i];
+    if (!isStringRecord(row)) {
+      return { ok: false, issue: structureIssue(source, ["participants", i], "wrong_type") };
+    }
+    const keys = Object.keys(row);
+    if (keys.length !== PARTICIPANT_KEYS.length || !PARTICIPANT_KEYS.every((k) => k in row)) {
+      return {
+        ok: false,
+        issue: structureIssue(
+          source,
+          ["participants", i],
+          keys.length > PARTICIPANT_KEYS.length ? "unknown_key" : "missing_key",
+        ),
+      };
+    }
+    const spokenName = row.spokenName;
+    if (typeof spokenName !== "string" || spokenName.length === 0) {
+      return { ok: false, issue: contractIssue(source, "participant") };
+    }
+    const matchedHandle = row.matchedHandle;
+    if (matchedHandle !== null && (typeof matchedHandle !== "string" || matchedHandle.length === 0)) {
+      return { ok: false, issue: contractIssue(source, "participant") };
+    }
+    const confidence = decodeSourceConfidence(row.confidence);
+    if (confidence === null) {
+      return { ok: false, issue: contractIssue(source, "participant") };
+    }
+    out.push({ spokenName, matchedHandle, confidence });
+  }
+  return { ok: true, value: out };
+}
+
+/**
+ * Decode the raw `allocations` array. Per #476: `equal` requires a present
+ * empty array (else `invalid_source_contract/allocations`). `custom` never
+ * rejects — any missing/non-array/wrong-cardinality/malformed-row array
+ * collapses to the edit-only empty sentinel `[]`, and only an exactly-two
+ * structurally-valid-row array survives as branded allocations.
+ */
+function decodeChatAllocations(
+  rawAllocations: unknown,
+  splitType: "equal" | "custom",
+): ValidationResult<
+  readonly [] | readonly [CanonicalChatAllocation, CanonicalChatAllocation],
+  ExpenseDecodeIssue
+> {
+  if (splitType === "equal") {
+    if (!Array.isArray(rawAllocations) || rawAllocations.length !== 0) {
+      return { ok: false, issue: contractIssue("chat", "allocations") };
+    }
+    return { ok: true, value: [] };
+  }
+  if (!Array.isArray(rawAllocations) || rawAllocations.length !== 2) {
+    return { ok: true, value: [] };
+  }
+  const rows: CanonicalChatAllocation[] = [];
+  for (const row of rawAllocations) {
+    if (!isStringRecord(row)) return { ok: true, value: [] };
+    const keys = Object.keys(row);
+    if (keys.length !== ALLOCATION_KEYS.length || !ALLOCATION_KEYS.every((k) => k in row)) {
+      return { ok: true, value: [] };
+    }
+    const handle = row.participantHandle;
+    if (typeof handle !== "string" || handle.length === 0) return { ok: true, value: [] };
+    const centsResult = parseExpenseCents(row.shareAmountCents, "allow");
+    if (!centsResult.ok) return { ok: true, value: [] };
+    rows.push({ participantHandle: handle, shareAmountCents: centsResult.value });
+  }
+  return { ok: true, value: [rows[0], rows[1]] as const };
+}
+
+/**
+ * Decode a raw chat provider result: exact root/item/participant/allocation
+ * keys, #578 quantity, and #477 cent/line arithmetic delegated to
+ * `validateExpenseMoney`. Chat has no fee fields; the adapter supplies
+ * canonical zero basis points/fixed fees. Never repairs a defect - #476's
+ * malformed-custom-allocation-collapses-to-`[]` rule is the sole documented
+ * exception, and it never rejects otherwise-valid base money for it.
+ */
+export function decodeExpenseResult(
+  source: "chat",
+  mode: "source_parse",
+  raw: unknown,
+  context: ExpenseSourceDecodeContext,
+): ValidationResult<DecodedChatExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue> {
+  void source;
+  void mode;
+  void context;
+
+  if (!isStringRecord(raw)) {
+    return { ok: false, issue: structureIssue("chat", [], "null") };
+  }
+  const rootKeys = Object.keys(raw);
+  for (const key of CHAT_ROOT_KEYS) {
+    if (!(key in raw)) {
+      return { ok: false, issue: structureIssue("chat", [key], "missing_key") };
+    }
+  }
+  if (rootKeys.length !== CHAT_ROOT_KEYS.length) {
+    return { ok: false, issue: structureIssue("chat", [], "unknown_key") };
+  }
+
+  const titleRaw = raw.title;
+  if (typeof titleRaw !== "string" || titleRaw.trim().length === 0) {
+    return { ok: false, issue: contractIssue("chat", "metadata") };
+  }
+  const title = titleRaw.trim();
+  if (countCodePoints(title) > MAX_EXPENSE_SOURCE_TITLE_CODE_POINTS) {
+    return { ok: false, issue: contractIssue("chat", "metadata") };
+  }
+
+  const merchantNameRaw = raw.merchantName;
+  if (merchantNameRaw !== null) {
+    if (typeof merchantNameRaw !== "string" || merchantNameRaw.trim().length === 0) {
+      return { ok: false, issue: contractIssue("chat", "metadata") };
+    }
+    if (countCodePoints(merchantNameRaw) > MAX_EXPENSE_SOURCE_MERCHANT_NAME_CODE_POINTS) {
+      return { ok: false, issue: contractIssue("chat", "metadata") };
+    }
+  }
+  const merchantName: string | null = merchantNameRaw;
+
+  const confidence = decodeSourceConfidence(raw.confidence);
+  if (confidence === null) {
+    return { ok: false, issue: contractIssue("chat", "metadata") };
+  }
+
+  const payerHandleRaw = raw.payerHandle;
+  if (payerHandleRaw !== null && (typeof payerHandleRaw !== "string" || payerHandleRaw.length === 0)) {
+    return { ok: false, issue: contractIssue("chat", "payer") };
+  }
+  const payerHandle: string | null = payerHandleRaw;
+
+  const expenseType = raw.expenseType;
+  if (expenseType !== "single_amount" && expenseType !== "itemized") {
+    return { ok: false, issue: contractIssue("chat", "expense_type") };
+  }
+
+  const splitType = raw.splitType;
+  if (splitType !== "equal" && splitType !== "custom") {
+    return { ok: false, issue: contractIssue("chat", "allocations") };
+  }
+
+  if (!Array.isArray(raw.items)) {
+    return { ok: false, issue: structureIssue("chat", ["items"], "wrong_type") };
+  }
+  const canonicalItems: unknown[] = [];
+  for (let i = 0; i < raw.items.length; i += 1) {
+    const item = raw.items[i];
+    if (!isStringRecord(item)) {
+      return { ok: false, issue: structureIssue("chat", ["items", i], "wrong_type") };
+    }
+    const itemKeys = Object.keys(item);
+    if (itemKeys.length !== SOURCE_ITEM_KEYS.length || !SOURCE_ITEM_KEYS.every((k) => k in item)) {
+      return {
+        ok: false,
+        issue: structureIssue(
+          "chat",
+          ["items", i],
+          itemKeys.length > SOURCE_ITEM_KEYS.length ? "unknown_key" : "missing_key",
+        ),
+      };
+    }
+    canonicalItems.push({
+      description: item.description,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents,
+      totalPriceCents: item.totalCents,
+    });
+  }
+
+  const participantsResult = decodeSourceParticipants(raw.participants, "chat");
+  if (!participantsResult.ok) return participantsResult;
+
+  const allocationsResult = decodeChatAllocations(raw.allocations, splitType);
+  if (!allocationsResult.ok) return allocationsResult;
+
+  const moneyInput: ExpenseMoneyInput = {
+    expenseType,
+    totalAmountCents: raw.amountCents,
+    serviceFeeBasisPoints: ZERO_SERVICE_FEE_BASIS_POINTS,
+    fixedFeesCents: ZERO_EXPENSE_CENTS,
+    items: canonicalItems,
+  };
+  const moneyResult = validateExpenseMoney(moneyInput, "source_parse");
+  if (!moneyResult.ok) {
+    return { ok: false, issue: moneyResult.issue };
+  }
+
+  const base = {
+    source: "chat" as const,
+    title,
+    merchantName,
+    participants: participantsResult.value,
+    payerHandle,
+    confidence,
+    money: moneyResult.value,
+  };
+  const result: DecodedChatExpense<UntrustedParsedExpenseMoney> =
+    splitType === "equal"
+      ? { ...base, splitType: "equal", allocations: [] }
+      : { ...base, splitType: "custom", allocations: allocationsResult.value };
+  deepFreeze(result);
+  return { ok: true, value: result };
+}
