@@ -1,8 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeRedirect } from "@/lib/safe-redirect";
+import {
+  CURRENT_FINANCIAL_SCHEMA_VERSION,
+  FINANCIAL_SCHEMA_HEADER_NAME,
+  evaluateServerFinancialGate,
+} from "@/lib/financial-compatibility";
 
-const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u"];
+const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u", "/api/runtime/financial-compatibility", "/manutencao"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -43,6 +48,9 @@ export async function updateSession(request: NextRequest) {
           );
         },
       },
+      global: {
+        headers: { [FINANCIAL_SCHEMA_HEADER_NAME]: String(CURRENT_FINANCIAL_SCHEMA_VERSION) },
+      },
     },
   );
 
@@ -61,6 +69,22 @@ export async function updateSession(request: NextRequest) {
     url.pathname = "/auth";
     url.search = `?next=${encodeURIComponent(pathname)}`;
     return NextResponse.redirect(url);
+  }
+
+  // Enforce maintenance/schema compatibility BEFORE any protected server
+  // component renders. A client-side gate alone cannot prevent a server
+  // component's own data fetch from running (and its result being
+  // serialized into the RSC payload) — this redirect runs upstream of
+  // that render entirely, so an incompatible/maintenance window can never
+  // let a financial page's server-side fetch execute at all.
+  if (user && !isPublicPath(pathname)) {
+    const gate = evaluateServerFinancialGate();
+    if (!gate.compatible) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/manutencao";
+      url.search = `?reason=${encodeURIComponent(gate.issue.code)}`;
+      return NextResponse.redirect(url);
+    }
   }
 
   if (user && (pathname === "/auth" || pathname === "/")) {

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { FinancialCompatibilityGate } from "@/components/financial-compatibility-gate";
 import { Logo } from "@/components/shared/logo";
 import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
 import { cn } from "@/lib/utils";
@@ -208,6 +209,7 @@ export function AppShell({
   const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(handleRefresh);
 
   return (
+    <FinancialCompatibilityGate>
     <UserProvider initialUser={initialUser}>
       <SettlementSubmissionProvider>
       <div className="flex h-dvh flex-col overflow-hidden bg-background">
@@ -272,5 +274,6 @@ export function AppShell({
       </div>
       </SettlementSubmissionProvider>
     </UserProvider>
+    </FinancialCompatibilityGate>
   );
 }
