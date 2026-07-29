@@ -7,6 +7,7 @@ import {
 import {
   createTestUsers,
   createTestGroupWithMembers,
+  createTestDmGroup,
   authenticateAs,
   createAndActivateExpense,
   getBalanceBetween,
@@ -77,29 +78,8 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
 
     beforeAll(async () => {
       [alice, bob] = await createTestUsers(2);
-      const { data: group } = await adminClient!
-        .from("groups")
-        .insert({ name: "", creator_id: alice.id, is_dm: true })
-        .select("id")
-        .single();
-
-      groupId = group!.id;
-
-      await adminClient!.from("group_members").insert([
-        {
-          group_id: groupId,
-          user_id: alice.id,
-          status: "accepted",
-          invited_by: alice.id,
-          accepted_at: new Date().toISOString(),
-        },
-        {
-          group_id: groupId,
-          user_id: bob.id,
-          status: "invited",
-          invited_by: alice.id,
-        },
-      ]);
+      const group = await createTestDmGroup(alice, bob, { bothAccepted: false });
+      groupId = group.id;
     });
 
     it("accepted sender can insert a text message", async () => {

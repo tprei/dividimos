@@ -3,6 +3,7 @@ import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUser,
   createTestGroupWithMembers,
+  createTestDmGroup,
   authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -22,14 +23,8 @@ describe.skipIf(!isIntegrationTestReady)(
       ]);
 
       // Create a DM group between alice and bob
-      const group = await createTestGroupWithMembers(alice, [bob]);
+      const group = await createTestDmGroup(alice, bob);
       dmGroupId = group.id;
-
-      // Mark it as DM
-      await adminClient!
-        .from("groups")
-        .update({ is_dm: true })
-        .eq("id", dmGroupId);
     });
 
     describe("INSERT", () => {

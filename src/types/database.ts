@@ -846,7 +846,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          created_by: string
+          created_by?: string
           expires_at?: string | null
           group_id: string
           id?: string
@@ -1302,6 +1302,12 @@ export type Database = {
       }
     }
     Functions: {
+      accept_group_invitation: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: undefined
+      }
       activate_expense: {
         Args: {
           p_expense_id: string
@@ -1314,6 +1320,27 @@ export type Database = {
           p_expected_graph_revision: number
         }
         Returns: Json
+      }
+      assert_dm_actor: {
+        Args: {
+          p_group_id: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      assert_dm_group_shape: {
+        Args: {
+          p_group_id: string
+          p_allow_missing: boolean
+        }
+        Returns: undefined
+      }
+      assert_dm_participants: {
+        Args: {
+          p_group_id: string
+          p_user_ids: string[]
+        }
+        Returns: undefined
       }
       build_expense_allocation_plan_edges: {
         Args: {
@@ -1377,8 +1404,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      deactivate_group_invite_link: {
+        Args: {
+          p_link_id: string
+        }
+        Returns: undefined
+      }
       decline_group_invitation: {
-        Args: { p_group_id: string }
+        Args: {
+          p_group_id: string
+        }
         Returns: undefined
       }
       delete_group: {
@@ -1510,17 +1545,6 @@ export type Database = {
           p_user_id: string
         }
         Returns: undefined
-      }
-      save_expense_draft: {
-        Args: {
-          p_expense: Json
-          p_items: Json
-          p_shares: Json
-          p_payers: Json
-          p_guests: Json
-          p_guest_shares: Json
-        }
-        Returns: Json
       }
       save_expense_draft_graph: {
         Args: {

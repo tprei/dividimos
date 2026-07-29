@@ -54,14 +54,14 @@ describe.skipIf(!canRun)("expense quantity milliunits round-trip (#578)", () => 
 
     // Drive the real draft-save RPC as the creator; the client sends milliunits.
     const client = authenticateAs(creator);
-    const { data, error } = await client.rpc("save_expense_draft", {
+    const { data, error } = await client.rpc("save_expense_draft_graph", {
       p_expense: {
         group_id: groupId,
         title: "Quantity round-trip",
-        merchant_name: "",
+        merchant_name: null,
         expense_type: "itemized",
         total_amount: 51,
-        service_fee_percent: 0,
+        service_fee_basis_points: 0,
         fixed_fees: 0,
       },
       p_items: [
@@ -76,6 +76,9 @@ describe.skipIf(!canRun)("expense quantity milliunits round-trip (#578)", () => 
       p_payers: [],
       p_guests: [],
       p_guest_shares: [],
+      p_participant_order: [],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: crypto.randomUUID(),
     });
     expect(error).toBeNull();
     const expenseId = (data as { id: string } | null)?.id;

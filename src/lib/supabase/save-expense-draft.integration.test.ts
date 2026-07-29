@@ -11,7 +11,9 @@ import { forceLockContentionRace } from "@/test/db-race-barrier";
 import type { Database, Json } from "@/types/database";
 
 // ---------------------------------------------------------------------------
-// Helper: call the save_expense_draft RPC via an authenticated client.
+// Helper: call the save_expense_draft_graph RPC via an authenticated client.
+// This is the sole public draft-graph writer (#467/#468/#471); the old
+// six-JSON save_expense_draft is dropped.
 // ---------------------------------------------------------------------------
 
 interface SaveDraftArgs {
@@ -21,29 +23,43 @@ interface SaveDraftArgs {
   payers?: Json[];
   guests?: Json[];
   guestShares?: Json[];
+  expectedGraphRevision: number;
+  saveOperationId?: string;
 }
 
 async function callSaveDraft(
   user: TestUser,
   args: SaveDraftArgs,
-): Promise<{ data: { id: string } | null; error: { message: string } | null }> {
+): Promise<{ data: { id: string; graph_revision: number } | null; error: { message: string; code?: string } | null }> {
   const client = authenticateAs(user);
-  const { data, error } = await client.rpc("save_expense_draft", {
+  const { data, error } = await client.rpc("save_expense_draft_graph", {
     p_expense: args.expense,
     p_items: args.items ?? [],
     p_shares: args.shares ?? [],
     p_payers: args.payers ?? [],
     p_guests: args.guests ?? [],
     p_guest_shares: args.guestShares ?? [],
+    p_participant_order: [],
+    p_expected_graph_revision: args.expectedGraphRevision,
+    p_save_operation_id: args.saveOperationId ?? crypto.randomUUID(),
   });
-  return { data: data as { id: string } | null, error };
+  return { data: data as { id: string; graph_revision: number } | null, error };
+}
+
+function draftExpense(overrides: Record<string, unknown>): Json {
+  return {
+    merchant_name: null,
+    service_fee_basis_points: 0,
+    fixed_fees: 0,
+    ...overrides,
+  } as Json;
 }
 
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
+describe.skipIf(!isIntegrationTestReady)("save_expense_draft_graph RPC", () => {
   let alice: TestUser;
   let bob: TestUser;
   let groupId: string;
@@ -63,23 +79,23 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
 
   it("creates a new draft expense and returns its id", async () => {
     const { data, error } = await callSaveDraft(alice, {
-      expense: {
+      expense: draftExpense({
         group_id: groupId,
         title: "Happy path dinner",
         expense_type: "single_amount",
         total_amount: 10000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
       shares: [
         { user_id: alice.id, share_amount_cents: 5000 },
         { user_id: bob.id, share_amount_cents: 5000 },
       ],
       payers: [{ user_id: alice.id, amount_cents: 10000 }],
+      expectedGraphRevision: 0,
     });
 
     expect(error).toBeNull();
     expect(data?.id).toBeTruthy();
+    expect(data?.graph_revision).toBe(1);
 
     const { data: rows } = await adminClient!
       .from("expense_shares")
@@ -112,18 +128,17 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
     expect(creatorMemberships).toHaveLength(0);
 
     const { data, error } = await callSaveDraft(alice, {
-      expense: {
+      expense: draftExpense({
         group_id: creatorOnlyGroup!.id,
         title: "Dinner with guest",
         expense_type: "single_amount",
         total_amount: 10000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
       shares: [{ user_id: alice.id, share_amount_cents: 5000 }],
       payers: [{ user_id: alice.id, amount_cents: 10000 }],
       guests: [{ local_id: "guest-1", display_name: "Maria" }],
       guestShares: [{ local_id: "guest-1", share_amount_cents: 5000 }],
+      expectedGraphRevision: 0,
     });
 
     expect(error).toBeNull();
@@ -136,19 +151,18 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
 
   it("updates an existing draft and replaces all child rows", async () => {
     const { data: firstSave } = await callSaveDraft(alice, {
-      expense: {
+      expense: draftExpense({
         group_id: groupId,
         title: "First version",
         expense_type: "single_amount",
         total_amount: 6000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
       shares: [
         { user_id: alice.id, share_amount_cents: 3000 },
         { user_id: bob.id, share_amount_cents: 3000 },
       ],
       payers: [{ user_id: alice.id, amount_cents: 6000 }],
+      expectedGraphRevision: 0,
     });
 
     expect(firstSave?.id).toBeTruthy();
@@ -156,17 +170,16 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
 
     // Second save: different total, different shares
     const { data: secondSave, error: secondError } = await callSaveDraft(alice, {
-      expense: {
+      expense: draftExpense({
         id: expenseId,
         group_id: groupId,
         title: "Updated version",
         expense_type: "single_amount",
         total_amount: 8000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
       shares: [{ user_id: alice.id, share_amount_cents: 8000 }],
       payers: [{ user_id: alice.id, amount_cents: 8000 }],
+      expectedGraphRevision: firstSave!.graph_revision,
     });
 
     expect(secondError).toBeNull();
@@ -188,51 +201,43 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
   // -------------------------------------------------------------------------
 
   it("rejects save when expense is already active", async () => {
-    // Create and activate an expense via admin so we bypass the save RPC
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
+    const { data: firstSave } = await callSaveDraft(alice, {
+      expense: draftExpense({
         group_id: groupId,
-        creator_id: alice.id,
         title: "Soon active",
         expense_type: "single_amount",
         total_amount: 4000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-        status: "draft",
-      })
-      .select("id")
-      .single();
+      }),
+      shares: [
+        { user_id: alice.id, share_amount_cents: 2000 },
+        { user_id: bob.id, share_amount_cents: 2000 },
+      ],
+      payers: [{ user_id: alice.id, amount_cents: 4000 }],
+      expectedGraphRevision: 0,
+    });
+    const expenseId = firstSave!.id;
 
-    const expenseId = expense!.id;
-
-    await adminClient!.from("expense_shares").insert([
-      { expense_id: expenseId, user_id: alice.id, share_amount_cents: 2000 },
-      { expense_id: expenseId, user_id: bob.id, share_amount_cents: 2000 },
-    ]);
-    await adminClient!.from("expense_payers").insert([
-      { expense_id: expenseId, user_id: alice.id, amount_cents: 4000 },
-    ]);
-
-    // Activate via the RPC
+    // Activate via the current-authority RPC (revision-gated CAS wrapper).
     const aliceClient = authenticateAs(alice);
-    await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
+    await aliceClient.rpc("activate_saved_expense", {
+      p_expense_id: expenseId,
+      p_expected_graph_revision: firstSave!.graph_revision,
+    });
 
     // Now attempt to save-draft the same expense
     const { error } = await callSaveDraft(alice, {
-      expense: {
+      expense: draftExpense({
         id: expenseId,
         group_id: groupId,
         title: "Mutated after activation",
         expense_type: "single_amount",
         total_amount: 4000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
+      expectedGraphRevision: firstSave!.graph_revision,
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toMatch(/invalid_status/);
+    expect(error!.message).toMatch(/stale_graph_revision/);
   });
 
   // -------------------------------------------------------------------------
@@ -240,34 +245,27 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
   // -------------------------------------------------------------------------
 
   it("rejects save when caller is not the creator", async () => {
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
+    const { data: firstSave } = await callSaveDraft(alice, {
+      expense: draftExpense({
         group_id: groupId,
-        creator_id: alice.id,
         title: "Alice expense",
         expense_type: "single_amount",
         total_amount: 5000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-
-    const expenseId = expense!.id;
+      }),
+      expectedGraphRevision: 0,
+    });
+    const expenseId = firstSave!.id;
 
     // Bob tries to overwrite Alice's draft
     const { error } = await callSaveDraft(bob, {
-      expense: {
+      expense: draftExpense({
         id: expenseId,
         group_id: groupId,
         title: "Bob hijacked",
         expense_type: "single_amount",
         total_amount: 5000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
+      expectedGraphRevision: firstSave!.graph_revision,
     });
 
     expect(error).not.toBeNull();
@@ -285,24 +283,27 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
       { auth: { persistSession: false } },
     );
 
-    const { error } = await anonClient.rpc("save_expense_draft", {
-      p_expense: {
+    const { error } = await anonClient.rpc("save_expense_draft_graph", {
+      p_expense: draftExpense({
         group_id: groupId,
         title: "Anon attempt",
         expense_type: "single_amount",
         total_amount: 1000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
       p_items: [],
       p_shares: [],
       p_payers: [],
       p_guests: [],
       p_guest_shares: [],
+      p_participant_order: [],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: crypto.randomUUID(),
     });
 
+    // anon has no EXECUTE grant at all on this function (ACL denial
+    // fires before the function body's own auth.uid() check runs).
     expect(error).not.toBeNull();
-    expect(error!.message).toMatch(/auth_required/);
+    expect(error!.message).toMatch(/permission denied/);
   });
 
   // -------------------------------------------------------------------------
@@ -314,14 +315,13 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
     const carol = await createTestUser({ name: "Carol NonMember" });
 
     const { error } = await callSaveDraft(carol, {
-      expense: {
+      expense: draftExpense({
         group_id: groupId,
         title: "Carol infiltrates",
         expense_type: "single_amount",
         total_amount: 1000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
+      expectedGraphRevision: 0,
     });
 
     expect(error).not.toBeNull();
@@ -333,38 +333,32 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
   //
   // Both RPCs are fired at the same instant via Promise.all so they race
   // through the network and hit the DB concurrently. PostgreSQL's FOR UPDATE
-  // inside save_expense_draft serialises them. The save supplies a valid
-  // replacement graph, so either legal lock order must leave an active expense
-  // with the exact shares and payer amount:
-  //   (a) activation locks first, so save returns invalid_status; or
-  //   (b) save locks first, returns the same expense id, and activation follows.
+  // inside save_expense_draft_graph serialises them. The save supplies a
+  // valid replacement graph, so either legal lock order must leave an active
+  // expense with the exact shares and payer amount:
+  //   (a) activation locks first, so save returns stale_graph_revision; or
+  //   (b) save locks first, returns the same expense id, and activation
+  //       follows (using the save's fresh graph_revision).
   // -------------------------------------------------------------------------
 
   it("concurrent activate and save produce a coherent final state", async () => {
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
+    const { data: firstSave } = await callSaveDraft(alice, {
+      expense: draftExpense({
         group_id: groupId,
-        creator_id: alice.id,
         title: "Concurrent lock test",
         expense_type: "single_amount",
         total_amount: 6000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-        status: "draft",
-      })
-      .select("id")
-      .single();
+      }),
+      shares: [
+        { user_id: alice.id, share_amount_cents: 3000 },
+        { user_id: bob.id, share_amount_cents: 3000 },
+      ],
+      payers: [{ user_id: alice.id, amount_cents: 6000 }],
+      expectedGraphRevision: 0,
+    });
 
-    const expenseId = expense!.id;
-
-    await adminClient!.from("expense_shares").insert([
-      { expense_id: expenseId, user_id: alice.id, share_amount_cents: 3000 },
-      { expense_id: expenseId, user_id: bob.id, share_amount_cents: 3000 },
-    ]);
-    await adminClient!.from("expense_payers").insert([
-      { expense_id: expenseId, user_id: alice.id, amount_cents: 6000 },
-    ]);
+    const expenseId = firstSave!.id;
+    const revision = firstSave!.graph_revision;
 
     // Two independent authenticated clients so there are two distinct
     // PostgREST connections — each request goes through a separate
@@ -378,27 +372,29 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
         {
           lockSql: "select id from expenses where id = $1 for update",
           lockParams: [expenseId],
-          queryContains: ["activate_expense", "save_expense_draft"],
+          queryContains: ["activate_saved_expense", "save_expense_draft_graph"],
           expectedRacers: 2,
         },
         () =>
           Promise.all([
-            aliceClientA.rpc("activate_expense", { p_expense_id: expenseId }),
+            aliceClientA.rpc("activate_saved_expense", {
+              p_expense_id: expenseId,
+              p_expected_graph_revision: revision,
+            }),
             callSaveDraft(alice, {
-              expense: {
+              expense: draftExpense({
                 id: expenseId,
                 group_id: groupId,
                 title: "Concurrent save attempt",
                 expense_type: "single_amount",
                 total_amount: 6000,
-                service_fee_percent: 0,
-                fixed_fees: 0,
-              },
+              }),
               shares: [
                 { user_id: alice.id, share_amount_cents: 3000 },
                 { user_id: bob.id, share_amount_cents: 3000 },
               ],
               payers: [{ user_id: alice.id, amount_cents: 6000 }],
+              expectedGraphRevision: revision,
             }),
           ]),
       );
@@ -409,10 +405,10 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
     // lock observes the other's committed effect and fails accordingly, but
     // the two writers can never BOTH lose — at least one must succeed.
     if (activateResult.error) {
-      expect(activateResult.error.message).toMatch(/invalid_status/);
+      expect(activateResult.error.message).toMatch(/stale_graph_revision/);
     }
     if (saveResult.error) {
-      expect(saveResult.error.message).toMatch(/invalid_status/);
+      expect(saveResult.error.message).toMatch(/stale_graph_revision/);
     } else {
       expect(saveResult.data?.id).toBe(expenseId);
     }
@@ -463,14 +459,12 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
 
   it("creates guests with shares using local_id correlation", async () => {
     const { data, error } = await callSaveDraft(alice, {
-      expense: {
+      expense: draftExpense({
         group_id: groupId,
         title: "Guest dinner",
         expense_type: "single_amount",
         total_amount: 9000,
-        service_fee_percent: 0,
-        fixed_fees: 0,
-      },
+      }),
       shares: [{ user_id: alice.id, share_amount_cents: 6000 }],
       payers: [{ user_id: alice.id, amount_cents: 9000 }],
       guests: [
@@ -481,6 +475,7 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
         { local_id: "g1", share_amount_cents: 2000 },
         { local_id: "g2", share_amount_cents: 1000 },
       ],
+      expectedGraphRevision: 0,
     });
 
     expect(error).toBeNull();

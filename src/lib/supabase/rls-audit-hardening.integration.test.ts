@@ -8,6 +8,7 @@ import {
   createTestUsers,
   createTestGroup,
   createTestGroupWithMembers,
+  createTestDmGroup,
   authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -38,9 +39,10 @@ function expectRlsFailure(error: { message: string } | null) {
 
 describe.skipIf(!isIntegrationTestReady)("RLS audit hardening", () => {
   // ────────────────────────────────────────────────────────
-  // group_members_accept — forgery is blocked
+  // group_members: accept is RPC-only; every direct client UPDATE is
+  // denied regardless of target columns (#471/#472 cutover).
   // ────────────────────────────────────────────────────────
-  describe("group_members_accept blocks identity forgery", () => {
+  describe("group_members accept is RPC-only", () => {
     let alice: TestUser;
     let bob: TestUser;
     let carol: TestUser;
@@ -57,80 +59,112 @@ describe.skipIf(!isIntegrationTestReady)("RLS audit hardening", () => {
       otherGroupId = other.id;
     });
 
-    it("allows the invitee to accept by flipping only status/accepted_at", async () => {
+    it("accept_group_invitation flips status/accepted_at for the invitee", async () => {
       const client = authenticateAs(bob);
-      const { error } = await client
-        .from("group_members")
-        .update({ status: "accepted", accepted_at: new Date().toISOString() })
-        .eq("group_id", invitedGroupId)
-        .eq("user_id", bob.id);
+      const { error } = await client.rpc("accept_group_invitation", {
+        p_group_id: invitedGroupId,
+      });
 
       expect(error).toBeNull();
+
+      const { data } = await adminClient!
+        .from("group_members")
+        .select("status, accepted_at")
+        .eq("group_id", invitedGroupId)
+        .eq("user_id", bob.id)
+        .single();
+      expect(data!.status).toBe("accepted");
+      expect(data!.accepted_at).not.toBeNull();
     });
 
-    it("rejects an UPDATE that rewrites group_id to a different group", async () => {
+    it("accept_group_invitation rejects a caller with no invitation", async () => {
+      const client = authenticateAs(carol);
+      const { error } = await client.rpc("accept_group_invitation", {
+        p_group_id: invitedGroupId,
+      });
+
+      expect(error).not.toBeNull();
+      expect(error!.message).toMatch(/not_a_member/);
+    });
+
+    it("accept_group_invitation rejects re-accepting an already-accepted row", async () => {
+      // Bob was accepted in the first test above.
+      const client = authenticateAs(bob);
+      const { error } = await client.rpc("accept_group_invitation", {
+        p_group_id: invitedGroupId,
+      });
+
+      expect(error).not.toBeNull();
+      expect(error!.message).toMatch(/not_invited/);
+    });
+
+    it("rejects any direct client UPDATE on group_members, regardless of target columns", async () => {
       const [dave] = await createTestUsers(1);
       const staging = await createTestGroup(alice.id, [dave.id]);
 
       const client = authenticateAs(dave);
-      const { error } = await client
-        .from("group_members")
-        .update({
-          group_id: otherGroupId,
-          status: "accepted",
-          accepted_at: new Date().toISOString(),
-        })
-        .eq("group_id", staging.id)
-        .eq("user_id", dave.id);
-
-      expectRlsFailure(error);
-
-      const { data } = await adminClient!
-        .from("group_members")
-        .select("group_id, user_id, status")
-        .eq("group_id", otherGroupId)
-        .eq("user_id", dave.id);
-      expect(data ?? []).toHaveLength(0);
-    });
-
-    it("rejects an UPDATE that rewrites user_id to another user", async () => {
-      const [erin] = await createTestUsers(1);
-      const staging = await createTestGroup(alice.id, [erin.id]);
-
-      const client = authenticateAs(erin);
-      const { error } = await client
-        .from("group_members")
-        .update({
-          user_id: carol.id,
-          status: "accepted",
-          accepted_at: new Date().toISOString(),
-        })
-        .eq("group_id", staging.id)
-        .eq("user_id", erin.id);
-
-      expectRlsFailure(error);
-    });
-
-    it("rejects an UPDATE on an already-accepted row (USING requires invited)", async () => {
-      // Bob was accepted in the first test; re-issuing an update must be
-      // rejected because the policy now requires status = 'invited'.
-      const client = authenticateAs(bob);
       const { error, count } = await client
         .from("group_members")
         .update(
-          { accepted_at: new Date().toISOString() },
+          {
+            group_id: otherGroupId,
+            status: "accepted",
+            accepted_at: new Date().toISOString(),
+          },
           { count: "exact" },
         )
-        .eq("group_id", invitedGroupId)
-        .eq("user_id", bob.id);
+        .eq("group_id", staging.id)
+        .eq("user_id", dave.id);
 
-      // RLS may either silently match zero rows (no error, count=0) or return
-      // an explicit error depending on PostgREST. Either is acceptable.
       if (error) {
         expectRlsFailure(error);
       } else {
         expect(count ?? 0).toBe(0);
       }
+
+      const { data: retargeted } = await adminClient!
+        .from("group_members")
+        .select("group_id, user_id, status")
+        .eq("group_id", otherGroupId)
+        .eq("user_id", dave.id);
+      expect(retargeted ?? []).toHaveLength(0);
+
+      const { data: original } = await adminClient!
+        .from("group_members")
+        .select("status")
+        .eq("group_id", staging.id)
+        .eq("user_id", dave.id)
+        .single();
+      expect(original!.status).toBe("invited");
+    });
+
+    it("a self-only mutable-field UPDATE is also denied (no policy-based accept path remains)", async () => {
+      const [erin] = await createTestUsers(1);
+      const staging = await createTestGroup(alice.id, [erin.id]);
+
+      const client = authenticateAs(erin);
+      const { error, count } = await client
+        .from("group_members")
+        .update(
+          { status: "accepted", accepted_at: new Date().toISOString() },
+          { count: "exact" },
+        )
+        .eq("group_id", staging.id)
+        .eq("user_id", erin.id);
+
+      if (error) {
+        expectRlsFailure(error);
+      } else {
+        expect(count ?? 0).toBe(0);
+      }
+
+      const { data } = await adminClient!
+        .from("group_members")
+        .select("status")
+        .eq("group_id", staging.id)
+        .eq("user_id", erin.id)
+        .single();
+      expect(data!.status).toBe("invited");
     });
   });
 
@@ -212,20 +246,17 @@ describe.skipIf(!isIntegrationTestReady)("RLS audit hardening", () => {
   // ────────────────────────────────────────────────────────
   describe("group_update pins is_dm", () => {
     let alice: TestUser;
+    let bob: TestUser;
     let regularGroupId: string;
     let dmGroupId: string;
 
     beforeAll(async () => {
-      [alice] = await createTestUsers(1);
+      [alice, bob] = await createTestUsers(2);
       const group = await createTestGroup(alice.id, []);
       regularGroupId = group.id;
 
-      const { data: dm } = await adminClient!
-        .from("groups")
-        .insert({ name: "", creator_id: alice.id, is_dm: true })
-        .select("id")
-        .single();
-      dmGroupId = dm!.id;
+      const dm = await createTestDmGroup(alice, bob);
+      dmGroupId = dm.id;
     });
 
     it("allows renaming a non-DM group", async () => {

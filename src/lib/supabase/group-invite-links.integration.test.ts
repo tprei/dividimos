@@ -54,7 +54,7 @@ describe.skipIf(!isIntegrationTestReady)(
         const client = untypedAs(alice);
         const { data, error } = await client
           .from("group_invite_links")
-          .insert({ group_id: groupId, created_by: alice.id })
+          .insert({ group_id: groupId })
           .select()
           .single();
 
@@ -63,27 +63,39 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(data!.token).toBeTruthy();
         expect(data!.is_active).toBe(true);
         expect(data!.use_count).toBe(0);
+        expect(data!.created_by).toBe(alice.id);
       });
 
       it("accepted member can insert an invite link", async () => {
         const client = untypedAs(bob);
         const { data, error } = await client
           .from("group_invite_links")
-          .insert({ group_id: groupId, created_by: bob.id })
+          .insert({ group_id: groupId })
           .select()
           .single();
 
         expect(error).toBeNull();
         expect(data).not.toBeNull();
+        expect(data!.created_by).toBe(bob.id);
       });
 
       it("non-member cannot insert an invite link", async () => {
         const client = untypedAs(carol);
         const { error } = await client
           .from("group_invite_links")
-          .insert({ group_id: groupId, created_by: carol.id });
+          .insert({ group_id: groupId });
 
         expect(error).not.toBeNull();
+      });
+
+      it("cannot supply created_by even as its own value (server-owned)", async () => {
+        const client = untypedAs(alice);
+        const { error } = await client
+          .from("group_invite_links")
+          .insert({ group_id: groupId, created_by: alice.id });
+
+        expect(error).not.toBeNull();
+        expect(error!.code).toBe("42501");
       });
 
       it("accepted group member can read invite links", async () => {
@@ -116,7 +128,30 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(data).toHaveLength(0);
       });
 
-      it("link creator can deactivate their link", async () => {
+      it("authenticated direct UPDATE/DELETE is denied; only deactivate_group_invite_link mutates", async () => {
+        const { data: link } = await untypedAdmin()
+          .from("group_invite_links")
+          .insert({ group_id: groupId, created_by: alice.id })
+          .select("id")
+          .single();
+
+        const client = untypedAs(alice);
+        const { error: updateError } = await client
+          .from("group_invite_links")
+          .update({ is_active: false })
+          .eq("id", link!.id);
+        expect(updateError).not.toBeNull();
+        expect(updateError!.code).toBe("42501");
+
+        const { error: deleteError } = await client
+          .from("group_invite_links")
+          .delete()
+          .eq("id", link!.id);
+        expect(deleteError).not.toBeNull();
+        expect(deleteError!.code).toBe("42501");
+      });
+
+      it("link creator can deactivate their link via RPC", async () => {
         const { data: link } = await untypedAdmin()
           .from("group_invite_links")
           .insert({ group_id: groupId, created_by: bob.id })
@@ -124,15 +159,21 @@ describe.skipIf(!isIntegrationTestReady)(
           .single();
 
         const client = untypedAs(bob);
-        const { error } = await client
-          .from("group_invite_links")
-          .update({ is_active: false })
-          .eq("id", link!.id);
+        const { error } = await client.rpc("deactivate_group_invite_link", {
+          p_link_id: link!.id,
+        });
 
         expect(error).toBeNull();
+
+        const { data: after } = await untypedAdmin()
+          .from("group_invite_links")
+          .select("is_active")
+          .eq("id", link!.id)
+          .single();
+        expect(after!.is_active).toBe(false);
       });
 
-      it("group creator can deactivate any link in their group", async () => {
+      it("group creator can deactivate any link in their group via RPC", async () => {
         const { data: link } = await untypedAdmin()
           .from("group_invite_links")
           .insert({ group_id: groupId, created_by: bob.id })
@@ -140,12 +181,27 @@ describe.skipIf(!isIntegrationTestReady)(
           .single();
 
         const client = untypedAs(alice);
-        const { error } = await client
-          .from("group_invite_links")
-          .update({ is_active: false })
-          .eq("id", link!.id);
+        const { error } = await client.rpc("deactivate_group_invite_link", {
+          p_link_id: link!.id,
+        });
 
         expect(error).toBeNull();
+      });
+
+      it("an unrelated user cannot deactivate another group's link", async () => {
+        const { data: link } = await untypedAdmin()
+          .from("group_invite_links")
+          .insert({ group_id: groupId, created_by: bob.id })
+          .select("id")
+          .single();
+
+        const client = untypedAs(carol);
+        const { error } = await client.rpc("deactivate_group_invite_link", {
+          p_link_id: link!.id,
+        });
+
+        expect(error).not.toBeNull();
+        expect(error!.message).toContain("permission_denied");
       });
     });
 

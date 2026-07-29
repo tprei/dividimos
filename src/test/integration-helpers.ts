@@ -194,6 +194,51 @@ export async function createTestGroup(
   return group;
 }
 
+/**
+ * Creates a canonical DM group between two users via get_or_create_dm_group,
+ * the sole trusted DM-creation path (#472). Never raw-inserts into `groups`
+ * with is_dm=true or into `dm_pairs` directly — both are locked down at the
+ * privilege boundary and only produce a shape the deferred DM invariant
+ * triggers accept.
+ */
+export async function createTestDmGroup(
+  userA: TestUser,
+  userB: TestUser,
+  options: { bothAccepted?: boolean } = {},
+): Promise<Database["public"]["Tables"]["groups"]["Row"]> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  const { bothAccepted = true } = options;
+
+  const callerClient = authenticateAs(userA);
+  const { data: groupId, error } = await callerClient.rpc("get_or_create_dm_group", {
+    p_other_user_id: userB.id,
+  });
+
+  if (error || !groupId) {
+    throw new Error(`Failed to create test DM group: ${error?.message}`);
+  }
+
+  if (bothAccepted) {
+    const otherClient = authenticateAs(userB);
+    await otherClient.rpc("accept_group_invitation", { p_group_id: groupId });
+  }
+
+  const { data: groupData, error: groupError } = await adminClient
+    .from("groups")
+    .select()
+    .eq("id", groupId)
+    .single();
+
+  if (groupError || !groupData) {
+    throw new Error(`Failed to load test DM group: ${groupError?.message}`);
+  }
+
+  return groupData as Database["public"]["Tables"]["groups"]["Row"];
+}
+
 // ---------------------------------------------------------------------------
 // Expense helpers
 // ---------------------------------------------------------------------------
@@ -418,11 +463,9 @@ export async function acceptGroupInvite(
 ): Promise<void> {
   const userClient = authenticateAs(user);
 
-  const { error } = await userClient
-    .from("group_members")
-    .update({ status: "accepted", accepted_at: new Date().toISOString() })
-    .eq("group_id", groupId)
-    .eq("user_id", user.id);
+  const { error } = await userClient.rpc("accept_group_invitation", {
+    p_group_id: groupId,
+  });
 
   if (error) {
     throw new Error(

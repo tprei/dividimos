@@ -104,28 +104,39 @@ describe.skipIf(!isIntegrationTestReady)(
     describe("direct UPDATE", () => {
       it("rejects direct update of dm_pairs", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data } = await aliceClient
+        const { data, error } = await aliceClient
           .from("dm_pairs")
           .update({ user_a: carol.id })
           .eq("group_id", dmGroupId)
           .select();
 
-        // RLS blocks — no rows updated
-        expect(data).toHaveLength(0);
+        // Table-level privilege revoke denies the statement outright now
+        // (#472 "defense in depth"); RLS's silent-filter behavior would
+        // also have blocked it, but ACL denial fires first.
+        expect(error).not.toBeNull();
+        expect(data).toBeNull();
+
+        const { data: adminData } = await adminClient!
+          .from("dm_pairs")
+          .select("user_a, user_b")
+          .eq("group_id", dmGroupId)
+          .single();
+        expect(adminData!.user_a).not.toBe(carol.id);
       });
     });
 
     describe("direct DELETE", () => {
       it("rejects direct delete from dm_pairs", async () => {
         const aliceClient = authenticateAs(alice);
-        const { data } = await aliceClient
+        const { data, error } = await aliceClient
           .from("dm_pairs")
           .delete()
           .eq("group_id", dmGroupId)
           .select();
 
-        // RLS blocks — no rows deleted
-        expect(data).toHaveLength(0);
+        // Table-level privilege revoke denies the statement outright.
+        expect(error).not.toBeNull();
+        expect(data).toBeNull();
 
         // Verify the row still exists
         const { data: adminData } = await adminClient!

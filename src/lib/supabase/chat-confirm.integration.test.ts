@@ -4,6 +4,7 @@ import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUser,
   createTestGroupWithMembers,
+  createTestDmGroup,
   authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -46,14 +47,6 @@ function request(groupId: string, alice: TestUser, bob: TestUser, overrides: Rec
   };
 }
 
-async function makeDmGroup(a: TestUser, b: TestUser): Promise<string> {
-  const dmGroup = await createTestGroupWithMembers(a, [b]);
-  await adminClient!.from("groups").update({ is_dm: true }).eq("id", dmGroup.id);
-  const [userA, userB] = [a.id, b.id].sort();
-  await adminClient!.from("dm_pairs").insert({ group_id: dmGroup.id, user_a: userA, user_b: userB });
-  return dmGroup.id;
-}
-
 describe.skipIf(!isIntegrationTestReady)("confirm_chat_expense RPC — behavior", () => {
   let alice: TestUser;
   let bob: TestUser;
@@ -67,7 +60,8 @@ describe.skipIf(!isIntegrationTestReady)("confirm_chat_expense RPC — behavior"
       createTestUser({ name: "Confirm Carol" }),
     ]);
 
-    dmGroupId = await makeDmGroup(alice, bob);
+    const dmGroup = await createTestDmGroup(alice, bob);
+    dmGroupId = dmGroup.id;
   });
 
   afterAll(async () => {
@@ -281,7 +275,8 @@ describe.skipIf(!isIntegrationTestReady)("get_chat_expense_confirmation / cancel
       createTestUser({ name: "GetCancel Alice" }),
       createTestUser({ name: "GetCancel Bob" }),
     ]);
-    dmGroupId = await makeDmGroup(alice, bob);
+    const dmGroup = await createTestDmGroup(alice, bob);
+    dmGroupId = dmGroup.id;
   });
 
   afterAll(async () => {
