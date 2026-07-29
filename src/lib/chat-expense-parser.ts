@@ -1,7 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import type { MemberContext } from "./voice-expense-parser";
 import { sanitizeMemberField, sanitizeUserText } from "./llm-prompt-safety";
-import { parseExpenseQuantity } from "./expense-quantity";
+import {
+  decodeExpenseResult,
+  toModelContractIssue,
+  type DecodedChatExpense,
+  type UntrustedParsedExpenseMoney,
+} from "./expense-money";
 
 export type { MemberContext } from "./voice-expense-parser";
 
@@ -289,77 +294,69 @@ export async function parseChatExpense(
     throw new Error("Gemini returned empty response");
   }
 
-  const parsed = JSON.parse(responseText) as ChatExpenseResult;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(responseText);
+  } catch {
+    throw new Error("Gemini returned invalid JSON");
+  }
 
-  return sanitizeChatResult(parsed);
+  const decoded = decodeExpenseResult("chat", "source_parse", parsed, {
+    members: (members ?? []).map((m) => ({ handle: m.handle, name: m.name })),
+  });
+  if (!decoded.ok) {
+    // #477: invalid model money/item/fee/structure output is rejected
+    // before it ever reaches review - never repaired, never defaulted.
+    // The route already maps any thrown error here to one safe generic
+    // message and logs the detail server-side only.
+    throw new Error(
+      `Gemini returned invalid expense data: ${JSON.stringify(toModelContractIssue(decoded.issue))}`,
+    );
+  }
+
+  return toLegacyChatExpenseResult(decoded.value);
 }
 
 /**
- * Validates and normalizes the raw provider `allocations` array. Never
- * repairs a malformed row (no trimming, coercion, rounding, or partial
- * retention) — any structural failure collapses the whole array to `[]`,
- * the edit-only sentinel. `[]` is always the correct result for "equal";
- * for "custom" it means the provider could not determine exact cents and
- * the caller must route to manual editing instead of ever computing an
- * equal split from it.
+ * Adapts the strict #477 decoder result back to the legacy `ChatExpenseResult`
+ * shape every existing caller (route, hook, `ChatDraftCard`, `chat-confirm.ts`,
+ * bill-store hydration) still consumes. `items[].quantity` stays branded
+ * milliunits, matching `sanitizeChatResult`'s prior contract exactly - only
+ * the validation is stricter; the wire shape downstream callers see is
+ * unchanged.
  */
-function decodeAllocations(raw: unknown): ChatExpenseAllocation[] {
-  if (!Array.isArray(raw) || raw.length === 0) return [];
-  if (raw.length !== 2) return [];
+function toLegacyChatExpenseResult(
+  decoded: DecodedChatExpense<UntrustedParsedExpenseMoney>,
+): ChatExpenseResult {
+  const money = decoded.money;
+  const amountCents = money.outcome === "complete" ? money.totalAmountCents : 0;
+  const items: ChatExpenseItem[] =
+    money.outcome === "complete"
+      ? money.items.map((item) => ({
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          totalCents: item.totalPriceCents,
+        }))
+      : [];
 
-  const rows: ChatExpenseAllocation[] = [];
-  for (const row of raw) {
-    if (typeof row !== "object" || row === null) return [];
-    const { participantHandle, shareAmountCents } = row as Record<string, unknown>;
-    if (typeof participantHandle !== "string" || participantHandle.length === 0) return [];
-    if (
-      typeof shareAmountCents !== "number" ||
-      !Number.isSafeInteger(shareAmountCents) ||
-      shareAmountCents < 0
-    ) {
-      return [];
-    }
-    rows.push({ participantHandle, shareAmountCents });
-  }
-  return rows;
-}
-
-/** Sanitize and normalize the raw Gemini response. Exported for testing. */
-export function sanitizeChatResult(parsed: ChatExpenseResult): ChatExpenseResult {
-  parsed.amountCents = Math.round(Math.max(0, parsed.amountCents ?? 0));
-  parsed.title = (parsed.title ?? "").trim();
-  parsed.items = Array.isArray(parsed.items) ? parsed.items : [];
-  parsed.participants = Array.isArray(parsed.participants)
-    ? parsed.participants
-    : [];
-  parsed.payerHandle = parsed.payerHandle ?? null;
-  parsed.merchantName = parsed.merchantName ?? null;
-  parsed.confidence = parsed.confidence ?? "low";
-  parsed.splitType = parsed.splitType ?? "equal";
-
-  // #476: a custom split must never be interpreted as equal. "equal"
-  // always carries an empty allocation array (equal shares are computed
-  // from amountCents, never from this field); "custom" keeps only a
-  // structurally exact two-row allocation or the empty edit-only
-  // sentinel — it is never defaulted, repaired, or discarded in favor of
-  // an equal split by this function or any downstream caller.
-  parsed.allocations =
-    parsed.splitType === "custom" ? decodeAllocations(parsed.allocations) : [];
-
-  for (const item of parsed.items) {
-    item.unitPriceCents = Math.round(Math.max(0, item.unitPriceCents ?? 0));
-    item.totalCents = Math.round(Math.max(0, item.totalCents ?? 0));
-    const quantityParsed = parseExpenseQuantity(item.quantity);
-    item.quantity = quantityParsed.ok ? (quantityParsed.value as number) : 0;
-  }
-
-  if (
-    parsed.expenseType === "itemized" &&
-    parsed.items.length > 0 &&
-    parsed.amountCents === 0
-  ) {
-    parsed.amountCents = parsed.items.reduce((sum, i) => sum + i.totalCents, 0);
-  }
-
-  return parsed;
+  return {
+    title: decoded.title,
+    amountCents,
+    expenseType: money.expenseType,
+    splitType: decoded.splitType,
+    allocations: decoded.allocations.map((a) => ({
+      participantHandle: a.participantHandle,
+      shareAmountCents: a.shareAmountCents,
+    })),
+    items,
+    participants: decoded.participants.map((p) => ({
+      spokenName: p.spokenName,
+      matchedHandle: p.matchedHandle,
+      confidence: p.confidence,
+    })),
+    payerHandle: decoded.payerHandle,
+    merchantName: decoded.merchantName,
+    confidence: decoded.confidence,
+  };
 }
