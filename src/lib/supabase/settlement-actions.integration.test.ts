@@ -19,7 +19,13 @@ import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
  * to validate the logic and RLS policies.
  */
 
-/** Helper: create a draft expense and activate it via RPC. */
+/**
+ * Helper: create a draft expense and activate it via the real RPCs.
+ * Issue #477's mutation-token guard rejects direct table writes (and
+ * service_role has no grant on begin_expense_graph_direct_mutation), so
+ * fixtures must route through save_expense_draft_graph +
+ * activate_saved_expense, exactly as the app does.
+ */
 async function createAndActivateExpense(opts: {
   groupId: string;
   creatorId: string;
@@ -28,48 +34,43 @@ async function createAndActivateExpense(opts: {
   shares: { userId: string; amount: number }[];
   payers: { userId: string; amount: number }[];
 }): Promise<string> {
-  const { data: expense } = await adminClient!
-    .from("expenses")
-    .insert({
-      group_id: opts.groupId,
-      creator_id: opts.creatorId,
-      title: "Test expense",
-      total_amount: opts.totalAmount,
-      expense_type: "single_amount",
-    })
-    .select()
-    .single();
-
-  if (!expense) throw new Error("Failed to create expense");
-
-  await adminClient!.from("expense_shares").insert(
-    opts.shares.map((s) => ({
-      expense_id: expense.id,
-      user_id: s.userId,
-      share_amount_cents: s.amount,
-    })),
-  );
-
-  await adminClient!.from("expense_payers").insert(
-    opts.payers.map((p) => ({
-      expense_id: expense.id,
-      user_id: p.userId,
-      amount_cents: p.amount,
-    })),
-  );
-
-  // Use a mock-free path: call RPC directly with authenticated client
   const client = authenticateAs({
     id: opts.creatorId,
     accessToken: opts.creatorToken,
   } as TestUser);
-  const { error } = await client.rpc(
-    "activate_expense" as never,
-    { p_expense_id: expense.id } as never,
-  );
-  if (error) throw new Error(`Failed to activate: ${error.message}`);
 
-  return expense.id;
+  const { data: saved, error: saveError } = await client.rpc(
+    "save_expense_draft_graph",
+    {
+      p_expense: {
+        group_id: opts.groupId,
+        title: "Test expense",
+        merchant_name: null,
+        expense_type: "single_amount",
+        total_amount: opts.totalAmount,
+        service_fee_basis_points: 0,
+        fixed_fees: 0,
+      },
+      p_items: [],
+      p_shares: opts.shares.map((s) => ({ user_id: s.userId, share_amount_cents: s.amount })),
+      p_payers: opts.payers.map((p) => ({ user_id: p.userId, amount_cents: p.amount })),
+      p_guests: [],
+      p_guest_shares: [],
+      p_participant_order: [],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: crypto.randomUUID(),
+    },
+  );
+  if (saveError || !saved) throw new Error(`Failed to create expense: ${saveError?.message}`);
+  const draft = saved as { id: string; graph_revision: number };
+
+  const { error: activateError } = await client.rpc("activate_saved_expense", {
+    p_expense_id: draft.id,
+    p_expected_graph_revision: draft.graph_revision,
+  });
+  if (activateError) throw new Error(`Failed to activate: ${activateError.message}`);
+
+  return draft.id;
 }
 
 describe.skipIf(!isIntegrationTestReady)(
