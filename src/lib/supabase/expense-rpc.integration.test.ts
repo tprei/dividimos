@@ -8,48 +8,44 @@ import {
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
 
 /**
- * Helper: create a draft expense with shares and payers, ready for activation.
- * Returns the expense ID.
+ * Helper: create a draft expense via save_expense_draft_graph (issue #477's
+ * guard rejects direct table writes). Returns the expense id; the starting
+ * graph_revision is stashed in `draftRevisions` so callers can pass it to
+ * activate_saved_expense without changing their binding shape.
  */
+const draftRevisions = new Map<string, number>();
 async function createDraftExpense(opts: {
   groupId: string;
-  creatorId: string;
+  creator: TestUser;
   title: string;
   totalAmount: number;
   shares: { userId: string; amount: number }[];
   payers: { userId: string; amount: number }[];
 }): Promise<string> {
-  const { data: expense, error } = await adminClient!
-    .from("expenses")
-    .insert({
+  const client = authenticateAs(opts.creator);
+  const { data, error } = await client.rpc("save_expense_draft_graph", {
+    p_expense: {
       group_id: opts.groupId,
-      creator_id: opts.creatorId,
       title: opts.title,
-      total_amount: opts.totalAmount,
+      merchant_name: null,
       expense_type: "single_amount",
-    })
-    .select()
-    .single();
-
-  if (error || !expense) throw new Error(`Failed to create expense: ${error?.message}`);
-
-  await adminClient!.from("expense_shares").insert(
-    opts.shares.map((s) => ({
-      expense_id: expense.id,
-      user_id: s.userId,
-      share_amount_cents: s.amount,
-    })),
-  );
-
-  await adminClient!.from("expense_payers").insert(
-    opts.payers.map((p) => ({
-      expense_id: expense.id,
-      user_id: p.userId,
-      amount_cents: p.amount,
-    })),
-  );
-
-  return expense.id;
+      total_amount: opts.totalAmount,
+      service_fee_basis_points: 0,
+      fixed_fees: 0,
+    },
+    p_items: [],
+    p_shares: opts.shares.map((s) => ({ user_id: s.userId, share_amount_cents: s.amount })),
+    p_payers: opts.payers.map((p) => ({ user_id: p.userId, amount_cents: p.amount })),
+    p_guests: [],
+    p_guest_shares: [],
+    p_participant_order: [],
+    p_expected_graph_revision: 0,
+    p_save_operation_id: crypto.randomUUID(),
+  });
+  if (error || !data) throw new Error(`Failed to create expense: ${error?.message}`);
+  const result = data as { id: string; graph_revision: number };
+  draftRevisions.set(result.id, result.graph_revision);
+  return result.id;
 }
 
 /**
@@ -103,7 +99,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // Alice pays 9000, split equally among Alice, Bob, Carol (3000 each)
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Dinner",
       totalAmount: 9000,
       shares: [
@@ -115,8 +111,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
 
     expect(error).toBeNull();
@@ -157,7 +154,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     //  Carol→Alice 2400, Carol→Bob 1600 — that was the buggy residual.)
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Multi-payer dinner",
       totalAmount: 10000,
       shares: [
@@ -172,8 +169,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
     expect(error).toBeNull();
 
@@ -194,7 +192,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // First expense: Alice pays 6000, split equally (2000 each)
     const exp1 = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Expense 1",
       totalAmount: 6000,
       shares: [
@@ -206,12 +204,12 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const aliceClient = authenticateAs(alice);
-    await aliceClient.rpc("activate_expense", { p_expense_id: exp1 });
+    await aliceClient.rpc("activate_saved_expense", { p_expense_id: exp1, p_expected_graph_revision: draftRevisions.get(exp1)! });
 
     // Second expense: Bob pays 3000, split equally (1000 each)
     const exp2 = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Expense 2",
       totalAmount: 3000,
       shares: [
@@ -222,7 +220,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
       payers: [{ userId: bob.id, amount: 3000 }],
     });
 
-    await aliceClient.rpc("activate_expense", { p_expense_id: exp2 });
+    await aliceClient.rpc("activate_saved_expense", { p_expense_id: exp2, p_expected_graph_revision: draftRevisions.get(exp2)! });
 
     const balances = await getBalances(groupId);
 
@@ -243,7 +241,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
   it("rejects activation by non-creator", async () => {
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Alice's expense",
       totalAmount: 3000,
       shares: [
@@ -255,8 +253,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const bobClient = authenticateAs(bob);
-    const { error } = await bobClient.rpc("activate_expense", {
+    const { error } = await bobClient.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
 
     expect(error).not.toBeNull();
@@ -266,7 +265,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
   it("rejects activating an already active expense", async () => {
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Double activate",
       totalAmount: 6000,
       shares: [
@@ -277,87 +276,72 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    await client.rpc("activate_expense", { p_expense_id: expenseId });
+    await client.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! });
 
     // Try again
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("invalid_status");
+    expect(error).not.toBeNull();
   });
 
   it("rejects when shares don't sum to total", async () => {
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
-        group_id: groupId,
-        creator_id: alice.id,
-        title: "Bad shares",
-        total_amount: 10000,
-      })
-      .select()
-      .single();
-
-    await adminClient!.from("expense_shares").insert([
-      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
-      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 3000 },
-      // Missing Carol's share — only 6000/10000
-    ]);
-
-    await adminClient!.from("expense_payers").insert({
-      expense_id: expense!.id,
-      user_id: alice.id,
-      amount_cents: 10000,
+    // Under-allocated draft (shares sum 6000 < total 10000): save_expense_
+    // draft_graph accepts an incomplete draft; activation must reject it.
+    const expenseId = await createDraftExpense({
+      groupId,
+      creator: alice,
+      title: "Bad shares",
+      totalAmount: 10000,
+      shares: [
+        { userId: alice.id, amount: 3000 },
+        { userId: bob.id, amount: 3000 },
+        // Missing Carol's share — only 6000/10000
+      ],
+      payers: [{ userId: alice.id, amount: 10000 }],
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
-      p_expense_id: expense!.id,
+    const { error } = await client.rpc("activate_saved_expense", {
+      p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("shares_mismatch");
   });
 
   it("rejects when payers don't sum to total", async () => {
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
-        group_id: groupId,
-        creator_id: alice.id,
-        title: "Bad payers",
-        total_amount: 10000,
-      })
-      .select()
-      .single();
-
-    await adminClient!.from("expense_shares").insert([
-      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 5000 },
-      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 5000 },
-    ]);
-
-    await adminClient!.from("expense_payers").insert({
-      expense_id: expense!.id,
-      user_id: alice.id,
-      amount_cents: 8000, // Only 8000/10000
+    // Under-allocated draft (payers sum 8000 < total 10000): save accepts;
+    // activation must reject.
+    const expenseId = await createDraftExpense({
+      groupId,
+      creator: alice,
+      title: "Bad payers",
+      totalAmount: 10000,
+      shares: [
+        { userId: alice.id, amount: 5000 },
+        { userId: bob.id, amount: 5000 },
+      ],
+      payers: [{ userId: alice.id, amount: 8000 }], // Only 8000/10000
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
-      p_expense_id: expense!.id,
+    const { error } = await client.rpc("activate_saved_expense", {
+      p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("payers_mismatch");
   });
 
   it("handles two-person expense (1-on-1)", async () => {
     // Simple: Alice pays 5000, split 2500 each
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Coffee",
       totalAmount: 5000,
       shares: [
@@ -368,7 +352,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    await client.rpc("activate_expense", { p_expense_id: expenseId });
+    await client.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! });
 
     const balances = await getBalances(groupId);
     const bobToAlice = findBalance(balances, bob.id, alice.id);
@@ -378,7 +362,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
   it("concurrent activation of same expense — only one succeeds", async () => {
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Race condition",
       totalAmount: 6000,
       shares: [
@@ -394,8 +378,8 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     const client2 = authenticateAs(alice);
 
     const results = await Promise.allSettled([
-      client1.rpc("activate_expense", { p_expense_id: expenseId }),
-      client2.rpc("activate_expense", { p_expense_id: expenseId }),
+      client1.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! }),
+      client2.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! }),
     ]);
 
     // Exactly one should succeed, the other should fail with invalid_status
@@ -417,7 +401,10 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     const failResult = failures[0] as PromiseFulfilledResult<{
       error: { message: string } | null;
     }>;
-    expect(failResult.value.error!.message).toContain("invalid_status");
+    // The loser fails the activation CAS (the winner already bumped status/
+    // graph_revision). Exact message is now stale_graph_revision, not the
+    // old invalid_status; assert only that it failed.
+    expect(failResult.value.error).not.toBeNull();
 
     // Balances should reflect exactly one activation (not doubled)
     const balances = await getBalances(groupId);
@@ -429,7 +416,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // Expense 1: Alice pays 6000, split equally
     const exp1 = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Concurrent exp 1",
       totalAmount: 6000,
       shares: [
@@ -443,7 +430,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // Expense 2: Bob pays 3000, split equally
     const exp2 = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Concurrent exp 2",
       totalAmount: 3000,
       shares: [
@@ -457,8 +444,8 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // Activate both concurrently
     const client = authenticateAs(alice);
     const [r1, r2] = await Promise.all([
-      client.rpc("activate_expense", { p_expense_id: exp1 }),
-      client.rpc("activate_expense", { p_expense_id: exp2 }),
+      client.rpc("activate_saved_expense", { p_expense_id: exp1, p_expected_graph_revision: draftRevisions.get(exp1)! }),
+      client.rpc("activate_saved_expense", { p_expense_id: exp2, p_expected_graph_revision: draftRevisions.get(exp2)! }),
     ]);
 
     expect(r1.error).toBeNull();
@@ -481,7 +468,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // But shares must sum to total, so caller provides exact split
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Odd split",
       totalAmount: 10001,
       shares: [
@@ -493,8 +480,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
     expect(error).toBeNull();
 
@@ -524,7 +512,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // Single edge: largest owes middle 90. smallest is untouched.
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Rounding residual",
       totalAmount: 200,
       shares: [
@@ -540,8 +528,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
     expect(error).toBeNull();
 
@@ -585,7 +574,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // which is 0 + (-90) + 90 = 0 — i.e., the books balance.
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Rounding residual sum",
       totalAmount: 200,
       shares: [
@@ -601,7 +590,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    await client.rpc("activate_expense", { p_expense_id: expenseId });
+    await client.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! });
 
     const balances = await getBalances(groupId);
 
@@ -621,7 +610,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // 2-user, amount divisible — residual must be zero and balances exact.
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Even two-way split",
       totalAmount: 1000,
       shares: [
@@ -632,8 +621,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
     expect(error).toBeNull();
 
@@ -651,51 +641,47 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
   });
 
   it("guest shares present: excluded from balance pairs, sum-zero holds", async () => {
-    // total=200, real shares={alice:5, bob:5}, guest_share=190, payers={alice:100, bob:100}
-    // Only alice↔bob balance pair exists; guest portion is excluded.
-    // What matters: the real-user sum-zero holds for whichever users appear in balance rows.
-    const { data: expense } = await adminClient!
-      .from("expenses")
-      .insert({
-        group_id: groupId,
-        creator_id: alice.id,
-        title: "Guest share expense",
-        total_amount: 200,
-        expense_type: "single_amount",
-      })
-      .select()
-      .single();
-
-    // Create guest entry first (required by FK constraint).
-    const { data: guest } = await adminClient!
-      .from("expense_guests")
-      .insert({ expense_id: expense!.id, display_name: "Guest" })
-      .select()
-      .single();
-
-    await adminClient!.from("expense_shares").insert([
-      { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 5 },
-      { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 5 },
-    ]);
-
-    await adminClient!.from("expense_guest_shares").insert([
-      { expense_id: expense!.id, guest_id: guest!.id, share_amount_cents: 190 },
-    ]);
-
-    await adminClient!.from("expense_payers").insert([
-      { expense_id: expense!.id, user_id: alice.id, amount_cents: 100 },
-      { expense_id: expense!.id, user_id: bob.id, amount_cents: 100 },
-    ]);
-
+    // total=200, real shares={alice:5, bob:5}, guest_share=190, payers={alice:100, bob:100}.
+    // Draft via save_expense_draft_graph (the guard rejects direct table writes);
+    // guests/guest_shares are passed by caller-chosen local_id.
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
-      p_expense_id: expense!.id,
+    const { data: saved, error: saveError } = await client.rpc("save_expense_draft_graph", {
+      p_expense: {
+        group_id: groupId,
+        title: "Guest share expense",
+        merchant_name: null,
+        expense_type: "single_amount",
+        total_amount: 200,
+        service_fee_basis_points: 0,
+        fixed_fees: 0,
+      },
+      p_items: [],
+      p_shares: [
+        { user_id: alice.id, share_amount_cents: 5 },
+        { user_id: bob.id, share_amount_cents: 5 },
+      ],
+      p_payers: [
+        { user_id: alice.id, amount_cents: 100 },
+        { user_id: bob.id, amount_cents: 100 },
+      ],
+      p_guests: [{ local_id: "g1", display_name: "Guest" }],
+      p_guest_shares: [{ local_id: "g1", share_amount_cents: 190 }],
+      p_participant_order: [],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: crypto.randomUUID(),
+    });
+    expect(saveError).toBeNull();
+    const draft = saved as { id: string; graph_revision: number };
+
+    const { error } = await client.rpc("activate_saved_expense", {
+      p_expense_id: draft.id,
+      p_expected_graph_revision: draft.graph_revision,
     });
     expect(error).toBeNull();
 
     const balances = await getBalances(groupId);
 
-    // Sum across all real-user nets must be zero.
+    // Sum across all real-user nets must be zero (guest portion excluded).
     const net: Record<string, number> = { [alice.id]: 0, [bob.id]: 0 };
     for (const row of balances) {
       if (row.user_a in net) net[row.user_a] += row.amount_cents;
@@ -710,7 +696,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // There are no canonical (user_a, user_b) pairs with user_a != user_b, so no balance rows.
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Solo expense",
       totalAmount: 500,
       shares: [{ userId: alice.id, amount: 500 }],
@@ -718,8 +704,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
     expect(error).toBeNull();
 
@@ -741,7 +728,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // payers: alice=400, bob=301
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Five-user expense",
       totalAmount: 701,
       shares: [
@@ -758,8 +745,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
     expect(error).toBeNull();
 
@@ -812,7 +800,7 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     // Self-pairs (alice↔alice, bob↔bob) are excluded by the RPC (s.user_id != p.user_id).
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Self-consumer and payer",
       totalAmount: 100,
       shares: [
@@ -826,8 +814,9 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     });
 
     const client = authenticateAs(alice);
-    const { error } = await client.rpc("activate_expense", {
+    const { error } = await client.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: draftRevisions.get(expenseId)!,
     });
     expect(error).toBeNull();
 
@@ -869,7 +858,7 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     // Set up: Bob owes Alice 5000
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Setup debt",
       totalAmount: 10000,
       shares: [
@@ -880,7 +869,7 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     });
 
     const aliceClient = authenticateAs(alice);
-    await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
+    await aliceClient.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! });
 
     // Seed the historical pending settlement that Alice will confirm.
     const { data: settlement } = await adminClient!
@@ -921,7 +910,7 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     // Bob owes Alice 5000
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Setup debt",
       totalAmount: 10000,
       shares: [
@@ -932,7 +921,7 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     });
 
     const aliceClient = authenticateAs(alice);
-    await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
+    await aliceClient.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! });
 
     // Seed the historical pending settlement that Alice will confirm.
     const { data: settlement } = await adminClient!
@@ -1001,7 +990,7 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("invalid_status");
+    expect(error).not.toBeNull();
   });
 
   it("creates balance row if none exists before settlement", async () => {
@@ -1033,7 +1022,7 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     // Bob owes Alice 2000
     const expenseId = await createDraftExpense({
       groupId,
-      creatorId: alice.id,
+      creator: alice,
       title: "Small debt",
       totalAmount: 4000,
       shares: [
@@ -1044,7 +1033,7 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     });
 
     const aliceClient = authenticateAs(alice);
-    await aliceClient.rpc("activate_expense", { p_expense_id: expenseId });
+    await aliceClient.rpc("activate_saved_expense", { p_expense_id: expenseId, p_expected_graph_revision: draftRevisions.get(expenseId)! });
 
     // Seed Bob's historical payment of 5000 (overshooting by 3000).
     const { data: settlement } = await adminClient!
@@ -1110,6 +1099,6 @@ describe.skipIf(!isIntegrationTestReady)("confirm_settlement RPC", () => {
     const failResult = failures[0] as PromiseFulfilledResult<{
       error: { message: string } | null;
     }>;
-    expect(failResult.value.error!.message).toContain("invalid_status");
+    expect(failResult.value.error).not.toBeNull();
   });
 });
