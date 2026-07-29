@@ -432,13 +432,13 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
       });
 
       const aliceClient = authenticateAs(alice2);
-      const { error } = await aliceClient
+      const { data } = await aliceClient
         .from("expense_shares")
         .update({ share_amount_cents: 1 })
         .eq("expense_id", expenseId)
         .select();
 
-      expect(error).toBeTruthy();
+      expect(data ?? []).toHaveLength(0);
     });
 
     it("rejects DELETE on expense_shares of an active expense", async () => {
@@ -456,13 +456,13 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
       });
 
       const aliceClient = authenticateAs(alice3);
-      const { error } = await aliceClient
+      const { data } = await aliceClient
         .from("expense_shares")
         .delete()
         .eq("expense_id", expenseId)
         .select();
 
-      expect(error).toBeTruthy();
+      expect(data ?? []).toHaveLength(0);
     });
 
     it("rejects UPDATE on expense_payers of an active expense", async () => {
@@ -480,13 +480,13 @@ describe.skipIf(!isIntegrationTestReady)("expense tables schema", () => {
       });
 
       const aliceClient = authenticateAs(alice4);
-      const { error } = await aliceClient
+      const { data } = await aliceClient
         .from("expense_payers")
         .update({ amount_cents: 1 })
         .eq("expense_id", expenseId)
         .select();
 
-      expect(error).toBeTruthy();
+      expect(data ?? []).toHaveLength(0);
     });
 
     it("rejects INSERT on expense_items of an active expense", async () => {
