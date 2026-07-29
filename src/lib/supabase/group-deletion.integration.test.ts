@@ -259,23 +259,69 @@ async function insertDraftExpense(
   creator: TestUser,
   totalAmount = 1000,
 ): Promise<string> {
-  const client = requireAdmin();
-  const { data, error } = await client
-    .from("expenses")
-    .insert({
+  // #477: the guard's expenses INSERT branch needs a 'new'-sourced token
+  // only save_expense_draft_graph can open. Route through the RPC as the
+  // creator's authenticated client, with empty shares/payers (children are
+  // added separately by insertExpenseChildren / insertGuestExpenseChildren
+  // via a raw direct-mutation-token transaction below).
+  const client = authenticateAs(creator);
+  const { data, error } = await client.rpc("save_expense_draft_graph", {
+    p_expense: {
       group_id: groupId,
-      creator_id: creator.id,
       title: "Protected draft",
+      merchant_name: null,
       expense_type: "single_amount",
       total_amount: totalAmount,
-      status: "draft",
-    })
-    .select("id")
-    .single();
+      service_fee_basis_points: 0,
+      fixed_fees: 0,
+    },
+    p_items: [],
+    p_shares: [],
+    p_payers: [],
+    p_guests: [],
+    p_guest_shares: [],
+    p_participant_order: [],
+    p_expected_graph_revision: 0,
+    p_save_operation_id: crypto.randomUUID(),
+  });
   if (error || !data) {
     throw new Error(`Failed to insert draft expense: ${error?.message}`);
   }
-  return data.id;
+  return (data as { id: string }).id;
+}
+
+/** Opens a direct mutation token and inserts guarded child rows. */
+async function insertGuardedChildren(
+  expenseId: string,
+  shares: { user_id: string; share_amount_cents: number }[],
+  payers: { user_id: string; amount_cents: number }[],
+): Promise<void> {
+  const conn = new Client({ connectionString: requireDatabaseUrl() });
+  await conn.connect();
+  try {
+    await conn.query("BEGIN");
+    await conn.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [
+      [expenseId],
+    ]);
+    for (const s of shares) {
+      await conn.query(
+        "insert into public.expense_shares (expense_id, user_id, share_amount_cents) values ($1, $2, $3)",
+        [expenseId, s.user_id, s.share_amount_cents],
+      );
+    }
+    for (const p of payers) {
+      await conn.query(
+        "insert into public.expense_payers (expense_id, user_id, amount_cents) values ($1, $2, $3)",
+        [expenseId, p.user_id, p.amount_cents],
+      );
+    }
+    await conn.query("COMMIT");
+  } catch (e) {
+    await conn.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    await conn.end();
+  }
 }
 
 async function insertExpenseChildren(
@@ -284,31 +330,14 @@ async function insertExpenseChildren(
   member: TestUser,
   totalAmount = 1000,
 ): Promise<void> {
-  const client = requireAdmin();
-  const { error: sharesError } = await client.from("expense_shares").insert([
-    {
-      expense_id: expenseId,
-      user_id: creator.id,
-      share_amount_cents: totalAmount / 2,
-    },
-    {
-      expense_id: expenseId,
-      user_id: member.id,
-      share_amount_cents: totalAmount / 2,
-    },
-  ]);
-  if (sharesError) {
-    throw new Error(`Failed to insert expense shares: ${sharesError.message}`);
-  }
-
-  const { error: payerError } = await client.from("expense_payers").insert({
-    expense_id: expenseId,
-    user_id: creator.id,
-    amount_cents: totalAmount,
-  });
-  if (payerError) {
-    throw new Error(`Failed to insert expense payer: ${payerError.message}`);
-  }
+  await insertGuardedChildren(
+    expenseId,
+    [
+      { user_id: creator.id, share_amount_cents: totalAmount / 2 },
+      { user_id: member.id, share_amount_cents: totalAmount / 2 },
+    ],
+    [{ user_id: creator.id, amount_cents: totalAmount }],
+  );
 }
 
 async function insertGuestExpenseChildren(
@@ -316,31 +345,14 @@ async function insertGuestExpenseChildren(
   creator: TestUser,
   member: TestUser,
 ): Promise<void> {
-  const client = requireAdmin();
-  const { error: sharesError } = await client.from("expense_shares").insert([
-    {
-      expense_id: expenseId,
-      user_id: creator.id,
-      share_amount_cents: 400,
-    },
-    {
-      expense_id: expenseId,
-      user_id: member.id,
-      share_amount_cents: 400,
-    },
-  ]);
-  if (sharesError) {
-    throw new Error(`Failed to insert guest expense shares: ${sharesError.message}`);
-  }
-
-  const { error: payerError } = await client.from("expense_payers").insert({
-    expense_id: expenseId,
-    user_id: creator.id,
-    amount_cents: 1000,
-  });
-  if (payerError) {
-    throw new Error(`Failed to insert guest expense payer: ${payerError.message}`);
-  }
+  await insertGuardedChildren(
+    expenseId,
+    [
+      { user_id: creator.id, share_amount_cents: 400 },
+      { user_id: member.id, share_amount_cents: 400 },
+    ],
+    [{ user_id: creator.id, amount_cents: 1000 }],
+  );
 }
 
 async function insertPendingSettlement(

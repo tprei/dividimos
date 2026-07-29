@@ -54,6 +54,20 @@ GRANT SELECT, INSERT, UPDATE, DELETE
   ON ALL TABLES IN SCHEMA public
   TO anon, authenticated, service_role;
 
+-- Re-apply table-level REVOKEs that earlier migrations established and
+-- the broad GRANT above would otherwise override. These are INTENTIONAL
+-- privilege restrictions for security-sensitive tables (groups DELETE,
+-- settlement_operations, rate limiting, chat append-only, DM pairs,
+-- invite links, chat confirmations).
+REVOKE DELETE ON TABLE public.groups FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.settlement_operations FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.settlement_operation_items FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.rate_limit_counters FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.chat_expense_confirmation_operations FROM PUBLIC, anon, authenticated, service_role;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.dm_pairs FROM PUBLIC, anon, authenticated, service_role;
+REVOKE INSERT, UPDATE, DELETE ON TABLE public.group_invite_links FROM PUBLIC, anon, authenticated;
+REVOKE UPDATE, DELETE ON TABLE public.chat_messages FROM PUBLIC, anon, authenticated, service_role;
+
 -- Future tables created in public by later migrations inherit the same.
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated, service_role;
