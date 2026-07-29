@@ -29,6 +29,12 @@ vi.mock("@/contexts/settlement-submission-context", () => ({
   ),
 }));
 
+vi.mock("@/components/financial-compatibility-gate", () => ({
+  FinancialCompatibilityGate: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
+}));
+
 vi.mock("@/hooks/use-unread-conversations", () => ({
   useUnreadConversations: () => 0,
 }));

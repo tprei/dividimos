@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeRedirect } from "@/lib/safe-redirect";
+import { CURRENT_FINANCIAL_SCHEMA_VERSION, FINANCIAL_SCHEMA_HEADER_NAME } from "@/lib/financial-compatibility";
 
 const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u"];
 
@@ -42,6 +43,9 @@ export async function updateSession(request: NextRequest) {
             supabaseResponse.cookies.set(name, value, options),
           );
         },
+      },
+      global: {
+        headers: { [FINANCIAL_SCHEMA_HEADER_NAME]: String(CURRENT_FINANCIAL_SCHEMA_VERSION) },
       },
     },
   );
