@@ -24,6 +24,7 @@ function makeResult(overrides: Partial<ChatExpenseResult> = {}): ChatExpenseResu
     amountCents: 2500,
     expenseType: "single_amount",
     splitType: "equal",
+    allocations: [],
     items: [],
     participants: [],
     payerHandle: null,
@@ -195,6 +196,28 @@ describe("parseChatExpense", () => {
     );
 
     expect(result.splitType).toBe("custom");
+  });
+
+  it("returns exact custom allocations from Gemini response, not a computed equal split", async () => {
+    mockGemini({
+      splitType: "custom",
+      amountCents: 10000,
+      allocations: [
+        { participantHandle: "SELF", shareAmountCents: 6000 },
+        { participantHandle: "bob", shareAmountCents: 4000 },
+      ],
+    });
+
+    const result = await parseChatExpense(
+      "paguei a conta de 100, minha parte é 60 e a do bob 40",
+      fakeApiKey,
+    );
+
+    expect(result.splitType).toBe("custom");
+    expect(result.allocations).toEqual([
+      { participantHandle: "SELF", shareAmountCents: 6000 },
+      { participantHandle: "bob", shareAmountCents: 4000 },
+    ]);
   });
 
   it("returns confidence level from Gemini response", async () => {
@@ -413,6 +436,99 @@ describe("sanitizeChatResult", () => {
     expect(result.items[0].quantity).toBe(0);
     expect(result.items[0].unitPriceCents).toBe(0);
     expect(result.items[0].totalCents).toBe(0);
+  });
+
+  it("forces empty allocations for an equal split even when provider sends rows", () => {
+    const result = sanitizeChatResult(
+      makeResult({
+        splitType: "equal",
+        allocations: [
+          { participantHandle: "SELF", shareAmountCents: 6000 },
+          { participantHandle: "bob", shareAmountCents: 4000 },
+        ],
+      }),
+    );
+
+    expect(result.allocations).toEqual([]);
+  });
+
+  it("keeps a structurally valid custom-split allocation", () => {
+    const result = sanitizeChatResult(
+      makeResult({
+        splitType: "custom",
+        allocations: [
+          { participantHandle: "SELF", shareAmountCents: 6000 },
+          { participantHandle: "bob", shareAmountCents: 4000 },
+        ],
+      }),
+    );
+
+    expect(result.allocations).toEqual([
+      { participantHandle: "SELF", shareAmountCents: 6000 },
+      { participantHandle: "bob", shareAmountCents: 4000 },
+    ]);
+  });
+
+  it("collapses a custom-split allocation to [] instead of defaulting to equal, when provider omits it", () => {
+    const result = sanitizeChatResult(
+      makeResult({ splitType: "custom", allocations: undefined }),
+    );
+
+    expect(result.splitType).toBe("custom");
+    expect(result.allocations).toEqual([]);
+  });
+
+  it("collapses a custom-split allocation with the wrong row count to []", () => {
+    const result = sanitizeChatResult(
+      makeResult({
+        splitType: "custom",
+        allocations: [{ participantHandle: "SELF", shareAmountCents: 10000 }],
+      }),
+    );
+
+    expect(result.allocations).toEqual([]);
+  });
+
+  it("collapses a custom-split allocation with a negative share to []", () => {
+    const result = sanitizeChatResult(
+      makeResult({
+        splitType: "custom",
+        allocations: [
+          { participantHandle: "SELF", shareAmountCents: -100 },
+          { participantHandle: "bob", shareAmountCents: 10100 },
+        ],
+      }),
+    );
+
+    expect(result.allocations).toEqual([]);
+  });
+
+  it("collapses a custom-split allocation with a non-integer share to []", () => {
+    const result = sanitizeChatResult(
+      makeResult({
+        splitType: "custom",
+        allocations: [
+          { participantHandle: "SELF", shareAmountCents: 60.5 },
+          { participantHandle: "bob", shareAmountCents: 4000 },
+        ],
+      }),
+    );
+
+    expect(result.allocations).toEqual([]);
+  });
+
+  it("collapses a custom-split allocation with an empty participant handle to []", () => {
+    const result = sanitizeChatResult(
+      makeResult({
+        splitType: "custom",
+        allocations: [
+          { participantHandle: "", shareAmountCents: 6000 },
+          { participantHandle: "bob", shareAmountCents: 4000 },
+        ],
+      }),
+    );
+
+    expect(result.allocations).toEqual([]);
   });
 });
 

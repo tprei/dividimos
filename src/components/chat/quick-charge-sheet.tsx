@@ -38,6 +38,7 @@ function buildResult(
     amountCents,
     expenseType: "single_amount",
     splitType: "equal",
+    allocations: [],
     items: [],
     participants: [
       {

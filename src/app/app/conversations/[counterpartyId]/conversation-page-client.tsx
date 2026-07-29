@@ -415,6 +415,7 @@ export function ConversationPageClient({
         amountCents: result.amountCents,
         expenseType: "single_amount",
         splitType: result.splitType === "equal" ? "equal" : "custom",
+        allocations: [],
         items: [],
         participants: [
           {
