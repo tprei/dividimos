@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import {
-  adminClient,
   isIntegrationTestReady,
   registerTestUser,
 } from "@/test/integration-setup";
@@ -9,6 +8,7 @@ import {
   createTestGroupWithMembers,
   createTestUsers,
   authenticateAs,
+  deleteTestExpenses,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -53,9 +53,8 @@ describe.skipIf(!canRun)("activate_expense allocation plan (#468)", () => {
   });
 
   afterAll(async () => {
-    if (expenseId && adminClient) {
-      // Cascades to entities, plan, edges, shares, payers.
-      await adminClient.from("expenses").delete().eq("id", expenseId);
+    if (expenseId && pg) {
+      await deleteTestExpenses(pg, [expenseId]);
     }
     if (pg) await pg.end();
   });
@@ -67,41 +66,45 @@ describe.skipIf(!canRun)("activate_expense allocation plan (#468)", () => {
     const group = await createTestGroupWithMembers(alice, [bob, carol]);
     groupId = group.id;
 
-    // Draft expense with exact integer shares [1,1,4] and payers [1,4,1].
-    const { data: expense, error: expError } = await adminClient!
-      .from("expenses")
-      .insert({
+    // Draft expense with exact integer shares [1,1,4] and payers [1,4,1],
+    // created through the real save_expense_draft_graph RPC (#477's
+    // expense-graph mutation-token guard rejects direct table writes).
+    const creatorClient = authenticateAs(alice);
+    const { data: saveResult, error: saveError } = await creatorClient.rpc("save_expense_draft_graph", {
+      p_expense: {
         group_id: groupId,
-        creator_id: alice.id,
         title: "#468 fixture [1,1,4]/[1,4,1]",
+        merchant_name: null,
         expense_type: "single_amount",
         total_amount: 6,
-        service_fee_percent: 0,
+        service_fee_basis_points: 0,
         fixed_fees: 0,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-    if (expError || !expense) throw new Error(`create expense: ${expError?.message}`);
-    expenseId = expense.id;
+      },
+      p_items: [],
+      p_shares: [
+        { user_id: alice.id, share_amount_cents: 1 },
+        { user_id: bob.id, share_amount_cents: 1 },
+        { user_id: carol.id, share_amount_cents: 4 },
+      ],
+      p_payers: [
+        { user_id: alice.id, amount_cents: 1 },
+        { user_id: bob.id, amount_cents: 4 },
+        { user_id: carol.id, amount_cents: 1 },
+      ],
+      p_guests: [],
+      p_guest_shares: [],
+      p_participant_order: [],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: crypto.randomUUID(),
+    });
+    if (saveError || !saveResult) throw new Error(`create expense: ${saveError?.message}`);
 
-    const sharesRes = await adminClient!.from("expense_shares").insert([
-      { expense_id: expenseId, user_id: alice.id, share_amount_cents: 1 },
-      { expense_id: expenseId, user_id: bob.id, share_amount_cents: 1 },
-      { expense_id: expenseId, user_id: carol.id, share_amount_cents: 4 },
-    ]);
-    if (sharesRes.error) throw new Error(`shares: ${sharesRes.error.message}`);
+    const saved = saveResult as { id: string; graph_revision: number };
+    expenseId = saved.id;
 
-    const payersRes = await adminClient!.from("expense_payers").insert([
-      { expense_id: expenseId, user_id: alice.id, amount_cents: 1 },
-      { expense_id: expenseId, user_id: bob.id, amount_cents: 4 },
-      { expense_id: expenseId, user_id: carol.id, amount_cents: 1 },
-    ]);
-    if (payersRes.error) throw new Error(`payers: ${payersRes.error.message}`);
-
-    const creatorClient = authenticateAs(alice);
-    const { error: rpcError } = await creatorClient.rpc("activate_expense", {
+    const { error: rpcError } = await creatorClient.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: saved.graph_revision,
     });
     if (rpcError) throw new Error(`activate: ${rpcError.message}`);
   }
@@ -203,13 +206,15 @@ describe.skipIf(!canRun)("activate_expense allocation plan (#468)", () => {
     expect(plans[0].source_digest).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it("rejects re-activation with invalid_status (and leaves the plan intact)", async () => {
+  it("rejects re-activation via a stale-revision CAS (and leaves the plan intact)", async () => {
     const creatorClient = authenticateAs(alice);
-    const { error } = await creatorClient.rpc("activate_expense", {
+    const { error } = await creatorClient.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: 2,
     });
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("invalid_status");
+    expect(error!.code).toBe("PST08");
+    expect(error!.message).toContain("stale_graph_revision");
 
     // Plan header must still be exactly one (no duplicate / corruption).
     const { rows } = await pg.query(

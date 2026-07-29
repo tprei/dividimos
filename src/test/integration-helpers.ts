@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Client } from "pg";
 import type { Database } from "@/types/database";
 import {
   adminClient,
@@ -265,7 +266,17 @@ export interface CreateAndActivateExpenseOptions {
 }
 
 /**
- * Creates an expense with shares and payers, then activates it via RPC.
+ * Creates an expense with shares and payers, then activates it, entirely
+ * through the same public RPCs the real app uses (save_expense_draft_graph
+ * then activate_saved_expense). Issue #477's expense-graph mutation-token
+ * guard makes every direct INSERT/UPDATE/DELETE against expenses/
+ * expense_items/expense_shares/expense_payers/expense_guests/
+ * expense_guest_shares/expense_allocation_entities/
+ * expense_balance_allocation_plans/expense_balance_allocations require an
+ * already-open, per-session mutation token; a service_role PostgREST
+ * client issuing separate HTTP requests never reliably shares one
+ * database session, so raw table writes here are structurally
+ * unreliable now. RPCs open/close their own token internally.
  * The total is computed as the sum of payer amounts.
  * Returns the expense id.
  */
@@ -290,28 +301,6 @@ export async function createAndActivateExpense(
   const totalAmount = payers.reduce((sum, p) => sum + p.amount, 0);
   const testId = Date.now().toString(36).slice(-4);
 
-  // Insert expense
-  const { data: expense, error: expError } = await adminClient
-    .from("expenses")
-    .insert({
-      group_id: groupId,
-      creator_id: creator.id,
-      title: title ?? `Test Expense ${testId}`,
-      expense_type: expenseType,
-      total_amount: totalAmount,
-      service_fee_percent: serviceFeePercent,
-      fixed_fees: fixedFees,
-      status: "draft",
-    })
-    .select("id")
-    .single();
-
-  if (expError || !expense) {
-    throw new Error(`Failed to create expense: ${expError?.message}`);
-  }
-
-  const expenseId = expense.id;
-
   // Payers are participant rows. Preserve payer-only fixtures as explicit
   // zero-share registered users rather than creating unreachable payers.
   const reachableShares = new Map(shares.map((share) => [share.userId, share.amount]));
@@ -321,33 +310,41 @@ export async function createAndActivateExpense(
     }
   }
 
-  const sharesResult = await adminClient.from("expense_shares").insert(
-    [...reachableShares].map(([userId, amount]) => ({
-      expense_id: expenseId,
+  const creatorClient = authenticateAs(creator);
+
+  const { data: saveResult, error: saveError } = await creatorClient.rpc("save_expense_draft_graph", {
+    p_expense: {
+      group_id: groupId,
+      title: title ?? `Test Expense ${testId}`,
+      merchant_name: null,
+      expense_type: expenseType,
+      total_amount: totalAmount,
+      service_fee_basis_points: Math.round(serviceFeePercent * 100),
+      fixed_fees: fixedFees,
+    },
+    p_items: [],
+    p_shares: [...reachableShares].map(([userId, amount]) => ({
       user_id: userId,
       share_amount_cents: amount,
     })),
-  );
-  if (sharesResult.error) {
-    throw new Error(`Failed to insert shares: ${sharesResult.error.message}`);
+    p_payers: payers.map((p) => ({ user_id: p.userId, amount_cents: p.amount })),
+    p_guests: [],
+    p_guest_shares: [],
+    p_participant_order: [],
+    p_expected_graph_revision: 0,
+    p_save_operation_id: crypto.randomUUID(),
+  });
+
+  if (saveError || !saveResult) {
+    throw new Error(`Failed to create expense: ${saveError?.message}`);
   }
 
-  const payersResult = await adminClient.from("expense_payers").insert(
-    payers.map((p) => ({
-      expense_id: expenseId,
-      user_id: p.userId,
-      amount_cents: p.amount,
-    })),
-  );
-  if (payersResult.error) {
-    throw new Error(`Failed to insert payers: ${payersResult.error.message}`);
-  }
+  const expenseId = (saveResult as { id: string; graph_revision: number }).id;
+  const graphRevision = (saveResult as { id: string; graph_revision: number }).graph_revision;
 
-
-  // Activate via RPC as the creator
-  const creatorClient = authenticateAs(creator);
-  const { error: rpcError } = await creatorClient.rpc("activate_expense", {
+  const { error: rpcError } = await creatorClient.rpc("activate_saved_expense", {
     p_expense_id: expenseId,
+    p_expected_graph_revision: graphRevision,
   });
 
   if (rpcError) {
@@ -355,6 +352,45 @@ export async function createAndActivateExpense(
   }
 
   return expenseId;
+}
+
+/**
+ * Deletes test expenses directly, for suites that need raw teardown rather
+ * than the app's own delete paths. #477's expense-graph mutation-token
+ * guard requires an already-open direct token for any raw DELETE against
+ * `expenses` (and its cascading children); `pg_temp`'s `ON COMMIT DELETE
+ * ROWS` wipes that token at the end of the transaction it opened in, so
+ * the open and the delete must share one explicit transaction, never two
+ * separate autocommit statements. Also scrubs any live `committed`
+ * expense_graph_save_operations ledger rows first: that table's
+ * expense_id FK is `ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`, so
+ * an un-scrubbed row aborts the delete at COMMIT.
+ */
+export async function deleteTestExpenses(pg: Client, expenseIds: string[]): Promise<void> {
+  if (expenseIds.length === 0) return;
+  await pg.query("BEGIN");
+  try {
+    await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [expenseIds]);
+    await pg.query(
+      `update public.expense_graph_save_operations
+          set outcome = 'retired',
+              canonical_request = null,
+              request_digest = null,
+              expense_id = null,
+              graph_revision = null,
+              result = null,
+              result_created_at = null,
+              retired_reason = 'expense_deleted',
+              retired_at = statement_timestamp()
+        where expense_id = any($1::uuid[]) and outcome = 'committed'`,
+      [expenseIds],
+    );
+    await pg.query("delete from public.expenses where id = any($1::uuid[])", [expenseIds]);
+    await pg.query("COMMIT");
+  } catch (error) {
+    await pg.query("ROLLBACK").catch(() => {});
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
