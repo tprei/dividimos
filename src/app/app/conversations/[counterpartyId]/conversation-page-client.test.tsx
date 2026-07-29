@@ -1,6 +1,7 @@
 import React from "react";
+import toast from "react-hot-toast";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   ConversationPageClient,
   type ConversationInitialData,
@@ -49,6 +50,13 @@ const chainEq = () => {
   return obj;
 };
 
+const mockRpcFn = vi.fn(() =>
+  Promise.resolve<{ data: null; error: { message: string } | null }>({
+    data: null,
+    error: null,
+  }),
+);
+
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     from: () => ({
@@ -62,10 +70,15 @@ vi.mock("@/lib/supabase/client", () => ({
         in: () => Promise.resolve({ data: [] }),
       }),
     }),
+    rpc: mockRpcFn,
     auth: {
       getUser: () => Promise.resolve({ data: { user: { id: "user-1" } } }),
     },
   }),
+}));
+
+vi.mock("react-hot-toast", () => ({
+  default: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("@/lib/supabase/expense-mappers", () => ({
@@ -176,6 +189,46 @@ describe("ConversationPageClient", () => {
     expect(
       screen.getByText(/Esta conversa está pendente/),
     ).toBeInTheDocument();
+  });
+
+  it("shows declined state after a successful decline click", async () => {
+    render(
+      <ConversationPageClient
+        initialData={makeInitialData({ callerStatus: "invited" })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Recusar"));
+
+    expect(mockRpcFn).toHaveBeenCalledWith("decline_group_invitation", {
+      p_group_id: "group-1",
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Você recusou este convite.")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps the invite pending and shows retryable feedback when decline is guard-rejected", async () => {
+    mockRpcFn.mockResolvedValueOnce({
+      data: null,
+      error: { message: "has_outstanding_balance: you have an unsettled balance in this group" },
+    });
+
+    render(
+      <ConversationPageClient
+        initialData={makeInitialData({ callerStatus: "invited" })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Recusar"));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.",
+      );
+    });
+    // The invite acceptance UI stays visible — never flipped to declined.
+    expect(screen.getByText("Aceitar convite")).toBeInTheDocument();
   });
 
   it("renders declined state", () => {

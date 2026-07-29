@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Check, Plus, Users, X } from "lucide-react";
+import toast from "react-hot-toast";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -186,12 +187,18 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
 
   const handleDeclineInvite = async (groupId: string) => {
     if (!user) return;
+    const { error } = await createClient().rpc("decline_group_invitation", {
+      p_group_id: groupId,
+    });
+    if (error) {
+      if (error.message.includes("has_outstanding_balance")) {
+        toast.error("Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.");
+      } else {
+        toast.error("Não foi possível recusar o convite. Tente novamente.");
+      }
+      return;
+    }
     setInvites((prev) => prev.filter((i) => i.groupId !== groupId));
-    await createClient()
-      .from("group_members")
-      .delete()
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
   };
 
   return (

@@ -1377,6 +1377,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      decline_group_invitation: {
+        Args: { p_group_id: string }
+        Returns: undefined
+      }
       delete_group: {
         Args: {
           p_group_id: string

@@ -1,4 +1,5 @@
 import React from "react";
+import toast from "react-hot-toast";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
@@ -30,6 +31,13 @@ const chainEq = () => {
   return obj as unknown as { eq: () => typeof obj } & Promise<{ error: null }>;
 };
 
+const mockRpcFn = vi.fn(() =>
+  Promise.resolve<{ data: null; error: { message: string } | null }>({
+    data: null,
+    error: null,
+  }),
+);
+
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     from: () => ({
@@ -40,8 +48,12 @@ vi.mock("@/lib/supabase/client", () => ({
         in: () => Promise.resolve({ data: [] }),
       }),
     }),
-    rpc: () => Promise.resolve({ data: null }),
+    rpc: mockRpcFn,
   }),
+}));
+
+vi.mock("react-hot-toast", () => ({
+  default: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("@/lib/supabase/unread-actions", () => ({
@@ -326,6 +338,39 @@ describe("ConversationsListContent", () => {
       await waitFor(() => {
         expect(screen.queryByText("Pedro Alves")).not.toBeInTheDocument();
       });
+    });
+
+    it("keeps the invitation and shows retryable feedback when decline is guard-rejected", async () => {
+      mockRpcFn.mockResolvedValueOnce({
+        data: null,
+        error: { message: "has_outstanding_balance: you have an unsettled balance in this group" },
+      });
+      const conversations = [
+        makeConversation({
+          groupId: "dm-invite",
+          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
+          callerStatus: "invited",
+          counterpartyStatus: "accepted",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      const inviteCard = screen.getByText("Pedro Alves").closest(".rounded-2xl");
+      const buttons = inviteCard!.querySelectorAll("button");
+      const declineBtn = Array.from(buttons).find(
+        (b) => !b.textContent?.includes("Aceitar"),
+      );
+      fireEvent.click(declineBtn!);
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(
+          "Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.",
+        );
+      });
+      // The invitation is retained — never optimistically removed, and
+      // the guard rejection never called setConversations to filter it.
+      expect(screen.getByText("Pedro Alves")).toBeInTheDocument();
     });
 
     it("renders mixed active and pending conversations correctly", () => {

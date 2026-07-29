@@ -455,13 +455,20 @@ export function ConversationPageClient({
 
   const handleDecline = useCallback(async () => {
     if (!groupId) return;
-    await createClient()
-      .from("group_members")
-      .delete()
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
+    const { error: declineError } = await createClient().rpc(
+      "decline_group_invitation",
+      { p_group_id: groupId },
+    );
+    if (declineError) {
+      if (declineError.message.includes("has_outstanding_balance")) {
+        toast.error("Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.");
+        return;
+      }
+      toast.error("Não foi possível recusar o convite. Tente novamente.");
+      return;
+    }
     setCallerStatus("declined");
-  }, [groupId, user.id]);
+  }, [groupId]);
 
   if (loading) {
     return (
