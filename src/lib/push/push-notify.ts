@@ -237,7 +237,14 @@ export async function notifyGroupAccepted(
 
 /**
  * Notify affected group members when an expense is activated.
- * Called after a successful activate_expense RPC.
+ *
+ * Requires a committed one-shot activation event: the atomic claim UPDATE
+ * below only matches a row that is `status = 'active'`, was created by the
+ * caller, and has never been claimed before (`activation_notified_at IS
+ * NULL`). Draft, settled, nonexistent, noncreator, and replayed calls all
+ * fail that single WHERE clause and return zero rows, so this function
+ * sends nothing for any of them. Exactly one concurrent caller can ever
+ * observe a returned row for a given expense.
  */
 export async function notifyExpenseActivated(
   expenseId: string,
@@ -249,22 +256,25 @@ export async function notifyExpenseActivated(
 
   const admin = createAdminClient();
 
-  const [expenseResult, sharesResult] = await Promise.all([
+  const [claimResult, sharesResult] = await Promise.all([
     admin
       .from("expenses")
-      .select("group_id, creator_id, title, total_amount")
+      .update({ activation_notified_at: new Date().toISOString() })
       .eq("id", expenseId)
-      .single(),
+      .eq("status", "active")
+      .eq("creator_id", callerId)
+      .is("activation_notified_at", null)
+      .select("group_id, creator_id, title, total_amount")
+      .maybeSingle(),
     admin
       .from("expense_shares")
       .select("user_id")
       .eq("expense_id", expenseId),
   ]);
 
-  if (!expenseResult.data) return;
-  if (expenseResult.data.creator_id !== callerId) return;
+  if (!claimResult.data) return;
 
-  const { group_id, creator_id, title, total_amount } = expenseResult.data;
+  const { group_id, creator_id, title, total_amount } = claimResult.data;
   const affectedUserIds = (sharesResult.data ?? []).map((s) => s.user_id);
 
   const [creatorResult, groupContext] = await Promise.all([
