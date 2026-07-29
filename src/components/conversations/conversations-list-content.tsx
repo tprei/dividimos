@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Check, MessageSquare, Search, Share2, X } from "lucide-react";
+import toast from "react-hot-toast";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -261,12 +262,18 @@ export function ConversationsListContent({
 
   const handleDecline = useCallback(async (groupId: string) => {
     if (!user) return;
+    const { error } = await createClient().rpc("decline_group_invitation", {
+      p_group_id: groupId,
+    });
+    if (error) {
+      if (error.message.includes("has_outstanding_balance")) {
+        toast.error("Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.");
+      } else {
+        toast.error("Não foi possível recusar o convite. Tente novamente.");
+      }
+      return;
+    }
     setConversations((prev) => prev.filter((c) => c.groupId !== groupId));
-    await createClient()
-      .from("group_members")
-      .delete()
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
   }, [user]);
 
   const totalCount = conversations.length;
