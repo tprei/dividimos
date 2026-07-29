@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import {
   decodeExpenseGraphSaveResult,
@@ -80,34 +79,35 @@ type GraphSaveGuestShareWire = Readonly<{
   share_amount_cents: ExpenseCents;
 }>;
 
-type GraphSaveRpcArgs = Record<string, unknown> &
-  Readonly<{
-    p_expense: GraphSaveExpenseWire | (GraphSaveExpenseWire & Readonly<{ id: string }>);
-    p_items: readonly GraphSaveItemWire[];
-    p_shares: readonly GraphSaveShareWire[];
-    p_payers: readonly GraphSavePayerWire[];
-    p_guests: readonly GraphSaveGuestWire[];
-    p_guest_shares: readonly GraphSaveGuestShareWire[];
-    // save_expense_draft_graph rejects a nonempty participant_order until
-    // draft map persistence lands (issue #467/#471); this cutover always
-    // sends the empty array the current RPC contract requires.
-    p_participant_order: readonly [];
-    p_expected_graph_revision: GraphRevision;
-    p_save_operation_id: string;
-  }>;
-
-type ExpenseGraphSaveDatabase = Omit<Database, "public"> & {
-  public: Omit<Database["public"], "Functions"> & {
-    Functions: Database["public"]["Functions"] & {
-      save_expense_draft_graph: {
-        Args: GraphSaveRpcArgs;
-        Returns: unknown;
-      };
-    };
+function toGraphSaveRpcArgs(args: {
+  readonly p_expense: GraphSaveExpenseWire | (GraphSaveExpenseWire & Readonly<{ id: string }>);
+  readonly p_items: readonly GraphSaveItemWire[];
+  readonly p_shares: readonly GraphSaveShareWire[];
+  readonly p_payers: readonly GraphSavePayerWire[];
+  readonly p_guests: readonly GraphSaveGuestWire[];
+  readonly p_guest_shares: readonly GraphSaveGuestShareWire[];
+  // save_expense_draft_graph rejects a nonempty participant_order until
+  // draft map persistence lands (issue #467/#471); this cutover always
+  // sends the empty array the current RPC contract requires.
+  readonly p_participant_order: readonly [];
+  readonly p_expected_graph_revision: GraphRevision;
+  readonly p_save_operation_id: string;
+}): Database["public"]["Functions"]["save_expense_draft_graph"]["Args"] {
+  // The generated RPC signature types every jsonb parameter as the opaque
+  // `Json` union; this function is the single, explicit boundary where the
+  // repo's own well-typed wire shapes are handed to that broader contract.
+  return {
+    p_expense: args.p_expense,
+    p_items: [...args.p_items],
+    p_shares: [...args.p_shares],
+    p_payers: [...args.p_payers],
+    p_guests: [...args.p_guests],
+    p_guest_shares: [...args.p_guest_shares],
+    p_participant_order: [...args.p_participant_order],
+    p_expected_graph_revision: args.p_expected_graph_revision,
+    p_save_operation_id: args.p_save_operation_id,
   };
-};
-
-type ExpenseGraphSaveClient = SupabaseClient<ExpenseGraphSaveDatabase>;
+}
 
 export type SaveExpenseDraftGuest = Readonly<{
   localId: string;
@@ -197,7 +197,7 @@ export async function saveExpenseDraft(
       share_amount_cents: guestShare.shareAmountCents,
     }),
   );
-  const rpcArgs: GraphSaveRpcArgs = {
+  const rpcArgs = toGraphSaveRpcArgs({
     p_expense: pExpense,
     p_items: pItems,
     p_shares: pShares,
@@ -207,11 +207,9 @@ export async function saveExpenseDraft(
     p_participant_order: [],
     p_expected_graph_revision: params.expectedGraphRevision,
     p_save_operation_id: params.saveOperationId,
-  };
+  });
 
-  // Generated database types intentionally lag this forward-only RPC migration.
-  // Its result stays unknown until the strict decoder accepts it.
-  const supabase = createClient() as unknown as ExpenseGraphSaveClient;
+  const supabase = createClient();
   const { data, error } = await supabase.rpc("save_expense_draft_graph", rpcArgs);
 
   if (error) {
