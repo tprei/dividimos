@@ -367,9 +367,20 @@ export function ConversationPageClient({
 
   const handleQuickChargeConfirm = useCallback(
     async (result: ChatExpenseResult) => {
+      if (!counterparty) return;
       setChargeStatus("confirming");
       setChargeError(undefined);
-      const outcome = await confirmChatExpenseCore(result, "quick_charge");
+      // #474: Quick Charge is a two-party transfer, not an equal split.
+      // The entered amount is the counterparty's whole liability (or the
+      // current user's, for the counterparty-paid direction) — never
+      // divided. Build the exact 0/N share pair instead of letting the
+      // generic equal-split fallback halve it.
+      const payerIsSelf = !result.payerHandle || result.payerHandle === "SELF";
+      const precomputedShares: PrecomputedShare[] = [
+        { userId: user.id, shareAmountCents: payerIsSelf ? 0 : result.amountCents },
+        { userId: counterparty.id, shareAmountCents: payerIsSelf ? result.amountCents : 0 },
+      ];
+      const outcome = await confirmChatExpenseCore(result, "quick_charge", precomputedShares);
       if ("error" in outcome) {
         setChargeStatus("error");
         setChargeError(outcome.error);
@@ -382,7 +393,7 @@ export function ConversationPageClient({
         setChargeStatus("idle");
       }, 1200);
     },
-    [confirmChatExpenseCore],
+    [confirmChatExpenseCore, counterparty, user.id],
   );
 
   const handleQuickChargeEdit = useCallback(

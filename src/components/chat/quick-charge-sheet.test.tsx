@@ -99,6 +99,38 @@ describe("QuickChargeSheet", () => {
     expect(onConfirm.mock.calls[0][0].payerHandle).toBe("maria123");
   });
 
+  it("shows 'Devo a' header and 'Registrar' confirm text when counterparty paid", async () => {
+    const user = userEvent.setup();
+    renderSheet();
+
+    expect(screen.getByText("Cobrar de Maria")).toBeInTheDocument();
+    expect(screen.getByTestId("quick-charge-confirm")).toHaveTextContent("Cobrar");
+
+    await user.click(screen.getByTestId("quick-charge-payer-other"));
+
+    expect(screen.queryByText("Cobrar de Maria")).not.toBeInTheDocument();
+    expect(screen.getByText("Devo a Maria")).toBeInTheDocument();
+    expect(screen.getByTestId("quick-charge-confirm")).toHaveTextContent("Registrar");
+  });
+
+  it("generates an owed-direction description when counterparty paid", async () => {
+    const onConfirm = vi.fn();
+    const user = userEvent.setup();
+    renderSheet({ onConfirm });
+
+    await user.click(screen.getByTestId("quick-charge-payer-other"));
+    await user.click(screen.getByLabelText("Adicionar R$10"));
+    await user.click(screen.getByTestId("quick-charge-confirm"));
+
+    const title: string = onConfirm.mock.calls[0][0].title;
+    expect(title).toContain("Cobrança");
+    expect(title).toContain("Maria");
+    // "de Maria" (charged FROM Maria — I owe her), never "para Maria"
+    // (charged TO Maria — she owes me), for this direction.
+    expect(title).toContain("de Maria");
+    expect(title).not.toContain("para Maria");
+  });
+
   it("calls onEdit when edit button clicked", async () => {
     const onEdit = vi.fn();
     const user = userEvent.setup();

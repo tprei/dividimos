@@ -6,6 +6,7 @@ import {
   ConversationPageClient,
   type ConversationInitialData,
 } from "./conversation-page-client";
+import { buildChatExpenseConfirmationRequest } from "@/lib/supabase/chat-confirm";
 import type { ChatMessageType, UserProfile } from "@/types";
 
 vi.mock("next/navigation", () => ({
@@ -97,11 +98,70 @@ vi.mock("@/components/chat/conversation-pay-button", () => ({
 }));
 
 vi.mock("@/components/chat/conversation-quick-actions", () => ({
-  ConversationQuickActions: () => <div data-testid="quick-actions" />,
+  ConversationQuickActions: ({ onCharge }: { onCharge: () => void }) => (
+    <div data-testid="quick-actions">
+      <button data-testid="open-quick-charge" onClick={onCharge}>
+        Cobrar
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/chat/quick-charge-sheet", () => ({
-  QuickChargeSheet: () => <div data-testid="quick-charge-sheet" />,
+  QuickChargeSheet: ({
+    onConfirm,
+  }: {
+    onConfirm: (result: {
+      title: string;
+      amountCents: number;
+      expenseType: "single_amount";
+      splitType: "equal";
+      items: [];
+      participants: { spokenName: string; matchedHandle: string; confidence: "high" }[];
+      payerHandle: string;
+      merchantName: null;
+      confidence: "high";
+    }) => void;
+  }) => (
+    <div data-testid="quick-charge-sheet">
+      <button
+        data-testid="quick-charge-self-paid"
+        onClick={() =>
+          onConfirm({
+            title: "Cobrança",
+            amountCents: 1001,
+            expenseType: "single_amount",
+            splitType: "equal",
+            items: [],
+            participants: [{ spokenName: "bob", matchedHandle: "bob", confidence: "high" }],
+            payerHandle: "SELF",
+            merchantName: null,
+            confidence: "high",
+          })
+        }
+      >
+        Self paid
+      </button>
+      <button
+        data-testid="quick-charge-counterparty-paid"
+        onClick={() =>
+          onConfirm({
+            title: "Cobrança",
+            amountCents: 1,
+            expenseType: "single_amount",
+            splitType: "equal",
+            items: [],
+            participants: [{ spokenName: "bob", matchedHandle: "bob", confidence: "high" }],
+            payerHandle: "bob",
+            merchantName: null,
+            confidence: "high",
+          })
+        }
+      >
+        Counterparty paid
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/chat/quick-split-sheet", () => ({
@@ -350,5 +410,47 @@ describe("ConversationPageClient", () => {
     );
 
     expect(container.innerHTML).toBe("");
+  });
+
+  // -------------------------------------------------------------------------
+  // #474: Quick Charge must build exact 0/N shares, never an equal split.
+  // -------------------------------------------------------------------------
+
+  it("Quick Charge (self paid): builds exact shares actor=0, counterparty=N", async () => {
+    vi.mocked(buildChatExpenseConfirmationRequest).mockReturnValue({ error: "stop here" });
+
+    render(<ConversationPageClient initialData={makeInitialData()} />);
+
+    fireEvent.click(screen.getByTestId("open-quick-charge"));
+    fireEvent.click(screen.getByTestId("quick-charge-self-paid"));
+
+    await waitFor(() => {
+      expect(buildChatExpenseConfirmationRequest).toHaveBeenCalled();
+    });
+
+    const call = vi.mocked(buildChatExpenseConfirmationRequest).mock.calls[0][0];
+    expect(call.precomputedShares).toEqual([
+      { userId: "user-1", shareAmountCents: 0 },
+      { userId: "user-2", shareAmountCents: 1001 },
+    ]);
+  });
+
+  it("Quick Charge (counterparty paid): builds exact shares actor=N, counterparty=0, preserving a one-cent liability", async () => {
+    vi.mocked(buildChatExpenseConfirmationRequest).mockReturnValue({ error: "stop here" });
+
+    render(<ConversationPageClient initialData={makeInitialData()} />);
+
+    fireEvent.click(screen.getByTestId("open-quick-charge"));
+    fireEvent.click(screen.getByTestId("quick-charge-counterparty-paid"));
+
+    await waitFor(() => {
+      expect(buildChatExpenseConfirmationRequest).toHaveBeenCalled();
+    });
+
+    const call = vi.mocked(buildChatExpenseConfirmationRequest).mock.calls[0][0];
+    expect(call.precomputedShares).toEqual([
+      { userId: "user-1", shareAmountCents: 1 },
+      { userId: "user-2", shareAmountCents: 0 },
+    ]);
   });
 });
