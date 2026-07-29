@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, Send, Sparkles } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ChatDraftCard } from "@/components/chat/chat-draft-card";
+import { ChatDraftCard, type ChatDraftStatus } from "@/components/chat/chat-draft-card";
 import { cn } from "@/lib/utils";
 import { useAiExpenseParse, type MemberContext } from "@/hooks/use-ai-expense-parse";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
@@ -15,7 +15,9 @@ interface ChatAiInputProps {
   groupId: string;
   members?: MemberContext[];
   onSend?: (text: string) => void;
-  onConfirmDraft: (result: ChatExpenseResult) => void;
+  onConfirmDraft: (
+    result: ChatExpenseResult,
+  ) => Promise<{ expenseId: string } | { error: string }>;
   onEditDraft: (result: ChatExpenseResult) => void;
   disabled?: boolean;
 }
@@ -29,17 +31,23 @@ export function ChatAiInput(props: ChatAiInputProps) {
 
   const isAiMode = mode === "ai";
   const hasDraft = result !== null;
+  const [confirmStatus, setConfirmStatus] = useState<ChatDraftStatus>("idle");
+  const [confirmError, setConfirmError] = useState<string | undefined>();
+  const isConfirming = confirmStatus === "confirming";
 
   const handleSparkleToggle = useCallback(() => {
+    if (isConfirming) return;
     if (hasDraft || isParsing) {
       reset();
       setText("");
       setMode("normal");
+      setConfirmStatus("idle");
+      setConfirmError(undefined);
       return;
     }
     setMode((prev) => (prev === "ai" ? "normal" : "ai"));
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, [hasDraft, isParsing, reset]);
+  }, [hasDraft, isParsing, isConfirming, reset]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = text.trim();
@@ -61,18 +69,26 @@ export function ChatAiInput(props: ChatAiInputProps) {
         e.preventDefault();
         handleSubmit();
       }
-      if (e.key === "Escape" && isAiMode) {
+      if (e.key === "Escape" && isAiMode && !isConfirming) {
         setMode("normal");
         reset();
         setText("");
       }
     },
-    [handleSubmit, isAiMode, reset],
+    [handleSubmit, isAiMode, isConfirming, reset],
   );
 
   const handleConfirm = useCallback(
-    (draft: ChatExpenseResult) => {
-      onConfirmDraft(draft);
+    async (draft: ChatExpenseResult) => {
+      setConfirmStatus("confirming");
+      setConfirmError(undefined);
+      const outcome = await onConfirmDraft(draft);
+      if ("error" in outcome) {
+        setConfirmStatus("error");
+        setConfirmError(outcome.error);
+        return;
+      }
+      setConfirmStatus("confirmed");
       reset();
       setText("");
       setMode("normal");
@@ -82,12 +98,13 @@ export function ChatAiInput(props: ChatAiInputProps) {
 
   const handleEdit = useCallback(
     (draft: ChatExpenseResult) => {
+      if (isConfirming) return;
       onEditDraft(draft);
       reset();
       setText("");
       setMode("normal");
     },
-    [onEditDraft, reset],
+    [onEditDraft, reset, isConfirming],
   );
 
   return (
@@ -125,6 +142,8 @@ export function ChatAiInput(props: ChatAiInputProps) {
               result={result}
               onConfirm={handleConfirm}
               onEdit={handleEdit}
+              status={confirmStatus}
+              errorMessage={confirmError}
             />
           </motion.div>
         )}
