@@ -6,6 +6,7 @@ import {
   createTestGroupWithMembers,
   createTestDmGroup,
   authenticateAs,
+  getBalanceBetween,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -262,6 +263,94 @@ describe.skipIf(!isIntegrationTestReady)("confirm_chat_expense RPC — behavior"
     // Bob owes Alice 4000 more than before (sign depends on lexical user_a/user_b
     // ordering, magnitude is what we assert deterministically here).
     expect(Math.abs(afterTotal - beforeTotal)).toBe(4000);
+  });
+});
+
+describe.skipIf(!isIntegrationTestReady)("Quick Charge (#474) — exact two-party liability", () => {
+  let actor: TestUser;
+  let counterparty: TestUser;
+  let dmGroupId: string;
+
+  beforeAll(async () => {
+    [actor, counterparty] = await Promise.all([
+      createTestUser({ name: "QuickCharge Actor" }),
+      createTestUser({ name: "QuickCharge Counterparty" }),
+    ]);
+    const dmGroup = await createTestDmGroup(actor, counterparty);
+    dmGroupId = dmGroup.id;
+  });
+
+  afterAll(async () => {
+    const databaseUrl = process.env.SUPABASE_DB_URL;
+    if (!databaseUrl || !dmGroupId) return;
+    const pg = new Client(databaseUrl);
+    await pg.connect();
+    await pg.query(
+      "DELETE FROM public.chat_expense_confirmation_operations WHERE group_id = $1 OR initiated_by_user_id = ANY($2::uuid[])",
+      [dmGroupId, [actor.id, counterparty.id]],
+    );
+    await pg.query(
+      "DELETE FROM public.expense_graph_save_operations WHERE group_id = $1 OR caller_id = ANY($2::uuid[])",
+      [dmGroupId, [actor.id, counterparty.id]],
+    );
+    await pg.query("DELETE FROM public.expenses WHERE group_id = $1", [dmGroupId]);
+    await pg.query("DELETE FROM public.groups WHERE id = $1", [dmGroupId]);
+    await pg.end();
+  });
+
+  // #474: the entered amount is the counterparty's whole liability, never
+  // divided. Real balance-delta oracle, not just the intermediate rows.
+  it.each([
+    ["self-paid, N=1 cent", true, 1],
+    ["self-paid, N=1001 (odd) cents", true, 1001],
+    ["counterparty-paid, N=1001 (odd) cents", false, 1001],
+  ])("%s: exact shares, one payer, and exact balance delta", async (_label, actorPays, amountCents) => {
+    const rpc = makeRpc(actor);
+    const beforeBalance = await getBalanceBetween(dmGroupId, actor.id, counterparty.id);
+
+    const shares = actorPays
+      ? [
+          { user_id: actor.id, share_amount_cents: 0 },
+          { user_id: counterparty.id, share_amount_cents: amountCents },
+        ]
+      : [
+          { user_id: actor.id, share_amount_cents: amountCents },
+          { user_id: counterparty.id, share_amount_cents: 0 },
+        ];
+    const payers = actorPays
+      ? [{ user_id: actor.id, amount_cents: amountCents }]
+      : [{ user_id: counterparty.id, amount_cents: amountCents }];
+
+    const result = await rpc("confirm_chat_expense", {
+      p_operation_id: crypto.randomUUID(),
+      p_request: request(dmGroupId, actor, counterparty, {
+        title: `Quick Charge ${amountCents}`,
+        total_amount_cents: amountCents,
+        shares,
+        payers,
+      }),
+    });
+    expect(result.error).toBeNull();
+    expect(result.data?.outcome).toBe("committed");
+    const expenseId = result.data!.expense!.id;
+
+    const { data: shareRows } = await adminClient!
+      .from("expense_shares")
+      .select("user_id, share_amount_cents")
+      .eq("expense_id", expenseId);
+    expect(shareRows).toHaveLength(2);
+    expect(shareRows).toEqual(expect.arrayContaining(shares.map((s) => ({ user_id: s.user_id, share_amount_cents: s.share_amount_cents }))));
+
+    const { data: payerRows } = await adminClient!
+      .from("expense_payers")
+      .select("user_id, amount_cents")
+      .eq("expense_id", expenseId);
+    expect(payerRows).toHaveLength(1);
+    expect(payerRows![0]).toEqual({ user_id: payers[0].user_id, amount_cents: payers[0].amount_cents });
+
+    const afterBalance = await getBalanceBetween(dmGroupId, actor.id, counterparty.id);
+    const expectedDelta = actorPays ? -amountCents : amountCents;
+    expect(afterBalance - beforeBalance).toBe(expectedDelta);
   });
 });
 
