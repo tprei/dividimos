@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import {
-  adminClient,
-  isIntegrationTestReady,
-} from "@/test/integration-setup";
+import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   createTestUsers,
   createTestGroupWithMembers,
+  createTestDmGroup,
   authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -24,18 +22,8 @@ describe.skipIf(!isIntegrationTestReady)(
       const regularGroup = await createTestGroupWithMembers(alice, [bob]);
       regularGroupId = regularGroup.id;
 
-      const { data: dmGroup, error: dmErr } = await adminClient!
-        .from("groups")
-        .insert({ name: "DM: alice-bob", creator_id: alice.id, is_dm: true })
-        .select()
-        .single();
-      if (dmErr || !dmGroup) throw new Error(`Failed to create DM group: ${dmErr?.message}`);
+      const dmGroup = await createTestDmGroup(alice, bob);
       dmGroupId = dmGroup.id;
-
-      await adminClient!.from("group_members").insert([
-        { group_id: dmGroupId, user_id: alice.id, status: "accepted", invited_by: alice.id },
-        { group_id: dmGroupId, user_id: bob.id, status: "accepted", invited_by: alice.id },
-      ]);
     });
 
     it("regular query without is_dm filter returns both groups", async () => {

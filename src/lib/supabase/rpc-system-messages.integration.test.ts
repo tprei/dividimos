@@ -3,6 +3,7 @@ import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUser,
   createTestGroupWithMembers,
+  createTestDmGroup,
   createAndActivateExpense,
   settleDebt,
   authenticateAs,
@@ -38,12 +39,8 @@ describe.skipIf(!isIntegrationTestReady)(
       ]);
 
       // Create a DM group
-      const dmGroup = await createTestGroupWithMembers(alice, [bob]);
+      const dmGroup = await createTestDmGroup(alice, bob);
       dmGroupId = dmGroup.id;
-      await adminClient!
-        .from("groups")
-        .update({ is_dm: true })
-        .eq("id", dmGroupId);
 
       // Create a regular group
       const regularGroup = await createTestGroupWithMembers(alice, [bob]);

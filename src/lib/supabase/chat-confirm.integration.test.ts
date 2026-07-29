@@ -4,6 +4,7 @@ import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUser,
   createTestGroupWithMembers,
+  createTestDmGroup,
   authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -59,9 +60,8 @@ describe.skipIf(!isIntegrationTestReady)("confirm_chat_expense RPC — behavior"
       createTestUser({ name: "Confirm Carol" }),
     ]);
 
-    const dmGroup = await createTestGroupWithMembers(alice, [bob]);
+    const dmGroup = await createTestDmGroup(alice, bob);
     dmGroupId = dmGroup.id;
-    await adminClient!.from("groups").update({ is_dm: true }).eq("id", dmGroupId);
   });
 
   afterAll(async () => {
@@ -275,9 +275,8 @@ describe.skipIf(!isIntegrationTestReady)("get_chat_expense_confirmation / cancel
       createTestUser({ name: "GetCancel Alice" }),
       createTestUser({ name: "GetCancel Bob" }),
     ]);
-    const dmGroup = await createTestGroupWithMembers(alice, [bob]);
+    const dmGroup = await createTestDmGroup(alice, bob);
     dmGroupId = dmGroup.id;
-    await adminClient!.from("groups").update({ is_dm: true }).eq("id", dmGroupId);
   });
 
   afterAll(async () => {
