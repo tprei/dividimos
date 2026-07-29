@@ -1449,7 +1449,7 @@ export type Database = {
           p_limit: number
           p_window_seconds: number
         }
-        Returns: number
+        Returns: boolean
       }
       join_group_via_link: {
         Args: {

@@ -30,40 +30,115 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "push.send-pair":     { limit: 5,   windowSeconds: 60 },
 };
 
-const BYPASS =
-  process.env.RATE_LIMIT_DISABLED === "1" &&
-  process.env.NODE_ENV !== "production";
+const MAX_SUBJECT_BYTES = 512;
 
-if (BYPASS) {
-  console.warn(
-    "[rate-limit] RATE_LIMIT_DISABLED=1 — rate limiting is OFF. " +
-      "This is for integration tests only. NEVER set this in production.",
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+function isBypassActive(): boolean {
+  return (
+    process.env.RATE_LIMIT_DISABLED === "1" &&
+    process.env.NODE_ENV === "test" &&
+    process.env.VITEST === "true"
   );
 }
 
+if (
+  process.env.RATE_LIMIT_DISABLED === "1" &&
+  process.env.NODE_ENV !== "production"
+) {
+  console.warn(
+    "[rate-limit] RATE_LIMIT_DISABLED=1 is set. It only takes effect under " +
+      "NODE_ENV=test with the Vitest runner; every other server (including " +
+      "a NODE_ENV=test synthetic/staging server) still enforces limits. " +
+      "NEVER set this in production.",
+  );
+}
+
+/**
+ * Spend one token from `bucket` for `subject` (the authenticated user ID).
+ *
+ * Resolves on success. Throws `AppError("RATE_LIMIT_EXCEEDED", ...)` when the
+ * bucket is saturated for this window, or `AppError("RATE_LIMIT_UNAVAILABLE",
+ * ...)` when the limiter infrastructure itself cannot be trusted to have
+ * made a decision (unknown bucket, invalid subject, RPC/transport failure,
+ * or any non-boolean RPC result). Callers must fail closed on the
+ * unavailable case rather than allow the request through.
+ */
 export async function enforceRateLimit(
   bucket: RateLimitBucket,
   subject: string,
 ): Promise<void> {
-  if (BYPASS) return;
-
   const config = CONFIGS[bucket];
-  const admin = createAdminClient();
-
-  const { error } = await admin.rpc("increment_rate_limit", {
-    p_bucket:         bucket,
-    p_subject:        subject,
-    p_limit:          config.limit,
-    p_window_seconds: config.windowSeconds,
-  });
-
-  if (!error) return;
-
-  if (error.message.includes("rate_limited")) {
-    throw new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
-      statusCode: 429,
-    });
+  if (!config) {
+    throw new AppError(
+      "RATE_LIMIT_UNAVAILABLE",
+      "Não foi possível verificar o limite de requisições.",
+    );
   }
 
-  throw new AppError("INTERNAL_ERROR", `Rate-limit RPC failed: ${error.message}`);
+  if (
+    typeof subject !== "string" ||
+    subject.trim().length === 0 ||
+    byteLength(subject) > MAX_SUBJECT_BYTES
+  ) {
+    throw new AppError(
+      "RATE_LIMIT_UNAVAILABLE",
+      "Não foi possível verificar o limite de requisições.",
+    );
+  }
+
+  if (isBypassActive()) return;
+
+  let data: unknown;
+  try {
+    const admin = createAdminClient();
+    const result = await admin.rpc("increment_rate_limit", {
+      p_bucket:         bucket,
+      p_subject:        subject,
+      p_limit:          config.limit,
+      p_window_seconds: config.windowSeconds,
+    });
+
+    if (result.error) {
+      console.error(
+        `[rate-limit] increment_rate_limit RPC error for bucket=${bucket}:`,
+        result.error.message,
+      );
+      throw new AppError(
+        "RATE_LIMIT_UNAVAILABLE",
+        "Não foi possível verificar o limite de requisições.",
+      );
+    }
+
+    data = result.data;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    console.error(
+      `[rate-limit] increment_rate_limit call failed for bucket=${bucket}:`,
+      error,
+    );
+    throw new AppError(
+      "RATE_LIMIT_UNAVAILABLE",
+      "Não foi possível verificar o limite de requisições.",
+    );
+  }
+
+  if (data === true) return;
+
+  if (data === false) {
+    throw new AppError(
+      "RATE_LIMIT_EXCEEDED",
+      "Muitas requisições. Tente novamente em alguns segundos.",
+    );
+  }
+
+  console.error(
+    `[rate-limit] increment_rate_limit returned a non-boolean result for bucket=${bucket}`,
+  );
+  throw new AppError(
+    "RATE_LIMIT_UNAVAILABLE",
+    "Não foi possível verificar o limite de requisições.",
+  );
 }

@@ -1,5 +1,8 @@
-process.env.RATE_LIMIT_DISABLED = "1";
-
+// Issue #475: no global RATE_LIMIT_DISABLED bypass here. A suite-wide
+// bypass would make every future route-to-RPC enforcement test a false
+// green. A test that genuinely does not exercise rate limiting may opt out
+// only within its own isolated module/env scope (see
+// src/lib/rate-limit.test.ts for the guarded non-production bypass itself).
 import { afterAll, beforeAll, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
