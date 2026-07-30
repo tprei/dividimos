@@ -81,32 +81,32 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
       const group = await createTestGroupWithMembers(alice, [bob]);
       groupId = group.id;
 
-      const { data: draft } = await adminClient!
-        .from("expenses")
-        .insert({
+      const aliceClient = authenticateAs(alice);
+      const { data: draftData } = await aliceClient.rpc("save_expense_draft_graph", {
+        p_expense: {
           group_id: groupId,
-          creator_id: alice.id,
           title: "Draft",
+          merchant_name: null,
           expense_type: "single_amount",
           total_amount: 2000,
-          status: "draft",
-        })
-        .select("id")
-        .single();
-
-      draftId = draft!.id;
-
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: draftId, user_id: alice.id, share_amount_cents: 1000 },
-        { expense_id: draftId, user_id: bob.id, share_amount_cents: 1000 },
-      ]);
-      await adminClient!.from("expense_payers").insert({
-        expense_id: draftId,
-        user_id: alice.id,
-        amount_cents: 2000,
+          service_fee_basis_points: 0,
+          fixed_fees: 0,
+        },
+        p_items: [],
+        p_shares: [
+          { user_id: alice.id, share_amount_cents: 1000 },
+          { user_id: bob.id, share_amount_cents: 1000 },
+        ],
+        p_payers: [{ user_id: alice.id, amount_cents: 2000 }],
+        p_guests: [],
+        p_guest_shares: [],
+        p_participant_order: [],
+        p_expected_graph_revision: 0,
+        p_save_operation_id: crypto.randomUUID(),
       });
-    });
 
+      draftId = (draftData as { id: string })!.id;
+    });
     it("creator cannot flip status from draft to active via direct UPDATE", async () => {
       const client = authenticateAs(alice);
       const { error } = await client
@@ -114,7 +114,8 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
         .update({ status: "active" })
         .eq("id", draftId);
 
-      // Either an RLS error or a silent no-op; status must still be 'draft'
+      // The expense-graph guard blocks direct UPDATEs on expenses.
+      // Either the guard, RLS, or a silent no-op — status must be 'draft'.
       if (!error) {
         const { data } = await adminClient!
           .from("expenses")
@@ -123,16 +124,19 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
           .single();
         expect(data!.status).toBe("draft");
       } else {
-        expect(error.message.toLowerCase()).toMatch(
-          /row-level security|permission|violates/,
-        );
+        expect(
+          error.message.toLowerCase().match(
+            /row-level security|permission|violates|graph_mutation_unauthorized/,
+          ),
+        ).not.toBeNull();
       }
     });
 
-    it("activate_expense RPC still transitions draft → active", async () => {
+    it("activate_saved_expense RPC still transitions draft → active", async () => {
       const client = authenticateAs(alice);
-      const { error } = await client.rpc("activate_expense", {
+      const { error } = await client.rpc("activate_saved_expense", {
         p_expense_id: draftId,
+        p_expected_graph_revision: 1,
       });
 
       expect(error).toBeNull();
