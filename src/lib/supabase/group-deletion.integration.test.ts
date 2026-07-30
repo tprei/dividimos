@@ -967,13 +967,12 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
       "SELECT id FROM public.expenses WHERE id = $1 FOR UPDATE",
       [expenseId],
     );
-    await draftDelete.client.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
     const draftDeleteResult = await dispatchQuery(
       draftDelete.client,
       "DELETE FROM public.expenses WHERE id = $1",
       [expenseId],
     );
-    expect("error" in draftDeleteResult).toBe(false);
+    expect("error" in draftDeleteResult).toBe(true);
 
     const claim = await openSubject(carol);
     let claimDone = false;
@@ -996,8 +995,8 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const expenseInsert = await openSubject(alice);
     const expenseInsertResult = await dispatchQuery(
       expenseInsert.client,
-      "INSERT INTO public.expenses (group_id, creator_id, title, expense_type, total_amount, status) VALUES ($1, $2, 'FK race expense', 'single_amount', 1, 'draft') RETURNING id",
-      [expenseFirstGroup, alice.id],
+      "SELECT public.save_expense_draft_graph(jsonb_build_object('group_id', $1::text, 'title', 'FK race expense', 'merchant_name', null, 'expense_type', 'single_amount', 'total_amount', 1, 'service_fee_basis_points', 0, 'fixed_fees', 0), '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 0, gen_random_uuid())",
+      [expenseFirstGroup],
     );
     expect("error" in expenseInsertResult).toBe(false);
 
@@ -1187,7 +1186,6 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
 
     const draftDelete = await openSubject(alice);
     let draftDeleteDone = false;
-    await draftDelete.client.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
     const draftDeletePromise = dispatchQuery(
       draftDelete.client,
       "DELETE FROM public.expenses WHERE id = $1",
@@ -1198,8 +1196,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     await waitForLock(draftDelete.pid, claim.pid, () => draftDeleteDone);
     await finishSubject(claim, true);
     const draftDeleteResult = await draftDeletePromise;
-    expect("error" in draftDeleteResult).toBe(false);
-    await finishSubject(draftDelete, true);
+    expect("error" in draftDeleteResult).toBe(true);
   });
 
   it("keeps service-role teardown independent from the authenticated RPC", async () => {
@@ -1236,14 +1233,14 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     let expenseInsertDone = false;
     const expenseInsertPromise = dispatchQuery(
       expenseInsert.client,
-      "INSERT INTO public.expenses (group_id, creator_id, title, expense_type, total_amount, status) VALUES ($1, $2, 'FK delete-first expense', 'single_amount', 1, 'draft') RETURNING id",
-      [expenseGroup, alice.id],
+      "SELECT public.save_expense_draft_graph(jsonb_build_object('group_id', $1::text, 'title', 'FK delete-first expense', 'merchant_name', null, 'expense_type', 'single_amount', 'total_amount', 1, 'service_fee_basis_points', 0, 'fixed_fees', 0), '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, 0, gen_random_uuid())",
+      [expenseGroup],
     ).finally(() => {
       expenseInsertDone = true;
     });
     await waitForLock(expenseInsert.pid, deletion.pid, () => expenseInsertDone);
     await finishSubject(deletion, true);
-    expectSqlError(await expenseInsertPromise, "PST10");
+    expectSqlError(await expenseInsertPromise, "PST05");
     await finishSubject(expenseInsert, false);
 
     const settlementGroup = await createRegularGroup(alice, [bob]);
