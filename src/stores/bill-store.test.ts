@@ -54,6 +54,51 @@ describe("createExpense", () => {
   });
 });
 
+describe("addParticipant / addGuest (#495: zero share, no payer, eligibility)", () => {
+  it("adding a participant creates no payer and derives a zero share until assigned", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    // Alice consumes the whole item; Bob is added afterward with no assignment.
+    useBillStore.getState().assignItem(itemId, "user-alice", "fixed", 10000);
+    s.addParticipant(userBob);
+
+    const state = useBillStore.getState();
+    expect(state.participants.map((p) => p.id)).toContain("user-bob");
+    expect(state.payers).toEqual([]);
+    expect(state.getParticipantTotal("user-bob")).toBe(0);
+    expect(state.getParticipantTotal("user-alice")).toBe(11000);
+  });
+
+  it("a zero-share added participant is an eligible payer candidate", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 5000 });
+    s.addParticipant(userBob);
+    expect(useBillStore.getState().getParticipantTotal("user-bob")).toBe(0);
+    const result = useBillStore.getState().setPayerFull("user-bob");
+    expect(result).toBeNull();
+    expect(useBillStore.getState().payers).toMatchObject([{ userId: "user-bob", amountCents: 5000 }]);
+  });
+
+  it("adding a guest creates no payer and is never an eligible payer candidate", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 5000 });
+    const guestId = s.addGuest("Maria");
+
+    const state = useBillStore.getState();
+    expect(state.guests.map((g) => g.id)).toContain(guestId);
+    expect(state.payers).toEqual([]);
+    expect(state.getParticipantTotal(guestId)).toBe(0);
+
+    const result = useBillStore.getState().setPayerFull(guestId);
+    expect(result).toEqual({ code: "ineligible_payer", payerIndex: 0 });
+    expect(useBillStore.getState().payers).toEqual([]);
+  });
+});
+
 describe("splitItemEqually", () => {
   function setupItemizedExpense() {
     const s = setup();
