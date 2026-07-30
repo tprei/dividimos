@@ -768,7 +768,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const writer = await openSubject(alice);
     const activationResult = await dispatchQuery(
       writer.client,
-      "SELECT public.activate_expense($1)",
+      "SELECT public.activate_saved_expense($1, (SELECT graph_revision FROM public.expenses WHERE id = $1))",
       [expenseId],
     );
     expect("error" in activationResult).toBe(false);
@@ -1064,7 +1064,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const writer = await openSubject(alice);
     const activationResult = await dispatchQuery(
       writer.client,
-      "SELECT public.activate_expense($1)",
+      "SELECT public.activate_saved_expense($1, (SELECT graph_revision FROM public.expenses WHERE id = $1))",
       [expenseId],
     );
     expect("error" in activationResult).toBe(false);
