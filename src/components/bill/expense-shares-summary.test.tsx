@@ -40,7 +40,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense()}
-        allParticipants={[alice, bob]}
       />,
     );
 
@@ -53,7 +52,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense()}
-        allParticipants={[alice, bob]}
       />,
     );
 
@@ -64,7 +62,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense({ payers: [] })}
-        allParticipants={[alice, bob]}
       />,
     );
 
@@ -75,7 +72,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense()}
-        allParticipants={[alice, bob]}
       />,
     );
 
