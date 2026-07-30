@@ -249,16 +249,12 @@ export default function BillDetailPage({
     return () => { cancelled = true; };
   }, [expenseData?.groupId, currentUser?.id]);
 
-  const onExpenseUpdate = useCallback(
-    (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => {
-      setExpenseData((prev) => {
-        if (!prev || prev.id !== updated.id) return prev;
-        return { ...prev, status: updated.status, updatedAt: updated.updatedAt };
-      });
-      useBillStore.getState().patchExpenseFromRealtime(updated);
-    },
-    [],
-  );
+  const onExpenseUpdate = useCallback(() => {
+    // Broadcast wake: refetch the complete authorized snapshot
+    if (expenseData?.id) {
+      loadExpenseData(expenseData.id);
+    }
+  }, [expenseData?.id, loadExpenseData]);
 
   useRealtimeExpense(expenseData?.id, onExpenseUpdate);
 

@@ -2,25 +2,21 @@
 
 import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { validateRealtimeRow } from "./realtime-payload";
 import type { ExpenseStatus } from "@/types";
 
-type ExpenseUpdateRow = {
-  id: string;
-  status: ExpenseStatus;
-  updated_at: string;
-};
-
-const EXPENSE_STRING_KEYS = ["id", "status", "updated_at"] as const;
-
 /**
- * Subscribe to realtime changes on a specific expense row.
- * Calls `onUpdate` with the changed fields when the expense is updated
- * (e.g., status transitions like draft → active → settled).
+ * Subscribe to realtime changes on a specific expense row via private
+ * Broadcast wakes (#477 Slice 6). The server sends a wake carrying only
+ * the expense ID and graph revision — no financial data. On receiving a
+ * wake, the caller refetches the authorized snapshot.
+ *
+ * Previously used Postgres Changes (which sent full row payloads).
+ * Postgres Changes was removed from the `expenses` table; the server now
+ * sends minimal Broadcast wakes from the graph-mutation finalizer.
  */
 export function useRealtimeExpense(
   expenseId: string | undefined,
-  onUpdate: (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => void,
+  onUpdate: () => void,
 ) {
   // Stabilize callback ref to avoid channel churn on every render.
   const callbackRef = useRef(onUpdate);
@@ -34,29 +30,14 @@ export function useRealtimeExpense(
     const supabase = createClient();
 
     const channel = supabase
-      .channel(`expense:${expenseId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "expenses",
-          filter: `id=eq.${expenseId}`,
-        },
-        (payload) => {
-          const row = validateRealtimeRow<ExpenseUpdateRow>(
-            payload.new,
-            EXPENSE_STRING_KEYS,
-          );
-          if (!row) return;
-
-          callbackRef.current({
-            id: row.id,
-            status: row.status,
-            updatedAt: row.updated_at,
-          });
-        },
-      )
+      .channel(`expense_wake:${expenseId}`)
+      .on("broadcast", { event: "wake" }, (payload) => {
+        // The wake carries { expense_id, graph_revision }. We don't use
+        // the revision here — the caller refetches the full snapshot.
+        const data = payload.payload as { expense_id?: string } | null;
+        if (data?.expense_id !== expenseId) return;
+        callbackRef.current();
+      })
       .subscribe();
 
     return () => {
