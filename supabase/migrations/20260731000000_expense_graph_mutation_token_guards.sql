@@ -924,7 +924,20 @@ DECLARE
   v_expense            public.expenses%ROWTYPE;
   v_revision           integer;
   v_token              uuid;
+  v_maintenance        boolean;
 BEGIN
+  -- #477/#495: "Run #477's financial compatibility guard as the first
+  -- body action and require authentication." financial_internal is
+  -- revoked from every PostgREST role, but this SECURITY DEFINER
+  -- function runs with its owner's privileges regardless of caller.
+  SELECT maintenance INTO v_maintenance
+    FROM financial_internal.financial_compatibility_state
+   WHERE id = true;
+
+  IF v_maintenance THEN
+    RAISE EXCEPTION USING ERRCODE = 'PST09', MESSAGE = 'financial_maintenance';
+  END IF;
+
   IF v_caller IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'PST01', MESSAGE = 'auth_required';
   END IF;

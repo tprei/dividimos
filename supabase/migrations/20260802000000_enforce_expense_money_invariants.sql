@@ -89,7 +89,18 @@ DECLARE
   v_payer_total                bigint := 0;
   v_protected_claimant_id     uuid;
   v_token                     uuid;
+  v_maintenance                boolean;
 BEGIN
+  -- #477/#495: "Run #477's financial compatibility guard as the first
+  -- body action and require authentication."
+  SELECT maintenance INTO v_maintenance
+    FROM financial_internal.financial_compatibility_state
+   WHERE id = true;
+
+  IF v_maintenance THEN
+    RAISE EXCEPTION USING ERRCODE = 'PST09', MESSAGE = 'financial_maintenance';
+  END IF;
+
   IF v_caller IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'PST01', MESSAGE = 'auth_required';
   END IF;

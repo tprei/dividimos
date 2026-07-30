@@ -34,7 +34,18 @@ DECLARE
   v_user_b                 uuid;
   v_delta                  integer;
   v_token                  uuid;
+  v_maintenance             boolean;
 BEGIN
+  -- #477/#495: "Run #477's financial compatibility guard as the first
+  -- body action and require authentication."
+  SELECT maintenance INTO v_maintenance
+    FROM financial_internal.financial_compatibility_state
+   WHERE id = true;
+
+  IF v_maintenance THEN
+    RAISE EXCEPTION 'financial_maintenance' USING ERRCODE = 'PST09';
+  END IF;
+
   IF v_caller_id IS NULL THEN
     RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'PST01';
   END IF;
