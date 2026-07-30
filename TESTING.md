@@ -24,9 +24,17 @@ supabase start
 npm run test:integration
 ```
 
-**What to test here:** RLS policies, RPC functions (`activate_expense`, `confirm_settlement`), foreign key constraints, row-level access control.
+**What to test here:** RLS policies, RPC functions (`save_expense_draft_graph`, `activate_saved_expense`, `confirm_settlement`), foreign key constraints, row-level access control, deterministic concurrency/mutation-guard behavior (see below).
 
 **What NOT to test here:** UI rendering, browser navigation, multi-step user journeys.
+
+### Deterministic concurrency (no timing-based races)
+
+`src/test/db-race-barrier.ts`'s `forceLockContentionRace` proves two RPC calls actually contend for the same PostgreSQL lock, instead of trusting `Promise.allSettled` network/event-loop timing (issue #519). It opens an independent raw `pg` connection, acquires the row lock the racing calls are expected to contend for, fires both calls while holding it, and polls `pg_stat_activity` until both racing backends are observed simultaneously present with at least one genuinely lock-waiting — a database-native proof of contention, not a guess from wall-clock delay. Used by `concurrency.integration.test.ts`, `financial-compatibility-gate.integration.test.ts`, and others wherever a test must prove a real lock-order outcome rather than assert on whichever side happened to run first.
+
+### Testing against seeded corruption (rollback-only fixtures)
+
+Some guards (e.g. `PST07/orphan_payer_state`) only fire against persisted state that valid application code can never produce — an orphan payer with no matching share row, a corrupt graph mid-migration. To test these without leaving corrupt data in the database: open a transaction on a direct `pg` connection, call the non-granted `begin_expense_graph_direct_mutation(uuid[])` to open a mutation token, insert the corrupt row directly, exercise the guard/RPC under test, then `ROLLBACK` — the corruption never commits. See `payer-reachability-repair.integration.test.ts` for worked examples. `financial_internal.set_financial_maintenance(boolean)` is the equivalent helper for exercising the financial maintenance gate (`PST09`); tests that use it must reset it to `false` in `afterEach`/`afterAll` since the singleton is shared across the whole suite.
 
 ## Synthetic Tests (E2E)
 
