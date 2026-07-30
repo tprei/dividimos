@@ -287,6 +287,28 @@ BEGIN
       RAISE EXCEPTION USING ERRCODE = 'PST07', MESSAGE = 'graph_state_corrupt';
     END IF;
 
+    -- #495 spec: "run the persisted-draft validator plus payer
+    -- reachability before considering the replacement payload. A
+    -- current payer without its required user share/map entity is
+    -- PST07/orphan_payer_state; any persisted corruption aborts before
+    -- incoming graph validation, operation insertion, or DML." The
+    -- composite expense_payers_participant_fkey makes this structurally
+    -- unreachable for any normally-persisted draft; defense in depth
+    -- only, for a corrupt state that could otherwise only arise from a
+    -- direct-connection bypass.
+    IF EXISTS (
+      SELECT 1
+        FROM public.expense_payers ep
+       WHERE ep.expense_id = v_expense.id
+         AND NOT EXISTS (
+           SELECT 1 FROM public.expense_shares es
+            WHERE es.expense_id = ep.expense_id
+              AND es.user_id = ep.user_id
+         )
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'PST07', MESSAGE = 'orphan_payer_state';
+    END IF;
+
     v_next_revision := v_expense.graph_revision + 1;
   END IF;
 

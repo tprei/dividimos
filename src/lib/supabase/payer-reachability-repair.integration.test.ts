@@ -435,3 +435,263 @@ describe.skipIf(!isIntegrationTestReady)("payer_reachability_repair migration (#
     }
   });
 });
+
+describe.skipIf(!isIntegrationTestReady)(
+  "activate_saved_expense rejects a corrupt persisted draft (#495)",
+  () => {
+    let alice: TestUser;
+    let bob: TestUser;
+    let groupId: string;
+
+    beforeAll(async () => {
+      [alice, bob] = await Promise.all([
+        createTestUser({ name: "Activation Orphan Alice" }),
+        createTestUser({ name: "Activation Orphan Bob" }),
+      ]);
+      const group = await createTestGroupWithMembers(alice, [bob]);
+      groupId = group.id;
+    });
+
+    it("returns PST07/orphan_payer_state and performs no activation when the persisted draft has an orphan payer", async () => {
+      const creatorClient = authenticateAs(alice);
+      const { data: saveResult, error: saveError } = await creatorClient.rpc(
+        "save_expense_draft_graph",
+        {
+          p_expense: {
+            group_id: groupId,
+            title: "Orphan activation rejection fixture",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 1000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [
+            { user_id: alice.id, share_amount_cents: 500 },
+            { user_id: bob.id, share_amount_cents: 500 },
+          ],
+          p_payers: [{ user_id: bob.id, amount_cents: 1000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        },
+      );
+      expect(saveError).toBeNull();
+      const saved = saveResult as { id: string; graph_revision: number };
+      const expenseId = saved.id;
+
+      const pg = new Client(databaseUrl!);
+      await pg.connect();
+      try {
+        await pg.query("BEGIN");
+        // Corrupt the persisted draft directly: remove Bob's share,
+        // leaving his payer row orphaned -- exactly what the pre-#495
+        // save RPC's delete-without-reachability-check bug could
+        // produce, and what the composite FK now prevents from ever
+        // being a *committed* fact, so this only exists transiently
+        // inside this never-committed transaction.
+        await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [
+          [expenseId],
+        ]);
+        await deleteShareBypassingCascade(pg, expenseId, bob.id);
+        await settleOpenDirectToken(pg);
+
+        // The seeding step's own 'direct' mutation legitimately bumped
+        // graph_revision once (exactly as it would for a real prior
+        // transaction that produced this corruption); read the current
+        // value back so the activation call's CAS check reflects reality
+        // rather than racing a revision the corruption itself advanced.
+        const corrupted = await pg.query<{ graph_revision: number }>(
+          "select graph_revision from public.expenses where id = $1",
+          [expenseId],
+        );
+        const corruptedRevision = corrupted.rows[0].graph_revision;
+
+        // Call the real activate_saved_expense RPC as the real creator,
+        // on this same connection, so the corruption is visible to it
+        // without ever having been committed. auth.uid() reads
+        // request.jwt.claim.sub; SECURITY DEFINER functions run with the
+        // definer's privileges regardless of calling role, so no role
+        // switch is needed to reach this owner-defined function.
+        await pg.query("select set_config('request.jwt.claim.sub', $1, true)", [alice.id]);
+
+        await expect(
+          pg.query("select public.activate_saved_expense($1, $2)", [
+            expenseId,
+            corruptedRevision,
+          ]),
+        ).rejects.toThrow(/orphan_payer_state/);
+      } finally {
+        await pg.query("ROLLBACK").catch(() => {});
+        await pg.end();
+      }
+
+      // Outside the rolled-back transaction, on a fresh connection:
+      // nothing committed. The draft is exactly as it was before the
+      // corrupted activation attempt -- still draft, no allocation
+      // entities, unchanged revision -- because the rejected activation
+      // never got the chance to write anything, and the corruption
+      // itself was never committed either.
+      const verify = new Client(databaseUrl!);
+      await verify.connect();
+      try {
+        const after = await verify.query<{ status: string; graph_revision: number }>(
+          "select status, graph_revision from public.expenses where id = $1",
+          [expenseId],
+        );
+        expect(after.rows[0].status).toBe("draft");
+        expect(after.rows[0].graph_revision).toBe(saved.graph_revision);
+
+        const entities = await verify.query<{ n: number }>(
+          "select count(*)::int as n from public.expense_allocation_entities where expense_id = $1",
+          [expenseId],
+        );
+        expect(entities.rows[0].n).toBe(0);
+
+        const bobShare = await verify.query(
+          "select share_amount_cents from public.expense_shares where expense_id = $1 and user_id = $2",
+          [expenseId, bob.id],
+        );
+        expect(bobShare.rows).toHaveLength(1);
+        expect(bobShare.rows[0].share_amount_cents).toBe(500);
+      } finally {
+        await verify.end();
+      }
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "save_expense_draft_graph rejects a corrupt persisted draft before considering the replacement (#495)",
+  () => {
+    let alice: TestUser;
+    let bob: TestUser;
+    let groupId: string;
+
+    beforeAll(async () => {
+      [alice, bob] = await Promise.all([
+        createTestUser({ name: "Save Orphan Alice" }),
+        createTestUser({ name: "Save Orphan Bob" }),
+      ]);
+      const group = await createTestGroupWithMembers(alice, [bob]);
+      groupId = group.id;
+    });
+
+    it("returns PST07/orphan_payer_state and performs no replacement when the existing persisted draft has an orphan payer", async () => {
+      const creatorClient = authenticateAs(alice);
+      const { data: saveResult, error: saveError } = await creatorClient.rpc(
+        "save_expense_draft_graph",
+        {
+          p_expense: {
+            group_id: groupId,
+            title: "Orphan save-replacement rejection fixture",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 1000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [
+            { user_id: alice.id, share_amount_cents: 500 },
+            { user_id: bob.id, share_amount_cents: 500 },
+          ],
+          p_payers: [{ user_id: bob.id, amount_cents: 1000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        },
+      );
+      expect(saveError).toBeNull();
+      const saved = saveResult as { id: string; graph_revision: number };
+      const expenseId = saved.id;
+
+      const pg = new Client(databaseUrl!);
+      await pg.connect();
+      try {
+        await pg.query("BEGIN");
+        // Corrupt the persisted draft, exactly as in the activation
+        // fixture above.
+        await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [
+          [expenseId],
+        ]);
+        await deleteShareBypassingCascade(pg, expenseId, bob.id);
+        await settleOpenDirectToken(pg);
+
+        const corrupted = await pg.query<{ graph_revision: number }>(
+          "select graph_revision from public.expenses where id = $1",
+          [expenseId],
+        );
+        const corruptedRevision = corrupted.rows[0].graph_revision;
+
+        // Attempt a well-formed replacement save (e.g. renaming the
+        // title) through the real RPC as the real creator, on this same
+        // connection. A valid incoming graph must not silently repair
+        // the persisted orphan -- it must be rejected before the
+        // replacement is ever considered.
+        await pg.query("select set_config('request.jwt.claim.sub', $1, true)", [alice.id]);
+
+        await expect(
+          pg.query(
+            `select public.save_expense_draft_graph(
+               $1::jsonb, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9
+             )`,
+            [
+              JSON.stringify({
+                id: expenseId,
+                group_id: groupId,
+                title: "Renamed after corruption",
+                merchant_name: null,
+                expense_type: "single_amount",
+                total_amount: 1000,
+                service_fee_basis_points: 0,
+                fixed_fees: 0,
+              }),
+              JSON.stringify([]),
+              JSON.stringify([
+                { user_id: alice.id, share_amount_cents: 500 },
+                { user_id: bob.id, share_amount_cents: 500 },
+              ]),
+              JSON.stringify([{ user_id: bob.id, amount_cents: 1000 }]),
+              JSON.stringify([]),
+              JSON.stringify([]),
+              JSON.stringify([]),
+              corruptedRevision,
+              crypto.randomUUID(),
+            ],
+          ),
+        ).rejects.toThrow(/orphan_payer_state/);
+      } finally {
+        await pg.query("ROLLBACK").catch(() => {});
+        await pg.end();
+      }
+
+      // Nothing committed: title is unchanged, Bob's share (which the
+      // corruption removed) is back per the rollback, revision unchanged.
+      const verify = new Client(databaseUrl!);
+      await verify.connect();
+      try {
+        const after = await verify.query<{ title: string; graph_revision: number }>(
+          "select title, graph_revision from public.expenses where id = $1",
+          [expenseId],
+        );
+        expect(after.rows[0].title).toBe("Orphan save-replacement rejection fixture");
+        expect(after.rows[0].graph_revision).toBe(saved.graph_revision);
+
+        const bobShare = await verify.query(
+          "select share_amount_cents from public.expense_shares where expense_id = $1 and user_id = $2",
+          [expenseId, bob.id],
+        );
+        expect(bobShare.rows).toHaveLength(1);
+        expect(bobShare.rows[0].share_amount_cents).toBe(500);
+      } finally {
+        await verify.end();
+      }
+    });
+  },
+);
