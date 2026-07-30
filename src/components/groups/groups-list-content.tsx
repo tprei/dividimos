@@ -14,7 +14,7 @@ import { createClient } from "@/lib/supabase/client";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { useUser } from "@/hooks/use-auth";
 import { notifyGroupAccepted } from "@/lib/push/push-notify";
-import type { GroupMemberStatus, UserProfile } from "@/types";
+import type { UserProfile } from "@/types";
 
 interface GroupEntry {
   id: string;
@@ -176,11 +176,16 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
 
   const handleAcceptInvite = async (groupId: string) => {
     if (!user) return;
-    await createClient()
-      .from("group_members")
-      .update({ status: "accepted" as GroupMemberStatus, accepted_at: new Date().toISOString() })
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
+    // group_members_accept_denied RLS policy blocks every direct UPDATE;
+    // acceptance must go through this RPC (matching decline's own RPC
+    // path below, and every other membership-transition RPC).
+    const { error } = await createClient().rpc("accept_group_invitation", {
+      p_group_id: groupId,
+    });
+    if (error) {
+      toast.error("Não foi possível aceitar o convite. Tente novamente.");
+      return;
+    }
     notifyGroupAccepted(groupId, user.id).catch(() => {});
     await refetch();
   };
