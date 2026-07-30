@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MAX_EXPENSE_CENTS } from "@/lib/expense-money";
 import { cn } from "@/lib/utils";
 
@@ -63,30 +63,60 @@ export function CurrencyInput({
   ...rest
 }: CurrencyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
+
+  // #477: candidates outside [0, upper] are never committed via
+  // onChangeCents (no store mutation) — they are held here as a local,
+  // uncommitted display override so the user can see what they typed.
+  // A valid candidate clears the override and commits normally. No
+  // clamped maximum ever appears.
+  const [rawOverride, setRawOverride] = useState<string | null>(null);
+
+  // A prop-driven value change (hydration/reset/reload) always restores
+  // canonical valid text, discarding any stale uncommitted override.
+  useEffect(() => {
+    setRawOverride(null);
+  }, [valueCents]);
 
   useEffect(() => {
-    const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
-    onValidityChange?.(valueCents >= 0 && valueCents <= upper);
-  }, [valueCents, maxCents, onValidityChange]);
+    const isValid = rawOverride === null;
+    onValidityChange?.(isValid);
+  }, [rawOverride, onValidityChange]);
+
+  const commitOrOverride = useCallback(
+    (candidateCents: number, displayText: string) => {
+      if (candidateCents >= 0 && candidateCents <= upper) {
+        setRawOverride(null);
+        onChangeCents(candidateCents);
+      } else {
+        setRawOverride(displayText);
+      }
+    },
+    [upper, onChangeCents],
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (disabled) return;
 
+      const base = rawOverride !== null ? (parseBrazilianToCents(rawOverride) ?? valueCents) : valueCents;
+
       if (e.key === "Backspace") {
         e.preventDefault();
-        onChangeCents(Math.max(0, Math.floor(valueCents / 10)));
+        const next = Math.max(0, Math.floor(base / 10));
+        commitOrOverride(next, formatCentsDisplay(next));
         return;
       }
 
       if (e.key >= "0" && e.key <= "9") {
         e.preventDefault();
         const digit = parseInt(e.key, 10);
-        onChangeCents(valueCents * 10 + digit);
+        const next = base * 10 + digit;
+        commitOrOverride(next, formatCentsDisplay(next));
         return;
       }
     },
-    [valueCents, onChangeCents, disabled],
+    [valueCents, rawOverride, disabled, commitOrOverride],
   );
 
   const handleChange = useCallback(
@@ -94,10 +124,10 @@ export function CurrencyInput({
       const raw = e.target.value;
       const cents = parseBrazilianToCents(raw);
       if (cents !== null) {
-        onChangeCents(cents);
+        commitOrOverride(cents, raw);
       }
     },
-    [onChangeCents],
+    [commitOrOverride],
   );
 
   const handleFocus = useCallback(() => {
@@ -115,21 +145,20 @@ export function CurrencyInput({
       const text = e.clipboardData.getData("text");
       const cents = parseBrazilianToCents(text);
       if (cents !== null) {
-        onChangeCents(cents);
+        commitOrOverride(cents, text);
       }
     },
-    [onChangeCents],
+    [commitOrOverride],
   );
 
-  const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
-  const isInvalid = valueCents < 0 || valueCents > upper;
+  const isInvalid = rawOverride !== null;
 
   return (
     <input
       ref={inputRef}
       type="text"
       inputMode="decimal"
-      value={formatCentsDisplay(valueCents)}
+      value={rawOverride ?? formatCentsDisplay(valueCents)}
       onKeyDown={handleKeyDown}
       onChange={handleChange}
       onFocus={handleFocus}
