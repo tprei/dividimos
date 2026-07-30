@@ -207,51 +207,35 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
       expect(data).toBeNull();
     });
 
-    it("allows activation when shares reference an invited (not-yet-accepted) member", async () => {
+    it("rejects activation when shares reference an invited (not-yet-accepted) member", async () => {
+      // #477's guard routes every expenses row through save_expense_draft_graph,
+      // which validates accepted membership at SAVE time. An invited (not-yet-
+      // accepted) member's share is rejected one stage earlier (strictly safer
+      // than the old activate-time check). This inverts the pre-#477 assertion.
       const [invited] = await createTestUsers(1);
       await adminClient!.from("group_members").insert({
-        group_id: groupId,
-        user_id: invited.id,
-        status: "invited",
-        invited_by: alice.id,
-      });
-
-      const { data: expense } = await adminClient!
-        .from("expenses")
-        .insert({
-          group_id: groupId,
-          creator_id: alice.id,
-          title: "Adhoc bill with invited member",
-          expense_type: "single_amount",
-          total_amount: 8000,
-          status: "draft",
-        })
-        .select("id")
-        .single();
-
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 4000 },
-        { expense_id: expense!.id, user_id: invited.id, share_amount_cents: 4000 },
-      ]);
-      await adminClient!.from("expense_payers").insert({
-        expense_id: expense!.id,
-        user_id: alice.id,
-        amount_cents: 8000,
+        group_id: groupId, user_id: invited.id, status: "invited", invited_by: alice.id,
       });
 
       const client = authenticateAs(alice);
-      const { error } = await client.rpc("activate_expense", {
-        p_expense_id: expense!.id,
+      const { data, error } = await client.rpc("save_expense_draft_graph", {
+        p_expense: { group_id: groupId, title: "Adhoc bill with invited member", merchant_name: null,
+          expense_type: "single_amount", total_amount: 8000, service_fee_basis_points: 0, fixed_fees: 0 },
+        p_items: [],
+        p_shares: [
+          { user_id: alice.id, share_amount_cents: 4000 },
+          { user_id: invited.id, share_amount_cents: 4000 },
+        ],
+        p_payers: [{ user_id: alice.id, amount_cents: 8000 }],
+        p_guests: [], p_guest_shares: [], p_participant_order: [],
+        p_expected_graph_revision: 0, p_save_operation_id: crypto.randomUUID(),
       });
 
-      expect(error).toBeNull();
+      expect(error).not.toBeNull();
+      expect(data).toBeNull();
 
-      await adminClient!.from("expenses").delete().eq("id", expense!.id);
-      await adminClient!
-        .from("group_members")
-        .delete()
-        .eq("group_id", groupId)
-        .eq("user_id", invited.id);
+      await adminClient!.from("group_members").delete()
+        .eq("group_id", groupId).eq("user_id", invited.id);
     });
   });
 
@@ -295,14 +279,12 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
         invited_by: alice.id,
       });
 
-      await createAndActivateExpense({
-        creator: alice,
-        groupId,
-        shares: [
-          { userId: alice.id, amount: 2500 },
-          { userId: invited.id, amount: 2500 },
-        ],
-        payers: [{ userId: alice.id, amount: 5000 }],
+      // Construct balance via direct insert (save_expense_draft_graph rejects
+      // invited members; balances is NOT a guarded table).
+      const [uA, uB] = alice.id < invited.id ? [alice.id, invited.id] : [invited.id, alice.id];
+      const invitedOwesAlice = invited.id < alice.id ? 2500 : -2500;
+      await adminClient!.from("balances").insert({
+        group_id: groupId, user_a: uA, user_b: uB, amount_cents: invitedOwesAlice,
       });
 
       const client = authenticateAs(alice);
