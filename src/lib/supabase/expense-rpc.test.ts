@@ -7,7 +7,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 import { createClient } from "@/lib/supabase/client";
-import { activateExpense } from "./expense-rpc";
+import { activateExpense, loadExpenseGraphSnapshot } from "./expense-rpc";
 
 let mock: MockSupabase;
 
@@ -128,6 +128,106 @@ describe("activateExpense", () => {
     expect(result).toEqual({
       error: "Resposta de ativação inválida",
       code: "invalid_graph_mutation_result",
+    });
+  });
+});
+
+describe("loadExpenseGraphSnapshot", () => {
+  const validSnapshot = {
+    expense_id: "exp-1",
+    group_id: "group-1",
+    graph_revision: 3,
+    title: "Uber",
+    merchant_name: null,
+    expense_type: "single_amount",
+    total_amount: 2000,
+    service_fee_basis_points: 0,
+    fixed_fees: 0,
+    items: [],
+    item_ids: [],
+    draft_claim_protected_user_ids: [],
+    status: "draft",
+    participant_order: [
+      { kind: "user", user_id: "user-alice" },
+      { kind: "user", user_id: "user-bob" },
+    ],
+    shares: [
+      { user_id: "user-alice", share_amount_cents: 1000 },
+      { user_id: "user-bob", share_amount_cents: 1000 },
+    ],
+    guest_shares: [],
+    payers: [{ user_id: "user-alice", amount_cents: 2000 }],
+    guests: [],
+  };
+
+  it("returns error when not authenticated", async () => {
+    const result = await loadExpenseGraphSnapshot("exp-1");
+
+    expect(result).toEqual({
+      error: "Não autenticado",
+      code: "not_authenticated",
+    });
+  });
+
+  it("calls the RPC and strictly decodes a valid snapshot", async () => {
+    mock.setUser({ id: "user-alice" });
+    mock.onRpc("load_expense_graph_snapshot", {
+      data: validSnapshot,
+      error: null,
+    });
+
+    const result = await loadExpenseGraphSnapshot("exp-1");
+
+    expect(result).not.toBeNull();
+    expect(result && "error" in result).toBe(false);
+    if (!result || "error" in result) return;
+    expect(result.expenseId).toBe("exp-1");
+    expect(result.status).toBe("draft");
+    expect(result.participantOrder).toHaveLength(2);
+    expect(mock.findCalls("rpc:load_expense_graph_snapshot", "rpc")).toEqual([
+      {
+        table: "rpc:load_expense_graph_snapshot",
+        method: "rpc",
+        args: ["load_expense_graph_snapshot", { p_expense_id: "exp-1" }],
+      },
+    ]);
+  });
+
+  it("returns null when the expense is unknown or not readable (non-disclosing)", async () => {
+    mock.setUser({ id: "user-alice" });
+    mock.onRpc("load_expense_graph_snapshot", { data: null, error: null });
+
+    const result = await loadExpenseGraphSnapshot("exp-missing");
+
+    expect(result).toBeNull();
+  });
+
+  it("returns typed errors from RPC failures", async () => {
+    mock.setUser({ id: "user-alice" });
+    mock.onRpc("load_expense_graph_snapshot", {
+      error: { message: "permission_denied: not a group member" },
+    });
+
+    const result = await loadExpenseGraphSnapshot("exp-1");
+
+    expect(result).toEqual({
+      error: "not a group member",
+      code: "permission_denied",
+    });
+  });
+
+  it("rejects a malformed/incomplete snapshot instead of returning partial data", async () => {
+    mock.setUser({ id: "user-alice" });
+    mock.onRpc("load_expense_graph_snapshot", {
+      data: { ...validSnapshot, shares: undefined },
+      error: null,
+    });
+
+    const result = await loadExpenseGraphSnapshot("exp-1");
+
+    expect(result).toEqual({
+      error: "Resposta de snapshot inválida",
+      code: "invalid_graph_snapshot",
     });
   });
 });

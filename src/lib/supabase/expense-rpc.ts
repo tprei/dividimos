@@ -2,6 +2,8 @@ import { createClient } from "@/lib/supabase/client";
 import { createLogger, logError } from "@/lib/logger";
 import {
   decodeExpenseActivationResult,
+  decodeExpenseGraphSnapshot,
+  type DecodedExpenseGraphSnapshot,
   type GraphRevision,
 } from "@/lib/expense-money";
 import type { ActivateExpenseRequest, ActivateExpenseResult } from "@/types";
@@ -113,4 +115,67 @@ export async function activateExpense(
     ...decoded.value,
     updatedBalances: [],
   };
+}
+
+export type LoadExpenseGraphSnapshotError = Readonly<{
+  error: string;
+  code: string;
+}>;
+
+/**
+ * Calls `load_expense_graph_snapshot` to load the current, canonical
+ * expense graph (parent, items, shares, payers, guest shares, guests,
+ * participant order, and `graph_revision`) through the strict #477 decoder.
+ *
+ * The RPC is non-leaking: an unknown expense id and an expense the caller
+ * has no read authority for both resolve to `null` (no existence
+ * disclosure). A malformed/corrupt response the decoder rejects, or an RPC
+ * error, surfaces as a typed error instead.
+ */
+export async function loadExpenseGraphSnapshot(
+  expenseId: string,
+): Promise<DecodedExpenseGraphSnapshot | null | LoadExpenseGraphSnapshotError> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    logError(logger, "User not authenticated", {
+      operation: "loadExpenseGraphSnapshot",
+    });
+    return { error: "Não autenticado", code: "not_authenticated" };
+  }
+
+  const { data, error: rpcError } = await supabase.rpc(
+    "load_expense_graph_snapshot",
+    { p_expense_id: expenseId },
+  );
+
+  if (rpcError) {
+    const parsed = parseRpcError(rpcError.message);
+    logError(logger, "load_expense_graph_snapshot RPC failed", {
+      operation: "loadExpenseGraphSnapshot",
+      expenseId,
+      code: rpcError.code ?? parsed.code,
+      detail: parsed.detail,
+    });
+    return { error: parsed.detail, code: parsed.code };
+  }
+
+  if (data === null) {
+    return null;
+  }
+
+  const decoded = decodeExpenseGraphSnapshot(data);
+  if (!decoded.ok) {
+    logError(logger, "load_expense_graph_snapshot returned an invalid snapshot", {
+      operation: "loadExpenseGraphSnapshot",
+      expenseId,
+      issue: decoded.issue,
+    });
+    return { error: "Resposta de snapshot inválida", code: decoded.issue.code };
+  }
+
+  return decoded.value;
 }
