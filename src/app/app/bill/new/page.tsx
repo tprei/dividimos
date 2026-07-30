@@ -290,7 +290,7 @@ function NewBillPageContent() {
         result.merchant || undefined,
       );
       store.updateExpense({
-        serviceFeePercent: result.serviceFeePercent || 0,
+        serviceFeePercent: (result.serviceFeeBasisPoints || 0) / 100,
       });
 
       for (const item of result.items) {
@@ -305,7 +305,7 @@ function NewBillPageContent() {
 
     setTitle(result.merchant || "Nota escaneada");
     setMerchantName(result.merchant || "");
-    setServiceFee(String(result.serviceFeePercent || 0));
+    setServiceFee(String((result.serviceFeeBasisPoints || 0) / 100));
     setStep("participants");
   }, [authUser, store]);
 

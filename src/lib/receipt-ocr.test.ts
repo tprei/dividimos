@@ -35,7 +35,8 @@ describe("parseReceiptImage", () => {
         totalCents: 5800,
       },
     ],
-    serviceFeePercent: 10,
+    serviceFeeBasisPoints: 1000,
+    fixedFeesCents: 0,
     totalCents: 9020,
   };
 
@@ -84,7 +85,7 @@ describe("parseReceiptImage", () => {
     expect(callArgs.config.temperature).toBe(0);
   });
 
-  it("rounds float cents to integers", async () => {
+  it("drops an item whose unit price is not an exact integer instead of rounding it (issue #477: never fabricate)", async () => {
     const resultWithFloats = {
       merchant: "Test",
       items: [
@@ -92,11 +93,11 @@ describe("parseReceiptImage", () => {
           description: "Item A",
           quantity: 1,
           unitPriceCents: 1250.7,
-          totalCents: 1250.3,
+          totalCents: 1251,
         },
       ],
-      serviceFeePercent: 10,
-      totalCents: 1375.8,
+      serviceFeeBasisPoints: 1000,
+      totalCents: 1376,
     };
     mockGenerateContent.mockResolvedValue({
       text: JSON.stringify(resultWithFloats),
@@ -104,14 +105,13 @@ describe("parseReceiptImage", () => {
 
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
+    // Root totalCents is a valid integer in this fixture and passes through
+    // unchanged; only the item with a non-integer unitPriceCents is dropped.
     expect(result.totalCents).toBe(1376);
-    // qty=1: sanitizer rounds to 1250, then absorb adds 1 centavo
-    // to close the gap (receipt 1376 vs items 1250 + fee 125 = 1375)
-    expect(result.items[0].unitPriceCents).toBe(1251);
-    expect(result.items[0].totalCents).toBe(1251);
+    expect(result.items).toHaveLength(0);
   });
 
-  it("clamps negative/zero quantity to 0.001", async () => {
+  it("drops an item with zero/negative quantity instead of clamping it", async () => {
     const resultWithZeroQty = {
       merchant: "Test",
       items: [
@@ -122,7 +122,7 @@ describe("parseReceiptImage", () => {
           totalCents: 1000,
         },
       ],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       totalCents: 1000,
     };
     mockGenerateContent.mockResolvedValue({
@@ -131,7 +131,23 @@ describe("parseReceiptImage", () => {
 
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
-    expect(result.items[0].quantity).toBe(0.001);
+    expect(result.items).toHaveLength(0);
+  });
+
+  it("drops an item missing unitPriceCents instead of deriving it from quantity + total", async () => {
+    const resultMissingUnit = {
+      merchant: "Test",
+      items: [{ description: "Item A", quantity: 2, totalCents: 2000 }],
+      serviceFeeBasisPoints: 0,
+      totalCents: 2000,
+    };
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify(resultMissingUnit),
+    });
+
+    const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
+
+    expect(result.items).toHaveLength(0);
   });
 
   it("throws when Gemini returns empty response", async () => {
@@ -159,7 +175,7 @@ describe("parseReceiptImage", () => {
   });
 
   it("handles receipt with no service fee", async () => {
-    const noFeeResult: ReceiptOcrResult = {
+    const noFeeResult = {
       merchant: "Lanchonete",
       items: [
         {
@@ -169,7 +185,7 @@ describe("parseReceiptImage", () => {
           totalCents: 2500,
         },
       ],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       totalCents: 2500,
     };
     mockGenerateContent.mockResolvedValue({
@@ -178,21 +194,15 @@ describe("parseReceiptImage", () => {
 
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
-    expect(result.serviceFeePercent).toBe(0);
+    expect(result.serviceFeeBasisPoints).toBe(0);
+    expect(result.fixedFeesCents).toBe(0);
   });
 
   it("handles receipt with null merchant", async () => {
-    const nullMerchantResult: ReceiptOcrResult = {
+    const nullMerchantResult = {
       merchant: null,
-      items: [
-        {
-          description: "Item",
-          quantity: 1,
-          unitPriceCents: 1000,
-          totalCents: 1000,
-        },
-      ],
-      serviceFeePercent: 0,
+      items: [{ description: "Item", quantity: 1, unitPriceCents: 1000, totalCents: 1000 }],
+      serviceFeeBasisPoints: 0,
       totalCents: 1000,
     };
     mockGenerateContent.mockResolvedValue({

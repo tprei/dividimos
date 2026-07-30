@@ -3114,13 +3114,134 @@ function decodeVoiceExpenseResult(
 }
 
 /**
- * Decode a raw chat or voice provider result: exact root/item/participant
- * (/allocation, for chat) keys, #578 quantity, and #477 cent/line arithmetic
- * delegated to `validateExpenseMoney`. Neither source has fee fields; the
- * adapter supplies canonical zero basis points/fixed fees. Never repairs a
- * defect - #476's malformed-custom-allocation-collapses-to-`[]` rule is the
- * sole documented exception, and it never rejects otherwise-valid base money
- * for it.
+ * Decoded OCR/SEFAZ receipt-scan result. Unlike chat/voice, a receipt may
+ * carry a real service fee/fixed fee (Brazilian "taxa de serviço"), so its
+ * money is validated in `scan_review` mode: `CompleteExpenseMoney`, never the
+ * `source_parse` edit-only shape. An incomplete/zero/unreconciled receipt is
+ * rejected here and never reaches `ScannedItemsReview` (issue #477).
+ */
+export type DecodedReceiptExpense<
+  Source extends "ocr" | "sefaz",
+  M extends CompleteExpenseMoney = CompleteExpenseMoney,
+> = Readonly<{
+  source: Source;
+  merchantName: string | null;
+  money: M;
+}>;
+
+const RECEIPT_ROOT_KEYS = [
+  "merchantName",
+  "expenseType",
+  "totalAmountCents",
+  "serviceFeeBasisPoints",
+  "fixedFeesCents",
+  "items",
+] as const;
+
+/**
+ * Decode a raw OCR/SEFAZ receipt-scan result. Structural mirror of the
+ * chat/voice decoders (exact root/item keys, #578 quantity, #477 cent/line
+ * arithmetic delegated to `validateExpenseMoney`), but items and fees are
+ * `scan_review`-complete: the upstream extractor (`receipt-ocr.ts`/
+ * `nfce.ts`) must never call this with a fabricated/derived/defaulted
+ * quantity, unit price, line total, fee percentage, or root total (#477
+ * part 1 "SEFAZ/OCR extraction" rules) - this decoder only proves the wire
+ * shape and the exact arithmetic reconciliation, exactly like #468's
+ * canonical graph validator does for the persisted graph.
+ */
+function decodeReceiptExpenseResult(
+  source: "ocr" | "sefaz",
+  raw: unknown,
+): ValidationResult<DecodedReceiptExpense<"ocr" | "sefaz">, ExpenseDecodeIssue> {
+  if (!isStringRecord(raw)) {
+    return { ok: false, issue: structureIssue(source, [], "null") };
+  }
+  const rootKeys = Object.keys(raw);
+  for (const key of RECEIPT_ROOT_KEYS) {
+    if (!(key in raw)) {
+      return { ok: false, issue: structureIssue(source, [key], "missing_key") };
+    }
+  }
+  if (rootKeys.length !== RECEIPT_ROOT_KEYS.length) {
+    return { ok: false, issue: structureIssue(source, [], "unknown_key") };
+  }
+
+  const merchantNameRaw = raw.merchantName;
+  if (merchantNameRaw !== null) {
+    if (typeof merchantNameRaw !== "string" || merchantNameRaw.trim().length === 0) {
+      return { ok: false, issue: contractIssue(source, "metadata") };
+    }
+    if (countCodePoints(merchantNameRaw) > MAX_EXPENSE_SOURCE_MERCHANT_NAME_CODE_POINTS) {
+      return { ok: false, issue: contractIssue(source, "metadata") };
+    }
+  }
+  const merchantName: string | null = merchantNameRaw;
+
+  const expenseType = raw.expenseType;
+  if (expenseType !== "single_amount" && expenseType !== "itemized") {
+    return { ok: false, issue: contractIssue(source, "expense_type") };
+  }
+
+  if (!Array.isArray(raw.items)) {
+    return { ok: false, issue: structureIssue(source, ["items"], "wrong_type") };
+  }
+  const canonicalItems: unknown[] = [];
+  for (let i = 0; i < raw.items.length; i += 1) {
+    const item = raw.items[i];
+    if (!isStringRecord(item)) {
+      return { ok: false, issue: structureIssue(source, ["items", i], "wrong_type") };
+    }
+    const itemKeys = Object.keys(item);
+    if (itemKeys.length !== SOURCE_ITEM_KEYS.length || !SOURCE_ITEM_KEYS.every((k) => k in item)) {
+      return {
+        ok: false,
+        issue: structureIssue(
+          source,
+          ["items", i],
+          itemKeys.length > SOURCE_ITEM_KEYS.length ? "unknown_key" : "missing_key",
+        ),
+      };
+    }
+    canonicalItems.push({
+      description: item.description,
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents,
+      totalPriceCents: item.totalCents,
+    });
+  }
+
+  const moneyInput: ExpenseMoneyInput = {
+    expenseType,
+    totalAmountCents: raw.totalAmountCents,
+    serviceFeeBasisPoints: raw.serviceFeeBasisPoints,
+    fixedFeesCents: raw.fixedFeesCents,
+    items: canonicalItems,
+  };
+  const moneyResult = validateExpenseMoney(moneyInput, "scan_review");
+  if (!moneyResult.ok) {
+    return { ok: false, issue: moneyResult.issue };
+  }
+
+  const result: DecodedReceiptExpense<"ocr" | "sefaz"> = {
+    source,
+    merchantName,
+    money: moneyResult.value,
+  };
+  deepFreeze(result);
+  return { ok: true, value: result };
+}
+
+/**
+ * Decode a raw chat, voice, or OCR/SEFAZ receipt-scan provider result. Chat/
+ * voice have no fee fields and validate money in `source_parse` (edit-only,
+ * tolerates an incomplete/zero result); OCR/SEFAZ carry a real service/fixed
+ * fee and validate money in `scan_review` (rejects any incomplete/zero/
+ * unreconciled result outright - issue #477 "an invalid or incomplete
+ * receipt never mounts ScannedItemsReview"). Exact root/item (/participant/
+ * allocation, for chat) keys, #578 quantity, and #477 cent/line arithmetic
+ * are delegated to `validateExpenseMoney`. Never repairs a defect - #476's
+ * malformed-custom-allocation-collapses-to-`[]` rule is the sole documented
+ * exception, and it never rejects otherwise-valid base money for it.
  */
 export function decodeExpenseResult(
   source: "chat",
@@ -3135,14 +3256,21 @@ export function decodeExpenseResult(
   context: ExpenseSourceDecodeContext,
 ): ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>;
 export function decodeExpenseResult(
-  source: "chat" | "voice",
-  mode: "source_parse",
+  source: "ocr" | "sefaz",
+  mode: "scan_review",
   raw: unknown,
-  context: ExpenseSourceDecodeContext,
+): ValidationResult<DecodedReceiptExpense<"ocr" | "sefaz">, ExpenseDecodeIssue>;
+export function decodeExpenseResult(
+  source: ExpenseSource,
+  mode: "source_parse" | "scan_review",
+  raw: unknown,
+  context?: ExpenseSourceDecodeContext,
 ):
   | ValidationResult<DecodedChatExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>
-  | ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue> {
-  void mode;
+  | ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>
+  | ValidationResult<DecodedReceiptExpense<"ocr" | "sefaz">, ExpenseDecodeIssue> {
   void context;
-  return source === "chat" ? decodeChatExpenseResult(raw) : decodeVoiceExpenseResult(raw);
+  if (source === "chat") return decodeChatExpenseResult(raw);
+  if (source === "voice") return decodeVoiceExpenseResult(raw);
+  return decodeReceiptExpenseResult(source, raw);
 }
