@@ -189,4 +189,38 @@ describe("GroupsListContent", () => {
     // and the display still reflects the current (unchanged) invite.
     expect(screen.getByText("Churrasco")).toBeInTheDocument();
   });
+
+  it("calls accept_group_invitation RPC and refetches when Aceitar is clicked", async () => {
+    const user = userEvent.setup();
+    const invites = [{ groupId: "g-1", groupName: "Churrasco", invitedByName: "João" }];
+    render(<GroupsListContent initialGroups={[]} initialInvites={invites} />);
+
+    await user.click(screen.getByText("Aceitar"));
+
+    expect(mockRpcFn).toHaveBeenCalledWith("accept_group_invitation", {
+      p_group_id: "g-1",
+    });
+  });
+
+  it("keeps the invitation and shows retryable feedback when accept fails", async () => {
+    mockRpcFn.mockResolvedValueOnce({
+      data: null,
+      error: { message: "not_invited: only a pending invitation can be accepted" },
+    });
+
+    const user = userEvent.setup();
+    const invites = [{ groupId: "g-1", groupName: "Churrasco", invitedByName: "João" }];
+    render(<GroupsListContent initialGroups={[]} initialInvites={invites} />);
+
+    await user.click(screen.getByText("Aceitar"));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível aceitar o convite. Tente novamente.",
+      );
+    });
+    // The RLS-denied direct-update path silently no-oped forever; the RPC
+    // path surfaces failure and leaves the invite visible for retry.
+    expect(screen.getByText("Churrasco")).toBeInTheDocument();
+  });
 });
