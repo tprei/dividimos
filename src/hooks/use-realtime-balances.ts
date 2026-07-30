@@ -18,7 +18,7 @@ const BALANCE_NUMBER_KEYS = ["amount_cents"] as const;
  * instead of triggering a full reload (per data fetching rules).
  *
  * Listens for INSERT and UPDATE events — balances are upserted by the
- * `activate_expense` and `confirm_settlement` RPCs.
+ * `activate_saved_expense` and `confirm_settlement` RPCs.
  */
 export function useRealtimeBalances(
   groupId: string | undefined,

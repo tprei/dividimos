@@ -209,16 +209,17 @@ export interface Settlement {
 // RPC request / result types (type-safe Supabase RPC calls)
 // ============================================================
 
-/** Request payload for the activate_expense RPC function. */
+/** Request payload for the `activate_saved_expense` RPC function. */
 export interface ActivateExpenseRequest {
   /** The expense to transition from draft → active. */
   expense_id: string;
 }
 
 /**
- * Result returned by the activate_expense RPC function.
- * The RPC validates that shares sum to total, transitions the expense
- * to active, and atomically updates the balances table.
+ * Result shape built from the `activate_saved_expense` RPC response.
+ * The RPC re-validates the locked persisted graph (including payer
+ * reachability), is guarded by a `graph_revision` compare-and-swap,
+ * transitions the expense to active, and atomically updates balances.
  */
 export interface ActivateExpenseResult {
   /** The activated expense ID. */
