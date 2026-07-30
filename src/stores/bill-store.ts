@@ -801,7 +801,12 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       title: result.title || "Despesa por voz",
       merchantName: result.merchantName ?? undefined,
       totalAmount: result.amountCents,
-      serviceFeePercent: result.expenseType === "itemized" ? 10 : 0,
+      // #477: voice/chat provider results carry no fee data (the source
+      // schema has no fee field) - defaulting to 10% here would silently
+      // persist an unconfirmed fee the user never saw or set. The manual
+      // 10% default belongs only to the visibly-configured itemized form
+      // (createExpense/setExpenseType), never to source hydration.
+      serviceFeePercent: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -874,7 +879,9 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       title: result.title || "",
       merchantName: result.merchantName ?? undefined,
       totalAmount: result.amountCents,
-      serviceFeePercent: result.expenseType === "itemized" ? 10 : 0,
+      // #477: same rule as hydrateFromVoice - chat provider results carry
+      // no fee data, so hydration must never silently apply one.
+      serviceFeePercent: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
