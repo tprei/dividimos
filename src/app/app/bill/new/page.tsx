@@ -41,7 +41,8 @@ import type { NfceQrResult } from "@/lib/nfce-qr";
 import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
-import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
+import { saveExpenseDraft, loadExpense, resolveExpenseGraphSaveResult } from "@/lib/supabase/expense-actions";
+import { setPendingSaveOperation, clearPendingSaveOperation, consumePendingSaveOperation } from "@/lib/supabase/pending-save-operation";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
@@ -607,6 +608,36 @@ function NewBillPageContent() {
     }
   }, [searchParams]);
 
+  // Durable save-operation wrapper: persists to localStorage before the RPC
+  // call and clears after, enabling crash/restart recovery (#477 Slice 5).
+  const durableSaveDraft = useCallback(
+    async (params: Parameters<typeof saveExpenseDraft>[0]) => {
+      setPendingSaveOperation(params.saveOperationId, params.groupId);
+      try {
+        return await saveExpenseDraft(params);
+      } finally {
+        clearPendingSaveOperation();
+      }
+    },
+    [],
+  );
+
+  // Mount-time reconciliation: if a previous save response was lost (crash,
+  // tab close, network error), resolve the pending operation to recover
+  // the expense ID without a duplicate save.
+  useEffect(() => {
+    const pending = consumePendingSaveOperation();
+    if (!pending) return;
+    resolveExpenseGraphSaveResult(pending.operationId, pending.groupId)
+      .then((result) => {
+        if (result?.outcome === "committed") {
+          setRemoteBillId(result.expenseId);
+          draftRevisionRef.current = result.graphRevision;
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const buildDraftParams = useCallback((existingId?: string, groupIdOverride?: string) => {
     const state = useBillStore.getState();
     const effectiveGroupId = groupIdOverride ?? selectedGroupId;
@@ -768,7 +799,7 @@ function NewBillPageContent() {
         if (state.expense && state.participants.length >= 2) {
           const params = buildDraftParams(remoteBillId ?? undefined, groupId);
           if (params) {
-            const result = await saveExpenseDraft(params);
+            const result = await durableSaveDraft(params);
             if ("expenseId" in result) {
               setRemoteBillId(result.expenseId);
               draftRevisionRef.current = result.graphRevision;
@@ -781,7 +812,7 @@ function NewBillPageContent() {
       if (remoteBillId) {
         const params = buildDraftParams(remoteBillId);
         if (params) {
-          const result = await saveExpenseDraft(params);
+          const result = await durableSaveDraft(params);
           if ("expenseId" in result) {
             draftRevisionRef.current = result.graphRevision;
           }
@@ -789,7 +820,7 @@ function NewBillPageContent() {
       } else if (isDmMode && selectedGroupId) {
         const params = buildDraftParams(undefined, selectedGroupId);
         if (params) {
-          const result = await saveExpenseDraft(params);
+          const result = await durableSaveDraft(params);
           if ("expenseId" in result) {
             setRemoteBillId(result.expenseId);
             draftRevisionRef.current = result.graphRevision;
@@ -805,7 +836,7 @@ function NewBillPageContent() {
 
       const params = buildDraftParams(remoteBillId ?? undefined);
       if (params) {
-        const saveResult = await saveExpenseDraft(params);
+        const saveResult = await durableSaveDraft(params);
         const expenseId = "expenseId" in saveResult
           ? saveResult.expenseId
           : remoteBillId;
@@ -836,7 +867,7 @@ function NewBillPageContent() {
       next = steps[stepIndex + 2];
     }
     if (next) setStep(next.key);
-  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, isDmMode, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams]);
+  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, isDmMode, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams, durableSaveDraft]);
 
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
