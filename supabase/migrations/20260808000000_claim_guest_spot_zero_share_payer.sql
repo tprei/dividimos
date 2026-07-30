@@ -251,8 +251,16 @@ BEGIN
         accepted_at = COALESCE(public.group_members.accepted_at, now())
     WHERE public.group_members.status != 'accepted';
 
+  -- #495 spec: "advance graph_revision exactly once from r to r + 1" for
+  -- a real claim (this UPDATE never runs on the already-claimed/
+  -- idempotent-replay return path above, which returns before this
+  -- point) so authorized clients' revisioned snapshot refetch actually
+  -- observes the claim. 'claim' is a named token (graph_internal.
+  -- open_named_token), so unlike a 'direct' token its caller is allowed
+  -- to bump graph_revision inline -- exactly like activate_saved_expense.
   UPDATE public.expenses
-     SET updated_at = now()
+     SET updated_at = now(),
+         graph_revision = graph_revision + 1
    WHERE id = v_guest.expense_id;
 
   PERFORM graph_internal.close_token(v_token);
