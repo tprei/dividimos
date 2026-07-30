@@ -792,7 +792,7 @@ BEGIN
 
     IF v_target.revision_bumped THEN
       SELECT graph_revision INTO v_rev FROM public.expenses WHERE id = v_target.expense_id;
-      IF v_rev IS DISTINCT FROM v_target.starting_revision + 1 THEN
+      IF v_rev <= v_target.starting_revision THEN
         RAISE EXCEPTION USING ERRCODE = 'PST10', MESSAGE = 'revision_transition_mismatch: ' || v_target.expense_id::text;
       END IF;
     ELSIF NEW.source = 'direct' THEN
