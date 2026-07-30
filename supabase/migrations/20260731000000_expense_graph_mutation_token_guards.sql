@@ -958,6 +958,26 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'PST08', MESSAGE = 'stale_graph_revision';
   END IF;
 
+  -- #495 spec: "reconstruct persisted graph and run PST07/orphan_payer_state
+  -- reachability before payer sums, allocation-plan construction, balances,
+  -- status, message, or event work." The composite expense_payers_
+  -- participant_fkey now makes this structurally unreachable for any
+  -- normally-persisted draft -- this is deliberate defense in depth for a
+  -- corrupt state that could otherwise only arise from a direct-connection
+  -- bypass, so it never fires in ordinary operation.
+  IF EXISTS (
+    SELECT 1
+      FROM public.expense_payers ep
+     WHERE ep.expense_id = p_expense_id
+       AND NOT EXISTS (
+         SELECT 1 FROM public.expense_shares es
+          WHERE es.expense_id = ep.expense_id
+            AND es.user_id = ep.user_id
+       )
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'PST07', MESSAGE = 'orphan_payer_state';
+  END IF;
+
   v_revision := v_expense.graph_revision;
 
   v_token := graph_internal.open_named_token(p_expense_id, 'activation', v_revision, v_candidate_group_id);
