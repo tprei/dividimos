@@ -1187,6 +1187,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
 
     const draftDelete = await openSubject(alice);
     let draftDeleteDone = false;
+    await draftDelete.client.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
     const draftDeletePromise = dispatchQuery(
       draftDelete.client,
       "DELETE FROM public.expenses WHERE id = $1",
@@ -1242,7 +1243,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     });
     await waitForLock(expenseInsert.pid, deletion.pid, () => expenseInsertDone);
     await finishSubject(deletion, true);
-    expectSqlError(await expenseInsertPromise, "23503");
+    expectSqlError(await expenseInsertPromise, "PST10");
     await finishSubject(expenseInsert, false);
 
     const settlementGroup = await createRegularGroup(alice, [bob]);
