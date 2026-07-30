@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "pg";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,7 @@ import {
   createTestGroupWithMembers,
   createAndActivateExpense,
   authenticateAs,
+  deleteTestExpenses,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -692,6 +693,165 @@ describe.skipIf(!isIntegrationTestReady)(
       } finally {
         await verify.end();
       }
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "expense_payers_participant_fkey direct-connection behavior (#495)",
+  () => {
+    let alice: TestUser;
+    let bob: TestUser;
+    let groupId: string;
+    let pg: Client;
+    const createdExpenseIds: string[] = [];
+
+    beforeAll(async () => {
+      pg = new Client(databaseUrl!);
+      await pg.connect();
+      [alice, bob] = await Promise.all([
+        createTestUser({ name: "FK Direct Alice" }),
+        createTestUser({ name: "FK Direct Bob" }),
+      ]);
+      const group = await createTestGroupWithMembers(alice, [bob]);
+      groupId = group.id;
+    });
+
+    afterAll(async () => {
+      if (createdExpenseIds.length > 0) {
+        await deleteTestExpenses(pg, createdExpenseIds);
+      }
+      await pg.end();
+    });
+
+    it("rejects a direct orphan payer insert with exact SQLSTATE 23503 and constraint name when forced immediate", async () => {
+      const creatorClient = authenticateAs(alice);
+      const { data: saveResult, error: saveError } = await creatorClient.rpc(
+        "save_expense_draft_graph",
+        {
+          p_expense: {
+            group_id: groupId,
+            title: "FK direct-insert rejection fixture",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 500,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [{ user_id: alice.id, share_amount_cents: 500 }],
+          p_payers: [{ user_id: alice.id, amount_cents: 500 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        },
+      );
+      expect(saveError).toBeNull();
+      const expenseId = (saveResult as { id: string }).id;
+      createdExpenseIds.push(expenseId);
+
+      await pg.query("BEGIN");
+      try {
+        await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [
+          [expenseId],
+        ]);
+        // Set only this one constraint immediate -- not ALL -- exactly
+        // as the spec directs, so the assertion below can only be
+        // satisfied by this exact named FK, not some other guard/ACL
+        // error that happened to also be forced immediate.
+        await pg.query("SET CONSTRAINTS expense_payers_participant_fkey IMMEDIATE");
+
+        let caught: { code?: string; constraint?: string } | undefined;
+        try {
+          await pg.query(
+            "insert into public.expense_payers (expense_id, user_id, amount_cents) values ($1, $2, 500)",
+            [expenseId, bob.id],
+          );
+        } catch (error) {
+          caught = error as { code?: string; constraint?: string };
+        }
+        expect(caught).toBeDefined();
+        expect(caught!.code).toBe("23503");
+        expect(caught!.constraint).toBe("expense_payers_participant_fkey");
+      } finally {
+        await pg.query("ROLLBACK").catch(() => {});
+      }
+    });
+
+    it("cascades a share delete to its payer, compacts nothing else, and bumps revision once", async () => {
+      const creatorClient = authenticateAs(alice);
+      const { data: saveResult, error: saveError } = await creatorClient.rpc(
+        "save_expense_draft_graph",
+        {
+          p_expense: {
+            group_id: groupId,
+            title: "FK cascade fixture",
+            merchant_name: null,
+            expense_type: "itemized",
+            total_amount: 1000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [
+            { description: "Pizza", quantity: 1000, unit_price_cents: 1000, total_price_cents: 1000 },
+          ],
+          p_shares: [
+            { user_id: alice.id, share_amount_cents: 500 },
+            { user_id: bob.id, share_amount_cents: 500 },
+          ],
+          p_payers: [{ user_id: bob.id, amount_cents: 1000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        },
+      );
+      expect(saveError).toBeNull();
+      const saved = saveResult as { id: string; graph_revision: number };
+      const expenseId = saved.id;
+      createdExpenseIds.push(expenseId);
+
+      await pg.query("BEGIN");
+      await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [
+        [expenseId],
+      ]);
+      // A plain delete this time -- no cascade-suppression trick -- to
+      // observe the FK's ON DELETE CASCADE fire for real, as a
+      // committable fact rather than a corruption fixture.
+      await pg.query(
+        "delete from public.expense_shares where expense_id = $1 and user_id = $2",
+        [expenseId, bob.id],
+      );
+      await settleOpenDirectToken(pg);
+      await pg.query("COMMIT");
+
+      const bobShare = await pg.query(
+        "select 1 from public.expense_shares where expense_id = $1 and user_id = $2",
+        [expenseId, bob.id],
+      );
+      expect(bobShare.rows).toHaveLength(0);
+
+      const bobPayer = await pg.query(
+        "select 1 from public.expense_payers where expense_id = $1 and user_id = $2",
+        [expenseId, bob.id],
+      );
+      expect(bobPayer.rows).toHaveLength(0);
+
+      const aliceShare = await pg.query(
+        "select share_amount_cents from public.expense_shares where expense_id = $1 and user_id = $2",
+        [expenseId, alice.id],
+      );
+      expect(aliceShare.rows).toHaveLength(1);
+      expect(aliceShare.rows[0].share_amount_cents).toBe(500);
+
+      const after = await pg.query<{ graph_revision: number }>(
+        "select graph_revision from public.expenses where id = $1",
+        [expenseId],
+      );
+      expect(after.rows[0].graph_revision).toBe(saved.graph_revision + 1);
     });
   },
 );
