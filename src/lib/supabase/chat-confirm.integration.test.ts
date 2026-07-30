@@ -78,7 +78,14 @@ describe.skipIf(!isIntegrationTestReady)("confirm_chat_expense RPC — behavior"
       "DELETE FROM public.expense_graph_save_operations WHERE group_id = $1 OR caller_id = ANY($2::uuid[])",
       [dmGroupId, [alice.id, bob.id, carol.id]],
     );
+    await pg.query("BEGIN");
+    const { rows: expRows } = await pg.query("SELECT id FROM public.expenses WHERE group_id = $1", [dmGroupId]);
+    if (expRows.length > 0) {
+      const expIds = expRows.map((r: { id: string }) => r.id);
+      await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [expIds]);
+    }
     await pg.query("DELETE FROM public.expenses WHERE group_id = $1", [dmGroupId]);
+    await pg.query("COMMIT");
     await pg.query("DELETE FROM public.groups WHERE id = $1", [dmGroupId]);
     await pg.end();
   });
@@ -293,7 +300,14 @@ describe.skipIf(!isIntegrationTestReady)("Quick Charge (#474) — exact two-part
       "DELETE FROM public.expense_graph_save_operations WHERE group_id = $1 OR caller_id = ANY($2::uuid[])",
       [dmGroupId, [actor.id, counterparty.id]],
     );
+    await pg.query("BEGIN");
+    const { rows: expRows } = await pg.query("SELECT id FROM public.expenses WHERE group_id = $1", [dmGroupId]);
+    if (expRows.length > 0) {
+      const expIds = expRows.map((r: { id: string }) => r.id);
+      await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [expIds]);
+    }
     await pg.query("DELETE FROM public.expenses WHERE group_id = $1", [dmGroupId]);
+    await pg.query("COMMIT");
     await pg.query("DELETE FROM public.groups WHERE id = $1", [dmGroupId]);
     await pg.end();
   });
@@ -381,7 +395,14 @@ describe.skipIf(!isIntegrationTestReady)("get_chat_expense_confirmation / cancel
       "DELETE FROM public.expense_graph_save_operations WHERE group_id = $1 OR caller_id = ANY($2::uuid[])",
       [dmGroupId, [alice.id, bob.id]],
     );
+    await pg.query("BEGIN");
+    const { rows: expRows } = await pg.query("SELECT id FROM public.expenses WHERE group_id = $1", [dmGroupId]);
+    if (expRows.length > 0) {
+      const expIds = expRows.map((r: { id: string }) => r.id);
+      await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [expIds]);
+    }
     await pg.query("DELETE FROM public.expenses WHERE group_id = $1", [dmGroupId]);
+    await pg.query("COMMIT");
     await pg.query("DELETE FROM public.groups WHERE id = $1", [dmGroupId]);
     await pg.end();
   });
