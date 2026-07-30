@@ -134,7 +134,16 @@ function NewBillPageContent() {
   const [step, setStep] = useState<Step>("type");
   const [title, setTitle] = useState("");
   const [merchantName, setMerchantName] = useState("");
-  const [serviceFee, setServiceFee] = useState("10");
+  // #477: default "10" is only for a genuinely fresh manual entry, where
+  // it is visibly configured in the itemized info-step form. A session
+  // already hydrated before this component mounted (voice/chat source via
+  // group-detail-content.tsx's navigate-then-render flow) must reflect
+  // that source's real fee (never a source schema field) instead of
+  // silently overriding it with the manual default.
+  const [serviceFee, setServiceFee] = useState(() => {
+    const existing = useBillStore.getState().expense;
+    return existing ? String(existing.serviceFeePercent).replace(".", ",") : "10";
+  });
   const [fixedFees, setFixedFees] = useState("");
   const [navigating, setNavigating] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -399,7 +408,10 @@ function NewBillPageContent() {
     setTitle(result.title);
     setMerchantName(result.merchantName || "");
     if (result.expenseType === "itemized") {
-      setServiceFee("10");
+      // #477: hydrateFromVoice already set the store's fee to 0 (voice
+      // results carry no fee data) - mirror that here instead of
+      // re-introducing the manual-entry 10% default.
+      setServiceFee("0");
     }
     setStep("participants");
   }, [authUser, store, selectedGroupId]);
@@ -417,7 +429,7 @@ function NewBillPageContent() {
       setBillType(storeState.expense.expenseType);
       setTitle(storeState.expense.title);
       setMerchantName(storeState.expense.merchantName ?? "");
-      setServiceFee(String(storeState.expense.serviceFeePercent || 10));
+      setServiceFee(String(storeState.expense.serviceFeePercent));
       setFixedFees(storeState.expense.fixedFees ? String(storeState.expense.fixedFees / 100) : "");
       setRemoteBillId(draftId);
       setStep("participants");
@@ -496,7 +508,7 @@ function NewBillPageContent() {
       setBillType(loaded.expenseType);
       setTitle(loaded.title);
       setMerchantName(loaded.merchantName ?? "");
-      setServiceFee(String(loaded.serviceFeePercent || 10));
+      setServiceFee(String(loaded.serviceFeePercent));
       setFixedFees(loaded.fixedFees ? String(loaded.fixedFees / 100) : "");
       setRemoteBillId(draftId);
 

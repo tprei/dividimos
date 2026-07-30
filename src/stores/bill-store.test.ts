@@ -582,7 +582,7 @@ describe("hydrateFromVoice", () => {
     const { expense, items, totalAmountInput } = useBillStore.getState();
     expect(expense?.expenseType).toBe("itemized");
     expect(expense?.merchantName).toBe("Bar do Zé");
-    expect(expense?.serviceFeePercent).toBe(10);
+    expect(expense?.serviceFeePercent).toBe(0);
     expect(expense?.totalAmount).toBe(5500);
     expect(items).toHaveLength(2);
     expect(items[0].description).toBe("Cerveja");
@@ -1117,7 +1117,7 @@ describe("hydrateFromChatDraft", () => {
 
     const { expense, items, payers, totalAmountInput } = useBillStore.getState();
     expect(expense?.expenseType).toBe("itemized");
-    expect(expense?.serviceFeePercent).toBe(10);
+    expect(expense?.serviceFeePercent).toBe(0);
     expect(items).toHaveLength(2);
     expect(items[0].description).toBe("Arroz");
     expect(items[0].totalPriceCents).toBe(2000);
