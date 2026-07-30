@@ -252,11 +252,15 @@ export function ConversationsListContent({
 
   const handleAccept = useCallback(async (groupId: string) => {
     if (!user) return;
-    await createClient()
-      .from("group_members")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
+    // group_members_accept_denied RLS policy blocks every direct UPDATE;
+    // acceptance must go through this RPC (matching handleDecline below).
+    const { error } = await createClient().rpc("accept_group_invitation", {
+      p_group_id: groupId,
+    });
+    if (error) {
+      toast.error("Não foi possível aceitar o convite. Tente novamente.");
+      return;
+    }
     await refetch();
   }, [user, refetch]);
 
