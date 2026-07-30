@@ -8,7 +8,7 @@ import {
   createTestUsers,
   createTestGroupWithMembers,
   authenticateAs,
-  createAndActivateExpense,
+
   getBalanceBetween,
   type TestUser,
 } from "@/test/integration-helpers";

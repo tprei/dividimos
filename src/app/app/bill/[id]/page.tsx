@@ -249,12 +249,13 @@ export default function BillDetailPage({
     return () => { cancelled = true; };
   }, [expenseData?.groupId, currentUser?.id]);
 
+  const expenseId = expenseData?.id;
   const onExpenseUpdate = useCallback(() => {
     // Broadcast wake: refetch the complete authorized snapshot
-    if (expenseData?.id) {
-      loadExpenseData(expenseData.id);
+    if (expenseId) {
+      loadExpenseData(expenseId);
     }
-  }, [expenseData?.id, loadExpenseData]);
+  }, [expenseId, loadExpenseData]);
 
   useRealtimeExpense(expenseData?.id, onExpenseUpdate);
 
