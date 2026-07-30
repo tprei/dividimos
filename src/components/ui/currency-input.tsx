@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { MAX_EXPENSE_CENTS } from "@/lib/expense-money";
 import { cn } from "@/lib/utils";
 
@@ -8,11 +8,10 @@ interface CurrencyInputProps {
   valueCents: number;
   onChangeCents: (cents: number) => void;
   maxCents?: number;
+  onValidityChange?: (valid: boolean) => void;
   disabled?: boolean;
   className?: string;
   autoFocus?: boolean;
-  "aria-label"?: string;
-  "data-testid"?: string;
 }
 
 const minorUnitsPerReal = BigInt(100);
@@ -57,6 +56,7 @@ export function CurrencyInput({
   valueCents,
   onChangeCents,
   maxCents,
+  onValidityChange,
   disabled = false,
   className,
   autoFocus,
@@ -64,13 +64,10 @@ export function CurrencyInput({
 }: CurrencyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const clamp = useCallback(
-    (cents: number) => {
-      const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
-      return Math.min(Math.max(0, cents), upper);
-    },
-    [maxCents],
-  );
+  useEffect(() => {
+    const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
+    onValidityChange?.(valueCents >= 0 && valueCents <= upper);
+  }, [valueCents, maxCents, onValidityChange]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -78,19 +75,18 @@ export function CurrencyInput({
 
       if (e.key === "Backspace") {
         e.preventDefault();
-        onChangeCents(clamp(Math.floor(valueCents / 10)));
+        onChangeCents(Math.max(0, Math.floor(valueCents / 10)));
         return;
       }
 
       if (e.key >= "0" && e.key <= "9") {
         e.preventDefault();
         const digit = parseInt(e.key, 10);
-        const next = valueCents * 10 + digit;
-        onChangeCents(clamp(next));
+        onChangeCents(valueCents * 10 + digit);
         return;
       }
     },
-    [valueCents, onChangeCents, clamp, disabled],
+    [valueCents, onChangeCents, disabled],
   );
 
   const handleChange = useCallback(
@@ -98,10 +94,10 @@ export function CurrencyInput({
       const raw = e.target.value;
       const cents = parseBrazilianToCents(raw);
       if (cents !== null) {
-        onChangeCents(clamp(cents));
+        onChangeCents(cents);
       }
     },
-    [onChangeCents, clamp],
+    [onChangeCents],
   );
 
   const handleFocus = useCallback(() => {
@@ -119,11 +115,14 @@ export function CurrencyInput({
       const text = e.clipboardData.getData("text");
       const cents = parseBrazilianToCents(text);
       if (cents !== null) {
-        onChangeCents(clamp(cents));
+        onChangeCents(cents);
       }
     },
-    [onChangeCents, clamp],
+    [onChangeCents],
   );
+
+  const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
+  const isInvalid = valueCents < 0 || valueCents > upper;
 
   return (
     <input
@@ -137,8 +136,10 @@ export function CurrencyInput({
       onPaste={handlePaste}
       disabled={disabled}
       autoFocus={autoFocus}
+      aria-invalid={isInvalid || undefined}
       className={cn(
         "bg-transparent text-center tabular-nums outline-none placeholder:text-muted-foreground/40 disabled:pointer-events-none disabled:opacity-50",
+        isInvalid && "text-destructive",
         className,
       )}
       {...rest}
