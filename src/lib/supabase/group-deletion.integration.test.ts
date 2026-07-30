@@ -355,6 +355,38 @@ async function insertGuestExpenseChildren(
   );
 }
 
+/**
+ * Inserts a guest + guest_share via a direct-mutation-token transaction.
+ * Returns { guestId, claimToken }.
+ */
+async function insertGuardedGuest(
+  expenseId: string,
+  displayName: string,
+  shareAmountCents: number,
+): Promise<{ guestId: string; claimToken: string }> {
+  const conn = new Client({ connectionString: requireDatabaseUrl() });
+  await conn.connect();
+  try {
+    await conn.query("BEGIN");
+    await conn.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
+    const { rows } = await conn.query<{ id: string; claim_token: string }>(
+      "insert into public.expense_guests (expense_id, display_name) values ($1, $2) returning id, claim_token",
+      [expenseId, displayName],
+    );
+    await conn.query(
+      "insert into public.expense_guest_shares (expense_id, guest_id, share_amount_cents) values ($1, $2, $3)",
+      [expenseId, rows[0].id, shareAmountCents],
+    );
+    await conn.query("COMMIT");
+    return { guestId: rows[0].id, claimToken: rows[0].claim_token };
+  } catch (e) {
+    await conn.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    await conn.end();
+  }
+}
+
 async function insertPendingSettlement(
   groupId: string,
   from: TestUser,
@@ -819,19 +851,11 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const groupId = await createRegularGroup(alice, [bob]);
     const expenseId = await insertDraftExpense(groupId, alice, 1000);
     await insertGuestExpenseChildren(expenseId, alice, bob);
-    const { data: guest, error: guestError } = await requireAdmin()
-      .from("expense_guests")
-      .insert({ expense_id: expenseId, display_name: "Guest" })
-      .select("id, claim_token")
-      .single();
-    if (guestError || !guest) throw new Error(guestError?.message);
-    const { error: guestShareError } = await requireAdmin()
-      .from("expense_guest_shares")
-      .insert({ expense_id: expenseId, guest_id: guest.id, share_amount_cents: 200 });
-    if (guestShareError) throw new Error(guestShareError.message);
+    const guestInfo = await insertGuardedGuest(expenseId, "Guest", 200);
+    const { data: expRow } = await requireAdmin().from("expenses").select("graph_revision").eq("id", expenseId).single();
     const { error: activateError } = await authenticateAs(alice).rpc(
-      "activate_expense",
-      { p_expense_id: expenseId },
+      "activate_saved_expense",
+      { p_expense_id: expenseId, p_expected_graph_revision: expRow!.graph_revision },
     );
     if (activateError) throw new Error(activateError.message);
 
@@ -839,7 +863,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const claimResult = await dispatchQuery(
       writer.client,
       "SELECT public.claim_guest_spot($1)",
-      [guest.claim_token],
+      [guestInfo.claimToken],
     );
     expect("error" in claimResult).toBe(false);
 
@@ -936,18 +960,14 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const groupId = await createRegularGroup(alice, [bob]);
     const expenseId = await insertDraftExpense(groupId, alice, 1000);
     await insertExpenseChildren(expenseId, alice, bob, 1000);
-    const { data: guest, error: guestError } = await requireAdmin()
-      .from("expense_guests")
-      .insert({ expense_id: expenseId, display_name: "Guest" })
-      .select("id, claim_token")
-      .single();
-    if (guestError || !guest) throw new Error(guestError?.message);
+    const guest = await insertGuardedGuest(expenseId, "Guest", 0);
 
     const draftDelete = await openSubject(alice);
     await draftDelete.client.query(
       "SELECT id FROM public.expenses WHERE id = $1 FOR UPDATE",
       [expenseId],
     );
+    await draftDelete.client.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
     const draftDeleteResult = await dispatchQuery(
       draftDelete.client,
       "DELETE FROM public.expenses WHERE id = $1",
@@ -960,7 +980,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const claimPromise = dispatchQuery(
       claim.client,
       "SELECT public.claim_guest_spot($1)",
-      [guest.claim_token],
+      [guest.claimToken],
     ).finally(() => {
       claimDone = true;
     });
@@ -1100,19 +1120,11 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const groupId = await createRegularGroup(alice, [bob]);
     const expenseId = await insertDraftExpense(groupId, alice, 1000);
     await insertGuestExpenseChildren(expenseId, alice, bob);
-    const { data: guest, error: guestError } = await requireAdmin()
-      .from("expense_guests")
-      .insert({ expense_id: expenseId, display_name: "Guest" })
-      .select("id, claim_token")
-      .single();
-    if (guestError || !guest) throw new Error(guestError?.message);
-    const { error: guestShareError } = await requireAdmin()
-      .from("expense_guest_shares")
-      .insert({ expense_id: expenseId, guest_id: guest.id, share_amount_cents: 200 });
-    if (guestShareError) throw new Error(guestShareError.message);
+    const guest = await insertGuardedGuest(expenseId, "Guest", 200);
+    const { data: expRow } = await requireAdmin().from("expenses").select("graph_revision").eq("id", expenseId).single();
     const { error: activateError } = await authenticateAs(alice).rpc(
-      "activate_expense",
-      { p_expense_id: expenseId },
+      "activate_saved_expense",
+      { p_expense_id: expenseId, p_expected_graph_revision: expRow!.graph_revision },
     );
     if (activateError) throw new Error(activateError.message);
 
@@ -1130,7 +1142,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const claimResult = await dispatchQuery(
       writer.client,
       "SELECT public.claim_guest_spot($1)",
-      [guest.claim_token],
+      [guest.claimToken],
     );
     expect("error" in claimResult).toBe(false);
     await finishSubject(writer, true);
@@ -1163,22 +1175,13 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const groupId = await createRegularGroup(alice, [bob]);
     const expenseId = await insertDraftExpense(groupId, alice, 1000);
     await insertGuestExpenseChildren(expenseId, alice, bob);
-    const { data: guest, error: guestError } = await requireAdmin()
-      .from("expense_guests")
-      .insert({ expense_id: expenseId, display_name: "Guest" })
-      .select("id, claim_token")
-      .single();
-    if (guestError || !guest) throw new Error(guestError?.message);
-    const { error: guestShareError } = await requireAdmin()
-      .from("expense_guest_shares")
-      .insert({ expense_id: expenseId, guest_id: guest.id, share_amount_cents: 200 });
-    if (guestShareError) throw new Error(guestShareError.message);
+    const guest = await insertGuardedGuest(expenseId, "Guest", 200);
 
     const claim = await openSubject(carol);
     const claimResult = await dispatchQuery(
       claim.client,
       "SELECT public.claim_guest_spot($1)",
-      [guest.claim_token],
+      [guest.claimToken],
     );
     expect("error" in claimResult).toBe(false);
 
