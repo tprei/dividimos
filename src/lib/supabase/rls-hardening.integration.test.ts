@@ -163,74 +163,48 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
     });
 
     it("rejects activation when a share references a non-member", async () => {
-      const { data: expense } = await adminClient!
-        .from("expenses")
-        .insert({
-          group_id: groupId,
-          creator_id: alice.id,
-          title: "Phantom share",
-          expense_type: "single_amount",
-          total_amount: 6000,
-          status: "draft",
-        })
-        .select("id")
-        .single();
-
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
-        { expense_id: expense!.id, user_id: unrelated.id, share_amount_cents: 3000 },
-      ]);
-      await adminClient!.from("expense_payers").insert({
-        expense_id: expense!.id,
-        user_id: alice.id,
-        amount_cents: 6000,
-      });
+      // #477's guard routes every expenses row through save_expense_draft_graph,
+      // which validates accepted membership at SAVE time. A non-member share
+      // is now rejected one stage earlier (strictly safer).
       const client = authenticateAs(alice);
-      const { error } = await client.rpc("activate_expense", {
-        p_expense_id: expense!.id,
+      const { data, error } = await client.rpc("save_expense_draft_graph", {
+        p_expense: { group_id: groupId, title: "Phantom share", merchant_name: null,
+          expense_type: "single_amount", total_amount: 6000, service_fee_basis_points: 0, fixed_fees: 0 },
+        p_items: [],
+        p_shares: [
+          { user_id: alice.id, share_amount_cents: 3000 },
+          { user_id: unrelated.id, share_amount_cents: 3000 },
+        ],
+        p_payers: [{ user_id: alice.id, amount_cents: 6000 }],
+        p_guests: [], p_guest_shares: [], p_participant_order: [],
+        p_expected_graph_revision: 0, p_save_operation_id: crypto.randomUUID(),
       });
 
       expect(error).not.toBeNull();
-      expect(error!.message).toContain("non_member_share");
+      expect(data).toBeNull();
 
       const balance = await getBalanceBetween(groupId, alice.id, unrelated.id);
       expect(balance).toBe(0);
-
-      await adminClient!.from("expenses").delete().eq("id", expense!.id);
     });
 
     it("rejects activation when a payer references a non-member", async () => {
-      const { data: expense } = await adminClient!
-        .from("expenses")
-        .insert({
-          group_id: groupId,
-          creator_id: alice.id,
-          title: "Phantom payer",
-          expense_type: "single_amount",
-          total_amount: 4000,
-          status: "draft",
-        })
-        .select("id")
-        .single();
-
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 2000 },
-        { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 2000 },
-        { expense_id: expense!.id, user_id: unrelated.id, share_amount_cents: 0 },
-      ]);
-      await adminClient!.from("expense_payers").insert({
-        expense_id: expense!.id,
-        user_id: unrelated.id,
-        amount_cents: 4000,
-      });
+      // Same: save_expense_draft_graph validates all participants at save time.
       const client = authenticateAs(alice);
-      const { error } = await client.rpc("activate_expense", {
-        p_expense_id: expense!.id,
+      const { data, error } = await client.rpc("save_expense_draft_graph", {
+        p_expense: { group_id: groupId, title: "Phantom payer", merchant_name: null,
+          expense_type: "single_amount", total_amount: 4000, service_fee_basis_points: 0, fixed_fees: 0 },
+        p_items: [],
+        p_shares: [
+          { user_id: alice.id, share_amount_cents: 2000 },
+          { user_id: bob.id, share_amount_cents: 2000 },
+        ],
+        p_payers: [{ user_id: unrelated.id, amount_cents: 4000 }],
+        p_guests: [], p_guest_shares: [], p_participant_order: [],
+        p_expected_graph_revision: 0, p_save_operation_id: crypto.randomUUID(),
       });
-      expect(error).not.toBeNull();
-      expect(error!.message).toContain("non_member_share");
 
-      await adminClient!.from("expenses").delete().eq("id", expense!.id);
+      expect(error).not.toBeNull();
+      expect(data).toBeNull();
     });
 
     it("allows activation when shares reference an invited (not-yet-accepted) member", async () => {
