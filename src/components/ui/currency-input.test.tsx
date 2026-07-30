@@ -50,7 +50,7 @@ describe("CurrencyInput", () => {
     expect(input.value).toBe("100,00");
   });
 
-  it("respects maxCents", () => {
+  it("does not clamp to maxCents — validity is the parent's concern (#477)", () => {
     function MaxWrapper() {
       const [cents, setCents] = useState(0);
       return <CurrencyInput valueCents={cents} onChangeCents={setCents} maxCents={5000} data-testid="ci" />;
@@ -59,6 +59,9 @@ describe("CurrencyInput", () => {
     const input = screen.getByTestId("ci") as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: "100,00" } });
-    expect(input.value).toBe("50,00");
+    // Value passes through unclamped; the parent form is responsible for
+    // validation against maxCents. CurrencyInput only flags invalid state.
+    expect(input.value).toBe("100,00");
+    expect(input).toHaveAttribute("aria-invalid");
   });
 });
