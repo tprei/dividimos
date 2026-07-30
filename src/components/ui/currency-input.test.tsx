@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { CurrencyInput } from "./currency-input";
 import { useState } from "react";
@@ -50,7 +50,7 @@ describe("CurrencyInput", () => {
     expect(input.value).toBe("100,00");
   });
 
-  it("does not clamp to maxCents — validity is the parent's concern (#477)", () => {
+  it("does not commit an out-of-range value — no store mutation, invalid state exposed (#477)", () => {
     function MaxWrapper() {
       const [cents, setCents] = useState(0);
       return <CurrencyInput valueCents={cents} onChangeCents={setCents} maxCents={5000} data-testid="ci" />;
@@ -59,9 +59,67 @@ describe("CurrencyInput", () => {
     const input = screen.getByTestId("ci") as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: "100,00" } });
-    // Value passes through unclamped; the parent form is responsible for
-    // validation against maxCents. CurrencyInput only flags invalid state.
+    // Raw typed text is still shown (uncommitted override) and flagged
+    // invalid, but the committed store value never mutated — no clamp,
+    // no silent commit of an out-of-range value.
     expect(input.value).toBe("100,00");
     expect(input).toHaveAttribute("aria-invalid");
+
+    // A subsequent in-range edit commits normally and clears the override.
+    fireEvent.change(input, { target: { value: "30,00" } });
+    expect(input.value).toBe("30,00");
+    expect(input).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("never calls onChangeCents for an out-of-range candidate", () => {
+    const onChangeCents = vi.fn();
+    render(
+      <CurrencyInput valueCents={0} onChangeCents={onChangeCents} maxCents={5000} data-testid="ci" />,
+    );
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "100,00" } });
+    expect(onChangeCents).not.toHaveBeenCalled();
+  });
+
+  it("restores canonical valid text when the value prop changes externally", () => {
+    function MaxWrapper() {
+      const [cents, setCents] = useState(1000);
+      return (
+        <>
+          <CurrencyInput valueCents={cents} onChangeCents={setCents} maxCents={5000} data-testid="ci" />
+          <button data-testid="reset" onClick={() => setCents(2000)}>reset</button>
+        </>
+      );
+    }
+    render(<MaxWrapper />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "999999,00" } });
+    expect(input).toHaveAttribute("aria-invalid");
+
+    fireEvent.click(screen.getByTestId("reset"));
+    expect(input.value).toBe("20,00");
+    expect(input).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("backspace from an invalid override recovers to a valid committed value", () => {
+    function MaxWrapper() {
+      const [cents, setCents] = useState(0);
+      return <CurrencyInput valueCents={cents} onChangeCents={setCents} maxCents={500} data-testid="ci" />;
+    }
+    render(<MaxWrapper />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    // 0 -> 9 (9c) -> 99 (99c) -> 999 (over 500=invalid override)
+    fireEvent.keyDown(input, { key: "9" });
+    fireEvent.keyDown(input, { key: "9" });
+    fireEvent.keyDown(input, { key: "9" });
+    expect(input).toHaveAttribute("aria-invalid");
+
+    // Backspace off the last digit: 999 -> 99 (within 500)
+    fireEvent.keyDown(input, { key: "Backspace" });
+    expect(input.value).toBe("0,99");
+    expect(input).not.toHaveAttribute("aria-invalid");
   });
 });
