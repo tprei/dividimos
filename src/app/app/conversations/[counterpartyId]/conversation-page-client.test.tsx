@@ -231,6 +231,50 @@ describe("ConversationPageClient", () => {
     expect(screen.getByText("Aceitar convite")).toBeInTheDocument();
   });
 
+  it("shows accepted state after a successful accept click", async () => {
+    render(
+      <ConversationPageClient
+        initialData={makeInitialData({ callerStatus: "invited" })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Aceitar convite"));
+
+    await waitFor(() => {
+      expect(mockRpcFn).toHaveBeenCalledWith("accept_group_invitation", {
+        p_group_id: "group-1",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-thread")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps the invite pending and shows retryable feedback when accept fails", async () => {
+    mockRpcFn.mockResolvedValueOnce({
+      data: null,
+      error: { message: "not_invited: only a pending invitation can be accepted" },
+    });
+
+    render(
+      <ConversationPageClient
+        initialData={makeInitialData({ callerStatus: "invited" })}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Aceitar convite"));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível aceitar o convite. Tente novamente.",
+      );
+    });
+    // The RLS-denied direct-update path used to flip to "accepted" UI
+    // even though the DB write silently failed. The RPC path surfaces
+    // failure and keeps the pending-invite UI visible for retry.
+    expect(screen.getByText("Aceitar convite")).toBeInTheDocument();
+  });
+
   it("renders declined state", () => {
     render(
       <ConversationPageClient

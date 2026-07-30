@@ -340,6 +340,55 @@ describe("ConversationsListContent", () => {
       });
     });
 
+    it("calls accept_group_invitation RPC when Aceitar is clicked", async () => {
+      const conversations = [
+        makeConversation({
+          groupId: "dm-invite",
+          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
+          callerStatus: "invited",
+          counterpartyStatus: "accepted",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      fireEvent.click(screen.getByText("Aceitar"));
+
+      await waitFor(() => {
+        expect(mockRpcFn).toHaveBeenCalledWith("accept_group_invitation", {
+          p_group_id: "dm-invite",
+        });
+      });
+    });
+
+    it("keeps the invitation and shows retryable feedback when accept fails", async () => {
+      mockRpcFn.mockResolvedValueOnce({
+        data: null,
+        error: { message: "not_invited: only a pending invitation can be accepted" },
+      });
+      const conversations = [
+        makeConversation({
+          groupId: "dm-invite",
+          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
+          callerStatus: "invited",
+          counterpartyStatus: "accepted",
+        }),
+      ];
+
+      render(<ConversationsListContent initialConversations={conversations} />);
+
+      fireEvent.click(screen.getByText("Aceitar"));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(
+          "Não foi possível aceitar o convite. Tente novamente.",
+        );
+      });
+      // The RLS-denied direct-update path silently no-oped forever; the
+      // RPC path surfaces failure and leaves the invite visible for retry.
+      expect(screen.getByText("Pedro Alves")).toBeInTheDocument();
+    });
+
     it("keeps the invitation and shows retryable feedback when decline is guard-rejected", async () => {
       mockRpcFn.mockResolvedValueOnce({
         data: null,

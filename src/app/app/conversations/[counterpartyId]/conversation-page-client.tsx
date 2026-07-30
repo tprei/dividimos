@@ -445,13 +445,19 @@ export function ConversationPageClient({
 
   const handleAccept = useCallback(async () => {
     if (!groupId) return;
-    await createClient()
-      .from("group_members")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
+    // group_members_accept_denied RLS policy blocks every direct UPDATE;
+    // acceptance must go through this RPC (matching handleDecline below).
+    // Setting callerStatus optimistically before the write succeeded would
+    // show an "accepted" UI while the DB row still says 'invited'.
+    const { error } = await createClient().rpc("accept_group_invitation", {
+      p_group_id: groupId,
+    });
+    if (error) {
+      toast.error("Não foi possível aceitar o convite. Tente novamente.");
+      return;
+    }
     setCallerStatus("accepted");
-  }, [groupId, user.id]);
+  }, [groupId]);
 
   const handleDecline = useCallback(async () => {
     if (!groupId) return;
