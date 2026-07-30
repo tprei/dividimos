@@ -284,8 +284,8 @@ Cada passo intermediário é registrado com as arestas removidas e adicionadas, 
 - `src/app/api/pix/generate/` — Server-side Pix Copia e Cola generation (decrypts key server-side)
 - `src/app/api/users/lookup/` — Exact @handle lookup for authenticated users
 - `src/stores/bill-store.ts` — Zustand store for the expense wizard. Manages draft creation, item management, splits, payer tracking, and client-side debt preview via `computeLedger()`
-- `src/lib/supabase/expense-actions.ts` — CRUD: `saveExpenseDraft`, `loadExpense`, `deleteExpense`, `listGroupExpenses`
-- `src/lib/supabase/expense-rpc.ts` — Wraps `activate_expense` RPC. Transitions draft → active and atomically updates balances
+- `src/lib/supabase/expense-actions.ts` — CRUD via the expense-graph RPCs: `saveExpenseDraft` (`save_expense_draft_graph`), `loadExpense`, `deleteExpense`, `listGroupExpenses`
+- `src/lib/supabase/expense-rpc.ts` — Wraps `activate_saved_expense` and `load_expense_graph_snapshot`. Activation is CAS-guarded by `graph_revision` and atomically updates `balances`
 - `src/lib/supabase/settlement-actions.ts` — Balance queries, `recordSettlement` (pending), `confirmSettlement` (RPC), settlement history
 - `src/lib/supabase/expense-mappers.ts` — Row → TypeScript type mappers for all expense tables
 - `src/lib/crypto.ts` — Server-only AES-256-GCM encryption for Pix keys. Never import from client components
@@ -419,19 +419,21 @@ npm run test:integration
 **Expense model (Splitwise-inspired)**: Every expense belongs to a group. Two types: `single_amount` (one total split among participants) and `itemized` (line items assigned per person). The wizard step array is computed dynamically from expense type.
 
 **Expense lifecycle: Draft → Active → Settled**:
-1. **Draft**: User builds the expense in the wizard. `saveExpenseDraft()` persists to `expenses` + child tables (`expense_items`, `expense_shares`, `expense_payers`). Can be edited or deleted.
-2. **Active**: `activate_expense` RPC atomically validates shares/payers sum to total, transitions status, and updates the `balances` table. This is the point of no return.
+1. **Draft**: User builds the expense in the wizard. `saveExpenseDraft()` calls the `save_expense_draft_graph` RPC, which validates and atomically replaces the full expense graph (parent, items, shares, guest shares, payers, participant map) in one transaction. Can be edited or deleted.
+2. **Active**: `activate_saved_expense` RPC re-validates the locked persisted graph (including payer reachability — see below), atomically transitions status, and updates the `balances` table. Guarded by a `graph_revision` compare-and-swap: an expected revision that doesn't match the current one is rejected (`PST08/stale_graph_revision`) instead of silently overwriting a concurrent edit. This is the point of no return.
 3. **Settled**: All debts from this expense have been settled (balances reach zero).
 
-**Balances (running net ledger)**: The `balances` table stores one row per (group, user_a, user_b) pair where `user_a < user_b` (canonical UUID ordering). Positive `amount_cents` means user_a owes user_b; negative means the reverse. Balances are never written directly — only via `activate_expense` and `confirm_settlement` RPC functions (SECURITY DEFINER). This prevents race conditions and ensures atomicity.
+**Expense-graph mutation guards**: every write to an expense's items/shares/payers/guests — including trusted direct SQL, not only the public RPCs — goes through a `graph_revision` CAS and a transaction-scoped mutation-token registry that rejects any write outside an authorized, named context (`graph_mutation_unauthorized`). A payer must always reference an existing user share row (`expense_payers_participant_fkey`, deferrable, validated); a total-changing edit clears every payer, a share-only edit preserves them. A `financial_internal.financial_compatibility_state` singleton gates every financial RPC first, before authentication, so a declared maintenance window (used only around breaking schema cutovers) fails every financial write/read closed instead of partially applying.
+
+**Balances (running net ledger)**: The `balances` table stores one row per (group, user_a, user_b) pair where `user_a < user_b` (canonical UUID ordering). Positive `amount_cents` means user_a owes user_b; negative means the reverse. Balances are never written directly — only via `activate_saved_expense` and `confirm_settlement` RPC functions (SECURITY DEFINER). This prevents race conditions and ensures atomicity.
 
 **Settlements (two-step confirmation)**: A debtor creates a pending settlement (`recordSettlement`). The creditor confirms it (`confirmSettlement` RPC), which atomically updates the balance toward zero. This mirrors Splitwise's "record a payment" flow.
 
 **Simplification**: `computeRawEdges` generates one edge per (consumer, payer) pair. `simplifyDebts` finds chains and reverse pairs, recording each step for the paginated visualization. Used for display only — the canonical balance data lives in the `balances` table.
 
-**Money**: Always integer centavos in the store, types, and database. Never floating point for arithmetic. `formatBRL` converts to display strings. Rounding happens inside the RPC: `ROUND(share * payer_amount / total)`.
+**Money**: Always integer centavos in the store, types, and database, capped at `MAX_EXPENSE_CENTS = 99_999_999` per expense. Never floating point for arithmetic; `src/lib/expense-money.ts` is the sole owner of the product cap and fee formula. `formatBRL` converts to display strings. All item/share/payer/fee equality is exact (no cent tolerance).
 
-**Fee distribution**: Service fee (percentage) is distributed proportionally based on item consumption. Fixed fees are divided equally among all participants.
+**Fee distribution**: Service fee is stored as integer basis points (`expenses.service_fee_basis_points`, 0–10000), computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000` and distributed proportionally to item consumption. Fixed fees are cents, divided equally among all participants.
 
 **Demo page**: Public at `/demo`, no auth. Pre-computed settlement showcase with interactive QR codes.
 
