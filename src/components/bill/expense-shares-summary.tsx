@@ -5,14 +5,12 @@ import { Receipt } from "lucide-react";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { formatBRL } from "@/lib/currency";
-import type { ExpenseWithDetails, UserProfile } from "@/types";
+import type { ExpenseWithDetails } from "@/types";
 
 export function ExpenseSharesSummary({
   expense,
-  allParticipants,
 }: {
   expense: ExpenseWithDetails;
-  allParticipants: UserProfile[];
 }) {
   return (
     <div className="space-y-4">
@@ -64,8 +62,7 @@ export function ExpenseSharesSummary({
 
       {expense.payers.length > 0 && (
         <PayerSummaryCard
-          payers={expense.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))}
-          participants={allParticipants}
+          payers={expense.payers.map((p) => ({ user: p.user, amountCents: p.amountCents }))}
         />
       )}
     </div>

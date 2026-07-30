@@ -5,14 +5,16 @@ import { formatBRL } from "@/lib/currency";
 import type { UserProfile } from "@/types";
 
 interface PayerSummaryCardProps {
-  payers: { userId: string; amountCents: number }[];
-  participants: UserProfile[];
+  payers: { user: UserProfile; amountCents: number }[];
 }
 
-export function PayerSummaryCard({ payers, participants }: PayerSummaryCardProps) {
+/**
+ * #495: consumes already-joined canonical payer/user rows. No nullable
+ * lookup, no unknown-person "?" fallback — callers must resolve each
+ * payer's UserProfile before rendering.
+ */
+export function PayerSummaryCard({ payers }: PayerSummaryCardProps) {
   if (payers.length === 0) return null;
-
-  const getUser = (id: string) => participants.find((p) => p.id === id);
 
   return (
     <div className="rounded-2xl border bg-card p-4">
@@ -21,25 +23,22 @@ export function PayerSummaryCard({ payers, participants }: PayerSummaryCardProps
         Quem pagou
       </div>
       <div className="mt-3 space-y-2">
-        {payers.map((payer) => {
-          const user = getUser(payer.userId);
-          return (
-            <div key={payer.userId} className="flex items-center gap-2 text-sm">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                {user?.name.charAt(0) || "?"}
-              </span>
-              <span className="flex-1">
-                {user?.name.split(" ")[0] || "?"}
-                {payers.length === 1 && (
-                  <span className="text-muted-foreground"> pagou tudo</span>
-                )}
-              </span>
-              <span className="font-medium tabular-nums">
-                {formatBRL(payer.amountCents)}
-              </span>
-            </div>
-          );
-        })}
+        {payers.map(({ user, amountCents }) => (
+          <div key={user.id} className="flex items-center gap-2 text-sm">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+              {user.name.charAt(0)}
+            </span>
+            <span className="flex-1">
+              {user.name.split(" ")[0]}
+              {payers.length === 1 && (
+                <span className="text-muted-foreground"> pagou tudo</span>
+              )}
+            </span>
+            <span className="font-medium tabular-nums">
+              {formatBRL(amountCents)}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

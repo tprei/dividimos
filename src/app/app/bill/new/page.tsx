@@ -1371,8 +1371,10 @@ function NewBillPageContent() {
                   />
                   {store.payers.length > 0 && (
                     <PayerSummaryCard
-                      payers={store.payers}
-                      participants={store.participants}
+                      payers={store.payers.flatMap((payer) => {
+                        const user = store.participants.find((p) => p.id === payer.userId);
+                        return user ? [{ user, amountCents: payer.amountCents }] : [];
+                      })}
                     />
                   )}
                   {store.wouldProduceNoEdges() && (
