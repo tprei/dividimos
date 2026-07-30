@@ -1505,6 +1505,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      load_expense_graph_snapshot: {
+        Args: {
+          p_expense_id: string
+        }
+        Returns: Json
+      }
       lookup_user_by_handle: {
         Args: {
           p_handle: string
