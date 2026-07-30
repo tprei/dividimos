@@ -174,6 +174,10 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
 
   it("claims the guest for exactly 1 cent total (not 2) and applies the edge", async () => {
     // carol is not a participant and not a group member yet.
+    const beforeRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
     const carolClient = authenticateAs(carol);
     const { data, error } = await carolClient.rpc("claim_guest_spot", {
       p_claim_token: guestClaimToken,
@@ -184,6 +188,15 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
       expense_id: expenseId,
       already_claimed: false,
     });
+
+    // #495: "advance graph_revision exactly once from r to r + 1" for a
+    // real claim, so authorized clients' revisioned snapshot refetch
+    // actually observes it.
+    const afterRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
+    expect(afterRev.rows[0].graph_revision).toBe(beforeRev.rows[0].graph_revision + 1);
 
     // The fix: carol owes exactly 1 cent total. The old per-payer
     // ROUND body charged ROUND(1*1/2)=1 to BOTH alice and bob (= 2).
@@ -261,12 +274,24 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
   });
 
   it("is idempotent: re-claiming as the same caller returns already_claimed with no balance change", async () => {
+    const beforeRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
     const carolClient = authenticateAs(carol);
     const { data, error } = await carolClient.rpc("claim_guest_spot", {
       p_claim_token: guestClaimToken,
     });
     expect(error).toBeNull();
     expect(data).toMatchObject({ already_claimed: true });
+
+    // #495: "an exact same-caller replay opens no claim token... does
+    // not increment revision".
+    const afterRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
+    expect(afterRev.rows[0].graph_revision).toBe(beforeRev.rows[0].graph_revision);
 
     // No further balance change: carol still owes exactly 1 cent total.
     const carolOwesBob = await getBalanceBetween(groupId, carol.id, bob.id);
