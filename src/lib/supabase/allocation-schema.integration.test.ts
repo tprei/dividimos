@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import {
-  adminClient,
   isIntegrationTestReady,
   registerTestUser,
 } from "@/test/integration-setup";
@@ -55,19 +54,6 @@ describe.skipIf(!canRun)("allocation plan schema (#468)", () => {
     }
     if (pg) await pg.end();
   });
-
-  /** Wraps a guarded-table write in a direct-mutation-token transaction. */
-  async function guardedExec(sql: string, values: unknown[] = []): Promise<void> {
-    await pg.query("BEGIN");
-    try {
-      await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
-      await pg.query(sql, values);
-      await pg.query("COMMIT");
-    } catch (e) {
-      await pg.query("ROLLBACK").catch(() => {});
-      throw e;
-    }
-  }
 
   it("accepts a valid user entity row and rejects structurally invalid ones", async () => {
     // The guard's finalizer (validate_graph_mode) correctly rejects a

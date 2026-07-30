@@ -21,6 +21,13 @@ type BalanceRow = Database["public"]["Tables"]["balances"]["Row"];
 type SettlementRow = Database["public"]["Tables"]["settlements"]["Row"];
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
+/**
+ * Issue #477: the database stores service_fee_basis_points (integer,
+ * 0..10000). The client-wide Expense.serviceFeePercent convention is a
+ * percent (0..100, may have up to 2 decimal digits) — convert at this
+ * one boundary rather than propagating basis points through every
+ * consumer (bill-store, BillSummary, ItemsStep, chat cards, etc.).
+ */
 export function expenseRowToExpense(row: ExpenseRow): Expense {
   return {
     id: row.id,
@@ -30,7 +37,7 @@ export function expenseRowToExpense(row: ExpenseRow): Expense {
     merchantName: row.merchant_name ?? undefined,
     expenseType: row.expense_type,
     totalAmount: row.total_amount,
-    serviceFeePercent: row.service_fee_percent,
+    serviceFeePercent: row.service_fee_basis_points / 100,
     fixedFees: row.fixed_fees,
     status: row.status,
     createdAt: row.created_at,
