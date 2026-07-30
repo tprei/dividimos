@@ -57,7 +57,19 @@ DECLARE
   v_payers             jsonb;
   v_guests             jsonb;
   v_protected          jsonb;
+  v_maintenance         boolean;
 BEGIN
+  -- #477/#495: "Run #477's financial compatibility guard as the first
+  -- body action and require authentication." This covers the
+  -- read/review/detail surface too, not only writes.
+  SELECT maintenance INTO v_maintenance
+    FROM financial_internal.financial_compatibility_state
+   WHERE id = true;
+
+  IF v_maintenance THEN
+    RAISE EXCEPTION USING ERRCODE = 'PST09', MESSAGE = 'financial_maintenance';
+  END IF;
+
   IF v_caller IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'PST01', MESSAGE = 'not_authenticated';
   END IF;
