@@ -773,7 +773,7 @@ export type Database = {
           group_id: string
           id: string
           merchant_name: string | null
-          service_fee_percent: number
+          service_fee_basis_points: number
           status: Database["public"]["Enums"]["expense_status"]
           title: string
           total_amount: number
@@ -789,7 +789,7 @@ export type Database = {
           group_id: string
           id?: string
           merchant_name?: string | null
-          service_fee_percent?: number
+          service_fee_basis_points?: number
           status?: Database["public"]["Enums"]["expense_status"]
           title: string
           total_amount?: number
@@ -805,7 +805,7 @@ export type Database = {
           group_id?: string
           id?: string
           merchant_name?: string | null
-          service_fee_percent?: number
+          service_fee_basis_points?: number
           status?: Database["public"]["Enums"]["expense_status"]
           title?: string
           total_amount?: number

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
-import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
+import { isIntegrationTestReady } from "@/test/integration-setup";
 import { createTestGroup, createTestUser, authenticateAs } from "@/test/integration-helpers";
 
 const databaseUrl = process.env.SUPABASE_DB_URL;
@@ -10,7 +10,6 @@ describe.skipIf(!canRun)("cents-cap constraints (#477)", () => {
   let pg: Client;
   let expenseId: string;
   let groupId: string;
-  let creatorId: string;
 
   beforeAll(async () => {
     pg = new Client(databaseUrl!);
@@ -18,7 +17,6 @@ describe.skipIf(!canRun)("cents-cap constraints (#477)", () => {
     const creator = await createTestUser();
     const group = await createTestGroup(creator.id);
     groupId = group.id;
-    creatorId = creator.id;
     // Create via save_expense_draft_graph (the guard rejects raw INSERT).
     const client = authenticateAs(creator);
     const { data, error } = await client.rpc("save_expense_draft_graph", {
@@ -119,8 +117,8 @@ describe.skipIf(!canRun)("cents-cap constraints (#477)", () => {
           and c.contype = 'c' and pg_get_constraintdef(c.oid) like '%total_amount%'`,
     );
     const capConstraint = rows.find((r: { definition: string }) =>
-      /total_amount.*99999999/i.test(r.definition),
+      /total_amount.*expense_money_max_cents/i.test(r.definition),
     );
+    expect(capConstraint).toBeDefined();
   });
-
 });

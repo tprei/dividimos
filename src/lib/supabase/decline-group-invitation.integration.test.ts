@@ -7,7 +7,6 @@ import {
   createTestUsers,
   createTestGroupWithMembers,
   authenticateAs,
-  createAndActivateExpense,
   settleDebt,
   getBalanceBetween,
   type TestUser,

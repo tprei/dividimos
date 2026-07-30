@@ -45,7 +45,7 @@ async function claimActivationNotification(
     );
     await conn.query("COMMIT");
     return rows.length > 0 ? rows[0] : null;
-  } catch (e) {
+  } catch {
     await conn.query("ROLLBACK").catch(() => {});
     return null;
   } finally {

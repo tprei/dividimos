@@ -728,7 +728,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     );
     if (activationError) throw new Error(activationError.message);
 
-    const { data: deletedActive, error: activeDeleteError } = await creatorClient
+    const { data: deletedActive } = await creatorClient
       .from("expenses")
       .delete()
       .eq("id", activeExpenseId)
@@ -747,7 +747,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
 
     // Non-creator also cannot DELETE.
     const wrongOwnerExpenseId = await insertDraftExpense(groupId, alice);
-    const { data: deletedByWrongOwner, error: wrongOwnerDeleteError } =
+    const { data: deletedByWrongOwner } =
       await authenticateAs(bob)
         .from("expenses")
         .delete()
