@@ -196,7 +196,11 @@ describe.skipIf(!canRun)("claim_guest_spot zero-share-payer amendment (#495)", (
       [groupId],
     );
     expect(groupBalances).toHaveLength(1);
-    expect(groupBalances[0].amount_cents).toBe(2);
+    // Magnitude, not sign: balances.amount_cents' sign encodes which of
+    // the random-UUID-ordered (user_a, user_b) pair owes the other, not
+    // which of alice/bob is which -- getBalanceBetween already
+    // normalizes that for the directional assertion above.
+    expect(Math.abs(groupBalances[0].amount_cents)).toBe(2);
 
     // Every formerly pending edge whose debtor was the guest is applied
     // to bob, including the self-edge.
