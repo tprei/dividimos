@@ -2,10 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { ExpenseStatus } from "@/types";
 
 /**
- * Subscribe to realtime changes on a specific expense row via private
  * Broadcast wakes (#477 Slice 6). The server sends a wake carrying only
  * the expense ID and graph revision — no financial data. On receiving a
  * wake, the caller refetches the authorized snapshot.
