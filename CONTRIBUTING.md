@@ -58,7 +58,7 @@ Avoid tests that only verify mocks, implementation details, or framework wiring 
 Choose the highest test layer needed to prove the product risk before opening a PR:
 
 - Unit tests (`*.test.ts` / `*.test.tsx`, run with `npm test`) for pure logic and component rendering — currency math, debt simplification, Pix EMV encoding, store logic.
-- Integration tests (`*.integration.test.ts`, run with `npm run test:integration` against local Supabase) for database behavior — RLS policies, RPC functions (`activate_expense`, `confirm_settlement`), foreign key constraints, row-level access control. Wrap them in `describe.skipIf(!isIntegrationTestReady)` so they skip when env vars are absent.
+- Integration tests (`*.integration.test.ts`, run with `npm run test:integration` against local Supabase) for database behavior — RLS policies, RPC functions (`save_expense_draft_graph`, `activate_saved_expense`, `confirm_settlement`), foreign key constraints, row-level access control. Wrap them in `describe.skipIf(!isIntegrationTestReady)` so they skip when env vars are absent.
 - Synthetic tests (`e2e/synthetic/*.spec.ts`, run with `npm run test:synthetic`) for end-to-end user journeys through the real UI, API routes, auth, and database, seeded per-test via `SeedHelper`.
 
 **Migrations with semantic logic must be covered by integration tests.** Any new migration that adds or modifies an RPC, RLS policy, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, RLS denial for outsiders, and the edge cases the SQL specifically guards. Pure structural migrations (adding an index, renaming a column with no semantic change) are exempt. The migration-replay CI job only proves the SQL applies cleanly; it does not exercise behavior.
@@ -107,7 +107,7 @@ Avoid dependencies that introduce hidden services, unnecessary global state, or 
 
 - Keep API route handlers thin. Push behavior into `src/lib` functions or Supabase RPC.
 - Every table has RLS. Data is isolated by group and user.
-- Balances are written only by `activate_expense` and `confirm_settlement` RPC functions (`SECURITY DEFINER`). Never write the `balances` table directly from client code.
+- Balances are written only by `activate_saved_expense` and `confirm_settlement` RPC functions (`SECURITY DEFINER`). Never write the `balances` table directly from client code.
 - Keep validation and domain decisions in RPC functions or `src/lib`, not in route handlers.
 - Prefer explicit SQL migrations under `supabase/migrations/`. Use `gen_random_uuid()`, not `uuid_generate_v4()`.
 - Return clear errors without leaking internals.
