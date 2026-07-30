@@ -65,7 +65,11 @@ REVOKE ALL ON TABLE public.settlement_operation_items FROM PUBLIC, anon, authent
 REVOKE ALL ON TABLE public.rate_limit_counters FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.chat_expense_confirmation_operations FROM PUBLIC, anon, authenticated, service_role;
 REVOKE INSERT, UPDATE, DELETE ON TABLE public.dm_pairs FROM PUBLIC, anon, authenticated, service_role;
-REVOKE INSERT, UPDATE, DELETE ON TABLE public.group_invite_links FROM PUBLIC, anon, authenticated;
+-- group_invite_links: PostgREST checks table-level privileges only, so the
+-- column-level INSERT grant (group_id, expires_at, max_uses) from the
+-- dm_canonical_pairs migration needs table-level INSERT present. Keep INSERT,
+-- revoke UPDATE/DELETE (RLS WITH CHECK enforces created_by restrictions).
+REVOKE UPDATE, DELETE ON TABLE public.group_invite_links FROM PUBLIC, anon, authenticated;
 REVOKE UPDATE, DELETE ON TABLE public.chat_messages FROM PUBLIC, anon, authenticated, service_role;
 
 -- Future tables created in public by later migrations inherit the same.
