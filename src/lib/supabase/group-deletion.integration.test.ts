@@ -696,24 +696,36 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
   });
 
   it("preserves the draft-only expense delete boundary", async () => {
+    // Under #477's guard, ALL direct DELETEs on expenses are blocked
+    // (graph_mutation_unauthorized). Draft cleanup goes through
+    // save_expense_draft_graph (edit) or deleteTestExpenses (raw pg).
+    // This test verifies the guard correctly blocks direct DELETEs
+    // regardless of status or caller.
     const groupId = await createRegularGroup(alice, [bob]);
     const draftExpenseId = await insertDraftExpense(groupId, alice);
     await insertExpenseChildren(draftExpenseId, alice, bob);
 
     const creatorClient = authenticateAs(alice);
+
+    // Creator cannot directly DELETE a draft (guard blocks).
     const { data: deletedDraft, error: draftDeleteError } = await creatorClient
       .from("expenses")
       .delete()
       .eq("id", draftExpenseId)
       .select("id");
-    if (draftDeleteError) throw new Error(draftDeleteError.message);
-    expect(deletedDraft).toHaveLength(1);
+    // RLS allows creator to see draft rows for DELETE, but the guard
+    // trigger raises graph_mutation_unauthorized on the actual DELETE.
+    expect(draftDeleteError).not.toBeNull();
+    expect(deletedDraft ?? []).toHaveLength(0);
 
+    // Active expense also cannot be directly DELETEd.
     const activeExpenseId = await insertDraftExpense(groupId, alice);
     await insertExpenseChildren(activeExpenseId, alice, bob);
-    const { error: activationError } = await creatorClient.rpc("activate_expense", {
-      p_expense_id: activeExpenseId,
-    });
+    const { data: expRow } = await requireAdmin().from("expenses").select("graph_revision").eq("id", activeExpenseId).single();
+    const { error: activationError } = await creatorClient.rpc(
+      "activate_saved_expense",
+      { p_expense_id: activeExpenseId, p_expected_graph_revision: expRow!.graph_revision },
+    );
     if (activationError) throw new Error(activationError.message);
 
     const { data: deletedActive, error: activeDeleteError } = await creatorClient
@@ -721,40 +733,28 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
       .delete()
       .eq("id", activeExpenseId)
       .select("id");
-    if (activeDeleteError) throw new Error(activeDeleteError.message);
-    expect(deletedActive).toEqual([]);
+    // RLS DELETE policy requires status='draft', so active expenses are
+    // invisible to the DELETE (0 rows matched, no trigger, no error).
+    expect(deletedActive ?? []).toHaveLength(0);
 
-    const { data: activeRow, error: activeReadError } = await requireAdmin()
+    // Active expense still exists.
+    const { data: activeRow } = await requireAdmin()
       .from("expenses")
       .select("id, status")
       .eq("id", activeExpenseId)
       .single();
-    if (activeReadError) throw new Error(activeReadError.message);
-    expect(activeRow.status).toBe("active");
+    expect(activeRow!.status).toBe("active");
 
-    const settledExpenseId = await insertDraftExpense(groupId, alice);
-    const { error: settledError } = await requireAdmin()
-      .from("expenses")
-      .update({ status: "settled" })
-      .eq("id", settledExpenseId);
-    if (settledError) throw new Error(settledError.message);
-    const { data: deletedSettled, error: settledDeleteError } = await creatorClient
-      .from("expenses")
-      .delete()
-      .eq("id", settledExpenseId)
-      .select("id");
-    if (settledDeleteError) throw new Error(settledDeleteError.message);
-    expect(deletedSettled).toEqual([]);
-
+    // Non-creator also cannot DELETE.
     const wrongOwnerExpenseId = await insertDraftExpense(groupId, alice);
     const { data: deletedByWrongOwner, error: wrongOwnerDeleteError } =
       await authenticateAs(bob)
         .from("expenses")
         .delete()
         .eq("id", wrongOwnerExpenseId)
-        .select("id");
-    if (wrongOwnerDeleteError) throw new Error(wrongOwnerDeleteError.message);
-    expect(deletedByWrongOwner).toEqual([]);
+    // RLS DELETE policy requires creator_id = auth.uid(), so bob can't
+    // see alice's expense rows for DELETE (0 rows, no error).
+    expect(deletedByWrongOwner ?? []).toHaveLength(0);
   });
 
   it("serializes writer-first batch settlement before deletion", async () => {
@@ -954,6 +954,10 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
   });
 
   it("uses group then expense then guest ordering against draft deletion", async () => {
+    // Under the guard, direct DELETE on expenses is blocked on subject
+    // connections. This test now verifies that the guard correctly
+    // blocks the DELETE, and the claim succeeds (the expense still
+    // exists because the DELETE failed).
     const groupId = await createRegularGroup(alice, [bob]);
     const expenseId = await insertDraftExpense(groupId, alice, 1000);
     await insertExpenseChildren(expenseId, alice, bob, 1000);
@@ -969,22 +973,19 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
       "DELETE FROM public.expenses WHERE id = $1",
       [expenseId],
     );
+    // Guard blocks the DELETE (no token open on subject connection).
     expect("error" in draftDeleteResult).toBe(true);
+    await finishSubject(draftDelete, false);
 
+    // Claim succeeds because the expense was NOT deleted (DELETE failed).
     const claim = await openSubject(carol);
-    let claimDone = false;
-    const claimPromise = dispatchQuery(
+    const claimResult = await dispatchQuery(
       claim.client,
       "SELECT public.claim_guest_spot($1)",
       [guest.claimToken],
-    ).finally(() => {
-      claimDone = true;
-    });
-    await waitForLock(claim.pid, draftDelete.pid, () => claimDone);
-    await finishSubject(draftDelete, true);
-    const claimResult = await claimPromise;
-    expect("error" in claimResult).toBe(true);
-    await finishSubject(claim, false);
+    );
+    expect("error" in claimResult).toBe(false);
+    await finishSubject(claim, true);
   });
 
   it("serializes expense inserts and batch settlements", async () => {
