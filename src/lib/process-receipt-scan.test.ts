@@ -24,7 +24,8 @@ const mockOcrResult: ReceiptOcrResult = {
       totalCents: 2500,
     },
   ],
-  serviceFeePercent: 10,
+  serviceFeeBasisPoints: 1000,
+  fixedFeesCents: 0,
   totalCents: 5390,
 };
 

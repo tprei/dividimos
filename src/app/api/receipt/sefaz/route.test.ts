@@ -109,7 +109,8 @@ describe("POST /api/receipt/sefaz", () => {
     mockParseSefazPage.mockReturnValue({
       merchant: "Loja",
       items: [{ description: "Item", quantity: 1, unitPriceCents: 100, totalCents: 100 }],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 100,
     });
 
@@ -124,7 +125,8 @@ describe("POST /api/receipt/sefaz", () => {
     mockParseSefazPage.mockReturnValue({
       merchant: "Loja",
       items: [{ description: "Item", quantity: 1, unitPriceCents: 100, totalCents: 100 }],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 100,
     });
 
@@ -139,7 +141,8 @@ describe("POST /api/receipt/sefaz", () => {
     mockParseSefazPage.mockReturnValue({
       merchant: "Loja",
       items: [{ description: "Item", quantity: 1, unitPriceCents: 100, totalCents: 100 }],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 100,
     });
 
@@ -155,7 +158,8 @@ describe("POST /api/receipt/sefaz", () => {
       items: [
         { description: "Pao Frances", quantity: 10, unitPriceCents: 50, totalCents: 500 },
       ],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 500,
     };
     mockFetchSefazPage.mockResolvedValue({ ok: true, html: "<html>...</html>" });
@@ -193,7 +197,13 @@ describe("POST /api/receipt/sefaz", () => {
 
   it("returns 422 with fallback when no items extracted", async () => {
     mockFetchSefazPage.mockResolvedValue({ ok: true, html: "<html>empty</html>" });
-    mockParseSefazPage.mockReturnValue({ merchant: null, items: [], serviceFeePercent: 0, totalCents: 0 });
+    mockParseSefazPage.mockReturnValue({
+      merchant: null,
+      items: [],
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
+      totalCents: 0,
+    });
 
     const res = await POST(jsonRequest({ url: "https://nfce.sefaz.sp.gov.br/consulta" }));
 

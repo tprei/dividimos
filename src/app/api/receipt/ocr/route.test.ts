@@ -87,7 +87,8 @@ describe("POST /api/receipt/ocr", () => {
           totalCents: 1000,
         },
       ],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 1000,
     };
     mockParseReceiptImage.mockResolvedValue(ocrResult);
@@ -109,7 +110,8 @@ describe("POST /api/receipt/ocr", () => {
     mockParseReceiptImage.mockResolvedValue({
       merchant: null,
       items: [],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 0,
     });
 
@@ -128,7 +130,8 @@ describe("POST /api/receipt/ocr", () => {
     const ocrResult = {
       merchant: "Restaurante",
       items: [],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 0,
     };
     mockParseReceiptImage.mockResolvedValue(ocrResult);

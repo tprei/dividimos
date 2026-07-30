@@ -1,5 +1,4 @@
 import { GoogleGenAI } from "@google/genai";
-import { sanitizeReceiptResult } from "./receipt-sanitize";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -15,11 +14,14 @@ export interface ReceiptItem {
   totalCents: number;
 }
 
-/** Structured result from receipt OCR. */
+/** Structured result from receipt OCR. Fees are already integer basis
+ * points/cents at this boundary (issue #477); no float percent survives
+ * past this module. */
 export interface ReceiptOcrResult {
   merchant: string | null;
   items: ReceiptItem[];
-  serviceFeePercent: number;
+  serviceFeeBasisPoints: number;
+  fixedFeesCents: number;
   totalCents: number;
 }
 
@@ -57,29 +59,29 @@ const RECEIPT_SCHEMA = {
         required: ["description", "quantity", "unitPriceCents", "totalCents"],
       },
     },
-    serviceFeePercent: {
-      type: "number",
+    serviceFeeBasisPoints: {
+      type: "integer",
       description:
-        "Percentual de taxa de serviço (ex: 10 para 10%). 0 se não houver.",
+        "Taxa de serviço em pontos-base (1 ponto-base = 0,01%; 10% = 1000). 0 se não houver.",
     },
     totalCents: {
       type: "integer",
       description: "Valor total da nota em centavos",
     },
   },
-  required: ["merchant", "items", "serviceFeePercent", "totalCents"],
+  required: ["merchant", "items", "serviceFeeBasisPoints", "totalCents"],
 } as const;
 
 const SYSTEM_PROMPT = `Você é um parser de notas fiscais brasileiras (NFC-e / cupom fiscal).
 Extraia os dados estruturados da imagem. Regras:
 - Todos os valores monetários devem ser em centavos (inteiro). R$ 12,50 = 1250.
 - quantity deve refletir a quantidade real do item.
-- unitPriceCents é o preço de UMA unidade em centavos.
+- unitPriceCents é o preço de UMA unidade em centavos, como impresso na nota.
 - totalCents de cada item é o valor total da linha como impresso na nota (última coluna de valor). NÃO multiplique quantity × unitPriceCents — o valor já está multiplicado na nota.
-- unitPriceCents é o preço de UMA unidade. Se a nota mostra apenas qty e total, calcule unitPriceCents = totalCents / quantity.
-- serviceFeePercent: se houver "taxa de serviço" ou "serviço" na nota, informe o percentual. Caso contrário, 0.
-- totalCents (raiz): valor total da nota fiscal, incluindo taxas.
-- Se o texto estiver parcialmente ilegível, faça o melhor esforço.
+- Cada item DEVE ter tanto unitPriceCents quanto totalCents lidos diretamente da nota. Se a nota mostrar apenas um dos dois valores para um item (ex: só a quantidade e o total, sem preço unitário impresso), OMITA esse item da lista por completo — não calcule o valor que falta.
+- serviceFeeBasisPoints: se houver "taxa de serviço" ou "serviço" na nota como um percentual explícito, converta para pontos-base (10% = 1000, 12,5% = 1250). Caso contrário, 0. NUNCA calcule o percentual dividindo um valor monetário de taxa pelo subtotal — se só houver um valor em R$ sem percentual impresso, informe 0.
+- totalCents (raiz): valor total da nota fiscal impresso, incluindo taxas. NUNCA calcule somando os itens — se o total da nota não estiver legível, retorne 0.
+- Se o texto estiver parcialmente ilegível, omita os itens ou valores ilegíveis em vez de adivinhar.
 - Não invente itens que não existem na imagem.`;
 
 /**
@@ -130,10 +132,35 @@ export async function parseReceiptImage(
     throw new Error("Gemini returned empty response");
   }
 
-  const parsed = JSON.parse(text) as ReceiptOcrResult;
-  parsed.totalCents = Math.round(parsed.totalCents ?? 0);
-  parsed.serviceFeePercent = Math.max(0, parsed.serviceFeePercent ?? 0);
-  parsed.items = Array.isArray(parsed.items) ? parsed.items : [];
+  const parsed = JSON.parse(text) as {
+    merchant: unknown;
+    items: unknown;
+    serviceFeeBasisPoints: unknown;
+    totalCents: unknown;
+  };
 
-  return sanitizeReceiptResult(parsed);
+  const merchant = typeof parsed.merchant === "string" ? parsed.merchant : null;
+
+  // Keep only items with both a stated unit price and a stated line total
+  // (issue #477: never solve a non-unique inverse from quantity + one value).
+  const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+  const items: ReceiptItem[] = [];
+  for (const raw of rawItems) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const r = raw as Record<string, unknown>;
+    const description = typeof r.description === "string" ? r.description.trim() : "";
+    const quantity = typeof r.quantity === "number" && Number.isFinite(r.quantity) && r.quantity > 0 ? r.quantity : 0;
+    const unitPriceCents = Number.isInteger(r.unitPriceCents) && (r.unitPriceCents as number) > 0 ? (r.unitPriceCents as number) : 0;
+    const totalCents = Number.isInteger(r.totalCents) && (r.totalCents as number) > 0 ? (r.totalCents as number) : 0;
+    if (!description || !quantity || !unitPriceCents || !totalCents) continue;
+    items.push({ description, quantity, unitPriceCents, totalCents });
+  }
+
+  const serviceFeeBasisPoints =
+    Number.isInteger(parsed.serviceFeeBasisPoints) && (parsed.serviceFeeBasisPoints as number) > 0
+      ? (parsed.serviceFeeBasisPoints as number)
+      : 0;
+  const totalCents = Number.isInteger(parsed.totalCents) && (parsed.totalCents as number) > 0 ? (parsed.totalCents as number) : 0;
+
+  return { merchant, items, serviceFeeBasisPoints, fixedFeesCents: 0, totalCents };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, Check, Pencil, Plus, Store, Trash2, X } from "lucide-react";
+import { Check, Pencil, Plus, Store, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { QuantityStepper } from "@/components/bill/quantity-stepper";
@@ -15,7 +15,12 @@ import {
   parseExpenseQuantity,
   type ExpenseQuantity,
 } from "@/lib/expense-quantity";
-import { brandExpenseCents } from "@/lib/expense-money";
+import {
+  brandExpenseCents,
+  formatServiceFeeBasisPoints,
+  parseServiceFeeBasisPoints,
+  parseServiceFeeBasisPointsText,
+} from "@/lib/expense-money";
 import {
   formatBRL,
 } from "@/lib/currency";
@@ -35,7 +40,7 @@ interface EditingState {
 }
 
 interface ScannedItemsReviewProps {
-  result: ReceiptOcrResult & { totalMismatch?: boolean };
+  result: ReceiptOcrResult;
   onConfirm: (result: ReceiptOcrResult) => void;
   onCancel: () => void;
 }
@@ -52,9 +57,10 @@ export function ScannedItemsReview({
     })),
   );
   const [merchant, setMerchant] = useState(result.merchant ?? "");
-  const [serviceFee, setServiceFee] = useState(
-    result.serviceFeePercent.toString(),
-  );
+  const [serviceFee, setServiceFee] = useState(() => {
+    const bps = parseServiceFeeBasisPoints(result.serviceFeeBasisPoints);
+    return bps.ok ? formatServiceFeeBasisPoints(bps.value).replace("%", "") : "0";
+  });
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [adding, setAdding] = useState(false);
   const [newDescription, setNewDescription] = useState("");
@@ -62,6 +68,7 @@ export function ScannedItemsReview({
   const [newPriceCents, setNewPriceCents] = useState(0);
 
   const computedTotal = items.reduce((sum, item) => sum + item.totalCents, 0);
+  const serviceFeeResult = parseServiceFeeBasisPointsText(serviceFee || "0");
 
   const startEdit = useCallback(
     (index: number) => {
@@ -134,15 +141,15 @@ export function ScannedItemsReview({
   }, [newDescription, newQuantity, newPriceCents]);
 
   const handleConfirm = useCallback(() => {
-    if (items.length === 0) return;
-    const feePercent = parseFloat(serviceFee.replace(",", ".")) || 0;
+    if (items.length === 0 || !serviceFeeResult.ok) return;
     onConfirm({
       merchant: merchant.trim() || null,
       items,
-      serviceFeePercent: Math.max(0, feePercent),
+      serviceFeeBasisPoints: serviceFeeResult.value as number,
+      fixedFeesCents: 0,
       totalCents: computedTotal,
     });
-  }, [items, merchant, serviceFee, computedTotal, onConfirm]);
+  }, [items, merchant, serviceFeeResult, computedTotal, onConfirm]);
 
   return (
     <motion.div
@@ -403,7 +410,13 @@ export function ScannedItemsReview({
           placeholder="0"
           value={serviceFee}
           onChange={(e) => setServiceFee(e.target.value.replace(/[^\d,]/g, ""))}
+          aria-invalid={!serviceFeeResult.ok}
         />
+        {!serviceFeeResult.ok && (
+          <p className="mt-1.5 text-xs text-destructive">
+            Taxa de servico invalida.
+          </p>
+        )}
       </div>
 
       {/* Total */}
@@ -418,17 +431,6 @@ export function ScannedItemsReview({
         </div>
       </div>
 
-      {/* Mismatch warning */}
-      {result.totalMismatch && result.totalCents > 0 && computedTotal !== result.totalCents && (
-        <div className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Total da nota: {formatBRL(result.totalCents)} — itens somam{" "}
-            {formatBRL(computedTotal)}. Confira os valores.
-          </span>
-        </div>
-      )}
-
       {/* Actions */}
       <div className="flex gap-3">
         <Button variant="outline" className="flex-1" onClick={onCancel}>
@@ -437,7 +439,7 @@ export function ScannedItemsReview({
         <Button
           className="flex-1"
           onClick={handleConfirm}
-          disabled={items.length === 0}
+          disabled={items.length === 0 || !serviceFeeResult.ok}
         >
           Confirmar
         </Button>
