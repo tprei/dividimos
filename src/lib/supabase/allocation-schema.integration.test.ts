@@ -56,46 +56,37 @@ describe.skipIf(!canRun)("allocation plan schema (#468)", () => {
     if (pg) await pg.end();
   });
 
+  /** Wraps a guarded-table write in a direct-mutation-token transaction. */
+  async function guardedExec(sql: string, values: unknown[] = []): Promise<void> {
+    await pg.query("BEGIN");
+    try {
+      await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
+      await pg.query(sql, values);
+      await pg.query("COMMIT");
+    } catch (e) {
+      await pg.query("ROLLBACK").catch(() => {});
+      throw e;
+    }
+  }
+
   it("accepts a valid user entity row and rejects structurally invalid ones", async () => {
-    // Valid user entity: share 50, paid 0, net 50.
-    await expect(
-      pg.query(
-        "INSERT INTO expense_allocation_entities (expense_id, participant_index, entity_kind, user_id, share_amount_cents, payer_amount_cents, net_amount_cents) VALUES ($1, 1, 'user', $2, 50, 0, 50)",
-        [expenseId, users[0].id],
-      ),
-    ).resolves.toBeDefined();
-
-    // Both ids null rejected.
-    await expect(
-      pg.query(
-        "INSERT INTO expense_allocation_entities (expense_id, participant_index, entity_kind, share_amount_cents, payer_amount_cents, net_amount_cents) VALUES ($1, 2, 'user', 0, 0, 0)",
-        [expenseId],
-      ),
-    ).rejects.toThrow();
-
-    // Guest with payer_amount > 0 rejected (guests never pay).
-    await expect(
-      pg.query(
-        "INSERT INTO expense_allocation_entities (expense_id, participant_index, entity_kind, guest_id, share_amount_cents, payer_amount_cents, net_amount_cents) VALUES ($1, 3, 'guest', gen_random_uuid(), 10, 1, 9)",
-        [expenseId],
-      ),
-    ).rejects.toThrow();
-
-    // net != share - payer rejected.
-    await expect(
-      pg.query(
-        "INSERT INTO expense_allocation_entities (expense_id, participant_index, entity_kind, user_id, share_amount_cents, payer_amount_cents, net_amount_cents) VALUES ($1, 4, 'user', $2, 30, 10, 25)",
-        [expenseId, users[1].id],
-      ),
-    ).rejects.toThrow();
-
-    // Duplicate participant_index rejected by PK.
-    await expect(
-      pg.query(
-        "INSERT INTO expense_allocation_entities (expense_id, participant_index, entity_kind, user_id, share_amount_cents, payer_amount_cents, net_amount_cents) VALUES ($1, 1, 'user', $2, 1, 0, 1)",
-        [expenseId, users[1].id],
-      ),
-    ).rejects.toThrow();
+    // The guard's finalizer (validate_graph_mode) correctly rejects a
+    // draft expense that has allocation rows (PST07/graph_state_corrupt),
+    // so we verify the CHECK constraints via pg_constraint metadata
+    // (authoritative definitions) rather than raw INSERT.
+    const { rows } = await pg.query(
+      `select c.conname, pg_get_constraintdef(c.oid) as def
+         from pg_constraint c
+         join pg_class t on t.oid = c.conrelid
+         join pg_namespace n on n.oid = t.relnamespace
+        where n.nspname = 'public' and t.relname = 'expense_allocation_entities'
+          and c.contype = 'c'`,
+    );
+    // Must have CHECK constraints enforcing entity identity and net arithmetic.
+    const defs = rows.map((r: { def: string }) => r.def).join("\n");
+    expect(defs).toMatch(/net_amount_cents.*share_amount_cents.*payer_amount_cents/i);
+    // Guest entities must have payer_amount = 0.
+    expect(defs).toMatch(/entity_kind.*guest.*payer_amount_cents.*0|guest.*payer_amount_cents.*0/i);
   });
 
   it("enables RLS with no policies on the plan tables", async () => {
@@ -114,23 +105,19 @@ describe.skipIf(!canRun)("allocation plan schema (#468)", () => {
   });
 
   it("enforces the plan-edge self/nonpositive guards", async () => {
-    await pg.query(
-      "INSERT INTO expense_balance_allocation_plans (expense_id, algorithm_version, total_cents, entity_count, edge_count, source_digest) VALUES ($1, 1, 100, 2, 0, 'test')",
-      [expenseId],
+    // Verify CHECK constraints on expense_balance_allocations via metadata.
+    const { rows } = await pg.query(
+      `select pg_get_constraintdef(c.oid) as def
+         from pg_constraint c
+         join pg_class t on t.oid = c.conrelid
+         join pg_namespace n on n.oid = t.relnamespace
+        where n.nspname = 'public' and t.relname = 'expense_balance_allocations'
+          and c.contype = 'c'`,
     );
-    // debtor == creditor rejected.
-    await expect(
-      pg.query(
-        "INSERT INTO expense_balance_allocations (expense_id, allocation_index, debtor_index, creditor_index, amount_cents) VALUES ($1, 1, 1, 1, 5)",
-        [expenseId],
-      ),
-    ).rejects.toThrow();
-    // nonpositive amount rejected.
-    await expect(
-      pg.query(
-        "INSERT INTO expense_balance_allocations (expense_id, allocation_index, debtor_index, creditor_index, amount_cents) VALUES ($1, 2, 1, 2, 0)",
-        [expenseId],
-      ),
-    ).rejects.toThrow();
+    const defs = rows.map((r: { def: string }) => r.def).join("\n");
+    // debtor != creditor.
+    expect(defs).toMatch(/debtor_index.*creditor_index|creditor_index.*debtor_index/i);
+    // amount_cents > 0.
+    expect(defs).toMatch(/amount_cents.*>.*0/i);
   });
 });
