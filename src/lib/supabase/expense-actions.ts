@@ -1,7 +1,9 @@
 import { createClient } from "@/lib/supabase/client";
 import {
   decodeExpenseGraphSaveResult,
+  decodeExpenseGraphSaveLookupResult,
   type ExpenseCents,
+  type ExpenseGraphSaveLookupResult,
   type ExpenseGraphSaveResult,
   type GraphRevision,
   type NormalizedExpenseItem,
@@ -219,6 +221,39 @@ export async function saveExpenseDraft(
   const result = decodeExpenseGraphSaveResult(data);
   if (!result.ok) {
     return { error: "Erro ao salvar rascunho" };
+  }
+
+  return result.value;
+}
+
+/**
+ * Resolve a save-operation ledger entry for durable client reconciliation.
+ * Call after a page reload if the save response was lost. Returns:
+ *  - null: operation hasn't reached the server (save is still in-flight or
+ *    never started)
+ *  - { outcome: "committed", expenseId, graphRevision }: the save succeeded
+ *  - { outcome: "retired" }: the operation was superseded/cancelled
+ */
+export async function resolveExpenseGraphSaveResult(
+  saveOperationId: string,
+  groupId: string,
+): Promise<ExpenseGraphSaveLookupResult | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc(
+    "resolve_expense_graph_save_result" as never,
+    {
+      p_save_operation_id: saveOperationId,
+      p_group_id: groupId,
+    } as never,
+  );
+
+  if (error || data === null) {
+    return null;
+  }
+
+  const result = decodeExpenseGraphSaveLookupResult(data);
+  if (!result.ok) {
+    return null;
   }
 
   return result.value;
