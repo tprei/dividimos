@@ -8,6 +8,7 @@ import {
 import {
   createTestGroupWithMembers,
   createTestUsers,
+  authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -31,17 +32,26 @@ describe.skipIf(!canRun)("allocation plan schema (#468)", () => {
     // allocation tables (#468), but these tests manually insert
     // participant/plan/edge rows to exercise the CHECK constraints,
     // so the expense must carry no allocation rows yet.
-    const ins = await pg.query<{ id: string }>(
-      "insert into expenses(group_id, creator_id, title, expense_type, total_amount, status) " +
-        "values ($1, $2, 'alloc-schema-468', 'single_amount', 100, 'draft') returning id",
-      [groupId, users[0].id],
-    );
-    expenseId = ins.rows[0].id;
+    const creator = authenticateAs(users[0]);
+    const { data, error } = await creator.rpc("save_expense_draft_graph", {
+      p_expense: { group_id: groupId, title: "alloc-schema-468", merchant_name: null,
+        expense_type: "single_amount", total_amount: 100, service_fee_basis_points: 0, fixed_fees: 0 },
+      p_items: [], p_shares: [], p_payers: [],
+      p_guests: [], p_guest_shares: [], p_participant_order: [],
+      p_expected_graph_revision: 0, p_save_operation_id: crypto.randomUUID(),
+    });
+    if (error || !data) throw new Error("Failed to create fixture: " + error?.message);
+    expenseId = (data as { id: string }).id;
   });
 
   afterAll(async () => {
-    if (expenseId && adminClient) {
-      await adminClient.from("expenses").delete().eq("id", expenseId);
+    if (expenseId) {
+      try {
+        await pg.query("BEGIN");
+        await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
+        await pg.query("delete from expenses where id = $1", [expenseId]);
+        await pg.query("COMMIT");
+      } catch { /* best-effort */ }
     }
     if (pg) await pg.end();
   });
