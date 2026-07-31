@@ -1033,6 +1033,14 @@ function NewBillPageContent() {
       // abandon-and-restart instead of crash recovery/activation retry).
       setRemoteBillId(null);
       draftRevisionRef.current = ZERO_GRAPH_REVISION;
+      // These are bound directly to the info step's visible inputs
+      // (title/merchantName/serviceFee/fixedFees) -- without resetting
+      // them here, a new bill would open showing the abandoned draft's
+      // title/fee text still pre-filled.
+      setTitle("");
+      setMerchantName("");
+      setServiceFee("10");
+      setFixedFees("");
       return;
     }
     if (isDmMode && billType === "single_amount") {
@@ -1092,21 +1100,7 @@ function NewBillPageContent() {
           </button>
         ) : !isTypeStep ? (
           <button
-            onClick={() => {
-              if (isDmMode && selectedGroupId) {
-                router.push(`/app/chat/${selectedGroupId}`);
-              } else if (isEditing && editDraftId) {
-                router.push(`/app/bill/${editDraftId}`);
-              } else {
-                setStep("type");
-                setBillType(null);
-                // #477 Slice 5: same fix as goBack()'s stepIndex === 0
-                // path -- see that comment for why this must reset
-                // remoteBillId/draftRevisionRef, not just step/billType.
-                setRemoteBillId(null);
-                draftRevisionRef.current = ZERO_GRAPH_REVISION;
-              }
-            }}
+            onClick={goBack}
             className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
           >
             <ArrowLeft className="h-5 w-5" />
