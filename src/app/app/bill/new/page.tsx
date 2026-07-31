@@ -1091,6 +1091,14 @@ function NewBillPageContent() {
       setMerchantName("");
       setServiceFee("10");
       setFixedFees("");
+      // A stale non-null selectedGroupId here would make the
+      // participants step's `if (!groupId)` check skip its own
+      // group-creation/DM-lookup entirely (see the participants-step
+      // save branch), silently placing the brand-new bill in the
+      // abandoned draft's group instead of creating/selecting a fresh
+      // one -- wrong participants, wrong balances.
+      setSelectedGroupId(null);
+      setSelectedGroupName(null);
       return;
     }
     if (isDmMode && billType === "single_amount") {
