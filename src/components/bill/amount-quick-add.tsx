@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -10,6 +10,7 @@ interface AmountQuickAddCentsProps {
   onChangeCents: (cents: number) => void;
   currentValue?: never;
   onChange?: never;
+  resetRevision?: number;
 }
 
 interface AmountQuickAddStringProps {
@@ -18,6 +19,7 @@ interface AmountQuickAddStringProps {
   onChange: (newValue: string) => void;
   valueCents?: never;
   onChangeCents?: never;
+  resetRevision?: number;
 }
 
 type AmountQuickAddProps = AmountQuickAddCentsProps | AmountQuickAddStringProps;
@@ -53,6 +55,17 @@ export function AmountQuickAdd(props: AmountQuickAddProps) {
   const centsHistoryRef = useRef<number[]>([]);
   const stringHistoryRef = useRef<string[]>([]);
   const [canUndo, setCanUndo] = useState(false);
+
+  // A hydration/session/type/group reset (issue #477's
+  // `DraftSessionState.inputResetRevision`) clears undo history before the
+  // next interaction: undo must never cross a source generation/input
+  // reset or write a prior draft's cents into the current draft.
+  const { resetRevision } = props;
+  useEffect(() => {
+    centsHistoryRef.current = [];
+    stringHistoryRef.current = [];
+    setCanUndo(false);
+  }, [resetRevision]);
 
   const handleAdd = useCallback(
     (increment: number) => {

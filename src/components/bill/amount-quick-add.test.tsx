@@ -119,4 +119,26 @@ describe("AmountQuickAdd", () => {
     await user.click(screen.getByLabelText("Desfazer"));
     expect(onChange).toHaveBeenLastCalledWith("");
   });
+
+  it("resetRevision clears undo history before the next interaction (#477)", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AmountQuickAdd currentValue="" onChange={onChange} resetRevision={0} />,
+    );
+
+    await user.click(screen.getByText("+R$10"));
+    expect(screen.getByLabelText("Desfazer")).toBeInTheDocument();
+
+    // A record switch that bumps resetRevision must clear undo history
+    // before the next interaction, even though currentValue itself also
+    // changed here — this proves the reset path, not just prop passthrough.
+    rerender(<AmountQuickAdd currentValue="99,00" onChange={onChange} resetRevision={1} />);
+    expect(screen.queryByLabelText("Desfazer")).not.toBeInTheDocument();
+
+    // A prior draft's cents must never leak into the current draft via undo.
+    await user.click(screen.getByText("+R$5"));
+    await user.click(screen.getByLabelText("Desfazer"));
+    expect(onChange).toHaveBeenLastCalledWith("99,00");
+  });
 });
