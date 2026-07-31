@@ -47,6 +47,42 @@ describe("Edit Draft Flow", () => {
     expect(state.payers).toHaveLength(1);
   });
 
+  it("restores guests from a draft expense (regression: guests were previously always discarded)", () => {
+    const expense = makeExpense({ id: "draft-1b", title: "Jantar com convidado" });
+    const items = [makeExpenseItem({ id: "item-1b" })];
+
+    useBillStore.getState().hydrateFromServer({
+      expense,
+      items,
+      participants: [userAlice],
+      guests: [{ id: "guest-maria", name: "Maria" }],
+    });
+
+    const state = useBillStore.getState();
+    expect(state.guests).toHaveLength(1);
+    expect(state.guests[0]).toMatchObject({ id: "guest-maria", name: "Maria" });
+  });
+
+  it("restores a guest's single_amount share so it is not deleted on the next save", () => {
+    const expense = makeSingleAmountExpense({ id: "draft-1c", totalAmount: 10000 });
+    const billSplits: AmountSplit[] = [
+      { userId: "user-alice", splitType: "equal", value: 1, computedAmountCents: 5000 },
+      { userId: "guest-maria", splitType: "equal", value: 1, computedAmountCents: 5000 },
+    ];
+
+    useBillStore.getState().hydrateFromServer({
+      expense,
+      items: [],
+      participants: [userAlice],
+      guests: [{ id: "guest-maria", name: "Maria" }],
+      billSplits,
+    });
+
+    const state = useBillStore.getState();
+    expect(state.guests.map((g) => g.id)).toContain("guest-maria");
+    expect(state.getParticipantTotal("guest-maria")).toBe(5000);
+  });
+
   it("restores a single_amount draft expense into the store", () => {
     const expense = makeSingleAmountExpense({
       id: "draft-2",
