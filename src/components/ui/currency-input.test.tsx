@@ -103,6 +103,39 @@ describe("CurrencyInput", () => {
     expect(input).not.toHaveAttribute("aria-invalid");
   });
 
+  it("resetRevision clears a stale invalid override even when valueCents is numerically unchanged (#477)", () => {
+    function ResetRevisionWrapper() {
+      const [cents] = useState(1000);
+      const [revision, setRevision] = useState(0);
+      return (
+        <>
+          <CurrencyInput
+            valueCents={cents}
+            onChangeCents={() => {}}
+            maxCents={5000}
+            resetRevision={revision}
+            data-testid="ci"
+          />
+          <button data-testid="bump" onClick={() => setRevision((r) => r + 1)}>
+            bump
+          </button>
+        </>
+      );
+    }
+    render(<ResetRevisionWrapper />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "999999,00" } });
+    expect(input).toHaveAttribute("aria-invalid");
+
+    // valueCents (1000) never changes, only resetRevision bumps — the
+    // plain value-change effect alone would miss this, which is exactly
+    // why DraftSessionState.inputResetRevision exists.
+    fireEvent.click(screen.getByTestId("bump"));
+    expect(input.value).toBe("10,00");
+    expect(input).not.toHaveAttribute("aria-invalid");
+  });
+
   it("backspace from an invalid override recovers to a valid committed value", () => {
     function MaxWrapper() {
       const [cents, setCents] = useState(0);

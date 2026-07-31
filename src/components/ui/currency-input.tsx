@@ -12,6 +12,15 @@ interface CurrencyInputProps {
   disabled?: boolean;
   className?: string;
   autoFocus?: boolean;
+  /**
+   * A monotonically increasing counter the owning form bumps on every
+   * hydration/session/type/group reset transition (issue #477's
+   * `DraftSessionState.inputResetRevision`). A change here — even when
+   * `valueCents` is numerically unchanged — discards any stale uncommitted
+   * invalid override, so an invalid draft from a prior record can never
+   * survive a record switch that happens to land on the same cents value.
+   */
+  resetRevision?: number;
 }
 
 const minorUnitsPerReal = BigInt(100);
@@ -60,6 +69,7 @@ export function CurrencyInput({
   disabled = false,
   className,
   autoFocus,
+  resetRevision,
   ...rest
 }: CurrencyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,10 +83,13 @@ export function CurrencyInput({
   const [rawOverride, setRawOverride] = useState<string | null>(null);
 
   // A prop-driven value change (hydration/reset/reload) always restores
-  // canonical valid text, discarding any stale uncommitted override.
+  // canonical valid text, discarding any stale uncommitted override. A
+  // `resetRevision` bump does the same even when `valueCents` is
+  // numerically unchanged, so a record switch that lands on an equal
+  // cents value still clears stale invalid text from the prior record.
   useEffect(() => {
     setRawOverride(null);
-  }, [valueCents]);
+  }, [valueCents, resetRevision]);
 
   useEffect(() => {
     const isValid = rawOverride === null;
