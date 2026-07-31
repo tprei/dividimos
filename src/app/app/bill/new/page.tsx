@@ -595,7 +595,6 @@ function NewBillPageContent() {
     }
   }, [store, title, billType, merchantName, serviceFee, fixedFees, authUser]);
 
-  const [, setSyncing] = useState(false);
   const [remoteBillId, setRemoteBillId] = useState<string | null>(null);
 
   const allAccepted = true;
@@ -937,14 +936,11 @@ function NewBillPageContent() {
       if (!allAccepted && store.participants.length > 1) {
         return;
       }
-      setSyncing(true);
-
       const params = buildDraftParams(remoteBillId ?? undefined);
       if (params) {
         const saveResult = await durableSaveDraft(params);
         if (!("expenseId" in saveResult)) {
           toast.error(saveResult.error);
-          setSyncing(false);
           return;
         }
         const expenseId = saveResult.expenseId;
@@ -962,10 +958,8 @@ function NewBillPageContent() {
           return;
         }
         toast.error(activationResult.error);
-        setSyncing(false);
         return;
       }
-      setSyncing(false);
       return;
     }
     let next = steps[stepIndex + 1];
