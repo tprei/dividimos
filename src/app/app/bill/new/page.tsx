@@ -182,6 +182,7 @@ function NewBillPageContent() {
     dmLoadedRef.current = true;
 
     const dmType = (searchParams.get("type") as ExpenseType) || "single_amount";
+    let cancelled = false;
 
     (async () => {
       const supabase = createClient();
@@ -190,7 +191,11 @@ function NewBillPageContent() {
         .select("id, handle, name, avatar_url")
         .eq("id", dmUserId)
         .single();
-      if (!profile) return;
+      // #477 Slice 5: a route change away from DM quick-charge mode while
+      // this profile fetch is in flight must not still hydrate the store
+      // for a departed session (DraftSessionState's "no late completion
+      // may reset or navigate a departed route").
+      if (cancelled || !profile) return;
       const profileMapped = userProfileRowToUserProfile(profile);
 
       const counterparty: User = {
@@ -205,25 +210,30 @@ function NewBillPageContent() {
         createdAt: new Date().toISOString(),
       };
 
-      store.setCurrentUser(authUser);
+      const billStore = useBillStore.getState();
+      billStore.setCurrentUser(authUser);
       setSelectedGroupId(dmGroupId);
       setIsDmMode(true);
 
       if (dmType === "single_amount") {
-        store.createExpenseFromDm(dmGroupId, counterparty);
+        billStore.createExpenseFromDm(dmGroupId, counterparty);
         const autoTitle = `Cobrança - ${profileMapped.name.split(" ")[0]}`;
-        store.updateExpense({ title: autoTitle });
+        billStore.updateExpense({ title: autoTitle });
         setTitle(autoTitle);
         setBillType("single_amount");
         setStep("amount-split");
       } else {
-        store.createExpense("", "itemized", undefined, dmGroupId);
-        store.addParticipant(counterparty);
+        billStore.createExpense("", "itemized", undefined, dmGroupId);
+        billStore.addParticipant(counterparty);
         setBillType("itemized");
         setStep("info");
       }
     })();
-  }, [searchParams, authUser, store]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, authUser]);
 
   // Chat draft edit mode: consume ?groupId=<id>&title=<text>&amount=<cents>
   useEffect(() => {
@@ -620,6 +630,8 @@ function NewBillPageContent() {
     const groupIdParam = searchParams.get("groupId");
     if (!groupIdParam || selectedGroupId || step !== "participants" || !authUser) return;
 
+    let cancelled = false;
+
     (async () => {
       const supabase = createClient();
       const { data: group } = await supabase
@@ -627,13 +639,14 @@ function NewBillPageContent() {
         .select("name, creator_id")
         .eq("id", groupIdParam)
         .single();
-      if (!group) return;
+      if (cancelled || !group) return;
 
       const { data: acceptedMembers } = await supabase
         .from("group_members")
         .select("user_id")
         .eq("group_id", groupIdParam)
         .eq("status", "accepted");
+      if (cancelled) return;
 
       const allMemberIds = [...new Set([
         ...(acceptedMembers ?? []).map((m) => m.user_id),
@@ -645,17 +658,26 @@ function NewBillPageContent() {
         .from("user_profiles")
         .select("id, handle, name, avatar_url")
         .in("id", otherIds);
+      // #477 Slice 5: groupIdParam/step/authUser can change (route
+      // navigation away from the participants step, or a different group
+      // selected) before this three-step async chain resolves. Without
+      // this guard, a late-arriving result would still overwrite the
+      // group/member selection and mutate participants -- exactly the
+      // "no late completion may reset or navigate a departed route" case
+      // the DraftSessionState spec requires.
+      if (cancelled) return;
 
       setSelectedGroupId(groupIdParam);
       setSelectedGroupName(group.name);
       setGroupMembers((profiles ?? []).map(userProfileRowToUserProfile));
 
-      for (const p of [...store.participants]) {
-        if (p.id !== authUser.id) store.removeParticipant(p.id);
+      const billStore = useBillStore.getState();
+      for (const p of [...billStore.participants]) {
+        if (p.id !== authUser.id) billStore.removeParticipant(p.id);
       }
       for (const row of profiles ?? []) {
         const mapped = userProfileRowToUserProfile(row);
-        store.addParticipant({
+        billStore.addParticipant({
           id: mapped.id,
           email: "",
           handle: mapped.handle,
@@ -668,7 +690,11 @@ function NewBillPageContent() {
         });
       }
     })();
-  }, [step, searchParams, selectedGroupId, authUser, store]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, searchParams, selectedGroupId, authUser]);
 
   const voiceStepRef = useRef(false);
   useEffect(() => {
