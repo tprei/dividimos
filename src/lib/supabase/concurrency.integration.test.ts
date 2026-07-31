@@ -754,5 +754,157 @@ describe.skipIf(!isIntegrationTestReady)(
         }
       });
     });
+
+    // -----------------------------------------------------------------------
+    // 5.8 — #495 checklist item 20: two-connection stale Bob-payer PST08
+    //       barrier test. Two racing save_expense_draft_graph replacements
+    //       at the same expected revision: one removes Bob (payer)
+    //       entirely and reallocates to Alice; the other resubmits Bob's
+    //       unchanged share/payer state, representing a stale tab that
+    //       never observed the removal. Exactly one wins; the loser gets
+    //       PST08/stale_graph_revision with zero effect, and the winner's
+    //       payload is exactly what persists -- proving the same CAS
+    //       mechanism proven generically elsewhere in this suite also
+    //       rejects a stale write whose payload still names a removed
+    //       payer, not just an unrelated stale field.
+    // -----------------------------------------------------------------------
+
+    describe("5.8 — concurrent draft replacement: Bob removal vs stale Bob-payer resubmit", () => {
+      it("exactly one save wins; the loser gets PST08 and the persisted graph matches only the winner", async () => {
+        const [ivy, jack] = await createTestUsers(2, { name: "5.8-stale-bob" });
+        const group = await createTestGroupWithMembers(ivy, [jack]);
+
+        const draft = await saveDraft(ivy, group.id, {
+          title: "5.8 stale Bob-payer fixture",
+          totalAmount: 6000,
+          shares: [
+            { userId: ivy.id, amount: 3000 },
+            { userId: jack.id, amount: 3000 },
+          ],
+          payers: [{ userId: jack.id, amount: 6000 }],
+        });
+        const expenseId = draft.id;
+        const baseRevision = draft.graphRevision;
+
+        const ivyClient = authenticateAs(ivy);
+
+        const removalPayload = {
+          p_expense: {
+            id: expenseId,
+            group_id: group.id,
+            title: "5.8 stale Bob-payer fixture",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 6000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [{ user_id: ivy.id, share_amount_cents: 6000 }],
+          p_payers: [{ user_id: ivy.id, amount_cents: 6000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: baseRevision,
+          p_save_operation_id: crypto.randomUUID(),
+        };
+        const staleBobPayload = {
+          p_expense: {
+            id: expenseId,
+            group_id: group.id,
+            title: "5.8 stale Bob-payer fixture",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 6000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [
+            { user_id: ivy.id, share_amount_cents: 3000 },
+            { user_id: jack.id, share_amount_cents: 3000 },
+          ],
+          p_payers: [{ user_id: jack.id, amount_cents: 6000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: baseRevision,
+          p_save_operation_id: crypto.randomUUID(),
+        };
+
+        const { result: [removeResult, staleResult], contention } =
+          await forceLockContentionRace(
+            process.env.SUPABASE_DB_URL!,
+            {
+              lockSql: "select id from groups where id = $1 for update",
+              lockParams: [group.id],
+              queryContains: ["save_expense_draft_graph"],
+              expectedRacers: 2,
+            },
+            () =>
+              Promise.allSettled([
+                ivyClient.rpc("save_expense_draft_graph", removalPayload),
+                ivyClient.rpc("save_expense_draft_graph", staleBobPayload),
+              ]),
+          );
+
+        expect(contention.observed).toBe(true);
+        if (removeResult.status !== "fulfilled" || staleResult.status !== "fulfilled") {
+          throw new Error("both RPC calls must resolve (not reject) regardless of ordering");
+        }
+
+        const removalWon = removeResult.value.error === null;
+        const staleWon = staleResult.value.error === null;
+        // Exactly one save wins; never both, never neither.
+        expect(removalWon).not.toBe(staleWon);
+        if (removalWon) {
+          expect(staleResult.value.error!.message).toMatch(/stale_graph_revision/);
+        } else {
+          expect(removeResult.value.error!.message).toMatch(/stale_graph_revision/);
+        }
+
+        const { adminClient } = await import("@/test/integration-setup");
+        const [{ data: shareRows }, { data: payerRows }, { data: expenseRow }] = await Promise.all([
+          adminClient!
+            .from("expense_shares")
+            .select("user_id, share_amount_cents")
+            .eq("expense_id", expenseId),
+          adminClient!
+            .from("expense_payers")
+            .select("user_id, amount_cents")
+            .eq("expense_id", expenseId),
+          adminClient!
+            .from("expenses")
+            .select("graph_revision")
+            .eq("id", expenseId)
+            .single(),
+        ]);
+
+        // Revision advances exactly once regardless of which side won.
+        expect(expenseRow!.graph_revision).toBe(baseRevision + 1);
+
+        if (removalWon) {
+          // Exact readback equals the removal's graph: Bob is gone
+          // entirely, no mixed children from the losing stale payload.
+          expect(shareRows).toHaveLength(1);
+          expect(shareRows![0]).toMatchObject({ user_id: ivy.id, share_amount_cents: 6000 });
+          expect(payerRows).toHaveLength(1);
+          expect(payerRows![0]).toMatchObject({ user_id: ivy.id, amount_cents: 6000 });
+        } else {
+          // The stale-but-first-to-commit resubmit won: Bob's original
+          // graph persists byte-for-byte, and the losing removal made
+          // zero effect (not a partial/mixed application of either).
+          expect(shareRows).toHaveLength(2);
+          expect(shareRows).toEqual(
+            expect.arrayContaining([
+              { user_id: ivy.id, share_amount_cents: 3000 },
+              { user_id: jack.id, share_amount_cents: 3000 },
+            ]),
+          );
+          expect(payerRows).toHaveLength(1);
+          expect(payerRows![0]).toMatchObject({ user_id: jack.id, amount_cents: 6000 });
+        }
+      });
+    });
   },
 );
