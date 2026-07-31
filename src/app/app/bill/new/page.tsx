@@ -710,18 +710,29 @@ function NewBillPageContent() {
   // Mount-time reconciliation: if a previous save response was lost (crash,
   // tab close, network error), resolve the pending operation to recover
   // the expense ID without a duplicate save.
+  //
+  // #477 Slice 5: a "committed" result must not just poison remoteBillId
+  // in place. This effect runs on mount, before the user has typed
+  // anything into what looks like a blank wizard. Silently setting
+  // remoteBillId/draftRevisionRef here made every *subsequent* save in
+  // that session -- for a completely unrelated new draft the user was
+  // about to create -- a replacement save against the recovered expense's
+  // ID instead of a new-expense creation, silently overwriting the
+  // recovered draft's content with unrelated data the user never
+  // reviewed. Redirect into the existing, already race-hardened
+  // ?draft=<id> edit-load flow instead, so the recovered draft is fully
+  // hydrated and visible before the user can act on it.
   useEffect(() => {
     const pending = consumePendingSaveOperation();
     if (!pending) return;
     resolveExpenseGraphSaveResult(pending.operationId, pending.groupId)
       .then((result) => {
-        if (result?.outcome === "committed") {
-          setRemoteBillId(result.expenseId);
-          draftRevisionRef.current = result.graphRevision;
-        }
+        if (result?.outcome !== "committed") return;
+        if (searchParams.get("draft") === result.expenseId) return;
+        router.push(`/app/bill/new?draft=${result.expenseId}`);
       })
       .catch(() => {});
-  }, []);
+  }, [router, searchParams]);
 
   const buildDraftParams = useCallback((existingId?: string, groupIdOverride?: string) => {
     const state = useBillStore.getState();
