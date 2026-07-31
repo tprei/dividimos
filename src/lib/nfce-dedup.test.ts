@@ -46,8 +46,10 @@ describe("nfce-dedup", () => {
       expect(checkDuplicateReceipt(CHAVE)).toBeNull();
     });
 
-    it("returns null when localStorage throws", () => {
-      vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    it("returns null when localStorage.getItem throws (with real data present)", () => {
+      const timestamp = new Date(Date.now() - 1000).toISOString();
+      localStorage.setItem(`nfce:${CHAVE}`, timestamp);
+      vi.spyOn(localStorage, "getItem").mockImplementation(() => {
         throw new Error("quota exceeded");
       });
       expect(checkDuplicateReceipt(CHAVE)).toBeNull();
@@ -63,8 +65,8 @@ describe("nfce-dedup", () => {
       expect(new Date(stored!).getTime()).not.toBeNaN();
     });
 
-    it("does not throw when localStorage is unavailable", () => {
-      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    it("does not throw and stores nothing when localStorage.setItem is unavailable", () => {
+      vi.spyOn(localStorage, "setItem").mockImplementation(() => {
         throw new Error("quota exceeded");
       });
       expect(() => markReceiptScanned(CHAVE)).not.toThrow();
@@ -79,8 +81,9 @@ describe("nfce-dedup", () => {
       expect(localStorage.getItem(`nfce:${CHAVE}`)).toBeNull();
     });
 
-    it("does not throw when localStorage is unavailable", () => {
-      vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+    it("does not throw when localStorage.removeItem is unavailable (with a real entry present)", () => {
+      markReceiptScanned(CHAVE);
+      vi.spyOn(localStorage, "removeItem").mockImplementation(() => {
         throw new Error("quota exceeded");
       });
       expect(() => clearReceiptRecord(CHAVE)).not.toThrow();
