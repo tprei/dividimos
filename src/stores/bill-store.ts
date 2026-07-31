@@ -57,6 +57,10 @@ interface ExpenseState {
   splits: ExpenseSplit[];
   /** Whole-expense split assignments (single_amount wizard). */
   billSplits: AmountSplit[];
+  /** Users protected from removal because their share came from a claimed
+   *  guest (#495). Populated only when editing an existing draft that has
+   *  one; empty for new/active/settled expenses. */
+  draftClaimProtectedUserIds: string[];
 
   setCurrentUser: (user: User) => void;
 
@@ -127,6 +131,10 @@ interface ExpenseState {
     guests?: Guest[];
     payers?: ExpensePayer[];
     billSplits?: AmountSplit[];
+    /** Users whose share came from a claimed guest -- see #495 spec: their
+     *  removal control must be hidden and their removal is a whole-state
+     *  no-op (the server rejects it with `claimed_guest_not_participant`). */
+    draftClaimProtectedUserIds?: string[];
   }) => void;
   /**
    * Patches only the server-derived status fields from a realtime event.
@@ -395,6 +403,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   payers: [],
   splits: [],
   billSplits: [],
+  draftClaimProtectedUserIds: [],
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -424,6 +433,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 
@@ -499,7 +509,10 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
 
   removeParticipant: (userId) => {
     set((state) => {
-      if (!state.participants.some((participant) => participant.id === userId)) {
+      if (
+        !state.participants.some((participant) => participant.id === userId) ||
+        state.draftClaimProtectedUserIds.includes(userId)
+      ) {
         return {};
       }
 
@@ -904,6 +917,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 
@@ -965,10 +979,19 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers,
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 
-  hydrateFromServer: ({ expense, items, participants, guests, payers, billSplits }) => {
+  hydrateFromServer: ({
+    expense,
+    items,
+    participants,
+    guests,
+    payers,
+    billSplits,
+    draftClaimProtectedUserIds,
+  }) => {
     set({
       expense,
       items,
@@ -978,6 +1001,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: payers ?? [],
       splits: [],
       billSplits: billSplits ?? [],
+      draftClaimProtectedUserIds: draftClaimProtectedUserIds ?? [],
     });
   },
 
@@ -999,6 +1023,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 }));

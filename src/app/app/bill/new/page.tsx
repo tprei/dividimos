@@ -46,7 +46,7 @@ import { setPendingSaveOperation, clearPendingSaveOperation, consumePendingSaveO
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
-import { activateExpense } from "@/lib/supabase/expense-rpc";
+import { activateExpense, loadExpenseGraphSnapshot } from "@/lib/supabase/expense-rpc";
 import { useBillStore, mapLoadedGuestsForEditHydration } from "@/stores/bill-store";
 import { useShallow } from "zustand/react/shallow";
 import { createClient } from "@/lib/supabase/client";
@@ -103,6 +103,7 @@ function NewBillPageContent() {
       payers: s.payers,
       splits: s.splits,
       billSplits: s.billSplits,
+      draftClaimProtectedUserIds: s.draftClaimProtectedUserIds,
       totalAmountInput: s.totalAmountInput,
       setCurrentUser: s.setCurrentUser,
       createExpense: s.createExpense,
@@ -437,9 +438,24 @@ function NewBillPageContent() {
     }
 
     (async () => {
-      const loaded = await loadExpense(draftId);
+      const [loaded, snapshotResult] = await Promise.all([
+        loadExpense(draftId),
+        loadExpenseGraphSnapshot(draftId),
+      ]);
       if (!loaded || editLoadedRef.current) return;
+      // #477/#495: the wizard cannot safely resume editing without the
+      // current graph_revision -- proceeding with a stale/zero ref would
+      // make the very next save fail with PST08 (stale_graph_revision).
+      // load_expense_graph_snapshot is also the only loader that surfaces
+      // draft_claim_protected_user_ids (loadExpense's direct table reads
+      // don't), so both requirements share this one guard.
+      if (!snapshotResult || "error" in snapshotResult) {
+        toast.error("Não foi possível carregar este rascunho para edição. Tente novamente.");
+        return;
+      }
       editLoadedRef.current = true;
+      draftRevisionRef.current = snapshotResult.graphRevision;
+      const draftClaimProtectedUserIds = [...snapshotResult.draftClaimProtectedUserIds];
 
       const participants = loaded.shares.map((s) => ({
         id: s.user.id,
@@ -499,6 +515,7 @@ function NewBillPageContent() {
         participants,
         guests: guestsForStore,
         payers: loaded.payers.map((p) => ({ expenseId: loaded.id, userId: p.userId, amountCents: p.amountCents })),
+        draftClaimProtectedUserIds,
         billSplits: loaded.expenseType === "single_amount"
           ? [
               ...loaded.shares.map((s) => ({
@@ -1245,6 +1262,7 @@ function NewBillPageContent() {
                 authUser={authUser}
                 participants={store.participants}
                 guests={store.guests}
+                protectedUserIds={store.draftClaimProtectedUserIds}
                 selectedGroupId={selectedGroupId}
                 selectedGroupName={selectedGroupName}
                 groupMembers={groupMembers}
