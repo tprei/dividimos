@@ -992,6 +992,13 @@ function NewBillPageContent() {
           return;
         }
         const expenseId = saveResult.expenseId;
+        // #477 Slice 5: without this, a retry after activateExpense
+        // fails below (stale revision, transient network error, a
+        // newly-true business rejection) would still see remoteBillId
+        // as null and build a brand-new "new save" request -- creating
+        // a second, duplicate draft expense instead of reusing the one
+        // that was just successfully saved.
+        setRemoteBillId(expenseId);
         draftRevisionRef.current = saveResult.graphRevision;
 
         const activationResult = await activateExpense({
