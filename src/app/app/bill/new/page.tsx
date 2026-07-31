@@ -425,6 +425,7 @@ function NewBillPageContent() {
 
   // Load draft for editing when ?draft=<id> is present
   useEffect(() => {
+    let cancelled = false;
     const draftId = searchParams.get("draft");
     if (!draftId || !authUser || editLoadedRef.current) return;
 
@@ -467,7 +468,14 @@ function NewBillPageContent() {
         loadExpense(draftId),
         loadExpenseGraphSnapshot(draftId),
       ]);
-      if (!loaded || editLoadedRef.current) return;
+      // #477 Slice 5: searchParams/authUser can change (e.g. ?draft=A ->
+      // ?draft=B via client-side navigation) before this in-flight load
+      // resolves. Without this guard, a late-arriving load for the OLD
+      // draft would silently overwrite whatever the NEW draft's own
+      // effect run has since started hydrating -- exactly the "no late
+      // completion may reset or navigate a departed route" case the
+      // DraftSessionState spec requires.
+      if (cancelled || !loaded || editLoadedRef.current) return;
       // #477/#495: the wizard cannot safely resume editing without the
       // current graph_revision -- proceeding with a stale/zero ref would
       // make the very next save fail with PST08 (stale_graph_revision).
@@ -526,7 +534,7 @@ function NewBillPageContent() {
         updatedAt: loaded.updatedAt,
       };
 
-      store.setCurrentUser(authUser);
+      useBillStore.getState().setCurrentUser(authUser);
       const { guests: guestsForStore, guestBillSplits } = mapLoadedGuestsForEditHydration(
         loaded.guests,
         loaded.expenseType,
@@ -571,6 +579,7 @@ function NewBillPageContent() {
         .select("name")
         .eq("id", loaded.groupId)
         .single();
+      if (cancelled) return;
       if (group) setSelectedGroupName(group.name);
 
       if (loaded.payers.length > 0) {
@@ -583,7 +592,11 @@ function NewBillPageContent() {
         setStep("participants");
       }
     })();
-  }, [searchParams, authUser, store]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, authUser]);
 
   const initBill = useCallback(() => {
     if (!billType || !authUser) return;
