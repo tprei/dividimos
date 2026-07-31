@@ -61,6 +61,18 @@ interface ExpenseState {
    *  guest (#495). Populated only when editing an existing draft that has
    *  one; empty for new/active/settled expenses. */
   draftClaimProtectedUserIds: string[];
+  /**
+   * Monotonically increasing counter bumped exactly once on every
+   * hydration/source/type reset transition (issue #477's
+   * `DraftSessionState.inputResetRevision`): `createExpense`,
+   * `createExpenseFromDm`, `hydrateFromChatDraft`, `hydrateFromServer`,
+   * `setExpenseType` (real type switch only), and `reset`. Money-entry
+   * components pass it through as `CurrencyInput`/`AmountQuickAdd`'s
+   * `resetRevision` prop so a stale invalid override or undo entry from a
+   * prior draft/type can never survive a reset transition, even when the
+   * numeric cents value happens to be unchanged.
+   */
+  inputResetRevision: number;
 
   setCurrentUser: (user: User) => void;
 
@@ -402,6 +414,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   splits: [],
   billSplits: [],
   draftClaimProtectedUserIds: [],
+  inputResetRevision: 0,
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -433,6 +446,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       splits: [],
       billSplits: [],
       draftClaimProtectedUserIds: [],
+      inputResetRevision: get().inputResetRevision + 1,
     });
   },
 
@@ -490,6 +504,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
           items: [],
           splits: [],
           payers: [],
+          inputResetRevision: state.inputResetRevision + 1,
         };
       }
 
@@ -504,6 +519,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
         totalAmountInput: 0,
         billSplits: [],
         payers: [],
+        inputResetRevision: state.inputResetRevision + 1,
       };
     });
   },
@@ -930,6 +946,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       splits: [],
       billSplits: [],
       draftClaimProtectedUserIds: [],
+      inputResetRevision: get().inputResetRevision + 1,
     });
   },
 
@@ -993,6 +1010,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       splits: [],
       billSplits: [],
       draftClaimProtectedUserIds: [],
+      inputResetRevision: get().inputResetRevision + 1,
     });
   },
 
@@ -1015,6 +1033,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       splits: [],
       billSplits: billSplits ?? [],
       draftClaimProtectedUserIds: draftClaimProtectedUserIds ?? [],
+      inputResetRevision: get().inputResetRevision + 1,
     });
   },
 
@@ -1037,6 +1056,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       splits: [],
       billSplits: [],
       draftClaimProtectedUserIds: [],
+      inputResetRevision: get().inputResetRevision + 1,
     });
   },
 }));

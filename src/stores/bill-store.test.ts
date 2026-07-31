@@ -1518,3 +1518,114 @@ describe("consumption memoization", () => {
     expect(_testGetCacheState().hasCachedResult).toBe(true);
   });
 });
+
+describe("inputResetRevision (#477 Slice 5: DraftSessionState.inputResetRevision)", () => {
+  it("increments once on createExpense", () => {
+    const s = setup();
+    const before = useBillStore.getState().inputResetRevision;
+    s.createExpense("Jantar", "itemized");
+    expect(useBillStore.getState().inputResetRevision).toBe(before + 1);
+  });
+
+  it("increments once on createExpenseFromDm", () => {
+    setup();
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().createExpenseFromDm("dm-group-1", userBob);
+    expect(useBillStore.getState().inputResetRevision).toBe(before + 1);
+  });
+
+  it("increments once on hydrateFromChatDraft", () => {
+    setup();
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().hydrateFromChatDraft(
+      {
+        title: "Uber",
+        amountCents: 2500,
+        expenseType: "single_amount",
+        splitType: "equal",
+        allocations: [],
+        items: [],
+        participants: [],
+        payerHandle: null,
+        merchantName: null,
+        confidence: "high",
+      },
+      "dm-group-1",
+      userBob,
+    );
+    expect(useBillStore.getState().inputResetRevision).toBe(before + 1);
+  });
+
+  it("increments once on hydrateFromServer", () => {
+    setup();
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().hydrateFromServer({
+      expense: {
+        id: "exp-1",
+        groupId: "group-1",
+        creatorId: "user-alice",
+        expenseType: "single_amount",
+        title: "Jantar",
+        totalAmount: 10000,
+        serviceFeePercent: 0,
+        fixedFees: 0,
+        status: "draft",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      items: [],
+      participants: [userAlice],
+      guests: [],
+      payers: [],
+      billSplits: [],
+    });
+    expect(useBillStore.getState().inputResetRevision).toBe(before + 1);
+  });
+
+  it("increments once on hydrateFromVoice (via its internal reset())", () => {
+    setup();
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().hydrateFromVoice({
+      title: "Táxi",
+      amountCents: 3000,
+      expenseType: "single_amount",
+      items: [],
+      participants: [],
+      merchantName: null,
+    });
+    expect(useBillStore.getState().inputResetRevision).toBe(before + 1);
+  });
+
+  it("increments exactly once on an explicit reset()", () => {
+    setup().createExpense("Test", "itemized");
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().reset();
+    expect(useBillStore.getState().inputResetRevision).toBe(before + 1);
+  });
+
+  it("increments on a real expense-type switch", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().setExpenseType("single_amount");
+    expect(useBillStore.getState().inputResetRevision).toBe(before + 1);
+  });
+
+  it("does not increment when setExpenseType is called with the same type", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().setExpenseType("itemized");
+    expect(useBillStore.getState().inputResetRevision).toBe(before);
+  });
+
+  it("does not increment on ordinary updateExpense/split mutations", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.addParticipant(userBob);
+    const before = useBillStore.getState().inputResetRevision;
+    useBillStore.getState().updateExpense({ totalAmountInput: 5000, totalAmount: 5000 });
+    useBillStore.getState().splitBillEqually(["user-alice", "user-bob"]);
+    expect(useBillStore.getState().inputResetRevision).toBe(before);
+  });
+});

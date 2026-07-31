@@ -29,6 +29,10 @@ interface SingleAmountStepProps {
   onSplitEqually: (userIds: string[]) => void;
   onSplitByPercentage: (assignments: { userId: string; percentage: number }[]) => void;
   onSplitByFixed: (assignments: { userId: string; amountCents: number }[]) => void;
+  /** Issue #477's `DraftSessionState.inputResetRevision` — bumped on every
+   *  hydration/type/generation reset so money inputs discard stale
+   *  invalid text/undo history that belongs to a different draft. */
+  inputResetRevision?: number;
 }
 
 const methods: { key: SplitType; icon: React.ElementType; label: string }[] = [
@@ -45,6 +49,7 @@ export function SingleAmountStep({
   onSplitEqually,
   onSplitByPercentage,
   onSplitByFixed,
+  inputResetRevision,
 }: SingleAmountStepProps) {
   const allPersons: { id: string; name: string }[] = useMemo(
     () => [...participants.map((p) => ({ id: p.id, name: p.name })), ...guests],
@@ -124,6 +129,7 @@ export function SingleAmountStep({
           <CurrencyInput
             valueCents={totalCents}
             onChangeCents={setTotalCents}
+            resetRevision={inputResetRevision}
             className="flex-1 text-2xl font-bold h-14"
           />
         </div>
@@ -132,6 +138,7 @@ export function SingleAmountStep({
             increments={[1, 5, 10, 50, 100]}
             valueCents={totalCents}
             onChangeCents={setTotalCents}
+            resetRevision={inputResetRevision}
           />
         </div>
       </div>

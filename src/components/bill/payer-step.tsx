@@ -18,6 +18,10 @@ interface PayerStepProps {
   onSplitPaymentEqually: (userIds: string[]) => void;
   onSetPayerAmount: (userId: string, amountCents: number) => void;
   onRemovePayerEntry: (userId: string) => void;
+  /** Issue #477's `DraftSessionState.inputResetRevision` — bumped on every
+   *  hydration/type/generation reset so money inputs discard stale
+   *  invalid text/undo history that belongs to a different draft. */
+  inputResetRevision?: number;
 }
 
 export function PayerStep({
@@ -28,6 +32,7 @@ export function PayerStep({
   onSplitPaymentEqually,
   onSetPayerAmount,
   onRemovePayerEntry,
+  inputResetRevision,
 }: PayerStepProps) {
   const [multiMode, setMultiMode] = useState(payers.length > 1);
   const [paymentInputMode, setPaymentInputMode] = useState<"fixed" | "percentage">("fixed");
@@ -316,6 +321,7 @@ export function PayerStep({
                         valueCents={userCents}
                         onChangeCents={(cents) => handleLocalChange(user.id, cents)}
                         maxCents={grandTotal}
+                        resetRevision={inputResetRevision}
                         className="h-8 w-24 text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       />
                     </div>
@@ -327,6 +333,7 @@ export function PayerStep({
                       increments={[5, 10, 50, 100]}
                       valueCents={userCents}
                       onChangeCents={(cents) => handleLocalChange(user.id, cents)}
+                      resetRevision={inputResetRevision}
                     />
                   </div>
                 )}
