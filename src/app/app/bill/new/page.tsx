@@ -1073,6 +1073,16 @@ function NewBillPageContent() {
       setBillType(null);
       setShowScanner(false);
       setPageScanResult(null);
+      // #477 Slice 5: abandoning back to type selection starts an
+      // entirely new local expense (initBill -> store.createExpense),
+      // but remoteBillId is separate React state that survived until
+      // now. Without this reset, a save from the fresh draft would use
+      // the OLD remoteBillId as a replacement target -- silently
+      // overwriting the abandoned draft's content with the new one's.
+      // Same bug class as #647/#649, different trigger (manual
+      // abandon-and-restart instead of crash recovery/activation retry).
+      setRemoteBillId(null);
+      draftRevisionRef.current = ZERO_GRAPH_REVISION;
       return;
     }
     if (isDmMode && billType === "single_amount") {
@@ -1140,6 +1150,11 @@ function NewBillPageContent() {
               } else {
                 setStep("type");
                 setBillType(null);
+                // #477 Slice 5: same fix as goBack()'s stepIndex === 0
+                // path -- see that comment for why this must reset
+                // remoteBillId/draftRevisionRef, not just step/billType.
+                setRemoteBillId(null);
+                draftRevisionRef.current = ZERO_GRAPH_REVISION;
               }
             }}
             className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
