@@ -181,6 +181,69 @@ describe("ParticipantsStep", () => {
     }
   });
 
+  it("hides the remove control for a protected participant (#495 item 24)", () => {
+    render(
+      <ParticipantsStep
+        authUser={authUser}
+        participants={[authUser, otherUser]}
+        guests={[]}
+        protectedUserIds={["user-2"]}
+        selectedGroupId={null}
+        selectedGroupName={null}
+        groupMembers={[]}
+        hasContactPicker={false}
+        onSelectGroup={vi.fn()}
+        onDeselectGroup={vi.fn()}
+        onAddParticipant={vi.fn()}
+        onRemoveParticipant={vi.fn()}
+        onAddGuest={vi.fn()}
+        onRemoveGuest={vi.fn()}
+        onPickContacts={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Bob")).toBeInTheDocument();
+    expect(screen.getByText("Protegido")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Remover Bob")).not.toBeInTheDocument();
+  });
+
+  it("renders a protected group member as non-interactive and never calls onRemoveParticipant for it", async () => {
+    const onRemoveParticipant = vi.fn();
+    const user = userEvent.setup();
+    const groupMembers: UserProfile[] = [
+      { id: "user-2", handle: "bob", name: "Bob" },
+      { id: "user-3", handle: "carol", name: "Carol" },
+    ];
+
+    render(
+      <ParticipantsStep
+        authUser={authUser}
+        participants={[authUser, otherUser, { ...otherUser, id: "user-3", handle: "carol", name: "Carol" }]}
+        guests={[]}
+        protectedUserIds={["user-2"]}
+        selectedGroupId="group-1"
+        selectedGroupName="Test Group"
+        groupMembers={groupMembers}
+        hasContactPicker={false}
+        onSelectGroup={vi.fn()}
+        onDeselectGroup={vi.fn()}
+        onAddParticipant={vi.fn()}
+        onRemoveParticipant={onRemoveParticipant}
+        onAddGuest={vi.fn()}
+        onRemoveGuest={vi.fn()}
+        onPickContacts={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Protegido")).toBeInTheDocument();
+    // Bob's row is a plain div now, not a button -- there must be exactly
+    // one toggleable group-member button left (Carol's).
+    const carolButton = screen.getByRole("button", { name: /Carol/ });
+    await user.click(carolButton);
+    expect(onRemoveParticipant).toHaveBeenCalledWith("user-3");
+    expect(onRemoveParticipant).not.toHaveBeenCalledWith("user-2");
+  });
+
   it("opens guest form and submits guest name", async () => {
     const onAddGuest = vi.fn();
     const user = userEvent.setup();

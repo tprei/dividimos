@@ -1022,6 +1022,36 @@ describe("participant and guest removal flows", () => {
     expect(splits.find((s) => s.userId === "user-carlos")).toBeUndefined();
   });
 
+  it("does not remove a protected claimant and leaves the rest of state untouched (#495 item 24)", () => {
+    setup().createExpense("Test", "single_amount");
+    useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().splitBillEqually(["user-alice", "user-bob"]);
+    useBillStore.getState().setPayerFull("user-bob");
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+    const before = useBillStore.getState();
+
+    useBillStore.getState().removeParticipant("user-bob");
+
+    const after = useBillStore.getState();
+    expect(after.participants).toEqual(before.participants);
+    expect(after.billSplits).toEqual(before.billSplits);
+    expect(after.payers).toEqual(before.payers);
+    expect(after.participants.map((p) => p.id)).toContain("user-bob");
+  });
+
+  it("removes an ordinary participant normally even when a different user is protected", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().addParticipant(userCarlos);
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+
+    useBillStore.getState().removeParticipant("user-carlos");
+
+    const { participants } = useBillStore.getState();
+    expect(participants.map((p) => p.id)).toEqual(["user-alice", "user-bob"]);
+  });
+
   it("guest removal then re-add produces clean state with no stale references", () => {
     setup().createExpense("Test", "single_amount");
     useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
@@ -1100,6 +1130,79 @@ describe("createExpenseFromDm", () => {
     expect(state.totalAmountInput).toBe(5000);
     expect(state.billSplits).toHaveLength(2);
     expect(state.billSplits[0].computedAmountCents + state.billSplits[1].computedAmountCents).toBe(5000);
+  });
+});
+
+describe("hydrateFromServer draftClaimProtectedUserIds (#495 item 24)", () => {
+  it("populates draftClaimProtectedUserIds from the server snapshot", () => {
+    setup();
+    useBillStore.getState().hydrateFromServer({
+      expense: {
+        id: "exp-1",
+        groupId: "group-1",
+        creatorId: "user-alice",
+        expenseType: "single_amount",
+        title: "Jantar",
+        totalAmount: 10000,
+        serviceFeePercent: 0,
+        fixedFees: 0,
+        status: "draft",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      items: [],
+      participants: [userAlice, userBob],
+      guests: [],
+      payers: [],
+      billSplits: [],
+      draftClaimProtectedUserIds: ["user-bob"],
+    });
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual(["user-bob"]);
+  });
+
+  it("defaults to an empty array when the field is omitted", () => {
+    setup();
+    useBillStore.getState().hydrateFromServer({
+      expense: {
+        id: "exp-1",
+        groupId: "group-1",
+        creatorId: "user-alice",
+        expenseType: "single_amount",
+        title: "Jantar",
+        totalAmount: 10000,
+        serviceFeePercent: 0,
+        fixedFees: 0,
+        status: "draft",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      items: [],
+      participants: [userAlice],
+      guests: [],
+      payers: [],
+      billSplits: [],
+    });
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
+  });
+
+  it("reset() clears draftClaimProtectedUserIds", () => {
+    setup();
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+
+    useBillStore.getState().reset();
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
+  });
+
+  it("createExpense() clears a stale draftClaimProtectedUserIds from a prior session", () => {
+    setup();
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+
+    useBillStore.getState().createExpense("New", "single_amount");
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
   });
 });
 

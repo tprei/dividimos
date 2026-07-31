@@ -15,6 +15,11 @@ export interface ParticipantsStepProps {
   authUser: User | null;
   participants: User[];
   guests: { id: string; name: string }[];
+  /** User ids protected from removal because their share came from a
+   *  claimed guest (#495) -- populated only when editing an existing draft
+   *  that has one. Their remove control is hidden and clicking their row
+   *  is a no-op. */
+  protectedUserIds?: readonly string[];
   selectedGroupId: string | null;
   selectedGroupName: string | null;
   groupMembers: UserProfile[];
@@ -32,6 +37,7 @@ export function ParticipantsStep({
   authUser,
   participants,
   guests,
+  protectedUserIds = [],
   selectedGroupId,
   selectedGroupName,
   groupMembers,
@@ -83,6 +89,23 @@ export function ParticipantsStep({
             </div>
             {groupMembers.map((m) => {
               const isChecked = participants.some((p) => p.id === m.id);
+              const isProtected = protectedUserIds.includes(m.id);
+              if (isProtected) {
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-3 rounded-xl border bg-card p-3"
+                  >
+                    <input type="checkbox" checked disabled className="h-4 w-4 accent-primary" />
+                    <UserAvatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{m.name}</p>
+                      <p className="text-xs text-muted-foreground">@{m.handle}</p>
+                    </div>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Protegido</span>
+                  </div>
+                );
+              }
               return (
                 <button
                   key={m.id}
@@ -126,6 +149,8 @@ export function ParticipantsStep({
               </div>
               {p.id === authUser?.id ? (
                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
+              ) : protectedUserIds.includes(p.id) ? (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Protegido</span>
               ) : (
                 <button onClick={() => onRemoveParticipant(p.id)} aria-label={`Remover ${p.name}`} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                   <X className="h-4 w-4" />
