@@ -104,6 +104,7 @@ function NewBillPageContent() {
       splits: s.splits,
       billSplits: s.billSplits,
       draftClaimProtectedUserIds: s.draftClaimProtectedUserIds,
+      inputResetRevision: s.inputResetRevision,
       totalAmountInput: s.totalAmountInput,
       setCurrentUser: s.setCurrentUser,
       createExpense: s.createExpense,
@@ -1362,6 +1363,7 @@ function NewBillPageContent() {
                 onSplitEqually={(ids) => store.splitBillEqually(ids)}
                 onSplitByPercentage={(a) => store.splitBillByPercentage(a)}
                 onSplitByFixed={(a) => store.splitBillByFixed(a)}
+                inputResetRevision={store.inputResetRevision}
               />
             </motion.div>
           )}
@@ -1382,6 +1384,7 @@ function NewBillPageContent() {
                 onSplitPaymentEqually={(ids) => store.splitPaymentEqually(ids)}
                 onSetPayerAmount={(id, amt) => store.setPayerAmount(id, amt)}
                 onRemovePayerEntry={(id) => store.removePayerEntry(id)}
+                inputResetRevision={store.inputResetRevision}
               />
             </motion.div>
           )}
