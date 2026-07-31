@@ -691,11 +691,18 @@ function NewBillPageContent() {
   const durableSaveDraft = useCallback(
     async (params: Parameters<typeof saveExpenseDraft>[0]) => {
       setPendingSaveOperation(params.saveOperationId, params.groupId);
-      try {
-        return await saveExpenseDraft(params);
-      } finally {
-        clearPendingSaveOperation();
-      }
+      const result = await saveExpenseDraft(params);
+      // Only a definitive server response -- success or a typed
+      // rejection -- proves this attempt is resolved; clear the durable
+      // record here. A thrown transport failure means the response was
+      // lost, not that the request failed: leaving the record intact
+      // lets the mount-time reconciliation effect (or a later retry)
+      // resolve it via resolveExpenseGraphSaveResult instead of silently
+      // discarding recovery data for exactly the "response loss" case
+      // it exists to protect (#477 Slice 5). A `finally` here would have
+      // cleared it unconditionally, including on throw.
+      clearPendingSaveOperation();
+      return result;
     },
     [],
   );
