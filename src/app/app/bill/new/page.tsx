@@ -824,6 +824,9 @@ function NewBillPageContent() {
             if ("expenseId" in result) {
               setRemoteBillId(result.expenseId);
               draftRevisionRef.current = result.graphRevision;
+            } else {
+              toast.error(result.error);
+              return;
             }
           }
         }
@@ -836,6 +839,9 @@ function NewBillPageContent() {
           const result = await durableSaveDraft(params);
           if ("expenseId" in result) {
             draftRevisionRef.current = result.graphRevision;
+          } else {
+            toast.error(result.error);
+            return;
           }
         }
       } else if (isDmMode && selectedGroupId) {
@@ -845,6 +851,9 @@ function NewBillPageContent() {
           if ("expenseId" in result) {
             setRemoteBillId(result.expenseId);
             draftRevisionRef.current = result.graphRevision;
+          } else {
+            toast.error(result.error);
+            return;
           }
         }
       }
@@ -858,29 +867,30 @@ function NewBillPageContent() {
       const params = buildDraftParams(remoteBillId ?? undefined);
       if (params) {
         const saveResult = await durableSaveDraft(params);
-        const expenseId = "expenseId" in saveResult
-          ? saveResult.expenseId
-          : remoteBillId;
-        if ("expenseId" in saveResult) {
-          draftRevisionRef.current = saveResult.graphRevision;
+        if (!("expenseId" in saveResult)) {
+          toast.error(saveResult.error);
+          setSyncing(false);
+          return;
         }
+        const expenseId = saveResult.expenseId;
+        draftRevisionRef.current = saveResult.graphRevision;
 
-        if (expenseId) {
-          const activationResult = await activateExpense({
-            expense_id: expenseId,
-            expectedGraphRevision: draftRevisionRef.current,
-          });
+        const activationResult = await activateExpense({
+          expense_id: expenseId,
+          expectedGraphRevision: draftRevisionRef.current,
+        });
 
-          if (!("error" in activationResult)) {
-            notifyExpenseActivated(expenseId).catch(() => {});
-            useBillStore.getState().reset();
-            router.push(`/app/bill/${expenseId}`);
-            return;
-          }
-          console.error("Activation failed:", activationResult.error);
+        if (!("error" in activationResult)) {
+          notifyExpenseActivated(expenseId).catch(() => {});
+          useBillStore.getState().reset();
+          router.push(`/app/bill/${expenseId}`);
+          return;
         }
+        toast.error(activationResult.error);
+        setSyncing(false);
+        return;
       }
-      router.push(`/app/bill/${remoteBillId || "new"}`);
+      setSyncing(false);
       return;
     }
     let next = steps[stepIndex + 1];

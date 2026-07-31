@@ -127,7 +127,7 @@ export function ParticipantsStep({
               {p.id === authUser?.id ? (
                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
               ) : (
-                <button onClick={() => onRemoveParticipant(p.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
+                <button onClick={() => onRemoveParticipant(p.id)} aria-label={`Remover ${p.name}`} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                   <X className="h-4 w-4" />
                 </button>
               )}
@@ -148,7 +148,7 @@ export function ParticipantsStep({
                 <p className="text-sm font-medium">{g.name}</p>
               </div>
               <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Convidado</span>
-              <button onClick={() => onRemoveGuest(g.id)} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
+              <button onClick={() => onRemoveGuest(g.id)} aria-label={`Remover ${g.name}`} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                 <X className="h-4 w-4" />
               </button>
             </div>
