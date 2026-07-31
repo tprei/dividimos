@@ -1099,6 +1099,18 @@ function NewBillPageContent() {
       // one -- wrong participants, wrong balances.
       setSelectedGroupId(null);
       setSelectedGroupName(null);
+      // groupMembers feeds voice/chat participant NAME MATCHING in
+      // TypeStep -- a stale list from the abandoned draft's group could
+      // silently match a new bill's spoken names against the WRONG
+      // group's members, adding incorrect participants. Also passed to
+      // the participants step as the initial suggestion list before any
+      // explicit fresh selection.
+      setGroupMembers([]);
+      // Transient scan-in-flight flags: reset alongside showScanner/
+      // pageScanResult above so an abandoned scan can't leave the next,
+      // unrelated session showing a stale processing skeleton.
+      setScanProcessing(false);
+      setScanProcessingPhoto(false);
       return;
     }
     if (isDmMode && billType === "single_amount") {
