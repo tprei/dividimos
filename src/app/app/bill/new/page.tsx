@@ -492,7 +492,9 @@ function NewBillPageContent() {
           expenseId: loaded.id,
         })),
         participants,
-        guests: loaded.guests.map((g) => ({ id: g.id, name: g.displayName })),
+        guests: loaded.guests
+          .filter((g) => !g.claimedBy)
+          .map((g) => ({ id: g.id, name: g.displayName })),
         payers: loaded.payers.map((p) => ({ expenseId: loaded.id, userId: p.userId, amountCents: p.amountCents })),
         billSplits: loaded.expenseType === "single_amount"
           ? [
@@ -502,12 +504,14 @@ function NewBillPageContent() {
                 value: s.shareAmountCents,
                 computedAmountCents: s.shareAmountCents,
               })),
-              ...loaded.guests.map((g) => ({
-                userId: g.id,
-                splitType: "fixed" as const,
-                value: g.share?.shareAmountCents ?? 0,
-                computedAmountCents: g.share?.shareAmountCents ?? 0,
-              })),
+              ...loaded.guests
+                .filter((g) => !g.claimedBy)
+                .map((g) => ({
+                  userId: g.id,
+                  splitType: "fixed" as const,
+                  value: g.share?.shareAmountCents ?? 0,
+                  computedAmountCents: g.share?.shareAmountCents ?? 0,
+                })),
             ]
           : [],
       });
