@@ -345,6 +345,46 @@ export function selectPreviewDebts(state: ExpenseState): DebtEdge[] {
   return debts;
 }
 
+/**
+ * Pure mapper: turns a loaded expense's raw guest rows (as returned by
+ * `loadExpense`) into the store-shaped `guests` list and, for
+ * `single_amount` expenses, the guest portion of `billSplits`.
+ *
+ * Extracted from the wizard's edit-mode hydration effect so this exact
+ * mapping is directly unit-testable, independent of the page component.
+ * A prior version of that inline logic silently dropped every guest
+ * (hardcoded `guests: []`), deleting them permanently on the next save;
+ * regression coverage for that class of bug belongs here, not only in
+ * `hydrateFromServer` itself, so a future revert of the wizard's call
+ * site is caught even if `hydrateFromServer` keeps behaving correctly.
+ *
+ * Already-claimed guests are excluded: a claimed guest is no longer a
+ * mutable, unclaimed placeholder and must never be resubmitted as
+ * `p_guests` on the next save.
+ */
+export function mapLoadedGuestsForEditHydration(
+  loadedGuests: readonly {
+    id: string;
+    displayName: string;
+    claimedBy?: string;
+    share?: { shareAmountCents: number };
+  }[],
+  expenseType: ExpenseType,
+): { guests: Guest[]; guestBillSplits: AmountSplit[] } {
+  const unclaimed = loadedGuests.filter((g) => !g.claimedBy);
+  const guests: Guest[] = unclaimed.map((g) => ({ id: g.id, name: g.displayName }));
+  const guestBillSplits: AmountSplit[] =
+    expenseType === "single_amount"
+      ? unclaimed.map((g) => ({
+          userId: g.id,
+          splitType: "fixed" as const,
+          value: g.share?.shareAmountCents ?? 0,
+          computedAmountCents: g.share?.shareAmountCents ?? 0,
+        }))
+      : [];
+  return { guests, guestBillSplits };
+}
+
 export const useBillStore = create<ExpenseState>((set, get) => ({
   currentUser: null,
   expense: null,
