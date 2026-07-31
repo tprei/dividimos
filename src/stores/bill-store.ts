@@ -124,6 +124,7 @@ interface ExpenseState {
     expense: Expense;
     items: ExpenseItem[];
     participants?: User[];
+    guests?: Guest[];
     payers?: ExpensePayer[];
     billSplits?: AmountSplit[];
   }) => void;
@@ -927,13 +928,13 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
     });
   },
 
-  hydrateFromServer: ({ expense, items, participants, payers, billSplits }) => {
+  hydrateFromServer: ({ expense, items, participants, guests, payers, billSplits }) => {
     set({
       expense,
       items,
       totalAmountInput: expense.expenseType === "single_amount" ? expense.totalAmount : 0,
       participants: participants ?? [],
-      guests: [],
+      guests: guests ?? [],
       payers: payers ?? [],
       splits: [],
       billSplits: billSplits ?? [],
