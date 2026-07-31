@@ -47,7 +47,7 @@ import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
 import { activateExpense } from "@/lib/supabase/expense-rpc";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, mapLoadedGuestsForEditHydration } from "@/stores/bill-store";
 import { useShallow } from "zustand/react/shallow";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -485,6 +485,11 @@ function NewBillPageContent() {
       };
 
       store.setCurrentUser(authUser);
+      const { guests: guestsForStore, guestBillSplits } = mapLoadedGuestsForEditHydration(
+        loaded.guests,
+        loaded.expenseType,
+      );
+
       useBillStore.getState().hydrateFromServer({
         expense: expenseForStore,
         items: loaded.items.map((item) => ({
@@ -492,9 +497,7 @@ function NewBillPageContent() {
           expenseId: loaded.id,
         })),
         participants,
-        guests: loaded.guests
-          .filter((g) => !g.claimedBy)
-          .map((g) => ({ id: g.id, name: g.displayName })),
+        guests: guestsForStore,
         payers: loaded.payers.map((p) => ({ expenseId: loaded.id, userId: p.userId, amountCents: p.amountCents })),
         billSplits: loaded.expenseType === "single_amount"
           ? [
@@ -504,14 +507,7 @@ function NewBillPageContent() {
                 value: s.shareAmountCents,
                 computedAmountCents: s.shareAmountCents,
               })),
-              ...loaded.guests
-                .filter((g) => !g.claimedBy)
-                .map((g) => ({
-                  userId: g.id,
-                  splitType: "fixed" as const,
-                  value: g.share?.shareAmountCents ?? 0,
-                  computedAmountCents: g.share?.shareAmountCents ?? 0,
-                })),
+              ...guestBillSplits,
             ]
           : [],
       });
