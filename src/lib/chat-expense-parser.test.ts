@@ -14,7 +14,7 @@ vi.mock("@google/genai", () => {
   };
 });
 
-const { parseChatExpense, sanitizeChatResult, buildSystemPrompt } = await import(
+const { parseChatExpense, buildSystemPrompt } = await import(
   "./chat-expense-parser"
 );
 
@@ -252,284 +252,185 @@ describe("parseChatExpense", () => {
   });
 });
 
-describe("sanitizeChatResult", () => {
-  it("rounds float cents to integers", () => {
-    const result = sanitizeChatResult(
-      makeResult({ amountCents: 2533.7 }) as ChatExpenseResult,
-    );
+describe("parseChatExpense — #477 strict decoding (no repair, no silent defaults)", () => {
+  const fakeApiKey = "test-api-key";
 
-    expect(result.amountCents).toBe(2534);
-    expect(Number.isInteger(result.amountCents)).toBe(true);
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("clamps negative amountCents to 0", () => {
-    const result = sanitizeChatResult(
-      makeResult({ amountCents: -500 }) as ChatExpenseResult,
+  async function expectRejected(overrides: Partial<ChatExpenseResult>) {
+    mockGemini(overrides);
+    await expect(parseChatExpense("teste", fakeApiKey)).rejects.toThrow(
+      "Gemini returned invalid expense data",
     );
+  }
 
-    expect(result.amountCents).toBe(0);
+  it("rejects float cents instead of rounding them", async () => {
+    await expectRejected({ amountCents: 2533.7 });
   });
 
-  it("defaults null amountCents to 0", () => {
-    const result = sanitizeChatResult(
-      makeResult({ amountCents: null as unknown as number }) as ChatExpenseResult,
-    );
-
-    expect(result.amountCents).toBe(0);
+  it("rejects negative amountCents instead of clamping to 0", async () => {
+    await expectRejected({ amountCents: -500 });
   });
 
-  it("defaults undefined amountCents to 0", () => {
-    const result = sanitizeChatResult(
-      makeResult({ amountCents: undefined as unknown as number }),
-    );
-
-    expect(result.amountCents).toBe(0);
+  it("rejects null/undefined amountCents instead of defaulting to 0", async () => {
+    await expectRejected({ amountCents: null as unknown as number });
+    await expectRejected({ amountCents: undefined as unknown as number });
   });
 
-  it("trims whitespace from title", () => {
-    const result = sanitizeChatResult(
-      makeResult({ title: "  Uber  " }) as ChatExpenseResult,
-    );
-
-    expect(result.title).toBe("Uber");
+  it("rejects a blank title instead of trimming it away", async () => {
+    await expectRejected({ title: "   " });
   });
 
-  it("defaults null title to empty string", () => {
-    const result = sanitizeChatResult(
-      makeResult({ title: null as unknown as string }) as ChatExpenseResult,
-    );
-
-    expect(result.title).toBe("");
+  it("rejects a null title instead of defaulting to empty string", async () => {
+    await expectRejected({ title: null as unknown as string });
   });
 
-  it("defaults null participants to empty array", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        participants: null as unknown as ChatParticipantMatch[],
-      }) as ChatExpenseResult,
-    );
-
-    expect(result.participants).toEqual([]);
+  it("rejects null participants instead of defaulting to an empty array", async () => {
+    await expectRejected({
+      participants: null as unknown as ChatParticipantMatch[],
+    });
   });
 
-  it("defaults null items to empty array", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        items: null as unknown as ChatExpenseResult["items"],
-      }) as ChatExpenseResult,
-    );
-
-    expect(result.items).toEqual([]);
+  it("rejects null items instead of defaulting to an empty array", async () => {
+    await expectRejected({ items: null as unknown as ChatExpenseResult["items"] });
   });
 
-  it("defaults null payerHandle to null", () => {
-    const result = sanitizeChatResult(makeResult({ payerHandle: null }));
-
+  it("accepts a null payerHandle (a legitimately ambiguous payer, not a defect)", async () => {
+    mockGemini({ payerHandle: null });
+    const result = await parseChatExpense("teste", fakeApiKey);
     expect(result.payerHandle).toBeNull();
   });
 
-  it("defaults null confidence to low", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        confidence: null as unknown as ChatExpenseResult["confidence"],
-      }) as ChatExpenseResult,
-    );
-
-    expect(result.confidence).toBe("low");
+  it("rejects null confidence instead of defaulting to low", async () => {
+    await expectRejected({
+      confidence: null as unknown as ChatExpenseResult["confidence"],
+    });
   });
 
-  it("defaults null splitType to equal", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        splitType: null as unknown as ChatExpenseResult["splitType"],
-      }) as ChatExpenseResult,
-    );
-
-    expect(result.splitType).toBe("equal");
+  it("rejects null/missing splitType instead of defaulting to equal", async () => {
+    await expectRejected({
+      splitType: null as unknown as ChatExpenseResult["splitType"],
+    });
   });
 
-  it("computes amountCents from items when Gemini returns 0", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        amountCents: 0,
-        expenseType: "itemized",
-        items: [
-          { description: "A", quantity: 1, unitPriceCents: 1000, totalCents: 1000 },
-          { description: "B", quantity: 1, unitPriceCents: 2000, totalCents: 2000 },
-        ],
-      }),
-    );
-
-    expect(result.amountCents).toBe(3000);
+  it("rejects nonempty itemized items with zero top-level amount instead of summing them", async () => {
+    // #477: a zero top total is never replaced with an item sum.
+    await expectRejected({
+      amountCents: 0,
+      expenseType: "itemized",
+      items: [
+        { description: "A", quantity: 1, unitPriceCents: 1000, totalCents: 1000 },
+        { description: "B", quantity: 1, unitPriceCents: 2000, totalCents: 2000 },
+      ],
+    });
   });
 
-  it("does not override amountCents when itemized with non-zero amount", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        amountCents: 5000,
-        expenseType: "itemized",
-        items: [
-          { description: "A", quantity: 1, unitPriceCents: 1000, totalCents: 1000 },
-        ],
-      }),
-    );
-
-    expect(result.amountCents).toBe(5000);
+  it("accepts a valid nonzero itemized amount that reconciles to the item sum", async () => {
+    mockGemini({
+      amountCents: 1000,
+      expenseType: "itemized",
+      items: [{ description: "A", quantity: 1, unitPriceCents: 1000, totalCents: 1000 }],
+    });
+    const result = await parseChatExpense("teste", fakeApiKey);
+    expect(result.amountCents).toBe(1000);
   });
 
-  it("clamps negative item values to 0", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        expenseType: "itemized",
-        items: [
-          {
-            description: "Item",
-            quantity: -3,
-            unitPriceCents: -200,
-            totalCents: -100,
-          },
-        ],
-      }),
-    );
-
-    expect(result.items[0].quantity).toBe(0);
-    expect(result.items[0].unitPriceCents).toBe(0);
-    expect(result.items[0].totalCents).toBe(0);
+  it("rejects negative item values instead of clamping to 0", async () => {
+    await expectRejected({
+      expenseType: "itemized",
+      amountCents: -100,
+      items: [{ description: "Item", quantity: -3, unitPriceCents: -200, totalCents: -100 }],
+    });
   });
 
-  it("rounds item cents to integers", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        expenseType: "itemized",
-        items: [
-          {
-            description: "Item",
-            quantity: 3,
-            unitPriceCents: 999.5,
-            totalCents: 2998.5,
-          },
-        ],
-      }),
-    );
-
-    expect(Number.isInteger(result.items[0].unitPriceCents)).toBe(true);
-    expect(Number.isInteger(result.items[0].totalCents)).toBe(true);
-    expect(result.items[0].unitPriceCents).toBe(1000);
-    expect(result.items[0].totalCents).toBe(2999);
+  it("rejects fractional item cents instead of rounding them", async () => {
+    await expectRejected({
+      expenseType: "itemized",
+      amountCents: 2999,
+      items: [{ description: "Item", quantity: 3, unitPriceCents: 999.5, totalCents: 2998.5 }],
+    });
   });
 
-  it("handles null item fields with defaults", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        expenseType: "itemized",
-        items: [
-          {
-            description: "Item",
-            quantity: null as unknown as number,
-            unitPriceCents: null as unknown as number,
-            totalCents: null as unknown as number,
-          },
-        ],
-      }),
-    );
-
-    expect(result.items[0].quantity).toBe(0);
-    expect(result.items[0].unitPriceCents).toBe(0);
-    expect(result.items[0].totalCents).toBe(0);
+  it("rejects null item fields instead of defaulting them to 0", async () => {
+    await expectRejected({
+      expenseType: "itemized",
+      amountCents: 1000,
+      items: [
+        {
+          description: "Item",
+          quantity: null as unknown as number,
+          unitPriceCents: null as unknown as number,
+          totalCents: null as unknown as number,
+        },
+      ],
+    });
   });
 
-  it("forces empty allocations for an equal split even when provider sends rows", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        splitType: "equal",
-        allocations: [
-          { participantHandle: "SELF", shareAmountCents: 6000 },
-          { participantHandle: "bob", shareAmountCents: 4000 },
-        ],
-      }),
-    );
-
-    expect(result.allocations).toEqual([]);
+  it("rejects a nonempty allocations array for an equal split", async () => {
+    await expectRejected({
+      splitType: "equal",
+      allocations: [{ participantHandle: "SELF", shareAmountCents: 6000 }],
+    });
   });
 
-  it("keeps a structurally valid custom-split allocation", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        splitType: "custom",
-        allocations: [
-          { participantHandle: "SELF", shareAmountCents: 6000 },
-          { participantHandle: "bob", shareAmountCents: 4000 },
-        ],
-      }),
-    );
-
+  it("keeps a structurally valid custom-split allocation byte-exact", async () => {
+    mockGemini({
+      splitType: "custom",
+      amountCents: 10000,
+      allocations: [
+        { participantHandle: "SELF", shareAmountCents: 6000 },
+        { participantHandle: "bob", shareAmountCents: 4000 },
+      ],
+    });
+    const result = await parseChatExpense("teste", fakeApiKey);
     expect(result.allocations).toEqual([
       { participantHandle: "SELF", shareAmountCents: 6000 },
       { participantHandle: "bob", shareAmountCents: 4000 },
     ]);
   });
 
-  it("collapses a custom-split allocation to [] instead of defaulting to equal, when provider omits it", () => {
-    const result = sanitizeChatResult(
-      makeResult({ splitType: "custom", allocations: undefined }),
-    );
-
-    expect(result.splitType).toBe("custom");
-    expect(result.allocations).toEqual([]);
+  it("rejects a response missing the allocations key entirely (structural, not an allocations collapse)", async () => {
+    await expectRejected({ splitType: "custom", allocations: undefined });
   });
 
-  it("collapses a custom-split allocation with the wrong row count to []", () => {
-    const result = sanitizeChatResult(
-      makeResult({
+  it.each([
+    ["null", null],
+    ["wrong row count", [{ participantHandle: "SELF", shareAmountCents: 10000 }]],
+    [
+      "negative share",
+      [
+        { participantHandle: "SELF", shareAmountCents: -100 },
+        { participantHandle: "bob", shareAmountCents: 10100 },
+      ],
+    ],
+    [
+      "non-integer share",
+      [
+        { participantHandle: "SELF", shareAmountCents: 60.5 },
+        { participantHandle: "bob", shareAmountCents: 4000 },
+      ],
+    ],
+    [
+      "empty participant handle",
+      [
+        { participantHandle: "", shareAmountCents: 6000 },
+        { participantHandle: "bob", shareAmountCents: 4000 },
+      ],
+    ],
+  ])(
+    "#476: collapses a custom-split allocation with %s to [] - never rejects, never defaults to equal",
+    async (_label, allocations) => {
+      mockGemini({
         splitType: "custom",
-        allocations: [{ participantHandle: "SELF", shareAmountCents: 10000 }],
-      }),
-    );
-
-    expect(result.allocations).toEqual([]);
-  });
-
-  it("collapses a custom-split allocation with a negative share to []", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        splitType: "custom",
-        allocations: [
-          { participantHandle: "SELF", shareAmountCents: -100 },
-          { participantHandle: "bob", shareAmountCents: 10100 },
-        ],
-      }),
-    );
-
-    expect(result.allocations).toEqual([]);
-  });
-
-  it("collapses a custom-split allocation with a non-integer share to []", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        splitType: "custom",
-        allocations: [
-          { participantHandle: "SELF", shareAmountCents: 60.5 },
-          { participantHandle: "bob", shareAmountCents: 4000 },
-        ],
-      }),
-    );
-
-    expect(result.allocations).toEqual([]);
-  });
-
-  it("collapses a custom-split allocation with an empty participant handle to []", () => {
-    const result = sanitizeChatResult(
-      makeResult({
-        splitType: "custom",
-        allocations: [
-          { participantHandle: "", shareAmountCents: 6000 },
-          { participantHandle: "bob", shareAmountCents: 4000 },
-        ],
-      }),
-    );
-
-    expect(result.allocations).toEqual([]);
-  });
+        allocations: allocations as unknown as ChatExpenseResult["allocations"],
+      });
+      const result = await parseChatExpense("teste", fakeApiKey);
+      expect(result.splitType).toBe("custom");
+      expect(result.allocations).toEqual([]);
+    },
+  );
 });
 
 describe("prompt-injection hardening", () => {
