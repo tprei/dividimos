@@ -607,5 +607,176 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(dbAmounts).toEqual(expectedAmounts);
       });
     });
+
+    // -----------------------------------------------------------------------
+    // 5.7 — leave_group / remove_group_member serialized against a
+    //       concurrent balance-writing RPC (issue #505)
+    // -----------------------------------------------------------------------
+
+    describe("5.7 — leave_group and remove_group_member serialize against balance writers", () => {
+      it("leave_group and a concurrent expense activation resolve to exactly one coherent outcome", async () => {
+        const [eve, frank] = await createTestUsers(2, { name: "5.7-leave" });
+        const group = await createTestGroupWithMembers(eve, [frank]);
+
+        const { adminClient } = await import("@/test/integration-setup");
+        const { data: expense } = await adminClient!
+          .from("expenses")
+          .insert({
+            group_id: group.id,
+            creator_id: eve.id,
+            title: "5.7 leave-vs-activate expense",
+            expense_type: "single_amount",
+            total_amount: 4000,
+            status: "draft",
+          })
+          .select("id")
+          .single();
+        const expenseId = expense!.id;
+
+        await adminClient!.from("expense_shares").insert([
+          { expense_id: expenseId, user_id: eve.id, share_amount_cents: 2000 },
+          { expense_id: expenseId, user_id: frank.id, share_amount_cents: 2000 },
+        ]);
+        await adminClient!.from("expense_payers").insert([
+          { expense_id: expenseId, user_id: eve.id, amount_cents: 4000 },
+        ]);
+
+        const eveClient = authenticateAs(eve);
+        const frankClient = authenticateAs(frank);
+
+        // Frank currently has a zero balance, so leave_group would succeed
+        // if it ran alone; activating the draft expense above would give
+        // Frank a fresh 2000-cent debt to Eve. Forcing contention on the
+        // groups-row lock both RPCs take proves the two writers actually
+        // overlapped inside PostgreSQL, not client-side timing (#519).
+        const { result: [leaveResult, activateResult], contention } =
+          await forceLockContentionRace(
+            process.env.SUPABASE_DB_URL!,
+            {
+              lockSql: "select id from groups where id = $1 for update",
+              lockParams: [group.id],
+              queryContains: ["leave_group", "activate_expense"],
+              expectedRacers: 2,
+            },
+            () =>
+              Promise.allSettled([
+                frankClient.rpc("leave_group", { p_group_id: group.id }),
+                eveClient.rpc("activate_expense", { p_expense_id: expenseId }),
+              ]),
+          );
+
+        expect(contention.observed).toBe(true);
+        if (leaveResult.status !== "fulfilled" || activateResult.status !== "fulfilled") {
+          throw new Error("both RPC calls must resolve (not reject) regardless of ordering");
+        }
+
+        const leaveSucceeded = leaveResult.value.error === null;
+        const activateSucceeded = activateResult.value.error === null;
+
+        // The group lock makes the two outcomes mutually exclusive: leave
+        // winning means activation must then see Frank as a non-member and
+        // fail; activation winning means leave must then see Frank's fresh
+        // balance and fail. Never both, never neither.
+        expect(leaveSucceeded).not.toBe(activateSucceeded);
+
+        const { data: membership } = await adminClient!
+          .from("group_members")
+          .select("status")
+          .eq("group_id", group.id)
+          .eq("user_id", frank.id)
+          .maybeSingle();
+
+        if (leaveSucceeded) {
+          expect(activateResult.value.error!.message).toContain("non_member_share");
+          expect(membership).toBeNull();
+          const { data: expenseAfter } = await adminClient!
+            .from("expenses")
+            .select("status")
+            .eq("id", expenseId)
+            .single();
+          expect(expenseAfter!.status).toBe("draft");
+        } else {
+          expect(leaveResult.value.error!.message).toContain("has_outstanding_balance");
+          expect(membership!.status).toBe("accepted");
+          const balance = await getBalanceBetween(group.id, frank.id, eve.id);
+          expect(balance).toBe(2000);
+        }
+      });
+
+      it("remove_group_member and a concurrent expense activation resolve to exactly one coherent outcome", async () => {
+        const [grace, heidi] = await createTestUsers(2, { name: "5.7-remove" });
+        const group = await createTestGroupWithMembers(grace, [heidi]);
+
+        const { adminClient } = await import("@/test/integration-setup");
+        const { data: expense } = await adminClient!
+          .from("expenses")
+          .insert({
+            group_id: group.id,
+            creator_id: grace.id,
+            title: "5.7 remove-vs-activate expense",
+            expense_type: "single_amount",
+            total_amount: 3000,
+            status: "draft",
+          })
+          .select("id")
+          .single();
+        const expenseId = expense!.id;
+
+        await adminClient!.from("expense_shares").insert([
+          { expense_id: expenseId, user_id: grace.id, share_amount_cents: 1500 },
+          { expense_id: expenseId, user_id: heidi.id, share_amount_cents: 1500 },
+        ]);
+        await adminClient!.from("expense_payers").insert([
+          { expense_id: expenseId, user_id: grace.id, amount_cents: 3000 },
+        ]);
+
+        const graceClient = authenticateAs(grace);
+
+        const { result: [removeResult, activateResult], contention } =
+          await forceLockContentionRace(
+            process.env.SUPABASE_DB_URL!,
+            {
+              lockSql: "select id from groups where id = $1 for update",
+              lockParams: [group.id],
+              queryContains: ["remove_group_member", "activate_expense"],
+              expectedRacers: 2,
+            },
+            () =>
+              Promise.allSettled([
+                graceClient.rpc("remove_group_member", {
+                  p_group_id: group.id,
+                  p_user_id: heidi.id,
+                }),
+                graceClient.rpc("activate_expense", { p_expense_id: expenseId }),
+              ]),
+          );
+
+        expect(contention.observed).toBe(true);
+        if (removeResult.status !== "fulfilled" || activateResult.status !== "fulfilled") {
+          throw new Error("both RPC calls must resolve (not reject) regardless of ordering");
+        }
+
+        const removeSucceeded = removeResult.value.error === null;
+        const activateSucceeded = activateResult.value.error === null;
+        expect(removeSucceeded).not.toBe(activateSucceeded);
+
+        const { data: membership } = await adminClient!
+          .from("group_members")
+          .select("status")
+          .eq("group_id", group.id)
+          .eq("user_id", heidi.id)
+          .maybeSingle();
+
+        if (removeSucceeded) {
+          expect(activateResult.value.error!.message).toContain("non_member_share");
+          expect(membership).toBeNull();
+        } else {
+          expect(removeResult.value.error!.message).toContain("has_outstanding_balance");
+          expect(membership!.status).toBe("accepted");
+          const balance = await getBalanceBetween(group.id, heidi.id, grace.id);
+          expect(balance).toBe(1500);
+        }
+      });
+    });
   },
 );
