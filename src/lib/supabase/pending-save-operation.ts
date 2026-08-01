@@ -54,16 +54,45 @@ export function clearPendingSaveOperation(): void {
 }
 
 /**
- * Read and clear the pending entry on wizard mount. Returns null if there
- * is no pending entry, or if the entry is older than 5 minutes (stale).
+ * Clear the pending entry only if it still names the given operation ID.
+ * Mount-time resolution runs asynchronously; if the user starts a new
+ * durable save (which overwrites the stored entry) before an in-flight
+ * resolution's promise settles, an unconditional clear would delete the
+ * NEW save's recovery record instead of the resolved one. Compare first.
  */
-export function consumePendingSaveOperation(): PendingSaveOperation | null {
+export function clearPendingSaveOperationIfMatches(operationId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const entry = JSON.parse(raw) as PendingSaveOperation;
+    if (entry.operationId === operationId) {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    // Ignore — nothing to recover.
+  }
+}
+
+/**
+ * Read the pending entry on wizard mount, WITHOUT clearing it. The caller
+ * must clear it explicitly only after a resolution call returns a
+ * determinate terminal outcome (committed/retired) -- clearing eagerly on
+ * read would destroy the only durable record of an in-flight save before
+ * its outcome is confirmed, so a second crash/reload during resolution
+ * itself (network drop, tab closed again) permanently loses recovery for
+ * that save and risks a duplicate on the next save attempt. This is the
+ * exact "survive... response loss" guarantee the registry exists for.
+ *
+ * Returns null if there is no pending entry, or if the entry is older than
+ * 5 minutes (stale entries ARE cleared here -- they belong to a previous
+ * session and are never going to be resolved).
+ */
+export function peekPendingSaveOperation(): PendingSaveOperation | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-
-    window.localStorage.removeItem(STORAGE_KEY);
 
     const entry = JSON.parse(raw) as PendingSaveOperation;
     if (
@@ -71,6 +100,7 @@ export function consumePendingSaveOperation(): PendingSaveOperation | null {
       typeof entry.groupId !== "string" ||
       typeof entry.timestamp !== "number"
     ) {
+      window.localStorage.removeItem(STORAGE_KEY);
       return null;
     }
 
@@ -79,6 +109,7 @@ export function consumePendingSaveOperation(): PendingSaveOperation | null {
     // to a previous session.
     const STALE_MS = 5 * 60 * 1000;
     if (Date.now() - entry.timestamp > STALE_MS) {
+      window.localStorage.removeItem(STORAGE_KEY);
       return null;
     }
 

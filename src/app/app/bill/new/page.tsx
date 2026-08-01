@@ -42,7 +42,12 @@ import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { saveExpenseDraft, loadExpense, resolveExpenseGraphSaveResult } from "@/lib/supabase/expense-actions";
-import { setPendingSaveOperation, clearPendingSaveOperation, consumePendingSaveOperation } from "@/lib/supabase/pending-save-operation";
+import {
+  setPendingSaveOperation,
+  clearPendingSaveOperation,
+  clearPendingSaveOperationIfMatches,
+  peekPendingSaveOperation,
+} from "@/lib/supabase/pending-save-operation";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
@@ -684,13 +689,21 @@ function NewBillPageContent() {
   // tab close, network error), resolve the pending operation to recover
   // the expense ID without a duplicate save.
   useEffect(() => {
-    const pending = consumePendingSaveOperation();
+    const pending = peekPendingSaveOperation();
     if (!pending) return;
     resolveExpenseGraphSaveResult(pending.operationId, pending.groupId)
       .then((result) => {
+        // #477 Slice 5: only clear the durable record once resolution
+        // returns a terminal outcome. A null result means the operation
+        // hasn't reached the server yet (or this lookup itself failed) --
+        // leaving the entry in place lets a later mount retry resolution
+        // instead of permanently losing recovery for an in-flight save.
         if (result?.outcome === "committed") {
           setRemoteBillId(result.expenseId);
           draftRevisionRef.current = result.graphRevision;
+          clearPendingSaveOperationIfMatches(pending.operationId);
+        } else if (result?.outcome === "retired") {
+          clearPendingSaveOperationIfMatches(pending.operationId);
         }
       })
       .catch(() => {});
