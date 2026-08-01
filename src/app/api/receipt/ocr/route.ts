@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { AppError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -67,6 +69,24 @@ export async function POST(request: Request) {
     }
     imageBase64 = body.image;
     mimeType = body.mimeType ?? "image/jpeg";
+  }
+
+  try {
+    await enforceRateLimit("receipt.ocr", user.id);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Muitas requisições. Tente novamente em alguns segundos." },
+        { status: 429 },
+      );
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[receipt/ocr] unexpected rate-limit failure:", error);
+    }
+    return NextResponse.json(
+      { error: "Serviço temporariamente indisponível" },
+      { status: 503 },
+    );
   }
 
   try {

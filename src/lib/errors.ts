@@ -47,6 +47,7 @@ export type ErrorCode =
   // External services
   | "EXTERNAL_SERVICE_ERROR"
   | "RATE_LIMIT_EXCEEDED"
+  | "RATE_LIMIT_UNAVAILABLE"
   // Generic
   | "INTERNAL_ERROR"
   | "NOT_IMPLEMENTED";
@@ -111,6 +112,8 @@ export class AppError extends Error {
         return 400;
       case "RATE_LIMIT_EXCEEDED":
         return 429;
+      case "RATE_LIMIT_UNAVAILABLE":
+        return 503;
       case "NOT_IMPLEMENTED":
         return 501;
       default:

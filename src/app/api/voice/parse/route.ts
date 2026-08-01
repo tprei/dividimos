@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { AppError } from "@/lib/errors";
 import {
   parseVoiceExpense,
   type MemberContext,
@@ -21,7 +23,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     return NextResponse.json(
       { error: "Reconhecimento de voz nao configurado" },
@@ -73,6 +75,8 @@ export async function POST(request: Request) {
     }
     for (const m of members) {
       if (
+        typeof m !== "object" ||
+        m === null ||
         typeof m.handle !== "string" ||
         typeof m.name !== "string"
       ) {
@@ -88,6 +92,24 @@ export async function POST(request: Request) {
         );
       }
     }
+  }
+
+  try {
+    await enforceRateLimit("voice.parse", user.id);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Muitas requisições. Tente novamente em alguns segundos." },
+        { status: 429 },
+      );
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[voice/parse] unexpected rate-limit failure:", error);
+    }
+    return NextResponse.json(
+      { error: "Serviço temporariamente indisponível" },
+      { status: 503 },
+    );
   }
 
   try {

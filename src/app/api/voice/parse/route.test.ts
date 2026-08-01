@@ -12,7 +12,13 @@ vi.mock("@/lib/voice-expense-parser", () => ({
   parseVoiceExpense: (...args: unknown[]) => mockParseVoiceExpense(...args),
 }));
 
+const mockEnforceRateLimit = vi.fn();
+vi.mock("@/lib/rate-limit", () => ({
+  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+}));
+
 const { POST, runtime, maxDuration } = await import("./route");
+const { AppError } = await import("@/lib/errors");
 
 function jsonRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/voice/parse", {
@@ -36,6 +42,10 @@ describe("POST /api/voice/parse", () => {
     vi.clearAllMocks();
     mockGetUser.mockResolvedValue(authenticatedUser);
     vi.stubEnv("GEMINI_API_KEY", "test-key");
+    // vi.clearAllMocks() clears call history but not a queued rejection
+    // implementation from a prior test — reset the default to success here.
+    mockEnforceRateLimit.mockReset();
+    mockEnforceRateLimit.mockResolvedValue(undefined);
   });
 
   // --- Auth ---
@@ -48,6 +58,8 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error).toBe("Nao autenticado");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
 
   // --- GEMINI_API_KEY ---
@@ -60,6 +72,25 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error).toBe("Reconhecimento de voz nao configurado");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 when GEMINI_API_KEY is whitespace only", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "   ");
+
+    const res = await POST(jsonRequest({ text: "pizza 50 reais" }));
+
+    expect(res.status).toBe(503);
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("trims a padded GEMINI_API_KEY before passing it to the parser", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "  test-key  ");
+    mockParseVoiceExpense.mockResolvedValue({ title: "Test" });
+
+    await POST(jsonRequest({ text: "pizza" }));
+
+    expect(mockParseVoiceExpense).toHaveBeenCalledWith("pizza", "test-key", undefined);
   });
 
   // --- Body parsing ---
@@ -70,6 +101,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Corpo da requisicao invalido");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
   });
 
   // --- Text validation ---
@@ -80,6 +112,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Campo 'text' obrigatorio");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
   });
 
   it("returns 400 when text is empty string", async () => {
@@ -112,6 +145,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(413);
     const body = await res.json();
     expect(body.error).toContain("2000");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
   });
 
   it("accepts text at exactly 2000 characters", async () => {
@@ -132,6 +166,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Campo 'members' deve ser um array");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
   });
 
   it("returns 400 when members exceeds 100 items", async () => {
@@ -145,6 +180,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain("limite");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
   });
 
   it("accepts members at exactly 100 items", async () => {
@@ -170,6 +206,7 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("Cada membro deve ter 'handle' e 'name'");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
   });
 
   it("returns 400 when member name is not a string", async () => {
@@ -178,6 +215,27 @@ describe("POST /api/voice/parse", () => {
         text: "pizza",
         members: [{ handle: "test", name: null }],
       }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Cada membro deve ter 'handle' e 'name'");
+  });
+
+  it("returns 400 (not a TypeError) when a members entry is null", async () => {
+    const res = await POST(
+      jsonRequest({ text: "pizza", members: [null] }),
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("Cada membro deve ter 'handle' e 'name'");
+    expect(mockEnforceRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when a members entry is a primitive", async () => {
+    const res = await POST(
+      jsonRequest({ text: "pizza", members: ["not-an-object"] }),
     );
 
     expect(res.status).toBe(400);
@@ -222,6 +280,127 @@ describe("POST /api/voice/parse", () => {
     );
 
     expect(res.status).toBe(200);
+  });
+
+  // --- Rate limiting ---
+
+  it("calls enforceRateLimit with the voice.parse bucket and the authenticated user id", async () => {
+    mockParseVoiceExpense.mockResolvedValue({ title: "Test" });
+
+    await POST(jsonRequest({ text: "pizza" }));
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith("voice.parse", "user-123");
+  });
+
+  it("resolves the limiter before starting the parser call", async () => {
+    const order: string[] = [];
+    mockEnforceRateLimit.mockImplementation(async () => {
+      order.push("limiter");
+    });
+    mockParseVoiceExpense.mockImplementation(async () => {
+      order.push("parser");
+      return { title: "Test" };
+    });
+
+    await POST(jsonRequest({ text: "pizza" }));
+
+    expect(order).toEqual(["limiter", "parser"]);
+  });
+
+  it("passes a distinct subject per authenticated user id", async () => {
+    mockParseVoiceExpense.mockResolvedValue({ title: "Test" });
+    mockGetUser.mockResolvedValue({ data: { user: { id: "user-A" } } });
+    await POST(jsonRequest({ text: "pizza" }));
+    expect(mockEnforceRateLimit).toHaveBeenLastCalledWith("voice.parse", "user-A");
+
+    mockGetUser.mockResolvedValue({ data: { user: { id: "user-B" } } });
+    await POST(jsonRequest({ text: "pizza" }));
+    expect(mockEnforceRateLimit).toHaveBeenLastCalledWith("voice.parse", "user-B");
+  });
+
+  it("returns 429 and invokes the parser zero times when the limiter is saturated on the first call", async () => {
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
+        statusCode: 429,
+      }),
+    );
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Muitas requisições. Tente novamente em alguns segundos." });
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
+  });
+
+  it("simulates 30 admitted requests followed by a 31st rejection with parser count pinned at 30", async () => {
+    mockParseVoiceExpense.mockResolvedValue({ title: "Test" });
+    let call = 0;
+    mockEnforceRateLimit.mockImplementation(async () => {
+      call += 1;
+      if (call > 30) {
+        throw new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
+          statusCode: 429,
+        });
+      }
+    });
+
+    for (let i = 0; i < 30; i++) {
+      const res = await POST(jsonRequest({ text: "pizza" }));
+      expect(res.status).toBe(200);
+    }
+    expect(mockParseVoiceExpense).toHaveBeenCalledTimes(30);
+
+    const rejected = await POST(jsonRequest({ text: "pizza" }));
+    expect(rejected.status).toBe(429);
+    expect(mockParseVoiceExpense).toHaveBeenCalledTimes(30);
+  });
+
+  it("returns the exact safe 503 body and invokes the parser zero times when the limiter is unavailable", async () => {
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_UNAVAILABLE", "Não foi possível verificar o limite de requisições."),
+    );
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Serviço temporariamente indisponível" });
+    expect(JSON.stringify(body)).not.toContain("verificar o limite");
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
+  });
+
+  it("returns the exact safe 503 body and invokes the parser zero times on an unknown limiter throw", async () => {
+    mockEnforceRateLimit.mockRejectedValue(new Error("unexpected"));
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Serviço temporariamente indisponível" });
+    expect(mockParseVoiceExpense).not.toHaveBeenCalled();
+  });
+
+  it("shows exactly one limiter call after an admitted token even when the parser throws", async () => {
+    mockParseVoiceExpense.mockRejectedValue(new Error("Gemini API error"));
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(500);
+    expect(mockEnforceRateLimit).toHaveBeenCalledOnce();
+    expect(mockParseVoiceExpense).toHaveBeenCalledOnce();
+  });
+
+  it("shows exactly one limiter call after an admitted token even when the parser times out", async () => {
+    const err = new Error("timed out");
+    err.name = "TimeoutError";
+    mockParseVoiceExpense.mockRejectedValue(err);
+
+    const res = await POST(jsonRequest({ text: "pizza" }));
+
+    expect(res.status).toBe(504);
+    expect(mockEnforceRateLimit).toHaveBeenCalledOnce();
+    expect(mockParseVoiceExpense).toHaveBeenCalledOnce();
   });
 
   // --- Success ---

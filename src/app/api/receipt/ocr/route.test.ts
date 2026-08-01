@@ -14,7 +14,13 @@ vi.mock("@/lib/receipt-ocr", () => ({
   parseReceiptImage: (...args: unknown[]) => mockParseReceiptImage(...args),
 }));
 
+const mockEnforceRateLimit = vi.fn();
+vi.mock("@/lib/rate-limit", () => ({
+  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
+}));
+
 const { POST, runtime, maxDuration } = await import("./route");
+const { AppError } = await import("@/lib/errors");
 
 function jsonRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/receipt/ocr", {
@@ -42,6 +48,10 @@ describe("POST /api/receipt/ocr", () => {
     vi.clearAllMocks();
     mockGetUser.mockResolvedValue(authenticatedUser);
     vi.stubEnv("GEMINI_API_KEY", "test-key");
+    // vi.clearAllMocks() clears call history but not a queued rejection
+    // implementation from a prior test — reset the default to success here.
+    mockEnforceRateLimit.mockReset();
+    mockEnforceRateLimit.mockResolvedValue(undefined);
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -224,6 +234,94 @@ describe("POST /api/receipt/ocr", () => {
     expect(res.status).toBe(504);
     const body = await res.json();
     expect(body.timeout).toBe(true);
+  });
+
+  // --- Rate limiting ---
+
+  it("calls enforceRateLimit with the receipt.ocr bucket and the authenticated user id", async () => {
+    mockParseReceiptImage.mockResolvedValue({
+      merchant: null,
+      items: [],
+      serviceFeePercent: 0,
+      totalCents: 0,
+    });
+
+    await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith("receipt.ocr", "user-123");
+  });
+
+  it("resolves the limiter before starting the OCR call", async () => {
+    const order: string[] = [];
+    mockEnforceRateLimit.mockImplementation(async () => {
+      order.push("limiter");
+    });
+    mockParseReceiptImage.mockImplementation(async () => {
+      order.push("ocr");
+      return { merchant: null, items: [], serviceFeePercent: 0, totalCents: 0 };
+    });
+
+    await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(order).toEqual(["limiter", "ocr"]);
+  });
+
+  it("returns 429 and invokes the OCR parser zero times when the limiter is saturated on the first call", async () => {
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
+        statusCode: 429,
+      }),
+    );
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Muitas requisições. Tente novamente em alguns segundos." });
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
+  });
+
+  it("simulates 30 admitted requests followed by a 31st rejection with parser count pinned at 30", async () => {
+    mockParseReceiptImage.mockResolvedValue({
+      merchant: null,
+      items: [],
+      serviceFeePercent: 0,
+      totalCents: 0,
+    });
+    let call = 0;
+    mockEnforceRateLimit.mockImplementation(async () => {
+      call += 1;
+      if (call > 30) {
+        throw new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
+          statusCode: 429,
+        });
+      }
+    });
+    const base64 = Buffer.from("fake").toString("base64");
+
+    for (let i = 0; i < 30; i++) {
+      const res = await POST(jsonRequest({ image: base64 }));
+      expect(res.status).toBe(200);
+    }
+    expect(mockParseReceiptImage).toHaveBeenCalledTimes(30);
+
+    const rejected = await POST(jsonRequest({ image: base64 }));
+    expect(rejected.status).toBe(429);
+    expect(mockParseReceiptImage).toHaveBeenCalledTimes(30);
+  });
+
+  it("returns the exact safe 503 body and invokes the OCR parser zero times when the limiter is unavailable", async () => {
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_UNAVAILABLE", "Não foi possível verificar o limite de requisições."),
+    );
+
+    const res = await POST(jsonRequest({ image: Buffer.from("fake").toString("base64") }));
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Serviço temporariamente indisponível" });
+    expect(JSON.stringify(body)).not.toContain("verificar o limite");
+    expect(mockParseReceiptImage).not.toHaveBeenCalled();
   });
 });
 

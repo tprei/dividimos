@@ -20,116 +20,234 @@ describe("enforceRateLimit", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is a no-op when RATE_LIMIT_DISABLED=1 outside production", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
-    vi.stubEnv("NODE_ENV", "test");
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
+  describe("test bypass", () => {
+    it("is a no-op when RATE_LIMIT_DISABLED=1, NODE_ENV=test, and VITEST=true", async () => {
+      vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+      vi.stubEnv("NODE_ENV", "test");
+      vi.stubEnv("VITEST", "true");
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
 
-    await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
-    expect(mockRpc).not.toHaveBeenCalled();
-  });
+      await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
 
-  it("still calls the RPC when RATE_LIMIT_DISABLED=1 but NODE_ENV=production", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
-    vi.stubEnv("NODE_ENV", "production");
-    mockRpc.mockResolvedValue({ data: 1, error: null });
+    it("still calls the RPC when VITEST is not set (production-like NODE_ENV=test server)", async () => {
+      vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+      vi.stubEnv("NODE_ENV", "test");
+      vi.stubEnv("VITEST", "");
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
 
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
-    await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
-    expect(mockRpc).toHaveBeenCalledOnce();
-  });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
+      expect(mockRpc).toHaveBeenCalledOnce();
+    });
 
-  it("calls increment_rate_limit RPC and returns void on success", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "");
-    mockRpc.mockResolvedValue({ data: 1, error: null });
+    it("still calls the RPC when NODE_ENV=production even with RATE_LIMIT_DISABLED=1 and VITEST=true", async () => {
+      vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("VITEST", "true");
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
 
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
-    await expect(enforceRateLimit("users.lookup", "user-abc")).resolves.toBeUndefined();
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
+      expect(mockRpc).toHaveBeenCalledOnce();
+    });
 
-    expect(mockRpc).toHaveBeenCalledOnce();
-    expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
-      p_bucket:         "users.lookup",
-      p_subject:        "user-abc",
-      p_limit:          30,
-      p_window_seconds: 60,
+    it("still calls the RPC when RATE_LIMIT_DISABLED is not '1'", async () => {
+      vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+      vi.stubEnv("NODE_ENV", "test");
+      vi.stubEnv("VITEST", "true");
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await expect(enforceRateLimit("users.lookup", "user-123")).resolves.toBeUndefined();
+      expect(mockRpc).toHaveBeenCalledOnce();
+    });
+
+    it("cannot hide an invalid subject: invalid identity fails before bypass is evaluated", async () => {
+      vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+      vi.stubEnv("NODE_ENV", "test");
+      vi.stubEnv("VITEST", "true");
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      const { AppError } = await import("@/lib/errors");
+
+      await expect(enforceRateLimit("users.lookup", "")).rejects.toMatchObject({
+        code: "RATE_LIMIT_UNAVAILABLE",
+      });
+      await expect(enforceRateLimit("users.lookup", "")).rejects.toBeInstanceOf(AppError);
+      expect(mockRpc).not.toHaveBeenCalled();
     });
   });
 
-  it("throws RateLimitExceeded (AppError RATE_LIMIT_EXCEEDED) when RPC raises rate_limited", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "");
-    mockRpc.mockResolvedValue({
-      data: null,
-      error: { message: "rate_limited: 30 per 60 seconds exceeded" },
+  describe("boolean RPC contract", () => {
+    beforeEach(() => {
+      vi.stubEnv("RATE_LIMIT_DISABLED", "0");
+      vi.stubEnv("NODE_ENV", "test");
+      vi.stubEnv("VITEST", "true");
     });
 
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
-    const { AppError } = await import("@/lib/errors");
+    it("returns void when the RPC resolves data:true", async () => {
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
 
-    await expect(enforceRateLimit("voice.parse", "user-xyz")).rejects.toThrow(AppError);
-    await expect(enforceRateLimit("voice.parse", "user-xyz")).rejects.toMatchObject({
-      code: "RATE_LIMIT_EXCEEDED",
-      statusCode: 429,
-    });
-  });
-
-  it("throws INTERNAL_ERROR on non-rate-limit RPC failure", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "");
-    mockRpc.mockResolvedValue({
-      data: null,
-      error: { message: "connection timeout" },
+      await expect(enforceRateLimit("users.lookup", "user-abc")).resolves.toBeUndefined();
+      expect(mockRpc).toHaveBeenCalledOnce();
+      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
+        p_bucket:         "users.lookup",
+        p_subject:        "user-abc",
+        p_limit:          30,
+        p_window_seconds: 60,
+      });
     });
 
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
-    const { AppError } = await import("@/lib/errors");
+    it("throws RATE_LIMIT_EXCEEDED (429) when the RPC resolves data:false", async () => {
+      mockRpc.mockResolvedValueOnce({ data: false, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      const { AppError } = await import("@/lib/errors");
 
-    await expect(enforceRateLimit("pix.generate", "user-xyz")).rejects.toThrow(AppError);
-    await expect(enforceRateLimit("pix.generate", "user-xyz")).rejects.toMatchObject({
-      code: "INTERNAL_ERROR",
+      await expect(enforceRateLimit("voice.parse", "user-xyz")).rejects.toThrow(AppError);
+      mockRpc.mockResolvedValueOnce({ data: false, error: null });
+      await expect(enforceRateLimit("voice.parse", "user-xyz")).rejects.toMatchObject({
+        code: "RATE_LIMIT_EXCEEDED",
+        statusCode: 429,
+      });
     });
-  });
 
-  it("passes correct config for pix.generate-self bucket", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "");
-    mockRpc.mockResolvedValue({ data: 1, error: null });
+    it.each([
+      ["an RPC error", { data: null, error: { message: "boom" } }],
+      ["a null result with no error", { data: null, error: null }],
+      ["a numeric result", { data: 1, error: null }],
+      ["a string result", { data: "true", error: null }],
+      ["an object result", { data: {}, error: null }],
+      ["a missing data key entirely", { error: null }],
+    ])("throws RATE_LIMIT_UNAVAILABLE (503) for %s", async (_label, mocked) => {
+      mockRpc.mockResolvedValueOnce(mocked);
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
 
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
-    await enforceRateLimit("pix.generate-self", "user-def");
-
-    expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
-      p_bucket:         "pix.generate-self",
-      p_subject:        "user-def",
-      p_limit:          60,
-      p_window_seconds: 60,
+      await expect(enforceRateLimit("pix.generate", "user-xyz")).rejects.toMatchObject({
+        code: "RATE_LIMIT_UNAVAILABLE",
+        statusCode: 503,
+      });
     });
-  });
 
-  it("passes correct config for receipt.sefaz bucket (lower limit)", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "");
-    mockRpc.mockResolvedValue({ data: 1, error: null });
+    it("throws RATE_LIMIT_UNAVAILABLE (503) when the RPC promise rejects", async () => {
+      mockRpc.mockRejectedValueOnce(new Error("connection refused"));
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
 
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
-    await enforceRateLimit("receipt.sefaz", "user-ghi");
-
-    expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
-      p_bucket:         "receipt.sefaz",
-      p_subject:        "user-ghi",
-      p_limit:          10,
-      p_window_seconds: 60,
+      await expect(enforceRateLimit("pix.generate", "user-xyz")).rejects.toMatchObject({
+        code: "RATE_LIMIT_UNAVAILABLE",
+        statusCode: 503,
+      });
     });
-  });
 
-  it("passes correct config for push.send-pair bucket", async () => {
-    vi.stubEnv("RATE_LIMIT_DISABLED", "");
-    mockRpc.mockResolvedValue({ data: 1, error: null });
+    it("never leaks raw RPC/database diagnostics into the thrown error", async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: null,
+        error: { message: "connection to postgresql://user:secret@host failed" },
+      });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
 
-    const { enforceRateLimit } = await import("@/lib/rate-limit");
-    await enforceRateLimit("push.send-pair", "user-a:user-b");
+      try {
+        await enforceRateLimit("pix.generate", "user-xyz");
+        expect.unreachable();
+      } catch (error) {
+        const serialized = JSON.stringify(error instanceof Error ? { ...error, message: error.message } : error);
+        expect(serialized).not.toContain("postgresql://");
+        expect(serialized).not.toContain("secret");
+      }
+    });
 
-    expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
-      p_bucket:         "push.send-pair",
-      p_subject:        "user-a:user-b",
-      p_limit:          5,
-      p_window_seconds: 60,
+    it("fails closed for a runtime-unknown bucket before touching config.limit or the RPC", async () => {
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      const unknownBucket = "not.a.real.bucket" as Parameters<typeof enforceRateLimit>[0];
+
+      await expect(enforceRateLimit(unknownBucket, "user-abc")).rejects.toMatchObject({
+        code: "RATE_LIMIT_UNAVAILABLE",
+      });
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it("fails closed for a blank subject before calling the RPC", async () => {
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+
+      await expect(enforceRateLimit("users.lookup", "   ")).rejects.toMatchObject({
+        code: "RATE_LIMIT_UNAVAILABLE",
+      });
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it("fails closed for an overlong subject before calling the RPC", async () => {
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+
+      await expect(
+        enforceRateLimit("users.lookup", "x".repeat(513)),
+      ).rejects.toMatchObject({ code: "RATE_LIMIT_UNAVAILABLE" });
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it("passes correct config and exact args for chat.parse", async () => {
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await enforceRateLimit("chat.parse", "user-chat");
+
+      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
+        p_bucket:         "chat.parse",
+        p_subject:        "user-chat",
+        p_limit:          30,
+        p_window_seconds: 60,
+      });
+    });
+
+    it("passes correct config and exact args for voice.parse", async () => {
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await enforceRateLimit("voice.parse", "user-voice");
+
+      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
+        p_bucket:         "voice.parse",
+        p_subject:        "user-voice",
+        p_limit:          30,
+        p_window_seconds: 60,
+      });
+    });
+
+    it("passes correct config for pix.generate-self bucket", async () => {
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await enforceRateLimit("pix.generate-self", "user-def");
+
+      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
+        p_bucket:         "pix.generate-self",
+        p_subject:        "user-def",
+        p_limit:          60,
+        p_window_seconds: 60,
+      });
+    });
+
+    it("passes correct config for receipt.sefaz bucket (lower limit)", async () => {
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await enforceRateLimit("receipt.sefaz", "user-ghi");
+
+      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
+        p_bucket:         "receipt.sefaz",
+        p_subject:        "user-ghi",
+        p_limit:          10,
+        p_window_seconds: 60,
+      });
+    });
+
+    it("passes correct config for push.send-pair bucket", async () => {
+      mockRpc.mockResolvedValueOnce({ data: true, error: null });
+      const { enforceRateLimit } = await import("@/lib/rate-limit");
+      await enforceRateLimit("push.send-pair", "user-a:user-b");
+
+      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
+        p_bucket:         "push.send-pair",
+        p_subject:        "user-a:user-b",
+        p_limit:          5,
+        p_window_seconds: 60,
+      });
     });
   });
 });
