@@ -26,7 +26,7 @@ function AuthPageContent() {
     (data: string) => {
       const claim = parseClaimQrCode(data);
       if (claim) {
-        router.push(`/claim/${claim.token}`);
+        router.push(`/claim#${claim.token}`);
       }
     },
     [router],
