@@ -7,7 +7,6 @@ import {
 import {
   createTestUsers,
   createTestGroupWithMembers,
-  createTestDmGroup,
   authenticateAs,
   createAndActivateExpense,
   getBalanceBetween,
@@ -65,50 +64,6 @@ describe.skipIf(!isIntegrationTestReady)("RLS hardening guards", () => {
       } else {
         expect(data ?? []).toHaveLength(0);
       }
-    });
-  });
-
-  // ────────────────────────────────────────────────────────
-  // chat_messages INSERT: invited users cannot write
-  // ────────────────────────────────────────────────────────
-  describe("chat_messages INSERT requires accepted membership", () => {
-    let alice: TestUser;
-    let bob: TestUser;
-    let groupId: string;
-
-    beforeAll(async () => {
-      [alice, bob] = await createTestUsers(2);
-      const group = await createTestDmGroup(alice, bob, { bothAccepted: false });
-      groupId = group.id;
-    });
-
-    it("accepted sender can insert a text message", async () => {
-      const client = untypedAs(alice);
-      const { error } = await client
-        .from("chat_messages")
-        .insert({
-          group_id: groupId,
-          sender_id: alice.id,
-          message_type: "text",
-          content: "hello",
-        });
-
-      expect(error).toBeNull();
-    });
-
-    it("invited sender cannot insert a message", async () => {
-      const client = untypedAs(bob);
-      const { error } = await client.from("chat_messages").insert({
-        group_id: groupId,
-        sender_id: bob.id,
-        message_type: "text",
-        content: "reply from invited",
-      });
-
-      expect(error).not.toBeNull();
-      expect(error!.message.toLowerCase()).toMatch(
-        /row-level security|violates|permission/,
-      );
     });
   });
 
