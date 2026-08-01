@@ -63,7 +63,7 @@ describe.skipIf(!isIntegrationTestReady)("Expense RLS policies", () => {
           expense_type: "itemized", total_amount: 10000,
           service_fee_basis_points: 0, fixed_fees: 0,
         },
-        p_items: [{ description: "Pizza", quantity: 1000, unit_price_cents: 5000, total_price_cents: 5000 }],
+        p_items: [{ description: "Pizza", quantity: 1000, unit_price_cents: 10000, total_price_cents: 10000 }],
         p_shares: [
           { user_id: alice.id, share_amount_cents: 5000 },
           { user_id: bob.id, share_amount_cents: 5000 },
