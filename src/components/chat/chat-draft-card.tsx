@@ -45,6 +45,8 @@ export function ChatDraftCard({
   const isLowConfidence = result.confidence === "low";
   const hasAmount = result.amountCents > 0;
   const hasItems = result.items.length > 0;
+  const hasUndeterminedAllocations =
+    result.splitType === "custom" && result.allocations.length !== 2;
   const isConfirming = status === "confirming";
   const isConfirmed = status === "confirmed";
   const isError = status === "error";
@@ -105,6 +107,34 @@ export function ChatDraftCard({
             {result.splitType === "equal" ? "Divisão igual" : "Divisão personalizada"}
           </span>
         </div>
+
+        {result.splitType === "custom" && (
+          <div className="text-xs text-muted-foreground" data-testid="draft-allocations">
+            {result.allocations.length === 2 ? (
+              <div className="space-y-0.5">
+                {result.allocations.map((allocation) => (
+                  <div
+                    key={allocation.participantHandle}
+                    className="flex items-center justify-between"
+                  >
+                    <span>
+                      {allocation.participantHandle === "SELF"
+                        ? "Você"
+                        : `@${allocation.participantHandle}`}
+                    </span>
+                    <span className="tabular-nums">
+                      {formatBRL(allocation.shareAmountCents)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span data-testid="draft-allocations-undetermined">
+                Não foi possível identificar a divisão exata. Edite para ajustar os valores.
+              </span>
+            )}
+          </div>
+        )}
 
         {hasItems && (
           <div className="mt-1 space-y-1">
@@ -187,7 +217,11 @@ export function ChatDraftCard({
             size="sm"
             className="flex-1"
             onClick={() => onConfirm(result)}
-            disabled={isDisabled || (!hasAmount && result.expenseType === "single_amount")}
+            disabled={
+              isDisabled ||
+              (!hasAmount && result.expenseType === "single_amount") ||
+              hasUndeterminedAllocations
+            }
             data-testid="draft-confirm-button"
           >
             {isConfirming ? (

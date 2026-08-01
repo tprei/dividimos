@@ -10,6 +10,7 @@ function makeResult(overrides: Partial<ChatExpenseResult> = {}): ChatExpenseResu
     amountCents: 2500,
     expenseType: "single_amount",
     splitType: "equal",
+    allocations: [],
     items: [],
     participants: [],
     payerHandle: null,
@@ -51,6 +52,41 @@ describe("ChatDraftCard", () => {
     expect(screen.getByTestId("draft-split-type")).toHaveTextContent(
       "Divisão personalizada",
     );
+  });
+
+  it("#476: renders exact per-participant amounts for a custom split, not a generic label", () => {
+    const result = makeResult({
+      splitType: "custom",
+      allocations: [
+        { participantHandle: "SELF", shareAmountCents: 6000 },
+        { participantHandle: "bob", shareAmountCents: 4000 },
+      ],
+    });
+
+    render(<ChatDraftCard {...defaultProps} result={result} />);
+
+    const allocations = screen.getByTestId("draft-allocations");
+    expect(allocations).toHaveTextContent("Você");
+    expect(allocations).toHaveTextContent("R$ 60,00");
+    expect(allocations).toHaveTextContent("@bob");
+    expect(allocations).toHaveTextContent("R$ 40,00");
+  });
+
+  it("#476: shows an undetermined-division notice instead of amounts when a custom split has no allocations", () => {
+    render(
+      <ChatDraftCard
+        {...defaultProps}
+        result={makeResult({ splitType: "custom", allocations: [] })}
+      />,
+    );
+
+    expect(screen.getByTestId("draft-allocations-undetermined")).toBeInTheDocument();
+  });
+
+  it("does not render an allocations block for an equal split", () => {
+    render(<ChatDraftCard {...defaultProps} />);
+
+    expect(screen.queryByTestId("draft-allocations")).not.toBeInTheDocument();
   });
 
   it("renders fallback title when empty", () => {
@@ -231,6 +267,34 @@ describe("ChatDraftCard", () => {
         <ChatDraftCard
           {...defaultProps}
           result={makeResult({ amountCents: 0, expenseType: "itemized" })}
+        />,
+      );
+
+      expect(screen.getByTestId("draft-confirm-button")).toBeEnabled();
+    });
+
+    it("#476: disables Confirmar when a custom split has no allocations (never lets the user commit a guessed equal split)", () => {
+      render(
+        <ChatDraftCard
+          {...defaultProps}
+          result={makeResult({ splitType: "custom", allocations: [] })}
+        />,
+      );
+
+      expect(screen.getByTestId("draft-confirm-button")).toBeDisabled();
+    });
+
+    it("#476: enables Confirmar when a custom split has exact allocations", () => {
+      render(
+        <ChatDraftCard
+          {...defaultProps}
+          result={makeResult({
+            splitType: "custom",
+            allocations: [
+              { participantHandle: "SELF", shareAmountCents: 6000 },
+              { participantHandle: "bob", shareAmountCents: 4000 },
+            ],
+          })}
         />,
       );
 
