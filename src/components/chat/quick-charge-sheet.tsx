@@ -22,9 +22,15 @@ export interface QuickChargeSheetProps {
   errorMessage?: string;
 }
 
-function buildDescription(amountCents: number, counterpartyName: string): string {
+function buildDescription(
+  amountCents: number,
+  counterpartyName: string,
+  payerIsSelf: boolean,
+): string {
   if (amountCents <= 0) return "";
-  return `Cobrança de ${formatBRL(amountCents)} para ${counterpartyName}`;
+  return payerIsSelf
+    ? `Cobrança de ${formatBRL(amountCents)} para ${counterpartyName}`
+    : `Cobrança de ${formatBRL(amountCents)} de ${counterpartyName}`;
 }
 
 function buildResult(
@@ -68,8 +74,8 @@ export function QuickChargeSheet({
   const [payerIsSelf, setPayerIsSelf] = useState(true);
 
   const autoDescription = useMemo(
-    () => buildDescription(amountCents, counterpartyName),
-    [amountCents, counterpartyName],
+    () => buildDescription(amountCents, counterpartyName, payerIsSelf),
+    [amountCents, counterpartyName, payerIsSelf],
   );
 
   const displayDescription = descriptionEdited ? description : autoDescription;
@@ -138,7 +144,7 @@ export function QuickChargeSheet({
 
       <div className="mb-3 text-center">
         <div className="mb-1 text-xs text-muted-foreground">
-          Cobrar de {counterpartyName}
+          {payerIsSelf ? `Cobrar de ${counterpartyName}` : `Devo a ${counterpartyName}`}
         </div>
         <div className="flex items-center justify-center gap-1">
           <span className="text-lg font-bold text-muted-foreground">R$</span>
@@ -235,7 +241,7 @@ export function QuickChargeSheet({
           ) : (
             <Check className="mr-1.5 h-3.5 w-3.5" />
           )}
-          {isConfirming ? "Enviando…" : "Cobrar"}
+          {isConfirming ? "Enviando…" : payerIsSelf ? "Cobrar" : "Registrar"}
         </Button>
       </div>
     </motion.div>
