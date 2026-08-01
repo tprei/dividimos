@@ -46,9 +46,14 @@ export class ReceiptInvalidError extends Error {
 
 /**
  * Validate a raw receipt candidate through the same #477 exact reconciliation
- * gate the persisted graph uses (issue #477 part 1 "an invalid or incomplete
- * receipt never mounts ScannedItemsReview"). Returns the unchanged candidate
- * on success; throws `ReceiptInvalidError` otherwise. Never repairs a defect.
+ * `decodeExpenseResult` applies before mounting `ScannedItemsReview`. Every
+ * OCR/SEFAZ receipt is `itemized` -- never inferred as `single_amount`. A
+ * scan that found zero items is never a legitimate single-total receipt; per
+ * #477 part 1, `scan_review` is itemized-only and "empty/zero or missing
+ * root total is a safe scan error before review." Passing the true
+ * `itemized` type here (instead of inferring `single_amount` from an empty
+ * item array) lets the decoder reject that case outright rather than
+ * silently mounting an undetailed, unreviewed single-amount expense.
  */
 function assertReconciledReceipt(
   source: "ocr" | "sefaz",
@@ -56,7 +61,7 @@ function assertReconciledReceipt(
 ): ReceiptOcrResult {
   const decoded = decodeExpenseResult(source, "scan_review", {
     merchantName: result.merchant,
-    expenseType: result.items.length > 0 ? "itemized" : "single_amount",
+    expenseType: "itemized",
     totalAmountCents: result.totalCents,
     serviceFeeBasisPoints: result.serviceFeeBasisPoints,
     fixedFeesCents: result.fixedFeesCents,

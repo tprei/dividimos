@@ -5,7 +5,13 @@ vi.mock("@/lib/image-utils", () => ({
   compressImage: vi.fn((file: File) => Promise.resolve(file)),
 }));
 
-import { processReceiptScan, fetchSefazReceipt, SefazFallbackError, ReceiptTimeoutError } from "./process-receipt-scan";
+import {
+  processReceiptScan,
+  fetchSefazReceipt,
+  SefazFallbackError,
+  ReceiptTimeoutError,
+  ReceiptInvalidError,
+} from "./process-receipt-scan";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 const mockOcrResult: ReceiptOcrResult = {
@@ -130,6 +136,48 @@ describe("processReceiptScan", () => {
 
     fetchSpy.mockRestore();
   });
+
+  it("rejects an OCR result with zero items and a positive total (#477 637k: never inferred as single_amount)", async () => {
+    const emptyItemsResult: ReceiptOcrResult = {
+      merchant: "Bar do Zeca",
+      items: [],
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
+      totalCents: 5390,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(emptyItemsResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const file = createMockFile();
+    await expect(processReceiptScan(file)).rejects.toBeInstanceOf(ReceiptInvalidError);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("rejects an OCR result with zero items and a zero total", async () => {
+    const emptyResult: ReceiptOcrResult = {
+      merchant: "Bar do Zeca",
+      items: [],
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
+      totalCents: 0,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(emptyResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const file = createMockFile();
+    await expect(processReceiptScan(file)).rejects.toBeInstanceOf(ReceiptInvalidError);
+
+    fetchSpy.mockRestore();
+  });
 });
 
 describe("fetchSefazReceipt", () => {
@@ -221,6 +269,28 @@ describe("fetchSefazReceipt", () => {
     expect(err.fallback).toBe(true);
     expect(err.name).toBe("SefazFallbackError");
     expect(err).toBeInstanceOf(Error);
+  });
+
+  it("rejects a SEFAZ result with zero items and a positive total (#477 637k)", async () => {
+    const emptyItemsResult: ReceiptOcrResult = {
+      merchant: "Loja X",
+      items: [],
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
+      totalCents: 1000,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(emptyItemsResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(fetchSefazReceipt("https://example.com")).rejects.toBeInstanceOf(
+      ReceiptInvalidError,
+    );
+
+    fetchSpy.mockRestore();
   });
 });
 
