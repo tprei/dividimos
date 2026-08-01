@@ -144,6 +144,62 @@ describe.skipIf(!isIntegrationTestReady)(
       });
     });
 
+    // ──────────────────────────────────────────────────────
+    // Same FK-RESTRICT/committed-ledger-row regression as leave_group,
+    // for remove_group_member (#477 review).
+    // ──────────────────────────────────────────────────────
+    describe("remove_group_member allows removal when the member has a saved draft", () => {
+      let alice: TestUser;
+      let bob: TestUser;
+      let groupId: string;
+      let draftId: string;
+
+      beforeAll(async () => {
+        [alice, bob] = await createTestUsers(2);
+        const group = await createTestGroupWithMembers(alice, [bob]);
+        groupId = group.id;
+
+        const bobClient = authenticateAs(bob);
+        const { data, error } = await bobClient.rpc("save_expense_draft_graph", {
+          p_expense: {
+            group_id: groupId,
+            title: "Bob's draft",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 1500,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [{ user_id: bob.id, share_amount_cents: 1500 }],
+          p_payers: [{ user_id: bob.id, amount_cents: 1500 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        });
+        if (error || !data) throw new Error(`save draft: ${error?.message}`);
+        draftId = (data as { id: string }).id;
+      });
+
+      it("removes the member and deletes their draft", async () => {
+        const aliceClient = authenticateAs(alice);
+        const { error } = await aliceClient.rpc("remove_group_member", {
+          p_group_id: groupId,
+          p_user_id: bob.id,
+        });
+        expect(error).toBeNull();
+
+        const { data: draftRow } = await adminClient!
+          .from("expenses")
+          .select("id")
+          .eq("id", draftId)
+          .maybeSingle();
+        expect(draftRow).toBeNull();
+      });
+    });
+
     describe("remove_group_member allows removal with zero balance rows", () => {
       let alice: TestUser;
       let bob: TestUser;

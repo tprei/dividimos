@@ -364,7 +364,8 @@ export async function loadExpense(
 }
 
 // ============================================================
-// Delete an expense (drafts only — RLS enforces creator check)
+// Delete an expense (drafts only — enforced inside delete_draft_expense,
+// the guard-compatible RPC; a direct DELETE cannot open a mutation token).
 // ============================================================
 
 export async function deleteExpense(
@@ -372,11 +373,9 @@ export async function deleteExpense(
 ): Promise<{ error?: string }> {
   const supabase = createClient();
 
-  const { error } = await supabase
-    .from("expenses")
-    .delete()
-    .eq("id", expenseId)
-    .eq("status", "draft");
+  const { error } = await supabase.rpc("delete_draft_expense", {
+    p_expense_id: expenseId,
+  });
 
   if (error) {
     console.error("Failed to delete expense:", error);

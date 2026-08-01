@@ -363,17 +363,19 @@ describe("loadExpense", () => {
 
 describe("deleteExpense", () => {
   it("deletes a draft expense", async () => {
-    mock.onTable("expenses", { error: null });
+    mock.onRpc("delete_draft_expense", { data: null, error: null });
 
     const result = await deleteExpense("expense-1");
 
     expect(result).toEqual({});
-    const deleteCalls = mock.findCalls("expenses", "delete");
-    expect(deleteCalls).toHaveLength(1);
+    const rpcCalls = mock.findCalls("rpc:delete_draft_expense", "rpc");
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].args[1]).toEqual({ p_expense_id: "expense-1" });
   });
 
   it("returns a generic error without leaking the raw delete message", async () => {
-    mock.onTable("expenses", {
+    mock.onRpc("delete_draft_expense", {
+      data: null,
       error: { message: 'permission denied for table "expenses"' },
     });
 

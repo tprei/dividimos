@@ -1377,6 +1377,10 @@ export type Database = {
         Args: { p_group_id: string }
         Returns: undefined
       }
+      delete_draft_expense: {
+        Args: { p_expense_id: string }
+        Returns: undefined
+      }
       delete_group: { Args: { p_group_id: string }; Returns: undefined }
       expense_money_max_cents: { Args: never; Returns: number }
       get_chat_expense_confirmation: {

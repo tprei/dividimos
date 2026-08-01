@@ -164,7 +164,7 @@ BEGIN
   IF pg_catalog.to_regclass('pg_temp.expense_graph_tokens') IS NULL THEN
     CREATE TEMP TABLE expense_graph_tokens (
       mutation_token           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-      source                   text        NOT NULL CHECK (source IN ('new', 'existing_save', 'activation', 'claim', 'direct', 'group_teardown')),
+      source                   text        NOT NULL CHECK (source IN ('new', 'existing_save', 'activation', 'claim', 'direct', 'group_teardown', 'delete_draft')),
       state                    text        NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed')),
       stack_depth              integer     NOT NULL CHECK (stack_depth > 0),
       opened_at                timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -2053,8 +2053,15 @@ GRANT EXECUTE ON FUNCTION public.save_expense_draft_graph(
 --     DELETE FROM public.expenses WHERE id = ANY(v_draft_ids) for the
 --     departing/removed member's own draft expenses, entirely outside
 --     any named-writer RPC. Wrap it with begin_expense_graph_direct_mutation
---     so the guard's DELETE rule is satisfied; every other statement in
---     both functions is unchanged from 20260729100000's definition.
+--     so the guard's DELETE rule is satisfied. Every draft with a
+--     committed expense_graph_save_operations ledger row (i.e. every
+--     normally-saved draft) must also have that row retired first --
+--     expense_id there is ON DELETE RESTRICT DEFERRABLE INITIALLY
+--     DEFERRED, so an un-scrubbed row aborts the whole transaction at
+--     COMMIT, not at the DELETE statement itself, silently failing
+--     leave/remove for any member with even one saved draft. Every
+--     other statement in both functions is unchanged from
+--     20260729100000's definition.
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.leave_group(
@@ -2125,6 +2132,17 @@ BEGIN
 
   IF v_draft_ids IS NOT NULL THEN
     PERFORM public.begin_expense_graph_direct_mutation(v_draft_ids);
+    UPDATE public.expense_graph_save_operations
+       SET outcome = 'retired',
+           canonical_request = null,
+           request_digest = null,
+           expense_id = null,
+           graph_revision = null,
+           result = null,
+           result_created_at = null,
+           retired_reason = 'expense_deleted',
+           retired_at = statement_timestamp()
+     WHERE expense_id = ANY(v_draft_ids) AND outcome = 'committed';
     DELETE FROM public.expenses WHERE id = ANY(v_draft_ids);
   END IF;
 
@@ -2190,6 +2208,17 @@ BEGIN
 
   IF v_draft_ids IS NOT NULL THEN
     PERFORM public.begin_expense_graph_direct_mutation(v_draft_ids);
+    UPDATE public.expense_graph_save_operations
+       SET outcome = 'retired',
+           canonical_request = null,
+           request_digest = null,
+           expense_id = null,
+           graph_revision = null,
+           result = null,
+           result_created_at = null,
+           retired_reason = 'expense_deleted',
+           retired_at = statement_timestamp()
+     WHERE expense_id = ANY(v_draft_ids) AND outcome = 'committed';
     DELETE FROM public.expenses WHERE id = ANY(v_draft_ids);
   END IF;
 
@@ -2201,3 +2230,76 @@ $$;
 GRANT EXECUTE ON FUNCTION public.remove_group_member(uuid, uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.leave_group(uuid) TO authenticated;
 
+
+-- ============================================================
+-- 15. delete_draft_expense: the sole client-facing draft-delete path.
+--     deleteExpense() (src/lib/supabase/expense-actions.ts) previously
+--     issued a raw PostgREST DELETE against `expenses`, which the guard
+--     now rejects outright -- no client-facing role can ever open a
+--     mutation token, so "Excluir rascunho" was unconditionally broken.
+--     Same authority shape as the RLS the direct path used to rely on
+--     (creator_id = auth.uid() AND status = 'draft' AND an accepted
+--     group member), plus the same expense_graph_save_operations
+--     retirement leave_group/remove_group_member now perform above.
+-- ============================================================
+
+CREATE FUNCTION public.delete_draft_expense(p_expense_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller  uuid := auth.uid();
+  v_expense public.expenses%ROWTYPE;
+  v_token   uuid;
+BEGIN
+  IF v_caller IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'PST01';
+  END IF;
+
+  SELECT * INTO v_expense
+    FROM public.expenses
+   WHERE id = p_expense_id
+     FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'lifecycle_conflict' USING ERRCODE = 'PST08';
+  END IF;
+
+  PERFORM 1 FROM public.groups WHERE id = v_expense.group_id FOR UPDATE;
+
+  IF v_expense.creator_id IS DISTINCT FROM v_caller
+     OR v_expense.status <> 'draft'
+     OR v_expense.group_id NOT IN (SELECT public.my_accepted_group_ids())
+  THEN
+    RAISE EXCEPTION 'permission_denied' USING ERRCODE = 'PST05';
+  END IF;
+
+  v_token := graph_internal.open_named_token(
+    p_expense_id, 'delete_draft', v_expense.graph_revision, v_expense.group_id
+  );
+
+  UPDATE public.expense_graph_save_operations
+     SET outcome = 'retired',
+         canonical_request = null,
+         request_digest = null,
+         expense_id = null,
+         graph_revision = null,
+         result = null,
+         result_created_at = null,
+         retired_reason = 'expense_deleted',
+         retired_at = statement_timestamp()
+   WHERE expense_id = p_expense_id AND outcome = 'committed';
+
+  DELETE FROM public.expenses WHERE id = p_expense_id;
+
+  PERFORM graph_internal.close_token(v_token);
+END;
+$$;
+
+COMMENT ON FUNCTION public.delete_draft_expense(uuid) IS
+  'Issue #477: guard-compatible replacement for the direct client DELETE deleteExpense() used to issue. Creator-owned drafts only.';
+
+REVOKE ALL ON FUNCTION public.delete_draft_expense(uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.delete_draft_expense(uuid) TO authenticated;

@@ -50,6 +50,70 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     // ──────────────────────────────────────────────
+    // Departing member with a saved draft (real regression, #477 review):
+    // expense_graph_save_operations.expense_id is ON DELETE RESTRICT
+    // DEFERRABLE INITIALLY DEFERRED. Without retiring the committed
+    // ledger row first, the whole leave_group transaction aborted
+    // silently at COMMIT for any member with even one saved draft.
+    // ──────────────────────────────────────────────
+    describe("departing member with a saved draft expense", () => {
+      let alice: TestUser;
+      let bob: TestUser;
+      let groupId: string;
+      let draftId: string;
+
+      beforeAll(async () => {
+        [alice, bob] = await createTestUsers(2);
+        const group = await createTestGroupWithMembers(alice, [bob]);
+        groupId = group.id;
+
+        const bobClient = authenticateAs(bob);
+        const { data, error } = await bobClient.rpc("save_expense_draft_graph", {
+          p_expense: {
+            group_id: groupId,
+            title: "Bob's draft",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 2000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [{ user_id: bob.id, share_amount_cents: 2000 }],
+          p_payers: [{ user_id: bob.id, amount_cents: 2000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        });
+        if (error || !data) throw new Error(`save draft: ${error?.message}`);
+        draftId = (data as { id: string }).id;
+      });
+
+      it("leaves successfully and deletes the draft", async () => {
+        const bobClient = authenticateAs(bob);
+        const { error } = await bobClient.rpc("leave_group", {
+          p_group_id: groupId,
+        });
+        expect(error).toBeNull();
+
+        const { data: members } = await adminClient!
+          .from("group_members")
+          .select("user_id")
+          .eq("group_id", groupId);
+        expect((members ?? []).map((m) => m.user_id)).not.toContain(bob.id);
+
+        const { data: draftRow } = await adminClient!
+          .from("expenses")
+          .select("id")
+          .eq("id", draftId)
+          .maybeSingle();
+        expect(draftRow).toBeNull();
+      });
+    });
+
+    // ──────────────────────────────────────────────
     // Member with outstanding balance cannot leave
     // ──────────────────────────────────────────────
     describe("member with outstanding balance", () => {
