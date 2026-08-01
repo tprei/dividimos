@@ -19,6 +19,7 @@ const makeExpense = (overrides?: Partial<ExpenseWithDetails>): ExpenseWithDetail
   expenseType: "itemized",
   totalAmount: 10000,
   serviceFeePercent: 0,
+  serviceFeeBasisPoints: 0,
   fixedFees: 0,
   status: "active",
   createdAt: "",

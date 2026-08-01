@@ -24,6 +24,7 @@ const expense: Expense = {
   expenseType: "single_amount",
   totalAmount: 8000,
   serviceFeePercent: 0,
+  serviceFeeBasisPoints: 0,
   fixedFees: 0,
   status: "active",
   createdAt: "2026-04-10T12:00:00Z",

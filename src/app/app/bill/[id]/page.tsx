@@ -177,6 +177,7 @@ export default function BillDetailPage({
           expenseType: data.expenseType,
           totalAmount: data.totalAmount,
           serviceFeePercent: data.serviceFeePercent,
+          serviceFeeBasisPoints: data.serviceFeeBasisPoints,
           fixedFees: data.fixedFees,
           status: data.status,
           createdAt: data.createdAt,

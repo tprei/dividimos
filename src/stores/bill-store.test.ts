@@ -281,6 +281,16 @@ describe("getGrandTotal", () => {
     setup().createExpense("Test", "itemized");
     expect(useBillStore.getState().getGrandTotal()).toBe(0);
   });
+
+  it("computes the exact half-up fee from basis points, not a float-drifted percent", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addItem({ description: "X", quantity: 1000, unitPriceCents: 250, totalPriceCents: 250 });
+    // 250 cents at 6460 bps: floor((250*6460+5000)/10000) = 162 (half-up).
+    // Math.round(250 * (6460/100) / 100) would drift to 161 because
+    // 6460/100 is not exactly representable as a float.
+    useBillStore.getState().updateExpense({ serviceFeeBasisPoints: 6460 });
+    expect(useBillStore.getState().getGrandTotal()).toBe(250 + 162);
+  });
 });
 
 describe("getParticipantTotal", () => {
@@ -1145,6 +1155,7 @@ describe("hydrateFromServer draftClaimProtectedUserIds (#495 item 24)", () => {
         title: "Jantar",
         totalAmount: 10000,
         serviceFeePercent: 0,
+        serviceFeeBasisPoints: 0,
         fixedFees: 0,
         status: "draft",
         createdAt: "2026-01-01T00:00:00.000Z",
@@ -1172,6 +1183,7 @@ describe("hydrateFromServer draftClaimProtectedUserIds (#495 item 24)", () => {
         title: "Jantar",
         totalAmount: 10000,
         serviceFeePercent: 0,
+        serviceFeeBasisPoints: 0,
         fixedFees: 0,
         status: "draft",
         createdAt: "2026-01-01T00:00:00.000Z",

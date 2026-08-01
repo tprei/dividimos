@@ -494,6 +494,7 @@ function NewBillPageContent() {
         merchantName: loaded.merchantName,
         status: loaded.status,
         serviceFeePercent: loaded.serviceFeePercent,
+        serviceFeeBasisPoints: loaded.serviceFeeBasisPoints,
         fixedFees: loaded.fixedFees,
         totalAmount: loaded.totalAmount,
         createdAt: loaded.createdAt,

@@ -598,6 +598,7 @@ describe("onSettlementComplete refreshes expense data", () => {
       expenseType: "itemized" as const,
       totalAmount: 10000,
       serviceFeePercent: 10,
+      serviceFeeBasisPoints: 1000,
       fixedFees: 0,
       status: "active" as const,
       createdAt: "2024-01-01",

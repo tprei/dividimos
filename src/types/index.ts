@@ -115,7 +115,10 @@ export interface Expense {
   merchantName?: string;
   expenseType: ExpenseType;
   totalAmount: number;
+  /** Display-only; may lose precision vs the DB's exact basis points. Never use to compute a fee amount — use `serviceFeeBasisPoints`. */
   serviceFeePercent: number;
+  /** Exact integer basis points (0-10000) from the DB. The only field money computations may use. */
+  serviceFeeBasisPoints: number;
   fixedFees: number;
   status: ExpenseStatus;
   createdAt: string;

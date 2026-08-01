@@ -51,6 +51,7 @@ function makeExpense(overrides: Partial<Expense> = {}): Expense {
     expenseType: "single_amount",
     totalAmount: 5000,
     serviceFeePercent: 0,
+    serviceFeeBasisPoints: 0,
     fixedFees: 0,
     status: "active",
     createdAt: "2026-04-10T20:00:00Z",

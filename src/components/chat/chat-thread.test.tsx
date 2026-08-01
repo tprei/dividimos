@@ -82,6 +82,7 @@ const testExpense: Expense = {
   expenseType: "single_amount",
   totalAmount: 5000,
   serviceFeePercent: 0,
+  serviceFeeBasisPoints: 0,
   fixedFees: 0,
   status: "active",
   createdAt: "2026-04-12T15:00:00Z",

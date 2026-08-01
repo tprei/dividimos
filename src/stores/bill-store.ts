@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
+import { allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
 import type { ExpenseAllocationIssue } from "@/lib/expense-money";
 import type {
   DebtEdge,
@@ -160,11 +160,8 @@ function getGrandTotalFor(
   if (expense.expenseType === "single_amount") return totalAmountInput;
 
   const itemsTotal = items.reduce((sum, item) => sum + item.totalPriceCents, 0);
-  return (
-    itemsTotal +
-    Math.round((itemsTotal * expense.serviceFeePercent) / 100) +
-    expense.fixedFees
-  );
+  const feeResult = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
+  return itemsTotal + (feeResult.ok ? feeResult.value : 0) + expense.fixedFees;
 }
 
 function recalculateItemizedExpense(
@@ -227,8 +224,9 @@ function computeConsumption(
     for (const split of splits) {
       consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
     }
-    if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
-      const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
+    if (expense.serviceFeeBasisPoints > 0 && itemsTotal > 0) {
+      const feeResult = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
+      const totalServiceFee = feeResult.ok ? feeResult.value : 0;
       const weights = allPersonIds.map((id) => consumption.get(id) || 0);
       const feesRes = allocateByWeights(totalServiceFee, weights);
       if (!feesRes.ok) return consumption;
@@ -418,6 +416,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       merchantName,
       totalAmount: 0,
       serviceFeePercent: expenseType === "itemized" ? 10 : 0,
+      serviceFeeBasisPoints: expenseType === "itemized" ? 1000 : 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -443,9 +442,18 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       if (!expense) return {};
 
       const { totalAmountInput, ...expenseUpdates } = updates;
+      // A percent update without a paired basis-points update would leave
+      // serviceFeeBasisPoints silently stale (still reflecting the old
+      // rate), and every fee-amount computation reads only the basis
+      // points field. Derive it here so callers can never desync the two.
+      const derivedBasisPoints =
+        expenseUpdates.serviceFeePercent !== undefined && expenseUpdates.serviceFeeBasisPoints === undefined
+          ? { serviceFeeBasisPoints: Math.round(expenseUpdates.serviceFeePercent * 100) }
+          : {};
       const nextExpense: Expense = {
         ...expense,
         ...expenseUpdates,
+        ...derivedBasisPoints,
         updatedAt: new Date().toISOString(),
       };
       const nextTotalAmountInput =
@@ -475,6 +483,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
             ...expense,
             expenseType,
             serviceFeePercent: 0,
+            serviceFeeBasisPoints: 0,
             fixedFees: 0,
             updatedAt,
           },
@@ -489,6 +498,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
           ...expense,
           expenseType,
           serviceFeePercent: 10,
+          serviceFeeBasisPoints: 1000,
           updatedAt,
         },
         totalAmountInput: 0,
@@ -861,6 +871,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       // 10% default belongs only to the visibly-configured itemized form
       // (createExpense/setExpenseType), never to source hydration.
       serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -902,6 +913,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       title: "",
       totalAmount: 0,
       serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -937,6 +949,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       // #477: same rule as hydrateFromVoice - chat provider results carry
       // no fee data, so hydration must never silently apply one.
       serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
