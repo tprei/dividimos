@@ -130,23 +130,36 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     it("rejects a creator's direct attempt to pre-poison the claim marker on their own draft", async () => {
-      const { data: draft } = await adminClient!
-        .from("expenses")
-        .insert({
-          group_id: groupId,
-          creator_id: alice.id,
-          title: "Cannot pre-poison the claim",
-          expense_type: "single_amount",
-          total_amount: 3000,
-          status: "draft",
-        })
-        .select("id")
-        .single();
+      // Draft via save_expense_draft_graph (the guard rejects direct INSERT).
+      const aliceClient = authenticateAs(alice);
+      const { data: draftData, error: draftErr } = await aliceClient.rpc(
+        "save_expense_draft_graph",
+        {
+          p_expense: {
+            group_id: groupId,
+            title: "Cannot pre-poison the claim",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 3000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [{ user_id: alice.id, share_amount_cents: 3000 }],
+          p_payers: [{ user_id: alice.id, amount_cents: 3000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        },
+      );
+      expect(draftErr).toBeNull();
+      const draft = draftData as { id: string };
 
       // If this direct client UPDATE succeeded, the marker would already be
       // non-null by the time the expense is later activated, and the real
       // activation push would be silently skipped.
-      const aliceClient = authenticateAs(alice);
       const { error } = await aliceClient
         .from("expenses")
         .update({ activation_notified_at: new Date().toISOString() })

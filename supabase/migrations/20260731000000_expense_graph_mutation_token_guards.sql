@@ -422,6 +422,32 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'PST10', MESSAGE = 'graph_mutation_unauthorized: expenses_immutable_field_changed';
       END IF;
 
+      -- Narrow exemption: the one-shot activation-push claim
+      -- (notifyExpenseActivated, see #534/#631) sets exactly this column
+      -- via the trusted admin (service_role) client, with no mutation
+      -- token open -- it is a notification-delivery bookkeeping write,
+      -- not a graph mutation. Require every other guarded column to be
+      -- byte-identical to OLD, the transition to be NULL -> non-null
+      -- (the column is set exactly once and never reset, per its own
+      -- invariant), and the caller to be service_role. #631's RLS
+      -- hardening already keeps every client-facing path from ever
+      -- reaching this transition, but the guard must not rely on that
+      -- alone as its only line of defense.
+      IF current_user = 'service_role'
+         AND OLD.activation_notified_at IS NULL
+         AND NEW.activation_notified_at IS NOT NULL
+         AND NEW.status IS NOT DISTINCT FROM OLD.status
+         AND NEW.graph_revision IS NOT DISTINCT FROM OLD.graph_revision
+         AND NEW.title IS NOT DISTINCT FROM OLD.title
+         AND NEW.merchant_name IS NOT DISTINCT FROM OLD.merchant_name
+         AND NEW.expense_type IS NOT DISTINCT FROM OLD.expense_type
+         AND NEW.total_amount IS NOT DISTINCT FROM OLD.total_amount
+         AND NEW.service_fee_basis_points IS NOT DISTINCT FROM OLD.service_fee_basis_points
+         AND NEW.fixed_fees IS NOT DISTINCT FROM OLD.fixed_fees
+      THEN
+        RETURN NEW;
+      END IF;
+
       SELECT * INTO v_active FROM graph_internal.active_token_for(OLD.id);
       IF v_active.mutation_token IS NULL THEN
         RAISE EXCEPTION USING ERRCODE = 'PST10', MESSAGE = 'graph_mutation_unauthorized: no open token for expense';
