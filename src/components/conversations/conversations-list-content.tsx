@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Check, MessageSquare, Search, Share2, X } from "lucide-react";
+import toast from "react-hot-toast";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -251,22 +252,32 @@ export function ConversationsListContent({
 
   const handleAccept = useCallback(async (groupId: string) => {
     if (!user) return;
-    await createClient()
-      .from("group_members")
-      .update({ status: "accepted", accepted_at: new Date().toISOString() })
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
+    // group_members_accept_denied RLS policy blocks every direct UPDATE;
+    // acceptance must go through this RPC (matching handleDecline below).
+    const { error } = await createClient().rpc("accept_group_invitation", {
+      p_group_id: groupId,
+    });
+    if (error) {
+      toast.error("Não foi possível aceitar o convite. Tente novamente.");
+      return;
+    }
     await refetch();
   }, [user, refetch]);
 
   const handleDecline = useCallback(async (groupId: string) => {
     if (!user) return;
+    const { error } = await createClient().rpc("decline_group_invitation", {
+      p_group_id: groupId,
+    });
+    if (error) {
+      if (error.message.includes("has_outstanding_balance")) {
+        toast.error("Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.");
+      } else {
+        toast.error("Não foi possível recusar o convite. Tente novamente.");
+      }
+      return;
+    }
     setConversations((prev) => prev.filter((c) => c.groupId !== groupId));
-    await createClient()
-      .from("group_members")
-      .delete()
-      .eq("group_id", groupId)
-      .eq("user_id", user.id);
   }, [user]);
 
   const totalCount = conversations.length;

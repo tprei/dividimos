@@ -427,7 +427,7 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
     const supabase = createClient();
     const { data, error } = await supabase
       .from("group_invite_links")
-      .insert({ group_id: id, created_by: user.id })
+      .insert({ group_id: id })
       .select("token")
       .single();
     setCreatingInviteLink(false);

@@ -449,34 +449,16 @@ async function insertGroupOwnedRows(
 }
 
 async function createDmGroup(creator: TestUser, member: TestUser): Promise<string> {
-  const { data, error } = await requireAdmin()
-    .from("groups")
-    .insert({ name: "", creator_id: creator.id, is_dm: true })
-    .select("id")
-    .single();
-  if (error || !data) {
-    throw new Error(`Failed to insert DM group: ${error?.message}`);
+  const creatorClient = authenticateAs(creator);
+  const { data: groupId, error } = await creatorClient.rpc("get_or_create_dm_group", {
+    p_other_user_id: member.id,
+  });
+  if (error || !groupId) {
+    throw new Error(`Failed to create DM group: ${error?.message}`);
   }
-  const { error: memberError } = await requireAdmin().from("group_members").insert([
-    {
-      group_id: data.id,
-      user_id: creator.id,
-      status: "accepted",
-      invited_by: creator.id,
-      accepted_at: new Date().toISOString(),
-    },
-    {
-      group_id: data.id,
-      user_id: member.id,
-      status: "accepted",
-      invited_by: creator.id,
-      accepted_at: new Date().toISOString(),
-    },
-  ]);
-  if (memberError) {
-    throw new Error(`Failed to insert DM members: ${memberError.message}`);
-  }
-  return data.id;
+  const memberClient = authenticateAs(member);
+  await memberClient.rpc("accept_group_invitation", { p_group_id: groupId });
+  return groupId;
 }
 
 let monitorClient: Client | undefined;

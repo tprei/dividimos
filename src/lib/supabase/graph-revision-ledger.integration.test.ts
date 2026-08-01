@@ -52,9 +52,15 @@ describe.skipIf(!canRun)("graph_revision + expense_graph_save_operations (#477)"
     expect(rows[0].column_default).toBe("0");
     expect(rows[0].is_nullable).toBe("NO");
     expect(rows[0].data_type).toBe("integer");
-    // existing rows read zero
-    const zero = await pg.query("select coalesce(max(graph_revision), 0) as m from expenses");
-    expect(Number(zero.rows[0].m)).toBe(0);
+    // a freshly inserted row reads the column default, independent of
+    // other concurrently-running suites' own expense rows in this shared
+    // database (#467/#471 now write graph_revision pervasively).
+    const fresh = await pg.query<{ id: string; graph_revision: number }>(
+      "insert into expenses(group_id, creator_id, title, expense_type, total_amount, status) values ($1, $2, 'rev-default', 'single_amount', 0, 'draft') returning id, graph_revision",
+      [groupId, fixtureCreatorId],
+    );
+    expect(fresh.rows[0].graph_revision).toBe(0);
+    await pg.query("delete from expenses where id = $1", [fresh.rows[0].id]);
   });
 
   it("rejects graph_revision outside [0, 2147483647]", async () => {

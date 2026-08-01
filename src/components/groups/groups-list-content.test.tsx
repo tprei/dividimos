@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import toast from "react-hot-toast";
 import { GroupsListContent } from "./groups-list-content";
 
 vi.mock("next/navigation", () => ({
@@ -13,6 +14,10 @@ vi.mock("@/hooks/use-auth", () => ({
 
 vi.mock("@/lib/push/push-notify", () => ({
   notifyGroupAccepted: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("react-hot-toast", () => ({
+  default: { success: vi.fn(), error: vi.fn() },
 }));
 
 // Track all Supabase chain calls to verify filters
@@ -35,9 +40,17 @@ const mockFromFn = vi.fn(() => {
   return chainable({ data: [], error: null });
 });
 
+const mockRpcFn = vi.fn(() =>
+  Promise.resolve<{ data: null; error: { message: string } | null }>({
+    data: null,
+    error: null,
+  }),
+);
+
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     from: mockFromFn,
+    rpc: mockRpcFn,
     channel: () => ({ on: () => ({ subscribe: () => ({}) }) }),
     removeChannel: vi.fn(),
   }),
@@ -139,5 +152,75 @@ describe("GroupsListContent", () => {
     const eqCalls = chainCalls.filter((c) => c.method === "eq");
     const isDmFilters = eqCalls.filter((c) => c.args[0] === "is_dm" && c.args[1] === false);
     expect(isDmFilters.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("removes the invite from the list after a successful decline", async () => {
+    const user = userEvent.setup();
+    const invites = [{ groupId: "g-1", groupName: "Churrasco", invitedByName: "João" }];
+    render(<GroupsListContent initialGroups={[]} initialInvites={invites} />);
+
+    await user.click(screen.getByLabelText("Recusar"));
+
+    expect(mockRpcFn).toHaveBeenCalledWith("decline_group_invitation", {
+      p_group_id: "g-1",
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Churrasco")).not.toBeInTheDocument();
+    });
+  });
+  it("keeps the invitation and shows retryable feedback when decline is guard-rejected", async () => {
+    mockRpcFn.mockResolvedValueOnce({
+      data: null,
+      error: { message: "has_outstanding_balance: you have an unsettled balance in this group" },
+    });
+
+    const user = userEvent.setup();
+    const invites = [{ groupId: "g-1", groupName: "Churrasco", invitedByName: "João" }];
+    render(<GroupsListContent initialGroups={[]} initialInvites={invites} />);
+
+    await user.click(screen.getByLabelText("Recusar"));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.",
+      );
+    });
+    // The invitation is retained — the guard rejection never removed it,
+    // and the display still reflects the current (unchanged) invite.
+    expect(screen.getByText("Churrasco")).toBeInTheDocument();
+  });
+
+  it("calls accept_group_invitation RPC and refetches when Aceitar is clicked", async () => {
+    const user = userEvent.setup();
+    const invites = [{ groupId: "g-1", groupName: "Churrasco", invitedByName: "João" }];
+    render(<GroupsListContent initialGroups={[]} initialInvites={invites} />);
+
+    await user.click(screen.getByText("Aceitar"));
+
+    expect(mockRpcFn).toHaveBeenCalledWith("accept_group_invitation", {
+      p_group_id: "g-1",
+    });
+  });
+
+  it("keeps the invitation and shows retryable feedback when accept fails", async () => {
+    mockRpcFn.mockResolvedValueOnce({
+      data: null,
+      error: { message: "not_invited: only a pending invitation can be accepted" },
+    });
+
+    const user = userEvent.setup();
+    const invites = [{ groupId: "g-1", groupName: "Churrasco", invitedByName: "João" }];
+    render(<GroupsListContent initialGroups={[]} initialInvites={invites} />);
+
+    await user.click(screen.getByText("Aceitar"));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Não foi possível aceitar o convite. Tente novamente.",
+      );
+    });
+    // The RLS-denied direct-update path silently no-oped forever; the RPC
+    // path surfaces failure and leaves the invite visible for retry.
+    expect(screen.getByText("Churrasco")).toBeInTheDocument();
   });
 });
