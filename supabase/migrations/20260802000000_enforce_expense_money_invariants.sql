@@ -80,6 +80,8 @@ DECLARE
   v_share_amount_cents        integer;
   v_payer_amount_cents        integer;
   v_expected_line_total       bigint;
+  v_items_subtotal            bigint := 0;
+  v_expected_expense_total    bigint;
   v_user_share_ids            uuid[] := ARRAY[]::uuid[];
   v_payer_user_ids            uuid[] := ARRAY[]::uuid[];
   v_guest_local_ids           text[] := ARRAY[]::text[];
@@ -447,7 +449,32 @@ BEGIN
        OR v_total_price_cents <> v_expected_line_total THEN
       RAISE EXCEPTION USING ERRCODE = 'PST03', MESSAGE = 'invalid_amount';
     END IF;
+    v_items_subtotal := v_items_subtotal + v_total_price_cents;
   END LOOP;
+
+  -- Issue #477 spec item 5: "If an itemized draft has any line, all
+  -- lines and the aggregate total/fees must already reconcile."
+  -- Per-line arithmetic is checked above; this closes the remaining
+  -- gap the old RPC left open (review finding: "activation checks
+  -- share/payer sums but not line or fee arithmetic") by requiring
+  -- the submitted top-level total to equal the exact sum of item
+  -- lines plus the exact basis-point service fee plus fixed fees.
+  -- single_amount and empty-itemized drafts have no lines to
+  -- reconcile against and keep their independently supplied total.
+  IF v_expense_type = 'itemized' AND v_items_subtotal > 0 THEN
+    IF v_items_subtotal > public.expense_money_max_cents() THEN
+      RAISE EXCEPTION USING ERRCODE = 'PST03', MESSAGE = 'invalid_amount';
+    END IF;
+
+    v_expected_expense_total := v_items_subtotal
+      + public.calculate_service_fee_cents(v_items_subtotal, v_service_fee_basis_points)
+      + v_fixed_fees;
+
+    IF v_expected_expense_total > public.expense_money_max_cents()
+       OR v_total_amount <> v_expected_expense_total THEN
+      RAISE EXCEPTION USING ERRCODE = 'PST03', MESSAGE = 'invalid_amount';
+    END IF;
+  END IF;
 
   FOR v_share IN SELECT value FROM pg_catalog.jsonb_array_elements(p_shares)
   LOOP

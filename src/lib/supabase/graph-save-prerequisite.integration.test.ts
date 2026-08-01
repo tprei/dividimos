@@ -197,6 +197,50 @@ describe.skipIf(!isIntegrationTestReady)("revisioned graph-save prerequisite", (
     expect(result.error?.code).toBe("PST04");
   });
 
+  it("rejects an itemized draft whose top-level total doesn't reconcile with lines/fee/fixed (#477)", async () => {
+    // #477 spec item 5: "If an itemized draft has any line, all lines
+    // and the aggregate total/fees must already reconcile." Two 1-unit
+    // lines (quantity is milliunits: 1000 = 1.000 units) totaling 2000
+    // cents, 10% fee (200), no fixed fee -> exact total is 2200; supply
+    // a total that's off by one cent.
+    const result = await callGraphSave(alice, {
+      expense: {
+        ...expense(2199),
+        expense_type: "itemized",
+        service_fee_basis_points: 1000,
+      },
+      items: [
+        { description: "Item A", quantity: 1000, unit_price_cents: 1000, total_price_cents: 1000 },
+        { description: "Item B", quantity: 1000, unit_price_cents: 1000, total_price_cents: 1000 },
+      ],
+      expectedRevision: 0,
+      operationId: crypto.randomUUID(),
+    });
+    expect(result.data).toBeNull();
+    expect(result.error?.code).toBe("PST03");
+  });
+
+  it("accepts an itemized draft whose top-level total exactly reconciles with lines/fee/fixed (#477)", async () => {
+    // Same 2000-cent subtotal and 10% fee as above, exact fixed fee of
+    // 50, and the arithmetically correct total: 2000 + 200 + 50 = 2250.
+    const result = await callGraphSave(alice, {
+      expense: {
+        ...expense(2250),
+        expense_type: "itemized",
+        service_fee_basis_points: 1000,
+        fixed_fees: 50,
+      },
+      items: [
+        { description: "Item A", quantity: 1000, unit_price_cents: 1000, total_price_cents: 1000 },
+        { description: "Item B", quantity: 1000, unit_price_cents: 1000, total_price_cents: 1000 },
+      ],
+      expectedRevision: 0,
+      operationId: crypto.randomUUID(),
+    });
+    expect(result.error).toBeNull();
+    expect(result.data?.id).toBeTruthy();
+  });
+
   it("rejects a replacement save that drops a claimed guest's claimant (#495)", async () => {
     // #495: once a guest spot is claimed, the claimant becomes a
     // "protected claimant" -- expense_guests.claimed_by is set, and any
