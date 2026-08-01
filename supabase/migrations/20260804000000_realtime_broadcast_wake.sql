@@ -86,39 +86,39 @@ BEGIN
 
       UPDATE pg_temp.expense_graph_targets SET revision_bumped = true
        WHERE mutation_token = NEW.mutation_token AND expense_id = v_target.expense_id;
+
+      v_rev := v_target.starting_revision + 1;
+    ELSE
+      v_rev := NULL;
     END IF;
     -- A non-direct target that never bumped (only reachable via a
-    -- 'claim' token today) is not treated as an error.
+    -- 'claim' token today) is not treated as an error, and sends no wake
+    -- (v_rev is NULL — nothing about it changed for a listener to refetch).
 
     PERFORM graph_internal.validate_graph_mode(v_target.expense_id);
-  END LOOP;
 
-  FOR v_claim IN SELECT * FROM pg_temp.expense_graph_claim_events WHERE mutation_token = NEW.mutation_token LOOP
-    IF NOT (
-      v_claim.old_claimed_by IS NULL AND v_claim.old_claimed_at IS NULL
-      AND v_claim.new_claimed_by IS NOT NULL AND v_claim.new_claimed_at IS NOT NULL
-    ) THEN
-      RAISE EXCEPTION USING ERRCODE = 'PST10', MESSAGE = 'invalid_claim_transition: ' || v_claim.guest_id::text;
+    -- Send a private Broadcast wake for THIS expense if it survived with
+    -- a revision bump. One send per target — the previous single send
+    -- after this loop used whatever v_target/v_rev happened to be left
+    -- over from the LAST iteration, so a multi-target mutation token
+    -- only ever woke (at most) one listener, sometimes for the wrong
+    -- expense entirely. The wake carries NO financial data — just the
+    -- expense ID and new graph revision; the client refetches the
+    -- authorized snapshot. realtime.send swallows errors internally
+    -- (RAISE WARNING), so a broadcast failure never rolls back the
+    -- mutation.
+    IF v_rev IS NOT NULL THEN
+      PERFORM realtime.send(
+        pg_catalog.jsonb_build_object(
+          'expense_id', v_target.expense_id,
+          'graph_revision', v_rev
+        ),
+        'wake',
+        'expense_wake:' || v_target.expense_id::text,
+        true
+      );
     END IF;
   END LOOP;
-
-  -- Send a private Broadcast wake for each expense that survived with
-  -- a revision bump. The wake carries NO financial data — just the
-  -- expense ID and new graph revision. The client refetches the
-  -- authorized snapshot. realtime.send swallows errors internally
-  -- (RAISE WARNING), so a broadcast failure never rolls back the
-  -- mutation.
-  IF v_rev IS NOT NULL THEN
-    PERFORM realtime.send(
-      pg_catalog.jsonb_build_object(
-        'expense_id', v_target.expense_id,
-        'graph_revision', v_rev
-      ),
-      'wake',
-      'expense_wake:' || v_target.expense_id::text,
-      true
-    );
-  END IF;
 
   UPDATE pg_temp.expense_graph_tokens SET state = 'closed', closed_at = clock_timestamp()
    WHERE mutation_token = NEW.mutation_token;
@@ -131,3 +131,27 @@ COMMENT ON FUNCTION graph_internal.finalize_mutation_token_trigger() IS
   'and claim events, sends a private Broadcast wake for each surviving '
   'bumped expense via realtime.send. The wake carries only the expense ID '
   'and graph revision — no financial payload.';
+
+-- ============================================================
+-- 3. Broadcast Authorization: a client subscribing with
+--    `{ config: { private: true } }` triggers Realtime's RLS check
+--    against `realtime.messages` for the topic it's subscribing to.
+--    Without this policy, `realtime.send(..., private := true)` above
+--    sends messages no client can ever receive — private messages are
+--    only delivered to subscribers whose subscription passes this check.
+--    Authorize exactly the callers who could read the expense itself:
+--    an accepted member of its group.
+-- ============================================================
+
+CREATE POLICY "expense_wake_broadcast_authz" ON realtime.messages
+  FOR SELECT
+  TO authenticated
+  USING (
+    realtime.topic() LIKE 'expense_wake:%'
+    AND EXISTS (
+      SELECT 1
+        FROM public.expenses e
+       WHERE e.id::text = substring(realtime.topic() FROM 'expense_wake:(.*)')
+         AND e.group_id IN (SELECT public.my_accepted_group_ids())
+    )
+  );

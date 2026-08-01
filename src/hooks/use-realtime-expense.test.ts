@@ -23,10 +23,11 @@ function createMockChannel() {
 
 let mockChannel: ReturnType<typeof createMockChannel>;
 const removeChannelSpy = vi.fn();
+const channelSpy = vi.fn();
 
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
-    channel: vi.fn(() => mockChannel.channel),
+    channel: channelSpy,
     removeChannel: removeChannelSpy,
   }),
 }));
@@ -36,6 +37,8 @@ const originalEnv = process.env.NEXT_PUBLIC_SUPABASE_URL;
 beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
   removeChannelSpy.mockClear();
+  channelSpy.mockReset();
+  channelSpy.mockImplementation(() => mockChannel.channel);
   mockChannel = createMockChannel();
 });
 
@@ -63,6 +66,16 @@ describe("useRealtimeExpense", () => {
     renderHook(() => useRealtimeExpense("exp-1", onUpdate));
     expect(mockChannel.channel.subscribe).toHaveBeenCalled();
     expect(mockChannel.listeners.some((l) => l.event === "broadcast")).toBe(true);
+  });
+
+  it("subscribes with private:true so the broadcast authorization RLS check runs", () => {
+    const onUpdate = vi.fn();
+    renderHook(() => useRealtimeExpense("exp-1", onUpdate));
+
+    expect(channelSpy).toHaveBeenCalledWith(
+      "expense_wake:exp-1",
+      { config: { private: true } },
+    );
   });
 
   it("calls onUpdate when a matching wake arrives", () => {

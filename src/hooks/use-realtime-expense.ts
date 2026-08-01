@@ -28,7 +28,7 @@ export function useRealtimeExpense(
     const supabase = createClient();
 
     const channel = supabase
-      .channel(`expense_wake:${expenseId}`)
+      .channel(`expense_wake:${expenseId}`, { config: { private: true } })
       .on("broadcast", { event: "wake" }, (payload) => {
         // The wake carries { expense_id, graph_revision }. We don't use
         // the revision here — the caller refetches the full snapshot.
