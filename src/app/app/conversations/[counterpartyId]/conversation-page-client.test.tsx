@@ -22,8 +22,14 @@ vi.mock("@/lib/supabase/chat-actions", () => ({
   sendChatMessage: vi.fn(() => Promise.resolve({ error: "not implemented" })),
 }));
 
-vi.mock("@/lib/supabase/chat-draft-confirm", () => ({
-  confirmChatDraft: vi.fn(() => Promise.resolve({ error: "not implemented" })),
+vi.mock("@/lib/supabase/chat-confirm", () => ({
+  buildChatExpenseConfirmationRequest: vi.fn(() => ({ error: "not implemented" })),
+}));
+
+vi.mock("@/lib/chat-confirmation-intent", () => ({
+  confirmChatExpenseWithIntent: vi.fn(() =>
+    Promise.resolve({ status: "error", error: "not implemented", code: "unknown" }),
+  ),
 }));
 
 vi.mock("@/lib/push/push-notify", () => ({

@@ -17,10 +17,10 @@ export type Database = {
     Functions: {
       graphql: {
         Args: {
-          extensions?: Json
           operationName?: string
           query?: string
           variables?: Json
+          extensions?: Json
         }
         Returns: Json
       }
@@ -90,6 +90,87 @@ export type Database = {
             columns: ["user_b"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_expense_confirmation_operations: {
+        Row: {
+          cancelled_at: string | null
+          canonical_request: Json | null
+          committed_at: string | null
+          created_at: string
+          expense_id: string | null
+          group_id: string | null
+          id: string
+          initiated_by_user_id: string | null
+          outcome: string
+          retired_at: string | null
+          system_message_id: string | null
+          terminal_code: string | null
+        }
+        Insert: {
+          cancelled_at?: string | null
+          canonical_request?: Json | null
+          committed_at?: string | null
+          created_at?: string
+          expense_id?: string | null
+          group_id?: string | null
+          id: string
+          initiated_by_user_id?: string | null
+          outcome: string
+          retired_at?: string | null
+          system_message_id?: string | null
+          terminal_code?: string | null
+        }
+        Update: {
+          cancelled_at?: string | null
+          canonical_request?: Json | null
+          committed_at?: string | null
+          created_at?: string
+          expense_id?: string | null
+          group_id?: string | null
+          id?: string
+          initiated_by_user_id?: string | null
+          outcome?: string
+          retired_at?: string | null
+          system_message_id?: string | null
+          terminal_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_expense_confirmation_operations_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: true
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_expense_confirmation_operations_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_expense_confirmation_operations_initiated_by_user_id_fkey"
+            columns: ["initiated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_expense_confirmation_operations_initiated_by_user_id_fkey"
+            columns: ["initiated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_expense_confirmation_operations_system_message_id_fkey"
+            columns: ["system_message_id"]
+            isOneToOne: true
+            referencedRelation: "chat_messages"
             referencedColumns: ["id"]
           },
         ]
@@ -257,6 +338,214 @@ export type Database = {
           },
         ]
       }
+      expense_allocation_entities: {
+        Row: {
+          entity_kind: string
+          expense_id: string
+          guest_id: string | null
+          net_amount_cents: number
+          participant_index: number
+          payer_amount_cents: number
+          share_amount_cents: number
+          user_id: string | null
+        }
+        Insert: {
+          entity_kind: string
+          expense_id: string
+          guest_id?: string | null
+          net_amount_cents: number
+          participant_index: number
+          payer_amount_cents: number
+          share_amount_cents: number
+          user_id?: string | null
+        }
+        Update: {
+          entity_kind?: string
+          expense_id?: string
+          guest_id?: string | null
+          net_amount_cents?: number
+          participant_index?: number
+          payer_amount_cents?: number
+          share_amount_cents?: number
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_allocation_entities_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expense_balance_allocation_plans: {
+        Row: {
+          algorithm_version: number
+          created_at: string
+          edge_count: number
+          entity_count: number
+          expense_id: string
+          source_digest: string
+          total_cents: number
+        }
+        Insert: {
+          algorithm_version: number
+          created_at?: string
+          edge_count: number
+          entity_count: number
+          expense_id: string
+          source_digest: string
+          total_cents: number
+        }
+        Update: {
+          algorithm_version?: number
+          created_at?: string
+          edge_count?: number
+          entity_count?: number
+          expense_id?: string
+          source_digest?: string
+          total_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_balance_allocation_plans_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: true
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expense_balance_allocations: {
+        Row: {
+          allocation_index: number
+          amount_cents: number
+          applied_at: string | null
+          applied_to_user_id: string | null
+          creditor_index: number
+          debtor_index: number
+          expense_id: string
+        }
+        Insert: {
+          allocation_index: number
+          amount_cents: number
+          applied_at?: string | null
+          applied_to_user_id?: string | null
+          creditor_index: number
+          debtor_index: number
+          expense_id: string
+        }
+        Update: {
+          allocation_index?: number
+          amount_cents?: number
+          applied_at?: string | null
+          applied_to_user_id?: string | null
+          creditor_index?: number
+          debtor_index?: number
+          expense_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_balance_allocations_creditor_entity_fkey"
+            columns: ["expense_id", "creditor_index"]
+            isOneToOne: false
+            referencedRelation: "expense_allocation_entities"
+            referencedColumns: ["expense_id", "participant_index"]
+          },
+          {
+            foreignKeyName: "expense_balance_allocations_debtor_entity_fkey"
+            columns: ["expense_id", "debtor_index"]
+            isOneToOne: false
+            referencedRelation: "expense_allocation_entities"
+            referencedColumns: ["expense_id", "participant_index"]
+          },
+          {
+            foreignKeyName: "expense_balance_allocations_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "expense_balance_allocation_plans"
+            referencedColumns: ["expense_id"]
+          },
+        ]
+      }
+      expense_graph_save_operations: {
+        Row: {
+          caller_id: string | null
+          canonical_request: Json | null
+          created_at: string
+          expense_id: string | null
+          graph_revision: number | null
+          group_id: string | null
+          operation_id: string
+          outcome: string
+          request_digest: string | null
+          result: Json | null
+          result_created_at: string | null
+          retired_at: string | null
+          retired_reason: string | null
+        }
+        Insert: {
+          caller_id?: string | null
+          canonical_request?: Json | null
+          created_at?: string
+          expense_id?: string | null
+          graph_revision?: number | null
+          group_id?: string | null
+          operation_id: string
+          outcome: string
+          request_digest?: string | null
+          result?: Json | null
+          result_created_at?: string | null
+          retired_at?: string | null
+          retired_reason?: string | null
+        }
+        Update: {
+          caller_id?: string | null
+          canonical_request?: Json | null
+          created_at?: string
+          expense_id?: string | null
+          graph_revision?: number | null
+          group_id?: string | null
+          operation_id?: string
+          outcome?: string
+          request_digest?: string | null
+          result?: Json | null
+          result_created_at?: string | null
+          retired_at?: string | null
+          retired_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_graph_save_operations_caller_id_fkey"
+            columns: ["caller_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_graph_save_operations_caller_id_fkey"
+            columns: ["caller_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_graph_save_operations_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "expenses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_graph_save_operations_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       expense_guest_shares: {
         Row: {
           expense_id: string
@@ -408,6 +697,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "expense_payers_share_reachability_fk"
+            columns: ["expense_id", "user_id"]
+            isOneToOne: true
+            referencedRelation: "expense_shares"
+            referencedColumns: ["expense_id", "user_id"]
+          },
+          {
             foreignKeyName: "expense_payers_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -472,6 +768,7 @@ export type Database = {
           creator_id: string
           expense_type: Database["public"]["Enums"]["expense_type"]
           fixed_fees: number
+          graph_revision: number
           group_id: string
           id: string
           merchant_name: string | null
@@ -486,6 +783,7 @@ export type Database = {
           creator_id: string
           expense_type?: Database["public"]["Enums"]["expense_type"]
           fixed_fees?: number
+          graph_revision?: number
           group_id: string
           id?: string
           merchant_name?: string | null
@@ -500,6 +798,7 @@ export type Database = {
           creator_id?: string
           expense_type?: Database["public"]["Enums"]["expense_type"]
           fixed_fees?: number
+          graph_revision?: number
           group_id?: string
           id?: string
           merchant_name?: string | null
@@ -1003,105 +1302,233 @@ export type Database = {
       }
     }
     Functions: {
-      activate_expense: { Args: { p_expense_id: string }; Returns: undefined }
-      claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
-      cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
+      activate_expense: {
+        Args: {
+          p_expense_id: string
+        }
+        Returns: undefined
+      }
+      activate_saved_expense: {
+        Args: {
+          p_expense_id: string
+          p_expected_graph_revision: number
+        }
+        Returns: Json
+      }
+      build_expense_allocation_plan_edges: {
+        Args: {
+          p_expense_id: string
+        }
+        Returns: {
+          allocation_index: number
+          debtor_index: number
+          creditor_index: number
+          amount_cents: number
+        }[]
+      }
+      calculate_service_fee_cents: {
+        Args: {
+          p_subtotal: number
+          p_basis_points: number
+        }
+        Returns: number
+      }
+      cancel_chat_expense_confirmation: {
+        Args: {
+          p_operation_id: string
+          p_request: Json
+          p_terminal_code: string
+        }
+        Returns: Json
+      }
+      claim_guest_spot: {
+        Args: {
+          p_claim_token: string
+        }
+        Returns: Json
+      }
+      cleanup_expired_rate_limit_counters: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      compute_expense_line_total_cents: {
+        Args: {
+          p_quantity_milliunits: number
+          p_unit_price_cents: number
+        }
+        Returns: number
+      }
+      confirm_chat_expense: {
+        Args: {
+          p_operation_id: string
+          p_request: Json
+        }
+        Returns: Json
+      }
       confirm_settlement: {
-        Args: { p_settlement_id: string }
+        Args: {
+          p_settlement_id: string
+        }
         Returns: undefined
       }
       confirm_vendor_charge: {
-        Args: { p_charge_id: string }
+        Args: {
+          p_charge_id: string
+        }
         Returns: undefined
       }
-      delete_group: { Args: { p_group_id: string }; Returns: undefined }
+      delete_group: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: undefined
+      }
+      expense_money_max_cents: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      get_chat_expense_confirmation: {
+        Args: {
+          p_operation_id: string
+        }
+        Returns: Json
+      }
       get_dm_previews: {
-        Args: { p_group_ids: string[] }
+        Args: {
+          p_group_ids: string[]
+        }
         Returns: {
-          content: string
-          created_at: string
           group_id: string
+          content: string
           message_type: string
+          created_at: string
         }[]
       }
       get_or_create_dm_group: {
-        Args: { p_other_user_id: string }
+        Args: {
+          p_other_user_id: string
+        }
         Returns: string
       }
       get_settlement_operation: {
-        Args: { p_operation_id: string }
+        Args: {
+          p_operation_id: string
+        }
         Returns: {
           allocation_index: number
-          amount_cents: number
-          confirmed_at: string
-          created_at: string
-          from_user_id: string
-          group_id: string
           settlement_id: string
-          status: Database["public"]["Enums"]["settlement_status"]
+          group_id: string
+          from_user_id: string
           to_user_id: string
+          amount_cents: number
+          status: Database["public"]["Enums"]["settlement_status"]
+          created_at: string
+          confirmed_at: string
         }[]
       }
       get_unread_counts: {
-        Args: { p_group_ids: string[] }
+        Args: {
+          p_group_ids: string[]
+        }
         Returns: {
           group_id: string
           unread_count: number
         }[]
       }
       has_outstanding_balance: {
-        Args: { p_group_id: string; p_user_id: string }
+        Args: {
+          p_group_id: string
+          p_user_id: string
+        }
         Returns: boolean
       }
       increment_rate_limit: {
         Args: {
           p_bucket: string
-          p_limit: number
           p_subject: string
+          p_limit: number
           p_window_seconds: number
         }
         Returns: number
       }
-      join_group_via_link: { Args: { p_token: string }; Returns: Json }
-      leave_group: { Args: { p_group_id: string }; Returns: undefined }
+      join_group_via_link: {
+        Args: {
+          p_token: string
+        }
+        Returns: Json
+      }
+      leave_group: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: undefined
+      }
       lookup_user_by_handle: {
-        Args: { p_handle: string }
+        Args: {
+          p_handle: string
+        }
         Returns: {
-          avatar_url: string
-          handle: string
           id: string
+          handle: string
           name: string
+          avatar_url: string
         }[]
       }
-      my_accepted_group_ids: { Args: never; Returns: string[] }
-      my_group_ids: { Args: never; Returns: string[] }
+      my_accepted_group_ids: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
+      my_group_ids: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
       record_settlements: {
-        Args: { p_allocations: Json; p_operation_id: string }
+        Args: {
+          p_operation_id: string
+          p_allocations: Json
+        }
         Returns: {
           allocation_index: number
-          amount_cents: number
-          confirmed_at: string
-          created_at: string
-          from_user_id: string
-          group_id: string
           settlement_id: string
-          status: Database["public"]["Enums"]["settlement_status"]
+          group_id: string
+          from_user_id: string
           to_user_id: string
+          amount_cents: number
+          status: Database["public"]["Enums"]["settlement_status"]
+          created_at: string
+          confirmed_at: string
           was_replay: boolean
         }[]
       }
       remove_group_member: {
-        Args: { p_group_id: string; p_user_id: string }
+        Args: {
+          p_group_id: string
+          p_user_id: string
+        }
         Returns: undefined
       }
       save_expense_draft: {
         Args: {
           p_expense: Json
-          p_guest_shares: Json
-          p_guests: Json
           p_items: Json
-          p_payers: Json
           p_shares: Json
+          p_payers: Json
+          p_guests: Json
+          p_guest_shares: Json
+        }
+        Returns: Json
+      }
+      save_expense_draft_graph: {
+        Args: {
+          p_expense: Json
+          p_items: Json
+          p_shares: Json
+          p_payers: Json
+          p_guests: Json
+          p_guest_shares: Json
+          p_participant_order: Json
+          p_expected_graph_revision: number
+          p_save_operation_id: string
         }
         Returns: Json
       }
@@ -1120,33 +1547,27 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type PublicSchema = Database[Extract<keyof Database, "public">]
 
 export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  PublicTableNameOrOptions extends
+    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+        Database[PublicTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
+        PublicSchema["Views"])
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -1154,24 +1575,20 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -1179,24 +1596,20 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -1204,52 +1617,30 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  PublicEnumNameOrOptions extends
+    | keyof PublicSchema["Enums"]
+    | { schema: keyof Database },
+  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+> = PublicEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
+    | keyof PublicSchema["CompositeTypes"]
+    | { schema: keyof Database },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof Database
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
     : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof PublicSchema["CompositeTypes"]
+    ? PublicSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
-
-export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
-  public: {
-    Enums: {
-      chat_message_type: ["text", "system_expense", "system_settlement"],
-      expense_status: ["draft", "active", "settled"],
-      expense_type: ["itemized", "single_amount"],
-      group_member_status: ["invited", "accepted"],
-      pix_key_type: ["cpf", "email", "random", "phone"],
-      settlement_status: ["pending", "confirmed"],
-    },
-  },
-} as const
 

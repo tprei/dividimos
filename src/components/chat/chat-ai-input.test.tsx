@@ -18,7 +18,7 @@ const mockResult: ChatExpenseResult = {
 
 const defaultProps = {
   groupId: "group-1",
-  onConfirmDraft: vi.fn(),
+  onConfirmDraft: vi.fn().mockResolvedValue({ expenseId: "expense-1" }),
   onEditDraft: vi.fn(),
 };
 
@@ -150,8 +150,8 @@ describe("ChatAiInput", () => {
     expect(screen.getByTestId("draft-title")).toHaveTextContent("Uber");
   });
 
-  it("calls onConfirmDraft when confirm button clicked", async () => {
-    const onConfirmDraft = vi.fn();
+  it("calls onConfirmDraft when confirm button clicked, awaits it, and clears the draft only on success", async () => {
+    const onConfirmDraft = vi.fn().mockResolvedValue({ expenseId: "expense-1" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -172,6 +172,78 @@ describe("ChatAiInput", () => {
 
     await user.click(screen.getByTestId("draft-confirm-button"));
     expect(onConfirmDraft).toHaveBeenCalledWith(mockResult);
+
+    // Committed: the draft card clears.
+    await waitFor(() => {
+      expect(screen.queryByTestId("chat-draft-card")).not.toBeInTheDocument();
+    });
+  });
+
+  it("retains the reviewed draft and shows the error inline when confirmation is rejected", async () => {
+    const onConfirmDraft = vi.fn().mockResolvedValue({ error: "Muitas requisições." });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockResult),
+      }),
+    );
+
+    const { user } = setup({ onConfirmDraft });
+
+    await user.click(screen.getByTestId("sparkle-toggle"));
+    await user.type(screen.getByTestId("chat-input"), "uber 25");
+    await user.click(screen.getByTestId("send-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("draft-confirm-button")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("draft-confirm-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("draft-error")).toHaveTextContent("Muitas requisições.");
+    });
+
+    // Rejected: the reviewed draft card stays visible (not silently reset).
+    expect(screen.getByTestId("chat-draft-card")).toBeInTheDocument();
+    expect(screen.getByTestId("draft-title")).toHaveTextContent("Uber");
+  });
+
+  it("disables the confirm button while a confirmation is in flight (blocks duplicate submits)", async () => {
+    let resolveConfirm: (value: { expenseId: string }) => void = () => {};
+    const onConfirmDraft = vi.fn(
+      () => new Promise<{ expenseId: string }>((resolve) => { resolveConfirm = resolve; }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(mockResult),
+      }),
+    );
+
+    const { user } = setup({ onConfirmDraft });
+
+    await user.click(screen.getByTestId("sparkle-toggle"));
+    await user.type(screen.getByTestId("chat-input"), "uber 25");
+    await user.click(screen.getByTestId("send-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("draft-confirm-button")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("draft-confirm-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("draft-confirm-button")).toBeDisabled();
+    });
+    expect(onConfirmDraft).toHaveBeenCalledTimes(1);
+
+    resolveConfirm({ expenseId: "expense-1" });
+    await waitFor(() => {
+      expect(screen.queryByTestId("chat-draft-card")).not.toBeInTheDocument();
+    });
   });
 
   it("calls onEditDraft when edit button clicked", async () => {

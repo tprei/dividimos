@@ -24,6 +24,7 @@ describe("expenseRowToExpense", () => {
       service_fee_percent: 10,
       fixed_fees: 200,
       status: "active" as const,
+      graph_revision: 1,
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-02T00:00:00Z",
     };
@@ -58,6 +59,7 @@ describe("expenseRowToExpense", () => {
       service_fee_percent: 0,
       fixed_fees: 0,
       status: "draft" as const,
+      graph_revision: 0,
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-01T00:00:00Z",
     };

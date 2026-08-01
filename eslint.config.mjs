@@ -19,6 +19,9 @@ const eslintConfig = defineConfig([
     // Generated Capacitor native build output (gitignored); the only JS here
     // is the generated native-bridge.js bundle.
     "android/**",
+    // Local Supabase CLI runtime state (gitignored, not part of the app).
+    "supabase/.temp/**",
+    "supabase/.branches/**",
   ]),
   // Project-level rule overrides — this codebase uses client-side data fetching
   // in effects (fetch → setState), which is a legitimate pattern that the strict

@@ -20,7 +20,14 @@ import {
   sendChatMessage,
   type ConversationThread,
 } from "@/lib/supabase/chat-actions";
-import { confirmChatDraft } from "@/lib/supabase/chat-draft-confirm";
+import {
+  buildChatExpenseConfirmationRequest,
+  type PrecomputedShare,
+} from "@/lib/supabase/chat-confirm";
+import {
+  confirmChatExpenseWithIntent,
+  type ChatExpenseConfirmationSource,
+} from "@/lib/chat-confirmation-intent";
 import { notifyDmTextMessage, notifyExpenseActivated } from "@/lib/push/push-notify";
 import { markConversationRead } from "@/lib/supabase/unread-actions";
 import { createClient } from "@/lib/supabase/client";
@@ -251,32 +258,58 @@ export function ConversationPageClient({
     [groupId, user],
   );
 
-  const handleConfirmDraft = useCallback(
-    async (result: ChatExpenseResult) => {
-      if (!groupId || !counterparty) return;
+  const confirmChatExpenseCore = useCallback(
+    async (
+      result: ChatExpenseResult,
+      source: ChatExpenseConfirmationSource,
+      precomputedShares?: PrecomputedShare[],
+    ): Promise<{ expenseId: string } | { error: string }> => {
+      if (!groupId || !counterparty) {
+        return { error: "Conversa não disponível." };
+      }
 
       const members: UserProfile[] = [
         { id: user.id, handle: user.handle, name: user.name, avatarUrl: user.avatarUrl },
         counterparty,
       ];
 
-      const confirmResult = await confirmChatDraft({
+      const built = buildChatExpenseConfirmationRequest({
         result,
         groupId,
         currentUserId: user.id,
         members,
+        precomputedShares,
       });
 
-      if ("error" in confirmResult) {
-        toast.error(confirmResult.error);
-        return confirmResult;
+      if ("error" in built) {
+        toast.error(built.error);
+        return { error: built.error };
       }
 
-      notifyExpenseActivated(confirmResult.expenseId).catch(() => {});
+      const outcome = await confirmChatExpenseWithIntent({
+        userId: user.id,
+        groupId,
+        request: built,
+        source,
+      });
 
-      return confirmResult;
+      if (outcome.status === "error") {
+        toast.error(outcome.error);
+        return { error: outcome.error };
+      }
+
+      if (outcome.created) {
+        notifyExpenseActivated(outcome.expenseId).catch(() => {});
+      }
+
+      return { expenseId: outcome.expenseId };
     },
     [groupId, user, counterparty],
+  );
+
+  const handleConfirmDraft = useCallback(
+    (result: ChatExpenseResult) => confirmChatExpenseCore(result, "ai"),
+    [confirmChatExpenseCore],
   );
 
   const handleEditDraft = useCallback(
@@ -336,10 +369,10 @@ export function ConversationPageClient({
     async (result: ChatExpenseResult) => {
       setChargeStatus("confirming");
       setChargeError(undefined);
-      const res = await handleConfirmDraft(result);
-      if (res && "error" in res) {
+      const outcome = await confirmChatExpenseCore(result, "quick_charge");
+      if ("error" in outcome) {
         setChargeStatus("error");
-        setChargeError(typeof res.error === "string" ? res.error : "Erro ao cobrar");
+        setChargeError(outcome.error);
         return;
       }
       setChargeStatus("confirmed");
@@ -349,7 +382,7 @@ export function ConversationPageClient({
         setChargeStatus("idle");
       }, 1200);
     },
-    [handleConfirmDraft],
+    [confirmChatExpenseCore],
   );
 
   const handleQuickChargeEdit = useCallback(
@@ -362,7 +395,7 @@ export function ConversationPageClient({
 
   const handleQuickSplitConfirm = useCallback(
     async (result: QuickSplitResult) => {
-      if (!groupId || !counterparty) return;
+      if (!counterparty) return;
       setSplitStatus("confirming");
       setSplitError(undefined);
 
@@ -384,22 +417,11 @@ export function ConversationPageClient({
         confidence: "high",
       };
 
-      const members: UserProfile[] = [
-        { id: user.id, handle: user.handle, name: user.name, avatarUrl: user.avatarUrl },
-        counterparty,
-      ];
+      const outcome = await confirmChatExpenseCore(chatResult, "quick_split", result.shares);
 
-      const confirmResult = await confirmChatDraft({
-        result: chatResult,
-        groupId,
-        currentUserId: user.id,
-        members,
-        precomputedShares: result.shares,
-      });
-
-      if ("error" in confirmResult) {
+      if ("error" in outcome) {
         setSplitStatus("error");
-        setSplitError(confirmResult.error);
+        setSplitError(outcome.error);
         return;
       }
 
@@ -410,7 +432,7 @@ export function ConversationPageClient({
         setSplitStatus("idle");
       }, 1200);
     },
-    [groupId, user, counterparty],
+    [confirmChatExpenseCore, counterparty, user.id],
   );
 
   // Clean up timers on unmount
