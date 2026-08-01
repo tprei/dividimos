@@ -390,127 +390,14 @@ test.describe("Expense payer cleanup (browser)", () => {
     expect(payersAfter).toEqual([{ user_id: bob.id, amount_cents: 9000 }]);
   });
 
-  test("a protected-claim fixture omits the removal control, survives save/reload, and finalizes with the canonical graph complete (#495 item 24)", async ({
-    page,
-    seed,
-    loginAs,
-    adminClient,
-  }) => {
-    const alice = await seed.createUser({ name: "Alice Protected" });
-    const carol = await seed.createUser({ name: "Carol Protected" });
-    const group = await seed.createGroup(alice.id, [], "Protected Claim Group");
-
-    // Seed a draft directly through the real save RPC: Alice + an
-    // unclaimed guest, no payer yet (so the edit-load jumps only as far
-    // as amount-split, not straight to payer -- see page.tsx's
-    // load.payers.length gate).
-    const aliceClient = await seed.authenticateAs(alice.id);
-    const { data: saved, error: saveError } = await aliceClient.rpc("save_expense_draft_graph", {
-      p_expense: {
-        group_id: group.id,
-        title: "Jantar com convidada",
-        merchant_name: null,
-        expense_type: "single_amount",
-        total_amount: 6000,
-        service_fee_basis_points: 0,
-        fixed_fees: 0,
-      },
-      p_items: [],
-      p_shares: [{ user_id: alice.id, share_amount_cents: 3000 }],
-      p_payers: [],
-      p_guests: [{ local_id: "g1", display_name: "Futura Carol" }],
-      p_guest_shares: [{ local_id: "g1", share_amount_cents: 3000 }],
-      p_participant_order: [],
-      p_expected_graph_revision: 0,
-      p_save_operation_id: crypto.randomUUID(),
-    });
-    expect(saveError).toBeNull();
-    const draftId = (saved as { id: string }).id;
-
-    const { data: guestRow } = await adminClient
-      .from("expense_guests")
-      .select("claim_token")
-      .eq("expense_id", draftId)
-      .single();
-
-    // Carol claims the guest spot while the expense is still a draft --
-    // she becomes a protected claimant: a real participant whose removal
-    // the server guard (claimed_guest_not_participant, #495 item 2) rejects.
-    const carolClient = await seed.authenticateAs(carol.id);
-    const { error: claimError } = await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: (guestRow as { claim_token: string }).claim_token,
-    });
-    expect(claimError).toBeNull();
-
-    // Alice opens the draft for editing. Shares exist but no payer yet, so
-    // the load lands on amount-split; go back to see the participants row.
-    await loginAs(alice, { navigate: false });
-    await page.goto(`/app/bill/new?draft=${draftId}`);
-    await page.waitForLoadState("networkidle");
-    await page.getByRole("button", { name: /Voltar/i }).click();
-
-    // The removal control is omitted: Carol shows as protected, with no
-    // "Remover Carol Protected" control anywhere on the page.
-    await expect(page.getByText("Carol Protected").first()).toBeVisible({
-      timeout: 5000,
-    });
-    await expect(page.getByText("Protegido")).toBeVisible();
-    await expect(
-      page.getByLabel(`Remover ${carol.name}`),
-    ).not.toBeVisible();
-
-    // Save/reload survival: proceed through the wizard without touching
-    // Carol. Each step re-saves the draft; the protected claimant must
-    // still be present afterward or the server would reject the save
-    // (claimed_guest_not_participant) and finalization would never reach
-    // "Gerar cobranças Pix".
-    await page
-      .getByRole("button", { name: /Próximo|Continuar/i })
-      .first()
-      .click();
-    await page
-      .getByRole("button", { name: /Próximo|Continuar/i })
-      .first()
-      .click();
-    await expect(page.getByText(/quem pagou/i)).toBeVisible({ timeout: 5000 });
-    await page.getByRole("button", { name: alice.name }).click();
-    await page
-      .getByRole("button", { name: /Próximo|Continuar/i })
-      .first()
-      .click();
-
-    // Finalizes only once the canonical graph (Alice + Carol) remains
-    // complete -- activation succeeds.
-    await page.getByRole("button", { name: /Gerar cobranças Pix/i }).click();
-    await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, { timeout: 15000 });
-
-    await expect
-      .poll(
-        async () => {
-          const { data } = await adminClient
-            .from("expenses")
-            .select("status")
-            .eq("id", draftId)
-            .single();
-          return data?.status ?? null;
-        },
-        { timeout: 10000 },
-      )
-      .toBe("active");
-
-    const { data: finalShares } = await adminClient
-      .from("expense_shares")
-      .select("user_id, share_amount_cents")
-      .eq("expense_id", draftId);
-    const finalUserIds = (finalShares ?? []).map((s) => s.user_id).sort();
-    expect(finalUserIds).toEqual([alice.id, carol.id].sort());
-    expect(finalShares!.reduce((sum, s) => sum + s.share_amount_cents, 0)).toBe(6000);
-
-    const { data: guestAfter } = await adminClient
-      .from("expense_guests")
-      .select("claimed_by")
-      .eq("expense_id", draftId)
-      .single();
-    expect(guestAfter!.claimed_by).toBe(carol.id);
-  });
+  // Removed under #581: this seeded a protected claimant by claiming a guest
+  // while the expense was still a DRAFT. That state is now unreachable -- a
+  // claim credential is only issuable for an active expense
+  // (issue_guest_claim_token requires status='active'), and an active expense
+  // can never be re-saved as a draft (save_expense_draft rejects a non-draft
+  // status), so a draft can no longer hold a claimed guest. The behaviour this
+  // covered is still pinned elsewhere: the "Protegido" badge and the hidden
+  // removal control by src/components/bill/wizard/participants-step.test.tsx,
+  // and the draft_claim_protected_user_ids contract by
+  // src/lib/supabase/load-expense-graph-snapshot.integration.test.ts.
 });
