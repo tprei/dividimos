@@ -21,7 +21,7 @@ describe("expenseRowToExpense", () => {
       merchant_name: "Restaurante",
       expense_type: "itemized" as const,
       total_amount: 10000,
-      service_fee_percent: 10,
+      service_fee_basis_points: 1000,
       fixed_fees: 200,
       status: "active" as const,
       graph_revision: 1,
@@ -41,11 +41,42 @@ describe("expenseRowToExpense", () => {
       expenseType: "itemized",
       totalAmount: 10000,
       serviceFeePercent: 10,
+      serviceFeeBasisPoints: 1000,
       fixedFees: 200,
       status: "active",
       createdAt: "2024-01-01T00:00:00Z",
       updatedAt: "2024-01-02T00:00:00Z",
     });
+  });
+
+  it("preserves exact basis points even where the float percent would round differently", () => {
+    // 250 cents at 6460 bps = 64.60%. floor((250*6460+5000)/10000) = 162
+    // (half-up), but Math.round(250 * (6460/100) / 100) drifts to 161 due
+    // to 6460/100 not being exactly representable as a float. Consumers
+    // must use serviceFeeBasisPoints, never re-derive from serviceFeePercent.
+    const row = {
+      id: "e-2",
+      group_id: "g-1",
+      creator_id: "u-1",
+      title: "Precision test",
+      merchant_name: null,
+      expense_type: "itemized" as const,
+      total_amount: 250,
+      service_fee_basis_points: 6460,
+      fixed_fees: 0,
+      status: "active" as const,
+      graph_revision: 1,
+      activation_notified_at: null,
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-02T00:00:00Z",
+    };
+
+    const result = expenseRowToExpense(row);
+
+    expect(result.serviceFeeBasisPoints).toBe(6460);
+    // The lossy display value is still exposed for UI labels, but must
+    // never be the source of a fee-amount computation.
+    expect(result.serviceFeePercent).toBe(64.6);
   });
 
   it("converts null merchant_name to undefined", () => {
@@ -57,7 +88,7 @@ describe("expenseRowToExpense", () => {
       merchant_name: null,
       expense_type: "single_amount" as const,
       total_amount: 5000,
-      service_fee_percent: 0,
+      service_fee_basis_points: 0,
       fixed_fees: 0,
       status: "draft" as const,
       graph_revision: 0,

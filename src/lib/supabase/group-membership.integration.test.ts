@@ -174,24 +174,39 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       it("carol can create expenses in the group", async () => {
+        // #477's guard routes every new expenses row through
+        // save_expense_draft_graph; carol (now an accepted member) can
+        // create one via that RPC just as the app does.
         const client = authenticateAs(carol);
-        const { data, error } = await client
-          .from("expenses")
-          .insert({
+        const { data, error } = await client.rpc("save_expense_draft_graph", {
+          p_expense: {
             group_id: groupId,
-            creator_id: carol.id,
             title: "Carol's expense",
+            merchant_name: null,
             expense_type: "single_amount",
             total_amount: 6000,
-          })
-          .select()
-          .single();
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [],
+          p_payers: [],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
+        });
 
         expect(error).toBeNull();
-        expect(data!.creator_id).toBe(carol.id);
-
-        // Cleanup draft
-        await adminClient!.from("expenses").delete().eq("id", data!.id);
+        expect(data).not.toBeNull();
+        // Carol is the creator (auth.uid() under the RPC).
+        const creator = await adminClient!
+          .from("expenses")
+          .select("creator_id")
+          .eq("id", (data as { id: string }).id)
+          .single();
+        expect(creator.data!.creator_id).toBe(carol.id);
       });
 
       it("carol can settle debts with other members", async () => {
@@ -707,49 +722,38 @@ describe.skipIf(!isIntegrationTestReady)(
         });
       });
 
-      it("outsider cannot activate an expense via RPC", async () => {
-        // Create a draft expense via admin
-        const { data: expense } = await adminClient!
-          .from("expenses")
-          .insert({
-            group_id: groupId,
-            creator_id: outsider.id,
-            title: "Outsider attempt",
-            total_amount: 1000,
-            status: "draft",
-          })
-          .select("id")
-          .single();
-
-        // Insert matching shares + payers via admin
-        await Promise.all([
-          adminClient!.from("expense_shares").insert({
-            expense_id: expense!.id,
-            user_id: alice.id,
-            share_amount_cents: 1000,
-          }),
-          adminClient!.from("expense_payers").insert({
-            expense_id: expense!.id,
-            user_id: outsider.id,
-            amount_cents: 1000,
-          }),
-        ]);
-
+      it("outsider cannot create an expense in a group they don't belong to", async () => {
+        // #477's guard routes every new expenses row through
+        // save_expense_draft_graph, which authenticates the caller as the
+        // creator and validates accepted membership at SAVE time. An
+        // outsider can no longer get a draft into this group at all -- the
+        // invariant this test used to check at activation is enforced one
+        // stage earlier. (The old admin-insert-bypassing-RLS fixture is
+        // itself now guard-blocked: service_role has no grant on
+        // begin_expense_graph_direct_mutation.)
         const client = authenticateAs(outsider);
-        const { error } = await client.rpc("activate_expense", {
-          p_expense_id: expense!.id,
+        const { data, error } = await client.rpc("save_expense_draft_graph", {
+          p_expense: {
+            group_id: groupId,
+            title: "Outsider attempt",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 1000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [{ user_id: outsider.id, share_amount_cents: 1000 }],
+          p_payers: [{ user_id: outsider.id, amount_cents: 1000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: 0,
+          p_save_operation_id: crypto.randomUUID(),
         });
 
-        // activate_expense checks creator_id matches caller — outsider is creator
-        // but not a group member. The RPC should fail because outsider isn't
-        // actually a member, and the expense references a group they don't belong to.
-        // However, activate_expense is SECURITY DEFINER and only checks creator_id,
-        // not group membership directly. The admin inserted the expense bypassing RLS.
-        // This test documents current behavior.
         expect(error).not.toBeNull();
-
-        // Cleanup
-        await adminClient!.from("expenses").delete().eq("id", expense!.id);
+        expect(data).toBeNull();
       });
 
       it("outsider cannot call record_settlements", async () => {

@@ -7,7 +7,6 @@ import {
   createTestUsers,
   createTestGroupWithMembers,
   authenticateAs,
-  createAndActivateExpense,
   settleDebt,
   getBalanceBetween,
   type TestUser,
@@ -72,15 +71,14 @@ describe.skipIf(!isIntegrationTestReady)(
           invited_by: alice.id,
         });
 
-        // Alice pays, invited Bob owes a real 5000-cent share.
-        await createAndActivateExpense({
-          creator: alice,
-          groupId,
-          shares: [
-            { userId: alice.id, amount: 5000 },
-            { userId: bob.id, amount: 5000 },
-          ],
-          payers: [{ userId: alice.id, amount: 10000 }],
+        // Construct the invited-member-with-balance edge state directly:
+        // save_expense_draft_graph rejects non-accepted shares at save time,
+         // but this state can exist from pre-guard data. Insert a balance
+         // directly (balances is NOT a guarded table).
+        const [userA1, userB1] = alice.id < bob.id ? [alice.id, bob.id] : [bob.id, alice.id];
+        const bobOwesAlice = bob.id < alice.id ? 5000 : -5000;
+        await adminClient!.from("balances").insert({
+          group_id: groupId, user_a: userA1, user_b: userB1, amount_cents: bobOwesAlice,
         });
       });
 
@@ -153,15 +151,11 @@ describe.skipIf(!isIntegrationTestReady)(
           invited_by: alice.id,
         });
 
-        // Invited Bob pays the whole expense; alice owes him back 5000.
-        await createAndActivateExpense({
-          creator: alice,
-          groupId,
-          shares: [
-            { userId: alice.id, amount: 5000 },
-            { userId: bob.id, amount: 5000 },
-          ],
-          payers: [{ userId: bob.id, amount: 10000 }],
+        // Same approach: insert balance directly. Alice owes Bob 5000.
+        const [userA2, userB2] = alice.id < bob.id ? [alice.id, bob.id] : [bob.id, alice.id];
+        const aliceOwesBob = alice.id < bob.id ? 5000 : -5000;
+        await adminClient!.from("balances").insert({
+          group_id: groupId, user_a: userA2, user_b: userB2, amount_cents: aliceOwesBob,
         });
       });
 

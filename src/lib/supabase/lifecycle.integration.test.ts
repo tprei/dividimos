@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { Client } from "pg";
 import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 import {
   createTestUsers,
@@ -6,11 +7,82 @@ import {
   createAndActivateExpense,
   settleDebt,
   getBalanceBetween,
+  deleteTestExpenses,
   authenticateAs,
   acceptGroupInvite,
   type TestUser,
 } from "@/test/integration-helpers";
 
+// Lazy raw pg connection for deleteTestExpenses (draft deletion must open a
+// direct mutation token; an authenticated PostgREST delete is guard-rejected).
+let lifecyclePg: Client | undefined;
+async function pg(): Promise<Client> {
+  if (!lifecyclePg) {
+    lifecyclePg = new Client(process.env.SUPABASE_DB_URL!);
+    await lifecyclePg.connect();
+  }
+  return lifecyclePg;
+}
+
+/**
+ * Issue #477: creates (or, when `id` is provided, edits) a draft expense
+ * through the real save_expense_draft_graph RPC -- the guard's `expenses`
+ * INSERT branch requires a 'new'-sourced token only this RPC can open,
+ * and adminClient (service_role) has no more direct-write access than an
+ * authenticated client does (both lack any grant on
+ * begin_expense_graph_direct_mutation).
+ */
+async function saveDraft(
+  creator: TestUser,
+  fields: {
+    id?: string;
+    groupId: string;
+    title: string;
+    totalAmount: number;
+    shares: { userId: string; amount: number }[];
+    payers: { userId: string; amount: number }[];
+    expectedGraphRevision: number;
+  },
+): Promise<{ id: string; graphRevision: number }> {
+  const client = authenticateAs(creator);
+  const { data, error } = await client.rpc("save_expense_draft_graph", {
+    p_expense: {
+      ...(fields.id ? { id: fields.id } : {}),
+      group_id: fields.groupId,
+      title: fields.title,
+      merchant_name: null,
+      expense_type: "single_amount",
+      total_amount: fields.totalAmount,
+      service_fee_basis_points: 0,
+      fixed_fees: 0,
+    },
+    p_items: [],
+    p_shares: fields.shares.map((s) => ({ user_id: s.userId, share_amount_cents: s.amount })),
+    p_payers: fields.payers.map((p) => ({ user_id: p.userId, amount_cents: p.amount })),
+    p_guests: [],
+    p_guest_shares: [],
+    p_participant_order: [],
+    p_expected_graph_revision: fields.expectedGraphRevision,
+    p_save_operation_id: crypto.randomUUID(),
+  });
+  if (error || !data) {
+    throw new Error(`Failed to save draft: ${error?.message}`);
+  }
+  const result = data as { id: string; graph_revision: number };
+  return { id: result.id, graphRevision: result.graph_revision };
+}
+
+/** Activates a draft expense through the real activate_saved_expense RPC. */
+async function activateDraft(creator: TestUser, expenseId: string, graphRevision: number): Promise<void> {
+  const client = authenticateAs(creator);
+  const { error } = await client.rpc("activate_saved_expense", {
+    p_expense_id: expenseId,
+    p_expected_graph_revision: graphRevision,
+  });
+  if (error) {
+    throw new Error(`Failed to activate expense: ${error.message}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Suite 2 — Expense lifecycle chains
@@ -120,47 +192,27 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
     });
 
     it("deleting a draft has no effect on balances, replacement works normally", async () => {
-      // Create a draft via admin (not activated)
-      const { data: draft } = await adminClient!
-        .from("expenses")
-        .insert({
-          group_id: freshGroupId,
-          creator_id: alice.id,
-          title: "Draft to delete",
-          expense_type: "single_amount",
-          total_amount: 10000,
-          service_fee_percent: 0,
-          fixed_fees: 0,
-          status: "draft",
-        })
-        .select("id")
-        .single();
+      // Create a draft (not activated)
+      const draft = await saveDraft(alice, {
+        groupId: freshGroupId,
+        title: "Draft to delete",
+        totalAmount: 10000,
+        shares: [
+          { userId: alice.id, amount: 5000 },
+          { userId: bob.id, amount: 5000 },
+        ],
+        payers: [{ userId: alice.id, amount: 10000 }],
+        expectedGraphRevision: 0,
+      });
 
-      expect(draft).not.toBeNull();
-
-      // Insert shares and payers for the draft
-      await Promise.all([
-        adminClient!.from("expense_shares").insert([
-          { expense_id: draft!.id, user_id: alice.id, share_amount_cents: 5000 },
-          { expense_id: draft!.id, user_id: bob.id, share_amount_cents: 5000 },
-        ]),
-        adminClient!.from("expense_payers").insert([
-          { expense_id: draft!.id, user_id: alice.id, amount_cents: 10000 },
-        ]),
-      ]);
+      expect(draft.id).toBeTruthy();
 
       // No balance exists yet
       expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(0);
 
-      // Delete the draft
-      const aliceClient = authenticateAs(alice);
-      const { error: delError } = await aliceClient
-        .from("expenses")
-        .delete()
-        .eq("id", draft!.id)
-        .eq("status", "draft");
-
-      expect(delError).toBeNull();
+      // Delete the draft via the raw direct-mutation-token path: an
+      // authenticated PostgREST DELETE on expenses is now guard-rejected.
+      await deleteTestExpenses(await pg(), [draft.id]);
 
       // Still no balance
       expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(0);
@@ -258,54 +310,35 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
 
     it("editing a draft's amounts before activation uses the final values", async () => {
       // Create initial draft with 10000
-      const { data: draft } = await adminClient!
-        .from("expenses")
-        .insert({
-          group_id: freshGroupId,
-          creator_id: alice.id,
-          title: "Editable draft",
-          expense_type: "single_amount",
-          total_amount: 10000,
-          service_fee_percent: 0,
-          fixed_fees: 0,
-          status: "draft",
-        })
-        .select("id")
-        .single();
-
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: draft!.id, user_id: alice.id, share_amount_cents: 5000 },
-        { expense_id: draft!.id, user_id: bob.id, share_amount_cents: 5000 },
-      ]);
-      await adminClient!.from("expense_payers").insert([
-        { expense_id: draft!.id, user_id: alice.id, amount_cents: 10000 },
-      ]);
-
-      // Edit: change total to 6000, update shares and payers
-      await adminClient!
-        .from("expenses")
-        .update({ total_amount: 6000 })
-        .eq("id", draft!.id);
-
-      // Delete old child data and reinsert (mimicking saveExpenseDraft behavior)
-      await Promise.all([
-        adminClient!.from("expense_shares").delete().eq("expense_id", draft!.id),
-        adminClient!.from("expense_payers").delete().eq("expense_id", draft!.id),
-      ]);
-
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: draft!.id, user_id: alice.id, share_amount_cents: 3000 },
-        { expense_id: draft!.id, user_id: bob.id, share_amount_cents: 3000 },
-      ]);
-      await adminClient!.from("expense_payers").insert([
-        { expense_id: draft!.id, user_id: alice.id, amount_cents: 6000 },
-      ]);
-      const aliceClient = authenticateAs(alice);
-      const { error } = await aliceClient.rpc("activate_expense", {
-        p_expense_id: draft!.id,
+      const initial = await saveDraft(alice, {
+        groupId: freshGroupId,
+        title: "Editable draft",
+        totalAmount: 10000,
+        shares: [
+          { userId: alice.id, amount: 5000 },
+          { userId: bob.id, amount: 5000 },
+        ],
+        payers: [{ userId: alice.id, amount: 10000 }],
+        expectedGraphRevision: 0,
       });
 
-      expect(error).toBeNull();
+      // Edit: change total to 6000, update shares and payers. Editing a
+      // draft goes through the same RPC again, with `id` set and
+      // p_expected_graph_revision matching the row's current revision.
+      const edited = await saveDraft(alice, {
+        id: initial.id,
+        groupId: freshGroupId,
+        title: "Editable draft",
+        totalAmount: 6000,
+        shares: [
+          { userId: alice.id, amount: 3000 },
+          { userId: bob.id, amount: 3000 },
+        ],
+        payers: [{ userId: alice.id, amount: 6000 }],
+        expectedGraphRevision: initial.graphRevision,
+      });
+
+      await activateDraft(alice, edited.id, edited.graphRevision);
 
       // Bob owes Alice 3000 (not 5000 from original draft)
       expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(3000);
@@ -480,75 +513,46 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
     });
 
     it("deleting one draft does not affect activation of another", async () => {
-      // Create two drafts via admin
-      const [{ data: draft1 }, { data: draft2 }] = await Promise.all([
-        adminClient!
-          .from("expenses")
-          .insert({
-            group_id: freshGroupId,
-            creator_id: alice.id,
-            title: "Draft to delete",
-            expense_type: "single_amount",
-            total_amount: 8000,
-            service_fee_percent: 0,
-            fixed_fees: 0,
-            status: "draft",
-          })
-          .select("id")
-          .single(),
-        adminClient!
-          .from("expenses")
-          .insert({
-            group_id: freshGroupId,
-            creator_id: alice.id,
-            title: "Draft to activate",
-            expense_type: "single_amount",
-            total_amount: 4000,
-            service_fee_percent: 0,
-            fixed_fees: 0,
-            status: "draft",
-          })
-          .select("id")
-          .single(),
+      // Create two drafts
+      const [draft1, draft2] = await Promise.all([
+        saveDraft(alice, {
+          groupId: freshGroupId,
+          title: "Draft to delete",
+          totalAmount: 8000,
+          shares: [
+            { userId: alice.id, amount: 4000 },
+            { userId: bob.id, amount: 4000 },
+          ],
+          payers: [{ userId: alice.id, amount: 8000 }],
+          expectedGraphRevision: 0,
+        }),
+        saveDraft(alice, {
+          groupId: freshGroupId,
+          title: "Draft to activate",
+          totalAmount: 4000,
+          shares: [
+            { userId: alice.id, amount: 2000 },
+            { userId: bob.id, amount: 2000 },
+          ],
+          payers: [{ userId: alice.id, amount: 4000 }],
+          expectedGraphRevision: 0,
+        }),
       ]);
 
-      // Set up child data for both drafts without racing each payer's FK.
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: draft1!.id, user_id: alice.id, share_amount_cents: 4000 },
-        { expense_id: draft1!.id, user_id: bob.id, share_amount_cents: 4000 },
-      ]);
-      await adminClient!.from("expense_payers").insert([
-        { expense_id: draft1!.id, user_id: alice.id, amount_cents: 8000 },
-      ]);
-      await adminClient!.from("expense_shares").insert([
-        { expense_id: draft2!.id, user_id: alice.id, share_amount_cents: 2000 },
-        { expense_id: draft2!.id, user_id: bob.id, share_amount_cents: 2000 },
-      ]);
-      await adminClient!.from("expense_payers").insert([
-        { expense_id: draft2!.id, user_id: alice.id, amount_cents: 4000 },
-      ]);
-
-      // Delete draft1
-      const aliceClient = authenticateAs(alice);
-      await aliceClient
-        .from("expenses")
-        .delete()
-        .eq("id", draft1!.id)
-        .eq("status", "draft");
+      // Delete draft1 via the direct-mutation-token path (an
+      // authenticated PostgREST DELETE is now guard-rejected).
+      await deleteTestExpenses(await pg(), [draft1.id]);
 
       // Verify draft1 is gone
       const { data: deleted } = await adminClient!
         .from("expenses")
         .select("id")
-        .eq("id", draft1!.id)
+        .eq("id", draft1.id)
         .maybeSingle();
       expect(deleted).toBeNull();
 
       // Activate draft2 — should work independently
-      const { error } = await aliceClient.rpc("activate_expense", {
-        p_expense_id: draft2!.id,
-      });
-      expect(error).toBeNull();
+      await activateDraft(alice, draft2.id, draft2.graphRevision);
 
       // Balance reflects only draft2: Bob owes Alice 2000
       expect(await getBalanceBetween(freshGroupId, bob.id, alice.id)).toBe(2000);
@@ -573,14 +577,25 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         title: "Already active",
       });
 
-      // Try to activate again
+      // Try to activate again -- activate_saved_expense's CAS rejects
+      // this via PST08/stale_graph_revision (the expense's committed
+      // graph_revision no longer matches the pre-activation value this
+      // fixture never captured; re-reading the current, now-bumped
+      // revision and replaying it still fails because status isn't
+      // 'draft' either way). activate_expense(uuid) itself no longer has
+      // a caller-facing grant at all under this guard.
+      const { data: current } = await adminClient!
+        .from("expenses")
+        .select("graph_revision")
+        .eq("id", expenseId)
+        .single();
       const aliceClient = authenticateAs(alice);
-      const { error } = await aliceClient.rpc("activate_expense", {
+      const { error } = await aliceClient.rpc("activate_saved_expense", {
         p_expense_id: expenseId,
+        p_expected_graph_revision: current!.graph_revision,
       });
 
       expect(error).not.toBeNull();
-      expect(error!.message).toContain("invalid_status");
 
       // Balance unchanged (still just the first activation)
       expect(await getBalanceBetween(freshGroup.id, bob.id, alice.id)).toBe(2000);

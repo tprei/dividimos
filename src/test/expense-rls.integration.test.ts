@@ -50,68 +50,49 @@ describe.skipIf(!isIntegrationTestReady)("Expense RLS policies", () => {
       .eq("group_id", groupId)
       .eq("user_id", bob.id);
 
-    // Alice creates an expense via her authenticated client
+    // Alice creates an expense via the guard's RPC path (direct table
+    // INSERTs are guard-blocked). save_expense_draft_graph creates the
+    // expense + shares + payers + items in one call; activate makes it
+    // visible to group members for the RLS SELECT tests below.
     const aliceClient = authenticateAs(alice);
-    const { data: expense, error: expError } = await aliceClient
-      .from("expenses")
-      .insert({
-        group_id: groupId,
-        creator_id: alice.id,
-        title: "Test Dinner",
-        expense_type: "itemized",
-        total_amount: 10000,
-      })
-      .select()
-      .single();
+    const { data: saved, error: saveError } = await aliceClient.rpc(
+      "save_expense_draft_graph",
+      {
+        p_expense: {
+          group_id: groupId, title: "Test Dinner", merchant_name: null,
+          expense_type: "itemized", total_amount: 10000,
+          service_fee_basis_points: 0, fixed_fees: 0,
+        },
+        p_items: [{ description: "Pizza", quantity: 1000, unit_price_cents: 10000, total_price_cents: 10000 }],
+        p_shares: [
+          { user_id: alice.id, share_amount_cents: 5000 },
+          { user_id: bob.id, share_amount_cents: 5000 },
+        ],
+        p_payers: [{ user_id: alice.id, amount_cents: 10000 }],
+        p_guests: [], p_guest_shares: [], p_participant_order: [],
+        p_expected_graph_revision: 0, p_save_operation_id: crypto.randomUUID(),
+      },
+    );
+    expect(saveError).toBeNull();
+    expenseId = (saved as { id: string; graph_revision: number }).id;
+    const graphRevision = (saved as { id: string; graph_revision: number }).graph_revision;
 
-    expect(expError).toBeNull();
-    expenseId = expense!.id;
+    // Activate so the expense is visible (status='active') to group members.
+    const { error: activateError } = await aliceClient.rpc("activate_saved_expense", {
+      p_expense_id: expenseId,
+      p_expected_graph_revision: graphRevision,
+    });
+    expect(activateError).toBeNull();
 
-    // Add expense item
-    const { error: itemError } = await aliceClient
-      .from("expense_items")
-      .insert({
-        expense_id: expenseId,
-        description: "Pizza",
-        quantity: 1000,
-        unit_price_cents: 5000,
-        total_price_cents: 5000,
-      })
-      .select()
-      .single();
-
-    expect(itemError).toBeNull();
-
-    // Add expense shares
-    const { error: sharesError } = await aliceClient
-      .from("expense_shares")
-      .insert([
-        { expense_id: expenseId, user_id: alice.id, share_amount_cents: 5000 },
-        { expense_id: expenseId, user_id: bob.id, share_amount_cents: 5000 },
-      ]);
-    expect(sharesError).toBeNull();
-
-    // Add expense payer
-    const { error: payerError } = await aliceClient
-      .from("expense_payers")
-      .insert({ expense_id: expenseId, user_id: alice.id, amount_cents: 10000 });
-    expect(payerError).toBeNull();
-
-    // Seed a balance row (admin — balances have no INSERT policy for users)
+    // Seed a balance row (balances are NOT a guarded table).
     const [userA, userB] = alice.id < bob.id ? [alice.id, bob.id] : [bob.id, alice.id];
     await adminClient!.from("balances").insert({
-      group_id: groupId,
-      user_a: userA,
-      user_b: userB,
-      amount_cents: 5000,
+      group_id: groupId, user_a: userA, user_b: userB, amount_cents: 5000,
     });
 
-    // Seed a settlement row via admin (from bob to alice)
+    // Seed a settlement row (settlements are NOT a guarded table).
     await adminClient!.from("settlements").insert({
-      group_id: groupId,
-      from_user_id: bob.id,
-      to_user_id: alice.id,
-      amount_cents: 5000,
+      group_id: groupId, from_user_id: bob.id, to_user_id: alice.id, amount_cents: 5000,
     });
   });
 
@@ -170,7 +151,9 @@ describe.skipIf(!isIntegrationTestReady)("Expense RLS policies", () => {
   // ──────────────────────────────────────────────
 
   describe("expenses INSERT", () => {
-    it("accepted member can create expense in their group", async () => {
+    it("rejects a direct authenticated INSERT into expenses (issue #477 guard)", async () => {
+      // The guard makes direct table INSERTs dead for all callers
+      // (only save_expense_draft_graph can INSERT a new expenses row).
       const client = authenticateAs(bob);
       const { data, error } = await client
         .from("expenses")
@@ -183,11 +166,8 @@ describe.skipIf(!isIntegrationTestReady)("Expense RLS policies", () => {
         .select()
         .single();
 
-      expect(error).toBeNull();
-      expect(data!.title).toBe("Bob Expense");
-
-      // Cleanup
-      await adminClient!.from("expenses").delete().eq("id", data!.id);
+      expect(data).toBeNull();
+      expect(error).not.toBeNull();
     });
 
     it("invited member cannot create expense", async () => {

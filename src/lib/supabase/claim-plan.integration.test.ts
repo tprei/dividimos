@@ -9,6 +9,7 @@ import {
   createTestGroupWithMembers,
   createTestUsers,
   authenticateAs,
+  deleteTestExpenses,
   getBalanceBetween,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -66,9 +67,8 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
   });
 
   afterAll(async () => {
-    if (expenseId && adminClient) {
-      // Cascades to entities, plan, edges, shares, payers, guest rows.
-      await adminClient.from("expenses").delete().eq("id", expenseId);
+    if (expenseId && pg) {
+      await deleteTestExpenses(pg, [expenseId]);
     }
     if (pg) await pg.end();
   });
@@ -80,54 +80,52 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
     const group = await createTestGroupWithMembers(alice, [bob]);
     groupId = group.id;
 
-    // Draft expense, total 2 cents.
-    const { data: expense, error: expError } = await adminClient!
-      .from("expenses")
-      .insert({
+    // Draft expense, total 2 cents: alice share 1 + pays 1, bob zero
+    // share + pays 1, guest share 1. Created through the real
+    // save_expense_draft_graph RPC (#477's expense-graph mutation-token
+    // guard rejects direct table writes).
+    const creatorClient = authenticateAs(alice);
+    const { data: saveResult, error: saveError } = await creatorClient.rpc("save_expense_draft_graph", {
+      p_expense: {
         group_id: groupId,
-        creator_id: alice.id,
         title: "#468 claim fixture [1,0,g1]/[1,1]",
+        merchant_name: null,
         expense_type: "single_amount",
         total_amount: 2,
-        service_fee_percent: 0,
+        service_fee_basis_points: 0,
         fixed_fees: 0,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-    if (expError || !expense) throw new Error(`create expense: ${expError?.message}`);
-    expenseId = expense.id;
+      },
+      p_items: [],
+      p_shares: [
+        { user_id: alice.id, share_amount_cents: 1 },
+        { user_id: bob.id, share_amount_cents: 0 },
+      ],
+      p_payers: [
+        { user_id: alice.id, amount_cents: 1 },
+        { user_id: bob.id, amount_cents: 1 },
+      ],
+      p_guests: [{ local_id: "g1", display_name: "Future carol" }],
+      p_guest_shares: [{ local_id: "g1", share_amount_cents: 1 }],
+      p_participant_order: [],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: crypto.randomUUID(),
+    });
+    if (saveError || !saveResult) throw new Error(`create expense: ${saveError?.message}`);
+
+    const saved = saveResult as { id: string; graph_revision: number };
+    expenseId = saved.id;
 
     const { data: guest, error: guestError } = await adminClient!
       .from("expense_guests")
-      .insert({ expense_id: expenseId, display_name: "Future carol" })
       .select("id, claim_token")
+      .eq("expense_id", expenseId)
       .single();
-    if (guestError || !guest) throw new Error(`create guest: ${guestError?.message}`);
+    if (guestError || !guest) throw new Error(`load guest: ${guestError?.message}`);
     guestId = guest.id;
 
-    // alice: share 1 + pays 1. bob: zero share + pays 1. guest: share 1.
-    const sharesRes = await adminClient!.from("expense_shares").insert([
-      { expense_id: expenseId, user_id: alice.id, share_amount_cents: 1 },
-      { expense_id: expenseId, user_id: bob.id, share_amount_cents: 0 },
-    ]);
-    const [guestShareRes, payersRes] = await Promise.all([
-      adminClient!.from("expense_guest_shares").insert([
-        { expense_id: expenseId, guest_id: guestId, share_amount_cents: 1 },
-      ]),
-      adminClient!.from("expense_payers").insert([
-        { expense_id: expenseId, user_id: alice.id, amount_cents: 1 },
-        { expense_id: expenseId, user_id: bob.id, amount_cents: 1 },
-      ]),
-    ]);
-    if (sharesRes.error) throw new Error(`shares: ${sharesRes.error.message}`);
-    if (guestShareRes.error)
-      throw new Error(`guest shares: ${guestShareRes.error.message}`);
-    if (payersRes.error) throw new Error(`payers: ${payersRes.error.message}`);
-
-    const creatorClient = authenticateAs(alice);
-    const { error: rpcError } = await creatorClient.rpc("activate_expense", {
+    const { error: rpcError } = await creatorClient.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
+      p_expected_graph_revision: saved.graph_revision,
     });
     if (rpcError) throw new Error(`activate: ${rpcError.message}`);
 
@@ -176,6 +174,10 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
 
   it("claims the guest for exactly 1 cent total (not 2) and applies the edge", async () => {
     // carol is not a participant and not a group member yet.
+    const beforeRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
     const carolClient = authenticateAs(carol);
     const { data, error } = await carolClient.rpc("claim_guest_spot", {
       p_claim_token: guestClaimToken,
@@ -186,6 +188,15 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
       expense_id: expenseId,
       already_claimed: false,
     });
+
+    // #495: "advance graph_revision exactly once from r to r + 1" for a
+    // real claim, so authorized clients' revisioned snapshot refetch
+    // actually observes it.
+    const afterRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
+    expect(afterRev.rows[0].graph_revision).toBe(beforeRev.rows[0].graph_revision + 1);
 
     // The fix: carol owes exactly 1 cent total. The old per-payer
     // ROUND body charged ROUND(1*1/2)=1 to BOTH alice and bob (= 2).
@@ -263,12 +274,24 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
   });
 
   it("is idempotent: re-claiming as the same caller returns already_claimed with no balance change", async () => {
+    const beforeRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
     const carolClient = authenticateAs(carol);
     const { data, error } = await carolClient.rpc("claim_guest_spot", {
       p_claim_token: guestClaimToken,
     });
     expect(error).toBeNull();
     expect(data).toMatchObject({ already_claimed: true });
+
+    // #495: "an exact same-caller replay opens no claim token... does
+    // not increment revision".
+    const afterRev = await pg.query<{ graph_revision: number }>(
+      "select graph_revision from expenses where id = $1",
+      [expenseId],
+    );
+    expect(afterRev.rows[0].graph_revision).toBe(beforeRev.rows[0].graph_revision);
 
     // No further balance change: carol still owes exactly 1 cent total.
     const carolOwesBob = await getBalanceBetween(groupId, carol.id, bob.id);

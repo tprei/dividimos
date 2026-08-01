@@ -24,6 +24,48 @@ import {
 } from "@/test/integration-helpers";
 import { forceLockContentionRace } from "@/test/db-race-barrier";
 
+/**
+ * Issue #477: creates a draft expense through save_expense_draft_graph --
+ * the only path allowed to insert a new expenses row (the guard's expenses
+ * INSERT branch needs a 'new'-sourced token only this RPC can open, and
+ * service_role has no grant on begin_expense_graph_direct_mutation either).
+ */
+async function saveDraft(
+  creator: TestUser,
+  groupId: string,
+  fields: {
+    title: string;
+    totalAmount: number;
+    shares: { userId: string; amount: number }[];
+    payers: { userId: string; amount: number }[];
+  },
+): Promise<{ id: string; graphRevision: number }> {
+  const client = authenticateAs(creator);
+  const { data, error } = await client.rpc("save_expense_draft_graph", {
+    p_expense: {
+      group_id: groupId,
+      title: fields.title,
+      merchant_name: null,
+      expense_type: "single_amount",
+      total_amount: fields.totalAmount,
+      service_fee_basis_points: 0,
+      fixed_fees: 0,
+    },
+    p_items: [],
+    p_shares: fields.shares.map((s) => ({ user_id: s.userId, share_amount_cents: s.amount })),
+    p_payers: fields.payers.map((p) => ({ user_id: p.userId, amount_cents: p.amount })),
+    p_guests: [],
+    p_guest_shares: [],
+    p_participant_order: [],
+    p_expected_graph_revision: 0,
+    p_save_operation_id: crypto.randomUUID(),
+  });
+  if (error || !data) {
+    throw new Error(`Failed to save draft: ${error?.message}`);
+  }
+  const result = data as { id: string; graph_revision: number };
+  return { id: result.id, graphRevision: result.graph_revision };
+}
 describe.skipIf(!isIntegrationTestReady)(
   "Concurrency — race conditions on balances",
   () => {
@@ -74,30 +116,19 @@ describe.skipIf(!isIntegrationTestReady)(
         //   → Bob's debt decreases by 2000
         // Net effect: +3000 - 2000 = +1000, so final = 5000 + 1000 = 6000
 
-        // Prepare the draft expense first (not yet activated)
-        const { adminClient } = await import("@/test/integration-setup");
-        const { data: expense } = await adminClient!
-          .from("expenses")
-          .insert({
-            group_id: groupId,
-            creator_id: alice.id,
-            title: "5.1 concurrent expense",
-            expense_type: "single_amount",
-            total_amount: 6000,
-            status: "draft",
-          })
-          .select("id")
-          .single();
-
-        const expenseId = expense!.id;
-
-        await adminClient!.from("expense_shares").insert([
-          { expense_id: expenseId, user_id: alice.id, share_amount_cents: 3000 },
-          { expense_id: expenseId, user_id: bob.id, share_amount_cents: 3000 },
-        ]);
-        await adminClient!.from("expense_payers").insert([
-          { expense_id: expenseId, user_id: alice.id, amount_cents: 6000 },
-        ]);
+        // Prepare the draft expense first (not yet activated) via the real
+        // save_expense_draft_graph RPC (issue #477's guard rejects direct
+        // table writes).
+        const draft = await saveDraft(alice, groupId, {
+          title: "5.1 concurrent expense",
+          totalAmount: 6000,
+          shares: [
+            { userId: alice.id, amount: 3000 },
+            { userId: bob.id, amount: 3000 },
+          ],
+          payers: [{ userId: alice.id, amount: 6000 }],
+        });
+        const expenseId = draft.id;
 
         // Fire both concurrently, and prove — by holding the exact `groups`
         // row lock both RPCs take, on an independent connection, until both
@@ -120,12 +151,15 @@ describe.skipIf(!isIntegrationTestReady)(
             {
               lockSql: "select id from groups where id = $1 for update",
               lockParams: [groupId],
-              queryContains: ["activate_expense", "record_settlements"],
+              queryContains: ["activate_saved_expense", "record_settlements"],
               expectedRacers: 2,
             },
             () =>
               Promise.allSettled([
-                aliceClient.rpc("activate_expense", { p_expense_id: expenseId }),
+                aliceClient.rpc("activate_saved_expense", {
+                  p_expense_id: expenseId,
+                  p_expected_graph_revision: draft.graphRevision,
+                }),
                 bobClient.rpc("record_settlements", {
                   p_allocations: [{
                     group_id: groupId,
@@ -308,32 +342,22 @@ describe.skipIf(!isIntegrationTestReady)(
           carol.id,
         );
 
-        // Now fire expense activation and settlement concurrently on different pairs
-        const { adminClient } = await import("@/test/integration-setup");
-        const { data: expense } = await adminClient!
-          .from("expenses")
-          .insert({
-            group_id: groupId,
-            creator_id: alice.id,
-            title: "5.3 concurrent expense AB",
-            expense_type: "single_amount",
-            total_amount: 4000,
-            status: "draft",
-          })
-          .select("id")
-          .single();
-
-        await adminClient!.from("expense_shares").insert([
-          { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 2000 },
-          { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 2000 },
-        ]);
-        await adminClient!.from("expense_payers").insert([
-          { expense_id: expense!.id, user_id: alice.id, amount_cents: 4000 },
-        ]);
+        // Now fire expense activation and settlement concurrently on
+        // different pairs. Draft via save_expense_draft_graph (#477 guard).
+        const draft = await saveDraft(alice, groupId, {
+          title: "5.3 concurrent expense AB",
+          totalAmount: 4000,
+          shares: [
+            { userId: alice.id, amount: 2000 },
+            { userId: bob.id, amount: 2000 },
+          ],
+          payers: [{ userId: alice.id, amount: 4000 }],
+        });
 
         const [expenseResult, settlementResult] = await Promise.allSettled([
-          authenticateAs(alice).rpc("activate_expense", {
-            p_expense_id: expense!.id,
+          authenticateAs(alice).rpc("activate_saved_expense", {
+            p_expense_id: draft.id,
+            p_expected_graph_revision: draft.graphRevision,
           }),
           settleDebt({
             caller: dave,
@@ -368,31 +392,20 @@ describe.skipIf(!isIntegrationTestReady)(
         const initialBA = await getBalanceBetween(groupId, bob.id, alice.id);
         const initialCA = await getBalanceBetween(groupId, carol.id, alice.id);
 
-        const { adminClient } = await import("@/test/integration-setup");
-        const { data: expense } = await adminClient!
-          .from("expenses")
-          .insert({
-            group_id: groupId,
-            creator_id: alice.id,
-            title: "5.3 overlapping participants",
-            expense_type: "single_amount",
-            total_amount: 9000,
-            status: "draft",
-          })
-          .select("id")
-          .single();
-
-        await adminClient!.from("expense_shares").insert([
-          { expense_id: expense!.id, user_id: alice.id, share_amount_cents: 3000 },
-          { expense_id: expense!.id, user_id: bob.id, share_amount_cents: 3000 },
-          { expense_id: expense!.id, user_id: carol.id, share_amount_cents: 3000 },
-        ]);
-        await adminClient!.from("expense_payers").insert([
-          { expense_id: expense!.id, user_id: alice.id, amount_cents: 9000 },
-        ]);
+        const draft = await saveDraft(alice, groupId, {
+          title: "5.3 overlapping participants",
+          totalAmount: 9000,
+          shares: [
+            { userId: alice.id, amount: 3000 },
+            { userId: bob.id, amount: 3000 },
+            { userId: carol.id, amount: 3000 },
+          ],
+          payers: [{ userId: alice.id, amount: 9000 }],
+        });
         const [expResult, settleResult] = await Promise.allSettled([
-          authenticateAs(alice).rpc("activate_expense", {
-            p_expense_id: expense!.id,
+          authenticateAs(alice).rpc("activate_saved_expense", {
+            p_expense_id: draft.id,
+            p_expected_graph_revision: draft.graphRevision,
           }),
           settleDebt({
             caller: bob,
@@ -405,11 +418,9 @@ describe.skipIf(!isIntegrationTestReady)(
 
         expect(expResult.status).toBe("fulfilled");
         expect(settleResult.status).toBe("fulfilled");
-
         if (expResult.status === "fulfilled") {
           expect(expResult.value.error).toBeNull();
         }
-
         // Bob-Alice: +3000 from expense, -1000 from settlement = net +2000
         const finalBA = await getBalanceBetween(groupId, bob.id, alice.id);
         expect(finalBA).toBe(initialBA + 3000 - 1000);
@@ -478,58 +489,37 @@ describe.skipIf(!isIntegrationTestReady)(
       it("two expenses involving the same pair accumulate correctly", async () => {
         const initialBA = await getBalanceBetween(groupId, bob.id, alice.id);
 
-        // Prepare two draft expenses both affecting Alice-Bob
-        const { adminClient } = await import("@/test/integration-setup");
-
-        const [{ data: exp1 }, { data: exp2 }] = await Promise.all([
-          adminClient!
-            .from("expenses")
-            .insert({
-              group_id: groupId,
-              creator_id: alice.id,
-              title: "5.5 expense A",
-              expense_type: "single_amount",
-              total_amount: 2000,
-              status: "draft",
-            })
-            .select("id")
-            .single(),
-          adminClient!
-            .from("expenses")
-            .insert({
-              group_id: groupId,
-              creator_id: alice.id,
-              title: "5.5 expense B",
-              expense_type: "single_amount",
-              total_amount: 3000,
-              status: "draft",
-            })
-            .select("id")
-            .single(),
-        ]);
-
-        await adminClient!.from("expense_shares").insert([
-          { expense_id: exp1!.id, user_id: alice.id, share_amount_cents: 1000 },
-          { expense_id: exp1!.id, user_id: bob.id, share_amount_cents: 1000 },
-        ]);
-        await adminClient!.from("expense_payers").insert([
-          { expense_id: exp1!.id, user_id: alice.id, amount_cents: 2000 },
-        ]);
-        await adminClient!.from("expense_shares").insert([
-          { expense_id: exp2!.id, user_id: alice.id, share_amount_cents: 1500 },
-          { expense_id: exp2!.id, user_id: bob.id, share_amount_cents: 1500 },
-        ]);
-        await adminClient!.from("expense_payers").insert([
-          { expense_id: exp2!.id, user_id: alice.id, amount_cents: 3000 },
+        // (created via the real save_expense_draft_graph RPC; #477 guard).
+        const [draft1, draft2] = await Promise.all([
+          saveDraft(alice, groupId, {
+            title: "5.5 expense A",
+            totalAmount: 2000,
+            shares: [
+              { userId: alice.id, amount: 1000 },
+              { userId: bob.id, amount: 1000 },
+            ],
+            payers: [{ userId: alice.id, amount: 2000 }],
+          }),
+          saveDraft(alice, groupId, {
+            title: "5.5 expense B",
+            totalAmount: 3000,
+            shares: [
+              { userId: alice.id, amount: 1500 },
+              { userId: bob.id, amount: 1500 },
+            ],
+            payers: [{ userId: alice.id, amount: 3000 }],
+          }),
         ]);
 
         // Activate both concurrently
         const [r1, r2] = await Promise.allSettled([
-          authenticateAs(alice).rpc("activate_expense", {
-            p_expense_id: exp1!.id,
+          authenticateAs(alice).rpc("activate_saved_expense", {
+            p_expense_id: draft1.id,
+            p_expected_graph_revision: draft1.graphRevision,
           }),
-          authenticateAs(alice).rpc("activate_expense", {
-            p_expense_id: exp2!.id,
+          authenticateAs(alice).rpc("activate_saved_expense", {
+            p_expense_id: draft2.id,
+            p_expected_graph_revision: draft2.graphRevision,
           }),
         ]);
 
@@ -618,28 +608,18 @@ describe.skipIf(!isIntegrationTestReady)(
         const [eve, frank] = await createTestUsers(2, { name: "5.7-leave" });
         const group = await createTestGroupWithMembers(eve, [frank]);
 
-        const { adminClient } = await import("@/test/integration-setup");
-        const { data: expense } = await adminClient!
-          .from("expenses")
-          .insert({
-            group_id: group.id,
-            creator_id: eve.id,
-            title: "5.7 leave-vs-activate expense",
-            expense_type: "single_amount",
-            total_amount: 4000,
-            status: "draft",
-          })
-          .select("id")
-          .single();
-        const expenseId = expense!.id;
-
-        await adminClient!.from("expense_shares").insert([
-          { expense_id: expenseId, user_id: eve.id, share_amount_cents: 2000 },
-          { expense_id: expenseId, user_id: frank.id, share_amount_cents: 2000 },
-        ]);
-        await adminClient!.from("expense_payers").insert([
-          { expense_id: expenseId, user_id: eve.id, amount_cents: 4000 },
-        ]);
+        // Draft via save_expense_draft_graph (#477 guard rejects direct
+        // table writes).
+        const draft = await saveDraft(eve, group.id, {
+          title: "5.7 leave-vs-activate expense",
+          totalAmount: 4000,
+          shares: [
+            { userId: eve.id, amount: 2000 },
+            { userId: frank.id, amount: 2000 },
+          ],
+          payers: [{ userId: eve.id, amount: 4000 }],
+        });
+        const expenseId = draft.id;
 
         const eveClient = authenticateAs(eve);
         const frankClient = authenticateAs(frank);
@@ -655,13 +635,16 @@ describe.skipIf(!isIntegrationTestReady)(
             {
               lockSql: "select id from groups where id = $1 for update",
               lockParams: [group.id],
-              queryContains: ["leave_group", "activate_expense"],
+              queryContains: ["leave_group", "activate_saved_expense"],
               expectedRacers: 2,
             },
             () =>
               Promise.allSettled([
                 frankClient.rpc("leave_group", { p_group_id: group.id }),
-                eveClient.rpc("activate_expense", { p_expense_id: expenseId }),
+                eveClient.rpc("activate_saved_expense", {
+                  p_expense_id: expenseId,
+                  p_expected_graph_revision: draft.graphRevision,
+                }),
               ]),
           );
 
@@ -679,6 +662,7 @@ describe.skipIf(!isIntegrationTestReady)(
         // balance and fail. Never both, never neither.
         expect(leaveSucceeded).not.toBe(activateSucceeded);
 
+        const { adminClient } = await import("@/test/integration-setup");
         const { data: membership } = await adminClient!
           .from("group_members")
           .select("status")
@@ -707,28 +691,16 @@ describe.skipIf(!isIntegrationTestReady)(
         const [grace, heidi] = await createTestUsers(2, { name: "5.7-remove" });
         const group = await createTestGroupWithMembers(grace, [heidi]);
 
-        const { adminClient } = await import("@/test/integration-setup");
-        const { data: expense } = await adminClient!
-          .from("expenses")
-          .insert({
-            group_id: group.id,
-            creator_id: grace.id,
-            title: "5.7 remove-vs-activate expense",
-            expense_type: "single_amount",
-            total_amount: 3000,
-            status: "draft",
-          })
-          .select("id")
-          .single();
-        const expenseId = expense!.id;
-
-        await adminClient!.from("expense_shares").insert([
-          { expense_id: expenseId, user_id: grace.id, share_amount_cents: 1500 },
-          { expense_id: expenseId, user_id: heidi.id, share_amount_cents: 1500 },
-        ]);
-        await adminClient!.from("expense_payers").insert([
-          { expense_id: expenseId, user_id: grace.id, amount_cents: 3000 },
-        ]);
+        const draft = await saveDraft(grace, group.id, {
+          title: "5.7 remove-vs-activate expense",
+          totalAmount: 3000,
+          shares: [
+            { userId: grace.id, amount: 1500 },
+            { userId: heidi.id, amount: 1500 },
+          ],
+          payers: [{ userId: grace.id, amount: 3000 }],
+        });
+        const expenseId = draft.id;
 
         const graceClient = authenticateAs(grace);
 
@@ -738,7 +710,7 @@ describe.skipIf(!isIntegrationTestReady)(
             {
               lockSql: "select id from groups where id = $1 for update",
               lockParams: [group.id],
-              queryContains: ["remove_group_member", "activate_expense"],
+              queryContains: ["remove_group_member", "activate_saved_expense"],
               expectedRacers: 2,
             },
             () =>
@@ -747,7 +719,10 @@ describe.skipIf(!isIntegrationTestReady)(
                   p_group_id: group.id,
                   p_user_id: heidi.id,
                 }),
-                graceClient.rpc("activate_expense", { p_expense_id: expenseId }),
+                graceClient.rpc("activate_saved_expense", {
+                  p_expense_id: expenseId,
+                  p_expected_graph_revision: draft.graphRevision,
+                }),
               ]),
           );
 
@@ -760,6 +735,7 @@ describe.skipIf(!isIntegrationTestReady)(
         const activateSucceeded = activateResult.value.error === null;
         expect(removeSucceeded).not.toBe(activateSucceeded);
 
+        const { adminClient } = await import("@/test/integration-setup");
         const { data: membership } = await adminClient!
           .from("group_members")
           .select("status")
@@ -775,6 +751,158 @@ describe.skipIf(!isIntegrationTestReady)(
           expect(membership!.status).toBe("accepted");
           const balance = await getBalanceBetween(group.id, heidi.id, grace.id);
           expect(balance).toBe(1500);
+        }
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // 5.8 — #495 checklist item 20: two-connection stale Bob-payer PST08
+    //       barrier test. Two racing save_expense_draft_graph replacements
+    //       at the same expected revision: one removes Bob (payer)
+    //       entirely and reallocates to Alice; the other resubmits Bob's
+    //       unchanged share/payer state, representing a stale tab that
+    //       never observed the removal. Exactly one wins; the loser gets
+    //       PST08/stale_graph_revision with zero effect, and the winner's
+    //       payload is exactly what persists -- proving the same CAS
+    //       mechanism proven generically elsewhere in this suite also
+    //       rejects a stale write whose payload still names a removed
+    //       payer, not just an unrelated stale field.
+    // -----------------------------------------------------------------------
+
+    describe("5.8 — concurrent draft replacement: Bob removal vs stale Bob-payer resubmit", () => {
+      it("exactly one save wins; the loser gets PST08 and the persisted graph matches only the winner", async () => {
+        const [ivy, jack] = await createTestUsers(2, { name: "5.8-stale-bob" });
+        const group = await createTestGroupWithMembers(ivy, [jack]);
+
+        const draft = await saveDraft(ivy, group.id, {
+          title: "5.8 stale Bob-payer fixture",
+          totalAmount: 6000,
+          shares: [
+            { userId: ivy.id, amount: 3000 },
+            { userId: jack.id, amount: 3000 },
+          ],
+          payers: [{ userId: jack.id, amount: 6000 }],
+        });
+        const expenseId = draft.id;
+        const baseRevision = draft.graphRevision;
+
+        const ivyClient = authenticateAs(ivy);
+
+        const removalPayload = {
+          p_expense: {
+            id: expenseId,
+            group_id: group.id,
+            title: "5.8 stale Bob-payer fixture",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 6000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [{ user_id: ivy.id, share_amount_cents: 6000 }],
+          p_payers: [{ user_id: ivy.id, amount_cents: 6000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: baseRevision,
+          p_save_operation_id: crypto.randomUUID(),
+        };
+        const staleBobPayload = {
+          p_expense: {
+            id: expenseId,
+            group_id: group.id,
+            title: "5.8 stale Bob-payer fixture",
+            merchant_name: null,
+            expense_type: "single_amount",
+            total_amount: 6000,
+            service_fee_basis_points: 0,
+            fixed_fees: 0,
+          },
+          p_items: [],
+          p_shares: [
+            { user_id: ivy.id, share_amount_cents: 3000 },
+            { user_id: jack.id, share_amount_cents: 3000 },
+          ],
+          p_payers: [{ user_id: jack.id, amount_cents: 6000 }],
+          p_guests: [],
+          p_guest_shares: [],
+          p_participant_order: [],
+          p_expected_graph_revision: baseRevision,
+          p_save_operation_id: crypto.randomUUID(),
+        };
+
+        const { result: [removeResult, staleResult], contention } =
+          await forceLockContentionRace(
+            process.env.SUPABASE_DB_URL!,
+            {
+              lockSql: "select id from groups where id = $1 for update",
+              lockParams: [group.id],
+              queryContains: ["save_expense_draft_graph"],
+              expectedRacers: 2,
+            },
+            () =>
+              Promise.allSettled([
+                ivyClient.rpc("save_expense_draft_graph", removalPayload),
+                ivyClient.rpc("save_expense_draft_graph", staleBobPayload),
+              ]),
+          );
+
+        expect(contention.observed).toBe(true);
+        if (removeResult.status !== "fulfilled" || staleResult.status !== "fulfilled") {
+          throw new Error("both RPC calls must resolve (not reject) regardless of ordering");
+        }
+
+        const removalWon = removeResult.value.error === null;
+        const staleWon = staleResult.value.error === null;
+        // Exactly one save wins; never both, never neither.
+        expect(removalWon).not.toBe(staleWon);
+        if (removalWon) {
+          expect(staleResult.value.error!.message).toMatch(/stale_graph_revision/);
+        } else {
+          expect(removeResult.value.error!.message).toMatch(/stale_graph_revision/);
+        }
+
+        const { adminClient } = await import("@/test/integration-setup");
+        const [{ data: shareRows }, { data: payerRows }, { data: expenseRow }] = await Promise.all([
+          adminClient!
+            .from("expense_shares")
+            .select("user_id, share_amount_cents")
+            .eq("expense_id", expenseId),
+          adminClient!
+            .from("expense_payers")
+            .select("user_id, amount_cents")
+            .eq("expense_id", expenseId),
+          adminClient!
+            .from("expenses")
+            .select("graph_revision")
+            .eq("id", expenseId)
+            .single(),
+        ]);
+
+        // Revision advances exactly once regardless of which side won.
+        expect(expenseRow!.graph_revision).toBe(baseRevision + 1);
+
+        if (removalWon) {
+          // Exact readback equals the removal's graph: Bob is gone
+          // entirely, no mixed children from the losing stale payload.
+          expect(shareRows).toHaveLength(1);
+          expect(shareRows![0]).toMatchObject({ user_id: ivy.id, share_amount_cents: 6000 });
+          expect(payerRows).toHaveLength(1);
+          expect(payerRows![0]).toMatchObject({ user_id: ivy.id, amount_cents: 6000 });
+        } else {
+          // The stale-but-first-to-commit resubmit won: Bob's original
+          // graph persists byte-for-byte, and the losing removal made
+          // zero effect (not a partial/mixed application of either).
+          expect(shareRows).toHaveLength(2);
+          expect(shareRows).toEqual(
+            expect.arrayContaining([
+              { user_id: ivy.id, share_amount_cents: 3000 },
+              { user_id: jack.id, share_amount_cents: 3000 },
+            ]),
+          );
+          expect(payerRows).toHaveLength(1);
+          expect(payerRows![0]).toMatchObject({ user_id: jack.id, amount_cents: 6000 });
         }
       });
     });

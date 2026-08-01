@@ -68,6 +68,7 @@ export function CreatorDraftView({
           expenseType: fresh.expenseType,
           totalAmount: fresh.totalAmount,
           serviceFeePercent: fresh.serviceFeePercent,
+          serviceFeeBasisPoints: fresh.serviceFeeBasisPoints,
           fixedFees: fresh.fixedFees,
           status: fresh.status,
           createdAt: fresh.createdAt,

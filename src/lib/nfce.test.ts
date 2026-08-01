@@ -100,7 +100,7 @@ describe("parseSefazPage", () => {
       totalCents: 8990,
     });
     expect(result!.totalCents).toBe(11570);
-    expect(result!.serviceFeePercent).toBe(0);
+    expect(result!.serviceFeeBasisPoints).toBe(0);
   });
 
   it("extracts items from div-based layout", () => {
@@ -158,7 +158,7 @@ describe("parseSefazPage", () => {
     expect(result!.totalCents).toBe(7130);
   });
 
-  it("calculates total from items when page total is missing", () => {
+  it("returns null when the page total is missing (never defaults to the item sum, issue #477)", () => {
     const html = `
       <html><body>
         <table class="toggable">
@@ -178,9 +178,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
-    expect(result).not.toBeNull();
-    expect(result!.totalCents).toBe(350 + 900);
+    expect(parseSefazPage(html)).toBeNull();
   });
 
   it("handles Razão Social merchant extraction", () => {
@@ -195,6 +193,7 @@ describe("parseSefazPage", () => {
             <td>8,00</td>
           </tr>
         </table>
+        <div>VALOR TOTAL R$ 8,00</div>
       </body></html>
     `;
 
@@ -214,6 +213,7 @@ describe("parseSefazPage", () => {
             <td>10,99</td>
           </tr>
         </table>
+        <div>VALOR TOTAL R$ 10,99</div>
       </body></html>
     `;
 
@@ -222,7 +222,7 @@ describe("parseSefazPage", () => {
     expect(result!.items[0].description).toBe("Coca Cola 2L");
   });
 
-  it("serviceFeePercent is 0 when no service fee present", () => {
+  it("serviceFeeBasisPoints is 0 when no service fee present", () => {
     const html = `
       <html><body>
         <table class="toggable">
@@ -233,15 +233,16 @@ describe("parseSefazPage", () => {
             <td>10,00</td>
           </tr>
         </table>
+        <div>VALOR TOTAL R$ 10,00</div>
       </body></html>
     `;
 
     const result = parseSefazPage(html);
     expect(result).not.toBeNull();
-    expect(result!.serviceFeePercent).toBe(0);
+    expect(result!.serviceFeeBasisPoints).toBe(0);
   });
 
-  it("extracts service fee percentage from explicit text", () => {
+  it("extracts service fee basis points from an explicit percentage", () => {
     const html = `
       <html><body>
         <table class="toggable">
@@ -259,10 +260,10 @@ describe("parseSefazPage", () => {
 
     const result = parseSefazPage(html);
     expect(result).not.toBeNull();
-    expect(result!.serviceFeePercent).toBe(10);
+    expect(result!.serviceFeeBasisPoints).toBe(1000);
   });
 
-  it("extracts service fee percentage from lowercase text", () => {
+  it("extracts service fee basis points from lowercase text", () => {
     const html = `
       <html><body>
         <table class="toggable">
@@ -274,15 +275,16 @@ describe("parseSefazPage", () => {
           </tr>
         </table>
         <div>taxa de servico: 12%</div>
+        <div>VALOR TOTAL R$ 89,90</div>
       </body></html>
     `;
 
     const result = parseSefazPage(html);
     expect(result).not.toBeNull();
-    expect(result!.serviceFeePercent).toBe(12);
+    expect(result!.serviceFeeBasisPoints).toBe(1200);
   });
 
-  it("derives service fee percentage from monetary value and subtotal", () => {
+  it("never derives a service fee percentage from a monetary value divided by subtotal (issue #477)", () => {
     const html = `
       <html><body>
         <table class="toggable">
@@ -307,7 +309,10 @@ describe("parseSefazPage", () => {
 
     const result = parseSefazPage(html);
     expect(result).not.toBeNull();
-    expect(result!.serviceFeePercent).toBe(10);
+    // No explicit "10%" text on the page - only a monetary fee value and a
+    // subtotal. The old code derived 5,00/50,00 = 10%; that ratio is never
+    // printed as ground truth, so the fix must not fabricate it.
+    expect(result!.serviceFeeBasisPoints).toBe(0);
   });
 });
 

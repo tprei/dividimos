@@ -19,7 +19,7 @@ function simulateScanConfirm(result: ReceiptOcrResult) {
     result.merchant || undefined,
   );
   store.updateExpense({
-    serviceFeePercent: result.serviceFeePercent || 0,
+    serviceFeePercent: (result.serviceFeeBasisPoints || 0) / 100,
   });
 
   for (const item of result.items) {
@@ -48,7 +48,8 @@ const sampleResult: ReceiptOcrResult = {
       totalCents: 4500,
     },
   ],
-  serviceFeePercent: 10,
+  serviceFeeBasisPoints: 1000,
+  fixedFeesCents: 0,
   totalCents: 6900,
 };
 
@@ -112,7 +113,7 @@ describe("scan confirm → bill store integration", () => {
   it("handles zero service fee", () => {
     simulateScanConfirm({
       ...sampleResult,
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
     });
     const { expense } = useBillStore.getState();
     expect(expense!.serviceFeePercent).toBe(0);
@@ -129,7 +130,8 @@ describe("scan confirm → bill store integration", () => {
           totalCents: 500,
         },
       ],
-      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
       totalCents: 500,
     });
     const { items } = useBillStore.getState();

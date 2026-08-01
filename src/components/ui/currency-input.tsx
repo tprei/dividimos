@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MAX_EXPENSE_CENTS } from "@/lib/expense-money";
 import { cn } from "@/lib/utils";
 
@@ -8,11 +8,10 @@ interface CurrencyInputProps {
   valueCents: number;
   onChangeCents: (cents: number) => void;
   maxCents?: number;
+  onValidityChange?: (valid: boolean) => void;
   disabled?: boolean;
   className?: string;
   autoFocus?: boolean;
-  "aria-label"?: string;
-  "data-testid"?: string;
 }
 
 const minorUnitsPerReal = BigInt(100);
@@ -57,40 +56,67 @@ export function CurrencyInput({
   valueCents,
   onChangeCents,
   maxCents,
+  onValidityChange,
   disabled = false,
   className,
   autoFocus,
   ...rest
 }: CurrencyInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
 
-  const clamp = useCallback(
-    (cents: number) => {
-      const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
-      return Math.min(Math.max(0, cents), upper);
+  // #477: candidates outside [0, upper] are never committed via
+  // onChangeCents (no store mutation) — they are held here as a local,
+  // uncommitted display override so the user can see what they typed.
+  // A valid candidate clears the override and commits normally. No
+  // clamped maximum ever appears.
+  const [rawOverride, setRawOverride] = useState<string | null>(null);
+
+  // A prop-driven value change (hydration/reset/reload) always restores
+  // canonical valid text, discarding any stale uncommitted override.
+  useEffect(() => {
+    setRawOverride(null);
+  }, [valueCents]);
+
+  useEffect(() => {
+    const isValid = rawOverride === null;
+    onValidityChange?.(isValid);
+  }, [rawOverride, onValidityChange]);
+
+  const commitOrOverride = useCallback(
+    (candidateCents: number, displayText: string) => {
+      if (candidateCents >= 0 && candidateCents <= upper) {
+        setRawOverride(null);
+        onChangeCents(candidateCents);
+      } else {
+        setRawOverride(displayText);
+      }
     },
-    [maxCents],
+    [upper, onChangeCents],
   );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (disabled) return;
 
+      const base = rawOverride !== null ? (parseBrazilianToCents(rawOverride) ?? valueCents) : valueCents;
+
       if (e.key === "Backspace") {
         e.preventDefault();
-        onChangeCents(clamp(Math.floor(valueCents / 10)));
+        const next = Math.max(0, Math.floor(base / 10));
+        commitOrOverride(next, formatCentsDisplay(next));
         return;
       }
 
       if (e.key >= "0" && e.key <= "9") {
         e.preventDefault();
         const digit = parseInt(e.key, 10);
-        const next = valueCents * 10 + digit;
-        onChangeCents(clamp(next));
+        const next = base * 10 + digit;
+        commitOrOverride(next, formatCentsDisplay(next));
         return;
       }
     },
-    [valueCents, onChangeCents, clamp, disabled],
+    [valueCents, rawOverride, disabled, commitOrOverride],
   );
 
   const handleChange = useCallback(
@@ -98,10 +124,10 @@ export function CurrencyInput({
       const raw = e.target.value;
       const cents = parseBrazilianToCents(raw);
       if (cents !== null) {
-        onChangeCents(clamp(cents));
+        commitOrOverride(cents, raw);
       }
     },
-    [onChangeCents, clamp],
+    [commitOrOverride],
   );
 
   const handleFocus = useCallback(() => {
@@ -119,26 +145,30 @@ export function CurrencyInput({
       const text = e.clipboardData.getData("text");
       const cents = parseBrazilianToCents(text);
       if (cents !== null) {
-        onChangeCents(clamp(cents));
+        commitOrOverride(cents, text);
       }
     },
-    [onChangeCents, clamp],
+    [commitOrOverride],
   );
+
+  const isInvalid = rawOverride !== null;
 
   return (
     <input
       ref={inputRef}
       type="text"
       inputMode="decimal"
-      value={formatCentsDisplay(valueCents)}
+      value={rawOverride ?? formatCentsDisplay(valueCents)}
       onKeyDown={handleKeyDown}
       onChange={handleChange}
       onFocus={handleFocus}
       onPaste={handlePaste}
       disabled={disabled}
       autoFocus={autoFocus}
+      aria-invalid={isInvalid || undefined}
       className={cn(
         "bg-transparent text-center tabular-nums outline-none placeholder:text-muted-foreground/40 disabled:pointer-events-none disabled:opacity-50",
+        isInvalid && "text-destructive",
         className,
       )}
       {...rest}

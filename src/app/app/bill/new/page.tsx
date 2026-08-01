@@ -41,12 +41,18 @@ import type { NfceQrResult } from "@/lib/nfce-qr";
 import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
-import { saveExpenseDraft, loadExpense } from "@/lib/supabase/expense-actions";
+import { saveExpenseDraft, loadExpense, resolveExpenseGraphSaveResult } from "@/lib/supabase/expense-actions";
+import {
+  setPendingSaveOperation,
+  clearPendingSaveOperation,
+  clearPendingSaveOperationIfMatches,
+  peekPendingSaveOperation,
+} from "@/lib/supabase/pending-save-operation";
 import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
 import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
-import { activateExpense } from "@/lib/supabase/expense-rpc";
-import { useBillStore } from "@/stores/bill-store";
+import { activateExpense, loadExpenseGraphSnapshot } from "@/lib/supabase/expense-rpc";
+import { useBillStore, mapLoadedGuestsForEditHydration } from "@/stores/bill-store";
 import { useShallow } from "zustand/react/shallow";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -102,6 +108,7 @@ function NewBillPageContent() {
       payers: s.payers,
       splits: s.splits,
       billSplits: s.billSplits,
+      draftClaimProtectedUserIds: s.draftClaimProtectedUserIds,
       totalAmountInput: s.totalAmountInput,
       setCurrentUser: s.setCurrentUser,
       createExpense: s.createExpense,
@@ -133,7 +140,16 @@ function NewBillPageContent() {
   const [step, setStep] = useState<Step>("type");
   const [title, setTitle] = useState("");
   const [merchantName, setMerchantName] = useState("");
-  const [serviceFee, setServiceFee] = useState("10");
+  // #477: default "10" is only for a genuinely fresh manual entry, where
+  // it is visibly configured in the itemized info-step form. A session
+  // already hydrated before this component mounted (voice/chat source via
+  // group-detail-content.tsx's navigate-then-render flow) must reflect
+  // that source's real fee (never a source schema field) instead of
+  // silently overriding it with the manual default.
+  const [serviceFee, setServiceFee] = useState(() => {
+    const existing = useBillStore.getState().expense;
+    return existing ? String(existing.serviceFeePercent).replace(".", ",") : "10";
+  });
   const [fixedFees, setFixedFees] = useState("");
   const [navigating, setNavigating] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -289,7 +305,7 @@ function NewBillPageContent() {
         result.merchant || undefined,
       );
       store.updateExpense({
-        serviceFeePercent: result.serviceFeePercent || 0,
+        serviceFeePercent: (result.serviceFeeBasisPoints || 0) / 100,
       });
 
       for (const item of result.items) {
@@ -304,7 +320,7 @@ function NewBillPageContent() {
 
     setTitle(result.merchant || "Nota escaneada");
     setMerchantName(result.merchant || "");
-    setServiceFee(String(result.serviceFeePercent || 0));
+    setServiceFee(String((result.serviceFeeBasisPoints || 0) / 100));
     setStep("participants");
   }, [authUser, store]);
 
@@ -398,7 +414,10 @@ function NewBillPageContent() {
     setTitle(result.title);
     setMerchantName(result.merchantName || "");
     if (result.expenseType === "itemized") {
-      setServiceFee("10");
+      // #477: hydrateFromVoice already set the store's fee to 0 (voice
+      // results carry no fee data) - mirror that here instead of
+      // re-introducing the manual-entry 10% default.
+      setServiceFee("0");
     }
     setStep("participants");
   }, [authUser, store, selectedGroupId]);
@@ -410,23 +429,57 @@ function NewBillPageContent() {
 
     const storeState = useBillStore.getState();
     if (storeState.expense?.id === draftId) {
-      editLoadedRef.current = true;
-      setIsEditing(true);
-      setEditDraftId(draftId);
-      setBillType(storeState.expense.expenseType);
-      setTitle(storeState.expense.title);
-      setMerchantName(storeState.expense.merchantName ?? "");
-      setServiceFee(String(storeState.expense.serviceFeePercent || 10));
-      setFixedFees(storeState.expense.fixedFees ? String(storeState.expense.fixedFees / 100) : "");
-      setRemoteBillId(draftId);
-      setStep("participants");
+      // #477: the store already holds this draft's editable rows from
+      // an earlier mount in the same SPA session (the module-level
+      // Zustand store survives client-side navigation even though
+      // draftRevisionRef is a fresh per-mount ref defaulting to zero).
+      // Fetching only the snapshot's graph_revision -- not re-hydrating
+      // the already-correct rows -- keeps editable rows and the
+      // graph-revision ref paired to the same persisted state instead
+      // of silently combining current rows with a stale/zero revision
+      // on the next save.
+      const draftExpense = storeState.expense;
+      (async () => {
+        const snapshotResult = await loadExpenseGraphSnapshot(draftId);
+        if (editLoadedRef.current) return;
+        if (!snapshotResult || "error" in snapshotResult) {
+          toast.error("Não foi possível carregar este rascunho para edição. Tente novamente.");
+          return;
+        }
+        editLoadedRef.current = true;
+        draftRevisionRef.current = snapshotResult.graphRevision;
+        setIsEditing(true);
+        setEditDraftId(draftId);
+        setBillType(draftExpense.expenseType);
+        setTitle(draftExpense.title);
+        setMerchantName(draftExpense.merchantName ?? "");
+        setServiceFee(String(draftExpense.serviceFeePercent));
+        setFixedFees(draftExpense.fixedFees ? String(draftExpense.fixedFees / 100) : "");
+        setRemoteBillId(draftId);
+        setStep("participants");
+      })();
       return;
     }
 
     (async () => {
-      const loaded = await loadExpense(draftId);
+      const [loaded, snapshotResult] = await Promise.all([
+        loadExpense(draftId),
+        loadExpenseGraphSnapshot(draftId),
+      ]);
       if (!loaded || editLoadedRef.current) return;
+      // #477/#495: the wizard cannot safely resume editing without the
+      // current graph_revision -- proceeding with a stale/zero ref would
+      // make the very next save fail with PST08 (stale_graph_revision).
+      // load_expense_graph_snapshot is also the only loader that surfaces
+      // draft_claim_protected_user_ids (loadExpense's direct table reads
+      // don't), so both requirements share this one guard.
+      if (!snapshotResult || "error" in snapshotResult) {
+        toast.error("Não foi possível carregar este rascunho para edição. Tente novamente.");
+        return;
+      }
       editLoadedRef.current = true;
+      draftRevisionRef.current = snapshotResult.graphRevision;
+      const draftClaimProtectedUserIds = [...snapshotResult.draftClaimProtectedUserIds];
 
       const participants = loaded.shares.map((s) => ({
         id: s.user.id,
@@ -465,6 +518,7 @@ function NewBillPageContent() {
         merchantName: loaded.merchantName,
         status: loaded.status,
         serviceFeePercent: loaded.serviceFeePercent,
+        serviceFeeBasisPoints: loaded.serviceFeeBasisPoints,
         fixedFees: loaded.fixedFees,
         totalAmount: loaded.totalAmount,
         createdAt: loaded.createdAt,
@@ -472,6 +526,11 @@ function NewBillPageContent() {
       };
 
       store.setCurrentUser(authUser);
+      const { guests: guestsForStore, guestBillSplits } = mapLoadedGuestsForEditHydration(
+        loaded.guests,
+        loaded.expenseType,
+      );
+
       useBillStore.getState().hydrateFromServer({
         expense: expenseForStore,
         items: loaded.items.map((item) => ({
@@ -479,14 +538,19 @@ function NewBillPageContent() {
           expenseId: loaded.id,
         })),
         participants,
+        guests: guestsForStore,
         payers: loaded.payers.map((p) => ({ expenseId: loaded.id, userId: p.userId, amountCents: p.amountCents })),
+        draftClaimProtectedUserIds,
         billSplits: loaded.expenseType === "single_amount"
-          ? loaded.shares.map((s) => ({
-              userId: s.userId,
-              splitType: "fixed" as const,
-              value: s.shareAmountCents,
-              computedAmountCents: s.shareAmountCents,
-            }))
+          ? [
+              ...loaded.shares.map((s) => ({
+                userId: s.userId,
+                splitType: "fixed" as const,
+                value: s.shareAmountCents,
+                computedAmountCents: s.shareAmountCents,
+              })),
+              ...guestBillSplits,
+            ]
           : [],
       });
 
@@ -495,7 +559,7 @@ function NewBillPageContent() {
       setBillType(loaded.expenseType);
       setTitle(loaded.title);
       setMerchantName(loaded.merchantName ?? "");
-      setServiceFee(String(loaded.serviceFeePercent || 10));
+      setServiceFee(String(loaded.serviceFeePercent));
       setFixedFees(loaded.fixedFees ? String(loaded.fixedFees / 100) : "");
       setRemoteBillId(draftId);
 
@@ -606,6 +670,51 @@ function NewBillPageContent() {
       setStep("participants");
     }
   }, [searchParams]);
+
+  // Durable save-operation wrapper: persists to localStorage before the RPC
+  // call and clears after, enabling crash/restart recovery (#477 Slice 5).
+  const durableSaveDraft = useCallback(
+    async (params: Parameters<typeof saveExpenseDraft>[0]) => {
+      setPendingSaveOperation(params.saveOperationId, params.groupId);
+      const result = await saveExpenseDraft(params);
+      // Only a definitive server response -- success or a typed
+      // rejection -- proves this attempt is resolved; clear the durable
+      // record here. A thrown transport failure means the response was
+      // lost, not that the request failed: leaving the record intact
+      // lets the mount-time reconciliation effect (or a later retry)
+      // resolve it via resolveExpenseGraphSaveResult instead of silently
+      // discarding recovery data for exactly the "response loss" case
+      // it exists to protect (#477 Slice 5). A `finally` here would have
+      // cleared it unconditionally, including on throw.
+      clearPendingSaveOperation();
+      return result;
+    },
+    [],
+  );
+
+  // Mount-time reconciliation: if a previous save response was lost (crash,
+  // tab close, network error), resolve the pending operation to recover
+  // the expense ID without a duplicate save.
+  useEffect(() => {
+    const pending = peekPendingSaveOperation();
+    if (!pending) return;
+    resolveExpenseGraphSaveResult(pending.operationId, pending.groupId)
+      .then((result) => {
+        // #477 Slice 5: only clear the durable record once resolution
+        // returns a terminal outcome. A null result means the operation
+        // hasn't reached the server yet (or this lookup itself failed) --
+        // leaving the entry in place lets a later mount retry resolution
+        // instead of permanently losing recovery for an in-flight save.
+        if (result?.outcome === "committed") {
+          setRemoteBillId(result.expenseId);
+          draftRevisionRef.current = result.graphRevision;
+          clearPendingSaveOperationIfMatches(pending.operationId);
+        } else if (result?.outcome === "retired") {
+          clearPendingSaveOperationIfMatches(pending.operationId);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const buildDraftParams = useCallback((existingId?: string, groupIdOverride?: string) => {
     const state = useBillStore.getState();
@@ -768,10 +877,13 @@ function NewBillPageContent() {
         if (state.expense && state.participants.length >= 2) {
           const params = buildDraftParams(remoteBillId ?? undefined, groupId);
           if (params) {
-            const result = await saveExpenseDraft(params);
+            const result = await durableSaveDraft(params);
             if ("expenseId" in result) {
               setRemoteBillId(result.expenseId);
               draftRevisionRef.current = result.graphRevision;
+            } else {
+              toast.error(result.error);
+              return;
             }
           }
         }
@@ -781,18 +893,24 @@ function NewBillPageContent() {
       if (remoteBillId) {
         const params = buildDraftParams(remoteBillId);
         if (params) {
-          const result = await saveExpenseDraft(params);
+          const result = await durableSaveDraft(params);
           if ("expenseId" in result) {
             draftRevisionRef.current = result.graphRevision;
+          } else {
+            toast.error(result.error);
+            return;
           }
         }
       } else if (isDmMode && selectedGroupId) {
         const params = buildDraftParams(undefined, selectedGroupId);
         if (params) {
-          const result = await saveExpenseDraft(params);
+          const result = await durableSaveDraft(params);
           if ("expenseId" in result) {
             setRemoteBillId(result.expenseId);
             draftRevisionRef.current = result.graphRevision;
+          } else {
+            toast.error(result.error);
+            return;
           }
         }
       }
@@ -805,30 +923,31 @@ function NewBillPageContent() {
 
       const params = buildDraftParams(remoteBillId ?? undefined);
       if (params) {
-        const saveResult = await saveExpenseDraft(params);
-        const expenseId = "expenseId" in saveResult
-          ? saveResult.expenseId
-          : remoteBillId;
-        if ("expenseId" in saveResult) {
-          draftRevisionRef.current = saveResult.graphRevision;
+        const saveResult = await durableSaveDraft(params);
+        if (!("expenseId" in saveResult)) {
+          toast.error(saveResult.error);
+          setSyncing(false);
+          return;
         }
+        const expenseId = saveResult.expenseId;
+        draftRevisionRef.current = saveResult.graphRevision;
 
-        if (expenseId) {
-          const activationResult = await activateExpense({
-            expense_id: expenseId,
-            expectedGraphRevision: draftRevisionRef.current,
-          });
+        const activationResult = await activateExpense({
+          expense_id: expenseId,
+          expectedGraphRevision: draftRevisionRef.current,
+        });
 
-          if (!("error" in activationResult)) {
-            notifyExpenseActivated(expenseId).catch(() => {});
-            useBillStore.getState().reset();
-            router.push(`/app/bill/${expenseId}`);
-            return;
-          }
-          console.error("Activation failed:", activationResult.error);
+        if (!("error" in activationResult)) {
+          notifyExpenseActivated(expenseId).catch(() => {});
+          useBillStore.getState().reset();
+          router.push(`/app/bill/${expenseId}`);
+          return;
         }
+        toast.error(activationResult.error);
+        setSyncing(false);
+        return;
       }
-      router.push(`/app/bill/${remoteBillId || "new"}`);
+      setSyncing(false);
       return;
     }
     let next = steps[stepIndex + 1];
@@ -836,7 +955,7 @@ function NewBillPageContent() {
       next = steps[stepIndex + 2];
     }
     if (next) setStep(next.key);
-  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, isDmMode, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams]);
+  }, [step, stepIndex, steps, authUser, remoteBillId, selectedGroupId, allAccepted, store, router, initBill, isEditing, isDmMode, title, merchantName, billType, serviceFee, fixedFees, buildDraftParams, durableSaveDraft]);
 
   const isNextDisabled = useCallback(() => {
     if (navigating || isTypeStep) return true;
@@ -1183,6 +1302,7 @@ function NewBillPageContent() {
                 authUser={authUser}
                 participants={store.participants}
                 guests={store.guests}
+                protectedUserIds={store.draftClaimProtectedUserIds}
                 selectedGroupId={selectedGroupId}
                 selectedGroupName={selectedGroupName}
                 groupMembers={groupMembers}
@@ -1340,8 +1460,10 @@ function NewBillPageContent() {
                   />
                   {store.payers.length > 0 && (
                     <PayerSummaryCard
-                      payers={store.payers}
-                      participants={store.participants}
+                      payers={store.payers.flatMap((payer) => {
+                        const user = store.participants.find((p) => p.id === payer.userId);
+                        return user ? [{ user, amountCents: payer.amountCents }] : [];
+                      })}
                     />
                   )}
                   {store.wouldProduceNoEdges() && (

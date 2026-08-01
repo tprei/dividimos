@@ -387,63 +387,61 @@ export class SeedHelper {
     const totalAmount = options.totalAmount ?? 10000;
     const title = options.title ?? `Synth Expense ${testId.slice(0, 8)}`;
 
-    const { data: expenseData, error: expenseError } = await this.admin
-      .from("expenses")
-      .insert({
-        group_id: groupId,
-        creator_id: creatorId,
-        title,
-        expense_type: options.expenseType ?? "single_amount",
-        total_amount: totalAmount,
-        service_fee_percent: options.serviceFeePercent ?? 0,
-        fixed_fees: options.fixedFees ?? 0,
-        status: "draft",
-      })
-      .select()
-      .single();
-
-    if (expenseError || !expenseData) {
-      throw new Error(
-        `SeedHelper.createExpense: insert failed: ${expenseError?.message}`,
-      );
-    }
-
-    const expenseId = expenseData.id as string;
-    this.expenseIds.push(expenseId);
-
     const shares = options.shares ?? this.equalSplit(participantIds, totalAmount);
-    const shareRows = Object.entries(shares).map(([userId, amount]) => ({
-      expense_id: expenseId,
-      user_id: userId,
-      share_amount_cents: amount,
-    }));
-
-    const { error: sharesError } = await this.admin
-      .from("expense_shares")
-      .insert(shareRows);
-
-    if (sharesError) {
-      throw new Error(
-        `SeedHelper.createExpense: shares insert failed: ${sharesError.message}`,
-      );
-    }
-
     const payers = options.payers ?? { [creatorId]: totalAmount };
-    const payerRows = Object.entries(payers).map(([userId, amount]) => ({
-      expense_id: expenseId,
-      user_id: userId,
-      amount_cents: amount,
-    }));
 
-    const { error: payersError } = await this.admin
-      .from("expense_payers")
-      .insert(payerRows);
+    // #477's expense-graph mutation-token guard rejects direct
+    // .from("expenses"/"expense_shares"/"expense_payers").insert(...) —
+    // every write must go through the named RPC. Payers must also be
+    // reachable participants: preserve payer-only fixtures as explicit
+    // zero-share registered users rather than creating an unreachable
+    // payer that save_expense_draft_graph would reject.
+    const reachableShares = new Map(Object.entries(shares));
+    for (const userId of Object.keys(payers)) {
+      if (!reachableShares.has(userId)) {
+        reachableShares.set(userId, 0);
+      }
+    }
 
-    if (payersError) {
+    const creatorClient = await this.authenticateAs(creatorId);
+
+    const { data: saveResult, error: saveError } = await creatorClient.rpc(
+      "save_expense_draft_graph",
+      {
+        p_expense: {
+          group_id: groupId,
+          title,
+          merchant_name: null,
+          expense_type: options.expenseType ?? "single_amount",
+          total_amount: totalAmount,
+          service_fee_basis_points: Math.round((options.serviceFeePercent ?? 0) * 100),
+          fixed_fees: options.fixedFees ?? 0,
+        },
+        p_items: [],
+        p_shares: [...reachableShares].map(([userId, amount]) => ({
+          user_id: userId,
+          share_amount_cents: amount,
+        })),
+        p_payers: Object.entries(payers).map(([userId, amount]) => ({
+          user_id: userId,
+          amount_cents: amount,
+        })),
+        p_guests: [],
+        p_guest_shares: [],
+        p_participant_order: [],
+        p_expected_graph_revision: 0,
+        p_save_operation_id: crypto.randomUUID(),
+      },
+    );
+
+    if (saveError || !saveResult) {
       throw new Error(
-        `SeedHelper.createExpense: payers insert failed: ${payersError.message}`,
+        `SeedHelper.createExpense: save_expense_draft_graph failed: ${saveError?.message}`,
       );
     }
+
+    const expenseId = (saveResult as { id: string }).id;
+    this.expenseIds.push(expenseId);
 
     return {
       id: expenseId,
@@ -469,8 +467,21 @@ export class SeedHelper {
     );
 
     const creatorClient = await this.authenticateAs(creatorId);
-    const { error: rpcError } = await creatorClient.rpc("activate_expense", {
+    const { data: expenseRow, error: fetchError } = await this.admin
+      .from("expenses")
+      .select("graph_revision")
+      .eq("id", expense.id)
+      .single();
+
+    if (fetchError || !expenseRow) {
+      throw new Error(
+        `SeedHelper.createActiveExpense: fetch graph_revision failed: ${fetchError?.message}`,
+      );
+    }
+
+    const { error: rpcError } = await creatorClient.rpc("activate_saved_expense", {
       p_expense_id: expense.id,
+      p_expected_graph_revision: expenseRow.graph_revision as number,
     });
 
     if (rpcError) {

@@ -64,103 +64,39 @@ describe("SeedHelper", () => {
     });
   });
 
-  describe("equalSplit (via createExpense)", () => {
-    it("splits evenly when divisible", async () => {
+  describe("equalSplit", () => {
+    it("splits evenly when divisible", () => {
       process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
 
       const admin = createMockAdmin();
-      const insertedShares: Array<{ share_amount_cents: number }> = [];
-
-      (admin.from as ReturnType<typeof vi.fn>).mockImplementation((table: string) => {
-        if (table === "expenses") {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({
-                  data: { id: "exp-1", title: "Test" },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-        if (table === "expense_shares") {
-          return {
-            insert: vi.fn().mockImplementation((rows: Array<{ share_amount_cents: number }>) => {
-              insertedShares.push(...rows);
-              return Promise.resolve({ error: null });
-            }),
-          };
-        }
-        if (table === "expense_payers") {
-          return {
-            insert: vi.fn().mockResolvedValue({ error: null }),
-          };
-        }
-        return mockQuery();
-      });
-
       const helper = new SeedHelper(admin);
-      await helper.createExpense(
-        "group-1",
-        "user-a",
-        ["user-a", "user-b"],
-        { totalAmount: 10000 },
-      );
+      const h = helper as unknown as {
+        equalSplit(participantIds: string[], totalAmount: number): Record<string, number>;
+      };
 
-      expect(insertedShares).toHaveLength(2);
-      expect(insertedShares[0].share_amount_cents).toBe(5000);
-      expect(insertedShares[1].share_amount_cents).toBe(5000);
+      const shares = h.equalSplit(["user-a", "user-b"], 10000);
+
+      expect(Object.values(shares)).toHaveLength(2);
+      expect(shares["user-a"]).toBe(5000);
+      expect(shares["user-b"]).toBe(5000);
     });
 
-    it("handles remainder cents correctly", async () => {
+    it("handles remainder cents correctly", () => {
       process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
 
       const admin = createMockAdmin();
-      const insertedShares: Array<{ share_amount_cents: number }> = [];
-
-      (admin.from as ReturnType<typeof vi.fn>).mockImplementation((table: string) => {
-        if (table === "expenses") {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({
-                  data: { id: "exp-2", title: "Test" },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-        if (table === "expense_shares") {
-          return {
-            insert: vi.fn().mockImplementation((rows: Array<{ share_amount_cents: number }>) => {
-              insertedShares.push(...rows);
-              return Promise.resolve({ error: null });
-            }),
-          };
-        }
-        if (table === "expense_payers") {
-          return {
-            insert: vi.fn().mockResolvedValue({ error: null }),
-          };
-        }
-        return mockQuery();
-      });
-
       const helper = new SeedHelper(admin);
-      await helper.createExpense(
-        "group-1",
-        "user-a",
-        ["user-a", "user-b", "user-c"],
-        { totalAmount: 10001 },
-      );
+      const h = helper as unknown as {
+        equalSplit(participantIds: string[], totalAmount: number): Record<string, number>;
+      };
 
-      expect(insertedShares).toHaveLength(3);
-      const amounts = insertedShares.map((s) => s.share_amount_cents);
-      expect(amounts.sort()).toEqual([3333, 3334, 3334]);
+      const shares = h.equalSplit(["user-a", "user-b", "user-c"], 10001);
+
+      const amounts = Object.values(shares);
+      expect(amounts).toHaveLength(3);
+      expect(amounts.slice().sort()).toEqual([3333, 3334, 3334]);
       expect(amounts.reduce((a, b) => a + b, 0)).toBe(10001);
     });
   });

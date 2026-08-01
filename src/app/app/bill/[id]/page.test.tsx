@@ -218,17 +218,14 @@ describe("ExpenseSharesSummary", () => {
   // but we can at least verify the PayerSummaryCard renders correctly
 
   it("PayerSummaryCard renders payer names and amounts", () => {
+    const alice = { id: "user-1", name: "Alice Silva", handle: "alice" };
+    const bob = { id: "user-2", name: "Bob Santos", handle: "bob" };
     const payers = [
-      { userId: "user-1", amountCents: 10000 },
-      { userId: "user-2", amountCents: 5000 },
+      { user: alice, amountCents: 10000 },
+      { user: bob, amountCents: 5000 },
     ];
 
-    const participants = [
-      { id: "user-1", name: "Alice Silva", handle: "alice" },
-      { id: "user-2", name: "Bob Santos", handle: "bob" },
-    ];
-
-    render(<PayerSummaryCard payers={payers} participants={participants} />);
+    render(<PayerSummaryCard payers={payers} />);
 
     expect(screen.getByText("Quem pagou")).toBeInTheDocument();
     expect(screen.getByText("Alice")).toBeInTheDocument();
@@ -236,20 +233,16 @@ describe("ExpenseSharesSummary", () => {
   });
 
   it("PayerSummaryCard shows 'pagou tudo' for single payer", () => {
+    const alice = { id: "user-1", name: "Alice Silva", handle: "alice" };
+    const payers = [{ user: alice, amountCents: 10000 }];
 
-    const payers = [{ userId: "user-1", amountCents: 10000 }];
-    const participants = [
-      { id: "user-1", name: "Alice Silva", handle: "alice" },
-    ];
-
-    render(<PayerSummaryCard payers={payers} participants={participants} />);
+    render(<PayerSummaryCard payers={payers} />);
     expect(screen.getByText("pagou tudo")).toBeInTheDocument();
   });
 
   it("PayerSummaryCard returns null for empty payers", () => {
-
     const { container } = render(
-      <PayerSummaryCard payers={[]} participants={[]} />,
+      <PayerSummaryCard payers={[]} />,
     );
     expect(container.innerHTML).toBe("");
   });
@@ -605,6 +598,7 @@ describe("onSettlementComplete refreshes expense data", () => {
       expenseType: "itemized" as const,
       totalAmount: 10000,
       serviceFeePercent: 10,
+      serviceFeeBasisPoints: 1000,
       fixedFees: 0,
       status: "active" as const,
       createdAt: "2024-01-01",

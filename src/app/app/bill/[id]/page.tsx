@@ -177,6 +177,7 @@ export default function BillDetailPage({
           expenseType: data.expenseType,
           totalAmount: data.totalAmount,
           serviceFeePercent: data.serviceFeePercent,
+          serviceFeeBasisPoints: data.serviceFeeBasisPoints,
           fixedFees: data.fixedFees,
           status: data.status,
           createdAt: data.createdAt,
@@ -249,16 +250,13 @@ export default function BillDetailPage({
     return () => { cancelled = true; };
   }, [expenseData?.groupId, currentUser?.id]);
 
-  const onExpenseUpdate = useCallback(
-    (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => {
-      setExpenseData((prev) => {
-        if (!prev || prev.id !== updated.id) return prev;
-        return { ...prev, status: updated.status, updatedAt: updated.updatedAt };
-      });
-      useBillStore.getState().patchExpenseFromRealtime(updated);
-    },
-    [],
-  );
+  const expenseId = expenseData?.id;
+  const onExpenseUpdate = useCallback(() => {
+    // Broadcast wake: refetch the complete authorized snapshot
+    if (expenseId) {
+      loadExpenseData(expenseId);
+    }
+  }, [expenseId, loadExpenseData]);
 
   useRealtimeExpense(expenseData?.id, onExpenseUpdate);
 
@@ -716,7 +714,7 @@ export default function BillDetailPage({
           transition={{ duration: 0.2 }}
           className="mt-5"
         >
-          <ExpenseSharesSummary expense={expense} allParticipants={allParticipants} />
+          <ExpenseSharesSummary expense={expense} />
           {expense.guests && expense.guests.length > 0 && (
             <div className="mt-4">
               <h3 className="mb-2 text-sm font-semibold">Convidados</h3>
@@ -1025,8 +1023,7 @@ export default function BillDetailPage({
           {expense.payers.length > 0 && (
             <div className="mb-4">
               <PayerSummaryCard
-                payers={expense.payers.map((p) => ({ userId: p.userId, amountCents: p.amountCents }))}
-                participants={allParticipants}
+                payers={expense.payers.map((p) => ({ user: p.user, amountCents: p.amountCents }))}
               />
             </div>
           )}

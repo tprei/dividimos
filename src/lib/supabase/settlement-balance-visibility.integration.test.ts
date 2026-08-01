@@ -132,14 +132,12 @@ describe.skipIf(!isIntegrationTestReady)(
       const adhocGroup = await createTestGroup(creator.id, [invited.id]);
       // invited.status remains 'invited' — no acceptGroupInvite call
 
-      await createAndActivateExpense({
-        creator,
-        groupId: adhocGroup.id,
-        shares: [
-          { userId: invited.id, amount: 4000 },
-          { userId: creator.id, amount: 6000 },
-        ],
-        payers: [{ userId: creator.id, amount: 10000 }],
+      // Construct the balance state directly: save_expense_draft_graph
+      // rejects non-accepted shares. Balances is NOT a guarded table.
+      const [uA1, uB1] = creator.id < invited.id ? [creator.id, invited.id] : [invited.id, creator.id];
+      const invitedOwesCreator = invited.id < creator.id ? 4000 : -4000;
+      await adminClient!.from("balances").insert({
+        group_id: adhocGroup.id, user_a: uA1, user_b: uB1, amount_cents: invitedOwesCreator,
       });
 
       const creatorClient = authenticateAs(creator);
@@ -168,14 +166,11 @@ describe.skipIf(!isIntegrationTestReady)(
       const invited = await createTestUser({ name: "Pendente" });
       const adhocGroup = await createTestGroup(creator.id, [invited.id]);
 
-      await createAndActivateExpense({
-        creator,
-        groupId: adhocGroup.id,
-        shares: [
-          { userId: invited.id, amount: 5000 },
-          { userId: creator.id, amount: 5000 },
-        ],
-        payers: [{ userId: creator.id, amount: 10000 }],
+      // Same direct balance insert approach.
+      const [uA2, uB2] = creator.id < invited.id ? [creator.id, invited.id] : [invited.id, creator.id];
+      const invitedOwesCreator2 = invited.id < creator.id ? 5000 : -5000;
+      await adminClient!.from("balances").insert({
+        group_id: adhocGroup.id, user_a: uA2, user_b: uB2, amount_cents: invitedOwesCreator2,
       });
 
       // Invited member can't see balances (my_accepted_group_ids excludes invited)

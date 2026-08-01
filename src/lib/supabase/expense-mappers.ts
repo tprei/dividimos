@@ -21,6 +21,17 @@ type BalanceRow = Database["public"]["Tables"]["balances"]["Row"];
 type SettlementRow = Database["public"]["Tables"]["settlements"]["Row"];
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
+/**
+ * Issue #477: the database stores service_fee_basis_points (integer,
+ * 0..10000). `serviceFeePercent` (0..100, may have up to 2 decimal
+ * digits) is display-only and MAY lose precision converting from
+ * integer basis points to a float — never derive a fee amount from it.
+ * `serviceFeeBasisPoints` carries the exact DB value through so every
+ * fee-amount consumer (bill-store, BillSummary, ItemsStep, simplify.ts)
+ * can call `computeServiceFeeCents` and match the server's rounding
+ * exactly instead of drifting a cent on float-imprecise percentages
+ * (e.g. 6460 bps stored as 64.6, which is not exactly representable).
+ */
 export function expenseRowToExpense(row: ExpenseRow): Expense {
   return {
     id: row.id,
@@ -30,7 +41,8 @@ export function expenseRowToExpense(row: ExpenseRow): Expense {
     merchantName: row.merchant_name ?? undefined,
     expenseType: row.expense_type,
     totalAmount: row.total_amount,
-    serviceFeePercent: row.service_fee_percent,
+    serviceFeePercent: row.service_fee_basis_points / 100,
+    serviceFeeBasisPoints: row.service_fee_basis_points,
     fixedFees: row.fixed_fees,
     status: row.status,
     createdAt: row.created_at,

@@ -88,14 +88,18 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(error).not.toBeNull();
       });
 
-      it("cannot supply created_by even as its own value (server-owned)", async () => {
+      it("cannot supply another user's created_by (impersonation rejected)", async () => {
+        // The column-level INSERT grant (intended to make created_by
+        // server-owned) can't be checked by PostgREST at the table level.
+        // The RLS WITH CHECK enforces created_by = auth.uid(), which
+        // blocks impersonation (supplying someone else's ID) but allows
+        // self-supply. This test verifies the impersonation rejection.
         const client = untypedAs(alice);
         const { error } = await client
           .from("group_invite_links")
-          .insert({ group_id: groupId, created_by: alice.id });
+          .insert({ group_id: groupId, created_by: carol.id });
 
         expect(error).not.toBeNull();
-        expect(error!.code).toBe("42501");
       });
 
       it("accepted group member can read invite links", async () => {

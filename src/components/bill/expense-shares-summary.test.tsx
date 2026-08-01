@@ -19,6 +19,7 @@ const makeExpense = (overrides?: Partial<ExpenseWithDetails>): ExpenseWithDetail
   expenseType: "itemized",
   totalAmount: 10000,
   serviceFeePercent: 0,
+  serviceFeeBasisPoints: 0,
   fixedFees: 0,
   status: "active",
   createdAt: "",
@@ -40,7 +41,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense()}
-        allParticipants={[alice, bob]}
       />,
     );
 
@@ -53,7 +53,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense()}
-        allParticipants={[alice, bob]}
       />,
     );
 
@@ -64,7 +63,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense({ payers: [] })}
-        allParticipants={[alice, bob]}
       />,
     );
 
@@ -75,7 +73,6 @@ describe("ExpenseSharesSummary", () => {
     render(
       <ExpenseSharesSummary
         expense={makeExpense()}
-        allParticipants={[alice, bob]}
       />,
     );
 

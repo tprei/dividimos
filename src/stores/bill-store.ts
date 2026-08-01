@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
+import { allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
 import type { ExpenseAllocationIssue } from "@/lib/expense-money";
 import type {
   DebtEdge,
@@ -57,6 +57,10 @@ interface ExpenseState {
   splits: ExpenseSplit[];
   /** Whole-expense split assignments (single_amount wizard). */
   billSplits: AmountSplit[];
+  /** Users protected from removal because their share came from a claimed
+   *  guest (#495). Populated only when editing an existing draft that has
+   *  one; empty for new/active/settled expenses. */
+  draftClaimProtectedUserIds: string[];
 
   setCurrentUser: (user: User) => void;
 
@@ -124,8 +128,13 @@ interface ExpenseState {
     expense: Expense;
     items: ExpenseItem[];
     participants?: User[];
+    guests?: Guest[];
     payers?: ExpensePayer[];
     billSplits?: AmountSplit[];
+    /** Users whose share came from a claimed guest -- see #495 spec: their
+     *  removal control must be hidden and their removal is a whole-state
+     *  no-op (the server rejects it with `claimed_guest_not_participant`). */
+    draftClaimProtectedUserIds?: string[];
   }) => void;
   /**
    * Patches only the server-derived status fields from a realtime event.
@@ -151,11 +160,8 @@ function getGrandTotalFor(
   if (expense.expenseType === "single_amount") return totalAmountInput;
 
   const itemsTotal = items.reduce((sum, item) => sum + item.totalPriceCents, 0);
-  return (
-    itemsTotal +
-    Math.round((itemsTotal * expense.serviceFeePercent) / 100) +
-    expense.fixedFees
-  );
+  const feeResult = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
+  return itemsTotal + (feeResult.ok ? feeResult.value : 0) + expense.fixedFees;
 }
 
 function recalculateItemizedExpense(
@@ -218,8 +224,9 @@ function computeConsumption(
     for (const split of splits) {
       consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
     }
-    if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
-      const totalServiceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
+    if (expense.serviceFeeBasisPoints > 0 && itemsTotal > 0) {
+      const feeResult = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
+      const totalServiceFee = feeResult.ok ? feeResult.value : 0;
       const weights = allPersonIds.map((id) => consumption.get(id) || 0);
       const feesRes = allocateByWeights(totalServiceFee, weights);
       if (!feesRes.ok) return consumption;
@@ -344,6 +351,46 @@ export function selectPreviewDebts(state: ExpenseState): DebtEdge[] {
   return debts;
 }
 
+/**
+ * Pure mapper: turns a loaded expense's raw guest rows (as returned by
+ * `loadExpense`) into the store-shaped `guests` list and, for
+ * `single_amount` expenses, the guest portion of `billSplits`.
+ *
+ * Extracted from the wizard's edit-mode hydration effect so this exact
+ * mapping is directly unit-testable, independent of the page component.
+ * A prior version of that inline logic silently dropped every guest
+ * (hardcoded `guests: []`), deleting them permanently on the next save;
+ * regression coverage for that class of bug belongs here, not only in
+ * `hydrateFromServer` itself, so a future revert of the wizard's call
+ * site is caught even if `hydrateFromServer` keeps behaving correctly.
+ *
+ * Already-claimed guests are excluded: a claimed guest is no longer a
+ * mutable, unclaimed placeholder and must never be resubmitted as
+ * `p_guests` on the next save.
+ */
+export function mapLoadedGuestsForEditHydration(
+  loadedGuests: readonly {
+    id: string;
+    displayName: string;
+    claimedBy?: string;
+    share?: { shareAmountCents: number };
+  }[],
+  expenseType: ExpenseType,
+): { guests: Guest[]; guestBillSplits: AmountSplit[] } {
+  const unclaimed = loadedGuests.filter((g) => !g.claimedBy);
+  const guests: Guest[] = unclaimed.map((g) => ({ id: g.id, name: g.displayName }));
+  const guestBillSplits: AmountSplit[] =
+    expenseType === "single_amount"
+      ? unclaimed.map((g) => ({
+          userId: g.id,
+          splitType: "fixed" as const,
+          value: g.share?.shareAmountCents ?? 0,
+          computedAmountCents: g.share?.shareAmountCents ?? 0,
+        }))
+      : [];
+  return { guests, guestBillSplits };
+}
+
 export const useBillStore = create<ExpenseState>((set, get) => ({
   currentUser: null,
   expense: null,
@@ -354,6 +401,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
   payers: [],
   splits: [],
   billSplits: [],
+  draftClaimProtectedUserIds: [],
 
   setCurrentUser: (user) => set({ currentUser: user }),
 
@@ -368,6 +416,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       merchantName,
       totalAmount: 0,
       serviceFeePercent: expenseType === "itemized" ? 10 : 0,
+      serviceFeeBasisPoints: expenseType === "itemized" ? 1000 : 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -383,6 +432,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 
@@ -392,9 +442,18 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       if (!expense) return {};
 
       const { totalAmountInput, ...expenseUpdates } = updates;
+      // A percent update without a paired basis-points update would leave
+      // serviceFeeBasisPoints silently stale (still reflecting the old
+      // rate), and every fee-amount computation reads only the basis
+      // points field. Derive it here so callers can never desync the two.
+      const derivedBasisPoints =
+        expenseUpdates.serviceFeePercent !== undefined && expenseUpdates.serviceFeeBasisPoints === undefined
+          ? { serviceFeeBasisPoints: Math.round(expenseUpdates.serviceFeePercent * 100) }
+          : {};
       const nextExpense: Expense = {
         ...expense,
         ...expenseUpdates,
+        ...derivedBasisPoints,
         updatedAt: new Date().toISOString(),
       };
       const nextTotalAmountInput =
@@ -424,6 +483,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
             ...expense,
             expenseType,
             serviceFeePercent: 0,
+            serviceFeeBasisPoints: 0,
             fixedFees: 0,
             updatedAt,
           },
@@ -438,6 +498,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
           ...expense,
           expenseType,
           serviceFeePercent: 10,
+          serviceFeeBasisPoints: 1000,
           updatedAt,
         },
         totalAmountInput: 0,
@@ -458,7 +519,10 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
 
   removeParticipant: (userId) => {
     set((state) => {
-      if (!state.participants.some((participant) => participant.id === userId)) {
+      if (
+        !state.participants.some((participant) => participant.id === userId) ||
+        state.draftClaimProtectedUserIds.includes(userId)
+      ) {
         return {};
       }
 
@@ -801,7 +865,13 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       title: result.title || "Despesa por voz",
       merchantName: result.merchantName ?? undefined,
       totalAmount: result.amountCents,
-      serviceFeePercent: result.expenseType === "itemized" ? 10 : 0,
+      // #477: voice/chat provider results carry no fee data (the source
+      // schema has no fee field) - defaulting to 10% here would silently
+      // persist an unconfirmed fee the user never saw or set. The manual
+      // 10% default belongs only to the visibly-configured itemized form
+      // (createExpense/setExpenseType), never to source hydration.
+      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -843,6 +913,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       title: "",
       totalAmount: 0,
       serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -858,6 +929,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 
@@ -874,7 +946,10 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       title: result.title || "",
       merchantName: result.merchantName ?? undefined,
       totalAmount: result.amountCents,
-      serviceFeePercent: result.expenseType === "itemized" ? 10 : 0,
+      // #477: same rule as hydrateFromVoice - chat provider results carry
+      // no fee data, so hydration must never silently apply one.
+      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
       fixedFees: 0,
       status: "draft",
       createdAt: now,
@@ -917,19 +992,29 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers,
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 
-  hydrateFromServer: ({ expense, items, participants, payers, billSplits }) => {
+  hydrateFromServer: ({
+    expense,
+    items,
+    participants,
+    guests,
+    payers,
+    billSplits,
+    draftClaimProtectedUserIds,
+  }) => {
     set({
       expense,
       items,
       totalAmountInput: expense.expenseType === "single_amount" ? expense.totalAmount : 0,
       participants: participants ?? [],
-      guests: [],
+      guests: guests ?? [],
       payers: payers ?? [],
       splits: [],
       billSplits: billSplits ?? [],
+      draftClaimProtectedUserIds: draftClaimProtectedUserIds ?? [],
     });
   },
 
@@ -951,6 +1036,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
+      draftClaimProtectedUserIds: [],
     });
   },
 }));

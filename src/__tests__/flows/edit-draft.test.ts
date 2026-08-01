@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, mapLoadedGuestsForEditHydration } from "@/stores/bill-store";
 import {
   userAlice,
   userBob,
@@ -45,6 +45,42 @@ describe("Edit Draft Flow", () => {
     expect(state.participants).toHaveLength(2);
     expect(state.items).toHaveLength(1);
     expect(state.payers).toHaveLength(1);
+  });
+
+  it("restores guests from a draft expense (regression: guests were previously always discarded)", () => {
+    const expense = makeExpense({ id: "draft-1b", title: "Jantar com convidado" });
+    const items = [makeExpenseItem({ id: "item-1b" })];
+
+    useBillStore.getState().hydrateFromServer({
+      expense,
+      items,
+      participants: [userAlice],
+      guests: [{ id: "guest-maria", name: "Maria" }],
+    });
+
+    const state = useBillStore.getState();
+    expect(state.guests).toHaveLength(1);
+    expect(state.guests[0]).toMatchObject({ id: "guest-maria", name: "Maria" });
+  });
+
+  it("restores a guest's single_amount share so it is not deleted on the next save", () => {
+    const expense = makeSingleAmountExpense({ id: "draft-1c", totalAmount: 10000 });
+    const billSplits: AmountSplit[] = [
+      { userId: "user-alice", splitType: "equal", value: 1, computedAmountCents: 5000 },
+      { userId: "guest-maria", splitType: "equal", value: 1, computedAmountCents: 5000 },
+    ];
+
+    useBillStore.getState().hydrateFromServer({
+      expense,
+      items: [],
+      participants: [userAlice],
+      guests: [{ id: "guest-maria", name: "Maria" }],
+      billSplits,
+    });
+
+    const state = useBillStore.getState();
+    expect(state.guests.map((g) => g.id)).toContain("guest-maria");
+    expect(state.getParticipantTotal("guest-maria")).toBe(5000);
   });
 
   it("restores a single_amount draft expense into the store", () => {
@@ -217,5 +253,49 @@ describe("Edit Draft Flow", () => {
         makeExpense(), { length: 0 }, { length: 0 }, { length: 0 }, { length: 0 },
       ),
     ).toBe("participants");
+  });
+});
+
+describe("mapLoadedGuestsForEditHydration (extracted from the wizard's edit-mode hydration effect)", () => {
+  it("maps unclaimed guests to the store shape for both itemized and single_amount expenses", () => {
+    const loadedGuests = [
+      { id: "guest-1", displayName: "Maria", share: { shareAmountCents: 2500 } },
+      { id: "guest-2", displayName: "Joao" },
+    ];
+
+    const itemized = mapLoadedGuestsForEditHydration(loadedGuests, "itemized");
+    expect(itemized.guests).toEqual([
+      { id: "guest-1", name: "Maria" },
+      { id: "guest-2", name: "Joao" },
+    ]);
+    // Itemized per-item provenance is not persisted server-side (#477's
+    // aggregate_only mode); billSplits is single_amount-only.
+    expect(itemized.guestBillSplits).toEqual([]);
+
+    const singleAmount = mapLoadedGuestsForEditHydration(loadedGuests, "single_amount");
+    expect(singleAmount.guests).toEqual(itemized.guests);
+    expect(singleAmount.guestBillSplits).toEqual([
+      { userId: "guest-1", splitType: "fixed", value: 2500, computedAmountCents: 2500 },
+      { userId: "guest-2", splitType: "fixed", value: 0, computedAmountCents: 0 },
+    ]);
+  });
+
+  it("excludes already-claimed guests from both the identity list and billSplits", () => {
+    const loadedGuests = [
+      { id: "guest-unclaimed", displayName: "Maria", share: { shareAmountCents: 3000 } },
+      { id: "guest-claimed", displayName: "Joao", claimedBy: "user-joao", share: { shareAmountCents: 4000 } },
+    ];
+
+    const result = mapLoadedGuestsForEditHydration(loadedGuests, "single_amount");
+    expect(result.guests).toEqual([{ id: "guest-unclaimed", name: "Maria" }]);
+    expect(result.guestBillSplits).toEqual([
+      { userId: "guest-unclaimed", splitType: "fixed", value: 3000, computedAmountCents: 3000 },
+    ]);
+  });
+
+  it("returns empty results for an expense with no guests", () => {
+    const result = mapLoadedGuestsForEditHydration([], "itemized");
+    expect(result.guests).toEqual([]);
+    expect(result.guestBillSplits).toEqual([]);
   });
 });

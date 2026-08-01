@@ -94,9 +94,9 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 ## Backend / Data Rules
 
 - Every Supabase table has Row-Level Security. Data is isolated by group and user; RLS is enforced, not optional.
-- Balances are never written directly. They are updated only by the `activate_expense` and `confirm_settlement` RPC functions (`SECURITY DEFINER`). This prevents race conditions and ensures atomicity.
+- Balances are never written directly. They are updated only by the `activate_saved_expense` and `confirm_settlement` RPC functions (`SECURITY DEFINER`). This prevents race conditions and ensures atomicity.
 - The `balances` table stores one row per `(group, user_a, user_b)` pair where `user_a < user_b` (canonical UUID ordering). Positive `amount_cents` means `user_a` owes `user_b`; negative means the reverse.
-- Rounding happens inside the RPC: `ROUND(share * payer_amount / total)`. Never round in client code.
+- The per-expense cap is `MAX_EXPENSE_CENTS = 99_999_999` cents (`src/lib/expense-money.ts` is the sole owner of this cap and the fee formula). Service fee is integer basis points, computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000`, identically in TypeScript and SQL. Persisted item/share/payer/fee equality is exact — never a tolerance, a client-side re-derivation the RPC then overwrites, or a second rounding convention.
 - Migrations with semantic logic must be covered by integration tests (see Tests).
 
 The remote Supabase instance has meaningful network latency (~1-5s per round trip from Brazil). Every unnecessary query is felt by the user. These rules are non-negotiable.

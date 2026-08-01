@@ -54,6 +54,51 @@ describe("createExpense", () => {
   });
 });
 
+describe("addParticipant / addGuest (#495: zero share, no payer, eligibility)", () => {
+  it("adding a participant creates no payer and derives a zero share until assigned", () => {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
+    const itemId = useBillStore.getState().items[0].id;
+    // Alice consumes the whole item; Bob is added afterward with no assignment.
+    useBillStore.getState().assignItem(itemId, "user-alice", "fixed", 10000);
+    s.addParticipant(userBob);
+
+    const state = useBillStore.getState();
+    expect(state.participants.map((p) => p.id)).toContain("user-bob");
+    expect(state.payers).toEqual([]);
+    expect(state.getParticipantTotal("user-bob")).toBe(0);
+    expect(state.getParticipantTotal("user-alice")).toBe(11000);
+  });
+
+  it("a zero-share added participant is an eligible payer candidate", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 5000 });
+    s.addParticipant(userBob);
+    expect(useBillStore.getState().getParticipantTotal("user-bob")).toBe(0);
+    const result = useBillStore.getState().setPayerFull("user-bob");
+    expect(result).toBeNull();
+    expect(useBillStore.getState().payers).toMatchObject([{ userId: "user-bob", amountCents: 5000 }]);
+  });
+
+  it("adding a guest creates no payer and is never an eligible payer candidate", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 5000 });
+    const guestId = s.addGuest("Maria");
+
+    const state = useBillStore.getState();
+    expect(state.guests.map((g) => g.id)).toContain(guestId);
+    expect(state.payers).toEqual([]);
+    expect(state.getParticipantTotal(guestId)).toBe(0);
+
+    const result = useBillStore.getState().setPayerFull(guestId);
+    expect(result).toEqual({ code: "ineligible_payer", payerIndex: 0 });
+    expect(useBillStore.getState().payers).toEqual([]);
+  });
+});
+
 describe("splitItemEqually", () => {
   function setupItemizedExpense() {
     const s = setup();
@@ -235,6 +280,16 @@ describe("getGrandTotal", () => {
   it("returns 0 for empty itemized expense with no items", () => {
     setup().createExpense("Test", "itemized");
     expect(useBillStore.getState().getGrandTotal()).toBe(0);
+  });
+
+  it("computes the exact half-up fee from basis points, not a float-drifted percent", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addItem({ description: "X", quantity: 1000, unitPriceCents: 250, totalPriceCents: 250 });
+    // 250 cents at 6460 bps: floor((250*6460+5000)/10000) = 162 (half-up).
+    // Math.round(250 * (6460/100) / 100) would drift to 161 because
+    // 6460/100 is not exactly representable as a float.
+    useBillStore.getState().updateExpense({ serviceFeeBasisPoints: 6460 });
+    expect(useBillStore.getState().getGrandTotal()).toBe(250 + 162);
   });
 });
 
@@ -582,7 +637,7 @@ describe("hydrateFromVoice", () => {
     const { expense, items, totalAmountInput } = useBillStore.getState();
     expect(expense?.expenseType).toBe("itemized");
     expect(expense?.merchantName).toBe("Bar do Zé");
-    expect(expense?.serviceFeePercent).toBe(10);
+    expect(expense?.serviceFeePercent).toBe(0);
     expect(expense?.totalAmount).toBe(5500);
     expect(items).toHaveLength(2);
     expect(items[0].description).toBe("Cerveja");
@@ -977,6 +1032,36 @@ describe("participant and guest removal flows", () => {
     expect(splits.find((s) => s.userId === "user-carlos")).toBeUndefined();
   });
 
+  it("does not remove a protected claimant and leaves the rest of state untouched (#495 item 24)", () => {
+    setup().createExpense("Test", "single_amount");
+    useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().splitBillEqually(["user-alice", "user-bob"]);
+    useBillStore.getState().setPayerFull("user-bob");
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+    const before = useBillStore.getState();
+
+    useBillStore.getState().removeParticipant("user-bob");
+
+    const after = useBillStore.getState();
+    expect(after.participants).toEqual(before.participants);
+    expect(after.billSplits).toEqual(before.billSplits);
+    expect(after.payers).toEqual(before.payers);
+    expect(after.participants.map((p) => p.id)).toContain("user-bob");
+  });
+
+  it("removes an ordinary participant normally even when a different user is protected", () => {
+    setup().createExpense("Test", "itemized");
+    useBillStore.getState().addParticipant(userBob);
+    useBillStore.getState().addParticipant(userCarlos);
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+
+    useBillStore.getState().removeParticipant("user-carlos");
+
+    const { participants } = useBillStore.getState();
+    expect(participants.map((p) => p.id)).toEqual(["user-alice", "user-bob"]);
+  });
+
   it("guest removal then re-add produces clean state with no stale references", () => {
     setup().createExpense("Test", "single_amount");
     useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
@@ -1058,6 +1143,81 @@ describe("createExpenseFromDm", () => {
   });
 });
 
+describe("hydrateFromServer draftClaimProtectedUserIds (#495 item 24)", () => {
+  it("populates draftClaimProtectedUserIds from the server snapshot", () => {
+    setup();
+    useBillStore.getState().hydrateFromServer({
+      expense: {
+        id: "exp-1",
+        groupId: "group-1",
+        creatorId: "user-alice",
+        expenseType: "single_amount",
+        title: "Jantar",
+        totalAmount: 10000,
+        serviceFeePercent: 0,
+        serviceFeeBasisPoints: 0,
+        fixedFees: 0,
+        status: "draft",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      items: [],
+      participants: [userAlice, userBob],
+      guests: [],
+      payers: [],
+      billSplits: [],
+      draftClaimProtectedUserIds: ["user-bob"],
+    });
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual(["user-bob"]);
+  });
+
+  it("defaults to an empty array when the field is omitted", () => {
+    setup();
+    useBillStore.getState().hydrateFromServer({
+      expense: {
+        id: "exp-1",
+        groupId: "group-1",
+        creatorId: "user-alice",
+        expenseType: "single_amount",
+        title: "Jantar",
+        totalAmount: 10000,
+        serviceFeePercent: 0,
+        serviceFeeBasisPoints: 0,
+        fixedFees: 0,
+        status: "draft",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      items: [],
+      participants: [userAlice],
+      guests: [],
+      payers: [],
+      billSplits: [],
+    });
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
+  });
+
+  it("reset() clears draftClaimProtectedUserIds", () => {
+    setup();
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+
+    useBillStore.getState().reset();
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
+  });
+
+  it("createExpense() clears a stale draftClaimProtectedUserIds from a prior session", () => {
+    setup();
+    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
+
+    useBillStore.getState().createExpense("New", "single_amount");
+
+    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
+  });
+});
+
 describe("hydrateFromChatDraft", () => {
   it("creates a single_amount expense with parsed data", () => {
     setup().hydrateFromChatDraft(
@@ -1117,7 +1277,7 @@ describe("hydrateFromChatDraft", () => {
 
     const { expense, items, payers, totalAmountInput } = useBillStore.getState();
     expect(expense?.expenseType).toBe("itemized");
-    expect(expense?.serviceFeePercent).toBe(10);
+    expect(expense?.serviceFeePercent).toBe(0);
     expect(items).toHaveLength(2);
     expect(items[0].description).toBe("Arroz");
     expect(items[0].totalPriceCents).toBe(2000);

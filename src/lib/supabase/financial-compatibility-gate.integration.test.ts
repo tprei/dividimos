@@ -134,6 +134,68 @@ describe.skipIf(!canRun)("financial compatibility gate (#477 preparatory)", () =
     await pg.query("delete from auth.users where id = $1", [id]);
   });
 
+  it("rejects save_expense_draft_graph with PST09 before authentication is even checked, while maintenance is open", async () => {
+    await pg.query("select financial_internal.set_financial_maintenance(true)");
+
+    await expect(
+      pg.query(
+        "select public.save_expense_draft_graph(null, null, null, null, null, null, null, 0, gen_random_uuid())",
+      ),
+    ).rejects.toMatchObject({ code: "PST09" });
+
+    await pg.query("select financial_internal.set_financial_maintenance(false)");
+
+    // With maintenance closed, the same unauthenticated call now fails
+    // for the next reason in body order: no caller.
+    await expect(
+      pg.query(
+        "select public.save_expense_draft_graph(null, null, null, null, null, null, null, 0, gen_random_uuid())",
+      ),
+    ).rejects.toMatchObject({ code: "PST01" });
+  });
+
+  it("rejects activate_saved_expense with PST09 before authentication is even checked, while maintenance is open", async () => {
+    await pg.query("select financial_internal.set_financial_maintenance(true)");
+
+    await expect(
+      pg.query("select public.activate_saved_expense(gen_random_uuid(), 0)"),
+    ).rejects.toMatchObject({ code: "PST09" });
+
+    await pg.query("select financial_internal.set_financial_maintenance(false)");
+
+    await expect(
+      pg.query("select public.activate_saved_expense(gen_random_uuid(), 0)"),
+    ).rejects.toMatchObject({ code: "PST01" });
+  });
+
+  it("rejects claim_guest_spot with PST09 before authentication is even checked, while maintenance is open", async () => {
+    await pg.query("select financial_internal.set_financial_maintenance(true)");
+
+    await expect(pg.query("select public.claim_guest_spot(gen_random_uuid())")).rejects.toMatchObject({
+      code: "PST09",
+    });
+
+    await pg.query("select financial_internal.set_financial_maintenance(false)");
+
+    await expect(pg.query("select public.claim_guest_spot(gen_random_uuid())")).rejects.toMatchObject({
+      code: "PST01",
+    });
+  });
+
+  it("rejects load_expense_graph_snapshot with PST09 before authentication is even checked, while maintenance is open", async () => {
+    await pg.query("select financial_internal.set_financial_maintenance(true)");
+
+    await expect(
+      pg.query("select public.load_expense_graph_snapshot(gen_random_uuid())"),
+    ).rejects.toMatchObject({ code: "PST09" });
+
+    await pg.query("select financial_internal.set_financial_maintenance(false)");
+
+    await expect(
+      pg.query("select public.load_expense_graph_snapshot(gen_random_uuid())"),
+    ).rejects.toMatchObject({ code: "PST01" });
+  });
+
   it(
     "drains an already-admitted deletion before closing: the maintenance setter blocks on the exclusive " +
       "advisory lock until the shared-lock-holding deletion transaction commits",

@@ -22,7 +22,8 @@ const makeResult = (
       totalCents: 4500,
     },
   ],
-  serviceFeePercent: 10,
+  serviceFeeBasisPoints: 1000,
+  fixedFeesCents: 0,
   totalCents: 6900,
   ...overrides,
 });
@@ -85,7 +86,7 @@ describe("ScannedItemsReview", () => {
     const call = onConfirm.mock.calls[0][0] as ReceiptOcrResult;
     expect(call.merchant).toBe("Bar do Zé");
     expect(call.items).toHaveLength(2);
-    expect(call.serviceFeePercent).toBe(10);
+    expect(call.serviceFeeBasisPoints).toBe(1000);
     expect(call.totalCents).toBe(6900);
   });
 

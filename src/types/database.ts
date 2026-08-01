@@ -17,10 +17,10 @@ export type Database = {
     Functions: {
       graphql: {
         Args: {
+          extensions?: Json
           operationName?: string
           query?: string
           variables?: Json
-          extensions?: Json
         }
         Returns: Json
       }
@@ -697,7 +697,7 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "expense_payers_share_reachability_fk"
+            foreignKeyName: "expense_payers_participant_fkey"
             columns: ["expense_id", "user_id"]
             isOneToOne: true
             referencedRelation: "expense_shares"
@@ -773,7 +773,7 @@ export type Database = {
           group_id: string
           id: string
           merchant_name: string | null
-          service_fee_percent: number
+          service_fee_basis_points: number
           status: Database["public"]["Enums"]["expense_status"]
           title: string
           total_amount: number
@@ -789,7 +789,7 @@ export type Database = {
           group_id: string
           id?: string
           merchant_name?: string | null
-          service_fee_percent?: number
+          service_fee_basis_points?: number
           status?: Database["public"]["Enums"]["expense_status"]
           title: string
           total_amount?: number
@@ -805,7 +805,7 @@ export type Database = {
           group_id?: string
           id?: string
           merchant_name?: string | null
-          service_fee_percent?: number
+          service_fee_basis_points?: number
           status?: Database["public"]["Enums"]["expense_status"]
           title?: string
           total_amount?: number
@@ -1306,61 +1306,41 @@ export type Database = {
     }
     Functions: {
       accept_group_invitation: {
-        Args: {
-          p_group_id: string
-        }
+        Args: { p_group_id: string }
         Returns: undefined
       }
-      activate_expense: {
-        Args: {
-          p_expense_id: string
-        }
-        Returns: undefined
-      }
+      activate_expense: { Args: { p_expense_id: string }; Returns: undefined }
       activate_saved_expense: {
-        Args: {
-          p_expense_id: string
-          p_expected_graph_revision: number
-        }
+        Args: { p_expected_graph_revision: number; p_expense_id: string }
         Returns: Json
       }
       assert_dm_actor: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
       }
       assert_dm_group_shape: {
-        Args: {
-          p_group_id: string
-          p_allow_missing: boolean
-        }
+        Args: { p_allow_missing: boolean; p_group_id: string }
         Returns: undefined
       }
       assert_dm_participants: {
-        Args: {
-          p_group_id: string
-          p_user_ids: string[]
-        }
+        Args: { p_group_id: string; p_user_ids: string[] }
         Returns: undefined
       }
+      begin_expense_graph_direct_mutation: {
+        Args: { p_expense_ids: string[] }
+        Returns: string
+      }
       build_expense_allocation_plan_edges: {
-        Args: {
-          p_expense_id: string
-        }
+        Args: { p_expense_id: string }
         Returns: {
           allocation_index: number
-          debtor_index: number
-          creditor_index: number
           amount_cents: number
+          creditor_index: number
+          debtor_index: number
         }[]
       }
       calculate_service_fee_cents: {
-        Args: {
-          p_subtotal: number
-          p_basis_points: number
-        }
+        Args: { p_basis_points: number; p_subtotal: number }
         Returns: number
       }
       cancel_chat_expense_confirmation: {
@@ -1371,195 +1351,140 @@ export type Database = {
         }
         Returns: Json
       }
-      claim_guest_spot: {
-        Args: {
-          p_claim_token: string
-        }
-        Returns: Json
-      }
-      cleanup_expired_rate_limit_counters: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
+      claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
+      cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       compute_expense_line_total_cents: {
-        Args: {
-          p_quantity_milliunits: number
-          p_unit_price_cents: number
-        }
+        Args: { p_quantity_milliunits: number; p_unit_price_cents: number }
         Returns: number
       }
       confirm_chat_expense: {
-        Args: {
-          p_operation_id: string
-          p_request: Json
-        }
+        Args: { p_operation_id: string; p_request: Json }
         Returns: Json
       }
       confirm_settlement: {
-        Args: {
-          p_settlement_id: string
-        }
+        Args: { p_settlement_id: string }
         Returns: undefined
       }
       confirm_vendor_charge: {
-        Args: {
-          p_charge_id: string
-        }
+        Args: { p_charge_id: string }
         Returns: undefined
       }
       deactivate_group_invite_link: {
-        Args: {
-          p_link_id: string
-        }
+        Args: { p_link_id: string }
         Returns: undefined
       }
       decline_group_invitation: {
-        Args: {
-          p_group_id: string
-        }
+        Args: { p_group_id: string }
         Returns: undefined
       }
-      delete_group: {
-        Args: {
-          p_group_id: string
-        }
+      delete_draft_expense: {
+        Args: { p_expense_id: string }
         Returns: undefined
       }
-      expense_money_max_cents: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
+      delete_group: { Args: { p_group_id: string }; Returns: undefined }
+      expense_money_max_cents: { Args: never; Returns: number }
       get_chat_expense_confirmation: {
-        Args: {
-          p_operation_id: string
-        }
+        Args: { p_operation_id: string }
         Returns: Json
       }
       get_dm_previews: {
-        Args: {
-          p_group_ids: string[]
-        }
+        Args: { p_group_ids: string[] }
         Returns: {
-          group_id: string
           content: string
-          message_type: string
           created_at: string
+          group_id: string
+          message_type: string
         }[]
       }
       get_or_create_dm_group: {
-        Args: {
-          p_other_user_id: string
-        }
+        Args: { p_other_user_id: string }
         Returns: string
       }
       get_settlement_operation: {
-        Args: {
-          p_operation_id: string
-        }
+        Args: { p_operation_id: string }
         Returns: {
           allocation_index: number
-          settlement_id: string
-          group_id: string
-          from_user_id: string
-          to_user_id: string
           amount_cents: number
-          status: Database["public"]["Enums"]["settlement_status"]
-          created_at: string
           confirmed_at: string
+          created_at: string
+          from_user_id: string
+          group_id: string
+          settlement_id: string
+          status: Database["public"]["Enums"]["settlement_status"]
+          to_user_id: string
         }[]
       }
       get_unread_counts: {
-        Args: {
-          p_group_ids: string[]
-        }
+        Args: { p_group_ids: string[] }
         Returns: {
           group_id: string
           unread_count: number
         }[]
       }
       has_outstanding_balance: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: boolean
       }
       increment_rate_limit: {
         Args: {
           p_bucket: string
-          p_subject: string
           p_limit: number
+          p_subject: string
           p_window_seconds: number
         }
         Returns: boolean
       }
-      join_group_via_link: {
-        Args: {
-          p_token: string
-        }
+      join_group_via_link: { Args: { p_token: string }; Returns: Json }
+      leave_group: { Args: { p_group_id: string }; Returns: undefined }
+      load_expense_graph_snapshot: {
+        Args: { p_expense_id: string }
         Returns: Json
       }
-      leave_group: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: undefined
-      }
       lookup_user_by_handle: {
-        Args: {
-          p_handle: string
-        }
+        Args: { p_handle: string }
         Returns: {
-          id: string
-          handle: string
-          name: string
           avatar_url: string
+          handle: string
+          id: string
+          name: string
         }[]
       }
-      my_accepted_group_ids: {
-        Args: Record<PropertyKey, never>
-        Returns: string[]
-      }
-      my_group_ids: {
-        Args: Record<PropertyKey, never>
-        Returns: string[]
-      }
+      my_accepted_group_ids: { Args: never; Returns: string[] }
+      my_group_ids: { Args: never; Returns: string[] }
       record_settlements: {
-        Args: {
-          p_operation_id: string
-          p_allocations: Json
-        }
+        Args: { p_allocations: Json; p_operation_id: string }
         Returns: {
           allocation_index: number
-          settlement_id: string
-          group_id: string
-          from_user_id: string
-          to_user_id: string
           amount_cents: number
-          status: Database["public"]["Enums"]["settlement_status"]
-          created_at: string
           confirmed_at: string
+          created_at: string
+          from_user_id: string
+          group_id: string
+          settlement_id: string
+          status: Database["public"]["Enums"]["settlement_status"]
+          to_user_id: string
           was_replay: boolean
         }[]
       }
       remove_group_member: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
+      }
+      resolve_expense_graph_save_result: {
+        Args: { p_group_id: string; p_save_operation_id: string }
+        Returns: Json
       }
       save_expense_draft_graph: {
         Args: {
-          p_expense: Json
-          p_items: Json
-          p_shares: Json
-          p_payers: Json
-          p_guests: Json
-          p_guest_shares: Json
-          p_participant_order: Json
           p_expected_graph_revision: number
+          p_expense: Json
+          p_guest_shares: Json
+          p_guests: Json
+          p_items: Json
+          p_participant_order: Json
+          p_payers: Json
           p_save_operation_id: string
+          p_shares: Json
         }
         Returns: Json
       }
@@ -1578,27 +1503,33 @@ export type Database = {
   }
 }
 
-type PublicSchema = Database[Extract<keyof Database, "public">]
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-        Database[PublicTableNameOrOptions["schema"]]["Views"])
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
-        PublicSchema["Views"])
-    ? (PublicSchema["Tables"] &
-        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -1606,20 +1537,24 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -1627,20 +1562,24 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -1648,30 +1587,52 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  PublicEnumNameOrOptions extends
-    | keyof PublicSchema["Enums"]
-    | { schema: keyof Database },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = PublicEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
-    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof PublicSchema["CompositeTypes"]
-    | { schema: keyof Database },
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof Database
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
     : never = never,
-> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof PublicSchema["CompositeTypes"]
-    ? PublicSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
+
+export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
+  public: {
+    Enums: {
+      chat_message_type: ["text", "system_expense", "system_settlement"],
+      expense_status: ["draft", "active", "settled"],
+      expense_type: ["itemized", "single_amount"],
+      group_member_status: ["invited", "accepted"],
+      pix_key_type: ["cpf", "email", "random", "phone"],
+      settlement_status: ["pending", "confirmed"],
+    },
+  },
+} as const
 

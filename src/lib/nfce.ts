@@ -15,7 +15,6 @@
  */
 import * as cheerio from "cheerio";
 import type { ReceiptItem, ReceiptOcrResult } from "./receipt-ocr";
-import { sanitizeReceiptResult } from "./receipt-sanitize";
 
 /** Result of a SEFAZ page fetch attempt. */
 export interface SefazFetchResult {
@@ -155,46 +154,33 @@ function extractMerchant($: cheerio.CheerioAPI): string | null {
 }
 
 /**
- * Try to extract a service fee percentage from the SEFAZ page.
- * Brazilian restaurants often add a 10% "taxa de serviço" which may
- * appear as a line item, a summary row, or in the page text.
- * Returns 0 if no service fee is found.
+ * Try to extract an explicitly stated service fee percentage from the SEFAZ
+ * page, converted to integer basis points. Brazilian restaurants often add a
+ * 10% "taxa de serviço" which may appear as a line item, a summary row, or
+ * in the page text. Never derives a percentage from a monetary fee value
+ * divided by a subtotal (issue #477: that ratio is never printed on the
+ * page as ground truth, so computing it would fabricate a value the source
+ * never stated). Returns 0 basis points if no explicit percentage is found.
  */
-function extractServiceFeePercent($: cheerio.CheerioAPI): number {
+function extractServiceFeeBasisPoints($: cheerio.CheerioAPI): number {
   const bodyText = $("body").text();
 
-  // Pattern 1: Explicit percentage mention — "Taxa de Serviço (10%)" or "Serviço: 10%"
+  // Explicit percentage mention — "Taxa de Serviço (10%)" or "Serviço: 10%"
   const percentMatch = bodyText.match(
     /(?:taxa\s*(?:de\s*)?servi[çc]o|servi[çc]o)\s*[:(]?\s*(\d{1,2})[,.]?(\d{0,2})\s*%/i,
   );
   if (percentMatch) {
     const whole = parseInt(percentMatch[1], 10);
-    const frac = percentMatch[2] ? parseInt(percentMatch[2], 10) : 0;
-    const pct = frac > 0 ? whole + frac / Math.pow(10, percentMatch[2].length) : whole;
-    if (pct > 0 && pct <= 30) return pct;
-  }
-
-  // Pattern 2: Service fee as a monetary value — derive percentage from items total
-  // Look for "Taxa de Serviço" followed by a currency value
-  const feeValueMatch = bodyText.match(
-    /(?:taxa\s*(?:de\s*)?servi[çc]o|gorjeta\s*sugerida)\s*[:]?\s*R?\$?\s*([\d.,]+)/i,
-  );
-  if (feeValueMatch) {
-    const feeCents = parseBrlToCents(feeValueMatch[1]);
-    if (feeCents > 0) {
-      // We need the subtotal (items total) to derive the percentage.
-      // Try to find a subtotal value in the page.
-      const subtotalMatch = bodyText.match(
-        /(?:subtotal|sub[\s-]?total|total\s*(?:dos\s*)?(?:itens|produtos))\s*[:]?\s*R?\$?\s*([\d.,]+)/i,
-      );
-      if (subtotalMatch) {
-        const subtotalCents = parseBrlToCents(subtotalMatch[1]);
-        if (subtotalCents > 0) {
-          const pct = Math.round((feeCents / subtotalCents) * 100);
-          if (pct > 0 && pct <= 30) return pct;
-        }
-      }
-    }
+    const fracDigits = percentMatch[2] ?? "";
+    // Exact integer basis points from the printed digits — never a float
+    // division. "10" -> 1000; "10,5" -> 1050; "10,55" -> 1055.
+    const fracBps = fracDigits.length === 0
+      ? 0
+      : fracDigits.length === 1
+        ? parseInt(fracDigits, 10) * 10
+        : parseInt(fracDigits, 10);
+    const bps = whole * 100 + fracBps;
+    if (bps > 0 && bps <= 3000) return bps;
   }
 
   return 0;
@@ -337,30 +323,20 @@ function extractFromDivs(
         /(?:Vl\.?\s*Total|V[.\s]*Total|Total)[.:]*\s*R?\$?\s*([\d.,]+)/i,
       );
 
-      if (description || qtyMatch || unitMatch || totalMatch) {
-        const quantity = qtyMatch ? parseQuantity(qtyMatch[1]) : 1;
-        const unitPriceCents = unitMatch
-          ? parseBrlToCents(unitMatch[1])
-          : 0;
-        const totalCents = totalMatch
-          ? parseBrlToCents(totalMatch[1])
-          : 0;
+      if (description && qtyMatch && unitMatch && totalMatch) {
+        const quantity = parseQuantity(qtyMatch[1]);
+        const unitPriceCents = parseBrlToCents(unitMatch[1]);
+        const totalCents = parseBrlToCents(totalMatch[1]);
 
-        // Derive missing values where possible
-        const finalUnit =
-          unitPriceCents ||
-          (totalCents && quantity
-            ? Math.round(totalCents / quantity)
-            : 0);
-        const finalTotal =
-          totalCents || Math.round(finalUnit * quantity);
-
-        if (description && finalTotal > 0) {
+        // Never derive a missing unit price or total from the other value
+        // (issue #477): only push the item when both were explicitly
+        // matched and parsed to a positive value.
+        if (unitPriceCents > 0 && totalCents > 0) {
           items.push({
             description: cleanDescription(description),
             quantity,
-            unitPriceCents: finalUnit,
-            totalCents: finalTotal,
+            unitPriceCents,
+            totalCents,
           });
         }
       }
@@ -396,12 +372,11 @@ function extractFromText(
     const unitPriceCents = parseBrlToCents(match[4]);
     const totalCents = parseBrlToCents(match[5]);
 
-    if (description && totalCents > 0) {
+    if (description && unitPriceCents > 0 && totalCents > 0) {
       items.push({
         description: cleanDescription(description),
         quantity,
-        unitPriceCents:
-          unitPriceCents || Math.round(totalCents / quantity),
+        unitPriceCents,
         totalCents,
       });
     }
@@ -419,12 +394,11 @@ function extractFromText(
     const unitPriceCents = parseBrlToCents(match[3]);
     const totalCents = parseBrlToCents(match[4]);
 
-    if (description && totalCents > 0) {
+    if (description && unitPriceCents > 0 && totalCents > 0) {
       items.push({
         description: cleanDescription(description),
         quantity,
-        unitPriceCents:
-          unitPriceCents || Math.round(totalCents / quantity),
+        unitPriceCents,
         totalCents,
       });
     }
@@ -462,61 +436,22 @@ function parseItemFromTexts(texts: string[]): ReceiptItem | null {
   const description = cleanDescription(texts[descIndex]);
   if (!description) return null;
 
-  // With 3+ numbers: qty, unitPrice, total
+  // With 3+ numbers: qty, unitPrice, total — only when both unitPrice and
+  // total were explicitly present and parsed (issue #477: never solve the
+  // inverse `totalCents / quantity` when unitPrice failed to parse).
   if (numbers.length >= 3) {
     const quantity = parseQuantity(numbers[0].value);
     const unitPriceCents = parseBrlToCents(numbers[1].value);
     const totalCents = parseBrlToCents(numbers[2].value);
-    if (totalCents > 0) {
-      return {
-        description,
-        quantity,
-        unitPriceCents:
-          unitPriceCents || Math.round(totalCents / quantity),
-        totalCents,
-      };
+    if (unitPriceCents > 0 && totalCents > 0) {
+      return { description, quantity, unitPriceCents, totalCents };
     }
   }
 
-  // With 2 numbers: assume unitPrice and total (qty=1) or qty and total
-  if (numbers.length === 2) {
-    const v1 = parseBrlToCents(numbers[0].value);
-    const v2 = parseBrlToCents(numbers[1].value);
-    if (v2 > 0) {
-      if (v1 > 0 && v1 <= v2) {
-        // v1=unitPrice, v2=total
-        const qty = v2 / v1;
-        return {
-          description,
-          quantity: Math.abs(qty - Math.round(qty)) < 0.01 ? Math.round(qty) : 1,
-          unitPriceCents: v1,
-          totalCents: v2,
-        };
-      }
-      // v1 might be quantity (non-monetary)
-      const qty = parseQuantity(numbers[0].value);
-      return {
-        description,
-        quantity: qty,
-        unitPriceCents: Math.round(v2 / qty),
-        totalCents: v2,
-      };
-    }
-  }
-
-  // With 1 number: assume it's the total
-  if (numbers.length === 1) {
-    const totalCents = parseBrlToCents(numbers[0].value);
-    if (totalCents > 0) {
-      return {
-        description,
-        quantity: 1,
-        unitPriceCents: totalCents,
-        totalCents,
-      };
-    }
-  }
-
+  // With 1 or 2 numbers, the source states at most one of {quantity, unit
+  // price, total} unambiguously alongside the other — solving for the
+  // missing value(s) would be a non-unique inverse guess, which issue #477
+  // forbids. Reject the item outright instead of guessing.
   return null;
 }
 
@@ -561,15 +496,21 @@ export function parseSefazPage(html: string): ReceiptOcrResult | null {
 
   const merchant = extractMerchant($);
   const extractedTotal = extractTotal($);
-  const itemsTotal = items.reduce((sum, item) => sum + item.totalCents, 0);
-  const serviceFeePercent = extractServiceFeePercent($);
 
-  return sanitizeReceiptResult({
+  // Never default a missing receipt root total to the item sum (issue
+  // #477): if the page has no explicitly stated total, this page cannot be
+  // used and the caller falls back to the photo/manual-entry path.
+  if (extractedTotal <= 0) return null;
+
+  const serviceFeeBasisPoints = extractServiceFeeBasisPoints($);
+
+  return {
     merchant,
     items,
-    serviceFeePercent,
-    totalCents: extractedTotal > 0 ? extractedTotal : itemsTotal,
-  });
+    serviceFeeBasisPoints,
+    fixedFeesCents: 0,
+    totalCents: extractedTotal,
+  };
 }
 
 /**

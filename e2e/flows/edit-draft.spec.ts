@@ -22,15 +22,15 @@ test.describe("Edit Draft Flow", () => {
     // === Step 1: Create a draft bill ===
     await page.goto("/app/bill/new");
 
-    // Select "Valor unico"
-    await page.getByRole("button", { name: /valor unico/i }).click();
+    // Select "Valor único"
+    await page.getByRole("button", { name: /valor único/i }).click();
 
     // Enter bill title
     await expect(page.getByLabel(/nome da conta/i)).toBeVisible();
     await page.getByLabel(/nome da conta/i).fill(billTitle);
 
     // Continue to participants step
-    await page.getByRole("button", { name: /proximo/i }).click();
+    await page.getByRole("button", { name: /próximo/i }).click();
 
     // Add Bob by handle
     await expect(page.getByText(/adicionar participantes/i)).toBeVisible();
@@ -40,21 +40,21 @@ test.describe("Edit Draft Flow", () => {
     await expect(page.getByText(/bob/i)).toBeVisible();
 
     // Continue to amount-split step (this saves the draft)
-    await page.getByRole("button", { name: /proximo/i }).click();
+    await page.getByRole("button", { name: /próximo/i }).click();
 
     // Enter total amount
     await expect(page.getByLabel(/valor total/i)).toBeVisible();
     await page.getByLabel(/valor total/i).fill("200");
 
     // Continue to payer step (saves draft with splits)
-    await page.getByRole("button", { name: /proximo/i }).click();
+    await page.getByRole("button", { name: /próximo/i }).click();
     await expect(page.getByText(/quem pagou/i)).toBeVisible();
 
     // Set Alice as payer
     await page.getByRole("button", { name: /alice/i }).first().click();
 
     // Continue to summary (saves draft with payer)
-    await page.getByRole("button", { name: /proximo/i }).click();
+    await page.getByRole("button", { name: /próximo/i }).click();
     await expect(page.getByText(/resumo/i)).toBeVisible();
 
     // Get the bill URL from draft detail — we need to navigate there
