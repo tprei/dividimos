@@ -424,16 +424,35 @@ function NewBillPageContent() {
 
     const storeState = useBillStore.getState();
     if (storeState.expense?.id === draftId) {
-      editLoadedRef.current = true;
-      setIsEditing(true);
-      setEditDraftId(draftId);
-      setBillType(storeState.expense.expenseType);
-      setTitle(storeState.expense.title);
-      setMerchantName(storeState.expense.merchantName ?? "");
-      setServiceFee(String(storeState.expense.serviceFeePercent));
-      setFixedFees(storeState.expense.fixedFees ? String(storeState.expense.fixedFees / 100) : "");
-      setRemoteBillId(draftId);
-      setStep("participants");
+      // #477: the store already holds this draft's editable rows from
+      // an earlier mount in the same SPA session (the module-level
+      // Zustand store survives client-side navigation even though
+      // draftRevisionRef is a fresh per-mount ref defaulting to zero).
+      // Fetching only the snapshot's graph_revision -- not re-hydrating
+      // the already-correct rows -- keeps editable rows and the
+      // graph-revision ref paired to the same persisted state instead
+      // of silently combining current rows with a stale/zero revision
+      // on the next save.
+      const draftExpense = storeState.expense;
+      (async () => {
+        const snapshotResult = await loadExpenseGraphSnapshot(draftId);
+        if (editLoadedRef.current) return;
+        if (!snapshotResult || "error" in snapshotResult) {
+          toast.error("Não foi possível carregar este rascunho para edição. Tente novamente.");
+          return;
+        }
+        editLoadedRef.current = true;
+        draftRevisionRef.current = snapshotResult.graphRevision;
+        setIsEditing(true);
+        setEditDraftId(draftId);
+        setBillType(draftExpense.expenseType);
+        setTitle(draftExpense.title);
+        setMerchantName(draftExpense.merchantName ?? "");
+        setServiceFee(String(draftExpense.serviceFeePercent));
+        setFixedFees(draftExpense.fixedFees ? String(draftExpense.fixedFees / 100) : "");
+        setRemoteBillId(draftId);
+        setStep("participants");
+      })();
       return;
     }
 
