@@ -764,6 +764,7 @@ export type Database = {
       }
       expenses: {
         Row: {
+          activation_notified_at: string | null
           created_at: string
           creator_id: string
           expense_type: Database["public"]["Enums"]["expense_type"]
@@ -779,6 +780,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          activation_notified_at?: string | null
           created_at?: string
           creator_id: string
           expense_type?: Database["public"]["Enums"]["expense_type"]
@@ -794,6 +796,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          activation_notified_at?: string | null
           created_at?: string
           creator_id?: string
           expense_type?: Database["public"]["Enums"]["expense_type"]
