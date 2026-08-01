@@ -956,6 +956,12 @@ BEGIN
   -- body action and require authentication." financial_internal is
   -- revoked from every PostgREST role, but this SECURITY DEFINER
   -- function runs with its owner's privileges regardless of caller.
+  -- Shared lock first: without it, this raw SELECT can read the
+  -- pre-flip value while set_financial_maintenance's EXCLUSIVE
+  -- acquisition is mid-transaction, letting a write slip through the
+  -- cutover window instead of blocking behind it.
+  PERFORM pg_catalog.pg_advisory_xact_lock_shared(477000001::bigint);
+
   SELECT maintenance INTO v_maintenance
     FROM financial_internal.financial_compatibility_state
    WHERE id = true;

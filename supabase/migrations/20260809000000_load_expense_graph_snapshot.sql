@@ -61,7 +61,10 @@ DECLARE
 BEGIN
   -- #477/#495: "Run #477's financial compatibility guard as the first
   -- body action and require authentication." This covers the
-  -- read/review/detail surface too, not only writes.
+  -- read/review/detail surface too, not only writes. Shared lock first:
+  -- see activate_saved_expense's identical comment (20260731000000).
+  PERFORM pg_catalog.pg_advisory_xact_lock_shared(477000001::bigint);
+
   SELECT maintenance INTO v_maintenance
     FROM financial_internal.financial_compatibility_state
    WHERE id = true;

@@ -92,7 +92,10 @@ DECLARE
   v_maintenance                boolean;
 BEGIN
   -- #477/#495: "Run #477's financial compatibility guard as the first
-  -- body action and require authentication."
+  -- body action and require authentication." Shared lock first: see
+  -- activate_saved_expense's identical comment (20260731000000).
+  PERFORM pg_catalog.pg_advisory_xact_lock_shared(477000001::bigint);
+
   SELECT maintenance INTO v_maintenance
     FROM financial_internal.financial_compatibility_state
    WHERE id = true;
@@ -807,6 +810,132 @@ END;
 $$;
 
 -- ============================================================
--- 5. Reload PostgREST schema cache (delivered on commit)
+-- 5. confirm_settlement never received #477/#495's "financial
+--    compatibility guard as the first body action" gate any of the
+--    other financial RPCs in this migration series have -- it mutates
+--    balances exactly like activate_saved_expense/claim_guest_spot but
+--    was never redefined by any #477 migration. In-place redefinition,
+--    every existing line unchanged from 20260716000000's definition.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.confirm_settlement(p_settlement_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller      uuid := auth.uid();
+  v_group_id    uuid;
+  v_group       RECORD;
+  v_settlement  RECORD;
+  v_user_a      uuid;
+  v_user_b      uuid;
+  v_delta       integer;
+  v_maintenance boolean;
+BEGIN
+  -- #477/#495: "Run #477's financial compatibility guard as the first
+  -- body action and require authentication." Shared lock first: see
+  -- activate_saved_expense's identical comment (20260731000000).
+  PERFORM pg_catalog.pg_advisory_xact_lock_shared(477000001::bigint);
+
+  SELECT maintenance INTO v_maintenance
+    FROM financial_internal.financial_compatibility_state
+   WHERE id = true;
+
+  IF v_maintenance THEN
+    RAISE EXCEPTION USING ERRCODE = 'PST09', MESSAGE = 'financial_maintenance';
+  END IF;
+
+  IF v_caller IS NULL THEN
+    RAISE EXCEPTION 'not_authenticated' USING ERRCODE = 'PST01';
+  END IF;
+
+  SELECT s.group_id
+    INTO v_group_id
+    FROM public.settlements s
+   WHERE s.id = p_settlement_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'settlement_not_found: %', p_settlement_id;
+  END IF;
+
+  SELECT g.id
+    INTO v_group
+    FROM public.groups g
+   WHERE g.id = v_group_id
+     FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'lifecycle_conflict' USING ERRCODE = 'PST08';
+  END IF;
+
+  SELECT s.*
+    INTO v_settlement
+    FROM public.settlements s
+   WHERE s.id = p_settlement_id
+     FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'settlement_not_found: %', p_settlement_id;
+  END IF;
+
+  IF v_settlement.group_id IS DISTINCT FROM v_group.id THEN
+    RAISE EXCEPTION 'lifecycle_conflict' USING ERRCODE = 'PST08';
+  END IF;
+
+  IF v_settlement.to_user_id IS DISTINCT FROM v_caller THEN
+    RAISE EXCEPTION 'permission_denied: only the payee can confirm' USING ERRCODE = 'PST05';
+  END IF;
+
+  IF v_settlement.group_id NOT IN (SELECT public.my_accepted_group_ids()) THEN
+    RAISE EXCEPTION 'permission_denied: caller is no longer a member of the group' USING ERRCODE = 'PST05';
+  END IF;
+
+  IF v_settlement.status != 'pending' THEN
+    RAISE EXCEPTION 'invalid_status: settlement is %, expected pending', v_settlement.status;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.group_members
+     WHERE group_id = v_settlement.group_id
+       AND user_id = v_settlement.from_user_id
+       AND status = 'accepted'
+  ) AND NOT EXISTS (
+    SELECT 1
+      FROM public.groups
+     WHERE id = v_settlement.group_id
+       AND creator_id = v_settlement.from_user_id
+  ) THEN
+    RAISE EXCEPTION 'permission_denied: debtor is no longer a member of the group' USING ERRCODE = 'PST05';
+  END IF;
+
+  IF v_settlement.from_user_id < v_settlement.to_user_id THEN
+    v_user_a := v_settlement.from_user_id;
+    v_user_b := v_settlement.to_user_id;
+    v_delta := -v_settlement.amount_cents;
+  ELSE
+    v_user_a := v_settlement.to_user_id;
+    v_user_b := v_settlement.from_user_id;
+    v_delta := v_settlement.amount_cents;
+  END IF;
+
+  INSERT INTO public.balances (group_id, user_a, user_b, amount_cents)
+  VALUES (v_settlement.group_id, v_user_a, v_user_b, v_delta)
+  ON CONFLICT (group_id, user_a, user_b)
+  DO UPDATE SET
+    amount_cents = public.balances.amount_cents + EXCLUDED.amount_cents,
+    updated_at = now();
+
+  UPDATE public.settlements
+     SET status = 'confirmed',
+         confirmed_at = now()
+   WHERE id = p_settlement_id;
+END;
+$$;
+
+-- ============================================================
+-- 6. Reload PostgREST schema cache (delivered on commit)
 -- ============================================================
 NOTIFY pgrst, 'reload schema';
