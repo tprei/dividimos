@@ -7,6 +7,7 @@ import {
   authenticateAs,
   type TestUser,
 } from "@/test/integration-helpers";
+import { forceLockContentionRace } from "@/test/db-race-barrier";
 import type { Database, Json } from "@/types/database";
 
 // ---------------------------------------------------------------------------
@@ -371,32 +372,51 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft RPC", () => {
     // and creates its own client, giving us the second connection.
     const aliceClientA = authenticateAs(alice);
 
-    const [activateResult, saveResult] = await Promise.all([
-      aliceClientA.rpc("activate_expense", { p_expense_id: expenseId }),
-      callSaveDraft(alice, {
-        expense: {
-          id: expenseId,
-          group_id: groupId,
-          title: "Concurrent save attempt",
-          expense_type: "single_amount",
-          total_amount: 6000,
-          service_fee_percent: 0,
-          fixed_fees: 0,
+    const { result: [activateResult, saveResult], contention } =
+      await forceLockContentionRace(
+        process.env.SUPABASE_DB_URL!,
+        {
+          lockSql: "select id from expenses where id = $1 for update",
+          lockParams: [expenseId],
+          queryContains: ["activate_expense", "save_expense_draft"],
+          expectedRacers: 2,
         },
-        shares: [
-          { user_id: alice.id, share_amount_cents: 3000 },
-          { user_id: bob.id, share_amount_cents: 3000 },
-        ],
-        payers: [{ user_id: alice.id, amount_cents: 6000 }],
-      }),
-    ]);
+        () =>
+          Promise.all([
+            aliceClientA.rpc("activate_expense", { p_expense_id: expenseId }),
+            callSaveDraft(alice, {
+              expense: {
+                id: expenseId,
+                group_id: groupId,
+                title: "Concurrent save attempt",
+                expense_type: "single_amount",
+                total_amount: 6000,
+                service_fee_percent: 0,
+                fixed_fees: 0,
+              },
+              shares: [
+                { user_id: alice.id, share_amount_cents: 3000 },
+                { user_id: bob.id, share_amount_cents: 3000 },
+              ],
+              payers: [{ user_id: alice.id, amount_cents: 6000 }],
+            }),
+          ]),
+      );
 
-    expect(activateResult.error).toBeNull();
+    expect(contention.observed).toBe(true);
+
+    // Either legal lock order is coherent: whichever request loses the row
+    // lock observes the other's committed effect and fails accordingly, but
+    // the two writers can never BOTH lose — at least one must succeed.
+    if (activateResult.error) {
+      expect(activateResult.error.message).toMatch(/invalid_status/);
+    }
     if (saveResult.error) {
       expect(saveResult.error.message).toMatch(/invalid_status/);
     } else {
       expect(saveResult.data?.id).toBe(expenseId);
     }
+    expect(activateResult.error === null || saveResult.error === null).toBe(true);
 
     const [
       { data: shareRows, error: sharesError },
