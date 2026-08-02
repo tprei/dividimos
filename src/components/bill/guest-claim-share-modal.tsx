@@ -1,12 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Copy, ExternalLink, MessageCircle, X } from "lucide-react";
+import { Copy, ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
-import { buildWhatsAppLink } from "@/lib/contacts";
 import { buildClaimUrl } from "@/lib/claim-qr";
 import { formatBRL } from "@/lib/currency";
 
@@ -14,9 +13,10 @@ interface GuestClaimShareModalProps {
   open: boolean;
   onClose: () => void;
   guestName: string;
-  guestPhone?: string;
+  /** Transient credential from the issuer response; null while closed. */
+  token: string | null;
+  generation: number;
   shareAmountCents?: number;
-  claimToken: string;
   expenseTitle: string;
 }
 
@@ -24,9 +24,8 @@ export function GuestClaimShareModal({
   open,
   onClose,
   guestName,
-  guestPhone,
+  token,
   shareAmountCents,
-  claimToken,
   expenseTitle,
 }: GuestClaimShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,9 +35,9 @@ export function GuestClaimShareModal({
     setCanShare(typeof navigator?.share === "function");
   }, []);
 
-  const claimUrl = typeof window !== "undefined"
-    ? buildClaimUrl(claimToken)
-    : "";
+  // The credential lives only in the fragment; buildClaimUrl never puts it in
+  // a path, query, or header. With no transient token there is nothing to show.
+  const claimUrl = token ? buildClaimUrl(token) : "";
 
   useEffect(() => {
     if (!open || !claimUrl || !canvasRef.current) return;
@@ -73,7 +72,7 @@ export function GuestClaimShareModal({
     toast.success("Link copiado!");
   };
 
-  if (!open) return null;
+  if (!open || token === null) return null;
 
   return (
     <AnimatePresence>
@@ -128,16 +127,6 @@ export function GuestClaimShareModal({
           </p>
 
           <div className="mt-4 space-y-2">
-            <Button
-              className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
-              onClick={() => {
-                const url = buildWhatsAppLink(`${shareText}\n${claimUrl}`, guestPhone);
-                window.open(url, "_blank");
-              }}
-            >
-              <MessageCircle className="h-4 w-4" />
-              Enviar pelo WhatsApp
-            </Button>
             {canShare && (
               <Button className="w-full gap-2" variant="outline" onClick={handleShare}>
                 <ExternalLink className="h-4 w-4" />

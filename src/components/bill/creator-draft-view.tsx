@@ -1,10 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, Loader2, Pencil, QrCode, Users } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Pencil, Users } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
@@ -30,15 +29,9 @@ export function CreatorDraftView({
   participants: UserProfile[];
   items: ExpenseItem[];
   shares: { userId: string; shareAmountCents: number }[];
-  guests: { id: string; displayName: string; claimToken: string; share?: { shareAmountCents: number } }[];
+  guests: { id: string; displayName: string; share?: { shareAmountCents: number } }[];
 }) {
   const [finalizing, setFinalizing] = useState(false);
-  const [guestShareModal, setGuestShareModal] = useState<{
-    open: boolean;
-    guestName: string;
-    shareAmountCents?: number;
-    claimToken: string;
-  }>({ open: false, guestName: "", claimToken: "" });
 
   const hasContent = shares.length > 0 || items.length > 0;
 
@@ -159,30 +152,12 @@ export function CreatorDraftView({
             {guests.map((guest) => (
               <div
                 key={guest.id}
-                className="flex items-center justify-between rounded-xl border border-dashed bg-card px-4 py-3"
+                className="flex items-center gap-3 rounded-xl border border-dashed bg-card px-4 py-3"
               >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
-                    {guest.displayName.charAt(0)}
-                  </span>
-                  <span className="text-sm font-medium">{guest.displayName}</span>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 text-xs"
-                  onClick={() =>
-                    setGuestShareModal({
-                      open: true,
-                      guestName: guest.displayName,
-                      shareAmountCents: guest.share?.shareAmountCents,
-                      claimToken: guest.claimToken,
-                    })
-                  }
-                >
-                  <QrCode className="h-3.5 w-3.5" />
-                  Convidar
-                </Button>
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
+                  {guest.displayName.charAt(0)}
+                </span>
+                <span className="text-sm font-medium">{guest.displayName}</span>
               </div>
             ))}
           </div>
@@ -216,15 +191,6 @@ export function CreatorDraftView({
           </Button>
         </Link>
       </motion.div>
-
-      <GuestClaimShareModal
-        open={guestShareModal.open}
-        onClose={() => setGuestShareModal({ ...guestShareModal, open: false })}
-        guestName={guestShareModal.guestName}
-        shareAmountCents={guestShareModal.shareAmountCents}
-        claimToken={guestShareModal.claimToken}
-        expenseTitle={expense.title}
-      />
     </div>
   );
 }

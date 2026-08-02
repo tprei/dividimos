@@ -294,7 +294,7 @@ export async function loadExpense(
       .single(),
     supabase
       .from("expense_guests")
-      .select("*")
+      .select("id, expense_id, display_name, claimed_by, claimed_at, created_at")
       .eq("expense_id", expenseId),
     supabase
       .from("expense_guest_shares")
@@ -442,4 +442,145 @@ export async function listGroupExpenses(
   }
 
   return { expenses, participants };
+}
+
+// ============================================================
+// Issue / rotate a guest-claim credential (creator only)
+//
+// The plaintext claim credential is never stored in the domain model: it
+// exists only in the issuer response returned here, and the caller keeps it
+// in transient UI state for as long as the delivery modal is open. The RPC
+// enforces creator authority and status='active'; this function maps its
+// error codes to fixed PT-BR messages and strictly decodes the success body.
+// ============================================================
+
+export type IssueGuestClaimTokenResult =
+  | { outcome: "exists"; generation: number }
+  | { outcome: "issued"; token: string; rotated: boolean; generation: number };
+
+export type IssueGuestClaimTokenErrorCode =
+  | "PST01"
+  | "PST02"
+  | "PST05"
+  | "PST07"
+  | "PST08"
+  | "22P02"
+  | "22003"
+  | "unknown";
+
+export interface IssueGuestClaimTokenError {
+  code: IssueGuestClaimTokenErrorCode;
+  message: string;
+}
+
+const GUEST_CLAIM_TOKEN_MESSAGES: Record<IssueGuestClaimTokenErrorCode, string> = {
+  PST01: "Faça login para gerar o link do convidado.",
+  PST02: "Não foi possível gerar o link: dados inválidos.",
+  PST05: "Somente o criador da despesa pode gerar este link.",
+  PST07: "Não foi possível gerar o link do convidado.",
+  PST08: "Este link foi alterado. Tente novamente.",
+  "22P02": "Não foi possível gerar o link: dados inválidos.",
+  "22003": "Não foi possível gerar o link do convidado.",
+  unknown: "Erro ao gerar o link do convidado.",
+};
+
+/** RPC error codes this function maps to a fixed message. "unknown" is the
+ *  client-only fallback, so it is not a valid wire code here. */
+const KNOWN_GUEST_CLAIM_TOKEN_CODES: Record<string, true> = {
+  PST01: true,
+  PST02: true,
+  PST05: true,
+  PST07: true,
+  PST08: true,
+  "22P02": true,
+  "22003": true,
+};
+
+/** Exact key sets the issuer may return; any other key is corrupt. */
+const ISSUED_BODY_KEYS: Record<string, true> = {
+  outcome: true,
+  token: true,
+  rotated: true,
+  generation: true,
+};
+const EXISTS_BODY_KEYS: Record<string, true> = { outcome: true, generation: true };
+
+/**
+ * Strictly decode the issuer response body. Rejects missing keys, wrong
+ * types, and any unknown key — the issuer returns a fixed shape, so anything
+ * else is treated as corrupt without logging the payload.
+ */
+function decodeIssueGuestClaimTokenBody(
+  data: unknown,
+): IssueGuestClaimTokenResult | null {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
+  const obj = data as Record<string, unknown>;
+
+  if (obj.outcome === "issued") {
+    if (
+      typeof obj.token !== "string" ||
+      obj.token.length === 0 ||
+      typeof obj.generation !== "number" ||
+      !Number.isFinite(obj.generation) ||
+      typeof obj.rotated !== "boolean"
+    ) {
+      return null;
+    }
+    for (const key of Object.keys(obj)) {
+      if (!(key in ISSUED_BODY_KEYS)) return null;
+    }
+    return {
+      outcome: "issued",
+      token: obj.token,
+      rotated: obj.rotated,
+      generation: obj.generation,
+    };
+  }
+
+  if (obj.outcome === "exists") {
+    if (typeof obj.generation !== "number" || !Number.isFinite(obj.generation)) {
+      return null;
+    }
+    for (const key of Object.keys(obj)) {
+      if (!(key in EXISTS_BODY_KEYS)) return null;
+    }
+    return { outcome: "exists", generation: obj.generation };
+  }
+
+  return null;
+}
+
+export async function issueGuestClaimToken(
+  guestId: string,
+  rotate: boolean,
+  expectedGeneration: number | null,
+): Promise<{ data: IssueGuestClaimTokenResult } | { error: IssueGuestClaimTokenError }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("issue_guest_claim_token", {
+    p_guest_id: guestId,
+    p_rotate: rotate,
+    // The SQL arg is a nullable integer, but gen-types renders it non-null,
+    // so cast the null initial-issue probe to satisfy the wire type.
+    p_expected_generation: expectedGeneration as unknown as number,
+  });
+
+  if (error) {
+    const rawCode = typeof error.code === "string" ? error.code : "";
+    const code: IssueGuestClaimTokenErrorCode = KNOWN_GUEST_CLAIM_TOKEN_CODES[rawCode]
+      ? (rawCode as IssueGuestClaimTokenErrorCode)
+      : "unknown";
+    return { error: { code, message: GUEST_CLAIM_TOKEN_MESSAGES[code] } };
+  }
+
+  const decoded = decodeIssueGuestClaimTokenBody(data);
+  if (!decoded) {
+    return {
+      error: {
+        code: "PST07",
+        message: GUEST_CLAIM_TOKEN_MESSAGES.PST07,
+      },
+    };
+  }
+
+  return { data: decoded };
 }

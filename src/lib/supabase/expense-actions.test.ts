@@ -11,6 +11,7 @@ import {
   loadExpense,
   deleteExpense,
   listGroupExpenses,
+  issueGuestClaimToken,
   type SaveExpenseDraftParams,
 } from "./expense-actions";
 import {
@@ -316,7 +317,6 @@ describe("loadExpense", () => {
           id: "guest-1",
           expense_id: "expense-1",
           display_name: "Maria",
-          claim_token: "token-abc",
           claimed_by: null,
           claimed_at: null,
           created_at: "2024-01-01T00:00:00Z",
@@ -325,7 +325,6 @@ describe("loadExpense", () => {
           id: "guest-2",
           expense_id: "expense-1",
           display_name: "Joao",
-          claim_token: "token-def",
           claimed_by: "user-carlos",
           claimed_at: "2024-01-02T00:00:00Z",
           created_at: "2024-01-01T00:00:00Z",
@@ -445,5 +444,170 @@ describe("listGroupExpenses", () => {
 
     expect(result.expenses).toHaveLength(0);
     expect(result.participants).toHaveLength(0);
+  });
+});
+
+
+// ============================================================
+// issueGuestClaimToken
+// ============================================================
+
+describe("issueGuestClaimToken", () => {
+  it("decodes an initial-issue response", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: { outcome: "issued", token: "gst1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", rotated: false, generation: 1 },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect(result).toEqual({
+      data: {
+        outcome: "issued",
+        token: "gst1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        rotated: false,
+        generation: 1,
+      },
+    });
+  });
+
+  it("decodes a rotate-issue response", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: { outcome: "issued", token: "gst1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", rotated: true, generation: 2 },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", true, 1);
+
+    expect(result).toEqual({
+      data: {
+        outcome: "issued",
+        token: "gst1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        rotated: true,
+        generation: 2,
+      },
+    });
+  });
+
+  it("decodes an exists response (no token revealed)", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: { outcome: "exists", generation: 3 },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect(result).toEqual({ data: { outcome: "exists", generation: 3 } });
+  });
+
+  it("passes the exact rpc args, casting the null probe to the wire number type", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: { outcome: "issued", token: "gst1_t", rotated: false, generation: 1 },
+    });
+
+    await issueGuestClaimToken("guest-1", false, null);
+
+    const rpcCalls = mock.findCalls("rpc:issue_guest_claim_token", "rpc");
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].args[1]).toEqual({
+      p_guest_id: "guest-1",
+      p_rotate: false,
+      p_expected_generation: null,
+    });
+  });
+
+  it("rejects a corrupt issued body (missing fields) as PST07 without logging", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: { outcome: "issued", token: "gst1_x" },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error.code).toBe("PST07");
+    }
+  });
+
+  it("rejects an issued body with an unknown key as PST07", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: {
+        outcome: "issued",
+        token: "gst1_x",
+        rotated: false,
+        generation: 1,
+        secret: "leak",
+      },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error.code).toBe("PST07");
+    }
+  });
+
+  it("rejects an unknown outcome as PST07", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: { outcome: "something-else", generation: 1 },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error.code).toBe("PST07");
+    }
+  });
+
+  it.each([
+    "PST01",
+    "PST02",
+    "PST05",
+    "PST07",
+    "PST08",
+    "22P02",
+    "22003",
+  ] as const)("maps the %s rpc error code to a fixed message", async (code) => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: null,
+      error: { code, message: `raw-${code}-detail` },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error.code).toBe(code);
+      expect(result.error.message).not.toContain("raw");
+      expect(result.error.message.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("maps an unknown rpc error code to 'unknown' and never leaks the message", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: null,
+      error: { code: "XX000", message: "internal database detail" },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error.code).toBe("unknown");
+      expect(result.error.message).not.toContain("internal database detail");
+    }
+  });
+
+  it("treats an error without a code as unknown", async () => {
+    mock.onRpc("issue_guest_claim_token", {
+      data: null,
+      error: { message: "network failure" },
+    });
+
+    const result = await issueGuestClaimToken("guest-1", false, null);
+
+    expect("error" in result).toBe(true);
+    if ("error" in result) {
+      expect(result.error.code).toBe("unknown");
+    }
   });
 });

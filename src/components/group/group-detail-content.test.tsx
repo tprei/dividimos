@@ -61,7 +61,8 @@ vi.mock("react-hot-toast", () => ({
   },
 }));
 
-import { GroupDetailContent, type GroupDetailData } from "./group-detail-content";
+import { GroupDetailContent, type GroupDetailData, type UnclaimedGuest } from "./group-detail-content";
+import type { ExpenseStatus } from "@/types";
 
 function buildDefaultData(overrides: Partial<GroupDetailData> = {}): GroupDetailData {
   return {
@@ -331,5 +332,56 @@ describe("GroupDetailContent", () => {
     render(<GroupDetailContent initialData={data} />);
 
     expect(screen.queryByText("Convidar")).toBeNull();
+  });
+  describe("guest delivery control", () => {
+    const pendingGuest = (overrides: {
+      id?: string;
+      creatorId?: string;
+      status?: ExpenseStatus;
+    } = {}): UnclaimedGuest => ({
+      id: "g1",
+      expenseId: "exp-1",
+      displayName: "Maria",
+      creatorId: "user-1",
+      status: "active",
+      expenseTitle: "Almoço",
+      ...overrides,
+    });
+
+    // Default data has no unclaimed guests, so the only "Convidar" is the
+    // member-invite button (asserted elsewhere). With a creator+active guest,
+    // the per-expense delivery control adds a second one.
+    it("shows the delivery control for the expense creator on an active expense", () => {
+      render(
+        <GroupDetailContent
+          initialData={buildDefaultData({ unclaimedGuests: [pendingGuest()] })}
+        />,
+      );
+      expect(screen.getAllByText("Convidar").length).toBe(2);
+    });
+
+    it("hides the delivery control when the guest's expense is not active", () => {
+      render(
+        <GroupDetailContent
+          initialData={buildDefaultData({
+            unclaimedGuests: [pendingGuest({ status: "settled" })],
+          })}
+        />,
+      );
+      expect(screen.getAllByText("Convidar").length).toBe(1);
+    });
+
+    it("hides the delivery control when the current user did not create the expense", () => {
+      // user-1 is the group creator (so the member-invite button still shows)
+      // but did not create this expense, so no guest delivery control.
+      render(
+        <GroupDetailContent
+          initialData={buildDefaultData({
+            unclaimedGuests: [pendingGuest({ creatorId: "user-2" })],
+          })}
+        />,
+      );
+      expect(screen.getAllByText("Convidar").length).toBe(1);
+    });
   });
 });

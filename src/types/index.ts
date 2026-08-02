@@ -155,12 +155,11 @@ export interface ExpensePayer {
 // Guest types (placeholder participants without accounts)
 // ============================================================
 
-/** A guest placeholder on an expense. Has a claim token for later account linking. */
+/** A guest placeholder on an expense. The creator issues a claim credential on demand. */
 export interface ExpenseGuest {
   id: string;
   expenseId: string;
   displayName: string;
-  claimToken: string;
   claimedBy?: string;
   claimedAt?: string;
   createdAt: string;

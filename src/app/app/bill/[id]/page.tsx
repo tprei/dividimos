@@ -22,6 +22,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ModalLoadingSkeleton, Skeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
+import { GuestClaimRotateDialog } from "@/components/bill/guest-claim-rotate-dialog";
+import { useGuestClaimDelivery } from "@/hooks/use-guest-claim-delivery";
 import dynamic from "next/dynamic";
 const PixQrModal = dynamic(
   () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
@@ -134,12 +136,15 @@ export default function BillDetailPage({
   );
   const [settlementRefreshError, setSettlementRefreshError] = useState<string | null>(null);
 
-  const [guestShareModal, setGuestShareModal] = useState<{
-    open: boolean;
-    guestName: string;
-    shareAmountCents?: number;
-    claimToken: string;
-  }>({ open: false, guestName: "", claimToken: "" });
+  const {
+    modal: guestDelivery,
+    rotatePrompt: guestRotatePrompt,
+    issuing: guestIssuing,
+    issue: issueGuestDelivery,
+    confirmRotate: confirmGuestRotate,
+    cancelRotate: cancelGuestRotate,
+    closeModal: closeGuestDelivery,
+  } = useGuestClaimDelivery();
 
   const [expenseData, setExpenseData] = useState<ExpenseWithDetails | null>(null);
   const [loadingFromDb, setLoadingFromDb] = useState(false);
@@ -387,23 +392,23 @@ export default function BillDetailPage({
     [expense],
   );
 
-  const prevUnclaimedTokensRef = useRef<Set<string>>(new Set());
+  const prevUnclaimedIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const currentTokens = new Set(unclaimedGuests.map((g) => g.claimToken));
+    const currentIds = new Set(unclaimedGuests.map((g) => g.id));
 
-    if (guestShareModal.open && guestShareModal.claimToken) {
+    if (guestDelivery.open && guestDelivery.guestId) {
       if (
-        prevUnclaimedTokensRef.current.has(guestShareModal.claimToken) &&
-        !currentTokens.has(guestShareModal.claimToken)
+        prevUnclaimedIdsRef.current.has(guestDelivery.guestId) &&
+        !currentIds.has(guestDelivery.guestId)
       ) {
         toast.success("Convidado entrou na conta!");
-        setGuestShareModal((prev) => ({ ...prev, open: false }));
+        closeGuestDelivery();
       }
     }
 
-    prevUnclaimedTokensRef.current = currentTokens;
-  }, [unclaimedGuests, guestShareModal.open, guestShareModal.claimToken]);
+    prevUnclaimedIdsRef.current = currentIds;
+  }, [unclaimedGuests, guestDelivery, closeGuestDelivery]);
 
   if (loadingFromDb) {
     return (
@@ -614,7 +619,7 @@ export default function BillDetailPage({
         </div>
       </motion.div>
 
-      {currentUser?.id === expense.creatorId && unclaimedGuests.length > 0 && (
+      {currentUser?.id === expense.creatorId && expense.status === "active" && unclaimedGuests.length > 0 && (
         <div className="mt-4 rounded-2xl border-2 border-dashed border-warning/30 bg-warning/5 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-warning">
             <Users className="h-4 w-4" />
@@ -628,13 +633,9 @@ export default function BillDetailPage({
                   size="sm"
                   variant="outline"
                   className="gap-1.5 text-xs"
+                  disabled={guestIssuing}
                   onClick={() =>
-                    setGuestShareModal({
-                      open: true,
-                      guestName: guest.displayName,
-                      shareAmountCents: guest.share?.shareAmountCents,
-                      claimToken: guest.claimToken,
-                    })
+                    issueGuestDelivery(guest.id, guest.displayName, expense.title, guest.share?.shareAmountCents)
                   }
                 >
                   <QrCode className="h-3.5 w-3.5" />
@@ -742,19 +743,15 @@ export default function BillDetailPage({
                           {guest.share ? formatBRL(guest.share.shareAmountCents) : "—"}
                         </span>
                       </div>
-                      {!isClaimed && currentUser?.id === expense.creatorId && (
+                      {!isClaimed && currentUser?.id === expense.creatorId && expense.status === "active" && (
                         <div className="mt-2">
                           <Button
                             size="sm"
                             variant="outline"
                             className="w-full gap-1.5 text-xs"
+                            disabled={guestIssuing}
                             onClick={() =>
-                              setGuestShareModal({
-                                open: true,
-                                guestName: guest.displayName,
-                                shareAmountCents: guest.share?.shareAmountCents,
-                                claimToken: guest.claimToken,
-                              })
+                              issueGuestDelivery(guest.id, guest.displayName, expense.title, guest.share?.shareAmountCents)
                             }
                           >
                             <QrCode className="h-3.5 w-3.5" />
@@ -1170,12 +1167,21 @@ export default function BillDetailPage({
       />
 
       <GuestClaimShareModal
-        open={guestShareModal.open}
-        onClose={() => setGuestShareModal({ ...guestShareModal, open: false })}
-        guestName={guestShareModal.guestName}
-        shareAmountCents={guestShareModal.shareAmountCents}
-        claimToken={guestShareModal.claimToken}
+        open={guestDelivery.open}
+        onClose={closeGuestDelivery}
+        guestName={guestDelivery.guestName}
+        token={guestDelivery.token}
+        generation={guestDelivery.generation}
+        shareAmountCents={guestDelivery.shareAmountCents}
         expenseTitle={expense.title}
+      />
+
+      <GuestClaimRotateDialog
+        open={guestRotatePrompt !== null}
+        guestName={guestRotatePrompt?.guestName ?? ""}
+        issuing={guestIssuing}
+        onConfirm={confirmGuestRotate}
+        onCancel={cancelGuestRotate}
       />
     </div>
   );

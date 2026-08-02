@@ -42,7 +42,7 @@ export default async function GroupDetailPage({
       .in("id", allUserIds),
     supabase
       .from("expenses")
-      .select("id, title, total_amount, status, created_at")
+      .select("id, title, total_amount, status, created_at, creator_id")
       .eq("group_id", id)
       .neq("status", "draft")
       .order("created_at", { ascending: false }),
@@ -68,11 +68,11 @@ export default async function GroupDetailPage({
 
   const expenseList = expenseRows ?? [];
   const expenseIds = expenseList.map((e) => e.id);
-  let guestRows: { id: string; expense_id: string; display_name: string; claim_token: string }[] = [];
+  let guestRows: { id: string; expense_id: string; display_name: string }[] = [];
   if (expenseIds.length > 0) {
     const { data } = await supabase
       .from("expense_guests")
-      .select("id, expense_id, display_name, claim_token")
+      .select("id, expense_id, display_name")
       .in("expense_id", expenseIds)
       .is("claimed_by", null);
     guestRows = data ?? [];
@@ -127,14 +127,21 @@ export default async function GroupDetailPage({
     confirmedAt: s.confirmed_at ?? undefined,
   }));
 
+  const expenseMetaMap = new Map(
+    expenseList.map((e) => [e.id, { creatorId: e.creator_id, status: e.status as ExpenseStatus }]),
+  );
   const expenseTitleMap = new Map(expenseList.map((e) => [e.id, e.title]));
-  const unclaimedGuests = guestRows.map((g) => ({
-    id: g.id,
-    expenseId: g.expense_id,
-    displayName: g.display_name,
-    claimToken: g.claim_token,
-    expenseTitle: expenseTitleMap.get(g.expense_id) ?? "Despesa",
-  }));
+  const unclaimedGuests = guestRows.map((g) => {
+    const meta = expenseMetaMap.get(g.expense_id);
+    return {
+      id: g.id,
+      expenseId: g.expense_id,
+      displayName: g.display_name,
+      creatorId: meta?.creatorId ?? "",
+      status: meta?.status ?? "active",
+      expenseTitle: expenseTitleMap.get(g.expense_id) ?? "Despesa",
+    };
+  });
 
   const memberBalances: Record<string, number> = {};
   if (balanceRows) {
