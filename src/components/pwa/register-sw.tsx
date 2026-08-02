@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 function isNativeWebView(): boolean {
@@ -11,6 +12,7 @@ function isNativeWebView(): boolean {
 }
 
 export function RegisterSW() {
+  const router = useRouter();
   useEffect(() => {
     const native = isNativeWebView();
 
@@ -24,7 +26,7 @@ export function RegisterSW() {
 
     if (native) {
       import("@/lib/capacitor").then(({ initCapacitor }) => {
-        initCapacitor();
+        initCapacitor((href) => router.replace(href));
       });
       return;
     }
@@ -35,7 +37,7 @@ export function RegisterSW() {
         updateViaCache: "none",
       });
     }
-  }, []);
+  }, [router]);
 
   return null;
 }

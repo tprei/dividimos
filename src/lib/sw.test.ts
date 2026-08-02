@@ -145,7 +145,7 @@ describe("Service Worker", () => {
       env.listeners["install"]![0]!(event);
       await Promise.all(event._promises);
 
-      const staticCache = await env.cacheStorage.open("dividimos-static-v2");
+      const staticCache = await env.cacheStorage.open("dividimos-static-v3");
       expect(staticCache.addAll).toHaveBeenCalledWith([
         "/offline.html",
         "/icon-192.png",
@@ -161,16 +161,16 @@ describe("Service Worker", () => {
       await env.cacheStorage.open("dividimos-static-v0");
       await env.cacheStorage.open("dividimos-runtime-v0");
       // Also create current caches so they exist
-      await env.cacheStorage.open("dividimos-static-v2");
-      await env.cacheStorage.open("dividimos-runtime-v2");
+      await env.cacheStorage.open("dividimos-static-v3");
+      await env.cacheStorage.open("dividimos-runtime-v3");
 
       const event = makeExtendableEvent();
       env.listeners["activate"]![0]!(event);
       await Promise.all(event._promises);
 
       const remaining = await env.cacheStorage.keys();
-      expect(remaining).toContain("dividimos-static-v2");
-      expect(remaining).toContain("dividimos-runtime-v2");
+      expect(remaining).toContain("dividimos-static-v3");
+      expect(remaining).toContain("dividimos-runtime-v3");
       expect(remaining).not.toContain("dividimos-static-v0");
       expect(remaining).not.toContain("dividimos-runtime-v0");
     });
@@ -250,13 +250,13 @@ describe("Service Worker", () => {
 
       // Give the cache.put a tick to complete
       await new Promise((r) => setTimeout(r, 10));
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v2");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v3");
       expect(runtimeCache.put).toHaveBeenCalled();
     });
 
     it("falls back to cache when asset fetch fails", async () => {
       // Pre-populate runtime cache
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v2");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v3");
       const cachedRes = new MockResponse("cached", { status: 200 });
       const assetUrl = "https://dividimos.app/_next/static/chunk.js";
       await runtimeCache.put(new MockRequest(assetUrl) as unknown as string, cachedRes);

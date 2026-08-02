@@ -1,6 +1,6 @@
 // Service worker — offline cache + fallback for PWA installability.
 
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
@@ -57,6 +57,7 @@ self.addEventListener("fetch", (event) => {
   // Skip API routes and auth routes — these should never be cached
   const url = new URL(request.url);
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
+  if (url.pathname === "/claim" || url.pathname.startsWith("/claim/")) return;
 
   // Navigation requests (HTML pages) — network-first, offline fallback
   if (request.mode === "navigate") {

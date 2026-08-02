@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { buildWhatsAppLink } from "@/lib/contacts";
+import { buildClaimUrl } from "@/lib/claim-qr";
 import { formatBRL } from "@/lib/currency";
 
 interface GuestClaimShareModalProps {
@@ -36,7 +37,7 @@ export function GuestClaimShareModal({
   }, []);
 
   const claimUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/claim/${claimToken}`
+    ? buildClaimUrl(claimToken)
     : "";
 
   useEffect(() => {

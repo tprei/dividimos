@@ -18,7 +18,7 @@ export default function ScanInvitePage() {
       const claim = parseClaimQrCode(data);
       if (claim) {
         setPaused(true);
-        router.push(`/claim/${claim.token}`);
+        router.push(`/claim#${claim.token}`);
         return;
       }
 
