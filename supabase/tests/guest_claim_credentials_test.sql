@@ -4,7 +4,7 @@
 -- absent from Realtime, and every function is owner-controlled
 -- SECURITY DEFINER with search_path pinned. Queries the live catalog.
 BEGIN;
-SELECT plan(18);
+SELECT plan(20);
 
 -- Schema exists and grants no USAGE/CREATE to API roles.
 SELECT has_schema('guest_credentials', 'guest_credentials schema exists');
@@ -123,6 +123,26 @@ SELECT ok(
        AND contype = 'c'
   ),
   'expense_guests_claim_state_consistent CHECK exists'
+);
+
+-- #581 final cutover: the legacy uuid claim path and the plaintext column
+-- are gone, and direct guest-table DML is revoked from every API role.
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+     WHERE p.proname = 'claim_guest_spot'
+       AND pg_get_function_identity_arguments(p.oid) = 'uuid'
+  ),
+  'claim_guest_spot(uuid) overload is absent'
+);
+SELECT ok(
+  NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+     WHERE attrelid = 'public.expense_guests'::regclass
+       AND attname = 'claim_token'
+       AND NOT attisdropped
+  ),
+  'expense_guests has no claim_token column'
 );
 
 SELECT * FROM finish();
