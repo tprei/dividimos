@@ -119,7 +119,6 @@ export function expenseGuestRowToExpenseGuest(row: ExpenseGuestRow): ExpenseGues
     id: row.id,
     expenseId: row.expense_id,
     displayName: row.display_name,
-    claimToken: row.claim_token,
     claimedBy: row.claimed_by ?? undefined,
     claimedAt: row.claimed_at ?? undefined,
     createdAt: row.created_at,

@@ -26,6 +26,8 @@ import { useCallback, useMemo, useState } from "react";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
 import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
+import { GuestClaimRotateDialog } from "@/components/bill/guest-claim-rotate-dialog";
+import { useGuestClaimDelivery } from "@/hooks/use-guest-claim-delivery";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -75,7 +77,10 @@ export interface UnclaimedGuest {
   id: string;
   expenseId: string;
   displayName: string;
-  claimToken: string;
+  /** Creator of the guest's expense — delivery is gated per-expense, never
+   *  substituted with the group creator. */
+  creatorId: string;
+  status: ExpenseStatus;
   expenseTitle: string;
 }
 
@@ -131,12 +136,15 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [guestShareModal, setGuestShareModal] = useState<{
-    open: boolean;
-    guestName: string;
-    claimToken: string;
-    expenseTitle: string;
-  }>({ open: false, guestName: "", claimToken: "", expenseTitle: "" });
+  const {
+    modal: guestDelivery,
+    rotatePrompt: guestRotatePrompt,
+    issuing: guestIssuing,
+    issue: issueGuestDelivery,
+    confirmRotate: confirmGuestRotate,
+    cancelRotate: cancelGuestRotate,
+    closeModal: closeGuestDelivery,
+  } = useGuestClaimDelivery();
   const [inviteLinkToken, setInviteLinkToken] = useState<string | null>(initialData.inviteLinkToken);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [creatingInviteLink, setCreatingInviteLink] = useState(false);
@@ -198,7 +206,7 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
         .in("id", allUserIds),
       supabase
         .from("expenses")
-        .select("id, title, total_amount, status, created_at")
+        .select("id, title, total_amount, status, created_at, creator_id")
         .eq("group_id", id)
         .neq("status", "draft")
         .order("created_at", { ascending: false }),
@@ -219,11 +227,11 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
 
     const expenseList = expenseRows ?? [];
     const expenseIds = expenseList.map((e) => e.id);
-    let guestRows: { id: string; expense_id: string; display_name: string; claim_token: string }[] = [];
+    let guestRows: { id: string; expense_id: string; display_name: string }[] = [];
     if (expenseIds.length > 0) {
       const { data } = await supabase
         .from("expense_guests")
-        .select("id, expense_id, display_name, claim_token")
+        .select("id, expense_id, display_name")
         .in("expense_id", expenseIds)
         .is("claimed_by", null);
       guestRows = data ?? [];
@@ -283,15 +291,25 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
       }))
     );
 
+    const expenseMetaMap = new Map(
+      expenseList.map((e: { id: string; creator_id: string; status: string }) => [
+        e.id,
+        { creatorId: e.creator_id, status: e.status as ExpenseStatus },
+      ]),
+    );
     const expenseTitleMap = new Map(expenseList.map((e) => [e.id, e.title]));
     setUnclaimedGuests(
-      guestRows.map((g) => ({
-        id: g.id,
-        expenseId: g.expense_id,
-        displayName: g.display_name,
-        claimToken: g.claim_token,
-        expenseTitle: expenseTitleMap.get(g.expense_id) ?? "Despesa",
-      })),
+      guestRows.map((g) => {
+        const meta = expenseMetaMap.get(g.expense_id);
+        return {
+          id: g.id,
+          expenseId: g.expense_id,
+          displayName: g.display_name,
+          creatorId: meta?.creatorId ?? "",
+          status: meta?.status ?? "active",
+          expenseTitle: expenseTitleMap.get(g.expense_id) ?? "Despesa",
+        };
+      }),
     );
 
     if (userId && balanceRows) {
@@ -808,22 +826,18 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
                         </p>
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 text-xs"
-                      onClick={() =>
-                        setGuestShareModal({
-                          open: true,
-                          guestName: guest.displayName,
-                          claimToken: guest.claimToken,
-                          expenseTitle: guest.expenseTitle,
-                        })
-                      }
-                    >
-                      <QrCode className="h-3.5 w-3.5" />
-                      Convidar
-                    </Button>
+                    {guest.creatorId === user?.id && guest.status === "active" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs"
+                        disabled={guestIssuing}
+                        onClick={() => issueGuestDelivery(guest.id, guest.displayName, guest.expenseTitle)}
+                      >
+                        <QrCode className="h-3.5 w-3.5" />
+                        Convidar
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -994,11 +1008,20 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
       )}
 
       <GuestClaimShareModal
-        open={guestShareModal.open}
-        onClose={() => setGuestShareModal({ ...guestShareModal, open: false })}
-        guestName={guestShareModal.guestName}
-        claimToken={guestShareModal.claimToken}
-        expenseTitle={guestShareModal.expenseTitle}
+        open={guestDelivery.open}
+        onClose={closeGuestDelivery}
+        guestName={guestDelivery.guestName}
+        token={guestDelivery.token}
+        generation={guestDelivery.generation}
+        expenseTitle={guestDelivery.expenseTitle}
+      />
+
+      <GuestClaimRotateDialog
+        open={guestRotatePrompt !== null}
+        guestName={guestRotatePrompt?.guestName ?? ""}
+        issuing={guestIssuing}
+        onConfirm={confirmGuestRotate}
+        onCancel={cancelGuestRotate}
       />
 
       <GroupInviteModal
