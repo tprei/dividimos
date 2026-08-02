@@ -241,90 +241,17 @@ describe.skipIf(!isIntegrationTestReady)("revisioned graph-save prerequisite", (
     expect(result.data?.id).toBeTruthy();
   });
 
-  it("rejects a replacement save that drops a claimed guest's claimant (#495)", async () => {
-    // #495: once a guest spot is claimed, the claimant becomes a
-    // "protected claimant" -- expense_guests.claimed_by is set, and any
-    // later graph replacement that omits that user from p_shares must be
-    // rejected wholesale (PST04 claimed_guest_not_participant), not
-    // partially applied. Claiming works on a draft-status expense too
-    // (claim_guest_spot only special-cases the allocation-plan
-    // reconciliation for 'active'), so this needs no activation step.
-    const carol = await createTestUser({ name: "Graph Save Carol" });
-    const saved = await callGraphSave(alice, {
-      expense: expense(100),
-      shares: [{ user_id: alice.id, share_amount_cents: 50 }],
-      payers: [{ user_id: alice.id, amount_cents: 100 }],
-      guests: [{ local_id: "g1", display_name: "Guest before claim" }],
-      guestShares: [{ local_id: "g1", share_amount_cents: 50 }],
-      expectedRevision: 0,
-      operationId: crypto.randomUUID(),
-    });
-    expect(saved.error).toBeNull();
-    const expenseId = saved.data!.id;
-
-    const { data: guestRow, error: guestError } = await adminClient!
-      .from("expense_guests")
-      .select("id, claim_token")
-      .eq("expense_id", expenseId)
-      .single();
-    expect(guestError).toBeNull();
-
-    const carolClient = authenticateAs(carol);
-    const { error: claimError } = await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: (guestRow as { claim_token: string }).claim_token,
-    });
-    expect(claimError).toBeNull();
-
-    const { data: revisionAfterClaim } = await adminClient!
-      .from("expenses")
-      .select("graph_revision")
-      .eq("id", expenseId)
-      .single();
-    const claimedRevision = (revisionAfterClaim as { graph_revision: number }).graph_revision;
-    expect(claimedRevision).toBe(saved.data!.graph_revision + 1);
-
-    // Attempt a replacement that keeps Alice but drops Carol -- the
-    // claimed guest's claimant -- from p_shares entirely.
-    const replacement = await callGraphSave(alice, {
-      expense: expense(100, expenseId),
-      shares: [{ user_id: alice.id, share_amount_cents: 100 }],
-      payers: [{ user_id: alice.id, amount_cents: 100 }],
-      expectedRevision: claimedRevision,
-      operationId: crypto.randomUUID(),
-    });
-    expect(replacement.data).toBeNull();
-    expect(replacement.error?.code).toBe("PST04");
-
-    // Whole-state no-op: the rejected attempt must not have partially
-    // applied -- revision, shares, and the guest's claim all unchanged.
-    const { data: revisionAfterReject } = await adminClient!
-      .from("expenses")
-      .select("graph_revision")
-      .eq("id", expenseId)
-      .single();
-    expect((revisionAfterReject as { graph_revision: number }).graph_revision).toBe(
-      claimedRevision,
-    );
-
-    const { data: sharesAfterReject } = await adminClient!
-      .from("expense_shares")
-      .select("user_id, share_amount_cents")
-      .eq("expense_id", expenseId);
-    expect(sharesAfterReject).toEqual(
-      expect.arrayContaining([
-        { user_id: alice.id, share_amount_cents: 50 },
-        { user_id: carol.id, share_amount_cents: 50 },
-      ]),
-    );
-    expect(sharesAfterReject).toHaveLength(2);
-
-    const { data: guestsAfterReject } = await adminClient!
-      .from("expense_guests")
-      .select("id, claimed_by")
-      .eq("expense_id", expenseId);
-    expect(guestsAfterReject).toHaveLength(1);
-    expect((guestsAfterReject as { claimed_by: string }[])[0].claimed_by).toBe(carol.id);
-  });
+  // Removed under #581: this exercised the #495 "protected claimant"
+  // invariant by claiming a guest on a DRAFT, then re-saving the draft
+  // graph to drop the claimant and expecting PST04. #581 removes
+  // pre-activation guest-link delivery: a usable claim credential now
+  // exists only after the creator explicitly issues one via
+  // issue_guest_claim_token, which requires status='active'. Since
+  // save_expense_draft_graph rejects any non-draft expense (status !=
+  // 'draft'), there is no longer a valid flow that claims a guest AND
+  // then re-saves its graph, so the scenario is unreachable. The
+  // claimed_guest_not_participant guard remains in save_expense_draft_graph
+  // as defense-in-depth.
 
   it("does not disclose a save to an outsider", async () => {
     const result = await callGraphSave(outsider, {

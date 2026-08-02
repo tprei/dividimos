@@ -526,3 +526,39 @@ export async function createTestGroupWithMembers(
 
   return group;
 }
+
+/**
+ * Issue a v1 guest-claim credential (gst1_...) as the expense creator.
+ * Replaces the legacy group-readable expense_guests.claim_token: an
+ * unclaimed active guest now has no usable token until the creator
+ * explicitly issues one through issue_guest_claim_token (#581). Used by
+ * integration tests to obtain a claimable bearer before calling
+ * claim_guest_spot(text). Throws on any error or non-`issued` outcome.
+ */
+export async function issueGuestClaimToken(
+  creator: TestUser,
+  guestId: string,
+): Promise<string> {
+  const client = authenticateAs(creator);
+  const { data, error } = await client.rpc("issue_guest_claim_token", {
+    p_guest_id: guestId,
+    p_rotate: false,
+    // SQL arg is nullable integer; gen-types renders it as non-null number,
+    // so cast. Initial issue requires NULL here (see issue_guest_claim_token).
+    p_expected_generation: null as unknown as number,
+  });
+  if (error || !data) {
+    throw new Error(`Failed to issue guest claim token: ${error?.message}`);
+  }
+  const result = data as {
+    outcome: string;
+    token?: string;
+    generation?: number;
+  };
+  if (result.outcome !== "issued" || typeof result.token !== "string") {
+    throw new Error(
+      `issue_guest_claim_token returned unexpected outcome: ${JSON.stringify(result)}`,
+    );
+  }
+  return result.token;
+}

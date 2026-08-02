@@ -11,6 +11,7 @@ import {
   authenticateAs,
   deleteTestExpenses,
   getBalanceBetween,
+  issueGuestClaimToken,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -117,7 +118,7 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
 
     const { data: guest, error: guestError } = await adminClient!
       .from("expense_guests")
-      .select("id, claim_token")
+      .select("id")
       .eq("expense_id", expenseId)
       .single();
     if (guestError || !guest) throw new Error(`load guest: ${guestError?.message}`);
@@ -129,8 +130,10 @@ describe.skipIf(!canRun)("claim_guest_spot allocation plan (#468)", () => {
     });
     if (rpcError) throw new Error(`activate: ${rpcError.message}`);
 
-    // Stash the claim token on the fixture guest row for the claim step.
-    guestClaimToken = guest.claim_token;
+    // #581: the creator issues a v1 opaque text claim credential now that the
+    // expense is active; the legacy group-readable expense_guests.claim_token
+    // uuid column is retired for claiming.
+    guestClaimToken = await issueGuestClaimToken(alice, guestId);
   }
 
   let guestClaimToken = "";

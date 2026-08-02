@@ -11,6 +11,7 @@ import {
   createTestGroupWithMembers,
   createTestUsers,
   deleteTestExpenses,
+  issueGuestClaimToken,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -63,7 +64,7 @@ async function buildGuestFixture(
 
   const { data: guest, error: guestError } = await adminClient!
     .from("expense_guests")
-    .select("id, claim_token")
+    .select("id")
     .eq("expense_id", saved.id)
     .single();
   if (guestError || !guest) throw new Error(`load guest: ${guestError?.message}`);
@@ -74,7 +75,11 @@ async function buildGuestFixture(
   });
   if (rpcError) throw new Error(`activate: ${rpcError.message}`);
 
-  return { expenseId: saved.id, guestId: guest.id, claimToken: guest.claim_token };
+  // #581: the creator issues a v1 opaque text claim credential now that the
+  // expense is active (the legacy expense_guests.claim_token uuid is retired).
+  const claimToken = await issueGuestClaimToken(creator, guest.id);
+
+  return { expenseId: saved.id, guestId: guest.id, claimToken };
 }
 
 describe.skipIf(!canRun)("claim_guest_spot DM guard (#472)", () => {

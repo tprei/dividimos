@@ -171,13 +171,16 @@ describe.skipIf(!canRun)("financial compatibility gate (#477 preparatory)", () =
   it("rejects claim_guest_spot with PST09 before authentication is even checked, while maintenance is open", async () => {
     await pg.query("select financial_internal.set_financial_maintenance(true)");
 
-    await expect(pg.query("select public.claim_guest_spot(gen_random_uuid())")).rejects.toMatchObject({
+    // claim_guest_spot(text) now takes an opaque text token; PST09 (maintenance)
+    // and PST01 (no auth on this raw pg connection) both fire before the token
+    // is examined, so any well-typed text argument suffices (#581 cutover).
+    await expect(pg.query("select public.claim_guest_spot('gst1_gate_probe')")).rejects.toMatchObject({
       code: "PST09",
     });
 
     await pg.query("select financial_internal.set_financial_maintenance(false)");
 
-    await expect(pg.query("select public.claim_guest_spot(gen_random_uuid())")).rejects.toMatchObject({
+    await expect(pg.query("select public.claim_guest_spot('gst1_gate_probe')")).rejects.toMatchObject({
       code: "PST01",
     });
   });

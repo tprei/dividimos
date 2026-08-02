@@ -1434,6 +1434,14 @@ export type Database = {
         }
         Returns: boolean
       }
+      issue_guest_claim_token: {
+        Args: {
+          p_expected_generation: number
+          p_guest_id: string
+          p_rotate: boolean
+        }
+        Returns: Json
+      }
       join_group_via_link: { Args: { p_token: string }; Returns: Json }
       leave_group: { Args: { p_group_id: string }; Returns: undefined }
       load_expense_graph_snapshot: {
@@ -1473,6 +1481,14 @@ export type Database = {
       resolve_expense_graph_save_result: {
         Args: { p_group_id: string; p_save_operation_id: string }
         Returns: Json
+      }
+      resolve_guest_claim_token: {
+        Args: { p_claim_token: string }
+        Returns: {
+          expense_id: string
+          group_id: string
+          guest_id: string
+        }[]
       }
       save_expense_draft_graph: {
         Args: {

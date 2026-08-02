@@ -7,6 +7,7 @@ import {
   authenticateAs,
   deleteTestExpenses,
   getBalanceBetween,
+  issueGuestClaimToken,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -89,18 +90,20 @@ describe.skipIf(!canRun)("claim_guest_spot zero-share-payer amendment (#495)", (
 
     const { data: guest, error: guestError } = await adminClient!
       .from("expense_guests")
-      .select("id, claim_token")
+      .select("id")
       .eq("expense_id", expenseId)
       .single();
     if (guestError || !guest) throw new Error(`load guest: ${guestError?.message}`);
     guestId = guest.id;
-    guestClaimToken = guest.claim_token!;
 
     const { error: activateError } = await creatorClient.rpc("activate_saved_expense", {
       p_expense_id: expenseId,
       p_expected_graph_revision: saved.graph_revision,
     });
     if (activateError) throw new Error(`activate: ${activateError.message}`);
+    // #581: the creator issues a v1 opaque text claim credential now that the
+    // expense is active (the legacy expense_guests.claim_token uuid is retired).
+    guestClaimToken = await issueGuestClaimToken(alice, guestId);
   });
 
   afterAll(async () => {

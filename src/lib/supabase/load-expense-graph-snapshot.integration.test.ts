@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { createTestUsers, createTestGroupWithMembers, authenticateAs } from "@/test/integration-helpers";
+import {
+  authenticateAs,
+  createTestGroupWithMembers,
+  createTestUsers,
+  issueGuestClaimToken,
+} from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   decodeExpenseGraphSnapshot,
@@ -188,7 +193,7 @@ describe.skipIf(!isIntegrationTestReady)("load_expense_graph_snapshot", () => {
     expect(outsiderSnapshot).toBeNull();
   });
 
-  it("hides a pre-activation claimed guest and reports it in draft_claim_protected_user_ids", async () => {
+  it("surfaces a post-activation claimed guest with its claimant in the active snapshot", async () => {
     const [alice, claimant] = await createTestUsers(2);
     const group = await createTestGroupWithMembers(alice, [claimant]);
     const aliceClient = authenticateAs(alice);
@@ -220,12 +225,20 @@ describe.skipIf(!isIntegrationTestReady)("load_expense_graph_snapshot", () => {
     const before = decodeOrThrow(snapshotBefore);
     expect(before.guests).toHaveLength(1);
 
-    const { data: tokenRow } = await aliceClient
-      .from("expense_guests")
-      .select("claim_token")
-      .eq("expense_id", expenseId)
-      .single();
-    const claimToken = (tokenRow as { claim_token: string }).claim_token;
+    // #581 cutover: a v1 claim credential can only be issued for an ACTIVE
+    // expense (the legacy group-readable expense_guests.claim_token uuid is
+    // retired, so pre-activation draft claims are no longer reachable).
+    // Activate, then have the creator issue a token the claimant redeems.
+    // The guest id and current graph_revision come straight from the draft
+    // snapshot already loaded above.
+    const guestId = before.guests[0].guestLocalId;
+    const { error: activateErr } = await aliceClient.rpc("activate_saved_expense", {
+      p_expense_id: expenseId,
+      p_expected_graph_revision: before.graphRevision,
+    });
+    expect(activateErr).toBeNull();
+
+    const claimToken = await issueGuestClaimToken(alice, guestId);
 
     const { error: claimErr } = await authenticateAs(claimant).rpc("claim_guest_spot", {
       p_claim_token: claimToken,
@@ -238,9 +251,10 @@ describe.skipIf(!isIntegrationTestReady)("load_expense_graph_snapshot", () => {
     );
     expect(snapErr).toBeNull();
     const after = decodeOrThrow(snapshotAfter);
-    expect(after.status).toBe("draft");
-    expect(after.guests).toHaveLength(0);
-    expect(after.draftClaimProtectedUserIds).toEqual([claimant.id]);
+    expect(after.status).toBe("active");
+    expect(after.guests).toHaveLength(1);
+    expect(after.guests[0].claimedByUserId).toBe(claimant.id);
+    expect(after.draftClaimProtectedUserIds).toEqual([]);
     const claimantInOrder = after.participantOrder.some(
       (p) => p.kind === "user" && p.userId === claimant.id,
     );

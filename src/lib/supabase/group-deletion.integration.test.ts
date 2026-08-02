@@ -9,6 +9,7 @@ import {
   createAndActivateExpense,
   createTestGroupWithMembers,
   createTestUsers,
+  issueGuestClaimToken,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -357,20 +358,20 @@ async function insertGuestExpenseChildren(
 
 /**
  * Inserts a guest + guest_share via a direct-mutation-token transaction.
- * Returns { guestId, claimToken }.
+ * Returns { guestId }.
  */
 async function insertGuardedGuest(
   expenseId: string,
   displayName: string,
   shareAmountCents: number,
-): Promise<{ guestId: string; claimToken: string }> {
+): Promise<{ guestId: string }> {
   const conn = new Client({ connectionString: requireDatabaseUrl() });
   await conn.connect();
   try {
     await conn.query("BEGIN");
     await conn.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [[expenseId]]);
-    const { rows } = await conn.query<{ id: string; claim_token: string }>(
-      "insert into public.expense_guests (expense_id, display_name) values ($1, $2) returning id, claim_token",
+    const { rows } = await conn.query<{ id: string }>(
+      "insert into public.expense_guests (expense_id, display_name) values ($1, $2) returning id",
       [expenseId, displayName],
     );
     await conn.query(
@@ -378,7 +379,7 @@ async function insertGuardedGuest(
       [expenseId, rows[0].id, shareAmountCents],
     );
     await conn.query("COMMIT");
-    return { guestId: rows[0].id, claimToken: rows[0].claim_token };
+    return { guestId: rows[0].id };
   } catch (e) {
     await conn.query("ROLLBACK").catch(() => {});
     throw e;
@@ -855,12 +856,14 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
       { p_expense_id: expenseId, p_expected_graph_revision: expRow!.graph_revision },
     );
     if (activateError) throw new Error(activateError.message);
+    // #581: the creator issues a v1 opaque text claim credential (cutover).
+    const claimToken = await issueGuestClaimToken(alice, guestInfo.guestId);
 
     const writer = await openSubject(carol);
     const claimResult = await dispatchQuery(
       writer.client,
       "SELECT public.claim_guest_spot($1)",
-      [guestInfo.claimToken],
+      [claimToken],
     );
     expect("error" in claimResult).toBe(false);
 
@@ -954,14 +957,16 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
   });
 
   it("uses group then expense then guest ordering against draft deletion", async () => {
-    // Under the guard, direct DELETE on expenses is blocked on subject
-    // connections. This test now verifies that the guard correctly
-    // blocks the DELETE, and the claim succeeds (the expense still
-    // exists because the DELETE failed).
+    // #477 guard: a direct DELETE on a draft expense is blocked on a subject
+    // connection with no graph-mutation token, and the blocked attempt applies
+    // nothing. (#581 removed pre-activation guest-link delivery, so the old
+    // "claim still works after the blocked delete" vehicle -- which claimed a
+    // draft guest by its uuid column -- is gone. The guard's no-partial-apply
+    // guarantee is now asserted via row survival.)
     const groupId = await createRegularGroup(alice, [bob]);
     const expenseId = await insertDraftExpense(groupId, alice, 1000);
     await insertExpenseChildren(expenseId, alice, bob, 1000);
-    const guest = await insertGuardedGuest(expenseId, "Guest", 0);
+    await insertGuardedGuest(expenseId, "Guest", 0);
 
     const draftDelete = await openSubject(alice);
     await draftDelete.client.query(
@@ -977,15 +982,12 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     expect("error" in draftDeleteResult).toBe(true);
     await finishSubject(draftDelete, false);
 
-    // Claim succeeds because the expense was NOT deleted (DELETE failed).
-    const claim = await openSubject(carol);
-    const claimResult = await dispatchQuery(
-      claim.client,
-      "SELECT public.claim_guest_spot($1)",
-      [guest.claimToken],
+    // The blocked DELETE applied nothing: the draft expense survives.
+    const survivors = await controlQuery<{ count: string }>(
+      "SELECT count(*)::text AS count FROM public.expenses WHERE id = $1",
+      [expenseId],
     );
-    expect("error" in claimResult).toBe(false);
-    await finishSubject(claim, true);
+    expect(survivors).toEqual([{ count: "1" }]);
   });
 
   it("serializes expense inserts and batch settlements", async () => {
@@ -1124,6 +1126,8 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
       { p_expense_id: expenseId, p_expected_graph_revision: expRow!.graph_revision },
     );
     if (activateError) throw new Error(activateError.message);
+    // #581: the creator issues a v1 opaque text claim credential (cutover).
+    const claimToken = await issueGuestClaimToken(alice, guest.guestId);
 
     const deletion = await openSubject(alice);
     await lockGroup(deletion, groupId);
@@ -1139,7 +1143,7 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     const claimResult = await dispatchQuery(
       writer.client,
       "SELECT public.claim_guest_spot($1)",
-      [guest.claimToken],
+      [claimToken],
     );
     expect("error" in claimResult).toBe(false);
     await finishSubject(writer, true);
@@ -1168,19 +1172,24 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     await finishSubject(writer, false);
   });
 
-  it("keeps claim-first and draft-delete-first transactions deadlock-free", async () => {
+  it("keeps an expense lock holder and a draft-delete deadlock-free", async () => {
+    // #581 removed draft guest-link delivery, so claim_guest_spot can no longer
+    // serve as the lock holder here (a v1 token requires status='active', but
+    // the guard's DELETE-block under test is specific to a draft). The
+    // deadlock-free row-lock ordering is unchanged: an expense FOR UPDATE
+    // holder and a concurrent draft DELETE serialize without deadlock.
     const groupId = await createRegularGroup(alice, [bob]);
     const expenseId = await insertDraftExpense(groupId, alice, 1000);
     await insertGuestExpenseChildren(expenseId, alice, bob);
-    const guest = await insertGuardedGuest(expenseId, "Guest", 200);
+    await insertGuardedGuest(expenseId, "Guest", 200);
 
-    const claim = await openSubject(carol);
-    const claimResult = await dispatchQuery(
-      claim.client,
-      "SELECT public.claim_guest_spot($1)",
-      [guest.claimToken],
+    const holder = await openSubject(alice);
+    const holderResult = await dispatchQuery(
+      holder.client,
+      "SELECT id FROM public.expenses WHERE id = $1 FOR UPDATE",
+      [expenseId],
     );
-    expect("error" in claimResult).toBe(false);
+    expect("error" in holderResult).toBe(false);
 
     const draftDelete = await openSubject(alice);
     let draftDeleteDone = false;
@@ -1191,10 +1200,13 @@ describe.skipIf(!canRun)("group deletion financial boundary", () => {
     ).finally(() => {
       draftDeleteDone = true;
     });
-    await waitForLock(draftDelete.pid, claim.pid, () => draftDeleteDone);
-    await finishSubject(claim, true);
+    // The DELETE blocks on the holder's expense row lock before the guard
+    // trigger fires -- no deadlock, deterministic serialization.
+    await waitForLock(draftDelete.pid, holder.pid, () => draftDeleteDone);
+    await finishSubject(holder, true);
     const draftDeleteResult = await draftDeletePromise;
     expect("error" in draftDeleteResult).toBe(true);
+    await finishSubject(draftDelete, false);
   });
 
   it("keeps service-role teardown independent from the authenticated RPC", async () => {

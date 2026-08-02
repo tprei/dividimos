@@ -6,6 +6,7 @@ import {
   authenticateAs,
   getBalanceBetween,
   deleteTestExpenses,
+  issueGuestClaimToken,
   type TestUser,
 } from "@/test/integration-helpers";
 import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
@@ -475,11 +476,13 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     });
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
+    await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Carol claims the guest spot
     const carolClient = authenticateAs(carol);
     const { data, error } = await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     expect(error).toBeNull();
@@ -522,6 +525,8 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     });
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
+    await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Carol is not in the group yet
     const { data: membersBefore } = await adminClient!
@@ -535,7 +540,7 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     // Carol claims
     const carolClient = authenticateAs(carol);
     await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     // Carol should be a group member now
@@ -567,11 +572,12 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
 
     // Activate expense
     await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Carol claims the guest spot on the active expense
     const carolClient = authenticateAs(carol);
     await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     // Carol should now owe Alice 5000. alice is the sole creditor, so the
@@ -609,17 +615,19 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     });
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
+    await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     const carolClient = authenticateAs(carol);
 
     // First claim
     await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     // Second claim — should return already_claimed: true, not error
     const { data, error } = await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     expect(error).toBeNull();
@@ -637,17 +645,19 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     });
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
+    await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Carol claims first
     const carolClient = authenticateAs(carol);
     await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     // Bob tries to claim the same token
     const bobClient = authenticateAs(bob);
     const { error } = await bobClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     expect(error).not.toBeNull();
@@ -661,7 +671,7 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     });
 
     expect(error).not.toBeNull();
-    expect(error!.message).toContain("invalid_token");
+    expect(error!.code).toBe("PST02");
   });
 
   it("rejects claim if user already has a share on the expense", async () => {
@@ -679,11 +689,13 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     });
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
+    await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Bob tries to claim the guest spot — but he already has a share
     const bobClient = authenticateAs(bob);
     const { error } = await bobClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     expect(error).not.toBeNull();
@@ -721,11 +733,12 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
     await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Carol claims the guest spot while still 'invited'
     const carolClient = authenticateAs(carol);
     const { error } = await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     expect(error).toBeNull();
@@ -763,11 +776,12 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
     await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Carol claims the guest spot
     const carolClient = authenticateAs(carol);
     await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     // Carol should be able to read balances (upgraded to accepted).
@@ -803,12 +817,14 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
     });
     const guest = draft.guests.get("g1")!;
         createdExpenseIds.push(draft.id);
+    await activateExpense(alice, draft.id, draft.graphRevision);
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     // Bob claims the guest spot (already accepted in the group, and has
     // no share on this expense, so the claim should succeed).
     const bobClient = authenticateAs(bob);
     const { error } = await bobClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
 
     expect(error).toBeNull();
@@ -845,13 +861,14 @@ describe.skipIf(!isIntegrationTestReady)("claim_guest_spot RPC", () => {
       p_expected_graph_revision: draft.graphRevision,
     });
     expect(activateError).toBeNull();
+    const claimToken = await issueGuestClaimToken(alice, guest.id);
 
     const bobOwesAliceAfterActivate = await getBalanceBetween(groupId, bob.id, alice.id);
     expect(bobOwesAliceAfterActivate).toBe(1000);
 
     const carolClient = authenticateAs(carol);
     const { error: claimError } = await carolClient.rpc("claim_guest_spot", {
-      p_claim_token: guest.claimToken,
+      p_claim_token: claimToken,
     });
     expect(claimError).toBeNull();
 
