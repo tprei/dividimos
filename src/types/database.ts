@@ -584,7 +584,6 @@ export type Database = {
       }
       expense_guests: {
         Row: {
-          claim_token: string
           claimed_at: string | null
           claimed_by: string | null
           created_at: string
@@ -593,7 +592,6 @@ export type Database = {
           id: string
         }
         Insert: {
-          claim_token?: string
           claimed_at?: string | null
           claimed_by?: string | null
           created_at?: string
@@ -602,7 +600,6 @@ export type Database = {
           id?: string
         }
         Update: {
-          claim_token?: string
           claimed_at?: string | null
           claimed_by?: string | null
           created_at?: string

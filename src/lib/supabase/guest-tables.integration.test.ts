@@ -20,7 +20,7 @@ interface GuestInput {
 interface DraftFixtureResult {
   id: string;
   graphRevision: number;
-  guests: Map<string, { id: string; claimToken: string }>;
+  guests: Map<string, { id: string }>;
 }
 
 /**
@@ -71,15 +71,15 @@ async function createDraftWithGuests(
   }
   const result = data as { id: string; graph_revision: number };
 
-  const guests = new Map<string, { id: string; claimToken: string }>();
+  const guests = new Map<string, { id: string }>();
   if (fields.guests?.length) {
     const { data: rows } = await adminClient!
       .from("expense_guests")
-      .select("id, display_name, claim_token")
+      .select("id, display_name")
       .eq("expense_id", result.id);
     for (const g of fields.guests) {
       const row = rows!.find((r) => r.display_name === g.displayName);
-      guests.set(g.localId, { id: row!.id, claimToken: row!.claim_token });
+      guests.set(g.localId, { id: row!.id });
     }
   }
 
@@ -227,23 +227,11 @@ describe.skipIf(!isIntegrationTestReady)("guest tables schema & RLS", () => {
       expect(data).toHaveLength(0);
     });
 
-    it("claim_token is unique", async () => {
-      const { rows: guest1 } = await withDirectToken(pg, expenseId, () =>
-        pg.query<{ claim_token: string }>(
-          "insert into public.expense_guests (expense_id, display_name) values ($1, 'Guest 1') returning claim_token",
-          [expenseId],
-        ),
-      );
-
-      await expect(
-        withDirectToken(pg, expenseId, () =>
-          pg.query(
-            "insert into public.expense_guests (expense_id, display_name, claim_token) values ($1, 'Guest 2', $2)",
-            [expenseId, guest1[0].claim_token],
-          ),
-        ),
-      ).rejects.toThrow();
-    });
+    // Removed under #581: the plaintext expense_guests.claim_token column
+    // (and its unique constraint) is gone, replaced by the opaque digest in
+    // the non-exposed guest_credentials schema; direct INSERT on
+    // expense_guests is also revoked. See guest-claim-credentials.integration.
+    // test.ts for the credential confidentiality boundary.
   });
 
   describe("expense_guest_shares", () => {
