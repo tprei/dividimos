@@ -190,10 +190,9 @@ function NewBillPageContent() {
         .select("id, handle, name, avatar_url")
         .eq("id", dmUserId)
         .single();
-      // #477 Slice 5: a route change away from DM quick-charge mode while
-      // this profile fetch is in flight must not still hydrate the store
-      // for a departed session (DraftSessionState's "no late completion
-      // may reset or navigate a departed route").
+      // A route change away from DM quick-charge mode while this profile
+      // fetch is in flight must not still hydrate the store for the route
+      // the user already left.
       if (cancelled || !profile) return;
       const profileMapped = userProfileRowToUserProfile(profile);
 
@@ -477,13 +476,11 @@ function NewBillPageContent() {
         loadExpense(draftId),
         loadExpenseGraphSnapshot(draftId),
       ]);
-      // #477 Slice 5: searchParams/authUser can change (e.g. ?draft=A ->
-      // ?draft=B via client-side navigation) before this in-flight load
-      // resolves. Without this guard, a late-arriving load for the OLD
-      // draft would silently overwrite whatever the NEW draft's own
-      // effect run has since started hydrating -- exactly the "no late
-      // completion may reset or navigate a departed route" case the
-      // DraftSessionState spec requires.
+      // searchParams/authUser can change (e.g. ?draft=A -> ?draft=B via
+      // client-side navigation) before this in-flight load resolves.
+      // Without this guard, a late-arriving load for the OLD draft would
+      // silently overwrite whatever the NEW draft's own effect run has
+      // since started hydrating.
       if (cancelled || !loaded || editLoadedRef.current) return;
       // #477/#495: the wizard cannot safely resume editing without the
       // current graph_revision -- proceeding with a stale/zero ref would
@@ -657,13 +654,11 @@ function NewBillPageContent() {
         .from("user_profiles")
         .select("id, handle, name, avatar_url")
         .in("id", otherIds);
-      // #477 Slice 5: groupIdParam/step/authUser can change (route
-      // navigation away from the participants step, or a different group
-      // selected) before this three-step async chain resolves. Without
-      // this guard, a late-arriving result would still overwrite the
-      // group/member selection and mutate participants -- exactly the
-      // "no late completion may reset or navigate a departed route" case
-      // the DraftSessionState spec requires.
+      // groupIdParam/step/authUser can change (route navigation away from
+      // the participants step, or a different group selected) before this
+      // three-step async chain resolves. Without this guard, a
+      // late-arriving result would still overwrite the group/member
+      // selection and mutate participants.
       if (cancelled) return;
 
       setSelectedGroupId(groupIdParam);
@@ -735,17 +730,15 @@ function NewBillPageContent() {
   // tab close, network error), resolve the pending operation to recover
   // the expense ID without a duplicate save.
   //
-  // #477 Slice 5: a "committed" result must not just poison remoteBillId
-  // in place. This effect runs on mount, before the user has typed
-  // anything into what looks like a blank wizard. Silently setting
-  // remoteBillId/draftRevisionRef here made every *subsequent* save in
-  // that session -- for a completely unrelated new draft the user was
-  // about to create -- a replacement save against the recovered expense's
-  // ID instead of a new-expense creation, silently overwriting the
-  // recovered draft's content with unrelated data the user never
-  // reviewed. Redirect into the existing, already race-hardened
-  // ?draft=<id> edit-load flow instead, so the recovered draft is fully
-  // hydrated and visible before the user can act on it.
+  // A committed result redirects into the existing ?draft=<id> edit-load
+  // flow instead of setting remoteBillId/draftRevisionRef directly, so the
+  // recovered draft is fully hydrated and visible before the user can act
+  // on it. Setting those refs directly here, before the user has typed
+  // anything into what looks like a blank wizard, would make the next
+  // unrelated save this session performs a replacement save against the
+  // recovered expense instead of creating a new one -- silently
+  // overwriting the recovered draft's content with data the user never
+  // reviewed.
   useEffect(() => {
     const pending = peekPendingSaveOperation();
     if (!pending) return;
@@ -758,16 +751,6 @@ function NewBillPageContent() {
         // instead of permanently losing recovery for an in-flight save.
         if (result?.outcome === "committed") {
           clearPendingSaveOperationIfMatches(pending.operationId);
-          // #477 Slice 5: redirect into the existing, already race-hardened
-          // ?draft=<id> edit-load flow instead of silently setting
-          // remoteBillId/draftRevisionRef in place. This effect runs on
-          // mount, before the user has typed anything into what looks like
-          // a blank wizard -- silently poisoning remoteBillId here made
-          // every *subsequent* save in that session, for a completely
-          // unrelated new draft the user was about to create, a
-          // replacement save against the recovered expense's ID instead of
-          // a new-expense creation, silently overwriting the recovered
-          // draft's content with unrelated data the user never reviewed.
           if (searchParams.get("draft") !== result.expenseId) {
             router.push(`/app/bill/new?draft=${result.expenseId}`);
           }
@@ -992,12 +975,12 @@ function NewBillPageContent() {
           return;
         }
         const expenseId = saveResult.expenseId;
-        // #477 Slice 5: without this, a retry after activateExpense
-        // fails below (stale revision, transient network error, a
-        // newly-true business rejection) would still see remoteBillId
-        // as null and build a brand-new "new save" request -- creating
-        // a second, duplicate draft expense instead of reusing the one
-        // that was just successfully saved.
+        // Without this, a retry after activateExpense fails below (stale
+        // revision, transient network error, a newly-true business
+        // rejection) would still see remoteBillId as null and build a
+        // brand-new "new save" request -- creating a second, duplicate
+        // draft expense instead of reusing the one that was just
+        // successfully saved.
         setRemoteBillId(expenseId);
         draftRevisionRef.current = saveResult.graphRevision;
 
@@ -1073,14 +1056,12 @@ function NewBillPageContent() {
       setBillType(null);
       setShowScanner(false);
       setPageScanResult(null);
-      // #477 Slice 5: abandoning back to type selection starts an
-      // entirely new local expense (initBill -> store.createExpense),
-      // but remoteBillId is separate React state that survived until
-      // now. Without this reset, a save from the fresh draft would use
-      // the OLD remoteBillId as a replacement target -- silently
-      // overwriting the abandoned draft's content with the new one's.
-      // Same bug class as #647/#649, different trigger (manual
-      // abandon-and-restart instead of crash recovery/activation retry).
+      // Abandoning back to type selection starts an entirely new local
+      // expense (initBill -> store.createExpense), but remoteBillId is
+      // separate React state that survived until now. Without this reset,
+      // a save from the fresh draft would use the OLD remoteBillId as a
+      // replacement target -- silently overwriting the abandoned draft's
+      // content with the new one's.
       setRemoteBillId(null);
       draftRevisionRef.current = ZERO_GRAPH_REVISION;
       // These are bound directly to the info step's visible inputs
