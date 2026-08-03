@@ -181,6 +181,7 @@ function NewBillPageContent() {
     dmLoadedRef.current = true;
 
     const dmType = (searchParams.get("type") as ExpenseType) || "single_amount";
+    let cancelled = false;
 
     (async () => {
       const supabase = createClient();
@@ -189,7 +190,10 @@ function NewBillPageContent() {
         .select("id, handle, name, avatar_url")
         .eq("id", dmUserId)
         .single();
-      if (!profile) return;
+      // A route change away from DM quick-charge mode while this profile
+      // fetch is in flight must not still hydrate the store for the route
+      // the user already left.
+      if (cancelled || !profile) return;
       const profileMapped = userProfileRowToUserProfile(profile);
 
       const counterparty: User = {
@@ -204,25 +208,30 @@ function NewBillPageContent() {
         createdAt: new Date().toISOString(),
       };
 
-      store.setCurrentUser(authUser);
+      const billStore = useBillStore.getState();
+      billStore.setCurrentUser(authUser);
       setSelectedGroupId(dmGroupId);
       setIsDmMode(true);
 
       if (dmType === "single_amount") {
-        store.createExpenseFromDm(dmGroupId, counterparty);
+        billStore.createExpenseFromDm(dmGroupId, counterparty);
         const autoTitle = `Cobrança - ${profileMapped.name.split(" ")[0]}`;
-        store.updateExpense({ title: autoTitle });
+        billStore.updateExpense({ title: autoTitle });
         setTitle(autoTitle);
         setBillType("single_amount");
         setStep("amount-split");
       } else {
-        store.createExpense("", "itemized", undefined, dmGroupId);
-        store.addParticipant(counterparty);
+        billStore.createExpense("", "itemized", undefined, dmGroupId);
+        billStore.addParticipant(counterparty);
         setBillType("itemized");
         setStep("info");
       }
     })();
-  }, [searchParams, authUser, store]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, authUser]);
 
   // Chat draft edit mode: consume ?groupId=<id>&title=<text>&amount=<cents>
   useEffect(() => {
@@ -424,6 +433,7 @@ function NewBillPageContent() {
 
   // Load draft for editing when ?draft=<id> is present
   useEffect(() => {
+    let cancelled = false;
     const draftId = searchParams.get("draft");
     if (!draftId || !authUser || editLoadedRef.current) return;
 
@@ -466,7 +476,12 @@ function NewBillPageContent() {
         loadExpense(draftId),
         loadExpenseGraphSnapshot(draftId),
       ]);
-      if (!loaded || editLoadedRef.current) return;
+      // searchParams/authUser can change (e.g. ?draft=A -> ?draft=B via
+      // client-side navigation) before this in-flight load resolves.
+      // Without this guard, a late-arriving load for the OLD draft would
+      // silently overwrite whatever the NEW draft's own effect run has
+      // since started hydrating.
+      if (cancelled || !loaded || editLoadedRef.current) return;
       // #477/#495: the wizard cannot safely resume editing without the
       // current graph_revision -- proceeding with a stale/zero ref would
       // make the very next save fail with PST08 (stale_graph_revision).
@@ -525,7 +540,7 @@ function NewBillPageContent() {
         updatedAt: loaded.updatedAt,
       };
 
-      store.setCurrentUser(authUser);
+      useBillStore.getState().setCurrentUser(authUser);
       const { guests: guestsForStore, guestBillSplits } = mapLoadedGuestsForEditHydration(
         loaded.guests,
         loaded.expenseType,
@@ -570,6 +585,7 @@ function NewBillPageContent() {
         .select("name")
         .eq("id", loaded.groupId)
         .single();
+      if (cancelled) return;
       if (group) setSelectedGroupName(group.name);
 
       if (loaded.payers.length > 0) {
@@ -582,7 +598,11 @@ function NewBillPageContent() {
         setStep("participants");
       }
     })();
-  }, [searchParams, authUser, store]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, authUser]);
 
   const initBill = useCallback(() => {
     if (!billType || !authUser) return;
@@ -606,6 +626,8 @@ function NewBillPageContent() {
     const groupIdParam = searchParams.get("groupId");
     if (!groupIdParam || selectedGroupId || step !== "participants" || !authUser) return;
 
+    let cancelled = false;
+
     (async () => {
       const supabase = createClient();
       const { data: group } = await supabase
@@ -613,13 +635,14 @@ function NewBillPageContent() {
         .select("name, creator_id")
         .eq("id", groupIdParam)
         .single();
-      if (!group) return;
+      if (cancelled || !group) return;
 
       const { data: acceptedMembers } = await supabase
         .from("group_members")
         .select("user_id")
         .eq("group_id", groupIdParam)
         .eq("status", "accepted");
+      if (cancelled) return;
 
       const allMemberIds = [...new Set([
         ...(acceptedMembers ?? []).map((m) => m.user_id),
@@ -631,17 +654,24 @@ function NewBillPageContent() {
         .from("user_profiles")
         .select("id, handle, name, avatar_url")
         .in("id", otherIds);
+      // groupIdParam/step/authUser can change (route navigation away from
+      // the participants step, or a different group selected) before this
+      // three-step async chain resolves. Without this guard, a
+      // late-arriving result would still overwrite the group/member
+      // selection and mutate participants.
+      if (cancelled) return;
 
       setSelectedGroupId(groupIdParam);
       setSelectedGroupName(group.name);
       setGroupMembers((profiles ?? []).map(userProfileRowToUserProfile));
 
-      for (const p of [...store.participants]) {
-        if (p.id !== authUser.id) store.removeParticipant(p.id);
+      const billStore = useBillStore.getState();
+      for (const p of [...billStore.participants]) {
+        if (p.id !== authUser.id) billStore.removeParticipant(p.id);
       }
       for (const row of profiles ?? []) {
         const mapped = userProfileRowToUserProfile(row);
-        store.addParticipant({
+        billStore.addParticipant({
           id: mapped.id,
           email: "",
           handle: mapped.handle,
@@ -654,7 +684,11 @@ function NewBillPageContent() {
         });
       }
     })();
-  }, [step, searchParams, selectedGroupId, authUser, store]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, searchParams, selectedGroupId, authUser]);
 
   const voiceStepRef = useRef(false);
   useEffect(() => {
@@ -695,6 +729,16 @@ function NewBillPageContent() {
   // Mount-time reconciliation: if a previous save response was lost (crash,
   // tab close, network error), resolve the pending operation to recover
   // the expense ID without a duplicate save.
+  //
+  // A committed result redirects into the existing ?draft=<id> edit-load
+  // flow instead of setting remoteBillId/draftRevisionRef directly, so the
+  // recovered draft is fully hydrated and visible before the user can act
+  // on it. Setting those refs directly here, before the user has typed
+  // anything into what looks like a blank wizard, would make the next
+  // unrelated save this session performs a replacement save against the
+  // recovered expense instead of creating a new one -- silently
+  // overwriting the recovered draft's content with data the user never
+  // reviewed.
   useEffect(() => {
     const pending = peekPendingSaveOperation();
     if (!pending) return;
@@ -706,15 +750,16 @@ function NewBillPageContent() {
         // leaving the entry in place lets a later mount retry resolution
         // instead of permanently losing recovery for an in-flight save.
         if (result?.outcome === "committed") {
-          setRemoteBillId(result.expenseId);
-          draftRevisionRef.current = result.graphRevision;
           clearPendingSaveOperationIfMatches(pending.operationId);
+          if (searchParams.get("draft") !== result.expenseId) {
+            router.push(`/app/bill/new?draft=${result.expenseId}`);
+          }
         } else if (result?.outcome === "retired") {
           clearPendingSaveOperationIfMatches(pending.operationId);
         }
       })
       .catch(() => {});
-  }, []);
+  }, [router, searchParams]);
 
   const buildDraftParams = useCallback((existingId?: string, groupIdOverride?: string) => {
     const state = useBillStore.getState();
@@ -930,6 +975,13 @@ function NewBillPageContent() {
           return;
         }
         const expenseId = saveResult.expenseId;
+        // Without this, a retry after activateExpense fails below (stale
+        // revision, transient network error, a newly-true business
+        // rejection) would still see remoteBillId as null and build a
+        // brand-new "new save" request -- creating a second, duplicate
+        // draft expense instead of reusing the one that was just
+        // successfully saved.
+        setRemoteBillId(expenseId);
         draftRevisionRef.current = saveResult.graphRevision;
 
         const activationResult = await activateExpense({
@@ -1004,6 +1056,42 @@ function NewBillPageContent() {
       setBillType(null);
       setShowScanner(false);
       setPageScanResult(null);
+      // Abandoning back to type selection starts an entirely new local
+      // expense (initBill -> store.createExpense), but remoteBillId is
+      // separate React state that survived until now. Without this reset,
+      // a save from the fresh draft would use the OLD remoteBillId as a
+      // replacement target -- silently overwriting the abandoned draft's
+      // content with the new one's.
+      setRemoteBillId(null);
+      draftRevisionRef.current = ZERO_GRAPH_REVISION;
+      // These are bound directly to the info step's visible inputs
+      // (title/merchantName/serviceFee/fixedFees) -- without resetting
+      // them here, a new bill would open showing the abandoned draft's
+      // title/fee text still pre-filled.
+      setTitle("");
+      setMerchantName("");
+      setServiceFee("10");
+      setFixedFees("");
+      // A stale non-null selectedGroupId here would make the
+      // participants step's `if (!groupId)` check skip its own
+      // group-creation/DM-lookup entirely (see the participants-step
+      // save branch), silently placing the brand-new bill in the
+      // abandoned draft's group instead of creating/selecting a fresh
+      // one -- wrong participants, wrong balances.
+      setSelectedGroupId(null);
+      setSelectedGroupName(null);
+      // groupMembers feeds voice/chat participant NAME MATCHING in
+      // TypeStep -- a stale list from the abandoned draft's group could
+      // silently match a new bill's spoken names against the WRONG
+      // group's members, adding incorrect participants. Also passed to
+      // the participants step as the initial suggestion list before any
+      // explicit fresh selection.
+      setGroupMembers([]);
+      // Transient scan-in-flight flags: reset alongside showScanner/
+      // pageScanResult above so an abandoned scan can't leave the next,
+      // unrelated session showing a stale processing skeleton.
+      setScanProcessing(false);
+      setScanProcessingPhoto(false);
       return;
     }
     if (isDmMode && billType === "single_amount") {
@@ -1063,16 +1151,7 @@ function NewBillPageContent() {
           </button>
         ) : !isTypeStep ? (
           <button
-            onClick={() => {
-              if (isDmMode && selectedGroupId) {
-                router.push(`/app/chat/${selectedGroupId}`);
-              } else if (isEditing && editDraftId) {
-                router.push(`/app/bill/${editDraftId}`);
-              } else {
-                setStep("type");
-                setBillType(null);
-              }
-            }}
+            onClick={goBack}
             className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
           >
             <ArrowLeft className="h-5 w-5" />

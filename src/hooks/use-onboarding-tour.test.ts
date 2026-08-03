@@ -62,7 +62,7 @@ describe("useOnboardingTour", () => {
     const { result } = renderHook(() => useOnboardingTour("user-err"));
     expect(result.current.shouldShow).toBe(true);
 
-    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    const spy = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("quota exceeded");
     });
 
@@ -70,8 +70,10 @@ describe("useOnboardingTour", () => {
       result.current.completeTour();
     });
 
-    // State still updates even if localStorage write fails
+    // State still updates even if localStorage write fails.
     expect(result.current.shouldShow).toBe(false);
+    // The write itself genuinely failed -- nothing was persisted.
+    expect(localStorage.getItem("dividimos_tour_completed_user-err")).toBeNull();
 
     spy.mockRestore();
   });
