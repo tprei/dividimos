@@ -31,10 +31,12 @@ class MockRequest {
   url: string;
   method: string;
   mode: string;
-  constructor(url: string, init: { method?: string; mode?: string } = {}) {
+  destination: string;
+  constructor(url: string, init: { method?: string; mode?: string; destination?: string } = {}) {
     this.url = url;
     this.method = init.method ?? "GET";
     this.mode = init.mode ?? "cors";
+    this.destination = init.destination ?? "empty";
   }
 }
 
@@ -145,7 +147,7 @@ describe("Service Worker", () => {
       env.listeners["install"]![0]!(event);
       await Promise.all(event._promises);
 
-      const staticCache = await env.cacheStorage.open("dividimos-static-v3");
+      const staticCache = await env.cacheStorage.open("dividimos-static-v4");
       expect(staticCache.addAll).toHaveBeenCalledWith([
         "/offline.html",
         "/icon-192.png",
@@ -161,16 +163,16 @@ describe("Service Worker", () => {
       await env.cacheStorage.open("dividimos-static-v0");
       await env.cacheStorage.open("dividimos-runtime-v0");
       // Also create current caches so they exist
-      await env.cacheStorage.open("dividimos-static-v3");
-      await env.cacheStorage.open("dividimos-runtime-v3");
+      await env.cacheStorage.open("dividimos-static-v4");
+      await env.cacheStorage.open("dividimos-runtime-v4");
 
       const event = makeExtendableEvent();
       env.listeners["activate"]![0]!(event);
       await Promise.all(event._promises);
 
       const remaining = await env.cacheStorage.keys();
-      expect(remaining).toContain("dividimos-static-v3");
-      expect(remaining).toContain("dividimos-runtime-v3");
+      expect(remaining).toContain("dividimos-static-v4");
+      expect(remaining).toContain("dividimos-runtime-v4");
       expect(remaining).not.toContain("dividimos-static-v0");
       expect(remaining).not.toContain("dividimos-runtime-v0");
     });
@@ -181,12 +183,33 @@ describe("Service Worker", () => {
       await Promise.all(event._promises);
       expect(env.clientsClaimed.value).toBe(true);
     });
+
+    it("deletes caches from every prior deployed version", async () => {
+      await env.cacheStorage.open("dividimos-static-v2");
+      await env.cacheStorage.open("dividimos-runtime-v2");
+      await env.cacheStorage.open("dividimos-static-v3");
+      await env.cacheStorage.open("dividimos-runtime-v3");
+      await env.cacheStorage.open("dividimos-static-v4");
+      await env.cacheStorage.open("dividimos-runtime-v4");
+
+      const event = makeExtendableEvent();
+      env.listeners["activate"]![0]!(event);
+      await Promise.all(event._promises);
+
+      const remaining = await env.cacheStorage.keys();
+      expect(remaining).not.toContain("dividimos-static-v2");
+      expect(remaining).not.toContain("dividimos-runtime-v2");
+      expect(remaining).not.toContain("dividimos-static-v3");
+      expect(remaining).not.toContain("dividimos-runtime-v3");
+      expect(remaining).toContain("dividimos-static-v4");
+      expect(remaining).toContain("dividimos-runtime-v4");
+    });
   });
 
   describe("fetch event", () => {
     function makeFetchEvent(
       url: string,
-      opts: { method?: string; mode?: string } = {}
+      opts: { method?: string; mode?: string; destination?: string } = {}
     ) {
       let response: unknown;
       return {
@@ -250,13 +273,13 @@ describe("Service Worker", () => {
 
       // Give the cache.put a tick to complete
       await new Promise((r) => setTimeout(r, 10));
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v3");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v4");
       expect(runtimeCache.put).toHaveBeenCalled();
     });
 
     it("falls back to cache when asset fetch fails", async () => {
       // Pre-populate runtime cache
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v3");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v4");
       const cachedRes = new MockResponse("cached", { status: 200 });
       const assetUrl = "https://dividimos.app/_next/static/chunk.js";
       await runtimeCache.put(new MockRequest(assetUrl) as unknown as string, cachedRes);
@@ -269,6 +292,18 @@ describe("Service Worker", () => {
       const response = await event._response;
 
       expect(response).toBe(cachedRes);
+    });
+
+    it("never caches RSC payload requests", () => {
+      const event = makeFetchEvent("https://dividimos.app/groups/abc?_rsc=1hash");
+      env.listeners["fetch"]![0]!(event);
+      expect(event._response).toBeUndefined();
+    });
+
+    it("does not cache same-origin requests with empty destination", () => {
+      const event = makeFetchEvent("https://dividimos.app/groups/abc/data");
+      env.listeners["fetch"]![0]!(event);
+      expect(event._response).toBeUndefined();
     });
   });
 });
