@@ -463,10 +463,9 @@ describe("handleNudge behavior", () => {
   async function simulateHandleNudge(
     debtorId: string,
     debtorName: string,
-    amountCents: number,
     groupId: string,
     nudgeSent: Set<string>,
-    notifyFn: (gid: string, did: string, amt: number) => Promise<void>,
+    notifyFn: (gid: string, did: string) => Promise<void>,
   ) {
     const key = `${groupId}-${debtorId}`;
     if (nudgeSent.has(key)) return { sent: false, nudgeSent };
@@ -481,7 +480,7 @@ describe("handleNudge behavior", () => {
 
     const toastId = mockToast.loading("Enviando lembrete…");
     try {
-      await notifyFn(groupId, debtorId, amountCents);
+      await notifyFn(groupId, debtorId);
       mockToast.success(`Lembrete enviado para ${debtorName}`, { id: toastId });
       return { sent: true, nudgeSent: next };
     } catch {
@@ -497,13 +496,13 @@ describe("handleNudge behavior", () => {
   it("sends nudge and persists cooldown on success", async () => {
     const notifyFn = vi.fn().mockResolvedValue(undefined);
     const result = await simulateHandleNudge(
-      "user-bob", "Bob", 5000, "group-1",
+      "user-bob", "Bob", "group-1",
       new Set(), notifyFn,
     );
 
     expect(result.sent).toBe(true);
     expect(result.nudgeSent.has("group-1-user-bob")).toBe(true);
-    expect(notifyFn).toHaveBeenCalledWith("group-1", "user-bob", 5000);
+    expect(notifyFn).toHaveBeenCalledWith("group-1", "user-bob");
     expect(mockToast.loading).toHaveBeenCalledWith("Enviando lembrete…");
     expect(mockToast.success).toHaveBeenCalledWith(
       "Lembrete enviado para Bob",
@@ -517,7 +516,7 @@ describe("handleNudge behavior", () => {
   it("skips nudge when already sent", async () => {
     const notifyFn = vi.fn();
     const result = await simulateHandleNudge(
-      "user-bob", "Bob", 5000, "group-1",
+      "user-bob", "Bob", "group-1",
       new Set(["group-1-user-bob"]), notifyFn,
     );
 
@@ -529,7 +528,7 @@ describe("handleNudge behavior", () => {
   it("rolls back cooldown on error", async () => {
     const notifyFn = vi.fn().mockRejectedValue(new Error("Network error"));
     const result = await simulateHandleNudge(
-      "user-bob", "Bob", 5000, "group-1",
+      "user-bob", "Bob", "group-1",
       new Set(), notifyFn,
     );
 
@@ -549,14 +548,14 @@ describe("handleNudge behavior", () => {
 
     // Send to bob in group-1
     const r1 = await simulateHandleNudge(
-      "user-bob", "Bob", 5000, "group-1",
+      "user-bob", "Bob", "group-1",
       new Set(), notifyFn,
     );
     expect(r1.nudgeSent.has("group-1-user-bob")).toBe(true);
 
     // Same user in group-2 should still be sendable
     const r2 = await simulateHandleNudge(
-      "user-bob", "Bob", 3000, "group-2",
+      "user-bob", "Bob", "group-2",
       r1.nudgeSent, notifyFn,
     );
     expect(r2.nudgeSent.has("group-2-user-bob")).toBe(true);

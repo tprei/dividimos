@@ -388,13 +388,15 @@ export async function notifySettlementRecorded(
 
 /**
  * Notify the debtor that the creditor is requesting payment.
- * Called from the settlement UI when creditor taps "Lembrar".
- * Rate limiting is enforced client-side (localStorage cooldown).
+ * Delegates all authority, balance verification, and cooldown to the
+ * claim_nudge RPC, which atomically checks accepted membership, reads
+ * the committed directed balance, enforces a 24-hour server-side
+ * cooldown, and returns the owed amount. The notification is only sent
+ * if the RPC returns a row.
  */
 export async function notifyPaymentNudge(
   groupId: string,
   debtorId: string,
-  amountCents: number,
 ): Promise<void> {
   if (!isAnyPushConfigured()) return;
 
@@ -402,6 +404,15 @@ export async function notifyPaymentNudge(
   if (!callerId || callerId === debtorId) return;
 
   const admin = createAdminClient();
+
+  const { data: claimResult } = await admin.rpc("claim_nudge", {
+    p_group_id: groupId,
+    p_debtor_id: debtorId,
+  });
+
+  if (!claimResult || claimResult.length === 0) return;
+
+  const amountCents = (claimResult as { amount_cents: number }[])[0].amount_cents;
 
   const [creditorResult, groupContext] = await Promise.all([
     admin.from("user_profiles").select("name").eq("id", callerId).single(),

@@ -194,6 +194,7 @@ export function GroupSettlementView({
 
   const debtEdges = balancesToEdges(balances);
   const displayEdges = simplificationResult?.simplifiedEdges ?? debtEdges;
+  const rawEdgeKeys = new Set(debtEdges.map((e) => `${e.fromUserId}-${e.toUserId}`));
 
   const getParticipant = (id: string) =>
     resolvedParticipants.find((p) => p.id === id) ?? {
@@ -233,7 +234,7 @@ export function GroupSettlementView({
     }
   }
 
-  async function handleNudge(debtorId: string, amountCents: number) {
+  async function handleNudge(debtorId: string) {
     const key = `${groupId}-${debtorId}`;
     if (nudgeSent.has(key)) return;
 
@@ -250,7 +251,7 @@ export function GroupSettlementView({
     const debtorName = getParticipant(debtorId).name;
     const toastId = toast.loading(`Enviando lembrete…`);
     try {
-      await notifyPaymentNudge(groupId, debtorId, amountCents);
+      await notifyPaymentNudge(groupId, debtorId);
       toast.success(`Lembrete enviado para ${debtorName}`, { id: toastId });
     } catch {
       toast.error("Erro ao enviar lembrete", { id: toastId });
@@ -406,15 +407,17 @@ export function GroupSettlementView({
                       >
                         Gerar cobranca
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleNudge(edge.fromUserId, edge.amountCents)}
-                        disabled={isActing || nudgeSent.has(`${groupId}-${edge.fromUserId}`)}
-                        title={nudgeSent.has(`${groupId}-${edge.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
-                      >
-                        <Bell className="h-4 w-4" />
-                      </Button>
+                      {rawEdgeKeys.has(`${edge.fromUserId}-${edge.toUserId}`) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleNudge(edge.fromUserId)}
+                          disabled={isActing || nudgeSent.has(`${groupId}-${edge.fromUserId}`)}
+                          title={nudgeSent.has(`${groupId}-${edge.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
+                        >
+                          <Bell className="h-4 w-4" />
+                        </Button>
+                      )}
                     </>
                   )}
 
