@@ -1073,41 +1073,34 @@ describe("push-notify", () => {
   });
 
   describe("notifyPaymentNudge", () => {
-    it("skips when web push is not configured", async () => {
-      vi.mocked(isWebPushConfigured).mockReturnValue(false);
-
-      await notifyPaymentNudge("group-1", "debtor-1", 5000);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("skips when caller is the debtor (cannot nudge yourself)", async () => {
-      mockCaller("debtor-1");
-
-      await notifyPaymentNudge("group-1", "debtor-1", 5000);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("skips when caller is not authenticated", async () => {
-      mockCaller(null);
-
-      await notifyPaymentNudge("group-1", "debtor-1", 5000);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("notifies debtor with creditor name and amount", async () => {
-      mockCaller("creditor-1");
-
+    function setupChain(opts: {
+      claimResult?: { amount_cents: number }[] | null;
+      group?: { name: string; is_dm?: boolean } | null;
+      dmPair?: { user_a: string; user_b: string } | null;
+      profileName?: string | null;
+    }) {
       const chain = mockSupabaseChain({ data: null, error: null });
+      chain.rpc = vi.fn().mockResolvedValue({
+        data: opts.claimResult ?? null,
+        error: null,
+      });
       chain.from.mockImplementation((table: string) => {
         if (table === "groups") {
           return {
             select: () => ({
               eq: () => ({
                 single: () =>
-                  Promise.resolve({ data: { name: "Viagem" }, error: null }),
+                  Promise.resolve({ data: opts.group ?? null, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: opts.dmPair ?? null, error: null }),
               }),
             }),
           };
@@ -1117,7 +1110,10 @@ describe("push-notify", () => {
             select: () => ({
               eq: () => ({
                 single: () =>
-                  Promise.resolve({ data: { name: "João" }, error: null }),
+                  Promise.resolve({
+                    data: opts.profileName != null ? { name: opts.profileName } : null,
+                    error: null,
+                  }),
               }),
             }),
           };
@@ -1125,8 +1121,50 @@ describe("push-notify", () => {
         return chain;
       });
       vi.mocked(createAdminClient).mockReturnValue(chain as never);
+    }
 
-      await notifyPaymentNudge("group-1", "debtor-1", 5000);
+    it("skips when web push is not configured", async () => {
+      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+
+      await notifyPaymentNudge("group-1", "debtor-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is the debtor", async () => {
+      mockCaller("debtor-1");
+
+      await notifyPaymentNudge("group-1", "debtor-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifyPaymentNudge("group-1", "debtor-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when claim_nudge returns nothing (no balance, unauthorized, or cooldown)", async () => {
+      mockCaller("creditor-1");
+      setupChain({ claimResult: null });
+
+      await notifyPaymentNudge("group-1", "debtor-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("notifies debtor with amount from claim_nudge RPC", async () => {
+      mockCaller("creditor-1");
+      setupChain({
+        claimResult: [{ amount_cents: 5000 }],
+        group: { name: "Viagem" },
+        profileName: "João",
+      });
+
+      await notifyPaymentNudge("group-1", "debtor-1");
 
       expect(notifyUser).toHaveBeenCalledWith("debtor-1", {
         title: "Lembrete de pagamento",
@@ -1136,24 +1174,15 @@ describe("push-notify", () => {
       });
     });
 
-    it("uses fallback names when DB returns null", async () => {
+    it("uses fallback names when group and profile are missing", async () => {
       mockCaller("creditor-1");
+      setupChain({ claimResult: [{ amount_cents: 5000 }] });
 
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation(() => ({
-        select: () => ({
-          eq: () => ({
-            single: () => Promise.resolve({ data: null, error: null }),
-          }),
-        }),
-      }));
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
-
-      await notifyPaymentNudge("group-1", "debtor-1", 2500);
+      await notifyPaymentNudge("group-1", "debtor-1");
 
       expect(notifyUser).toHaveBeenCalledWith("debtor-1", {
         title: "Lembrete de pagamento",
-        body: 'Alguém pediu R$\u00a025,00 em "um grupo"',
+        body: 'Alguém pediu R$\u00a050,00 em "um grupo"',
         url: "/app/groups/group-1",
         tag: "nudge-group-1-creditor-1",
       });

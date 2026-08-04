@@ -155,7 +155,7 @@ export function DashboardContent({
     const key = `${debt.groupId}-${debt.counterpartyId}`;
     if (nudgeSent.has(key)) return;
 
-    notifyPaymentNudge(debt.groupId, debt.counterpartyId, debt.amountCents).catch(() => {});
+    notifyPaymentNudge(debt.groupId, debt.counterpartyId).catch(() => {});
 
     const next = new Set(nudgeSent);
     next.add(key);

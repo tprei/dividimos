@@ -1352,6 +1352,10 @@ export type Database = {
         Returns: Json
       }
       claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
+      claim_nudge: {
+        Args: { p_debtor_id: string; p_group_id: string }
+        Returns: { amount_cents: number }[]
+      }
       cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       compute_expense_line_total_cents: {
         Args: { p_quantity_milliunits: number; p_unit_price_cents: number }

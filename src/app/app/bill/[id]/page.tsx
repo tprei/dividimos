@@ -194,7 +194,7 @@ export default function BillDetailPage({
     return data;
   }, []);
 
-  const handleNudge = useCallback(async (debtorId: string, debtorName: string, amountCents: number, groupId: string) => {
+  const handleNudge = useCallback(async (debtorId: string, debtorName: string, groupId: string) => {
     const key = `${groupId}-${debtorId}`;
     if (nudgeSent.has(key)) return;
 
@@ -209,7 +209,7 @@ export default function BillDetailPage({
 
     const toastId = toast.loading("Enviando lembrete…");
     try {
-      await notifyPaymentNudge(groupId, debtorId, amountCents);
+      await notifyPaymentNudge(groupId, debtorId);
       toast.success(`Lembrete enviado para ${debtorName}`, { id: toastId });
     } catch {
       toast.error("Erro ao enviar lembrete", { id: toastId });
@@ -974,7 +974,7 @@ export default function BillDetailPage({
                             size="sm"
                             variant="ghost"
                             className="gap-1 text-muted-foreground"
-                            onClick={() => handleNudge(debt.fromUserId, debtor?.name || "?", debt.amountCents, expense.groupId!)}
+                            onClick={() => handleNudge(debt.fromUserId, debtor?.name || "?", expense.groupId!)}
                             disabled={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`)}
                             title={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
                           >
@@ -1118,7 +1118,7 @@ export default function BillDetailPage({
                             size="sm"
                             variant="ghost"
                             className="gap-1 text-muted-foreground"
-                            onClick={() => handleNudge(debt.fromUserId, debtor?.name || "?", debt.amountCents, expense.groupId!)}
+                            onClick={() => handleNudge(debt.fromUserId, debtor?.name || "?", expense.groupId!)}
                             disabled={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`)}
                             title={nudgeSent.has(`${expense.groupId}-${debt.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
                           >
