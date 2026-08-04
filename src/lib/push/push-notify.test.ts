@@ -34,8 +34,6 @@ import {
   notifySettlementRecorded,
   notifyDmTextMessage,
   notifyPaymentNudge,
-  notifyExpenseEdited,
-  notifyExpenseDeleted,
 } from "./push-notify";
 
 function mockCaller(userId: string | null) {
@@ -99,8 +97,10 @@ describe("push-notify", () => {
               return {
                 eq: () => ({
                   eq: () => ({
-                    single: () =>
-                      Promise.resolve({ data: null, error: null }),
+                    eq: () => ({
+                      single: () =>
+                        Promise.resolve({ data: null, error: null }),
+                    }),
                   }),
                 }),
               };
@@ -140,11 +140,13 @@ describe("push-notify", () => {
               return {
                 eq: () => ({
                   eq: () => ({
-                    single: () =>
-                      Promise.resolve({
-                        data: { invited_by: "inviter-1" },
-                        error: null,
-                      }),
+                    eq: () => ({
+                      single: () =>
+                        Promise.resolve({
+                          data: { invited_by: "inviter-1" },
+                          error: null,
+                        }),
+                    }),
                   }),
                 }),
               };
@@ -192,7 +194,13 @@ describe("push-notify", () => {
               return {
                 eq: () => ({
                   eq: () => ({
-                    single: () => Promise.resolve({ data: null, error: null }),
+                    eq: () => ({
+                      single: () =>
+                        Promise.resolve({
+                          data: { invited_by: "inviter-1" },
+                          error: null,
+                        }),
+                    }),
                   }),
                 }),
               };
@@ -257,11 +265,13 @@ describe("push-notify", () => {
               return {
                 eq: () => ({
                   eq: () => ({
-                    single: () =>
-                      Promise.resolve({
-                        data: { invited_by: "creator-1" },
-                        error: null,
-                      }),
+                    eq: () => ({
+                      single: () =>
+                        Promise.resolve({
+                          data: { invited_by: "creator-1" },
+                          error: null,
+                        }),
+                    }),
                   }),
                 }),
               };
@@ -333,11 +343,13 @@ describe("push-notify", () => {
             select: () => ({
               eq: () => ({
                 eq: () => ({
-                  single: () =>
-                    Promise.resolve({
-                      data: { invited_by: "inviter-1" },
-                      error: null,
-                    }),
+                  eq: () => ({
+                    single: () =>
+                      Promise.resolve({
+                        data: { invited_by: "inviter-1" },
+                        error: null,
+                      }),
+                  }),
                 }),
               }),
             }),
@@ -390,11 +402,13 @@ describe("push-notify", () => {
             select: () => ({
               eq: () => ({
                 eq: () => ({
-                  single: () =>
-                    Promise.resolve({
-                      data: { invited_by: "same-user" },
-                      error: null,
-                    }),
+                  eq: () => ({
+                    single: () =>
+                      Promise.resolve({
+                        data: { invited_by: "same-user" },
+                        error: null,
+                      }),
+                  }),
                 }),
               }),
             }),
@@ -835,34 +849,13 @@ describe("push-notify", () => {
   });
 
   describe("notifyDmTextMessage", () => {
-    it("skips when web push is not configured", async () => {
-      vi.mocked(isWebPushConfigured).mockReturnValue(false);
-
-      await notifyDmTextMessage("group-1", "Oi!");
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("skips when caller is not authenticated", async () => {
-      mockCaller(null);
-
-      await notifyDmTextMessage("group-1", "Oi!");
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("skips when dm_pairs row is not found", async () => {
-      const chain = mockSupabaseChain({ data: null, error: null });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
-
-      await notifyDmTextMessage("group-1", "Oi!");
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("notifies counterparty (user_b) when sender is user_a", async () => {
-      mockCaller("user-a");
-
+    // The function re-derives the message preview from the latest committed
+    // chat_messages row sent by the caller, so callers cannot inject text.
+    function setupChain(opts: {
+      dmPair?: { user_a: string; user_b: string } | null;
+      message?: string | null;
+      senderName?: string | null;
+    }) {
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
         if (table === "dm_pairs") {
@@ -870,10 +863,26 @@ describe("push-notify", () => {
             select: () => ({
               eq: () => ({
                 single: () =>
-                  Promise.resolve({
-                    data: { user_a: "user-a", user_b: "user-b" },
-                    error: null,
+                  Promise.resolve({ data: opts.dmPair ?? null, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "chat_messages") {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  order: () => ({
+                    limit: () => ({
+                      single: () =>
+                        Promise.resolve({
+                          data: opts.message != null ? { content: opts.message } : null,
+                          error: null,
+                        }),
+                    }),
                   }),
+                }),
               }),
             }),
           };
@@ -884,7 +893,7 @@ describe("push-notify", () => {
               eq: () => ({
                 single: () =>
                   Promise.resolve({
-                    data: { name: "Alice" },
+                    data: opts.senderName != null ? { name: opts.senderName } : null,
                     error: null,
                   }),
               }),
@@ -894,8 +903,53 @@ describe("push-notify", () => {
         return chain;
       });
       vi.mocked(createAdminClient).mockReturnValue(chain as never);
+    }
 
-      await notifyDmTextMessage("group-1", "Oi, tudo bem?");
+    it("skips when web push is not configured", async () => {
+      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+
+      await notifyDmTextMessage("group-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifyDmTextMessage("group-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when dm_pairs row is not found", async () => {
+      setupChain({ dmPair: null });
+
+      await notifyDmTextMessage("group-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when no message exists from the caller", async () => {
+      mockCaller("user-a");
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: null,
+      });
+
+      await notifyDmTextMessage("group-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("notifies counterparty (user_b) when sender is user_a", async () => {
+      mockCaller("user-a");
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: "Oi, tudo bem?",
+        senderName: "Alice",
+      });
+
+      await notifyDmTextMessage("group-1");
 
       expect(notifyUser).toHaveBeenCalledWith("user-b", {
         title: "Alice",
@@ -907,40 +961,13 @@ describe("push-notify", () => {
 
     it("notifies counterparty (user_a) when sender is user_b", async () => {
       mockCaller("user-b");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "dm_pairs") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { user_a: "user-a", user_b: "user-b" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "Bob" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        return chain;
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: "Vamos dividir?",
+        senderName: "Bob",
       });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
 
-      await notifyDmTextMessage("group-1", "Vamos dividir?");
+      await notifyDmTextMessage("group-1");
 
       expect(notifyUser).toHaveBeenCalledWith("user-a", {
         title: "Bob",
@@ -952,81 +979,29 @@ describe("push-notify", () => {
 
     it("truncates long messages to 80 characters", async () => {
       mockCaller("user-a");
-
       const longMessage = "A".repeat(100);
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "dm_pairs") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { user_a: "user-a", user_b: "user-b" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "Alice" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        return chain;
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: longMessage,
+        senderName: "Alice",
       });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
 
-      await notifyDmTextMessage("group-1", longMessage);
+      await notifyDmTextMessage("group-1");
 
       expect(notifyUser).toHaveBeenCalledWith("user-b", expect.objectContaining({
-        body: "A".repeat(77) + "…",
+        body: "A".repeat(77) + "\u2026",
       }));
     });
 
     it("uses fallback name when sender profile not found", async () => {
       mockCaller("user-a");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "dm_pairs") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { user_a: "user-a", user_b: "user-b" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: null, error: null }),
-              }),
-            }),
-          };
-        }
-        return chain;
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: "Oi!",
+        senderName: null,
       });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
 
-      await notifyDmTextMessage("group-1", "Oi!");
+      await notifyDmTextMessage("group-1");
 
       expect(notifyUser).toHaveBeenCalledWith("user-b", expect.objectContaining({
         title: "Alguém",
@@ -1035,39 +1010,15 @@ describe("push-notify", () => {
 
     it("swallows errors from notifyUser", async () => {
       mockCaller("user-a");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "dm_pairs") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { user_a: "user-a", user_b: "user-b" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: { name: "X" }, error: null }),
-              }),
-            }),
-          };
-        }
-        return chain;
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: "Oi!",
+        senderName: "X",
       });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
       vi.mocked(notifyUser).mockRejectedValue(new Error("push failed"));
 
       await expect(
-        notifyDmTextMessage("group-1", "Oi!"),
+        notifyDmTextMessage("group-1"),
       ).resolves.toBeUndefined();
     });
   });
@@ -1185,158 +1136,6 @@ describe("push-notify", () => {
         body: 'Alguém pediu R$\u00a050,00 em "um grupo"',
         url: "/app/groups/group-1",
         tag: "nudge-group-1-creditor-1",
-      });
-    });
-  });
-
-  describe("notifyExpenseEdited", () => {
-    it("skips when web push is not configured", async () => {
-      vi.mocked(isWebPushConfigured).mockReturnValue(false);
-
-      await notifyExpenseEdited("exp-1", "group-1", "Pizza", ["user-2"]);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("skips when caller is not authenticated", async () => {
-      mockCaller(null);
-
-      await notifyExpenseEdited("exp-1", "group-1", "Pizza", ["user-2"]);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("notifies affected users excluding the editor", async () => {
-      mockCaller("editor-1");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "groups") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: { name: "Amigos" }, error: null }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: { name: "Carlos" }, error: null }),
-              }),
-            }),
-          };
-        }
-        return chain;
-      });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
-
-      await notifyExpenseEdited("exp-1", "group-1", "Pizza", [
-        "editor-1",
-        "user-2",
-        "user-3",
-      ]);
-
-      expect(notifyUser).toHaveBeenCalledTimes(2);
-      expect(notifyUser).toHaveBeenCalledWith("user-2", {
-        title: 'Despesa editada em "Amigos"',
-        body: 'Carlos editou "Pizza"',
-        url: "/app/bill/exp-1",
-        tag: "expense-edited-exp-1",
-      });
-      expect(notifyUser).toHaveBeenCalledWith("user-3", expect.objectContaining({
-        title: 'Despesa editada em "Amigos"',
-      }));
-    });
-  });
-
-  describe("notifyExpenseDeleted", () => {
-    it("skips when web push is not configured", async () => {
-      vi.mocked(isWebPushConfigured).mockReturnValue(false);
-
-      await notifyExpenseDeleted("group-1", "Pizza", ["user-2"]);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("skips when caller is not authenticated", async () => {
-      mockCaller(null);
-
-      await notifyExpenseDeleted("group-1", "Pizza", ["user-2"]);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("notifies affected users excluding the deleter", async () => {
-      mockCaller("deleter-1");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "groups") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: { name: "Casa" }, error: null }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: { name: "Ana" }, error: null }),
-              }),
-            }),
-          };
-        }
-        return chain;
-      });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
-
-      await notifyExpenseDeleted("group-1", "Almoço", [
-        "deleter-1",
-        "user-2",
-      ]);
-
-      expect(notifyUser).toHaveBeenCalledTimes(1);
-      expect(notifyUser).toHaveBeenCalledWith("user-2", {
-        title: 'Despesa removida em "Casa"',
-        body: 'Ana removeu "Almoço"',
-        url: "/app/groups/group-1",
-        tag: "expense-deleted-group-1",
-      });
-    });
-
-    it("uses fallback names when DB returns null", async () => {
-      mockCaller("deleter-1");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation(() => ({
-        select: () => ({
-          eq: () => ({
-            single: () => Promise.resolve({ data: null, error: null }),
-          }),
-        }),
-      }));
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
-
-      await notifyExpenseDeleted("group-1", "Pizza", [
-        "deleter-1",
-        "user-2",
-      ]);
-
-      expect(notifyUser).toHaveBeenCalledWith("user-2", {
-        title: 'Despesa removida em "um grupo"',
-        body: 'Alguém removeu "Pizza"',
-        url: "/app/groups/group-1",
-        tag: "expense-deleted-group-1",
       });
     });
   });

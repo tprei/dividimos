@@ -155,6 +155,7 @@ export async function notifyGroupInvite(
       .select("invited_by")
       .eq("group_id", groupId)
       .eq("user_id", inviteeId)
+      .eq("status", "invited")
       .single(),
   ]);
 
@@ -162,6 +163,7 @@ export async function notifyGroupInvite(
   const isCreator = groupResult.data?.creator_id === callerId;
   if (!isMember && !isCreator) return;
 
+  if (!inviterResult.data) return;
   const groupName = groupResult.data?.name ?? "um grupo";
   const inviterId = inviterResult.data?.invited_by;
 
@@ -209,6 +211,7 @@ export async function notifyGroupAccepted(
       .select("invited_by")
       .eq("group_id", groupId)
       .eq("user_id", accepterId)
+      .eq("status", "accepted")
       .single(),
     admin
       .from("user_profiles")
@@ -221,7 +224,7 @@ export async function notifyGroupAccepted(
   const inviterId = memberResult.data?.invited_by;
   const accepterName = accepterResult.data?.name ?? "Alguém";
 
-  if (!inviterId || inviterId === accepterId) return;
+  if (!memberResult.data || !inviterId || inviterId === accepterId) return;
 
   await safeNotify(inviterId, {
     title: "Convite aceito",
@@ -436,88 +439,6 @@ export async function notifyPaymentNudge(
   }, "nudges");
 }
 
-// ============================================================
-// Expense edited
-// ============================================================
-
-/**
- * Notify affected group members when an active expense is edited.
- * Accepts pre-fetched data so it works even if the caller already
- * updated the row.
- */
-export async function notifyExpenseEdited(
-  expenseId: string,
-  groupId: string,
-  title: string,
-  affectedUserIds: string[],
-): Promise<void> {
-  if (!isAnyPushConfigured()) return;
-
-  const callerId = await getCallerId();
-  if (!callerId) return;
-
-  const admin = createAdminClient();
-
-  const [groupResult, editorResult] = await Promise.all([
-    admin.from("groups").select("name").eq("id", groupId).single(),
-    admin
-      .from("user_profiles")
-      .select("name")
-      .eq("id", callerId)
-      .single(),
-  ]);
-
-  const groupName = groupResult.data?.name ?? "um grupo";
-  const editorName = editorResult.data?.name ?? "Alguém";
-
-  await safeNotifyMany(affectedUserIds, callerId, {
-    title: `Despesa editada em "${groupName}"`,
-    body: `${editorName} editou "${title}"`,
-    url: `/app/bill/${expenseId}`,
-    tag: `expense-edited-${expenseId}`,
-  }, "expenses");
-}
-
-// ============================================================
-// Expense deleted
-// ============================================================
-
-/**
- * Notify affected group members when an expense is deleted.
- * Accepts pre-fetched data since the expense row may already
- * be gone by the time this runs.
- */
-export async function notifyExpenseDeleted(
-  groupId: string,
-  title: string,
-  affectedUserIds: string[],
-): Promise<void> {
-  if (!isAnyPushConfigured()) return;
-
-  const callerId = await getCallerId();
-  if (!callerId) return;
-
-  const admin = createAdminClient();
-
-  const [groupResult, deleterResult] = await Promise.all([
-    admin.from("groups").select("name").eq("id", groupId).single(),
-    admin
-      .from("user_profiles")
-      .select("name")
-      .eq("id", callerId)
-      .single(),
-  ]);
-
-  const groupName = groupResult.data?.name ?? "um grupo";
-  const deleterName = deleterResult.data?.name ?? "Alguém";
-
-  await safeNotifyMany(affectedUserIds, callerId, {
-    title: `Despesa removida em "${groupName}"`,
-    body: `${deleterName} removeu "${title}"`,
-    url: `/app/groups/${groupId}`,
-    tag: `expense-deleted-${groupId}`,
-  }, "expenses");
-}
 
 // ============================================================
 // DM text message
@@ -525,11 +446,11 @@ export async function notifyExpenseDeleted(
 
 /**
  * Notify the counterparty when a text message is sent in a DM conversation.
- * Called after a successful sendChatMessage in a DM group.
+ * Derives the message preview from the latest committed chat_messages row
+ * sent by the caller, so a client cannot inject arbitrary notification text.
  */
 export async function notifyDmTextMessage(
   groupId: string,
-  messagePreview: string,
 ): Promise<void> {
   if (!isAnyPushConfigured()) return;
 
@@ -538,13 +459,24 @@ export async function notifyDmTextMessage(
 
   const admin = createAdminClient();
 
-  const { data: dmPair } = await admin
-    .from("dm_pairs")
-    .select("user_a, user_b")
-    .eq("group_id", groupId)
-    .single();
+  const [dmPairResult, latestMessageResult] = await Promise.all([
+    admin
+      .from("dm_pairs")
+      .select("user_a, user_b")
+      .eq("group_id", groupId)
+      .single(),
+    admin
+      .from("chat_messages")
+      .select("content")
+      .eq("group_id", groupId)
+      .eq("sender_id", callerId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single(),
+  ]);
 
-  if (!dmPair) return;
+  const dmPair = dmPairResult.data;
+  if (!dmPair || !latestMessageResult.data) return;
 
   const recipientId =
     dmPair.user_a === callerId ? dmPair.user_b : dmPair.user_b === callerId ? dmPair.user_a : null;
@@ -557,6 +489,7 @@ export async function notifyDmTextMessage(
     .single();
 
   const senderName = senderProfile?.name ?? "Alguém";
+  const messagePreview = latestMessageResult.data.content as string;
   const truncated =
     messagePreview.length > 80
       ? messagePreview.slice(0, 77) + "…"
