@@ -6,5 +6,5 @@ export default async function SearchPage() {
 
   if (!user) return null;
 
-  return <SearchContent userId={user.id} />;
+  return <SearchContent />;
 }
