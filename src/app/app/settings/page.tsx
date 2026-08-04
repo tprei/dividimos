@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { updateNotificationPreferences } from "./actions";
-import type { NotificationCategory, NotificationPreferences } from "@/types";
+import type { NotificationCategory, NotificationPreferences, User } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
 interface CategoryConfig {
@@ -62,31 +62,7 @@ const CATEGORIES: CategoryConfig[] = [
 
 export default function SettingsPage() {
   const { permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
-  const { user } = useAuth();
-  const [prefs, setPrefs] = useState<NotificationPreferences>({});
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  useEffect(() => {
-    if (user?.notificationPreferences) {
-      setPrefs(user.notificationPreferences);
-    }
-  }, [user?.notificationPreferences]);
-
-  const persistPrefs = useCallback((next: NotificationPreferences) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      updateNotificationPreferences(next).catch(() => {});
-    }, 500);
-  }, []);
-
-  const toggleCategory = useCallback((category: NotificationCategory) => {
-    setPrefs((prev) => {
-      const current = prev[category] !== false;
-      const next = { ...prev, [category]: !current };
-      persistPrefs(next);
-      return next;
-    });
-  }, [persistPrefs]);
+  const auth = useAuth();
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -159,7 +135,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {isSubscribed && (
+          {isSubscribed && auth.status === "authenticated" && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -169,36 +145,97 @@ export default function SettingsPage() {
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Categorias
               </h2>
-              <div className="rounded-2xl border bg-card">
-                {CATEGORIES.map((cat, i) => {
-                  const Icon = cat.icon;
-                  const enabled = prefs[cat.key] !== false;
-                  return (
-                    <div key={cat.key}>
-                      {i > 0 && <Separator />}
-                      <div className="flex items-center justify-between p-4">
-                        <div className="flex items-center gap-3">
-                          <Icon className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm font-medium">{cat.label}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {cat.description}
-                            </p>
-                          </div>
-                        </div>
-                        <Switch
-                          checked={enabled}
-                          onCheckedChange={() => toggleCategory(cat.key)}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <NotificationPreferencesSection
+                key={`${auth.generation}:${auth.userId}`}
+                user={auth.user}
+                userId={auth.userId}
+              />
             </motion.div>
           )}
         </motion.div>
       )}
+    </div>
+  );
+}
+
+function NotificationPreferencesSection({
+  user,
+  userId,
+}: {
+  user: User;
+  userId: string;
+}) {
+  // Seeded once, from the user this section was mounted with. The parent keys
+  // us by generation:userId, so every identity boundary discards this state
+  // and a previous account's draft toggles never carry into the new one.
+  const [prefs, setPrefs] = useState<NotificationPreferences>(
+    () => user.notificationPreferences ?? {},
+  );
+  const saveTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
+  const persistPrefs = useCallback(
+    (next: NotificationPreferences) => {
+      clearTimeout(saveTimerRef.current);
+      // Capture the caller's identity at schedule time. The keying above is the
+      // primary defense; this captured id is the second line so a timer that
+      // releases late still names the user who started the edit, and the
+      // server compares it against fresh auth before doing anything.
+      const expectedUserId = userId;
+      saveTimerRef.current = setTimeout(() => {
+        updateNotificationPreferences(expectedUserId, next).catch(() => {});
+      }, 500);
+    },
+    [userId],
+  );
+
+  const toggleCategory = useCallback(
+    (category: NotificationCategory) => {
+      setPrefs((prev) => {
+        const current = prev[category] !== false;
+        const next = { ...prev, [category]: !current };
+        persistPrefs(next);
+        return next;
+      });
+    },
+    [persistPrefs],
+  );
+
+  // Cancel any pending debounced save when the section unmounts. The parent's
+  // key makes an identity change an unmount, so a timer captured under the old
+  // account can never fire against the new one.
+  useEffect(() => {
+    return () => {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = undefined;
+    };
+  }, []);
+
+  return (
+    <div className="rounded-2xl border bg-card">
+      {CATEGORIES.map((cat, i) => {
+        const Icon = cat.icon;
+        const enabled = prefs[cat.key] !== false;
+        return (
+          <div key={cat.key}>
+            {i > 0 && <Separator />}
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-3">
+                <Icon className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">{cat.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {cat.description}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={enabled}
+                onCheckedChange={() => toggleCategory(cat.key)}
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
