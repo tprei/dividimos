@@ -636,36 +636,53 @@ describe("push-notify", () => {
   });
 
   describe("notifySettlementRecorded", () => {
-    it("skips when web push is not configured", async () => {
-      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+    const settlementRow = {
+      group_id: "group-1",
+      from_user_id: "from-1",
+      to_user_id: "to-1",
+      amount_cents: 2500,
+    };
 
-      await notifySettlementRecorded("group-1", "from-1", "to-1", 2500);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("skips when caller is neither the debtor nor the creditor", async () => {
-      mockCaller("outsider");
-
-      await notifySettlementRecorded("group-1", "from-1", "to-1", 2500);
-
-      expect(notifyUser).not.toHaveBeenCalled();
-    });
-
-    it("notifies the creditor when the debtor records the settlement (pay mode)", async () => {
-      mockCaller("from-1");
-
+    function setupChain(opts: {
+      settlement?: typeof settlementRow | null;
+      group?: { name: string; is_dm?: boolean } | null;
+      dmPair?: { user_a: string; user_b: string } | null;
+      profileName?: string | null;
+    }) {
       const chain = mockSupabaseChain({ data: null, error: null });
       chain.from.mockImplementation((table: string) => {
+        if (table === "settlements") {
+          return {
+            update: () => ({
+              eq: () => ({
+                eq: () => ({
+                  is: () => ({
+                    select: () => ({
+                      maybeSingle: () =>
+                        Promise.resolve({ data: opts.settlement ?? null, error: null }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
         if (table === "groups") {
           return {
             select: () => ({
               eq: () => ({
                 single: () =>
-                  Promise.resolve({
-                    data: { name: "Casa" },
-                    error: null,
-                  }),
+                  Promise.resolve({ data: opts.group ?? null, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "dm_pairs") {
+          return {
+            select: () => ({
+              eq: () => ({
+                single: () =>
+                  Promise.resolve({ data: opts.dmPair ?? null, error: null }),
               }),
             }),
           };
@@ -676,7 +693,7 @@ describe("push-notify", () => {
               eq: () => ({
                 single: () =>
                   Promise.resolve({
-                    data: { name: "Ana" },
+                    data: opts.profileName != null ? { name: opts.profileName } : null,
                     error: null,
                   }),
               }),
@@ -686,8 +703,65 @@ describe("push-notify", () => {
         return chain;
       });
       vi.mocked(createAdminClient).mockReturnValue(chain as never);
+    }
 
-      await notifySettlementRecorded("group-1", "from-1", "to-1", 2500);
+    it("skips when web push is not configured", async () => {
+      vi.mocked(isWebPushConfigured).mockReturnValue(false);
+
+      await notifySettlementRecorded("settlement-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is not authenticated", async () => {
+      mockCaller(null);
+
+      await notifySettlementRecorded("settlement-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when the settlement does not exist", async () => {
+      mockCaller("from-1");
+      setupChain({ settlement: null });
+
+      await notifySettlementRecorded("settlement-missing");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when caller is neither party in the settlement", async () => {
+      mockCaller("outsider");
+      setupChain({ settlement: settlementRow });
+
+      await notifySettlementRecorded("settlement-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when the settlement is pending (not yet confirmed)", async () => {
+      mockCaller("from-1");
+      setupChain({ settlement: null });
+
+      await notifySettlementRecorded("settlement-pending");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips on replay (notification already claimed)", async () => {
+      mockCaller("from-1");
+      setupChain({ settlement: null });
+
+      await notifySettlementRecorded("settlement-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("notifies the creditor when the debtor records the settlement (pay mode)", async () => {
+      mockCaller("from-1");
+      setupChain({ settlement: settlementRow, group: { name: "Casa" }, profileName: "Ana" });
+
+      await notifySettlementRecorded("settlement-1");
 
       expect(notifyUser).toHaveBeenCalledWith("to-1", {
         title: "Pagamento registrado",
@@ -699,88 +773,24 @@ describe("push-notify", () => {
 
     it("swallows errors from notifyUser", async () => {
       mockCaller("from-1");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "groups") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: { name: "G" }, error: null }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({ data: { name: "X" }, error: null }),
-              }),
-            }),
-          };
-        }
-        return chain;
-      });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
+      setupChain({ settlement: settlementRow, group: { name: "G" }, profileName: "X" });
       vi.mocked(notifyUser).mockRejectedValue(new Error("push failed"));
 
       await expect(
-        notifySettlementRecorded("group-1", "from-1", "to-1", 1000),
+        notifySettlementRecorded("settlement-1"),
       ).resolves.toBeUndefined();
     });
 
     it("omits group name and deep-links to the conversation in a DM", async () => {
       mockCaller("from-1");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "groups") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "", is_dm: true },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "dm_pairs") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { user_a: "from-1", user_b: "to-1" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "Ana" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        return chain;
+      setupChain({
+        settlement: settlementRow,
+        group: { name: "", is_dm: true },
+        dmPair: { user_a: "from-1", user_b: "to-1" },
+        profileName: "Ana",
       });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
 
-      await notifySettlementRecorded("group-1", "from-1", "to-1", 2500);
+      await notifySettlementRecorded("settlement-1");
 
       expect(notifyUser).toHaveBeenCalledWith("to-1", {
         title: "Pagamento registrado",
@@ -791,50 +801,14 @@ describe("push-notify", () => {
     });
 
     it("notifies the debtor when the creditor records a collection (collect mode)", async () => {
-      // When the creditor taps "Cobrar" in the UI, the client calls
-      // notifySettlementRecorded with the debtor as fromUserId and the
-      // creditor as toUserId but the caller/session is the creditor.
-      // The debtor should be notified that their payment was marked as
-      // received.
       mockCaller("to-1");
+      setupChain({ settlement: settlementRow, group: { name: "Viagem" }, profileName: "Bia" });
 
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "groups") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "Viagem", is_dm: false },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "Bia" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        return chain;
-      });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
-
-      await notifySettlementRecorded("group-1", "from-1", "to-1", 1500);
+      await notifySettlementRecorded("settlement-1");
 
       expect(notifyUser).toHaveBeenCalledWith("from-1", {
         title: "Pagamento registrado",
-        body: 'Bia marcou seu pagamento de R$\u00a015,00 como recebido em "Viagem"',
+        body: 'Bia marcou seu pagamento de R$\u00a025,00 como recebido em "Viagem"',
         url: "/app/groups/group-1",
         tag: "settlement-group-1",
       });
@@ -842,57 +816,18 @@ describe("push-notify", () => {
 
     it("notifies the debtor in a DM when the creditor records a collection", async () => {
       mockCaller("to-1");
-
-      const chain = mockSupabaseChain({ data: null, error: null });
-      chain.from.mockImplementation((table: string) => {
-        if (table === "groups") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "", is_dm: true },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "dm_pairs") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { user_a: "to-1", user_b: "from-1" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        if (table === "user_profiles") {
-          return {
-            select: () => ({
-              eq: () => ({
-                single: () =>
-                  Promise.resolve({
-                    data: { name: "Bia" },
-                    error: null,
-                  }),
-              }),
-            }),
-          };
-        }
-        return chain;
+      setupChain({
+        settlement: settlementRow,
+        group: { name: "", is_dm: true },
+        dmPair: { user_a: "to-1", user_b: "from-1" },
+        profileName: "Bia",
       });
-      vi.mocked(createAdminClient).mockReturnValue(chain as never);
 
-      await notifySettlementRecorded("group-1", "from-1", "to-1", 500);
+      await notifySettlementRecorded("settlement-1");
 
       expect(notifyUser).toHaveBeenCalledWith("from-1", {
         title: "Pagamento registrado",
-        body: "Bia marcou seu pagamento de R$\u00a05,00 como recebido",
+        body: "Bia marcou seu pagamento de R$\u00a025,00 como recebido",
         url: "/app/conversations/to-1",
         tag: "settlement-group-1",
       });

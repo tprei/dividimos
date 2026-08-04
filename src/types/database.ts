@@ -1129,6 +1129,7 @@ export type Database = {
           from_user_id: string
           group_id: string
           id: string
+          notification_sent_at: string | null
           status: Database["public"]["Enums"]["settlement_status"]
           to_user_id: string
         }
@@ -1139,6 +1140,7 @@ export type Database = {
           from_user_id: string
           group_id: string
           id?: string
+          notification_sent_at?: string | null
           status?: Database["public"]["Enums"]["settlement_status"]
           to_user_id: string
         }
@@ -1149,6 +1151,7 @@ export type Database = {
           from_user_id?: string
           group_id?: string
           id?: string
+          notification_sent_at?: string | null
           status?: Database["public"]["Enums"]["settlement_status"]
           to_user_id?: string
         }

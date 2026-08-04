@@ -190,6 +190,7 @@ describe("settlementRowToSettlement", () => {
       status: "confirmed",
       created_at: "2024-01-01T00:00:00Z",
       confirmed_at: "2024-01-02T00:00:00Z",
+      notification_sent_at: null,
     });
 
     expect(result).toEqual({
@@ -214,6 +215,7 @@ describe("settlementRowToSettlement", () => {
       status: "pending",
       created_at: "2024-01-01T00:00:00Z",
       confirmed_at: null,
+      notification_sent_at: null,
     });
 
     expect(result.confirmedAt).toBeUndefined();

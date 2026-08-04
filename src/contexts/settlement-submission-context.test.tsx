@@ -165,12 +165,7 @@ describe("SettlementSubmissionProvider", () => {
 
     expect(result.current.phase).toBe("committed");
     expect(result.current.result).toEqual(freshResult);
-    expect(mocks.notifySettlementRecorded).toHaveBeenCalledWith(
-      groupId,
-      debtorId,
-      creditorId,
-      5000,
-    );
+    expect(mocks.notifySettlementRecorded).toHaveBeenCalledWith(settlementId);
   });
 
   it("retains persisted reservations after an unknown outcome", async () => {
