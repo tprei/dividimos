@@ -66,7 +66,7 @@ function toPixKeyValue(type: PixKeyType, display: string): string {
 }
 
 export default function ProfilePage() {
-  const { user, loading } = useAuth();
+  const { user, status } = useAuth();
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof document === "undefined") return false;
     const stored = localStorage.getItem("theme");
@@ -149,7 +149,7 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading) {
+  if (status === "loading") {
     return (
       <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
         <div className="flex items-center gap-4">
