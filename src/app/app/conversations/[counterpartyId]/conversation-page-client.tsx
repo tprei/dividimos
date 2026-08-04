@@ -233,7 +233,7 @@ export function ConversationPageClient({
       const result = await sendChatMessage(groupId, content);
       if ("error" in result) return;
 
-      notifyDmTextMessage(groupId, content).catch(() => {});
+      notifyDmTextMessage(groupId).catch(() => {});
 
       const senderProfile: UserProfile = {
         id: user.id,
