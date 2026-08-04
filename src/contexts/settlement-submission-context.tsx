@@ -410,13 +410,8 @@ export function SettlementSubmissionProvider({ children }: { children: React.Rea
       removeStoredRequest(ownerId);
       updateState(committedState(request, result));
       if (!result.replayed) {
-        for (const allocation of request.allocations) {
-          void notifySettlementRecorded(
-            allocation.groupId,
-            allocation.fromUserId,
-            allocation.toUserId,
-            allocation.amountCents,
-          );
+        for (const settlement of result.settlements) {
+          void notifySettlementRecorded(settlement.id);
         }
       }
       return result;

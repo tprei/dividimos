@@ -305,28 +305,45 @@ export async function notifyExpenseActivated(
 
 /**
  * Notify the other party when a settlement is recorded.
- * Called after a fresh replay-safe settlement operation commits.
+ * Derives every field from the committed settlement row so a caller
+ * cannot forge the parties, amount, or group. The caller must be one
+ * of the two settlement participants (verified server-side via session).
  *
  * Two directions, depending on who initiated:
  *   - Pay mode    (caller = debtor/fromUser): notify the creditor
  *                  "{payer} pagou {amount}"
  *   - Collect mode (caller = creditor/toUser): notify the debtor
  *                   "{creditor} marcou seu pagamento de {amount} como recebido"
- *
- * Previously the guard only accepted `callerId === fromUserId`, so the
- * "Cobrar" flow (creditor records an incoming payment) silently dropped
- * every notification. Both directions now flow through a single function.
  */
 export async function notifySettlementRecorded(
-  groupId: string,
-  fromUserId: string,
-  toUserId: string,
-  amountCents: number,
+  settlementId: string,
 ): Promise<void> {
   if (!isAnyPushConfigured()) return;
 
   const callerId = await getCallerId();
   if (!callerId) return;
+
+  const admin = createAdminClient();
+
+  // Atomically claim the notification one-shot: the conditional UPDATE
+  // matches only a confirmed settlement that has never been notified.
+  // The first caller gets a row back; all subsequent calls (replay,
+  // concurrent tabs) and any pending/nonexistent settlement get null.
+  const { data: settlement } = await admin
+    .from("settlements")
+    .update({ notification_sent_at: new Date().toISOString() })
+    .eq("id", settlementId)
+    .eq("status", "confirmed")
+    .is("notification_sent_at", null)
+    .select("group_id, from_user_id, to_user_id, amount_cents")
+    .maybeSingle();
+
+  if (!settlement) return;
+
+  const groupId = settlement.group_id as string;
+  const fromUserId = settlement.from_user_id as string;
+  const toUserId = settlement.to_user_id as string;
+  const amountCents = settlement.amount_cents as number;
 
   const callerIsFromUser = callerId === fromUserId;
   const callerIsToUser = callerId === toUserId;
@@ -334,8 +351,6 @@ export async function notifySettlementRecorded(
 
   const recipientId = callerIsFromUser ? toUserId : fromUserId;
   const counterpartyId = callerIsFromUser ? fromUserId : toUserId;
-
-  const admin = createAdminClient();
 
   const [counterpartyResult, groupContext] = await Promise.all([
     admin
