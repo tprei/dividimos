@@ -1,6 +1,6 @@
 // Service worker — offline cache + fallback for PWA installability.
 
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
@@ -42,9 +42,24 @@ self.addEventListener("activate", (event) => {
 });
 
 // ── Fetch ────────────────────────────────────────────────────────────
-// Strategy: network-first for navigation requests (HTML pages).
-// For same-origin non-navigation requests: network-first with runtime cache.
-// Cross-origin requests and API calls are not cached.
+// Strategy: network-first for navigation requests (HTML pages) and
+// immutable static assets. All other same-origin requests pass through
+// uncached so that authenticated responses (RSC payloads, etc.) are
+// never stored and never served to a different session.
+
+// Only immutable, content-hashed assets are eligible for runtime caching.
+// request.destination reflects the loading context (script/style/font/image
+// for tags, "empty" for programmatic fetch including RSC payloads).
+function isCacheableAsset(request, url) {
+  return (
+    url.pathname.startsWith("/_next/static/") ||
+    request.destination === "script" ||
+    request.destination === "style" ||
+    request.destination === "font" ||
+    request.destination === "image"
+  );
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
@@ -59,7 +74,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
   if (url.pathname === "/claim" || url.pathname.startsWith("/claim/")) return;
 
-  // Navigation requests (HTML pages) — network-first, offline fallback
+  // Navigation requests (HTML pages) — network-first, offline fallback only
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
@@ -68,7 +83,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Same-origin assets (JS, CSS, images, fonts) — network-first with cache
+  // Deny by default: only immutable static assets are cached. RSC payloads
+  // and any other authenticated response pass through without caching.
+  if (!isCacheableAsset(request, url)) return;
+
+  // Static assets — network-first with cache fallback
   event.respondWith(
     fetch(request)
       .then((response) => {
