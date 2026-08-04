@@ -14,18 +14,21 @@ export async function GET(request: Request) {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from("users")
-          .select("onboarded")
-          .eq("id", user.id)
-          .single();
+      if (!user) {
+        return NextResponse.redirect(
+          `${origin}/auth?error=callback_failed`,
+        );
+      }
+      const { data: profile } = await supabase
+        .from("users")
+        .select("onboarded")
+        .eq("id", user.id)
+        .single();
 
-        if (!profile?.onboarded) {
-          const onboardUrl = new URL(`${origin}/auth/onboard`);
-          if (next !== "/app") onboardUrl.searchParams.set("next", next);
-          return NextResponse.redirect(onboardUrl.toString());
-        }
+      if (!profile?.onboarded) {
+        const onboardUrl = new URL(`${origin}/auth/onboard`);
+        if (next !== "/app") onboardUrl.searchParams.set("next", next);
+        return NextResponse.redirect(onboardUrl.toString());
       }
 
       return NextResponse.redirect(`${origin}${next}`);
