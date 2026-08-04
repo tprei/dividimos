@@ -34,12 +34,16 @@ export async function notifyUser(
     return { sent: 0, cleaned: 0 };
   }
 
+  // Defense-in-depth: cap concurrent sends even if the DB-level
+  // subscription cap is somehow bypassed.
+  const capped = rows.slice(0, 10);
+
   let sent = 0;
   let cleaned = 0;
   const staleIds: string[] = [];
 
   await Promise.all(
-    rows.map(async (row) => {
+    capped.map(async (row) => {
       const channel = (row.channel ?? "web") as SubscriptionChannel;
 
       let decrypted: string;
