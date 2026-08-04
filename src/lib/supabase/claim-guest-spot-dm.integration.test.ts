@@ -273,4 +273,66 @@ describe.skipIf(!canRun)("claim_guest_spot DM guard (#472)", () => {
       .single();
     expect((membership as { status: string }).status).toBe("accepted");
   });
+
+  it("grants a seeded outsider membership row zero visibility into the DM pair", async () => {
+    // Seed an accepted outsider membership for carol into the DM group,
+    // bypassing the triggers so the row persists. The pair-aware visibility
+    // helpers exclude carol from this DM because she is not one of the two
+    // canonical members, so the seeded row grants zero visibility through
+    // every RLS policy.
+    await pg.query("BEGIN");
+    await pg.query("SET LOCAL session_replication_role = replica");
+    await pg.query(
+      `INSERT INTO public.group_members (group_id, user_id, status, invited_by, accepted_at)
+       VALUES ($1, $2, 'accepted', $3, now())
+       ON CONFLICT (group_id, user_id) DO UPDATE
+         SET status = 'accepted', accepted_at = now()`,
+      [dmGroupId, carol.id, alice.id],
+    );
+    await pg.query("COMMIT");
+
+    try {
+      const carolClient = authenticateAs(carol);
+
+      const groupsResult = await carolClient
+        .from("groups")
+        .select("id")
+        .eq("id", dmGroupId);
+      expect(groupsResult.error).toBeNull();
+      expect(groupsResult.data ?? []).toEqual([]);
+
+      const expensesResult = await carolClient
+        .from("expenses")
+        .select("id")
+        .eq("group_id", dmGroupId);
+      expect(expensesResult.error).toBeNull();
+      expect(expensesResult.data ?? []).toEqual([]);
+
+      const balancesResult = await carolClient
+        .from("balances")
+        .select("group_id")
+        .eq("group_id", dmGroupId);
+      expect(balancesResult.error).toBeNull();
+      expect(balancesResult.data ?? []).toEqual([]);
+
+      const membersResult = await carolClient
+        .from("group_members")
+        .select("group_id")
+        .eq("group_id", dmGroupId);
+      expect(membersResult.error).toBeNull();
+      expect(membersResult.data ?? []).toEqual([]);
+
+      const messagesResult = await carolClient
+        .from("chat_messages")
+        .select("id")
+        .eq("group_id", dmGroupId);
+      expect(messagesResult.error).toBeNull();
+      expect(messagesResult.data ?? []).toEqual([]);
+    } finally {
+      await pg.query(
+        "DELETE FROM public.group_members WHERE group_id = $1 AND user_id = $2",
+        [dmGroupId, carol.id],
+      );
+    }
+  });
 });
