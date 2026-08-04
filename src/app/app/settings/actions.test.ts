@@ -38,23 +38,36 @@ describe("updateNotificationPreferences", () => {
     vi.clearAllMocks();
   });
 
-  it("returns error when not authenticated", async () => {
+  it("returns an error and does no privileged work when there is no session", async () => {
     mockAuth(null);
-    const result = await updateNotificationPreferences({ expenses: false });
+
+    const result = await updateNotificationPreferences("user-1", { expenses: false });
+
     expect(result.error).toBe("Não autenticado");
+    expect(createAdminClient).not.toHaveBeenCalled();
   });
 
-  it("saves valid preferences", async () => {
+  it("returns an error and does no privileged work when the expected id does not match the session", async () => {
     mockAuth("user-1");
-    const { update } = mockAdmin();
 
-    const result = await updateNotificationPreferences({
+    const result = await updateNotificationPreferences("user-2", { expenses: false });
+
+    expect(result.error).toBe("Não autenticado");
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes preferences and updates the verified user when the expected id matches", async () => {
+    mockAuth("user-1");
+    const { from, update, eq } = mockAdmin();
+
+    const result = await updateNotificationPreferences("user-1", {
       expenses: false,
       settlements: true,
       nudges: false,
     });
 
     expect(result.error).toBeUndefined();
+    expect(from).toHaveBeenCalledWith("users");
     expect(update).toHaveBeenCalledWith({
       notification_preferences: {
         expenses: false,
@@ -62,29 +75,32 @@ describe("updateNotificationPreferences", () => {
         nudges: false,
       },
     });
+    // The row written targets the verified session user, not the (matching) expected id.
+    expect(eq).toHaveBeenCalledWith("id", "user-1");
   });
 
-  it("strips invalid category keys", async () => {
+  it("drops unknown category keys and non-boolean values before writing", async () => {
     mockAuth("user-1");
     const { update } = mockAdmin();
 
     const prefs = {
       expenses: true,
       bogus_key: false,
+      settlements: "yes" as unknown as boolean,
     } as Record<string, boolean>;
 
-    await updateNotificationPreferences(prefs);
+    await updateNotificationPreferences("user-1", prefs);
 
     expect(update).toHaveBeenCalledWith({
       notification_preferences: { expenses: true },
     });
   });
 
-  it("returns error when db update fails", async () => {
+  it("returns an error when the db update fails", async () => {
     mockAuth("user-1");
     mockAdmin({ message: "DB error" });
 
-    const result = await updateNotificationPreferences({ expenses: false });
+    const result = await updateNotificationPreferences("user-1", { expenses: false });
     expect(result.error).toBe("Erro ao salvar preferências");
   });
 });
