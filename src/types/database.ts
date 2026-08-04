@@ -992,6 +992,63 @@ export type Database = {
           },
         ]
       }
+      nudge_cooldowns: {
+        Row: {
+          creditor_id: string
+          debtor_id: string
+          group_id: string
+          nudged_at: string
+        }
+        Insert: {
+          creditor_id: string
+          debtor_id: string
+          group_id: string
+          nudged_at?: string
+        }
+        Update: {
+          creditor_id?: string
+          debtor_id?: string
+          group_id?: string
+          nudged_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nudge_cooldowns_creditor_id_fkey"
+            columns: ["creditor_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nudge_cooldowns_creditor_id_fkey"
+            columns: ["creditor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nudge_cooldowns_debtor_id_fkey"
+            columns: ["debtor_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nudge_cooldowns_debtor_id_fkey"
+            columns: ["debtor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "nudge_cooldowns_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       push_subscriptions: {
         Row: {
           channel: string
@@ -1354,7 +1411,9 @@ export type Database = {
       claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
       claim_nudge: {
         Args: { p_debtor_id: string; p_group_id: string }
-        Returns: { amount_cents: number }[]
+        Returns: {
+          amount_cents: number
+        }[]
       }
       cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       compute_expense_line_total_cents: {
@@ -1398,6 +1457,21 @@ export type Database = {
           created_at: string
           group_id: string
           message_type: string
+        }[]
+      }
+      get_my_profile: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          created_at: string
+          email: string
+          handle: string
+          id: string
+          name: string
+          notification_preferences: Json
+          onboarded: boolean
+          pix_key_hint: string
+          pix_key_type: Database["public"]["Enums"]["pix_key_type"]
         }[]
       }
       get_or_create_dm_group: {
