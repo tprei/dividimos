@@ -1415,6 +1415,10 @@ export type Database = {
           amount_cents: number
         }[]
       }
+      claim_push_subscription: {
+        Args: { p_channel: string; p_fingerprint: string; p_subscription: string }
+        Returns: undefined
+      }
       cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       compute_expense_line_total_cents: {
         Args: { p_quantity_milliunits: number; p_unit_price_cents: number }
@@ -1555,6 +1559,10 @@ export type Database = {
       remove_group_member: {
         Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
+      }
+      release_push_subscription: {
+        Args: { p_channel: string; p_fingerprint: string }
+        Returns: number
       }
       resolve_expense_graph_save_result: {
         Args: { p_group_id: string; p_save_operation_id: string }

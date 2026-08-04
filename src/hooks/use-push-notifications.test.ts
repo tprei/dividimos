@@ -44,6 +44,30 @@ vi.mock("@capacitor/push-notifications", () => ({
   },
 }));
 
+const { useAuthMock } = vi.hoisted(() => ({
+  useAuthMock: vi.fn(),
+}));
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => useAuthMock(),
+}));
+
+function authed(userId: string, generation: number) {
+  return {
+    status: "authenticated" as const,
+    userId,
+    generation,
+    user: { id: userId },
+  };
+}
+function unauthed(generation: number) {
+  return {
+    status: "unauthenticated" as const,
+    userId: null,
+    generation,
+    user: null,
+  };
+}
+
 import { usePushNotifications } from "./use-push-notifications";
 import { __resetNativeRegistrationForTests } from "@/lib/push/native-registration";
 
@@ -101,6 +125,9 @@ describe("usePushNotifications", () => {
 
     // Mock fetch
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+    useAuthMock.mockReset();
+    useAuthMock.mockReturnValue(authed("u1", 0));
   });
 
   afterEach(() => {
@@ -141,7 +168,13 @@ describe("usePushNotifications", () => {
   });
 
   it("detects existing subscription", async () => {
-    const existingSub = { endpoint: "https://fcm.example.com/abc" };
+    const existingSub = {
+      endpoint: "https://fcm.example.com/abc",
+      toJSON: () => ({
+        endpoint: "https://fcm.example.com/abc",
+        keys: { p256dh: "p", auth: "a" },
+      }),
+    };
     mockPushManager.getSubscription.mockResolvedValue(existingSub);
 
     const { result } = renderHook(() => usePushNotifications());
@@ -207,6 +240,10 @@ describe("usePushNotifications", () => {
   it("unsubscribe removes subscription", async () => {
     const existingSub = {
       endpoint: "https://fcm.example.com/abc",
+      toJSON: () => ({
+        endpoint: "https://fcm.example.com/abc",
+        keys: { p256dh: "p", auth: "a" },
+      }),
       unsubscribe: vi.fn().mockResolvedValue(true),
     };
     mockPushManager.getSubscription.mockResolvedValue(existingSub);
@@ -226,6 +263,117 @@ describe("usePushNotifications", () => {
       method: "POST",
     }));
     expect(result.current.isSubscribed).toBe(false);
+  });
+
+  // --- Owner reconciliation (#483) ---
+
+  const localSub = () => ({
+    endpoint: "https://fcm.example.com/abc",
+    toJSON: () => ({
+      endpoint: "https://fcm.example.com/abc",
+      keys: { p256dh: "p", auth: "a" },
+    }),
+  });
+
+  function subscribeCallCount(): number {
+    return (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => c[0] === "/api/push/subscribe",
+    ).length;
+  }
+
+  it("claims an existing local subscription for the authenticated owner (one POST)", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(localSub());
+    useAuthMock.mockReturnValue(authed("a", 0));
+
+    const { result } = renderHook(() => usePushNotifications());
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(result.current.isSubscribed).toBe(true);
+    expect(subscribeCallCount()).toBe(1);
+  });
+
+  it("reports isSubscribed:false and posts nothing while unauthenticated", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(localSub());
+    useAuthMock.mockReturnValue(unauthed(0));
+
+    const { result } = renderHook(() => usePushNotifications());
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(result.current.isSubscribed).toBe(false);
+    expect(subscribeCallCount()).toBe(0);
+  });
+
+  it("re-claims exactly once after a transition through unauthenticated to a new owner", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(localSub());
+
+    useAuthMock.mockReturnValue(authed("a", 0));
+    const { result, rerender } = renderHook(() => usePushNotifications());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.isSubscribed).toBe(true);
+
+    useAuthMock.mockReturnValue(unauthed(1));
+    rerender();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.isSubscribed).toBe(false);
+
+    const callsAfterUnauth = subscribeCallCount();
+    useAuthMock.mockReturnValue(authed("b", 2));
+    rerender();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.isSubscribed).toBe(true);
+    expect(subscribeCallCount() - callsAfterUnauth).toBe(1);
+  });
+
+  it("does not re-post on a same-owner rerender", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(localSub());
+    useAuthMock.mockReturnValue(authed("a", 0));
+
+    const { result, rerender } = renderHook(() => usePushNotifications());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.isSubscribed).toBe(true);
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockClear();
+    rerender();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(subscribeCallCount()).toBe(0);
+  });
+
+  it("leaves isSubscribed:false after a failed reconcile and retries on the next owner-key render", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(localSub());
+    useAuthMock.mockReturnValue(authed("a", 0));
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: false }) as unknown as typeof fetch;
+
+    const { result, rerender } = renderHook(() => usePushNotifications());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.isSubscribed).toBe(false);
+
+    // A generation bump re-runs the effect and retries; this time it succeeds.
+    useAuthMock.mockReturnValue(authed("a", 1));
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true }) as unknown as typeof fetch;
+    rerender();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(result.current.isSubscribed).toBe(true);
   });
 
   // --- Native (Capacitor) tests ---

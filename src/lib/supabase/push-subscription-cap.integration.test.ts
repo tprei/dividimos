@@ -37,6 +37,7 @@ describe.skipIf(!canRun)("push subscription cap (#492)", () => {
           user_id: user.id,
           subscription: `test-encrypted-${i}`,
           channel: "web",
+          fingerprint: `cap-seed-${i}`,
         })
         .select("id")
         .single();
@@ -51,6 +52,7 @@ describe.skipIf(!canRun)("push subscription cap (#492)", () => {
         user_id: user.id,
         subscription: "test-encrypted-overflow",
         channel: "web",
+        fingerprint: "cap-overflow",
       });
 
     expect(error).not.toBeNull();
@@ -61,12 +63,10 @@ describe.skipIf(!canRun)("push subscription cap (#492)", () => {
     // Use a fresh user so this test is independent of the one above.
     const [user2] = await createTestUsers(1);
     registerTestUser(user2.id);
-
-    // Seed 4 subscriptions (one below the cap).
     for (let i = 0; i < 4; i++) {
       await pg.query(
-        "INSERT INTO public.push_subscriptions (user_id, subscription, channel) VALUES ($1, $2, 'web')",
-        [user2.id, `concurrent-seed-${i}`],
+        "INSERT INTO public.push_subscriptions (user_id, subscription, channel, fingerprint) VALUES ($1, $2, 'web', $3)",
+        [user2.id, `concurrent-seed-${i}`, `conc-seed-fp-${i}`],
       );
     }
 
@@ -78,16 +78,16 @@ describe.skipIf(!canRun)("push subscription cap (#492)", () => {
       // the user row FOR UPDATE), but do NOT commit yet.
       await pg.query("BEGIN");
       await pg.query(
-        "INSERT INTO public.push_subscriptions (user_id, subscription, channel) VALUES ($1, $2, 'web')",
-        [user2.id, "conn1-sub"],
+        "INSERT INTO public.push_subscriptions (user_id, subscription, channel, fingerprint) VALUES ($1, $2, 'web', $3)",
+        [user2.id, "conn1-sub", "conn1-fp"],
       );
 
       // Connection 2: try to insert — the trigger blocks on the user-row
       // lock held by connection 1's transaction.
       const conn2Promise = pg2
         .query(
-          "INSERT INTO public.push_subscriptions (user_id, subscription, channel) VALUES ($1, $2, 'web')",
-          [user2.id, "conn2-sub"],
+          "INSERT INTO public.push_subscriptions (user_id, subscription, channel, fingerprint) VALUES ($1, $2, 'web', $3)",
+          [user2.id, "conn2-sub", "conn2-fp"],
         )
         .catch((e: unknown) => e);
 

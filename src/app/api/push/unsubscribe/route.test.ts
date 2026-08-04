@@ -6,14 +6,18 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => serverMock.client),
 }));
 
+// The admin client must no longer be touched by this route.
 const adminMock = createMockSupabase();
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => adminMock.client),
 }));
 
-const mockDecrypt = vi.fn();
-vi.mock("@/lib/crypto", () => ({
-  decryptPixKey: (...args: unknown[]) => mockDecrypt(...args),
+const mockPushFingerprint = vi.fn<(channel: string, value: string) => string>(
+  (channel, value) => `fp:${channel}:${value}`,
+);
+vi.mock("@/lib/push/fingerprint", () => ({
+  pushFingerprint: (channel: string, value: string) =>
+    mockPushFingerprint(channel, value),
 }));
 
 import { POST } from "./route";
@@ -33,22 +37,29 @@ function makeRequest(body?: unknown): Request {
   });
 }
 
+const RELEASE = "rpc:release_push_subscription";
+
 describe("POST /api/push/unsubscribe", () => {
   beforeEach(() => {
     serverMock.reset();
     adminMock.reset();
-    mockDecrypt.mockReset();
+    mockPushFingerprint.mockClear();
+    mockPushFingerprint.mockImplementation(
+      (channel: string, value: string) => `fp:${channel}:${value}`,
+    );
   });
 
-  it("returns 401 when not authenticated", async () => {
+  it("returns 401 when not authenticated and makes zero RPC calls", async () => {
     const res = await POST(makeRequest({ endpoint: "https://x.com/sub" }));
     expect(res.status).toBe(401);
+    expect(serverMock.findCalls(RELEASE, "rpc")).toHaveLength(0);
   });
 
   it("returns 400 for invalid JSON", async () => {
     serverMock.setUser({ id: "u1" });
     const res = await POST(makeRequest());
     expect(res.status).toBe(400);
+    expect(serverMock.findCalls(RELEASE, "rpc")).toHaveLength(0);
   });
 
   it("returns 400 when endpoint is missing", async () => {
@@ -56,82 +67,70 @@ describe("POST /api/push/unsubscribe", () => {
     const res = await POST(makeRequest({}));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain("Endpoint");
+    expect(serverMock.findCalls(RELEASE, "rpc")).toHaveLength(0);
   });
 
-  it("returns 500 when fetching subscriptions fails", async () => {
+  it("returns 400 when fcm token is missing", async () => {
     serverMock.setUser({ id: "u1" });
-    adminMock.onTable("push_subscriptions", { data: null, error: { message: "db error" } });
-
-    const res = await POST(makeRequest({ endpoint: "https://x.com/sub" }));
-    expect(res.status).toBe(500);
+    const res = await POST(makeRequest({ channel: "fcm" }));
+    expect(res.status).toBe(400);
+    expect(serverMock.findCalls(RELEASE, "rpc")).toHaveLength(0);
   });
 
-  it("deletes matching subscriptions by endpoint", async () => {
+  it("releases a web subscription via RPC with the exact fingerprint", async () => {
     serverMock.setUser({ id: "u1" });
+    serverMock.onRpc("release_push_subscription", { data: 1, error: null });
 
-    const targetEndpoint = "https://push.example.com/sub/abc";
-    mockDecrypt.mockImplementation((encrypted: string) => {
-      if (encrypted === "enc-match")
-        return JSON.stringify({ endpoint: targetEndpoint });
-      if (encrypted === "enc-other")
-        return JSON.stringify({ endpoint: "https://other.com/sub" });
-      throw new Error("bad");
-    });
-
-    adminMock.onTable("push_subscriptions", {
-      data: [
-        { id: "match-1", subscription: "enc-match" },
-        { id: "other-1", subscription: "enc-other" },
-      ],
-    });
-    adminMock.onTable("push_subscriptions", { data: null, error: null });
-
-    const res = await POST(makeRequest({ endpoint: targetEndpoint }));
+    const res = await POST(
+      makeRequest({ endpoint: "https://push.example.com/sub/abc" }),
+    );
     expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json).toEqual({ ok: true, deleted: 1 });
+    expect(await res.json()).toEqual({ ok: true, deleted: 1 });
 
-    const deleteCalls = adminMock.findCalls("push_subscriptions", "delete");
-    expect(deleteCalls.length).toBe(1);
+    const calls = serverMock.findCalls(RELEASE, "rpc");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args[0]).toBe("release_push_subscription");
+    expect(calls[0].args[1]).toEqual({
+      p_channel: "web",
+      p_fingerprint: "fp:web:https://push.example.com/sub/abc",
+    });
+    expect(adminMock.calls).toHaveLength(0);
   });
 
-  it("returns deleted: 0 when no endpoints match", async () => {
+  it("releases an fcm token via RPC with the exact fingerprint", async () => {
     serverMock.setUser({ id: "u1" });
+    serverMock.onRpc("release_push_subscription", { data: 1, error: null });
 
-    mockDecrypt.mockReturnValue(JSON.stringify({ endpoint: "https://other.com/sub" }));
+    const res = await POST(
+      makeRequest({ token: "fcm-token-xyz", channel: "fcm" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, deleted: 1 });
 
-    adminMock.onTable("push_subscriptions", {
-      data: [{ id: "row-1", subscription: "enc-1" }],
+    const calls = serverMock.findCalls(RELEASE, "rpc");
+    expect(calls[0].args[1]).toEqual({
+      p_channel: "fcm",
+      p_fingerprint: "fp:fcm:fcm-token-xyz",
     });
+  });
+
+  it("returns deleted: 0 when nothing matched", async () => {
+    serverMock.setUser({ id: "u1" });
+    serverMock.onRpc("release_push_subscription", { data: 0, error: null });
 
     const res = await POST(makeRequest({ endpoint: "https://no-match.com/sub" }));
     expect(res.status).toBe(200);
     expect((await res.json()).deleted).toBe(0);
-
-    const deleteCalls = adminMock.findCalls("push_subscriptions", "delete");
-    expect(deleteCalls.length).toBe(0);
   });
 
-  it("skips rows that fail to decrypt", async () => {
+  it("returns 500 when the RPC errors", async () => {
     serverMock.setUser({ id: "u1" });
-
-    const targetEndpoint = "https://push.example.com/sub/abc";
-    mockDecrypt.mockImplementation((encrypted: string) => {
-      if (encrypted === "enc-good")
-        return JSON.stringify({ endpoint: targetEndpoint });
-      throw new Error("decrypt failed");
+    serverMock.onRpc("release_push_subscription", {
+      data: null,
+      error: { code: "PST01", message: "db error" },
     });
 
-    adminMock.onTable("push_subscriptions", {
-      data: [
-        { id: "bad-1", subscription: "garbage" },
-        { id: "good-1", subscription: "enc-good" },
-      ],
-    });
-    adminMock.onTable("push_subscriptions", { data: null, error: null });
-
-    const res = await POST(makeRequest({ endpoint: targetEndpoint }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).deleted).toBe(1);
+    const res = await POST(makeRequest({ endpoint: "https://x.com/sub" }));
+    expect(res.status).toBe(500);
   });
 });

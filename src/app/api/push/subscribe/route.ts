@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  encryptPixKey as encrypt,
-  decryptPixKey as decrypt,
-} from "@/lib/crypto";
+import { encryptPixKey as encrypt } from "@/lib/crypto";
+import { pushFingerprint, type PushChannel } from "@/lib/push/fingerprint";
 
 type SubscribeBody =
   | { subscription: PushSubscriptionJSON; channel?: "web" }
@@ -27,9 +24,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const channel = ("channel" in body && body.channel === "fcm") ? "fcm" : "web";
-
-  const admin = createAdminClient();
+  const channel: PushChannel =
+    "channel" in body && body.channel === "fcm" ? "fcm" : "web";
 
   if (channel === "fcm") {
     const fcmBody = body as { token: string; channel: "fcm" };
@@ -40,34 +36,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: existing } = await admin
-      .from("push_subscriptions")
-      .select("id, subscription")
-      .eq("user_id", user.id)
-      .eq("channel", "fcm");
-
-    const duplicateIds: string[] = [];
-    for (const row of existing ?? []) {
-      try {
-        const decrypted = decrypt(row.subscription);
-        if (decrypted === fcmBody.token) {
-          duplicateIds.push(row.id);
-        }
-      } catch {
-        // Skip rows that can't be decrypted — stale data
-      }
-    }
-
-    if (duplicateIds.length > 0) {
-      await admin.from("push_subscriptions").delete().in("id", duplicateIds);
-    }
-
+    const fingerprint = pushFingerprint("fcm", fcmBody.token);
     const encrypted = encrypt(fcmBody.token);
 
-    const { error } = await admin.from("push_subscriptions").insert({
-      user_id: user.id,
-      subscription: encrypted,
-      channel: "fcm",
+    const { error } = await supabase.rpc("claim_push_subscription", {
+      p_channel: "fcm",
+      p_fingerprint: fingerprint,
+      p_subscription: encrypted,
     });
 
     if (error) {
@@ -86,7 +61,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // Web Push flow (existing behavior)
+  // Web Push flow
   const webBody = body as { subscription: PushSubscriptionJSON };
   const { subscription } = webBody;
   if (!subscription?.endpoint || !subscription?.keys) {
@@ -96,36 +71,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: existing } = await admin
-    .from("push_subscriptions")
-    .select("id, subscription")
-    .eq("user_id", user.id)
-    .eq("channel", "web");
-
-  const duplicateIds: string[] = [];
-  for (const row of existing ?? []) {
-    try {
-      const sub = JSON.parse(decrypt(row.subscription)) as {
-        endpoint: string;
-      };
-      if (sub.endpoint === subscription.endpoint) {
-        duplicateIds.push(row.id);
-      }
-    } catch {
-      // Skip rows that can't be decrypted — stale data
-    }
-  }
-
-  if (duplicateIds.length > 0) {
-    await admin.from("push_subscriptions").delete().in("id", duplicateIds);
-  }
-
+  const fingerprint = pushFingerprint("web", subscription.endpoint);
   const encrypted = encrypt(JSON.stringify(subscription));
 
-  const { error } = await admin.from("push_subscriptions").insert({
-    user_id: user.id,
-    subscription: encrypted,
-    channel: "web",
+  const { error } = await supabase.rpc("claim_push_subscription", {
+    p_channel: "web",
+    p_fingerprint: fingerprint,
+    p_subscription: encrypted,
   });
 
   if (error) {
