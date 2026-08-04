@@ -39,6 +39,9 @@ vi.mock("@/lib/supabase/client", () => ({
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
+    status: "authenticated",
+    userId: "user-1",
+    generation: 0,
     user: {
       id: "user-1",
       name: "Alice Test",

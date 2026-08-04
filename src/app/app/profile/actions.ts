@@ -5,7 +5,25 @@ import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
 import type { PixKeyType } from "@/types";
 
-export async function updatePixKey(formData: FormData) {
+/**
+ * Save the caller's Pix key.
+ *
+ * `expectedUserId` is untrusted evidence of which account the client believed
+ * it was editing; a client that changed accounts mid-edit will send a stale
+ * one. Fresh server auth decides, and the comparison happens before any
+ * validation, encryption, logging, or storage work so a mismatched call does
+ * nothing at all. The row written is always the verified current user.
+ */
+export async function updatePixKey(expectedUserId: string, formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user || user.id !== expectedUserId) {
+    return { error: "Sessao expirada" };
+  }
+
   const pixKey = formData.get("pixKey") as string;
   const pixKeyType = formData.get("pixKeyType") as PixKeyType;
 
@@ -15,14 +33,6 @@ export async function updatePixKey(formData: FormData) {
 
   if (!validatePixKey(pixKey, pixKeyType)) {
     return { error: "Chave Pix invalida para o tipo selecionado" };
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return { error: "Sessao expirada" };
   }
 
   const encrypted = encryptPixKey(pixKey);

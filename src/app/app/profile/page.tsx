@@ -15,7 +15,7 @@ import {
   Shield,
   X,
 } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ProfileShareModal } from "@/components/profile/profile-share-modal";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -29,7 +29,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { updatePixKey } from "./actions";
 import toast from "react-hot-toast";
-import type { PixKeyType } from "@/types";
+import type { PixKeyType, User } from "@/types";
 
 const pixKeyTypeLabels: Record<string, string> = {
   cpf: "CPF",
@@ -66,7 +66,7 @@ function toPixKeyValue(type: PixKeyType, display: string): string {
 }
 
 export default function ProfilePage() {
-  const { user, status } = useAuth();
+  const { user, status, userId, generation } = useAuth();
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof document === "undefined") return false;
     const stored = localStorage.getItem("theme");
@@ -77,12 +77,6 @@ export default function ProfilePage() {
     }
     return document.documentElement.classList.contains("dark");
   });
-  const [editingPix, setEditingPix] = useState(false);
-  const [pixType, setPixType] = useState<PixKeyType>("email");
-  const [pixInput, setPixInput] = useState("");
-  const [pixError, setPixError] = useState("");
-  const [isPending, startTransition] = useTransition();
-  const [shareOpen, setShareOpen] = useState(false);
 
   const toggleDark = () => {
     const next = !darkMode;
@@ -90,6 +84,73 @@ export default function ProfilePage() {
     document.documentElement.classList.toggle("dark", next);
     localStorage.setItem("theme", next ? "dark" : "light");
   };
+
+  if (status === "loading") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-16 w-16 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+        </div>
+        <Skeleton className="h-24 rounded-2xl" />
+      </div>
+    );
+  }
+
+  return (
+    <AuthenticatedProfilePage
+      key={`${generation}:${userId ?? "anonymous"}`}
+      user={user}
+      userId={userId}
+      generation={generation}
+      darkMode={darkMode}
+      onToggleDark={toggleDark}
+    />
+  );
+}
+
+function AuthenticatedProfilePage({
+  user,
+  userId,
+  generation,
+  darkMode,
+  onToggleDark,
+}: {
+  user: User | null;
+  userId: string | null;
+  generation: number;
+  darkMode: boolean;
+  onToggleDark: () => void;
+}) {
+  const [editingPix, setEditingPix] = useState(false);
+  const [pixType, setPixType] = useState<PixKeyType>("email");
+  const [pixInput, setPixInput] = useState("");
+  const [pixError, setPixError] = useState("");
+  const [isPending, startTransition] = useTransition();
+  const [shareOpen, setShareOpen] = useState(false);
+
+  // Flipped to false when this keyed instance unmounts. An identity boundary
+  // changes the key, unmounting this whole subtree, so a save continuation
+  // that resumes afterwards sees this and bails before any side effect.
+  const aliveRef = useRef(true);
+  // Mirror the identity this instance is mounted for so a resuming
+  // continuation can confirm it still matches what it was issued for. Updated
+  // in an effect (never during render) so it stays out of the render output.
+  const identityRef = useRef({ userId, generation });
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    identityRef.current = { userId, generation };
+  });
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -128,8 +189,27 @@ export default function ProfilePage() {
     formData.set("pixKey", realValue);
     formData.set("pixKeyType", pixType);
 
+    // Snapshot the owner at dispatch time. The action treats this id as
+    // untrusted and re-checks server auth; locally it is used to ignore any
+    // result that outlives the identity it was issued for.
+    const ownerId = userId;
+    const ownerGeneration = generation;
+    if (!ownerId) return;
+
     startTransition(async () => {
-      const result = await updatePixKey(formData);
+      const result = await updatePixKey(ownerId, formData);
+
+      // If this keyed instance was replaced by an account switch, or no longer
+      // represents the same identity, drop the result without touching state,
+      // showing a toast, or reloading the page.
+      if (!aliveRef.current) return;
+      if (
+        identityRef.current.userId !== ownerId ||
+        identityRef.current.generation !== ownerGeneration
+      ) {
+        return;
+      }
+
       if (result.error) {
         setPixError(result.error);
         return;
@@ -148,21 +228,6 @@ export default function ProfilePage() {
       default: return "seu@email.com";
     }
   };
-
-  if (status === "loading") {
-    return (
-      <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-16 w-16 rounded-full" />
-          <div className="space-y-2">
-            <Skeleton className="h-6 w-32" />
-            <Skeleton className="h-4 w-48" />
-          </div>
-        </div>
-        <Skeleton className="h-24 rounded-2xl" />
-      </div>
-    );
-  }
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -357,7 +422,7 @@ export default function ProfilePage() {
             <Switch
               id="dark-mode"
               checked={darkMode}
-              onCheckedChange={toggleDark}
+              onCheckedChange={onToggleDark}
             />
           </div>
           <Separator />

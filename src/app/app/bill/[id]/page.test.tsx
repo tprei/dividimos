@@ -24,7 +24,12 @@ vi.mock("@/lib/supabase/client", () => ({
 
 // Mock auth hook
 vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({ user: { id: "user-1", name: "Alice", email: "a@test.com", handle: "alice" } }),
+  useAuth: () => ({
+    status: "authenticated",
+    userId: "user-1",
+    generation: 0,
+    user: { id: "user-1", name: "Alice", email: "a@test.com", handle: "alice" },
+  }),
 }));
 
 // Mock realtime expense hook

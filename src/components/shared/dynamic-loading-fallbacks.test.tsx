@@ -33,7 +33,12 @@ vi.mock("@/lib/push/push-notify", () => ({
   notifyPaymentNudge: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({ user: { id: "u1", name: "Test", email: "t@t.com", handle: "test" } }),
+  useAuth: () => ({
+    status: "authenticated",
+    userId: "u1",
+    generation: 0,
+    user: { id: "u1", name: "Test", email: "t@t.com", handle: "test" },
+  }),
   useUser: () => ({ id: "u1", name: "Test", email: "t@t.com", handle: "test", avatarUrl: null }),
 }));
 vi.mock("@/hooks/use-haptics", () => ({
