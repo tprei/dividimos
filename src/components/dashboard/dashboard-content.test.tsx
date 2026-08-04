@@ -1,19 +1,23 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { DashboardContent } from "./dashboard-content";
-import type { DebtSummary } from "@/types";
-const submission = vi.hoisted(() => ({
-  error: null,
-  finish: vi.fn(),
-  phase: "idle",
-  ready: true,
-  reconcile: vi.fn(),
-  request: null,
-  reservedEdgeKeys: new Set<string>(),
-  result: null,
-  submit: vi.fn(),
-}));
+import type { DebtSummary, User } from "@/types";
 
+const { submission, useAuthMock, OnboardingTourSpy } = vi.hoisted(() => ({
+  submission: {
+    error: null,
+    finish: vi.fn(),
+    phase: "idle",
+    ready: true,
+    reconcile: vi.fn(),
+    request: null,
+    reservedEdgeKeys: new Set<string>(),
+    result: null,
+    submit: vi.fn(),
+  },
+  useAuthMock: vi.fn(),
+  OnboardingTourSpy: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }),
@@ -26,7 +30,14 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
-  useUser: () => ({ id: "user-1", name: "Test User", avatarUrl: null }),
+  useAuth: () => useAuthMock(),
+}));
+
+vi.mock("@/components/onboarding/onboarding-tour", () => ({
+  OnboardingTour: (props: { userId: string | null; identityGeneration: number }) => {
+    OnboardingTourSpy(props);
+    return null;
+  },
 }));
 
 vi.mock("@/lib/supabase/debt-actions", () => ({
@@ -50,6 +61,20 @@ vi.mock("@/lib/supabase/dm-actions", () => ({
   getOrCreateDmGroup: vi.fn().mockResolvedValue({ groupId: "dm-group-1" }),
 }));
 
+function makeUser(overrides: Partial<User> = {}): User {
+  return {
+    id: "user-1",
+    email: "test@test.com",
+    handle: "testuser",
+    name: "Test User",
+    pixKeyType: "email",
+    pixKeyHint: "t***@test.com",
+    onboarded: true,
+    createdAt: "2024-01-01",
+    ...overrides,
+  };
+}
+
 function makeDebt(
   overrides: Partial<DebtSummary> & { direction: "owes" | "owed" },
 ): DebtSummary {
@@ -65,10 +90,22 @@ function makeDebt(
   };
 }
 
+function authed(user: User, generation: number) {
+  return {
+    status: "authenticated" as const,
+    userId: user.id,
+    generation,
+    user,
+  };
+}
+
 describe("DashboardContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthMock.mockReturnValue(authed(makeUser(), 0));
   });
+
+  // ---- Existing presentation tests ----
 
   it("renders greeting and user name", () => {
     render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
@@ -128,5 +165,93 @@ describe("DashboardContent", () => {
     ];
     render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
     expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  // ---- Identity-tagged tour handoff ----
+
+  it("passes the authenticated userId and generation to the tour", () => {
+    useAuthMock.mockReturnValue(authed(makeUser({ id: "A", name: "Alice" }), 7));
+    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
+    expect(OnboardingTourSpy).toHaveBeenCalledWith({
+      userId: "A",
+      identityGeneration: 7,
+    });
+  });
+
+  it("passes null userId with the current generation when loading", () => {
+    useAuthMock.mockReturnValue({
+      status: "loading",
+      userId: null,
+      generation: 7,
+      user: null,
+    });
+    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
+    expect(OnboardingTourSpy).toHaveBeenCalledWith({
+      userId: null,
+      identityGeneration: 7,
+    });
+    expect(screen.queryByText("Test")).not.toBeInTheDocument();
+  });
+
+  it("passes null userId with the current generation when unauthenticated", () => {
+    useAuthMock.mockReturnValue({
+      status: "unauthenticated",
+      userId: null,
+      generation: 7,
+      user: null,
+    });
+    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
+    expect(OnboardingTourSpy).toHaveBeenCalledWith({
+      userId: null,
+      identityGeneration: 7,
+    });
+    expect(screen.queryByText("Test")).not.toBeInTheDocument();
+  });
+
+  it("passes null userId with the current generation on error", () => {
+    useAuthMock.mockReturnValue({
+      status: "error",
+      userId: "A",
+      generation: 7,
+      user: null,
+    });
+    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
+    expect(OnboardingTourSpy).toHaveBeenCalledWith({
+      userId: null,
+      identityGeneration: 7,
+    });
+    expect(screen.queryByText("Test")).not.toBeInTheDocument();
+  });
+
+  it("passes null when the user snapshot id does not match the verified userId", () => {
+    useAuthMock.mockReturnValue({
+      status: "authenticated",
+      userId: "A",
+      generation: 7,
+      user: makeUser({ id: "different-id", name: "Mismatch" }),
+    });
+    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
+    expect(OnboardingTourSpy).toHaveBeenCalledWith({
+      userId: null,
+      identityGeneration: 7,
+    });
+  });
+
+  it("passes the exact identity tuple across account switches", () => {
+    useAuthMock.mockReturnValue(authed(makeUser({ id: "A", name: "Alice" }), 7));
+    const { rerender } = render(
+      <DashboardContent initialDebts={[]} initialNetBalance={0} />,
+    );
+    expect(OnboardingTourSpy).toHaveBeenLastCalledWith({
+      userId: "A",
+      identityGeneration: 7,
+    });
+
+    useAuthMock.mockReturnValue(authed(makeUser({ id: "B", name: "Bob" }), 8));
+    rerender(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
+    expect(OnboardingTourSpy).toHaveBeenLastCalledWith({
+      userId: "B",
+      identityGeneration: 8,
+    });
   });
 });

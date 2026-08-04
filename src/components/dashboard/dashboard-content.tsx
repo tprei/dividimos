@@ -20,7 +20,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { DebtCard } from "@/components/dashboard/debt-card";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
-import { useUser } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/use-auth";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { notifyPaymentNudge } from "@/lib/push/push-notify";
@@ -65,7 +65,7 @@ export function DashboardContent({
   initialDebts,
   initialNetBalance,
 }: DashboardContentProps) {
-  const user = useUser();
+  const auth = useAuth();
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [debts, setDebts] = useState<DebtSummary[]>(initialDebts);
   const [netBalance, setNetBalance] = useState(initialNetBalance);
@@ -103,9 +103,9 @@ export function DashboardContent({
   const filteredDebts = debts.filter((d) => d.direction === activeTab);
 
   const fetchDashboard = useCallback(async () => {
-    if (!user) return;
+    if (!auth.user) return;
 
-    const refreshed = await fetchUserDebts(user.id);
+    const refreshed = await fetchUserDebts(auth.user.id);
     setDebts(refreshed);
 
     let net = 0;
@@ -113,7 +113,7 @@ export function DashboardContent({
       net += d.direction === "owes" ? -d.amountCents : d.amountCents;
     }
     setNetBalance(net);
-  }, [user]);
+  }, [auth]);
 
   // Prefetch conversation routes for visible debt cards
   const conversationRoutes = useMemo(
@@ -126,12 +126,12 @@ export function DashboardContent({
     debt: DebtSummary,
     amountCents: number,
   ) => {
-    if (!user) throw new Error("An authenticated account is required to record a settlement");
+    if (!auth.user) throw new Error("An authenticated account is required to record a settlement");
 
     const fromUserId =
-      debt.direction === "owes" ? user.id : debt.counterpartyId;
+      debt.direction === "owes" ? auth.user.id : debt.counterpartyId;
     const toUserId =
-      debt.direction === "owes" ? debt.counterpartyId : user.id;
+      debt.direction === "owes" ? debt.counterpartyId : auth.user.id;
     const edgeKey = settlementEdgeKey({
       groupId: debt.groupId,
       fromUserId,
@@ -204,7 +204,7 @@ export function DashboardContent({
   };
 
   const isPositive = netBalance >= 0;
-  const firstName = user?.name.split(" ")[0] ?? "";
+  const firstName = auth.user?.name.split(" ")[0] ?? "";
 
   return (
     <div
@@ -249,7 +249,7 @@ export function DashboardContent({
               />
             </button>
             <Link href="/app/profile">
-              <UserAvatar name={user?.name ?? ""} avatarUrl={user?.avatarUrl} size="md" priority />
+              <UserAvatar name={auth.user?.name ?? ""} avatarUrl={auth.user?.avatarUrl} size="md" priority />
             </Link>
           </div>
         </div>
@@ -328,7 +328,7 @@ export function DashboardContent({
           <QrCode className="h-3.5 w-3.5" />
           Ler convite
         </Link>
-        {user?.pixKeyHint && (
+        {auth.user?.pixKeyHint && (
           <button
             onClick={() => setQuickChargeOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/5 px-3 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/10"
@@ -437,9 +437,9 @@ export function DashboardContent({
           {filteredDebts.map((debt) => {
             const debtKey = `${debt.groupId}-${debt.counterpartyId}`;
             const fromUserId =
-              debt.direction === "owes" ? user?.id : debt.counterpartyId;
+              debt.direction === "owes" ? auth.user?.id : debt.counterpartyId;
             const toUserId =
-              debt.direction === "owes" ? debt.counterpartyId : user?.id;
+              debt.direction === "owes" ? debt.counterpartyId : auth.user?.id;
             const settlementKey =
               fromUserId && toUserId
                 ? settlementEdgeKey({
@@ -474,7 +474,10 @@ export function DashboardContent({
         </motion.div>
       </motion.div>
 
-      <OnboardingTour userId={user?.id} />
+      <OnboardingTour
+        userId={auth.status === "authenticated" && auth.user.id === auth.userId ? auth.userId : null}
+        identityGeneration={auth.generation}
+      />
 
       {quickChargeOpen && (
         <QuickChargeModal
