@@ -71,6 +71,12 @@ export async function POST(request: Request) {
     });
 
     if (error) {
+      if (error.code === "PST09") {
+        return NextResponse.json(
+          { error: "Limite de dispositivos atingido" },
+          { status: 409 },
+        );
+      }
       return NextResponse.json(
         { error: "Erro ao salvar subscription" },
         { status: 500 },
@@ -123,6 +129,12 @@ export async function POST(request: Request) {
   });
 
   if (error) {
+    if (error.code === "PST09") {
+      return NextResponse.json(
+        { error: "Limite de dispositivos atingido" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { error: "Erro ao salvar subscription" },
       { status: 500 },
