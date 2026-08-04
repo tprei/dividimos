@@ -1,9 +1,17 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { Database } from "@/types/database";
+import { mapOwnerProfileRow } from "@/lib/owner-profile";
 
-type UserRow = Database["public"]["Tables"]["users"]["Row"];
-
+/**
+ * Load the authenticated caller's own profile.
+ *
+ * The profile row comes from the argument-free `get_my_profile` RPC, which
+ * derives its row from `auth.uid()`. Reading `users` by ID would instead go
+ * through `users_read_visible`, which also exposes related accounts, so a
+ * request issued for one account could return that account's row after the
+ * session had already changed to a related one. The returned ID is compared
+ * against the verified auth ID to reject exactly that case.
+ */
 export const getAuthUser = cache(async () => {
   const supabase = await createClient();
 
@@ -13,25 +21,14 @@ export const getAuthUser = cache(async () => {
 
   if (!authUser) return null;
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id", authUser.id)
-    .single();
+  const { data, error } = await supabase.rpc("get_my_profile");
 
-  if (!profile) return null;
+  if (error) return null;
+  if (!Array.isArray(data) || data.length !== 1) return null;
 
-  const p = profile as UserRow;
-  return {
-    id: p.id,
-    email: p.email ?? "",
-    handle: p.handle ?? "",
-    name: p.name,
-    pixKeyType: p.pix_key_type,
-    pixKeyHint: p.pix_key_hint,
-    avatarUrl: p.avatar_url ?? undefined,
-    onboarded: p.onboarded,
-    createdAt: p.created_at,
-    notificationPreferences: (p.notification_preferences ?? {}) as Record<string, boolean>,
-  };
+  const profile = mapOwnerProfileRow(data[0]);
+
+  if (!profile || profile.id !== authUser.id) return null;
+
+  return profile;
 });
