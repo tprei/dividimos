@@ -2,12 +2,14 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertCircle,
   ArrowLeft,
+  Clock,
+  Loader2,
+  LogOut,
   ArrowRight,
   Check,
   CheckCheck,
-  Clock,
-  LogOut,
   Mic,
   Pencil,
   Plus,
@@ -22,7 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
 import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
@@ -49,12 +51,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { formatBRL } from "@/lib/currency";
 import toast from "react-hot-toast";
 import { notifyGroupInvite } from "@/lib/push/push-notify";
-import type { ExpenseStatus, GroupMemberStatus, Settlement, User, UserProfile } from "@/types";
+import type { ExpenseStatus, GroupMemberStatus, User, UserProfile } from "@/types";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { useBillStore } from "@/stores/bill-store";
 import { useShallow } from "zustand/react/shallow";
 import type { Database } from "@/types/database";
+import { useGroupFinances } from "@/hooks/use-group-finances";
+import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
+import { computeMemberNetBalances } from "@/lib/group-balances";
 
 type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
 
@@ -90,10 +95,8 @@ export interface GroupDetailData {
   creatorId: string;
   members: MemberEntry[];
   expenses: ExpenseSummaryEntry[];
-  settlements: Settlement[];
   unclaimedGuests: UnclaimedGuest[];
   inviteLinkToken: string | null;
-  memberBalances: Record<string, number>;
 }
 
 const expenseStatusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
@@ -117,7 +120,6 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
   const [creatorId] = useState(initialData.creatorId);
   const [members, setMembers] = useState<MemberEntry[]>(initialData.members);
   const [expenses, setExpenses] = useState<ExpenseSummaryEntry[]>(initialData.expenses);
-  const [settlements, setSettlements] = useState<Settlement[]>(initialData.settlements);
   const [activeTab, setActiveTab] = useState<Tab>("membros");
   const [showInvite, setShowInvite] = useState(false);
   const [handleInput, setHandleInput] = useState("");
@@ -151,9 +153,6 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
   const [showVoiceInput, setShowVoiceInput] = useState(false);
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [memberBalances, setMemberBalances] = useState<Map<string, number>>(
-    new Map(Object.entries(initialData.memberBalances))
-  );
   const store = useBillStore(
     useShallow((s) => ({
       setCurrentUser: s.setCurrentUser,
@@ -167,7 +166,7 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
   const billRoutes = useMemo(() => [`/app/bill/new?groupId=${id}`], [id]);
   usePrefetchRoutes(billRoutes);
 
-  const fetchGroup = useCallback(async (userId?: string) => {
+  const fetchGroup = useCallback(async () => {
     const supabase = createClient();
 
     const [{ data: group }, { data: groupMembers }] = await Promise.all([
@@ -184,21 +183,11 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
       ...new Set([group.creator_id, ...memberRows.map((m) => m.user_id)]),
     ];
 
-    const balancePromise = userId
-      ? supabase
-          .from("balances")
-          .select("*")
-          .eq("group_id", id)
-          .neq("amount_cents", 0)
-          .or(`user_a.eq.${userId},user_b.eq.${userId}`)
-      : Promise.resolve({ data: null });
 
     const [
       { data: profiles },
       { data: expenseRows },
-      { data: settlementRows },
       { data: inviteLinkRows },
-      { data: balanceRows },
     ] = await Promise.all([
       supabase
         .from("user_profiles")
@@ -211,18 +200,12 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
         .neq("status", "draft")
         .order("created_at", { ascending: false }),
       supabase
-        .from("settlements")
-        .select("id, group_id, from_user_id, to_user_id, amount_cents, status, created_at, confirmed_at")
-        .eq("group_id", id)
-        .order("created_at", { ascending: false }),
-      supabase
         .from("group_invite_links")
         .select("token")
         .eq("group_id", id)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
         .limit(1),
-      balancePromise,
     ]);
 
     const expenseList = expenseRows ?? [];
@@ -278,19 +261,6 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
       }))
     );
 
-    setSettlements(
-      (settlementRows ?? []).map((s: { id: string; group_id: string; from_user_id: string; to_user_id: string; amount_cents: number; status: string; created_at: string; confirmed_at: string | null }) => ({
-        id: s.id,
-        groupId: s.group_id,
-        fromUserId: s.from_user_id,
-        toUserId: s.to_user_id,
-        amountCents: s.amount_cents,
-        status: s.status as Settlement["status"],
-        createdAt: s.created_at,
-        confirmedAt: s.confirmed_at ?? undefined,
-      }))
-    );
-
     const expenseMetaMap = new Map(
       expenseList.map((e: { id: string; creator_id: string; status: string }) => [
         e.id,
@@ -311,18 +281,6 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
         };
       }),
     );
-
-    if (userId && balanceRows) {
-      const result = new Map<string, number>();
-      for (const row of balanceRows as { user_a: string; user_b: string; amount_cents: number }[]) {
-        if (row.user_a === userId) {
-          result.set(row.user_b, (result.get(row.user_b) ?? 0) - row.amount_cents);
-        } else {
-          result.set(row.user_a, (result.get(row.user_a) ?? 0) + row.amount_cents);
-        }
-      }
-      setMemberBalances(result);
-    }
   }, [id]);
 
   const isCreator = user?.id === creatorId;
@@ -480,6 +438,23 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
       })),
     [members],
   );
+
+  const { state: finances, refresh: refreshFinances, applyRealtimeBalance } =
+    useGroupFinances({ groupId: id, participants: participantsAsUsers });
+
+  useRealtimeBalances(id, applyRealtimeBalance);
+
+  useEffect(() => {
+    window.addEventListener("app-refresh", refreshFinances);
+    return () => window.removeEventListener("app-refresh", refreshFinances);
+  }, [refreshFinances]);
+
+  const financeSnapshot =
+    finances.phase === "ready" || finances.phase === "error"
+      ? finances.snapshot
+      : null;
+
+  const showStaleFinancesBanner = finances.phase === "error" && financeSnapshot !== null;
 
   const voiceMembers = useMemo(() =>
     members
@@ -721,6 +696,13 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
       {/* Members tab */}
       {activeTab === "membros" && (
         <div className="mt-4 space-y-2">
+          {showStaleFinancesBanner && (
+            <div className="mb-1 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              <AlertCircle className="h-4 w-4 shrink-0 text-warning-foreground" />
+              <p className="flex-1 text-xs text-muted-foreground">Os saldos podem estar desatualizados.</p>
+              <Button variant="ghost" size="sm" onClick={refreshFinances}>Atualizar</Button>
+            </div>
+          )}
           {members.map((member) => (
             <motion.div
               key={member.userId}
@@ -764,7 +746,10 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
                 </div>
               </div>
               {(() => {
-                const bal = member.userId !== user?.id ? memberBalances.get(member.userId) : undefined;
+                const bal =
+                  member.userId !== user?.id && financeSnapshot && user
+                    ? computeMemberNetBalances(financeSnapshot.balances, user.id).get(member.userId)
+                    : undefined;
                 if (!bal || Math.abs(bal) < 2) return null;
                 return (
                   <div className="text-right shrink-0">
@@ -942,25 +927,62 @@ export function GroupDetailContent({ initialData }: { initialData: GroupDetailDa
       {/* Settlement tab */}
       {activeTab === "acerto" && user && (
         <div className="mt-4">
-          <GroupSettlementView
-            groupId={id}
-            participants={participantsAsUsers}
-            currentUserId={user.id}
-          />
+          {showStaleFinancesBanner && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              <AlertCircle className="h-4 w-4 shrink-0 text-warning-foreground" />
+              <p className="flex-1 text-xs text-muted-foreground">Os saldos podem estar desatualizados.</p>
+              <Button variant="ghost" size="sm" onClick={refreshFinances}>Atualizar</Button>
+            </div>
+          )}
+          {finances.phase === "loading" && !financeSnapshot ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : finances.phase === "error" && !financeSnapshot ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <p className="text-sm font-semibold">Não foi possível carregar os saldos</p>
+              <p className="text-xs text-muted-foreground">Verifique sua conexão e tente de novo.</p>
+              <Button variant="outline" size="sm" onClick={refreshFinances}>Tentar de novo</Button>
+            </div>
+          ) : financeSnapshot ? (
+            <GroupSettlementView
+              groupId={id}
+              balances={financeSnapshot.balances}
+              participants={financeSnapshot.participants}
+              currentUserId={user.id}
+            />
+          ) : null}
         </div>
       )}
 
       {/* Payments (settlement history) tab */}
       {activeTab === "pagamentos" && (
         <div className="mt-4 space-y-2">
-          {settlements.length === 0 ? (
+          {showStaleFinancesBanner && (
+            <div className="mb-1 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2">
+              <AlertCircle className="h-4 w-4 shrink-0 text-warning-foreground" />
+              <p className="flex-1 text-xs text-muted-foreground">Os saldos podem estar desatualizados.</p>
+              <Button variant="ghost" size="sm" onClick={refreshFinances}>Atualizar</Button>
+            </div>
+          )}
+          {finances.phase === "loading" && !financeSnapshot ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : finances.phase === "error" && !financeSnapshot ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <p className="text-sm font-semibold">Não foi possível carregar os saldos</p>
+              <p className="text-xs text-muted-foreground">Verifique sua conexão e tente de novo.</p>
+              <Button variant="outline" size="sm" onClick={refreshFinances}>Tentar de novo</Button>
+            </div>
+          ) : (financeSnapshot?.settlements ?? []).length === 0 ? (
             <EmptyState
               icon={Wallet}
               title="Nenhum pagamento ainda"
               description="Quando alguém pagar uma dívida do grupo, o registro aparece aqui."
             />
           ) : (
-            settlements.map((settlement) => {
+            (financeSnapshot?.settlements ?? []).map((settlement) => {
               const from = members.find((m) => m.userId === settlement.fromUserId);
               const to = members.find((m) => m.userId === settlement.toUserId);
               const statusCfg = settlementStatusConfig[settlement.status] ?? settlementStatusConfig.pending;

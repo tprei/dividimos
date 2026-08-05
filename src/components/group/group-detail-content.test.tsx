@@ -64,6 +64,26 @@ vi.mock("react-hot-toast", () => ({
   },
 }));
 
+const mockUseGroupFinances = vi.hoisted(() => ({
+  state: {
+    phase: "ready" as const,
+    snapshot: {
+      balances: [] as Array<{ groupId: string; userA: string; userB: string; amountCents: number; updatedAt: string }>,
+      settlements: [] as Array<{ id: string; groupId: string; fromUserId: string; toUserId: string; amountCents: number; status: string; createdAt: string; confirmedAt?: string }>,
+      participants: [] as Array<{ id: string; name: string }>,
+    },
+  },
+  refresh: vi.fn(),
+  applyRealtimeBalance: vi.fn(),
+}));
+vi.mock("@/hooks/use-group-finances", () => ({
+  useGroupFinances: () => mockUseGroupFinances,
+}));
+
+vi.mock("@/hooks/use-realtime-balances", () => ({
+  useRealtimeBalances: vi.fn(),
+}));
+
 import { GroupDetailContent, type GroupDetailData, type UnclaimedGuest } from "./group-detail-content";
 import type { ExpenseStatus } from "@/types";
 
@@ -95,21 +115,8 @@ function buildDefaultData(overrides: Partial<GroupDetailData> = {}): GroupDetail
         createdAt: "2026-03-28T12:00:00Z",
       },
     ],
-    settlements: [
-      {
-        id: "stl-1",
-        groupId: "group-1",
-        fromUserId: "user-2",
-        toUserId: "user-1",
-        amountCents: 2500,
-        status: "confirmed",
-        createdAt: "2026-03-28T13:00:00Z",
-        confirmedAt: "2026-03-28T14:00:00Z",
-      },
-    ],
     unclaimedGuests: [],
     inviteLinkToken: "invite-token-123",
-    memberBalances: { "user-2": 1500 },
     ...overrides,
   };
 }
@@ -130,8 +137,25 @@ describe("GroupDetailContent", () => {
     mockSupabaseData.expenses = [];
     mockSupabaseData.expense_guests = [];
     mockSupabaseData.group_invite_links = [];
-    mockSupabaseData.settlements = [];
-    mockSupabaseData.balances = [];
+    mockUseGroupFinances.state = {
+      phase: "ready",
+      snapshot: {
+        balances: [],
+        settlements: [
+          {
+            id: "stl-1",
+            groupId: "group-1",
+            fromUserId: "user-2",
+            toUserId: "user-1",
+            amountCents: 2500,
+            status: "confirmed",
+            createdAt: "2026-03-28T13:00:00Z",
+            confirmedAt: "2026-03-28T14:00:00Z",
+          },
+        ],
+        participants: [],
+      },
+    };
   });
 
   it("renders group name immediately (no loading state)", () => {
@@ -161,7 +185,9 @@ describe("GroupDetailContent", () => {
 
     await user.click(screen.getByText("Pagamentos"));
 
-    expect(screen.getByText("Confirmado")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("Confirmado")).toBeTruthy();
+    });
   });
 
   it("switches to acerto tab and shows settlement view", async () => {
@@ -170,7 +196,9 @@ describe("GroupDetailContent", () => {
 
     await user.click(screen.getByText("Acerto"));
 
-    expect(screen.getByTestId("settlement-view")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByTestId("settlement-view")).toBeTruthy();
+    });
   });
 
   it("shows invite button for group creator", () => {
@@ -199,11 +227,17 @@ describe("GroupDetailContent", () => {
 
   it("shows empty state when no settlements", async () => {
     const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData({ settlements: [] })} />);
+    mockUseGroupFinances.state = {
+      phase: "ready",
+      snapshot: { balances: [], settlements: [], participants: [] },
+    };
+    render(<GroupDetailContent initialData={buildDefaultData()} />);
 
     await user.click(screen.getByText("Pagamentos"));
 
-    expect(screen.getByText("Nenhum pagamento ainda")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("Nenhum pagamento ainda")).toBeTruthy();
+    });
     expect(
       screen.getByText(
         "Quando alguém pagar uma dívida do grupo, o registro aparece aqui.",
@@ -281,6 +315,16 @@ describe("GroupDetailContent", () => {
   });
 
   it("shows per-member balance in members tab", () => {
+    const [userA, userB] = ["user-1", "user-2"].sort();
+    const sign = userA === "user-2" ? 1 : -1;
+    mockUseGroupFinances.state = {
+      phase: "ready",
+      snapshot: {
+        balances: [{ groupId: "group-1", userA, userB, amountCents: sign * 1500, updatedAt: "" }],
+        settlements: [],
+        participants: [],
+      },
+    };
     render(<GroupDetailContent initialData={buildDefaultData()} />);
 
     expect(screen.getByText("te deve")).toBeTruthy();

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Bell, CheckCheck, Loader2 } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import toast from "react-hot-toast";
 import { DebtGraph } from "@/components/settlement/debt-graph";
 import dynamic from "next/dynamic";
@@ -15,18 +15,16 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import type { DebtEdge } from "@/lib/simplify";
-import { queryBalances } from "@/lib/supabase/settlement-actions";
 import { notifyPaymentNudge } from "@/lib/push/push-notify";
 import {
   settlementEdgeKey,
   useSettlementSubmission,
 } from "@/contexts/settlement-submission-context";
-import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
-import { createClient } from "@/lib/supabase/client";
 import type { Balance, User } from "@/types";
 
 interface GroupSettlementViewProps {
   groupId: string;
+  balances: Balance[];
   participants: User[];
   currentUserId: string;
 }
@@ -50,12 +48,10 @@ function balancesToEdges(balances: Balance[]): DebtEdge[] {
 
 export function GroupSettlementView({
   groupId,
+  balances,
   participants,
   currentUserId,
 }: GroupSettlementViewProps) {
-  const [loading, setLoading] = useState(true);
-  const [balances, setBalances] = useState<Balance[]>([]);
-  const [resolvedParticipants, setResolvedParticipants] = useState<User[]>(participants);
   const [pixModal, setPixModal] = useState<{
     recipientId: string;
     recipientName: string;
@@ -79,101 +75,10 @@ export function GroupSettlementView({
     } catch { return new Set(); }
   });
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    const loadedBalances = await queryBalances(groupId);
-
-    const balanceUserIds = new Set<string>();
-    for (const b of loadedBalances) {
-      balanceUserIds.add(b.userA);
-      balanceUserIds.add(b.userB);
-    }
-
-    const knownIds = new Set(participants.map((p) => p.id));
-    const missingIds = [...balanceUserIds].filter((id) => !knownIds.has(id));
-
-    let allParticipants = participants;
-
-    if (missingIds.length > 0) {
-      const supabase = createClient();
-      const { data: profiles } = await supabase
-        .from("user_profiles")
-        .select("id, handle, name, avatar_url")
-        .in("id", missingIds);
-
-      const extra: User[] = [];
-      const fetched = new Set<string>();
-
-      for (const p of profiles ?? []) {
-        if (p.id === null || p.name === null || p.handle === null) continue;
-        fetched.add(p.id);
-        extra.push({
-          id: p.id,
-          name: p.name,
-          handle: p.handle,
-          email: "",
-          pixKeyType: "email" as const,
-          pixKeyHint: "",
-          avatarUrl: p.avatar_url ?? undefined,
-          onboarded: true,
-          createdAt: "",
-        });
-      }
-
-      for (const id of missingIds) {
-        if (!fetched.has(id)) {
-          extra.push({
-            id,
-            name: "Membro removido",
-            handle: "",
-            email: "",
-            pixKeyType: "email" as const,
-            pixKeyHint: "",
-            onboarded: false,
-            createdAt: "",
-          });
-        }
-      }
-
-      allParticipants = [...participants, ...extra];
-    }
-
-    setResolvedParticipants(allParticipants);
-    setBalances(loadedBalances);
-    setLoading(false);
-  }, [groupId, participants]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  useEffect(() => {
-    const handleRefresh = () => loadData();
-    window.addEventListener("app-refresh", handleRefresh);
-    return () => window.removeEventListener("app-refresh", handleRefresh);
-  }, [loadData]);
-
-  // Realtime: patch balances locally
-  useRealtimeBalances(groupId, useCallback((updatedBalance: Balance) => {
-    setBalances((prev) => {
-      const idx = prev.findIndex(
-        (b) => b.userA === updatedBalance.userA && b.userB === updatedBalance.userB,
-      );
-      const next = idx >= 0
-        ? prev.map((b, i) => (i === idx ? updatedBalance : b))
-        : [...prev, updatedBalance];
-
-      // Filter out zero balances
-      const filtered = next.filter((b) => b.amountCents !== 0);
-
-      return filtered;
-    });
-  }, []));
-
   const debtEdges = balancesToEdges(balances);
 
   const getParticipant = (id: string) =>
-    resolvedParticipants.find((p) => p.id === id) ?? {
+    participants.find((p) => p.id === id) ?? {
       id,
       name: "?",
       handle: "",
@@ -240,13 +145,6 @@ export function GroupSettlementView({
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   if (debtEdges.length === 0) {
     return (
@@ -268,7 +166,7 @@ export function GroupSettlementView({
       <div className="rounded-2xl border bg-card p-4">
         <h3 className="text-sm font-semibold mb-3">Saldo consolidado</h3>
         <div className="space-y-2">
-          {resolvedParticipants.map((p) => {
+          {participants.map((p) => {
             const net = userNetBalances.get(p.id) ?? 0;
             if (Math.abs(net) < 2) return null;
             return (
@@ -290,7 +188,7 @@ export function GroupSettlementView({
       {/* Debt graph */}
       {debtEdges.length > 0 && (
         <div className="rounded-2xl border bg-card overflow-hidden">
-          <DebtGraph participants={resolvedParticipants} edges={debtEdges} />
+          <DebtGraph participants={participants} edges={debtEdges} />
         </div>
       )}
 
