@@ -6,6 +6,7 @@ import {
   registerNativePushToken,
   unregisterNativePushToken,
 } from "@/lib/push/native-registration";
+import { useAuth } from "@/hooks/use-auth";
 
 export type PushPermission = "default" | "granted" | "denied" | "unsupported";
 
@@ -64,12 +65,25 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const checkedRef = useRef(false);
+  const reconciledOwnerRef = useRef<string | null>(null);
   const native = isNativePlatform();
+  const { status, userId, generation } = useAuth();
 
   useEffect(() => {
-    if (checkedRef.current) return;
-    checkedRef.current = true;
+    if (status !== "authenticated") {
+      // A signed-out or loading session never reports a capability as owned.
+      setIsSubscribed(false);
+      reconciledOwnerRef.current = null;
+      return;
+    }
+
+    const ownerKey = `${generation}:${userId}`;
+    if (reconciledOwnerRef.current === ownerKey) {
+      // Already reconciled for this owner; nothing to do.
+      return;
+    }
+
+    let cancelled = false;
 
     if (native) {
       (async () => {
@@ -78,29 +92,38 @@ export function usePushNotifications(): UsePushNotificationsReturn {
             "@capacitor/push-notifications"
           );
           const result = await PushNotifications.checkPermissions();
+          if (cancelled) return;
           const mapped = mapNativePermission(result.receive);
           setPermission(mapped);
 
           if (mapped === "granted") {
-            // Previously opted in — refresh the FCM token on startup so the
-            // server always holds the current token (tokens can rotate).
+            // registerNativePushToken POSTs to /api/push/subscribe — the
+            // claim RPC transfers ownership to the current account.
             try {
               await registerNativePushToken();
+              if (cancelled) return;
+              reconciledOwnerRef.current = ownerKey;
               setIsSubscribed(true);
             } catch {
+              if (cancelled) return;
               setIsSubscribed(false);
             }
+          } else {
+            setIsSubscribed(false);
           }
         } finally {
-          setIsInitializing(false);
+          if (!cancelled) setIsInitializing(false);
         }
       })();
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (!isPushSupported()) {
       setPermission("unsupported");
       setIsInitializing(false);
+      setIsSubscribed(false);
       return;
     }
 
@@ -108,13 +131,41 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
     navigator.serviceWorker.ready
       .then((registration) => registration.pushManager.getSubscription())
-      .then((sub) => {
-        setIsSubscribed(sub !== null);
+      .then(async (sub) => {
+        if (cancelled) return;
+        if (!sub) {
+          setIsSubscribed(false);
+          return;
+        }
+        // Reconcile: claim the existing local capability for the current
+        // owner. The claim RPC is an atomic transfer, so a previously
+        // signed-out account's row is re-bound here rather than leaking.
+        try {
+          const response = await fetch("/api/push/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subscription: sub.toJSON() }),
+          });
+          if (cancelled) return;
+          if (response.ok) {
+            reconciledOwnerRef.current = ownerKey;
+            setIsSubscribed(true);
+          } else {
+            setIsSubscribed(false);
+          }
+        } catch {
+          if (cancelled) return;
+          setIsSubscribed(false);
+        }
       })
       .finally(() => {
-        setIsInitializing(false);
+        if (!cancelled) setIsInitializing(false);
       });
-  }, [native]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, userId, generation, native]);
 
   const subscribe = useCallback(async () => {
     if (native) {
@@ -179,6 +230,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       setIsLoading(true);
       try {
         await unregisterNativePushToken();
+        reconciledOwnerRef.current = null;
         setIsSubscribed(false);
       } finally {
         setIsLoading(false);
@@ -202,7 +254,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
 
         await subscription.unsubscribe();
       }
-
+      reconciledOwnerRef.current = null;
       setIsSubscribed(false);
     } finally {
       setIsLoading(false);

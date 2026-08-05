@@ -22,10 +22,27 @@ vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => useAuthMock(),
 }));
 
+const { pushMock, signOutMock } = vi.hoisted(() => ({
+  pushMock: {
+    permission: "default" as const,
+    isSubscribed: false,
+    isLoading: false,
+    isInitializing: false,
+    isNative: false,
+    subscribe: vi.fn().mockResolvedValue(undefined),
+    unsubscribe: vi.fn().mockResolvedValue(undefined),
+  },
+  signOutMock: vi.fn().mockResolvedValue({}),
+}));
+
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
-    auth: { signOut: vi.fn().mockResolvedValue({}) },
+    auth: { signOut: signOutMock },
   }),
+}));
+
+vi.mock("@/hooks/use-push-notifications", () => ({
+  usePushNotifications: () => pushMock,
 }));
 
 vi.mock("@/components/profile/profile-share-modal", () => ({
@@ -112,6 +129,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   useAuthMock.mockReturnValue(authenticatedAs(userA, 0));
   updatePixKeyMock.mockImplementation(async () => ({ success: true, hint: "" }));
+  pushMock.unsubscribe.mockResolvedValue(undefined);
+  signOutMock.mockResolvedValue({});
 });
 
 describe("ProfilePage QR share button", () => {
@@ -266,5 +285,54 @@ describe("ProfilePage identity-keyed state", () => {
 
     expect(toastSuccessMock).not.toHaveBeenCalled();
     expect(reloadMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProfilePage sign-out push release", () => {
+  it("awaits unsubscribe before signing out (call order)", async () => {
+    const user = userEvent.setup();
+    useAuthMock.mockReturnValue(authenticatedAs(userA, 0));
+    render(<ProfilePage />);
+
+    await user.click(screen.getByText("Sair"));
+
+    expect(pushMock.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+    const unsubOrder = pushMock.unsubscribe.mock.invocationCallOrder[0];
+    const signOutOrder = signOutMock.mock.invocationCallOrder[0];
+    expect(unsubOrder).toBeLessThan(signOutOrder);
+  });
+
+  it("still signs out when the server release fails but local teardown succeeds", async () => {
+    const user = userEvent.setup();
+    useAuthMock.mockReturnValue(authenticatedAs(userA, 0));
+    // unsubscribe resolves — local endpoint was destroyed, so sign-out proceeds.
+    pushMock.unsubscribe.mockResolvedValue(undefined);
+    render(<ProfilePage />);
+
+    await user.click(screen.getByText("Sair"));
+
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("blocks sign-out with a retry alert when local teardown fails", async () => {
+    const user = userEvent.setup();
+    useAuthMock.mockReturnValue(authenticatedAs(userA, 0));
+    pushMock.unsubscribe.mockRejectedValue(new Error("local teardown failed"));
+    render(<ProfilePage />);
+
+    await user.click(screen.getByText("Sair"));
+
+    expect(signOutMock).not.toHaveBeenCalled();
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("notificações deste aparelho");
+    // The retry button is re-enabled.
+    expect(screen.getByText("Sair")).not.toBeDisabled();
+
+    // A retry that succeeds now completes sign-out.
+    pushMock.unsubscribe.mockResolvedValue(undefined);
+    await user.click(screen.getByText("Sair"));
+    expect(signOutMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -27,6 +27,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { updatePixKey } from "./actions";
 import toast from "react-hot-toast";
 import type { PixKeyType, User } from "@/types";
@@ -131,6 +132,9 @@ function AuthenticatedProfilePage({
   const [pixError, setPixError] = useState("");
   const [isPending, startTransition] = useTransition();
   const [shareOpen, setShareOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutPushError, setSignOutPushError] = useState(false);
+  const { unsubscribe } = usePushNotifications();
 
   // Flipped to false when this keyed instance unmounts. An identity boundary
   // changes the key, unmounting this whole subtree, so a save continuation
@@ -153,6 +157,20 @@ function AuthenticatedProfilePage({
   });
 
   const handleSignOut = async () => {
+    setSigningOut(true);
+    setSignOutPushError(false);
+    // Release this account's push row while its session is still valid,
+    // then destroy the local endpoint. A destroyed endpoint cannot deliver
+    // even if the server release failed, so only a LOCAL teardown failure
+    // blocks sign-out — leaving a live endpoint bound to this account would
+    // leak notifications onto the next signed-in user.
+    try {
+      await unsubscribe();
+    } catch {
+      setSigningOut(false);
+      setSignOutPushError(true);
+      return;
+    }
     const supabase = createClient();
     await supabase.auth.signOut();
     window.location.href = "/auth";
@@ -468,10 +486,16 @@ function AuthenticatedProfilePage({
         transition={{ delay: 0.25, duration: 0.4 }}
         className="mt-8"
       >
+        {signOutPushError && (
+          <p role="alert" className="mb-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            Não deu pra desativar as notificações deste aparelho. Tente de novo.
+          </p>
+        )}
         <Button
           variant="outline"
           className="w-full gap-2 text-destructive"
           onClick={handleSignOut}
+          disabled={signingOut}
         >
           <LogOut className="h-4 w-4" />
           Sair

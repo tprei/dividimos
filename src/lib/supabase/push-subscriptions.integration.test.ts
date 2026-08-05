@@ -20,6 +20,8 @@ describe.skipIf(!isIntegrationTestReady)(
         .insert({
           user_id: user.id,
           subscription: "encrypted_subscription_json_here",
+          fingerprint: "fp-own-insert",
+          channel: "web",
         })
         .select()
         .single();
@@ -38,8 +40,8 @@ describe.skipIf(!isIntegrationTestReady)(
 
       // Insert two subscriptions (different devices)
       await client.from("push_subscriptions").insert([
-        { user_id: user.id, subscription: "device_1_sub" },
-        { user_id: user.id, subscription: "device_2_sub" },
+        { user_id: user.id, subscription: "device_1_sub", fingerprint: "fp-read-1", channel: "web" },
+        { user_id: user.id, subscription: "device_2_sub", fingerprint: "fp-read-2", channel: "web" },
       ]);
 
       const { data, error } = await client
@@ -61,6 +63,8 @@ describe.skipIf(!isIntegrationTestReady)(
       await adminClient!.from("push_subscriptions").insert({
         user_id: userA.id,
         subscription: "secret_sub_a",
+        fingerprint: "fp-cross-read",
+        channel: "web",
       });
 
       // userB tries to read userA's subscriptions
@@ -86,6 +90,8 @@ describe.skipIf(!isIntegrationTestReady)(
         .insert({
           user_id: userA.id,
           subscription: "malicious_sub",
+          fingerprint: "fp-cross-insert",
+          channel: "web",
         });
 
       expect(error).not.toBeNull();
@@ -100,6 +106,8 @@ describe.skipIf(!isIntegrationTestReady)(
         .insert({
           user_id: user.id,
           subscription: "to_be_deleted",
+          fingerprint: "fp-delete-own",
+          channel: "web",
         })
         .select("id")
         .single();
@@ -131,6 +139,8 @@ describe.skipIf(!isIntegrationTestReady)(
         .insert({
           user_id: userA.id,
           subscription: "protected_sub",
+          fingerprint: "fp-protected",
+          channel: "web",
         })
         .select("id")
         .single();
@@ -159,8 +169,8 @@ describe.skipIf(!isIntegrationTestReady)(
       ]);
 
       await adminClient!.from("push_subscriptions").insert([
-        { user_id: userA.id, subscription: "sub_a" },
-        { user_id: userB.id, subscription: "sub_b" },
+        { user_id: userA.id, subscription: "sub_a", fingerprint: "fp-admin-a", channel: "web" },
+        { user_id: userB.id, subscription: "sub_b", fingerprint: "fp-admin-b", channel: "web" },
       ]);
 
       // Admin can read both
@@ -179,6 +189,8 @@ describe.skipIf(!isIntegrationTestReady)(
       await adminClient!.from("push_subscriptions").insert({
         user_id: user.id,
         subscription: "will_cascade",
+        fingerprint: "fp-cascade",
+        channel: "web",
       });
 
       // Delete the user (triggers ON DELETE CASCADE)

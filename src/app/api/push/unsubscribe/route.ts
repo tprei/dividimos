@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { decryptPixKey as decrypt } from "@/lib/crypto";
+import { pushFingerprint, type PushChannel } from "@/lib/push/fingerprint";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -20,9 +19,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const channel = body.channel === "fcm" ? "fcm" : "web";
-
-  const admin = createAdminClient();
+  const channel: PushChannel = body.channel === "fcm" ? "fcm" : "web";
 
   if (channel === "fcm") {
     const { token } = body;
@@ -30,66 +27,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Token FCM é obrigatório" }, { status: 400 });
     }
 
-    const { data: rows, error: fetchError } = await admin
-      .from("push_subscriptions")
-      .select("id, subscription")
-      .eq("user_id", user.id)
-      .eq("channel", "fcm");
+    const fingerprint = pushFingerprint("fcm", token);
 
-    if (fetchError || !rows) {
-      return NextResponse.json({ error: "Erro ao buscar subscriptions" }, { status: 500 });
+    const { data, error } = await supabase.rpc("release_push_subscription", {
+      p_channel: "fcm",
+      p_fingerprint: fingerprint,
+    });
+
+    if (error) {
+      return NextResponse.json(
+        { error: "Erro ao remover subscription" },
+        { status: 500 },
+      );
     }
 
-    const idsToDelete: string[] = [];
-    for (const row of rows) {
-      try {
-        const decrypted = decrypt(row.subscription);
-        if (decrypted === token) {
-          idsToDelete.push(row.id);
-        }
-      } catch {
-        // Skip rows that can't be decrypted — they're stale anyway
-      }
-    }
-
-    if (idsToDelete.length > 0) {
-      await admin.from("push_subscriptions").delete().in("id", idsToDelete);
-    }
-
-    return NextResponse.json({ ok: true, deleted: idsToDelete.length });
+    return NextResponse.json({ ok: true, deleted: data ?? 0 });
   }
 
-  // Web Push flow (existing behavior)
+  // Web Push flow
   const { endpoint } = body;
   if (!endpoint) {
     return NextResponse.json({ error: "Endpoint é obrigatório" }, { status: 400 });
   }
 
-  const { data: rows, error: fetchError } = await admin
-    .from("push_subscriptions")
-    .select("id, subscription")
-    .eq("user_id", user.id)
-    .eq("channel", "web");
+  const fingerprint = pushFingerprint("web", endpoint);
 
-  if (fetchError || !rows) {
-    return NextResponse.json({ error: "Erro ao buscar subscriptions" }, { status: 500 });
+  const { data, error } = await supabase.rpc("release_push_subscription", {
+    p_channel: "web",
+    p_fingerprint: fingerprint,
+  });
+
+  if (error) {
+    return NextResponse.json(
+      { error: "Erro ao remover subscription" },
+      { status: 500 },
+    );
   }
 
-  const idsToDelete: string[] = [];
-  for (const row of rows) {
-    try {
-      const sub = JSON.parse(decrypt(row.subscription)) as { endpoint: string };
-      if (sub.endpoint === endpoint) {
-        idsToDelete.push(row.id);
-      }
-    } catch {
-      // Skip rows that can't be decrypted — they're stale anyway
-    }
-  }
-
-  if (idsToDelete.length > 0) {
-    await admin.from("push_subscriptions").delete().in("id", idsToDelete);
-  }
-
-  return NextResponse.json({ ok: true, deleted: idsToDelete.length });
+  return NextResponse.json({ ok: true, deleted: data ?? 0 });
 }
