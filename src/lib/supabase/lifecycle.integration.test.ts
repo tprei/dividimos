@@ -84,6 +84,34 @@ async function activateDraft(creator: TestUser, expenseId: string, graphRevision
   }
 }
 
+/**
+ * Computes a user's NET ledger position in a group: the sum of every balance
+ * row where they are the creditor (user_b) minus every row where they are the
+ * debtor (user_a). Positive = net creditor, negative = net debtor.
+ *
+ * The balance ledger is greedily minimized after every balance-writing RPC, so
+ * pairwise (userX, userY) values are an artifact of the minimizer while each
+ * user's net position is the invariant we actually want to assert.
+ */
+async function getNetPosition(groupId: string, userId: string): Promise<number> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+  const { data, error } = await adminClient
+    .from("balances")
+    .select("user_a, user_b, amount_cents")
+    .eq("group_id", groupId);
+  if (error) {
+    throw new Error(`Failed to query balances: ${error.message}`);
+  }
+  return (data ?? [])
+    .filter((b) => b.user_a === userId || b.user_b === userId)
+    .reduce(
+      (sum, b) => sum + (b.user_a === userId ? -b.amount_cents : b.amount_cents),
+      0,
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Suite 2 — Expense lifecycle chains
 //
@@ -677,7 +705,10 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         amountCents: 1000,
       });
 
-      expect(await getBalanceBetween(gid, bob.id, alice.id)).toBe(2000);
+      // Nets after Bob's 1000 settlement: Alice +5000, Bob -2000, Carol -3000.
+      expect(await getNetPosition(gid, alice.id)).toBe(5000);
+      expect(await getNetPosition(gid, bob.id)).toBe(-2000);
+      expect(await getNetPosition(gid, carol.id)).toBe(-3000);
 
       // Step 3: Bob pays 6000, split between Alice(3000) and Carol(3000)
       // Alice owes Bob 3000, Carol owes Bob 3000
@@ -692,12 +723,12 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         title: "Step 3",
       });
 
-      // Bob→Alice: 2000 - 3000 = -1000 (Alice owes Bob 1000)
-      expect(await getBalanceBetween(gid, bob.id, alice.id)).toBe(-1000);
-      // Carol→Alice: 3000 (unchanged from step 1)
-      expect(await getBalanceBetween(gid, carol.id, alice.id)).toBe(3000);
-      // Carol→Bob: 3000 (from step 3)
-      expect(await getBalanceBetween(gid, carol.id, bob.id)).toBe(3000);
+      // Bob paid 6000 (net creditor); Alice & Carol each owe 3000 more.
+      // Nets: Alice +2000, Bob +4000, Carol -6000. The minimizer re-pairs so
+      // Carol owes both Alice and Bob directly — no separate Bob↔Alice debt.
+      expect(await getNetPosition(gid, alice.id)).toBe(2000);
+      expect(await getNetPosition(gid, bob.id)).toBe(4000);
+      expect(await getNetPosition(gid, carol.id)).toBe(-6000);
 
       // Step 4: Carol settles 2000 with Bob
       await settleDebt({
@@ -708,7 +739,10 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         amountCents: 2000,
       });
 
-      expect(await getBalanceBetween(gid, carol.id, bob.id)).toBe(1000);
+      // Carol settled 2000 with Bob. Nets: Alice +2000, Bob +2000, Carol -4000.
+      expect(await getNetPosition(gid, alice.id)).toBe(2000);
+      expect(await getNetPosition(gid, bob.id)).toBe(2000);
+      expect(await getNetPosition(gid, carol.id)).toBe(-4000);
 
       // Step 5: Carol pays 4000, split: Alice 2000, Bob 2000
       await createAndActivateExpense({
@@ -722,13 +756,10 @@ describe.skipIf(!isIntegrationTestReady)("Expense lifecycle chains", () => {
         title: "Step 5",
       });
 
-      // Final balances:
-      // Bob→Alice: -1000 (from step 3)
-      expect(await getBalanceBetween(gid, bob.id, alice.id)).toBe(-1000);
-      // Carol→Alice: 3000 - 2000 = 1000
-      expect(await getBalanceBetween(gid, carol.id, alice.id)).toBe(1000);
-      // Carol→Bob: 1000 - 2000 = -1000 (Bob now owes Carol)
-      expect(await getBalanceBetween(gid, carol.id, bob.id)).toBe(-1000);
+      // Final nets: the entire sequence cancels out — everyone at zero.
+      expect(await getNetPosition(gid, alice.id)).toBe(0);
+      expect(await getNetPosition(gid, bob.id)).toBe(0);
+      expect(await getNetPosition(gid, carol.id)).toBe(0);
     });
   });
 
