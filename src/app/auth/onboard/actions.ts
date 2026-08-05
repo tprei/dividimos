@@ -3,60 +3,133 @@
 import { createClient } from "@/lib/supabase/server";
 import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
+import { isValidHandle } from "@/lib/onboarding";
 import type { PixKeyType } from "@/types";
-import { redirect } from "next/navigation";
-import { safeRedirect } from "@/lib/safe-redirect";
 
-export async function completeOnboarding(formData: FormData) {
-  const handle = formData.get("handle") as string;
-  const pixKey = formData.get("pixKey") as string;
-  const pixKeyType = formData.get("pixKeyType") as string;
-  const name = formData.get("name") as string | null;
-  const next = safeRedirect(formData.get("next") as string | null);
+export type CompleteOnboardingResult =
+  | { kind: "completed"; redirectTo: string }
+  | {
+      kind: "rejected";
+      reason:
+        | "unauthenticated"
+        | "identity_changed"
+        | "invalid_name"
+        | "invalid_handle"
+        | "invalid_pix_type"
+        | "invalid_pix_key"
+        | "handle_taken"
+        | "profile_unavailable"
+        | "save_failed";
+    };
 
-  if (!handle || !pixKey || !pixKeyType) {
-    return { error: "Dados incompletos" };
-  }
+function isPixKeyType(value: unknown): value is PixKeyType {
+  return (
+    value === "cpf" ||
+    value === "email" ||
+    value === "phone" ||
+    value === "random"
+  );
+}
 
-  if (!validatePixKey(pixKey, pixKeyType as PixKeyType)) {
-    return { error: "Chave Pix invalida para o tipo selecionado" };
-  }
-
+/**
+ * Server-authoritative onboarding completion.
+ *
+ * The `expectedUserId`/`redirectTo` closure values are NOT treated as
+ * authorization — this helper re-authenticates against the live session before
+ * touching any FormData field, and the single conditional update is fenced by
+ * both `id = expectedUserId` and `onboarded = false`. No redirect, RPC, upsert,
+ * or admin/service-role client is used here.
+ */
+export async function completeOnboarding(
+  expectedUserId: string,
+  redirectTo: string,
+  formData: FormData,
+): Promise<CompleteOnboardingResult> {
   const supabase = await createClient();
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
-  if (!user) {
-    return { error: "Sessao expirada" };
+  if (error || !user) {
+    return { kind: "rejected", reason: "unauthenticated" };
+  }
+  if (user.id !== expectedUserId) {
+    return { kind: "rejected", reason: "identity_changed" };
   }
 
-  const encrypted = encryptPixKey(pixKey);
-  const hint = maskPixKey(pixKey);
+  const nameRaw = formData.get("name");
+  const handleRaw = formData.get("handle");
+  const pixKeyTypeRaw = formData.get("pixKeyType");
+  const pixKeyRaw = formData.get("pixKey");
 
-  const updates: Record<string, unknown> = {
-    handle: handle.toLowerCase(),
-    pix_key_encrypted: encrypted,
-    pix_key_hint: hint,
-    pix_key_type: pixKeyType,
-    onboarded: true,
-  };
-
-  if (name?.trim()) {
-    updates.name = name.trim();
+  if (typeof nameRaw !== "string") {
+    return { kind: "rejected", reason: "invalid_name" };
+  }
+  const trimmedName = nameRaw.trim();
+  if (trimmedName === "") {
+    return { kind: "rejected", reason: "invalid_name" };
   }
 
-  const { error } = await supabase
+  if (typeof handleRaw !== "string") {
+    return { kind: "rejected", reason: "invalid_handle" };
+  }
+  const canonicalHandle = handleRaw.trim().toLowerCase();
+  if (!isValidHandle(canonicalHandle)) {
+    return { kind: "rejected", reason: "invalid_handle" };
+  }
+
+  if (!isPixKeyType(pixKeyTypeRaw)) {
+    return { kind: "rejected", reason: "invalid_pix_type" };
+  }
+
+  if (typeof pixKeyRaw !== "string") {
+    return { kind: "rejected", reason: "invalid_pix_key" };
+  }
+  if (!validatePixKey(pixKeyRaw, pixKeyTypeRaw)) {
+    return { kind: "rejected", reason: "invalid_pix_key" };
+  }
+
+  const encrypted = encryptPixKey(pixKeyRaw);
+  const hint = maskPixKey(pixKeyRaw);
+
+  const { data, error: updateError } = await supabase
     .from("users")
-    .update(updates)
-    .eq("id", user.id);
+    .update({
+      name: trimmedName,
+      handle: canonicalHandle,
+      pix_key_encrypted: encrypted,
+      pix_key_hint: hint,
+      pix_key_type: pixKeyTypeRaw,
+      onboarded: true,
+    })
+    .eq("id", expectedUserId)
+    .eq("onboarded", false)
+    .select("id");
 
-  if (error) {
-    if (error.code === "23505") {
-      return { error: "Handle ja em uso. Escolha outro." };
-    }
-    console.error("[onboard] Failed to save profile:", error);
-    return { error: "Erro ao salvar. Tente novamente." };
+  if (updateError?.code === "23505") {
+    return { kind: "rejected", reason: "handle_taken" };
+  }
+  if (updateError) {
+    return { kind: "rejected", reason: "save_failed" };
+  }
+  if (Array.isArray(data) && data.length === 1) {
+    return { kind: "completed", redirectTo };
   }
 
-  redirect(next);
+  const { data: row, error: readError } = await supabase
+    .from("users")
+    .select("onboarded")
+    .eq("id", expectedUserId)
+    .maybeSingle();
+
+  if (readError) {
+    return { kind: "rejected", reason: "save_failed" };
+  }
+  if (!row) {
+    return { kind: "rejected", reason: "profile_unavailable" };
+  }
+  if (row.onboarded === true) {
+    return { kind: "completed", redirectTo };
+  }
+  return { kind: "rejected", reason: "save_failed" };
 }
