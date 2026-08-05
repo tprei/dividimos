@@ -9,7 +9,6 @@ import type {
   ExpenseItem,
   ExpensePayer,
   ExpenseShare,
-  ExpenseStatus,
   ExpenseType,
   SplitType,
   User,
@@ -136,11 +135,6 @@ interface ExpenseState {
      *  no-op (the server rejects it with `claimed_guest_not_participant`). */
     draftClaimProtectedUserIds?: string[];
   }) => void;
-  /**
-   * Patches only the server-derived status fields from a realtime event.
-   * Does not reload — only touches status and updatedAt on the expense.
-   */
-  patchExpenseFromRealtime: (updated: { id: string; status: ExpenseStatus; updatedAt: string }) => void;
   reset: () => void;
 }
 
@@ -1016,14 +1010,6 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       billSplits: billSplits ?? [],
       draftClaimProtectedUserIds: draftClaimProtectedUserIds ?? [],
     });
-  },
-
-  patchExpenseFromRealtime: (updated) => {
-    set((state) => ({
-      expense: state.expense
-        ? { ...state.expense, status: updated.status, updatedAt: updated.updatedAt }
-        : null,
-    }));
   },
 
   reset: () => {

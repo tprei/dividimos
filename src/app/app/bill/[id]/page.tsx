@@ -35,7 +35,6 @@ import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quant
 import { loadExpense } from "@/lib/supabase/expense-actions";
 import { queryBalanceBetween } from "@/lib/supabase/settlement-actions";
 import { getGroupNavUrl } from "@/lib/group-nav";
-import { useBillStore } from "@/stores/bill-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useRealtimeExpense } from "@/hooks/use-realtime-expense";
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
@@ -52,6 +51,8 @@ import type {
   ExpenseWithDetails,
   UserProfile,
 } from "@/types";
+
+let nextBillGeneration = 0;
 
 const expenseStatusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
   draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
@@ -164,32 +165,19 @@ export default function BillDetailPage({
       return active;
     } catch { return new Set(); }
   });
-  const loadedKeyRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  const committedBillRef = useRef<string | null>(null);
+  const generationRef = useRef(0);
   const [dmBalance, setDmBalance] = useState<Balance | null>(null);
   const [dmBalanceLoaded, setDmBalanceLoaded] = useState(false);
 
   const loadExpenseData = useCallback(async (expenseId: string) => {
     const data = await loadExpense(expenseId);
-    if (data) {
+    // Guard the write boundary: if the user has navigated to a different bill
+    // while this fetch was in flight, discard the stale result rather than
+    // overwriting the current bill's data.
+    if (data && mountedRef.current && committedBillRef.current === expenseId) {
       setExpenseData(data);
-      useBillStore.getState().hydrateFromServer({
-        expense: {
-          id: data.id,
-          groupId: data.groupId,
-          creatorId: data.creatorId,
-          title: data.title,
-          merchantName: data.merchantName,
-          expenseType: data.expenseType,
-          totalAmount: data.totalAmount,
-          serviceFeePercent: data.serviceFeePercent,
-          serviceFeeBasisPoints: data.serviceFeeBasisPoints,
-          fixedFees: data.fixedFees,
-          status: data.status,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        },
-        items: data.items,
-      });
     }
     return data;
   }, []);
@@ -225,22 +213,23 @@ export default function BillDetailPage({
 
   useEffect(() => {
     if (id === "demo") return;
-    const cacheKey = `${currentUserId ?? "anon"}:${id}`;
-    if (loadedKeyRef.current === cacheKey) {
-      setLoadingFromDb(false);
-      return;
-    }
 
-    loadedKeyRef.current = cacheKey;
-    let cancelled = false;
+    mountedRef.current = true;
+    const generation = ++nextBillGeneration;
+    generationRef.current = generation;
+    committedBillRef.current = id;
+
     setLoadingFromDb(true);
     (async () => {
       await loadExpenseData(id);
-      if (!cancelled) {
+      if (mountedRef.current && generationRef.current === generation && committedBillRef.current === id) {
         setLoadingFromDb(false);
       }
     })();
-    return () => { cancelled = true; };
+
+    return () => {
+      mountedRef.current = false;
+    };
   }, [id, currentUserId, loadExpenseData]);
 
   useEffect(() => {
@@ -256,9 +245,13 @@ export default function BillDetailPage({
   }, [expenseData?.groupId, currentUser?.id]);
 
   const expenseId = expenseData?.id;
+
   const onExpenseUpdate = useCallback(() => {
-    // Broadcast wake: refetch the complete authorized snapshot
-    if (expenseId) {
+    if (
+      expenseId &&
+      mountedRef.current &&
+      committedBillRef.current === expenseId
+    ) {
       loadExpenseData(expenseId);
     }
   }, [expenseId, loadExpenseData]);
@@ -544,6 +537,7 @@ export default function BillDetailPage({
         items={expense.items}
         shares={expense.shares}
         guests={expense.guests ?? []}
+        onActivated={() => loadExpenseData(expense.id)}
       />
     );
   }
