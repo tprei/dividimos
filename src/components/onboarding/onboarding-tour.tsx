@@ -53,6 +53,8 @@ interface SpotlightRect {
 
 const PADDING = 8;
 const BORDER_RADIUS = 16;
+const RECALC_DELAY_MS = 350;
+const CELEBRATION_DURATION_MS = 2000;
 
 function getTargetRect(selector: string): SpotlightRect | null {
   const el = document.querySelector(selector);
@@ -76,43 +78,115 @@ function scrollToTarget(selector: string): void {
   }
 }
 
-export function OnboardingTour({ userId }: { userId: string | undefined }) {
-  const { shouldShow, completeTour } = useOnboardingTour(userId);
+type OnboardingTourProps = Readonly<{
+  userId: string | null;
+  identityGeneration: number;
+}>;
+
+interface OwnerTag {
+  userId: string | null;
+  identityGeneration: number;
+}
+
+export function OnboardingTour({ userId, identityGeneration }: OnboardingTourProps) {
+  const { shouldShow, completeTour } = useOnboardingTour(userId, identityGeneration);
   const [currentStep, setCurrentStep] = useState(0);
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const recalcTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  const [ownerTag, setOwnerTag] = useState<OwnerTag>({ userId, identityGeneration });
+  const recalcTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const celebrationTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+
+  // Latest committed owner — every timer/handler captures its own tuple at
+  // schedule time and compares against this ref before mutating state or
+  // calling completeTour, so work from a superseded identity never lands.
+  const tourOwnerRef = useRef<OwnerTag>({ userId, identityGeneration });
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Reset every piece of transient state at an identity boundary, before the
+  // new overlay can paint. Clears both timers so a pending recalc or
+  // celebration from the previous owner can never fire.
+  useLayoutEffect(() => {
+    if (recalcTimerRef.current) {
+      clearTimeout(recalcTimerRef.current);
+      recalcTimerRef.current = undefined;
+    }
+    if (celebrationTimerRef.current) {
+      clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = undefined;
+    }
+    setCurrentStep(0);
+    setSpotlight(null);
+    setShowCelebration(false);
+    setOwnerTag({ userId, identityGeneration });
+    tourOwnerRef.current = { userId, identityGeneration };
+    return () => {
+      if (recalcTimerRef.current) {
+        clearTimeout(recalcTimerRef.current);
+        recalcTimerRef.current = undefined;
+      }
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current);
+        celebrationTimerRef.current = undefined;
+      }
+    };
+  }, [userId, identityGeneration]);
+
   const recalcSpotlight = useCallback(() => {
+    if (
+      tourOwnerRef.current.userId !== userId ||
+      tourOwnerRef.current.identityGeneration !== identityGeneration
+    ) {
+      return;
+    }
     if (!shouldShow || showCelebration) return;
     const step = TOUR_STEPS[currentStep];
     if (!step) return;
     const rect = getTargetRect(step.target);
     if (rect) setSpotlight(rect);
-  }, [shouldShow, currentStep, showCelebration]);
+  }, [shouldShow, currentStep, showCelebration, userId, identityGeneration]);
 
   useLayoutEffect(() => {
+    if (
+      tourOwnerRef.current.userId !== userId ||
+      tourOwnerRef.current.identityGeneration !== identityGeneration
+    ) {
+      return;
+    }
     if (!shouldShow || showCelebration) return;
     const step = TOUR_STEPS[currentStep];
     if (!step) return;
 
     scrollToTarget(step.target);
 
-    if (recalcTimer.current) clearTimeout(recalcTimer.current);
-    recalcTimer.current = setTimeout(recalcSpotlight, 350);
+    clearTimeout(recalcTimerRef.current);
+    recalcTimerRef.current = setTimeout(() => {
+      if (
+        tourOwnerRef.current.userId !== userId ||
+        tourOwnerRef.current.identityGeneration !== identityGeneration
+      ) {
+        return;
+      }
+      recalcSpotlight();
+    }, RECALC_DELAY_MS);
 
     return () => {
-      if (recalcTimer.current) clearTimeout(recalcTimer.current);
+      clearTimeout(recalcTimerRef.current);
     };
-  }, [shouldShow, currentStep, recalcSpotlight, showCelebration]);
+  }, [shouldShow, currentStep, recalcSpotlight, showCelebration, userId, identityGeneration]);
 
   useEffect(() => {
     if (!shouldShow) return;
+    if (
+      tourOwnerRef.current.userId !== userId ||
+      tourOwnerRef.current.identityGeneration !== identityGeneration
+    ) {
+      return;
+    }
     const handler = () => recalcSpotlight();
     window.addEventListener("resize", handler);
     window.addEventListener("scroll", handler, { passive: true });
@@ -120,25 +194,53 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
       window.removeEventListener("resize", handler);
       window.removeEventListener("scroll", handler);
     };
-  }, [shouldShow, recalcSpotlight]);
+  }, [shouldShow, recalcSpotlight, userId, identityGeneration]);
 
   const handleNext = useCallback(() => {
+    if (
+      tourOwnerRef.current.userId !== userId ||
+      tourOwnerRef.current.identityGeneration !== identityGeneration
+    ) {
+      return;
+    }
     if (currentStep < TOUR_STEPS.length - 1) {
       setCurrentStep((s) => s + 1);
     } else {
       setShowCelebration(true);
-      setTimeout(() => {
+      const capturedUserId = userId;
+      const capturedGeneration = identityGeneration;
+      clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = setTimeout(() => {
+        if (
+          tourOwnerRef.current.userId !== capturedUserId ||
+          tourOwnerRef.current.identityGeneration !== capturedGeneration
+        ) {
+          return;
+        }
         setShowCelebration(false);
         completeTour();
-      }, 2000);
+      }, CELEBRATION_DURATION_MS);
     }
-  }, [currentStep, completeTour]);
+  }, [currentStep, userId, identityGeneration, completeTour]);
 
   const handleSkip = useCallback(() => {
+    if (
+      tourOwnerRef.current.userId !== userId ||
+      tourOwnerRef.current.identityGeneration !== identityGeneration
+    ) {
+      return;
+    }
     completeTour();
-  }, [completeTour]);
+  }, [userId, identityGeneration, completeTour]);
 
-  if (!mounted || !shouldShow) return null;
+  if (
+    !mounted ||
+    !shouldShow ||
+    ownerTag.userId !== userId ||
+    ownerTag.identityGeneration !== identityGeneration
+  ) {
+    return null;
+  }
 
   const step = TOUR_STEPS[currentStep];
 
