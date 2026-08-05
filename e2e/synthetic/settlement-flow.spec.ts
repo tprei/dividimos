@@ -61,36 +61,40 @@ test.describe("Settlement Flow", () => {
       bobPage.getByText(/Você deve|Você recebe|a pagar|a receber/i).first(),
     ).toBeVisible({ timeout: 10000 });
 
-    // Settle Bob's debt to Alice via RPC
+    // Settle all remaining debts via RPC. With the normalized ledger the
+    // intermediary (Bob) may net to zero, so the debtor could be anyone.
+    // Each settlement is authenticated as the debtor (from_user).
+    const aliceClient = await seed.authenticateAs(alice.id);
     const bobClient = await seed.authenticateAs(bob.id);
+    const carolClient = await seed.authenticateAs(carol.id);
+    const clientFor: Record<string, typeof aliceClient> = {
+      [alice.id]: aliceClient,
+      [bob.id]: bobClient,
+      [carol.id]: carolClient,
+    };
 
-    const { data: balances } = await adminClient
+    const { data: debts } = await adminClient
       .from("balances")
       .select("*")
       .eq("group_id", group.id)
       .neq("amount_cents", 0);
 
-    for (const bal of balances ?? []) {
-      const amount = bal.amount_cents as number;
-      const userA = bal.user_a as string;
-      const userB = bal.user_b as string;
+    for (const row of debts ?? []) {
+      const amount = row.amount_cents as number;
+      const userA = row.user_a as string;
+      const userB = row.user_b as string;
+      const fromUser = amount > 0 ? userA : userB;
+      const toUser = amount > 0 ? userB : userA;
 
-      if (userA === bob.id || userB === bob.id) {
-        const fromUser = amount > 0 ? userA : userB;
-        const toUser = amount > 0 ? userB : userA;
-
-        if (fromUser === bob.id) {
-          await bobClient.rpc("record_settlements", {
-            p_allocations: [{
-              group_id: group.id,
-              from_user_id: bob.id,
-              to_user_id: toUser,
-              amount_cents: Math.abs(amount),
-            }],
-            p_operation_id: crypto.randomUUID(),
-          });
-        }
-      }
+      await clientFor[fromUser].rpc("record_settlements", {
+        p_allocations: [{
+          group_id: group.id,
+          from_user_id: fromUser,
+          to_user_id: toUser,
+          amount_cents: Math.abs(amount),
+        }],
+        p_operation_id: crypto.randomUUID(),
+      });
     }
 
     // Alice checks the "Pagamentos" tab
@@ -101,38 +105,6 @@ test.describe("Settlement Flow", () => {
     await expect(
       page.getByText(/Confirmado/i).first(),
     ).toBeVisible({ timeout: 10000 });
-
-    // Settle Carol's remaining debts
-    const carolClient = await seed.authenticateAs(carol.id);
-
-    const { data: remainingBalances } = await adminClient
-      .from("balances")
-      .select("*")
-      .eq("group_id", group.id)
-      .neq("amount_cents", 0);
-
-    for (const bal of remainingBalances ?? []) {
-      const amount = bal.amount_cents as number;
-      const userA = bal.user_a as string;
-      const userB = bal.user_b as string;
-
-      if (userA === carol.id || userB === carol.id) {
-        const fromUser = amount > 0 ? userA : userB;
-        const toUser = amount > 0 ? userB : userA;
-
-        if (fromUser === carol.id) {
-          await carolClient.rpc("record_settlements", {
-            p_allocations: [{
-              group_id: group.id,
-              from_user_id: carol.id,
-              to_user_id: toUser,
-              amount_cents: Math.abs(amount),
-            }],
-            p_operation_id: crypto.randomUUID(),
-          });
-        }
-      }
-    }
 
     // Alice verifies "Tudo liquidado!" on the settlement tab
     await page.goto(`/app/groups/${group.id}`);

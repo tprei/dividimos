@@ -7,6 +7,7 @@ import {
 import {
   createTestUsers,
   createTestGroupWithMembers,
+  createAndActivateExpense,
   settleDebt,
   getBalanceBetween,
   authenticateAs,
@@ -339,3 +340,103 @@ describe.skipIf(!canRun)("minimize_group_balances on settlement (#592)", () => {
     expect(error!.code).toBe("PST09");
   });
 });
+
+describe.skipIf(!canRun)(
+  "minimize_group_balances on expense activation (#592)",
+  () => {
+    let alice: TestUser;
+    let bob: TestUser;
+    let carol: TestUser;
+    let groupId: string;
+
+    beforeEach(async () => {
+      [alice, bob, carol] = await createTestUsers(3);
+      const group = await createTestGroupWithMembers(alice, [bob, carol]);
+      groupId = group.id;
+    });
+
+    // -----------------------------------------------------------------
+    // Chain collapse at activation (the reported bug dies here)
+    // -----------------------------------------------------------------
+    it("two chained activations collapse to a single net edge", async () => {
+      // Expense 1: Bob pays, Alice consumes -> Alice owes Bob.
+      await createAndActivateExpense({
+        creator: alice,
+        groupId,
+        shares: [{ userId: alice.id, amount: 10000 }],
+        payers: [{ userId: bob.id, amount: 10000 }],
+      });
+      // Expense 2: Carol pays, Bob consumes -> Bob owes Carol.
+      await createAndActivateExpense({
+        creator: bob,
+        groupId,
+        shares: [{ userId: bob.id, amount: 10000 }],
+        payers: [{ userId: carol.id, amount: 10000 }],
+      });
+
+      expect(await getBalanceBetween(groupId, alice.id, bob.id)).toBe(0);
+      expect(await getBalanceBetween(groupId, bob.id, carol.id)).toBe(0);
+      expect(await getBalanceBetween(groupId, alice.id, carol.id)).toBe(10000);
+      expect(await netPosition(groupId, alice.id)).toBe(-10000);
+      expect(await netPosition(groupId, bob.id)).toBe(0);
+      expect(await netPosition(groupId, carol.id)).toBe(10000);
+    });
+
+    // -----------------------------------------------------------------
+    // Single-payer star graph is already minimal (no re-pairing)
+    // -----------------------------------------------------------------
+    it("single-payer star graph keeps its pairwise rows unchanged", async () => {
+      await createAndActivateExpense({
+        creator: alice,
+        groupId,
+        shares: [
+          { userId: alice.id, amount: 2000 },
+          { userId: bob.id, amount: 2000 },
+          { userId: carol.id, amount: 2000 },
+        ],
+        payers: [{ userId: alice.id, amount: 6000 }],
+      });
+
+      // Bob and Carol each owe Alice 2000; Alice's own consumption nets out.
+      expect(await getBalanceBetween(groupId, bob.id, alice.id)).toBe(2000);
+      expect(await getBalanceBetween(groupId, carol.id, alice.id)).toBe(2000);
+    });
+
+    // -----------------------------------------------------------------
+    // Rotating-payer cycle zeroes every net and unblocks exit
+    // -----------------------------------------------------------------
+    it("a three-expense rotating-payer cycle collapses to zero", async () => {
+      await createAndActivateExpense({
+        creator: bob,
+        groupId,
+        shares: [{ userId: bob.id, amount: 10000 }],
+        payers: [{ userId: alice.id, amount: 10000 }],
+      });
+      await createAndActivateExpense({
+        creator: carol,
+        groupId,
+        shares: [{ userId: carol.id, amount: 10000 }],
+        payers: [{ userId: bob.id, amount: 10000 }],
+      });
+      await createAndActivateExpense({
+        creator: alice,
+        groupId,
+        shares: [{ userId: alice.id, amount: 10000 }],
+        payers: [{ userId: carol.id, amount: 10000 }],
+      });
+
+      expect(await netPosition(groupId, alice.id)).toBe(0);
+      expect(await netPosition(groupId, bob.id)).toBe(0);
+      expect(await netPosition(groupId, carol.id)).toBe(0);
+      expect(await getBalanceBetween(groupId, alice.id, bob.id)).toBe(0);
+      expect(await getBalanceBetween(groupId, bob.id, carol.id)).toBe(0);
+      expect(await getBalanceBetween(groupId, alice.id, carol.id)).toBe(0);
+
+      const bobClient = authenticateAs(bob);
+      const { error } = await bobClient.rpc("leave_group", {
+        p_group_id: groupId,
+      });
+      expect(error).toBeNull();
+    });
+  },
+);
