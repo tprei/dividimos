@@ -37,8 +37,8 @@ export interface SimplificationStep {
   description: string;
   removedEdges?: DebtEdge[];
   addedEdge?: DebtEdge;
-  /** For reverse-pair cancellations: the smaller edge treated as a "payment" */
-  paymentEdge?: DebtEdge;
+  /** For reverse-pair cancellations: the amount by which the two obligations cancel out. */
+  nettedEdge?: DebtEdge;
 }
 
 export interface SimplificationResult {
@@ -72,6 +72,12 @@ export function consolidateEdges(edges: DebtEdge[]): DebtEdge[] {
   return Array.from(map.values()).filter((e) => e.amountCents > 0);
 }
 
+/**
+ * Reduce a raw debt graph to the minimal set of transfers by pairing the
+ * largest net debtor with the largest net creditor. Drives the wizard/demo
+ * preview; the stored group balances arrive already minimized from the
+ * database, written by the minimize_group_balances SQL helper.
+ */
 export function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
   const balances = new Map<string, number>();
   for (const e of edges) {
@@ -205,10 +211,10 @@ export function simplifyDebts(
         const removed = [a, b];
         const next = currentEdges.filter((_, j) => j !== i && j !== reverseIdx);
 
-        // The smaller edge represents the "payment"
-        const paymentEdge = a.amountCents <= b.amountCents ? a : b;
-        const paymentFrom = getUserName(paymentEdge.fromUserId, participants);
-        const paymentTo = getUserName(paymentEdge.toUserId, participants);
+        // The smaller edge represents the amount that nets out.
+        const nettedEdge = a.amountCents <= b.amountCents ? a : b;
+        const nettedFrom = getUserName(nettedEdge.fromUserId, participants);
+        const nettedTo = getUserName(nettedEdge.toUserId, participants);
 
         if (Math.abs(net) > 0) {
           const newEdge: DebtEdge = net > 0
@@ -217,17 +223,17 @@ export function simplifyDebts(
           next.push(newEdge);
           steps.push({
             edges: consolidateEdges(next),
-            description: `${paymentFrom} pagou ${formatBRL(paymentEdge.amountCents)} a ${paymentTo}`,
+            description: `${nettedFrom} e ${nettedTo} se compensam em ${formatBRL(nettedEdge.amountCents)}`,
             removedEdges: removed,
             addedEdge: newEdge,
-            paymentEdge,
+            nettedEdge,
           });
         } else {
           steps.push({
             edges: consolidateEdges(next),
-            description: `${paymentFrom} pagou ${formatBRL(paymentEdge.amountCents)} a ${paymentTo}`,
+            description: `${nettedFrom} e ${nettedTo} se compensam em ${formatBRL(nettedEdge.amountCents)}`,
             removedEdges: removed,
-            paymentEdge,
+            nettedEdge,
           });
         }
         currentEdges = consolidateEdges(next);

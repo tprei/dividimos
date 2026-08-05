@@ -101,10 +101,6 @@ vi.mock("@/components/settlement/debt-graph", () => ({
   },
 }));
 
-// Mock SimplificationViewer
-vi.mock("@/components/settlement/simplification-viewer", () => ({
-  SimplificationViewer: () => null,
-}));
 
 import { haptics } from "@/hooks/use-haptics";
 import { GroupSettlementView } from "./group-settlement-view";
