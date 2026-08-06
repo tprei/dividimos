@@ -485,6 +485,43 @@ export async function getBalanceBetween(
   return (userX < userY ? data.amount_cents : -data.amount_cents) || 0;
 }
 
+/**
+ * Computes a user's net position across all their balance rows in a group:
+ * the total they are owed minus the total they owe.
+ * Positive = net creditor, negative = net debtor.
+ *
+ * `amount_cents` is signed (positive = user_a owes user_b, per the balances
+ * convention), so the user_b side is the creditor and the user_a side the
+ * debtor. Unlike the pairwise {@link getBalanceBetween}, the net position is
+ * an invariant of balance-ledger normalization — the greedy minimized
+ * transfer set preserves every user's net — so it stays stable regardless of
+ * how debts get re-paired.
+ */
+export async function getNetPosition(
+  groupId: string,
+  userId: string,
+): Promise<number> {
+  if (!isIntegrationTestReady || !adminClient) {
+    throw new Error("Integration tests require Supabase environment variables.");
+  }
+
+  const { data, error } = await adminClient
+    .from("balances")
+    .select("user_a, user_b, amount_cents")
+    .eq("group_id", groupId);
+
+  if (error) {
+    throw new Error(`Failed to query net position: ${error.message}`);
+  }
+
+  return (data ?? [])
+    .filter((r) => r.user_a === userId || r.user_b === userId)
+    .reduce(
+      (sum, r) => sum + (r.user_b === userId ? r.amount_cents : -r.amount_cents),
+      0,
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Group membership helpers
 // ---------------------------------------------------------------------------

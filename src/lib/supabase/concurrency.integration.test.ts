@@ -20,6 +20,7 @@ import {
   createAndActivateExpense,
   settleDebt,
   getBalanceBetween,
+  getNetPosition,
   authenticateAs,
 } from "@/test/integration-helpers";
 import { forceLockContentionRace } from "@/test/db-race-barrier";
@@ -315,14 +316,11 @@ describe.skipIf(!isIntegrationTestReady)(
 
     describe("5.3 — interleaved expenses and settlements across pairs", () => {
       it("concurrent operations on different pairs do not interfere", async () => {
-        // Record initial balances for all pairs we'll touch
-        const initialAB = await getBalanceBetween(groupId, bob.id, alice.id);
-
         // Concurrently:
         // 1) Expense: Alice pays 4000, Bob's share 2000, Alice's share 2000
         //    → Bob owes Alice +2000
         // 2) Settlement: Dave pays Carol 1500
-        //    → Dave-Carol balance changes by -1500
+        //    → Dave's debt to Carol drops by 1500
 
         // First, set up a debt from Dave to Carol so the settlement makes sense
         await createAndActivateExpense({
@@ -336,11 +334,17 @@ describe.skipIf(!isIntegrationTestReady)(
           title: "5.3 setup dave-carol debt",
         });
 
-        const daveCarolAfterSetup = await getBalanceBetween(
-          groupId,
-          dave.id,
-          carol.id,
-        );
+        // Snapshot net positions right before the concurrent operations. We
+        // assert on net positions rather than pairwise balances: the ledger is
+        // normalized to the greedy minimized transfer set after every
+        // balance-writing RPC, which preserves each user's net but re-pairs
+        // who owes whom (so pairwise values are unstable).
+        const before = {
+          alice: await getNetPosition(groupId, alice.id),
+          bob: await getNetPosition(groupId, bob.id),
+          carol: await getNetPosition(groupId, carol.id),
+          dave: await getNetPosition(groupId, dave.id),
+        };
 
         // Now fire expense activation and settlement concurrently on
         // different pairs. Draft via save_expense_draft_graph (#477 guard).
@@ -375,12 +379,13 @@ describe.skipIf(!isIntegrationTestReady)(
           expect(expenseResult.value.error).toBeNull();
         }
 
-        // Verify each pair updated independently
-        const finalAB = await getBalanceBetween(groupId, bob.id, alice.id);
-        expect(finalAB).toBe(initialAB + 2000);
-
-        const finalCD = await getBalanceBetween(groupId, dave.id, carol.id);
-        expect(finalCD).toBe(daveCarolAfterSetup - 1500);
+        // Net effect of the two disjoint operations:
+        //  - expense AB:  Alice +2000, Bob -2000
+        //  - settlement:  Dave +1500 (paid down debt), Carol -1500 (owed less)
+        expect(await getNetPosition(groupId, alice.id)).toBe(before.alice + 2000);
+        expect(await getNetPosition(groupId, bob.id)).toBe(before.bob - 2000);
+        expect(await getNetPosition(groupId, carol.id)).toBe(before.carol - 1500);
+        expect(await getNetPosition(groupId, dave.id)).toBe(before.dave + 1500);
       });
 
       it("concurrent expense + settlement on overlapping participant sets", async () => {
@@ -389,8 +394,16 @@ describe.skipIf(!isIntegrationTestReady)(
         //    → Bob owes Alice +3000, Carol owes Alice +3000
         // 2) Settlement: Bob pays Alice 1000
 
-        const initialBA = await getBalanceBetween(groupId, bob.id, alice.id);
-        const initialCA = await getBalanceBetween(groupId, carol.id, alice.id);
+        // Assert on net positions (see the disjoint-pairs test above for why
+        // pairwise balances are unstable after normalization). Snapshot just
+        // before the concurrent operations.
+        //   expense:    Alice +6000, Bob -3000, Carol -3000
+        //   settlement: Bob pays Alice 1000 → Bob +1000, Alice -1000
+        const before = {
+          alice: await getNetPosition(groupId, alice.id),
+          bob: await getNetPosition(groupId, bob.id),
+          carol: await getNetPosition(groupId, carol.id),
+        };
 
         const draft = await saveDraft(alice, groupId, {
           title: "5.3 overlapping participants",
@@ -421,13 +434,11 @@ describe.skipIf(!isIntegrationTestReady)(
         if (expResult.status === "fulfilled") {
           expect(expResult.value.error).toBeNull();
         }
-        // Bob-Alice: +3000 from expense, -1000 from settlement = net +2000
-        const finalBA = await getBalanceBetween(groupId, bob.id, alice.id);
-        expect(finalBA).toBe(initialBA + 3000 - 1000);
 
-        // Carol-Alice: +3000 from expense only
-        const finalCA = await getBalanceBetween(groupId, carol.id, alice.id);
-        expect(finalCA).toBe(initialCA + 3000);
+        // Net: Alice +5000, Bob -2000, Carol -3000
+        expect(await getNetPosition(groupId, alice.id)).toBe(before.alice + 5000);
+        expect(await getNetPosition(groupId, bob.id)).toBe(before.bob - 2000);
+        expect(await getNetPosition(groupId, carol.id)).toBe(before.carol - 3000);
       });
     });
 
@@ -449,12 +460,18 @@ describe.skipIf(!isIntegrationTestReady)(
           title: "5.4 setup bob-carol debt",
         });
 
-        const initialBC = await getBalanceBetween(groupId, bob.id, carol.id);
+        // Snapshot net positions before the concurrent settlements (asserting
+        // nets rather than the pairwise balance — see the 5.3 disjoint-pairs
+        // test for why normalization makes pairwise values unstable).
+        const before = {
+          bob: await getNetPosition(groupId, bob.id),
+          carol: await getNetPosition(groupId, carol.id),
+        };
 
         // Concurrently:
         // 1) Bob pays Carol 2000 (reduces Bob's debt)
         // 2) Carol pays Bob 1000 (increases Bob's debt — Carol overpaid)
-        // Net effect: -2000 + 1000 = -1000
+        // Net effect on Bob's debt: -2000 + 1000 = -1000
         const [r1, r2] = await Promise.allSettled([
           settleDebt({
             caller: bob,
@@ -475,9 +492,9 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(r1.status).toBe("fulfilled");
         expect(r2.status).toBe("fulfilled");
 
-        // Net: initial - 2000 + 1000
-        const finalBC = await getBalanceBetween(groupId, bob.id, carol.id);
-        expect(finalBC).toBe(initialBC - 2000 + 1000);
+        // Bob pays 2000 then is paid back 1000 → net +1000; Carol mirrors: -1000.
+        expect(await getNetPosition(groupId, bob.id)).toBe(before.bob + 1000);
+        expect(await getNetPosition(groupId, carol.id)).toBe(before.carol - 1000);
       });
     });
 
