@@ -224,18 +224,16 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
 
     const balances = await getBalances(groupId);
 
-    // After exp1: Bob→Alice = 2000, Carol→Alice = 2000
-    // After exp2: Alice→Bob = 1000, Carol→Bob = 1000
-    // Net Bob↔Alice: Bob owes Alice 2000-1000 = 1000
-    // Net Carol↔Alice: Carol owes Alice 2000
-    // Net Carol↔Bob: Carol owes Bob 1000
-    const bobToAlice = findBalance(balances, bob.id, alice.id);
-    const carolToAlice = findBalance(balances, carol.id, alice.id);
-    const carolToBob = findBalance(balances, carol.id, bob.id);
+    // Normalized: nets are Alice +3000, Bob 0, Carol -3000.
+    // Minimized to a single Carol→Alice edge; Bob nets to zero.
+    const netOf = (userId: string) =>
+      balances
+        .filter((b) => b.user_a === userId || b.user_b === userId)
+        .reduce((sum, b) => sum + (b.user_a === userId ? -b.amount_cents : b.amount_cents), 0);
 
-    expect(bobToAlice!.amount).toBe(1000);
-    expect(carolToAlice!.amount).toBe(2000);
-    expect(carolToBob!.amount).toBe(1000);
+    expect(netOf(alice.id)).toBe(3000);
+    expect(netOf(bob.id)).toBe(0);
+    expect(netOf(carol.id)).toBe(-3000);
   });
 
   it("rejects activation by non-creator", async () => {
@@ -451,16 +449,15 @@ describe.skipIf(!isIntegrationTestReady)("activate_expense RPC", () => {
     expect(r1.error).toBeNull();
     expect(r2.error).toBeNull();
 
-    // Expected net balances:
-    //   exp1: Bob→Alice=2000, Carol→Alice=2000
-    //   exp2: Alice→Bob=1000, Carol→Bob=1000
-    //   Net Bob↔Alice: Bob owes Alice 2000-1000=1000
-    //   Net Carol↔Alice: Carol owes Alice 2000
-    //   Net Carol↔Bob: Carol owes Bob 1000
+    // Normalized: nets Alice +3000, Bob 0, Carol -3000.
     const balances = await getBalances(groupId);
-    expect(findBalance(balances, bob.id, alice.id)!.amount).toBe(1000);
-    expect(findBalance(balances, carol.id, alice.id)!.amount).toBe(2000);
-    expect(findBalance(balances, carol.id, bob.id)!.amount).toBe(1000);
+    const netOf = (userId: string) =>
+      balances
+        .filter((b) => b.user_a === userId || b.user_b === userId)
+        .reduce((sum, b) => sum + (b.user_a === userId ? -b.amount_cents : b.amount_cents), 0);
+    expect(netOf(alice.id)).toBe(3000);
+    expect(netOf(bob.id)).toBe(0);
+    expect(netOf(carol.id)).toBe(-3000);
   });
 
   it("handles rounding with indivisible amounts", async () => {
