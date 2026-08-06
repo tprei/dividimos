@@ -10,9 +10,10 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
+import { useClientOnly } from "@/hooks/use-client-only";
 import {
   buildWhatsAppLink,
   isContactPickerSupported,
@@ -36,21 +37,17 @@ export function ConversationShareModal({
   onClose,
   handle,
 }: ConversationShareModalProps) {
-  const [canShare, setCanShare] = useState(false);
-  const [hasContactPicker, setHasContactPicker] = useState(false);
+  const canShare = useClientOnly(
+    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
+  );
+  const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [contacts, setContacts] = useState<SelectedContact[]>([]);
   const [picking, setPicking] = useState(false);
-
-  useEffect(() => {
-    setCanShare(typeof navigator?.share === "function");
-    setHasContactPicker(isContactPickerSupported());
-  }, []);
-
-  useEffect(() => {
-    if (!open) {
-      setContacts([]);
-    }
-  }, [open]);
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setContacts([]);
+  }
 
   const appUrl =
     typeof window !== "undefined" ? window.location.origin : "";

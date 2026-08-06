@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useMounted } from "@/hooks/use-client-only";
 
 const TOUR_KEY_PREFIX = "dividimos_tour_completed_";
 
@@ -8,20 +9,25 @@ function getTourKey(userId: string): string {
   return `${TOUR_KEY_PREFIX}${userId}`;
 }
 
-export function useOnboardingTour(userId: string | undefined) {
-  const [shouldShow, setShouldShow] = useState(false);
-  const [ready, setReady] = useState(false);
+function readShouldShow(userId: string | undefined): boolean {
+  if (!userId) return false;
+  try {
+    return !localStorage.getItem(getTourKey(userId));
+  } catch {
+    return false;
+  }
+}
 
-  useEffect(() => {
-    if (!userId) return;
-    try {
-      const completed = localStorage.getItem(getTourKey(userId));
-      setShouldShow(!completed);
-    } catch {
-      setShouldShow(false);
-    }
-    setReady(true);
-  }, [userId]);
+export function useOnboardingTour(userId: string | undefined) {
+  // Re-derive from localStorage when the user changes, gated to the client so
+  // nothing renders during SSR/hydration. completeTour/resetTour override.
+  const mounted = useMounted();
+  const [shouldShow, setShouldShow] = useState(false);
+  const [trackedUserId, setTrackedUserId] = useState<string | undefined | null>(null);
+  if (mounted && userId !== trackedUserId) {
+    setTrackedUserId(userId);
+    setShouldShow(readShouldShow(userId));
+  }
 
   const completeTour = useCallback(() => {
     if (!userId) return;
@@ -43,5 +49,5 @@ export function useOnboardingTour(userId: string | undefined) {
     setShouldShow(true);
   }, [userId]);
 
-  return { shouldShow: ready && shouldShow, completeTour, resetTour };
+  return { shouldShow: mounted && shouldShow, completeTour, resetTour };
 }

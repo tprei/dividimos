@@ -37,89 +37,91 @@ export function NewConversationButton() {
   const [handleInput, setHandleInput] = useState("");
   const [searchResult, setSearchResult] = useState<UserProfile | null | "not_found">(null);
   const [searching, setSearching] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const loadKnownContacts = useCallback(async () => {
-    if (!user) return;
-    setLoadingContacts(true);
-
-    const supabase = createClient();
-
-    const { data: dmPairs } = await supabase
-      .from("dm_pairs")
-      .select("user_a, user_b")
-      .or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
-
-    const existingDmIds = new Set<string>(
-      (dmPairs ?? []).map((p) =>
-        p.user_a === user.id ? p.user_b : p.user_a,
-      ),
-    );
-
-    const { data: memberRows } = await supabase
-      .from("group_members")
-      .select("group_id, user_id")
-      .eq("user_id", user.id)
-      .eq("status", "accepted");
-
-    const myGroupIds = (memberRows ?? []).map((r) => r.group_id);
-
-    if (myGroupIds.length === 0) {
-      setKnownContacts([]);
-      setKnownContactIds(existingDmIds);
-      setLoadingContacts(false);
-      return;
-    }
-
-    const { data: otherMembers } = await supabase
-      .from("group_members")
-      .select("user_id")
-      .in("group_id", myGroupIds)
-      .eq("status", "accepted")
-      .neq("user_id", user.id);
-
-    const otherIds = [...new Set((otherMembers ?? []).map((m) => m.user_id))];
-
-    if (otherIds.length === 0) {
-      setKnownContacts([]);
-      setKnownContactIds(existingDmIds);
-      setLoadingContacts(false);
-      return;
-    }
-
-    const { data: profiles } = await supabase
-      .from("user_profiles")
-      .select("*")
-      .in("id", otherIds);
-
-    const contacts = (profiles ?? [])
-      .map((p) => userProfileRowToUserProfile(p as UserProfileRow))
-      .filter((c) => !existingDmIds.has(c.id));
-
-    setKnownContacts(contacts);
-    setKnownContactIds(existingDmIds);
-    setLoadingContacts(false);
-  }, [user]);
-
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setHandleInput("");
       setSearchResult(null);
-      loadKnownContacts();
+      if (user) setLoadingContacts(true);
     }
-  }, [open, loadKnownContacts]);
+  }
+
+  useEffect(() => {
+    if (!open || !user) return;
+    void (async () => {
+      const supabase = createClient();
+
+      const { data: dmPairs } = await supabase
+        .from("dm_pairs")
+        .select("user_a, user_b")
+        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
+
+      const existingDmIds = new Set<string>(
+        (dmPairs ?? []).map((p) => (p.user_a === user.id ? p.user_b : p.user_a)),
+      );
+
+      const { data: memberRows } = await supabase
+        .from("group_members")
+        .select("group_id, user_id")
+        .eq("user_id", user.id)
+        .eq("status", "accepted");
+
+      const myGroupIds = (memberRows ?? []).map((r) => r.group_id);
+
+      if (myGroupIds.length === 0) {
+        setKnownContacts([]);
+        setKnownContactIds(existingDmIds);
+        setLoadingContacts(false);
+        return;
+      }
+
+      const { data: otherMembers } = await supabase
+        .from("group_members")
+        .select("user_id")
+        .in("group_id", myGroupIds)
+        .eq("status", "accepted")
+        .neq("user_id", user.id);
+
+      const otherIds = [...new Set((otherMembers ?? []).map((m) => m.user_id))];
+
+      if (otherIds.length === 0) {
+        setKnownContacts([]);
+        setKnownContactIds(existingDmIds);
+        setLoadingContacts(false);
+        return;
+      }
+
+      const { data: profiles } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .in("id", otherIds);
+
+      const contacts = (profiles ?? [])
+        .map((p) => userProfileRowToUserProfile(p as UserProfileRow))
+        .filter((c) => !existingDmIds.has(c.id));
+
+      setKnownContacts(contacts);
+      setKnownContactIds(existingDmIds);
+      setLoadingContacts(false);
+    })();
+  }, [open, user]);
+
+  const [prevHandleInput, setPrevHandleInput] = useState(handleInput);
+  if (handleInput !== prevHandleInput) {
+    setPrevHandleInput(handleInput);
+    if (handleInput.trim().replace(/^@/, "").length < 2) {
+      setSearchResult(null);
+    }
+  }
 
   useEffect(() => {
     const trimmed = handleInput.trim().replace(/^@/, "");
+    if (trimmed.length < 2) return;
 
-    if (trimmed.length < 2) {
-      setSearchResult(null);
-      return;
-    }
-
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
+    clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
@@ -143,9 +145,7 @@ export function NewConversationButton() {
     }, 500);
 
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
+      clearTimeout(debounceRef.current);
     };
   }, [handleInput, user]);
 

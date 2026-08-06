@@ -5,6 +5,7 @@ import { ChevronRight, PartyPopper, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useOnboardingTour } from "@/hooks/use-onboarding-tour";
+import { useMounted } from "@/hooks/use-client-only";
 
 interface TourStep {
   target: string;
@@ -81,12 +82,9 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useMounted();
   const recalcTimer = useRef<ReturnType<typeof setTimeout>>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const recalcSpotlight = useCallback(() => {
     if (!shouldShow || showCelebration) return;

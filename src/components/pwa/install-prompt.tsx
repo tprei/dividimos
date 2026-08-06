@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Smartphone } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
+import { useMounted } from "@/hooks/use-client-only";
 import {
   Dialog,
   DialogContent,
@@ -35,12 +36,18 @@ export function InstallPrompt() {
   const [visible, setVisible] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [platform, setPlatform] = useState<"ios" | "android" | null>(null);
+  const mounted = useMounted();
+  const [prevMounted, setPrevMounted] = useState(false);
+  if (mounted !== prevMounted) {
+    setPrevMounted(mounted);
+    if (mounted && isMobileBrowser()) {
+      setPlatform(detectPlatform());
+      setVisible(true);
+    }
+  }
 
   useEffect(() => {
     if (!isMobileBrowser()) return;
-
-    setPlatform(detectPlatform());
-    setVisible(true);
 
     const captured = (window as unknown as Record<string, unknown>)
       .__pwaInstallPrompt as BeforeInstallPromptEvent | null;
