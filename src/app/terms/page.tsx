@@ -15,7 +15,7 @@ export default function TermsPage() {
 
       <h1 className="mt-8 text-2xl font-bold">Termos de Uso</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Última atualização: 14 de abril de 2026
+        Última atualização: 6 de agosto de 2026
       </p>
 
       <div className="mt-8 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -56,8 +56,10 @@ export default function TermsPage() {
               Você é responsável pela veracidade das informações fornecidas, incluindo sua chave Pix.
             </li>
             <li>
-              Ao fornecer uma chave Pix, você autoriza que ela seja compartilhada de forma mascarada
-              com membros dos seus grupos para fins de pagamento.
+              Ao fornecer uma chave Pix, você autoriza o servidor a descriptografá-la apenas para
+              gerar o código Pix de pagamento para um participante que tenha um saldo a te pagar em
+              um grupo. A chave completa fica embutida nesse código; no perfil, só aparecem o tipo
+              e um trecho mascarado.
             </li>
           </ul>
         </section>
