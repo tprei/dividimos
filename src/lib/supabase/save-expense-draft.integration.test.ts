@@ -197,6 +197,73 @@ describe.skipIf(!isIntegrationTestReady)("save_expense_draft_graph RPC", () => {
   });
 
   // -------------------------------------------------------------------------
+  // #471: a member who created a draft and then left the group must not be
+  // able to keep overwriting it through the SECURITY DEFINER RPC.
+  // -------------------------------------------------------------------------
+
+  it("denies a departed member from updating their old draft", async () => {
+    const carol = await createTestUser({ name: "Carol Departed" });
+    const group = await createTestGroupWithMembers(alice, [carol]);
+    const gid = group.id;
+
+    // Carol (accepted, non-creator) creates a draft.
+    const { data: created, error: createError } = await callSaveDraft(carol, {
+      expense: draftExpense({
+        group_id: gid,
+        title: "Carol draft",
+        expense_type: "single_amount",
+        total_amount: 4000,
+      }),
+      shares: [
+        { user_id: carol.id, share_amount_cents: 2000 },
+        { user_id: alice.id, share_amount_cents: 2000 },
+      ],
+      payers: [{ user_id: carol.id, amount_cents: 4000 }],
+      expectedGraphRevision: 0,
+    });
+    expect(createError).toBeNull();
+    expect(created?.id).toBeTruthy();
+    const expenseId = created!.id;
+
+    // Carol leaves the group (membership removed).
+    const { error: removeError } = await adminClient!
+      .from("group_members")
+      .delete()
+      .eq("group_id", gid)
+      .eq("user_id", carol.id);
+    expect(removeError).toBeNull();
+
+    // Carol attempts to update her old draft — must be denied.
+    const { data, error } = await callSaveDraft(carol, {
+      expense: draftExpense({
+        id: expenseId,
+        group_id: gid,
+        title: "Carol hijacked",
+        expense_type: "single_amount",
+        total_amount: 5000,
+      }),
+      shares: [
+        { user_id: carol.id, share_amount_cents: 2500 },
+        { user_id: alice.id, share_amount_cents: 2500 },
+      ],
+      payers: [{ user_id: carol.id, amount_cents: 5000 }],
+      expectedGraphRevision: 1,
+    });
+
+    expect(error).not.toBeNull();
+    expect(data).toBeNull();
+
+    // The draft must be unchanged.
+    const { data: expense } = await adminClient!
+      .from("expenses")
+      .select("title, total_amount")
+      .eq("id", expenseId)
+      .single();
+    expect(expense?.title).toBe("Carol draft");
+    expect(expense?.total_amount).toBe(4000);
+  });
+
+  // -------------------------------------------------------------------------
   // Status guard: save must be rejected for non-draft expenses
   // -------------------------------------------------------------------------
 
