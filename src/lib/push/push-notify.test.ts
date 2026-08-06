@@ -855,8 +855,14 @@ describe("push-notify", () => {
       dmPair?: { user_a: string; user_b: string } | null;
       message?: string | null;
       senderName?: string | null;
+      acceptedMembers?: { user_id: string }[] | null;
     }) {
       const chain = mockSupabaseChain({ data: null, error: null });
+      const acceptedMembers =
+        opts.acceptedMembers ??
+        (opts.dmPair
+          ? [{ user_id: opts.dmPair.user_a }, { user_id: opts.dmPair.user_b }]
+          : null);
       chain.from.mockImplementation((table: string) => {
         if (table === "dm_pairs") {
           return {
@@ -864,6 +870,18 @@ describe("push-notify", () => {
               eq: () => ({
                 single: () =>
                   Promise.resolve({ data: opts.dmPair ?? null, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === "group_members") {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  in: () =>
+                    Promise.resolve({ data: acceptedMembers, error: null }),
+                }),
               }),
             }),
           };
@@ -1020,6 +1038,35 @@ describe("push-notify", () => {
       await expect(
         notifyDmTextMessage("group-1"),
       ).resolves.toBeUndefined();
+    });
+
+    it("skips when the counterparty has not accepted the DM", async () => {
+      mockCaller("user-a");
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: "Oi!",
+        senderName: "Alice",
+        // only the caller has accepted; the counterparty is still 'invited'
+        acceptedMembers: [{ user_id: "user-a" }],
+      });
+
+      await notifyDmTextMessage("group-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it("skips when the caller is not an accepted member", async () => {
+      mockCaller("user-a");
+      setupChain({
+        dmPair: { user_a: "user-a", user_b: "user-b" },
+        message: "Oi!",
+        senderName: "Alice",
+        acceptedMembers: [{ user_id: "user-b" }],
+      });
+
+      await notifyDmTextMessage("group-1");
+
+      expect(notifyUser).not.toHaveBeenCalled();
     });
   });
 

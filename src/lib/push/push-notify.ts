@@ -448,6 +448,8 @@ export async function notifyPaymentNudge(
  * Notify the counterparty when a text message is sent in a DM conversation.
  * Derives the message preview from the latest committed chat_messages row
  * sent by the caller, so a client cannot inject arbitrary notification text.
+ * Delivers only when both DM members have accepted — an invited contact who
+ * has not yet accepted does not receive notifications.
  */
 export async function notifyDmTextMessage(
   groupId: string,
@@ -459,12 +461,31 @@ export async function notifyDmTextMessage(
 
   const admin = createAdminClient();
 
-  const [dmPairResult, latestMessageResult] = await Promise.all([
-    admin
-      .from("dm_pairs")
-      .select("user_a, user_b")
-      .eq("group_id", groupId)
-      .single(),
+  const { data: dmPair } = await admin
+    .from("dm_pairs")
+    .select("user_a, user_b")
+    .eq("group_id", groupId)
+    .single();
+
+  if (!dmPair) return;
+
+  const recipientId =
+    dmPair.user_a === callerId ? dmPair.user_b : dmPair.user_b === callerId ? dmPair.user_a : null;
+  if (!recipientId) return;
+
+  // Only deliver when both members have accepted the DM. The invite wall lets
+  // a DM group exist before the counterparty accepts; an invited or declined
+  // contact has not consented to receive notifications.
+  const { data: acceptedMembers } = await admin
+    .from("group_members")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .eq("status", "accepted")
+    .in("user_id", [dmPair.user_a, dmPair.user_b]);
+  const acceptedIds = new Set((acceptedMembers ?? []).map((m) => m.user_id));
+  if (!acceptedIds.has(dmPair.user_a) || !acceptedIds.has(dmPair.user_b)) return;
+
+  const [latestMessageResult, senderProfileResult] = await Promise.all([
     admin
       .from("chat_messages")
       .select("content")
@@ -473,22 +494,16 @@ export async function notifyDmTextMessage(
       .order("created_at", { ascending: false })
       .limit(1)
       .single(),
+    admin
+      .from("user_profiles")
+      .select("name")
+      .eq("id", callerId)
+      .single(),
   ]);
 
-  const dmPair = dmPairResult.data;
-  if (!dmPair || !latestMessageResult.data) return;
+  if (!latestMessageResult.data) return;
 
-  const recipientId =
-    dmPair.user_a === callerId ? dmPair.user_b : dmPair.user_b === callerId ? dmPair.user_a : null;
-  if (!recipientId) return;
-
-  const { data: senderProfile } = await admin
-    .from("user_profiles")
-    .select("name")
-    .eq("id", callerId)
-    .single();
-
-  const senderName = senderProfile?.name ?? "Alguém";
+  const senderName = senderProfileResult.data?.name ?? "Alguém";
   const messagePreview = latestMessageResult.data.content as string;
   const truncated =
     messagePreview.length > 80
