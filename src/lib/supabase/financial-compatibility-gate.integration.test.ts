@@ -262,4 +262,25 @@ describe.skipIf(!canRun)("financial compatibility gate (#477 preparatory)", () =
       }
     },
   );
+  // #505: leave_group / remove_group_member must take the #477 gate, raising
+  // PST09 while maintenance is open — like every balance writer. The check
+  // runs before auth, so an unauthenticated raw call is enough to prove it.
+  it("rejects leave_group with PST09 while maintenance is open", async () => {
+    await pg.query("select financial_internal.set_financial_maintenance(true)");
+    await expect(
+      pg.query("select public.leave_group($1)", [
+        "00000000-0000-0000-0000-000000000099",
+      ]),
+    ).rejects.toMatchObject({ code: "PST09" });
+  });
+
+  it("rejects remove_group_member with PST09 while maintenance is open", async () => {
+    await pg.query("select financial_internal.set_financial_maintenance(true)");
+    await expect(
+      pg.query("select public.remove_group_member($1, $2)", [
+        "00000000-0000-0000-0000-000000000099",
+        "00000000-0000-0000-0000-000000000098",
+      ]),
+    ).rejects.toMatchObject({ code: "PST09" });
+  });
 });

@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { isIntegrationTestReady } from "@/test/integration-setup";
+import { adminClient, isIntegrationTestReady } from "@/test/integration-setup";
 import {
   type TestUser,
   createTestUsers,
@@ -920,6 +920,81 @@ describe.skipIf(!isIntegrationTestReady)(
           );
           expect(payerRows).toHaveLength(1);
           expect(payerRows![0]).toMatchObject({ user_id: jack.id, amount_cents: 6000 });
+        }
+      });
+    });
+    // -----------------------------------------------------------------------
+    // 5.9 — Exit vs balance write serialize on the group row lock.
+    // #505: the check-then-delete race was already closed by the groups
+    // FOR UPDATE both take, but nothing pinned exit-vs-balance-write. With
+    // #505's fix both also take the #477 gate; the serialization itself is
+    // the groups row lock.
+    // -----------------------------------------------------------------------
+    describe("5.9 — exit vs balance write serialize on the group row lock", () => {
+      it("remove_group_member and record_settlements contend; a member with a balance is never removed", async () => {
+        const group = await createTestGroupWithMembers(alice, [bob]);
+        const gid = group.id;
+
+        // Bob owes Alice 5000.
+        await createAndActivateExpense({
+          creator: alice,
+          groupId: gid,
+          shares: [
+            { userId: alice.id, amount: 5000 },
+            { userId: bob.id, amount: 5000 },
+          ],
+          payers: [{ userId: alice.id, amount: 10000 }],
+          title: "5.9 setup expense",
+        });
+
+        const aliceClient = authenticateAs(alice);
+        const bobClient = authenticateAs(bob);
+
+        const { result: [removeResult, settleResult], contention } =
+          await forceLockContentionRace(
+            process.env.SUPABASE_DB_URL!,
+            {
+              lockSql: "select id from groups where id = $1 for update",
+              lockParams: [gid],
+              queryContains: ["remove_group_member", "record_settlements"],
+              expectedRacers: 2,
+            },
+            () =>
+              Promise.allSettled([
+                aliceClient.rpc("remove_group_member", {
+                  p_group_id: gid,
+                  p_user_id: bob.id,
+                }),
+                bobClient.rpc("record_settlements", {
+                  p_allocations: [{
+                    group_id: gid,
+                    from_user_id: bob.id,
+                    to_user_id: alice.id,
+                    amount_cents: 2000,
+                  }],
+                  p_operation_id: crypto.randomUUID(),
+                }),
+              ]),
+          );
+
+        // Proven genuine contention on the group row lock.
+        expect(contention.observed).toBe(true);
+
+        // #505 invariant: a member with an outstanding balance is never
+        // removed, so remove_group_member must be rejected and membership
+        // retained regardless of how the settlement resolved.
+        expect(removeResult.status).toBe("fulfilled");
+        if (removeResult.status === "fulfilled") {
+          expect(removeResult.value.error).not.toBeNull();
+        }
+        const { data: members } = await adminClient!
+          .from("group_members")
+          .select("user_id")
+          .eq("group_id", gid);
+        expect(members?.map((m) => m.user_id)).toContain(bob.id);
+
+        if (settleResult.status === "fulfilled") {
+          expect(settleResult.value.error).toBeNull();
         }
       });
     });
