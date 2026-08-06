@@ -154,7 +154,7 @@ O app modela as dívidas como um [grafo dirigido](https://en.wikipedia.org/wiki/
 
 #### Etapa 2 &mdash; Cancelamento de pares reversos
 
-Procura pares de arestas antiparalelas (A &rarr; B e B &rarr; A) e as substitui por uma única aresta com o saldo líquido. Isso só se aplica quando duas pessoas devem uma à outra simultaneamente &mdash; por exemplo, quando ambas são pagadoras parciais e consumidoras ao mesmo tempo.
+Procura pares de arestas antiparalelas (A &rarr; B e B &rarr; A) e as compensa, substituindo as duas por uma única aresta com o saldo líquido. Não é um pagamento &mdash; é uma compensação contábil que reduz o número de transferências. Aplica-se quando duas pessoas devem uma à outra simultaneamente &mdash; por exemplo, quando ambas são pagadoras parciais e consumidoras ao mesmo tempo.
 
 #### Etapa 3 &mdash; [Redução transitiva](https://en.wikipedia.org/wiki/Transitive_reduction)
 
@@ -163,6 +163,8 @@ Se existe uma cadeia A &rarr; B &rarr; C, o intermediário B é eliminado: A pas
 #### Etapa 4 &mdash; Minimização por saldo líquido
 
 `netAndMinimize` descarta o grafo intermediário e recalcula do zero: soma todas as entradas e saídas de cada participante para obter o saldo líquido. Depois, pareia devedores com credores usando um [algoritmo guloso](https://en.wikipedia.org/wiki/Greedy_algorithm) ordenado por valor decrescente &mdash; o maior devedor paga o maior credor, e assim por diante. Isso produz o número mínimo de transferências.
+
+A tabela `balances` armazena sempre o grafo já minimizado: ao final de toda operação que altera saldos (ativação de conta, liquidação, reivindicação de convidado, confirmação), o SQL `minimize_group_balances` reescreve as linhas do grupo para o conjunto mínimo de transferências. As transferências mostradas no Acerto são as próprias linhas da tabela &mdash; pagar uma liquidá-a diretamente, sem deixar resíduo.
 
 ---
 
@@ -290,7 +292,7 @@ Cada passo intermediário é registrado com as arestas removidas e adicionadas, 
 - `src/lib/supabase/expense-mappers.ts` — Row → TypeScript type mappers for all expense tables
 - `src/lib/crypto.ts` — Server-only AES-256-GCM encryption for Pix keys. Never import from client components
 - `src/lib/pix.ts` — EMV BR Code generation with CRC16-CCITT, plus key validation and masking
-- `src/lib/simplify.ts` — Debt simplification algorithm for display. `computeRawEdges` generates proportional edges, `simplifyDebts` reduces them with step recording for visualization
+- `src/lib/simplify.ts` — Debt simplification algorithm that drives the wizard/demo preview. `computeRawEdges` generates proportional edges, `simplifyDebts` reduces them with step recording for visualization. Group balances arrive already minimized from the database (`minimize_group_balances` runs at the end of every balance-writing RPC).
 - `src/lib/currency.ts` — All money is integer centavos. `formatBRL` for display, `decimalToCents` for input
 - `src/hooks/use-auth.ts` — Client-side hook for current authenticated user profile
 - `src/components/bill/` — Expense wizard components (type selector, item card, payer step, single amount step, summary, handle-based participant addition)

@@ -134,33 +134,32 @@ export function SimplificationViewer({
                 </p>
               )}
 
-              {!isFirst && step.paymentEdge && (() => {
-                const pe = step.paymentEdge;
-                const paymentFrom = getUserName(pe.fromUserId, participants);
-                const paymentTo = getUserName(pe.toUserId, participants);
+              {!isFirst && step.nettedEdge && (() => {
+                const netted = step.nettedEdge;
+                const nettedFrom = getUserName(netted.fromUserId, participants);
+                const nettedTo = getUserName(netted.toUserId, participants);
                 return (
                   <div className="space-y-3">
                     <div className="flex flex-col items-center gap-2">
                       <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
-                        Pagamento
+                        Compensação
                       </p>
                       <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm">
                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
-                          {paymentFrom.charAt(0)}
+                          {nettedFrom.charAt(0)}
                         </span>
                         <span className="font-semibold text-primary">
-                          {paymentFrom}
+                          {nettedFrom}
                         </span>
-                        <span className="text-xs text-muted-foreground">pagou</span>
+                        <span className="text-xs text-muted-foreground">se compensam em</span>
                         <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-sm font-bold text-primary tabular-nums">
-                          {formatBRL(pe.amountCents)}
+                          {formatBRL(netted.amountCents)}
                         </span>
-                        <span className="text-xs text-muted-foreground">a</span>
                         <span className="font-semibold text-primary">
-                          {paymentTo}
+                          {nettedTo}
                         </span>
                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
-                          {paymentTo.charAt(0)}
+                          {nettedTo.charAt(0)}
                         </span>
                       </span>
                     </div>
@@ -211,7 +210,7 @@ export function SimplificationViewer({
                 );
               })()}
 
-              {!isFirst && !step.paymentEdge && step.removedEdges && step.removedEdges.length > 0 && (
+              {!isFirst && !step.nettedEdge && step.removedEdges && step.removedEdges.length > 0 && (
                 <div className="space-y-3">
                   <div className="flex flex-col items-center gap-2">
                     <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -301,7 +300,7 @@ export function SimplificationViewer({
                 </div>
               )}
 
-              {!isFirst && !step.paymentEdge && (!step.removedEdges || step.removedEdges.length === 0) && (
+              {!isFirst && !step.nettedEdge && (!step.removedEdges || step.removedEdges.length === 0) && (
                 <p className="text-center text-sm font-medium">
                   {step.description}
                 </p>

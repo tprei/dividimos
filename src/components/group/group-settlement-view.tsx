@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Bell, CheckCheck, Info, Loader2 } from "lucide-react";
+import { Bell, CheckCheck, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { DebtGraph } from "@/components/settlement/debt-graph";
-import { SimplificationViewer } from "@/components/settlement/simplification-viewer";
 import dynamic from "next/dynamic";
 import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
 const PixQrModal = dynamic(
@@ -14,9 +13,7 @@ const PixQrModal = dynamic(
 );
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/currency";
-import { consolidateEdges, simplifyDebts } from "@/lib/simplify";
 import type { DebtEdge } from "@/lib/simplify";
 import { queryBalances } from "@/lib/supabase/settlement-actions";
 import { notifyPaymentNudge } from "@/lib/push/push-notify";
@@ -27,7 +24,6 @@ import {
 import { useRealtimeBalances } from "@/hooks/use-realtime-balances";
 import { createClient } from "@/lib/supabase/client";
 import type { Balance, User } from "@/types";
-import type { SimplificationResult } from "@/lib/simplify";
 
 interface GroupSettlementViewProps {
   groupId: string;
@@ -60,8 +56,6 @@ export function GroupSettlementView({
   const [loading, setLoading] = useState(true);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [resolvedParticipants, setResolvedParticipants] = useState<User[]>(participants);
-  const [simplificationResult, setSimplificationResult] = useState<SimplificationResult | null>(null);
-  const [showSimplificationViewer, setShowSimplificationViewer] = useState(false);
   const [pixModal, setPixModal] = useState<{
     recipientId: string;
     recipientName: string;
@@ -146,14 +140,6 @@ export function GroupSettlementView({
 
     setResolvedParticipants(allParticipants);
     setBalances(loadedBalances);
-
-    const rawEdges = balancesToEdges(loadedBalances);
-    if (rawEdges.length >= 2 && allParticipants.length >= 3) {
-      setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), allParticipants));
-    } else {
-      setSimplificationResult(null);
-    }
-
     setLoading(false);
   }, [groupId, participants]);
 
@@ -180,21 +166,11 @@ export function GroupSettlementView({
       // Filter out zero balances
       const filtered = next.filter((b) => b.amountCents !== 0);
 
-      // Recompute simplification
-      const rawEdges = balancesToEdges(filtered);
-      if (rawEdges.length >= 2 && resolvedParticipants.length >= 3) {
-        setSimplificationResult(simplifyDebts(consolidateEdges(rawEdges), resolvedParticipants));
-      } else {
-        setSimplificationResult(null);
-      }
-
       return filtered;
     });
-  }, [resolvedParticipants]));
+  }, []));
 
   const debtEdges = balancesToEdges(balances);
-  const displayEdges = simplificationResult?.simplifiedEdges ?? debtEdges;
-  const rawEdgeKeys = new Set(debtEdges.map((e) => `${e.fromUserId}-${e.toUserId}`));
 
   const getParticipant = (id: string) =>
     resolvedParticipants.find((p) => p.id === id) ?? {
@@ -312,28 +288,17 @@ export function GroupSettlementView({
       </div>
 
       {/* Debt graph */}
-      {displayEdges.length > 0 && (
+      {debtEdges.length > 0 && (
         <div className="rounded-2xl border bg-card overflow-hidden">
-          <DebtGraph participants={resolvedParticipants} edges={displayEdges} />
+          <DebtGraph participants={resolvedParticipants} edges={debtEdges} />
         </div>
       )}
 
-      {simplificationResult && simplificationResult.steps.length > 0 && (
-        <button
-          onClick={() => setShowSimplificationViewer(true)}
-          className="flex w-full items-center gap-2 rounded-xl border bg-card px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/30"
-        >
-          <Info className="h-4 w-4 shrink-0" />
-          <span>
-            {simplificationResult.originalCount} transacoes simplificadas para {simplificationResult.simplifiedCount}
-          </span>
-        </button>
-      )}
 
       {/* Debt cards (balance-derived — who owes whom) */}
-      {displayEdges.length > 0 && (
+      {debtEdges.length > 0 && (
         <div className="space-y-3">
-          {displayEdges.map((edge) => {
+          {debtEdges.map((edge) => {
             const from = getParticipant(edge.fromUserId);
             const to = getParticipant(edge.toUserId);
             const isDebtor = edge.fromUserId === currentUserId;
@@ -407,17 +372,15 @@ export function GroupSettlementView({
                       >
                         Gerar cobranca
                       </Button>
-                      {rawEdgeKeys.has(`${edge.fromUserId}-${edge.toUserId}`) && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleNudge(edge.fromUserId)}
-                          disabled={isActing || nudgeSent.has(`${groupId}-${edge.fromUserId}`)}
-                          title={nudgeSent.has(`${groupId}-${edge.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
-                        >
-                          <Bell className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleNudge(edge.fromUserId)}
+                        disabled={isActing || nudgeSent.has(`${groupId}-${edge.fromUserId}`)}
+                        title={nudgeSent.has(`${groupId}-${edge.fromUserId}`) ? "Lembrete já enviado" : "Enviar lembrete"}
+                      >
+                        <Bell className="h-4 w-4" />
+                      </Button>
                     </>
                   )}
 
@@ -431,21 +394,6 @@ export function GroupSettlementView({
             );
           })}
         </div>
-      )}
-
-      {/* Simplification viewer */}
-      {simplificationResult && (
-        <Dialog open={showSimplificationViewer} onOpenChange={setShowSimplificationViewer}>
-          <DialogContent className="max-w-lg max-h-[85dvh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Simplificacao passo a passo</DialogTitle>
-            </DialogHeader>
-            <SimplificationViewer
-              result={simplificationResult}
-              participants={resolvedParticipants}
-            />
-          </DialogContent>
-        </Dialog>
       )}
 
       {/* Pix QR modal */}
