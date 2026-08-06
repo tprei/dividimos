@@ -2,9 +2,10 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, ExternalLink, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
+import { useClientOnly } from "@/hooks/use-client-only";
 import { Button } from "@/components/ui/button";
 import { buildClaimUrl } from "@/lib/claim-qr";
 import { formatBRL } from "@/lib/currency";
@@ -29,11 +30,9 @@ export function GuestClaimShareModal({
   expenseTitle,
 }: GuestClaimShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [canShare, setCanShare] = useState(false);
-
-  useEffect(() => {
-    setCanShare(typeof navigator?.share === "function");
-  }, []);
+  const canShare = useClientOnly(
+    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
+  );
 
   // The credential lives only in the fragment; buildClaimUrl never puts it in
   // a path, query, or header. With no transient token there is nothing to show.

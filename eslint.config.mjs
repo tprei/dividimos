@@ -23,16 +23,9 @@ const eslintConfig = defineConfig([
     "supabase/.temp/**",
     "supabase/.branches/**",
   ]),
-  // Project-level rule overrides — this codebase uses client-side data fetching
-  // in effects (fetch → setState), which is a legitimate pattern that the strict
-  // React 19 rule flags. Migrating to server components or a data-fetching library
-  // would be the long-term fix. Until then, disable the rule at the config level
-  // rather than sprinkling eslint-disable comments.
-  {
-    rules: {
-      "react-hooks/set-state-in-effect": "off",
-    },
-  },
+  // react-hooks/set-state-in-effect runs at its recommended severity (error).
+  // Synchronous setState-in-effect is an infinite-render class of bug (see
+  // #588, #579); the rule permits legitimate async fetch → setState.
   {
     files: ["e2e/**/*.ts"],
     rules: {

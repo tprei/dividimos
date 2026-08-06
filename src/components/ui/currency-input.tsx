@@ -74,10 +74,11 @@ export function CurrencyInput({
 
   // A prop-driven value change (hydration/reset/reload) always restores
   // canonical valid text, discarding any stale uncommitted override.
-  useEffect(() => {
+  const [prevValueCents, setPrevValueCents] = useState(valueCents);
+  if (valueCents !== prevValueCents) {
+    setPrevValueCents(valueCents);
     setRawOverride(null);
-  }, [valueCents]);
-
+  }
   useEffect(() => {
     const isValid = rawOverride === null;
     onValidityChange?.(isValid);

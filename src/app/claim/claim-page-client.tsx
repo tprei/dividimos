@@ -127,10 +127,12 @@ export function ClaimPageClient() {
   }, [capture]);
 
   // Reset transient UI whenever the captured credential changes.
-  useEffect(() => {
+  const [prevToken, setPrevToken] = useState(state.token);
+  if (state.token !== prevToken) {
+    setPrevToken(state.token);
     setHandoffFailed(false);
     setClaimError(null);
-  }, [state.token]);
+  }
 
   const handleSignIn = useCallback(() => {
     if (!state.token) return;

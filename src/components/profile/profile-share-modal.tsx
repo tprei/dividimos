@@ -2,9 +2,10 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, ExternalLink, MessageCircle, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
+import { useClientOnly } from "@/hooks/use-client-only";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buildWhatsAppLink } from "@/lib/contacts";
@@ -25,11 +26,9 @@ export function ProfileShareModal({
   avatarUrl,
 }: ProfileShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [canShare, setCanShare] = useState(false);
-
-  useEffect(() => {
-    setCanShare(typeof navigator?.share === "function");
-  }, []);
+  const canShare = useClientOnly(
+    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
+  );
 
   const profileUrl =
     typeof window !== "undefined"

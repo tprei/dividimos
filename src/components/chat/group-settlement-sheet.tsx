@@ -80,23 +80,27 @@ export function GroupSettlementSheet({
     [groupDebts],
   );
 
-  useEffect(() => {
-    if (!open) return;
-
-    setSelectedGroupIds(new Set(groupIds));
-
-    if (groupIds.length === 0) {
-      setLoadingNames(false);
-      return;
+  const depKey = `${open}:${groupIds.join(",")}`;
+  const [prevDepKey, setPrevDepKey] = useState(depKey);
+  if (depKey !== prevDepKey) {
+    setPrevDepKey(depKey);
+    if (open) {
+      setSelectedGroupIds(new Set(groupIds));
+      setLoadingNames(groupIds.length > 0);
     }
+  }
 
-    setLoadingNames(true);
+  useEffect(() => {
+    if (!open || groupIds.length === 0) return;
+
+    let cancelled = false;
     const supabase = createClient();
     supabase
       .from("groups")
       .select("id, name")
       .in("id", groupIds)
       .then(({ data }) => {
+        if (cancelled) return;
         const map = new Map<string, string>();
         for (const row of (data ?? []) as { id: string; name: string }[]) {
           map.set(row.id, row.name);
@@ -104,6 +108,9 @@ export function GroupSettlementSheet({
         setGroupNames(map);
         setLoadingNames(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [open, groupIds]);
 
   const selectedTotal = groupDebts
