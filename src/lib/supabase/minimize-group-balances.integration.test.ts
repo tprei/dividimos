@@ -3,6 +3,7 @@ import { Client } from "pg";
 import {
   adminClient,
   isIntegrationTestReady,
+  registerTestUser,
 } from "@/test/integration-setup";
 import {
   createTestUsers,
@@ -11,6 +12,8 @@ import {
   settleDebt,
   getBalanceBetween,
   authenticateAs,
+  issueGuestClaimToken,
+  deleteTestExpenses,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -437,6 +440,158 @@ describe.skipIf(!canRun)(
         p_group_id: groupId,
       });
       expect(error).toBeNull();
+    });
+  },
+);
+
+/**
+ * Build an active expense whose guest owes `debtCents` to the creator, and
+ * return the claim token a registered user can redeem. Mirrors the fixture in
+ * claim-guest-spot-dm.integration.test.ts but for a regular multi-member group.
+ */
+async function buildGuestClaimFixture(
+  creator: TestUser,
+  groupId: string,
+  debtCents: number,
+): Promise<{ expenseId: string; guestId: string; claimToken: string }> {
+  const creatorClient = authenticateAs(creator);
+  const { data: saveResult, error: saveError } = await creatorClient.rpc(
+    "save_expense_draft_graph",
+    {
+      p_expense: {
+        group_id: groupId,
+        title: "minimize-on-claim fixture",
+        merchant_name: null,
+        expense_type: "single_amount",
+        total_amount: debtCents,
+        service_fee_basis_points: 0,
+        fixed_fees: 0,
+      },
+      p_items: [],
+      p_shares: [{ user_id: creator.id, share_amount_cents: 0 }],
+      p_payers: [{ user_id: creator.id, amount_cents: debtCents }],
+      p_guests: [{ local_id: "g1", display_name: "Future claimant" }],
+      p_guest_shares: [{ local_id: "g1", share_amount_cents: debtCents }],
+      p_participant_order: [],
+      p_expected_graph_revision: 0,
+      p_save_operation_id: globalThis.crypto.randomUUID(),
+    },
+  );
+  if (saveError || !saveResult) {
+    throw new Error(`create guest expense: ${saveError?.message}`);
+  }
+  const saved = saveResult as { id: string; graph_revision: number };
+
+  const { data: guest, error: guestError } = await adminClient!
+    .from("expense_guests")
+    .select("id")
+    .eq("expense_id", saved.id)
+    .single();
+  if (guestError || !guest) {
+    throw new Error(`load guest: ${guestError?.message}`);
+  }
+
+  const { error: rpcError } = await creatorClient.rpc("activate_saved_expense", {
+    p_expense_id: saved.id,
+    p_expected_graph_revision: saved.graph_revision,
+  });
+  if (rpcError) throw new Error(`activate: ${rpcError.message}`);
+
+  const claimToken = await issueGuestClaimToken(creator, guest.id);
+  return { expenseId: saved.id, guestId: guest.id, claimToken };
+}
+
+describe.skipIf(!canRun)(
+  "minimize_group_balances on guest claim and confirm (#592)",
+  () => {
+    let pg: Client;
+
+    beforeAll(async () => {
+      pg = new Client(databaseUrl!);
+      await pg.connect();
+    });
+
+    afterAll(async () => {
+      if (pg) await pg.end();
+    });
+
+    // -----------------------------------------------------------------
+    // claim_guest_spot re-pairs the graph after applying the guest debt
+    // -----------------------------------------------------------------
+    it("guest claim minimizes the resulting graph", async () => {
+      const [creator, member, claimer] = await createTestUsers(3);
+      registerTestUser(creator.id);
+      registerTestUser(member.id);
+      registerTestUser(claimer.id);
+      const group = await createTestGroupWithMembers(creator, [member]);
+      const groupId = group.id;
+
+      // Pre-seed creator owes member 5000.
+      await seedBalance(groupId, creator.id, member.id, 5000);
+
+      // Guest expense: guest owes creator 2000.
+      const fixture = await buildGuestClaimFixture(creator, groupId, 2000);
+
+      // Claimer (a registered non-member) redeems the guest spot, taking on
+      // the guest's 2000 debt to the creator.
+      const claimerClient = authenticateAs(claimer);
+      const { error } = await claimerClient.rpc("claim_guest_spot", {
+        p_claim_token: fixture.claimToken,
+      });
+      expect(error).toBeNull();
+
+      // Nets: creator -5000 + 2000 = -3000, member +5000, claimer -2000.
+      // Minimized pairing: creator -> member 3000, claimer -> member 2000.
+      expect(await netPosition(groupId, creator.id)).toBe(-3000);
+      expect(await netPosition(groupId, member.id)).toBe(5000);
+      expect(await netPosition(groupId, claimer.id)).toBe(-2000);
+      expect(await getBalanceBetween(groupId, creator.id, member.id)).toBe(3000);
+      expect(await getBalanceBetween(groupId, claimer.id, member.id)).toBe(2000);
+      expect(await getBalanceBetween(groupId, claimer.id, creator.id)).toBe(0);
+
+      await deleteTestExpenses(pg, [fixture.expenseId]);
+    });
+
+    // -----------------------------------------------------------------
+    // confirm_settlement re-pairs the graph after applying the delta
+    // -----------------------------------------------------------------
+    it("settlement confirmation minimizes the resulting graph", async () => {
+      const [alice, bob, carol] = await createTestUsers(3);
+      const group = await createTestGroupWithMembers(alice, [bob, carol]);
+      const groupId = group.id;
+
+      // Seed a chain: alice owes bob 5000, bob owes carol 5000.
+      await seedBalance(groupId, alice.id, bob.id, 5000);
+      await seedBalance(groupId, bob.id, carol.id, 5000);
+
+      // Seed a pending settlement: alice pays bob 2000 (reduces her debt).
+      const { data: settlement } = await adminClient!
+        .from("settlements")
+        .insert({
+          group_id: groupId,
+          from_user_id: alice.id,
+          to_user_id: bob.id,
+          amount_cents: 2000,
+        })
+        .select()
+        .single();
+
+      // Bob confirms.
+      const bobClient = authenticateAs(bob);
+      const { error } = await bobClient.rpc("confirm_settlement", {
+        p_settlement_id: settlement!.id,
+      });
+      expect(error).toBeNull();
+
+      // The pair delta reduces alice->bob by 2000 (5000 -> 3000), then
+      // minimize re-pairs the chain: nets alice -3000, bob -2000,
+      // carol +5000 -> alice->carol 3000, bob->carol 2000.
+      expect(await netPosition(groupId, alice.id)).toBe(-3000);
+      expect(await netPosition(groupId, bob.id)).toBe(-2000);
+      expect(await netPosition(groupId, carol.id)).toBe(5000);
+      expect(await getBalanceBetween(groupId, alice.id, carol.id)).toBe(3000);
+      expect(await getBalanceBetween(groupId, bob.id, carol.id)).toBe(2000);
+      expect(await getBalanceBetween(groupId, alice.id, bob.id)).toBe(0);
     });
   },
 );
