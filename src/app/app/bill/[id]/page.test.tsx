@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
+import { Suspense, type ReactElement } from "react";
 import { PayerSummaryCard } from "@/components/bill/payer-summary-card";
+import BillDetailPage from "./page";
+import { loadExpense } from "@/lib/supabase/expense-actions";
+import type { ExpenseWithDetails } from "@/types";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -13,14 +17,18 @@ vi.mock("next/dynamic", () => ({
 }));
 
 // Mock supabase client
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    channel: () => ({
-      on: () => ({ subscribe: () => ({}) }),
+vi.mock("@/lib/supabase/client", () => {
+  const chainableChannel = {
+    on: () => chainableChannel,
+    subscribe: () => chainableChannel,
+  };
+  return {
+    createClient: () => ({
+      channel: () => chainableChannel,
+      removeChannel: vi.fn(),
     }),
-    removeChannel: vi.fn(),
-  }),
-}));
+  };
+});
 
 // Mock auth hook
 vi.mock("@/hooks/use-auth", () => ({
@@ -58,12 +66,31 @@ vi.mock("@/lib/group-nav", () => ({
   getGroupNavUrl: vi.fn().mockResolvedValue({ url: "/app/groups/g1", isDm: true }),
 }));
 
+// Mock settlement submission context (used by BillDetailPage's Pix flow;
+// not exercised by the render-race test but required for the module import)
+vi.mock("@/contexts/settlement-submission-context", () => ({
+  useSettlementSubmission: () => ({
+    ready: true,
+    reservedEdgeKeys: new Set<string>(),
+    submit: vi.fn(),
+  }),
+  settlementEdgeKey: ({ groupId, fromUserId, toUserId }: { groupId: string; fromUserId: string; toUserId: string }) =>
+    `${groupId}:${fromUserId}:${toUserId}`,
+}));
+
+// Mock DM balance query (unrelated to the render-race test)
+vi.mock("@/lib/supabase/settlement-actions", () => ({
+  queryBalanceBetween: vi.fn().mockResolvedValue(null),
+}));
+
 // Mock react-hot-toast
-const mockToast = Object.assign(vi.fn(), {
-  success: vi.fn(),
-  error: vi.fn(),
-  loading: vi.fn().mockReturnValue("toast-id"),
-});
+const mockToast = vi.hoisted(() =>
+  Object.assign(vi.fn(), {
+    success: vi.fn(),
+    error: vi.fn(),
+    loading: vi.fn().mockReturnValue("toast-id"),
+  }),
+);
 vi.mock("react-hot-toast", () => ({ default: mockToast }));
 
 // Mock haptics
@@ -653,5 +680,118 @@ describe("nudge button rendering conditions", () => {
 
     expect(getTitle("group-1-user-bob")).toBe("Lembrete já enviado");
     expect(getTitle("group-1-user-carol")).toBe("Enviar lembrete");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bill navigation race (#579): a stale in-flight load for a previous bill
+// must never overwrite the currently-viewed bill's rendered data.
+// ---------------------------------------------------------------------------
+
+describe("bill navigation race", () => {
+  function buildExpense(overrides: Partial<ExpenseWithDetails>): ExpenseWithDetails {
+    return {
+      id: "bill-a",
+      groupId: "group-1",
+      creatorId: "user-1",
+      title: "Bill A",
+      expenseType: "single_amount",
+      totalAmount: 1000,
+      serviceFeePercent: 0,
+      serviceFeeBasisPoints: 0,
+      fixedFees: 0,
+      status: "active",
+      createdAt: "2026-03-28T00:00:00Z",
+      updatedAt: "2026-03-28T00:00:00Z",
+      items: [],
+      shares: [
+        {
+          id: "share-1",
+          expenseId: overrides.id ?? "bill-a",
+          userId: "user-2",
+          shareAmountCents: 500,
+          user: { id: "user-2", handle: "bob", name: "Bob", avatarUrl: undefined },
+        },
+      ],
+      payers: [
+        {
+          expenseId: overrides.id ?? "bill-a",
+          userId: "user-1",
+          amountCents: 1000,
+          user: { id: "user-1", handle: "alice", name: "Alice", avatarUrl: undefined },
+        },
+      ],
+      guests: [],
+      ...overrides,
+    };
+  }
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => { resolve = res; });
+    return { promise, resolve };
+  }
+
+  beforeEach(() => {
+    vi.mocked(loadExpense).mockReset();
+  });
+
+  it("discards a stale load for a previous bill after navigating away (#579)", async () => {
+    const billA = buildExpense({ id: "bill-a", title: "Bill A Title" });
+    const billB = buildExpense({ id: "bill-b", title: "Bill B Title" });
+
+    const deferredA = deferred<ExpenseWithDetails>();
+    const deferredB = deferred<ExpenseWithDetails>();
+
+    vi.mocked(loadExpense).mockImplementation((expenseId: string) => {
+      if (expenseId === "bill-a") return deferredA.promise;
+      if (expenseId === "bill-b") return deferredB.promise;
+      return Promise.resolve(null);
+    });
+
+    let rerender!: (ui: ReactElement) => void;
+    await act(async () => {
+      ({ rerender } = render(
+        <Suspense fallback={<div>route-loading</div>}>
+          <BillDetailPage params={Promise.resolve({ id: "bill-a" })} />
+        </Suspense>,
+      ));
+    });
+
+    // Wait for bill A's fetch to be kicked off.
+    await waitFor(() => expect(loadExpense).toHaveBeenCalledWith("bill-a"));
+
+    // Navigate to bill B while A's fetch is still in flight. Next.js keeps
+    // the same component instance mounted across a client transition to a
+    // sibling route matching the same page — this rerender with a new
+    // `params` promise is exactly that.
+    await act(async () => {
+      rerender(
+        <Suspense fallback={<div>route-loading</div>}>
+          <BillDetailPage params={Promise.resolve({ id: "bill-b" })} />
+        </Suspense>,
+      );
+    });
+
+    await waitFor(() => expect(loadExpense).toHaveBeenCalledWith("bill-b"));
+
+    // Resolve B's fetch first (fast network), then A's stale fetch resolves
+    // last (slow network) — the exact ordering the bug depended on.
+    await act(async () => {
+      deferredB.resolve(billB);
+    });
+
+    await waitFor(() => expect(screen.getByText("Bill B Title")).toBeInTheDocument());
+
+    await act(async () => {
+      deferredA.resolve(billA);
+      // Let any microtasks from the resolved-but-discarded load flush.
+      await Promise.resolve();
+    });
+
+    // Bill A's stale data must never have been committed: bill B's title
+    // stays on screen, bill A's title never appears.
+    expect(screen.getByText("Bill B Title")).toBeInTheDocument();
+    expect(screen.queryByText("Bill A Title")).not.toBeInTheDocument();
   });
 });

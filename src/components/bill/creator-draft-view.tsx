@@ -7,11 +7,9 @@ import { useState } from "react";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
-import { loadExpense } from "@/lib/supabase/expense-actions";
 import { activateExpense } from "@/lib/supabase/expense-rpc";
 import { ZERO_GRAPH_REVISION } from "@/lib/expense-money";
 import { notifyExpenseActivated } from "@/lib/push/push-notify";
-import { useBillStore } from "@/stores/bill-store";
 import { haptics } from "@/hooks/use-haptics";
 import toast from "react-hot-toast";
 import type { Expense, ExpenseItem, UserProfile } from "@/types";
@@ -24,12 +22,14 @@ export function CreatorDraftView({
   items,
   shares,
   guests,
+  onActivated,
 }: {
   expense: Expense;
   participants: UserProfile[];
   items: ExpenseItem[];
   shares: { userId: string; shareAmountCents: number }[];
   guests: { id: string; displayName: string; share?: { shareAmountCents: number } }[];
+  onActivated: () => void;
 }) {
   const [finalizing, setFinalizing] = useState(false);
 
@@ -49,27 +49,7 @@ export function CreatorDraftView({
     }
     haptics.success();
     notifyExpenseActivated(expense.id).catch(() => {});
-    const fresh = await loadExpense(expense.id);
-    if (fresh) {
-      useBillStore.getState().hydrateFromServer({
-        expense: {
-          id: fresh.id,
-          groupId: fresh.groupId,
-          creatorId: fresh.creatorId,
-          title: fresh.title,
-          merchantName: fresh.merchantName,
-          expenseType: fresh.expenseType,
-          totalAmount: fresh.totalAmount,
-          serviceFeePercent: fresh.serviceFeePercent,
-          serviceFeeBasisPoints: fresh.serviceFeeBasisPoints,
-          fixedFees: fresh.fixedFees,
-          status: fresh.status,
-          createdAt: fresh.createdAt,
-          updatedAt: fresh.updatedAt,
-        },
-        items: [],
-      });
-    }
+    onActivated();
     setFinalizing(false);
   };
 
