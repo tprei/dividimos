@@ -391,8 +391,8 @@ function OnboardPageContent() {
                   <div className="flex items-start gap-2 rounded-xl bg-muted/50 p-3">
                     <Shield className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                     <p className="text-xs text-muted-foreground">
-                      Sua chave Pix é criptografada e nunca compartilhada com
-                      terceiros.
+                      Sua chave Pix é criptografada (AES-256-GCM). Ela só é usada para gerar o
+                      código de pagamento para quem te deve em um grupo.
                     </p>
                   </div>
                   <p className="text-center text-[10px] text-muted-foreground">

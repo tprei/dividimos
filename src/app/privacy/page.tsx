@@ -15,7 +15,7 @@ export default function PrivacyPage() {
 
       <h1 className="mt-8 text-2xl font-bold">Política de Privacidade</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Última atualização: 6 de abril de 2026
+        Última atualização: 6 de agosto de 2026
       </p>
 
       <div className="mt-8 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -33,9 +33,9 @@ export default function PrivacyPage() {
             <li>
               <strong className="text-foreground">Handle e chave Pix:</strong> escolhidos por você
               durante o cadastro. A chave Pix é criptografada (AES-256-GCM) antes do
-              armazenamento. Ela só é compartilhada com membros do grupo mediante seu
-              consentimento (ao aceitar um convite), e você é notificado antes de qualquer
-              exposição.
+              armazenamento. Ela não fica visível para o grupo: apenas o tipo e um trecho
+              mascarado da chave aparecem no seu perfil. O código Pix com a chave completa só é
+              gerado para um participante que realmente te deve em um grupo.
             </li>
             <li>
               <strong className="text-foreground">Despesas e grupos:</strong> títulos, valores,
@@ -77,7 +77,9 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong className="text-foreground">Membros do grupo:</strong> outros participantes
-              do seu grupo veem nome, handle e foto de perfil — nunca sua chave Pix completa.
+              veem nome, handle e foto de perfil, além do tipo e de um trecho mascarado da sua
+              chave Pix. A chave completa só viaja dentro do código Pix gerado para quem tem um
+              saldo a te pagar.
             </li>
           </ul>
         </section>

@@ -489,7 +489,7 @@ export function DashboardContent({
           onClose={() => setPixModal(null)}
           recipientName={pixModal.debt.counterpartyName}
           amountCents={pixModal.debt.amountCents}
-          recipientUserId={pixModal.debt.counterpartyId}
+          recipientUserId={pixModal.mode === "collect" ? user?.id : pixModal.debt.counterpartyId}
           groupId={pixModal.debt.groupId}
           mode={pixModal.mode}
           onMarkPaid={(amountCents: number) =>

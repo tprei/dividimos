@@ -28,6 +28,7 @@ import { POST } from "./route";
 beforeEach(() => {
   serverMock.reset();
   adminMock.reset();
+  vi.mocked(decryptPixKey).mockClear();
 });
 
 function makeRequest(body: Record<string, unknown>) {
@@ -38,23 +39,44 @@ function makeRequest(body: Record<string, unknown>) {
   });
 }
 
+/** Both alice and bob are accepted members of group-1 (creator is a third user). */
+function setupAcceptedMembers() {
+  serverMock.setUser({ id: "user-alice" });
+  serverMock.onTable("group_members", {
+    data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
+  });
+  serverMock.onTable("groups", { data: { creator_id: "user-other" } });
+}
+
+/** Canonical balance row: "user-alice" < "user-bob", positive = alice owes bob. */
+function balanceOwedByAlice(amountCents: number) {
+  serverMock.onTable("balances", {
+    data: {
+      group_id: "group-1",
+      user_a: "user-alice",
+      user_b: "user-bob",
+      amount_cents: amountCents,
+    },
+  });
+}
+
+function bobHasKey() {
+  adminMock.onTable("users", {
+    data: { pix_key_encrypted: "encrypted-key", name: "Bob" },
+  });
+}
+
 describe("POST /api/pix/generate", () => {
   it("returns 401 when not authenticated", async () => {
     const response = await POST(
       makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
     );
-
     expect(response.status).toBe(401);
-    const body = await response.json();
-    expect(body.error).toBe("Nao autenticado");
   });
 
   it("returns 400 with invalid data", async () => {
     serverMock.setUser({ id: "user-alice" });
-
-    // Missing required fields
-    const response = await POST(makeRequest({ recipientUserId: "user-bob" }));
-
+    const response = await POST(makeRequest({}));
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toBe("Dados invalidos");
@@ -62,69 +84,55 @@ describe("POST /api/pix/generate", () => {
 
   it("returns 400 when groupId is not provided", async () => {
     serverMock.setUser({ id: "user-alice" });
-
     const response = await POST(
       makeRequest({ recipientUserId: "user-bob", amountCents: 5000 }),
     );
-
     expect(response.status).toBe(400);
   });
 
   it("returns 400 when amountCents is 0 or negative", async () => {
     serverMock.setUser({ id: "user-alice" });
-
     const response = await POST(
       makeRequest({ recipientUserId: "user-bob", amountCents: 0, groupId: "group-1" }),
     );
-
     expect(response.status).toBe(400);
   });
 
   it("returns 400 when amountCents is not an integer", async () => {
     serverMock.setUser({ id: "user-alice" });
-
     const response = await POST(
       makeRequest({ recipientUserId: "user-bob", amountCents: 50.5, groupId: "group-1" }),
     );
-
     expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.error).toBe("Dados invalidos");
   });
 
   it("returns 400 when amountCents exceeds R$100,000 cap", async () => {
     serverMock.setUser({ id: "user-alice" });
-
     const response = await POST(
       makeRequest({ recipientUserId: "user-bob", amountCents: 100_000_01, groupId: "group-1" }),
     );
-
     expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.error).toBe("Dados invalidos");
   });
 
   it("returns 400 when amountCents is Number.MAX_SAFE_INTEGER", async () => {
     serverMock.setUser({ id: "user-alice" });
-
     const response = await POST(
-      makeRequest({ recipientUserId: "user-bob", amountCents: Number.MAX_SAFE_INTEGER, groupId: "group-1" }),
+      makeRequest({
+        recipientUserId: "user-bob",
+        amountCents: Number.MAX_SAFE_INTEGER,
+        groupId: "group-1",
+      }),
     );
-
     expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.error).toBe("Dados invalidos");
   });
 
   describe("group settlement flow", () => {
     it("returns 403 when users are not in the same group", async () => {
       serverMock.setUser({ id: "user-alice" });
-
       // group_members → only alice
       serverMock.onTable("group_members", {
         data: [{ user_id: "user-alice" }],
       });
-      // groups.select → creator
       serverMock.onTable("groups", { data: { creator_id: "user-other" } });
 
       const response = await POST(
@@ -133,21 +141,19 @@ describe("POST /api/pix/generate", () => {
 
       expect(response.status).toBe(403);
       const body = await response.json();
-      expect(body.error).toContain("nao pertencem ao mesmo grupo");
+      expect(body.error).toBe("Acesso negado");
     });
 
-    it("allows group creator who is not a member row", async () => {
+    it("allows group creator who is not a member row, across a real payable edge", async () => {
       serverMock.setUser({ id: "user-alice" });
-
       // group_members → only bob (alice is creator, not in members table)
       serverMock.onTable("group_members", {
         data: [{ user_id: "user-bob" }],
       });
       serverMock.onTable("groups", { data: { creator_id: "user-alice" } });
-
-      adminMock.onTable("users", {
-        data: { pix_key_encrypted: "encrypted-key", name: "Bob" },
-      });
+      // alice (creator) genuinely owes bob
+      balanceOwedByAlice(5000);
+      bobHasKey();
 
       const response = await POST(
         makeRequest({ recipientUserId: "user-bob", amountCents: 3000, groupId: "group-1" }),
@@ -160,13 +166,8 @@ describe("POST /api/pix/generate", () => {
   });
 
   it("returns 500 when pix key decryption fails", async () => {
-    serverMock.setUser({ id: "user-alice" });
-
-    serverMock.onTable("group_members", {
-      data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
-    });
-    serverMock.onTable("groups", { data: { creator_id: "user-other" } });
-
+    setupAcceptedMembers();
+    balanceOwedByAlice(5000);
     adminMock.onTable("users", {
       data: { pix_key_encrypted: "corrupted-data", name: "Bob Santos" },
     });
@@ -182,5 +183,162 @@ describe("POST /api/pix/generate", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.error).toContain("chave Pix");
+  });
+
+  describe("payable-edge guard", () => {
+    it("denies a co-member with no balance row", async () => {
+      setupAcceptedMembers();
+      serverMock.onTable("balances", { data: null });
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(403);
+      // The encrypted key is never read when authorization does not resolve.
+      expect(adminMock.findCalls("users")).toHaveLength(0);
+      expect(decryptPixKey).not.toHaveBeenCalled();
+    });
+
+    it("denies a settled (zero) balance", async () => {
+      setupAcceptedMembers();
+      balanceOwedByAlice(0);
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(adminMock.findCalls("users")).toHaveLength(0);
+      expect(decryptPixKey).not.toHaveBeenCalled();
+    });
+
+    it("denies when the recipient is the net debtor (wrong direction)", async () => {
+      setupAcceptedMembers();
+      // negative amount_cents = user_b (bob) owes user_a (alice) — bob is the debtor
+      balanceOwedByAlice(-5000);
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(adminMock.findCalls("users")).toHaveLength(0);
+      expect(decryptPixKey).not.toHaveBeenCalled();
+    });
+
+    it("denies when the requested amount exceeds the outstanding edge", async () => {
+      setupAcceptedMembers();
+      balanceOwedByAlice(3000);
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(adminMock.findCalls("users")).toHaveLength(0);
+      expect(decryptPixKey).not.toHaveBeenCalled();
+    });
+
+    it("allows an amount up to the outstanding edge (partial payment)", async () => {
+      setupAcceptedMembers();
+      balanceOwedByAlice(5000);
+      bobHasKey();
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(200);
+    });
+
+    it("allows self-collection (caller's own key) with no payable edge", async () => {
+      serverMock.setUser({ id: "user-alice" });
+      serverMock.onTable("group_members", { data: [{ user_id: "user-alice" }] });
+      serverMock.onTable("groups", { data: { creator_id: "user-alice" } });
+      adminMock.onTable("users", {
+        data: { pix_key_encrypted: "encrypted-key", name: "Alice" },
+      });
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-alice", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(200);
+      // self-collection skips the balance read entirely
+      expect(serverMock.findCalls("balances")).toHaveLength(0);
+    });
+
+    it("returns a byte-identical body for every pre-edge denial", async () => {
+      const deniedBody = JSON.stringify({ error: "Acesso negado" });
+
+      // not same group
+      serverMock.setUser({ id: "user-alice" });
+      serverMock.onTable("group_members", { data: [{ user_id: "user-alice" }] });
+      serverMock.onTable("groups", { data: { creator_id: "user-other" } });
+      const notMember = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      // no balance
+      setupAcceptedMembers();
+      serverMock.onTable("balances", { data: null });
+      const noBalance = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      // wrong direction
+      setupAcceptedMembers();
+      balanceOwedByAlice(-5000);
+      const wrongDirection = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      // over-amount
+      setupAcceptedMembers();
+      balanceOwedByAlice(3000);
+      const overAmount = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      for (const res of [notMember, noBalance, wrongDirection, overAmount]) {
+        expect(res.status).toBe(403);
+        expect(JSON.stringify(await res.json())).toBe(deniedBody);
+      }
+    });
+  });
+
+  describe("cache headers", () => {
+    it("sets Cache-Control: private, no-store on success", async () => {
+      setupAcceptedMembers();
+      balanceOwedByAlice(5000);
+      bobHasKey();
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 3000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+    });
+
+    it("sets Cache-Control: private, no-store on denial", async () => {
+      serverMock.setUser({ id: "user-alice" });
+      serverMock.onTable("group_members", { data: [] });
+      serverMock.onTable("groups", { data: { creator_id: "user-other" } });
+
+      const response = await POST(
+        makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+    });
+
+    it("sets Cache-Control: private, no-store on bad input", async () => {
+      serverMock.setUser({ id: "user-alice" });
+      const response = await POST(makeRequest({}));
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+    });
   });
 });

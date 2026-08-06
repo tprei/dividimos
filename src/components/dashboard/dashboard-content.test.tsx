@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { DashboardContent } from "./dashboard-content";
 import type { DebtSummary } from "@/types";
 const submission = vi.hoisted(() => ({
@@ -48,6 +48,19 @@ vi.mock("@/contexts/settlement-submission-context", () => ({
 
 vi.mock("@/lib/supabase/dm-actions", () => ({
   getOrCreateDmGroup: vi.fn().mockResolvedValue({ groupId: "dm-group-1" }),
+}));
+
+const pixCapture = vi.hoisted(() => ({
+  recipientUserId: undefined as string | undefined,
+  mode: undefined as string | undefined,
+}));
+
+vi.mock("@/components/settlement/pix-qr-modal", () => ({
+  PixQrModal: (props: { recipientUserId?: string; mode?: string }) => {
+    pixCapture.recipientUserId = props.recipientUserId;
+    pixCapture.mode = props.mode;
+    return null;
+  },
 }));
 
 function makeDebt(
@@ -128,5 +141,41 @@ describe("DashboardContent", () => {
     ];
     render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
     expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("requests the counterparty's key when paying a debt the viewer owes", async () => {
+    pixCapture.recipientUserId = undefined;
+    pixCapture.mode = undefined;
+    const debts = [
+      makeDebt({ direction: "owes", counterpartyId: "user-2", counterpartyName: "Maria" }),
+    ];
+    render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Pagar via Pix/i }));
+
+    await waitFor(() => {
+      expect(pixCapture.mode).toBe("pay");
+    });
+    // paying → the Pix code is payable to the counterparty (the creditor)
+    expect(pixCapture.recipientUserId).toBe("user-2");
+  });
+
+  it("requests the viewer's own key when collecting a debt owed to them", async () => {
+    pixCapture.recipientUserId = undefined;
+    pixCapture.mode = undefined;
+    const debts = [
+      makeDebt({ direction: "owed", counterpartyId: "user-2", counterpartyName: "Joao" }),
+    ];
+    render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
+
+    // the owed list lives on the "Você recebe" tab
+    fireEvent.click(screen.getByRole("button", { name: /Você recebe/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Cobrar via Pix/i }));
+
+    await waitFor(() => {
+      expect(pixCapture.mode).toBe("collect");
+    });
+    // collecting → the Pix code is payable to the viewer themselves
+    expect(pixCapture.recipientUserId).toBe("user-1");
   });
 });
