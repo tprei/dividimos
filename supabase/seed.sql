@@ -57,9 +57,4 @@ INSERT INTO auth.identities (
 );
 
 -- Mark seed users as onboarded with test Pix keys
-UPDATE public.users SET
-  onboarded = true,
-  pix_key_encrypted = '',
-  pix_key_hint = '***@teste',
-  pix_key_type = 'email'
-WHERE email LIKE '%@test.dividimos.local';
+UPDATE public.users SET onboarded = true, pix_key_type = 'email', pix_key_hint = '***@teste' WHERE email LIKE '%@test.dividimos.local';

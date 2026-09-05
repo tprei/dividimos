@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/database";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   adminClient,
   isIntegrationTestReady,
@@ -12,7 +11,7 @@ function makeSubject(): string {
 }
 
 async function callRpc(
-  client: ReturnType<typeof createClient<Database>>,
+  client: SupabaseClient,
   bucket: string,
   subject: string,
   limit: number,
@@ -286,12 +285,12 @@ describe.skipIf(!isIntegrationTestReady)(
       const totalCalls = 20;
 
       // Two separate Supabase clients — each has its own HTTP keep-alive pool.
-      const clientA = createClient<Database>(
+      const clientA = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } },
       );
-      const clientB = createClient<Database>(
+      const clientB = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } },
@@ -341,11 +340,11 @@ describe.skipIf(!isIntegrationTestReady)(
 
 describe.skipIf(!isIntegrationTestReady)("rate_limit_counters — ACL boundary", () => {
   let admin: NonNullable<typeof adminClient>;
-  let anonClient: ReturnType<typeof createClient<Database>>;
+  let anonClient: SupabaseClient;
 
   beforeAll(() => {
     admin = adminClient!;
-    anonClient = createClient<Database>(
+    anonClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } },
