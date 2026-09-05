@@ -216,6 +216,16 @@ BEGIN
       FROM group_balances gb
       WHERE gb.group_id = g.id
     ), '[]'::jsonb),
+    'guests', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', gu.id,
+        'displayName', gu.display_name,
+        'expenseId', gu.expense_id
+      ) ORDER BY gu.created_at, gu.id)
+      FROM guests gu
+      JOIN expenses e ON e.id = gu.expense_id
+      WHERE e.group_id = g.id AND e.status = 'active' AND gu.claimed_by IS NULL
+    ), '[]'::jsonb),
     'pendingSettlements', COALESCE((
       SELECT jsonb_agg(ledger_settlement_json(s.id) ORDER BY s.created_at DESC, s.id)
       FROM settlements s

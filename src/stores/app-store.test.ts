@@ -71,6 +71,7 @@ function snapshot(
     },
     members: [],
     balances: [],
+    guests: [],
     pendingSettlements: [],
     recentExpenses: recent,
     lastEventId: 0,
