@@ -1,22 +1,36 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { DashboardContent } from "./dashboard-content";
-import type { DebtSummary } from "@/types";
-const submission = vi.hoisted(() => ({
-  error: null,
-  finish: vi.fn(),
-  phase: "idle",
-  ready: true,
-  reconcile: vi.fn(),
-  request: null,
-  reservedEdgeKeys: new Set<string>(),
-  result: null,
-  submit: vi.fn(),
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { GroupSnapshot, Me } from "@/types/ledger";
+import { useAppStore } from "@/stores/app-store";
+import { LedgerError } from "@/lib/sync/errors";
+
+const mutations = vi.hoisted(() => ({
+  confirmSettlement: vi.fn(),
+  recordSettlement: vi.fn(),
+  voidSettlement: vi.fn(),
+}));
+vi.mock("@/lib/sync/mutations", () => mutations);
+
+const toastError = vi.fn();
+vi.mock("react-hot-toast", () => ({
+  default: {
+    error: (message: string) => toastError(message),
+    success: vi.fn(),
+  },
 }));
 
+const pixProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
+}));
+vi.mock("@/components/settlement/pix-qr-modal", () => ({
+  PixQrModal: (props: Record<string, unknown>) => {
+    pixProps.current = props;
+    return null;
+  },
+}));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn() }),
 }));
 
 vi.mock("next/link", () => ({
@@ -25,157 +39,209 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("@/hooks/use-auth", () => ({
-  useUser: () => ({ id: "user-1", name: "Test User", avatarUrl: null }),
-}));
+import { DashboardContent } from "./dashboard-content";
 
-vi.mock("@/lib/supabase/debt-actions", () => ({
-  fetchUserDebts: vi.fn().mockResolvedValue([]),
-}));
+const me: Me = {
+  id: "user-1",
+  handle: "alice",
+  name: "Alice Souza",
+  avatarUrl: null,
+  email: "alice@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
+};
 
-vi.mock("@/contexts/settlement-submission-context", () => ({
-  settlementEdgeKey: ({
-    groupId,
-    fromUserId,
-    toUserId,
-  }: {
-    groupId: string;
-    fromUserId: string;
-    toUserId: string;
-  }) => `${groupId}:${fromUserId}:${toUserId}`,
-  useSettlementSubmission: () => submission,
-}));
+const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
+const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null };
 
-vi.mock("@/lib/supabase/dm-actions", () => ({
-  getOrCreateDmGroup: vi.fn().mockResolvedValue({ groupId: "dm-group-1" }),
-}));
-
-const pixCapture = vi.hoisted(() => ({
-  recipientUserId: undefined as string | undefined,
-  mode: undefined as string | undefined,
-}));
-
-vi.mock("@/components/settlement/pix-qr-modal", () => ({
-  PixQrModal: (props: { recipientUserId?: string; mode?: string }) => {
-    pixCapture.recipientUserId = props.recipientUserId;
-    pixCapture.mode = props.mode;
-    return null;
-  },
-}));
-
-function makeDebt(
-  overrides: Partial<DebtSummary> & { direction: "owes" | "owed" },
-): DebtSummary {
+function settlement(overrides: Partial<GroupSnapshot["pendingSettlements"][number]> = {}) {
   return {
-    groupId: overrides.groupId ?? "group-1",
-    groupName: overrides.groupName ?? "Jantar",
-    isDm: overrides.isDm ?? false,
-    counterpartyId: overrides.counterpartyId ?? "user-2",
-    counterpartyName: overrides.counterpartyName ?? "Maria",
-    counterpartyAvatarUrl: overrides.counterpartyAvatarUrl ?? null,
-    amountCents: overrides.amountCents ?? 5000,
-    direction: overrides.direction,
+    id: "set-1",
+    operationId: "op-1",
+    groupId: "g1",
+    fromUserId: carol.id,
+    toUserId: me.id,
+    amountCents: 3000,
+    status: "pending" as const,
+    createdBy: carol.id,
+    createdAt: "2026-01-01T00:00:00Z",
+    confirmedAt: null,
+    voidedAt: null,
+    voidedBy: null,
+    ...overrides,
   };
+}
+
+function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
+  const base: GroupSnapshot = {
+    group: {
+      id: "g1",
+      kind: "group",
+      name: "Jantar",
+      creatorId: me.id,
+      dmUserA: null,
+      dmUserB: null,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    members: [
+      { groupId: "g1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+      { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
+      { groupId: "g1", userId: dave.id, status: "accepted", invitedBy: null, acceptedAt: null, user: dave },
+    ],
+    balances: [],
+    guests: [],
+    pendingSettlements: [],
+    recentExpenses: [],
+    lastEventId: 0,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt: "2026-01-02T00:00:00Z",
+  };
+  return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
+}
+
+function seedStore(snapshots: GroupSnapshot[]) {
+  const groups = Object.fromEntries(snapshots.map((s) => [s.group.id, s]));
+  useAppStore.setState({ hydrated: true, me, groups, groupOrder: snapshots.map((s) => s.group.id) });
 }
 
 describe("DashboardContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    pixProps.current = null;
+    useAppStore.getState().reset();
   });
 
-  it("renders greeting and user name", () => {
-    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
-    expect(screen.getByText("Test")).toBeInTheDocument();
+  it("renders the skeleton before hydration", () => {
+    useAppStore.setState({ hydrated: false, me });
+    render(<DashboardContent />);
+
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 
-  it("shows positive net balance as A receber", () => {
-    render(<DashboardContent initialDebts={[]} initialNetBalance={5000} />);
-    expect(screen.getByText("A receber")).toBeInTheDocument();
-    expect(screen.getByText("R$ 50,00")).toBeInTheDocument();
-  });
+  it("renders the greeting and the net balance across debt rows", () => {
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -3000 },
+          { kind: "user", participantId: carol.id, netCents: 3000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
 
-  it("shows negative net balance as A pagar", () => {
-    render(<DashboardContent initialDebts={[]} initialNetBalance={-3000} />);
+    expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText("A pagar")).toBeInTheDocument();
-    expect(screen.getByText("R$ 30,00")).toBeInTheDocument();
+    expect(screen.getAllByText("R$ 30,00").length).toBeGreaterThan(0);
   });
 
-  it("shows debt count in balance card subtitle", () => {
-    const debts = [
-      makeDebt({ direction: "owes", amountCents: 3000 }),
-      makeDebt({ direction: "owes", amountCents: 2000 }),
-    ];
-    render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
-    expect(screen.getByText("2 contas pendentes")).toBeInTheDocument();
-  });
+  it("confirms an incoming pending settlement", async () => {
+    mutations.confirmSettlement.mockResolvedValue({});
+    seedStore([
+      snapshot({ pendingSettlements: [settlement({ fromUserId: carol.id, toUserId: me.id })] }),
+    ]);
+    render(<DashboardContent />);
 
-  it("shows empty state when no debts on owes tab", () => {
-    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
-    expect(screen.getByText("Tudo certo por aqui!")).toBeInTheDocument();
-    expect(screen.getByText(/Você não tem nenhuma conta pendente/)).toBeInTheDocument();
-  });
-
-  it("shows empty state CTA linking to new bill", () => {
-    render(<DashboardContent initialDebts={[]} initialNetBalance={0} />);
-    const emptyStateLink = screen.getAllByText("Nova conta")
-      .map((el) => el.closest("a"))
-      .find((a) => a?.getAttribute("href") === "/app/bill/new");
-    expect(emptyStateLink).toBeTruthy();
-  });
-
-  it("renders debt cards for owes tab by default", () => {
-    const debts = [
-      makeDebt({ direction: "owes", counterpartyName: "Maria", amountCents: 5000 }),
-      makeDebt({ direction: "owed", counterpartyName: "Joao", amountCents: 3000 }),
-    ];
-    render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
-    expect(screen.getByText("Maria")).toBeInTheDocument();
-    expect(screen.queryByText("Joao")).not.toBeInTheDocument();
-  });
-
-  it("renders segmented toggle with counts", () => {
-    const debts = [
-      makeDebt({ direction: "owes" }),
-      makeDebt({ direction: "owes" }),
-      makeDebt({ direction: "owed" }),
-    ];
-    render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
-    expect(screen.getByText("2")).toBeInTheDocument();
-  });
-
-  it("requests the counterparty's key when paying a debt the viewer owes", async () => {
-    pixCapture.recipientUserId = undefined;
-    pixCapture.mode = undefined;
-    const debts = [
-      makeDebt({ direction: "owes", counterpartyId: "user-2", counterpartyName: "Maria" }),
-    ];
-    render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Pagar via Pix/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirmar/i }));
 
     await waitFor(() => {
-      expect(pixCapture.mode).toBe("pay");
+      expect(mutations.confirmSettlement).toHaveBeenCalledWith("g1", "set-1");
     });
-    // paying → the Pix code is payable to the counterparty (the creditor)
-    expect(pixCapture.recipientUserId).toBe("user-2");
   });
 
-  it("requests the viewer's own key when collecting a debt owed to them", async () => {
-    pixCapture.recipientUserId = undefined;
-    pixCapture.mode = undefined;
-    const debts = [
-      makeDebt({ direction: "owed", counterpartyId: "user-2", counterpartyName: "Joao" }),
-    ];
-    render(<DashboardContent initialDebts={debts} initialNetBalance={0} />);
+  it("declines an incoming pending settlement with voidSettlement", async () => {
+    mutations.voidSettlement.mockResolvedValue({});
+    seedStore([
+      snapshot({ pendingSettlements: [settlement({ fromUserId: carol.id, toUserId: me.id })] }),
+    ]);
+    render(<DashboardContent />);
 
-    // the owed list lives on the "Você recebe" tab
-    fireEvent.click(screen.getByRole("button", { name: /Você recebe/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Cobrar via Pix/i }));
+    fireEvent.click(screen.getByRole("button", { name: /recusar/i }));
 
     await waitFor(() => {
-      expect(pixCapture.mode).toBe("collect");
+      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1", false);
     });
-    // collecting → the Pix code is payable to the viewer themselves
-    expect(pixCapture.recipientUserId).toBe("user-1");
+  });
+
+  it("shows a toast when confirming fails", async () => {
+    mutations.confirmSettlement.mockRejectedValue(new LedgerError("network"));
+    seedStore([
+      snapshot({ pendingSettlements: [settlement({ fromUserId: carol.id, toUserId: me.id })] }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /confirmar/i }));
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
+    });
+  });
+
+  it("lets me cancel an outgoing pending settlement", async () => {
+    mutations.voidSettlement.mockResolvedValue({});
+    seedStore([
+      snapshot({ pendingSettlements: [settlement({ fromUserId: me.id, toUserId: dave.id })] }),
+    ]);
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Aguardando confirmação")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /cancelar/i }));
+
+    await waitFor(() => {
+      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1", false);
+    });
+    expect(mutations.confirmSettlement).not.toHaveBeenCalled();
+  });
+
+  it("opens the Pix modal in pay mode and records the settlement through it", async () => {
+    mutations.recordSettlement.mockResolvedValue({});
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pagar via Pix" }));
+
+    await waitFor(() => {
+      expect(pixProps.current).not.toBeNull();
+    });
+    expect(pixProps.current?.recipientName).toBe("Carol Souza");
+    expect(pixProps.current?.amountCents).toBe(5000);
+    expect(pixProps.current?.mode).toBe("pay");
+    expect(pixProps.current?.pixKey).toBeUndefined();
+
+    const onMarkPaid = pixProps.current?.onMarkPaid as (cents: number) => Promise<void>;
+    await onMarkPaid(3000);
+
+    expect(mutations.recordSettlement).toHaveBeenCalledWith({
+      groupId: "g1",
+      toUserId: carol.id,
+      amountCents: 3000,
+    });
+  });
+
+  it("renders guest debt rows with a chip and no pay action", () => {
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -4000 },
+          { kind: "guest", participantId: "guest-1", netCents: 4000 },
+        ],
+        guests: [{ id: "guest-1", displayName: "Bruno Convidado", expenseId: "e1" }],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Convidado")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pagar via Pix" })).not.toBeInTheDocument();
   });
 });

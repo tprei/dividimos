@@ -4,34 +4,41 @@ import { motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Check,
   CheckCheck,
   Eye,
   EyeOff,
   Plus,
   QrCode,
-  RefreshCw,
   ScanLine,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { UserAvatar } from "@/components/shared/user-avatar";
+import { useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import { useShallow } from "zustand/react/shallow";
 import { DebtCard } from "@/components/dashboard/debt-card";
+import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/shared/user-avatar";
+import {
+  DashboardSkeleton,
+  ModalLoadingSkeleton,
+} from "@/components/shared/skeleton";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
-import { useUser } from "@/hooks/use-auth";
-import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
-import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
-import { notifyPaymentNudge } from "@/lib/push/push-notify";
-import { fetchUserDebts } from "@/lib/supabase/debt-actions";
+import { selectDebtRows } from "@/lib/ledger/debt-rows";
+import type { DebtRow } from "@/lib/ledger/debt-rows";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import {
-  settlementEdgeKey,
-  useSettlementSubmission,
-} from "@/contexts/settlement-submission-context";
-import type { DebtSummary } from "@/types";
-
-import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
+  confirmSettlement,
+  recordSettlement,
+  voidSettlement,
+} from "@/lib/sync/mutations";
+import { useMe } from "@/hooks/use-me";
+import { selectPendingSettlementsForMe } from "@/stores/app-selectors";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot, Settlement } from "@/types/ledger";
 
 const PixQrModal = dynamic(
   () =>
@@ -56,176 +63,100 @@ function getGreeting(): string {
   return "Boa noite";
 }
 
-interface DashboardContentProps {
-  initialDebts: DebtSummary[];
-  initialNetBalance: number;
+function memberName(snapshot: GroupSnapshot | undefined, userId: string): string {
+  return (
+    snapshot?.members.find((member) => member.userId === userId)?.user.name ??
+    "Alguém"
+  );
 }
 
-export function DashboardContent({
-  initialDebts,
-  initialNetBalance,
-}: DashboardContentProps) {
-  const user = useUser();
-  const [balanceVisible, setBalanceVisible] = useState(true);
-  const [debts, setDebts] = useState<DebtSummary[]>(initialDebts);
-  const [netBalance, setNetBalance] = useState(initialNetBalance);
-  const [refreshing, setRefreshing] = useState(false);
-  const [pullDistance, setPullDistance] = useState(0);
-  const [activeTab, setActiveTab] = useState<"owes" | "owed">("owes");
-  const [pixModal, setPixModal] = useState<{
-    debt: DebtSummary;
-    mode: "pay" | "collect";
-  } | null>(null);
-  const [acting, setActing] = useState<string | null>(null);
-  const [settlementRefreshError, setSettlementRefreshError] = useState<string | null>(null);
-  const submission = useSettlementSubmission();
-  const [quickChargeOpen, setQuickChargeOpen] = useState(false);
-  const [nudgeSent, setNudgeSent] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    const stored = localStorage.getItem("nudge-cooldowns");
-    if (!stored) return new Set();
-    try {
-      const parsed = JSON.parse(stored) as Record<string, number>;
-      const now = Date.now();
-      const active = new Set<string>();
-      for (const [key, ts] of Object.entries(parsed)) {
-        if (now - ts < 24 * 60 * 60 * 1000) active.add(key);
-      }
-      return active;
-    } catch { return new Set(); }
-  });
-  const touchStartY = useRef(0);
-  const touchStartX = useRef(0);
-  const touchStartTime = useRef(0);
+interface PendingRow {
+  groupId: string;
+  settlement: Settlement;
+}
 
-  const owesCount = debts.filter((d) => d.direction === "owes").length;
-  const owedCount = debts.filter((d) => d.direction === "owed").length;
-  const filteredDebts = debts.filter((d) => d.direction === activeTab);
-
-  const fetchDashboard = useCallback(async () => {
-    if (!user) return;
-
-    const refreshed = await fetchUserDebts(user.id);
-    setDebts(refreshed);
-
-    let net = 0;
-    for (const d of refreshed) {
-      net += d.direction === "owes" ? -d.amountCents : d.amountCents;
-    }
-    setNetBalance(net);
-  }, [user]);
-
-  // Prefetch conversation routes for visible debt cards
-  const conversationRoutes = useMemo(
-    () => debts.map((d) => `/app/conversations/${d.counterpartyId}`),
-    [debts],
+export function DashboardContent() {
+  const me = useMe();
+  const { hydrated, groupOrder, groups } = useAppStore(
+    useShallow((s) => ({
+      hydrated: s.hydrated,
+      groupOrder: s.groupOrder,
+      groups: s.groups,
+    })),
   );
-  usePrefetchRoutes(conversationRoutes);
+  const debtRows = useAppStore(selectDebtRows);
+  const pendingIncoming = useAppStore(selectPendingSettlementsForMe);
+  const [balanceVisible, setBalanceVisible] = useState(true);
+  const [activeTab, setActiveTab] = useState<"owes" | "owed">("owes");
+  const [payingDebt, setPayingDebt] = useState<DebtRow | null>(null);
+  const [quickChargeOpen, setQuickChargeOpen] = useState(false);
+  const [actingId, setActingId] = useState<string | null>(null);
 
-  const handleRecordSettlement = async (
-    debt: DebtSummary,
-    amountCents: number,
-  ) => {
-    if (!user) throw new Error("An authenticated account is required to record a settlement");
-
-    const fromUserId =
-      debt.direction === "owes" ? user.id : debt.counterpartyId;
-    const toUserId =
-      debt.direction === "owes" ? debt.counterpartyId : user.id;
-    const edgeKey = settlementEdgeKey({
-      groupId: debt.groupId,
-      fromUserId,
-      toUserId,
-    });
-
-    setActing(edgeKey);
-    try {
-      return await submission.submit([{
-        groupId: debt.groupId,
-        fromUserId,
-        toUserId,
-        amountCents,
-      }]);
-    } finally {
-      setActing(null);
-    }
-  };
-
-  const handleNudge = useCallback((debt: DebtSummary) => {
-    const key = `${debt.groupId}-${debt.counterpartyId}`;
-    if (nudgeSent.has(key)) return;
-
-    notifyPaymentNudge(debt.groupId, debt.counterpartyId).catch(() => {});
-
-    const next = new Set(nudgeSent);
-    next.add(key);
-    setNudgeSent(next);
-
-    const stored = localStorage.getItem("nudge-cooldowns");
-    const parsed: Record<string, number> = stored ? JSON.parse(stored) : {};
-    parsed[key] = Date.now();
-    localStorage.setItem("nudge-cooldowns", JSON.stringify(parsed));
-  }, [nudgeSent]);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartTime.current = Date.now();
-    if (window.scrollY === 0) {
-      touchStartY.current = e.touches[0].clientY;
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartY.current > 0) {
-      const distance = Math.max(0, e.touches[0].clientY - touchStartY.current);
-      setPullDistance(Math.min(distance, 100));
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-    const deltaTime = Date.now() - touchStartTime.current;
-
-    if (Math.abs(deltaX) > 50 && deltaTime < 400) {
-      if (deltaX < 0 && activeTab === "owes") {
-        setActiveTab("owed");
-      } else if (deltaX > 0 && activeTab === "owed") {
-        setActiveTab("owes");
+  const pendingOutgoing = useMemo<PendingRow[]>(() => {
+    if (!me) return [];
+    const rows: PendingRow[] = [];
+    for (const groupId of groupOrder) {
+      const snapshot = groups[groupId];
+      if (!snapshot) continue;
+      for (const settlement of snapshot.pendingSettlements) {
+        if (settlement.fromUserId === me.id) rows.push({ groupId, settlement });
       }
     }
+    return rows;
+  }, [groupOrder, groups, me]);
 
-    if (pullDistance > 60) {
-      setRefreshing(true);
-      fetchDashboard().finally(() => setRefreshing(false));
+  if (!hydrated || !me) {
+    return (
+      <div className="px-4 py-6">
+        <DashboardSkeleton />
+      </div>
+    );
+  }
+
+  const firstName = me.name.split(" ")[0];
+  const owesCount = debtRows.filter((row) => row.direction === "owes").length;
+  const owedCount = debtRows.length - owesCount;
+  const netBalance = debtRows.reduce(
+    (sum, row) => sum + (row.direction === "owed" ? row.amountCents : -row.amountCents),
+    0,
+  );
+  const isPositive = netBalance >= 0;
+  const filteredDebts = debtRows.filter((row) => row.direction === activeTab);
+
+  const handleConfirm = async (groupId: string, settlementId: string) => {
+    setActingId(settlementId);
+    try {
+      await confirmSettlement(groupId, settlementId);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setActingId(null);
     }
-    setPullDistance(0);
-    touchStartY.current = 0;
-    touchStartX.current = 0;
   };
 
-  const isPositive = netBalance >= 0;
-  const firstName = user?.name.split(" ")[0] ?? "";
+  const handleVoid = async (groupId: string, settlementId: string) => {
+    setActingId(settlementId);
+    try {
+      await voidSettlement(groupId, settlementId, false);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const handleMarkPaid = async (amountCents: number) => {
+    const debt = payingDebt;
+    if (!me || !debt) throw new LedgerError("unauthenticated");
+    await recordSettlement({
+      groupId: debt.groupId,
+      toUserId: debt.counterpartyId,
+      amountCents,
+    });
+  };
 
   return (
-    <div
-      className="mx-auto max-w-lg px-4 py-6"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {pullDistance > 0 && (
-        <div className="flex justify-center" style={{ height: pullDistance * 0.5 }}>
-          <RefreshCw
-            className={`h-5 w-5 text-muted-foreground ${pullDistance > 60 ? "text-primary" : ""}`}
-            style={{ transform: `rotate(${pullDistance * 3}deg)` }}
-          />
-        </div>
-      )}
-      {settlementRefreshError && (
-        <p className="mt-3 text-sm text-warning" role="status">
-          {settlementRefreshError}
-        </p>
-      )}
+    <div className="mx-auto max-w-lg px-4 py-6">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -236,22 +167,9 @@ export function DashboardContent({
             <p className="text-sm text-muted-foreground">{getGreeting()}</p>
             <h1 className="text-2xl font-bold">{firstName}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setRefreshing(true);
-                fetchDashboard().finally(() => setRefreshing(false));
-              }}
-              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-            >
-              <RefreshCw
-                className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
-            <Link href="/app/profile">
-              <UserAvatar name={user?.name ?? ""} avatarUrl={user?.avatarUrl} size="md" priority />
-            </Link>
-          </div>
+          <Link href="/app/profile">
+            <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="md" priority />
+          </Link>
         </div>
       </motion.div>
 
@@ -262,7 +180,6 @@ export function DashboardContent({
         className="mt-5"
       >
         <div
-          data-tour="balance-card"
           className={`rounded-2xl p-5 text-white shadow-lg ${
             isPositive
               ? "gradient-income shadow-income/20"
@@ -311,7 +228,6 @@ export function DashboardContent({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.14, duration: 0.4 }}
-        data-tour="quick-actions"
         className="mt-3 flex gap-2"
       >
         <Link
@@ -328,7 +244,7 @@ export function DashboardContent({
           <QrCode className="h-3.5 w-3.5" />
           Ler convite
         </Link>
-        {user?.pixKeyHint && (
+        {me.pixKeyHint && (
           <button
             onClick={() => setQuickChargeOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/5 px-3 py-1.5 text-xs font-medium text-success transition-colors hover:bg-success/10"
@@ -339,13 +255,101 @@ export function DashboardContent({
         )}
       </motion.div>
 
+      {pendingIncoming.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.17, duration: 0.4 }}
+          className="mt-6"
+        >
+          <h2 className="text-lg font-semibold">Pendentes de confirmação</h2>
+          <div className="mt-3 space-y-2">
+            {pendingIncoming.map(({ groupId, settlement }) => (
+              <div
+                key={settlement.id}
+                className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-4"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {memberName(groups[groupId], settlement.fromUserId)} te pagou
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {groups[groupId]?.group.name}
+                  </p>
+                  <p className="text-sm font-semibold tabular-nums text-success">
+                    {formatBRL(settlement.amountCents)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    size="sm"
+                    disabled={actingId === settlement.id}
+                    onClick={() => void handleConfirm(groupId, settlement.id)}
+                  >
+                    <Check className="h-4 w-4" />
+                    Confirmar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={actingId === settlement.id}
+                    onClick={() => void handleVoid(groupId, settlement.id)}
+                  >
+                    Recusar
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.section>
+      )}
+
+      {pendingOutgoing.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+          className="mt-4"
+        >
+          <h2 className="text-lg font-semibold">Aguardando confirmação</h2>
+          <div className="mt-3 space-y-2">
+            {pendingOutgoing.map(({ groupId, settlement }) => (
+              <div
+                key={settlement.id}
+                className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-4"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {memberName(groups[groupId], settlement.toUserId)}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {groups[groupId]?.group.name}
+                  </p>
+                  <p className="text-sm font-semibold tabular-nums">
+                    {formatBRL(settlement.amountCents)}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={actingId === settlement.id}
+                  onClick={() => void handleVoid(groupId, settlement.id)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </motion.section>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2, duration: 0.4 }}
+        transition={{ delay: 0.23, duration: 0.4 }}
         className="mt-8"
       >
-        <div data-tour="debt-tabs" className="flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Quem deve o quê</h2>
           <Link
             href="/app/groups"
@@ -434,47 +438,16 @@ export function DashboardContent({
           animate="visible"
           className="mt-4 space-y-3"
         >
-          {filteredDebts.map((debt) => {
-            const debtKey = `${debt.groupId}-${debt.counterpartyId}`;
-            const fromUserId =
-              debt.direction === "owes" ? user?.id : debt.counterpartyId;
-            const toUserId =
-              debt.direction === "owes" ? debt.counterpartyId : user?.id;
-            const settlementKey =
-              fromUserId && toUserId
-                ? settlementEdgeKey({
-                  groupId: debt.groupId,
-                  fromUserId,
-                  toUserId,
-                })
-                : null;
-            const isActingOnThis =
-              settlementKey !== null &&
-              (acting === settlementKey ||
-                submission.reservedEdgeKeys.has(settlementKey));
-            return (
-              <motion.div key={debtKey} variants={staggerItem}>
-                <DebtCard
-                  debt={debt}
-                  onPay={(debtToPay) => {
-                    if (!submission.ready || isActingOnThis) return;
-                    setPixModal({ debt: debtToPay, mode: "pay" });
-                  }}
-                  onCollect={(debtToCollect) => {
-                    if (!submission.ready || isActingOnThis) return;
-                    setPixModal({ debt: debtToCollect, mode: "collect" });
-                  }}
-                  onNudge={handleNudge}
-                  isActing={isActingOnThis}
-                  nudgeCooldown={nudgeSent.has(`${debt.groupId}-${debt.counterpartyId}`)}
-                />
-              </motion.div>
-            );
-          })}
+          {filteredDebts.map((debt) => (
+            <motion.div
+              key={`${debt.groupId}-${debt.counterpartyId}`}
+              variants={staggerItem}
+            >
+              <DebtCard debt={debt} onPay={setPayingDebt} />
+            </motion.div>
+          ))}
         </motion.div>
       </motion.div>
-
-      <OnboardingTour userId={user?.id} />
 
       {quickChargeOpen && (
         <QuickChargeModal
@@ -483,29 +456,14 @@ export function DashboardContent({
         />
       )}
 
-      {pixModal && (
+      {payingDebt && (
         <PixQrModal
           open
-          onClose={() => setPixModal(null)}
-          recipientName={pixModal.debt.counterpartyName}
-          amountCents={pixModal.debt.amountCents}
-          recipientUserId={pixModal.mode === "collect" ? user?.id : pixModal.debt.counterpartyId}
-          groupId={pixModal.debt.groupId}
-          mode={pixModal.mode}
-          onMarkPaid={(amountCents: number) =>
-            handleRecordSettlement(pixModal.debt, amountCents)
-          }
-          onSettlementComplete={() => {
-            setPixModal(null);
-            void fetchDashboard().catch((error) => {
-              if (error instanceof Error) {
-                setSettlementRefreshError(error.message);
-                return;
-              }
-              setSettlementRefreshError("Não foi possível atualizar os saldos.");
-            });
-          }}
-          submission={submission}
+          onClose={() => setPayingDebt(null)}
+          recipientName={payingDebt.counterpartyName}
+          amountCents={payingDebt.amountCents}
+          mode="pay"
+          onMarkPaid={handleMarkPaid}
         />
       )}
     </div>

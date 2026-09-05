@@ -301,28 +301,18 @@ export function GroupSettlementView({
           onClose={() => setPixModal(null)}
           recipientName={pixModal.recipientName}
           amountCents={pixModal.amountCents}
-          recipientUserId={pixModal.mode === "collect" ? currentUserId : pixModal.recipientId}
-          groupId={groupId}
           mode={pixModal.mode}
-          onMarkPaid={(amountCents: number) => {
+          onMarkPaid={async (amountCents: number) => {
             if (pixModal.mode === "collect") {
-              return handleRecordSettlement(
-                pixModal.recipientId,
-                currentUserId,
-                amountCents,
-              );
+              await handleRecordSettlement(pixModal.recipientId, currentUserId, amountCents);
+              return;
             }
-            return handleRecordSettlement(
-              currentUserId,
-              pixModal.recipientId,
-              amountCents,
-            );
+            await handleRecordSettlement(currentUserId, pixModal.recipientId, amountCents);
           }}
           onSettlementComplete={() => {
             setPixModal(null);
             window.dispatchEvent(new CustomEvent("app-refresh"));
           }}
-          submission={submission}
         />
       )}
     </div>

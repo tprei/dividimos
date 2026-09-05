@@ -1150,14 +1150,13 @@ export default function BillDetailPage({
       <PixQrModal
         open={pixModal.open}
         onClose={() => setPixModal((current) => ({ ...current, open: false }))}
-        recipientUserId={pixModal.recipientUserId}
         recipientName={pixModal.name}
         amountCents={pixModal.amount}
         mode={pixModal.mode}
-        groupId={expense.groupId}
-        onMarkPaid={handleMarkPaid}
+        onMarkPaid={async (amountCents) => {
+          await handleMarkPaid(amountCents);
+        }}
         onSettlementComplete={handleSettlementComplete}
-        submission={submission}
       />
 
       <GuestClaimShareModal

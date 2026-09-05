@@ -1,79 +1,67 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { DebtCard } from "./debt-card";
-import type { DebtSummary } from "@/types";
+import type { DebtRow } from "@/lib/ledger/debt-rows";
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    prefetch: vi.fn(),
-    push: vi.fn(),
-    replace: vi.fn(),
-    back: vi.fn(),
-    forward: vi.fn(),
-    refresh: vi.fn(),
-  }),
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 
-const mockDebt: DebtSummary = {
+const baseRow: DebtRow = {
   groupId: "g1",
   groupName: "Almoço",
+  isDm: false,
+  counterpartyKind: "user",
   counterpartyId: "u2",
   counterpartyName: "Maria Silva",
   counterpartyAvatarUrl: null,
   amountCents: 5000,
   direction: "owes",
-  isDm: false,
 };
 
 describe("DebtCard", () => {
-  it("renders a link to the conversation page", () => {
-    render(
-      <DebtCard
-        debt={mockDebt}
-        onPay={vi.fn()}
-        onCollect={vi.fn()}
-      />,
-    );
+  it("renders a link to the conversation page with counterparty and amount", () => {
+    render(<DebtCard debt={baseRow} onPay={vi.fn()} />);
 
     const link = screen.getByRole("link");
     expect(link).toHaveAttribute("href", "/app/conversations/u2");
-  });
-
-  it("displays counterparty name and group name", () => {
-    render(
-      <DebtCard
-        debt={mockDebt}
-        onPay={vi.fn()}
-        onCollect={vi.fn()}
-      />,
-    );
-
     expect(screen.getByText("Maria")).toBeInTheDocument();
     expect(screen.getByText("Almoço")).toBeInTheDocument();
+    expect(screen.getByText("R$ 50,00")).toBeInTheDocument();
   });
 
-  it("shows 'Pagar via Pix' button when user owes", () => {
+  it("calls onPay with the row when the user owes and presses Pagar via Pix", () => {
+    const onPay = vi.fn();
+    render(<DebtCard debt={baseRow} onPay={onPay} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pagar via Pix" }));
+    expect(onPay).toHaveBeenCalledWith(baseRow);
+  });
+
+  it("shows no pay action when the user is owed", () => {
     render(
       <DebtCard
-        debt={mockDebt}
+        debt={{ ...baseRow, direction: "owed" }}
         onPay={vi.fn()}
-        onCollect={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Pagar via Pix")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByText("Você recebe")).toBeInTheDocument();
   });
 
-  it("shows 'Cobrar via Pix' button when user is owed", () => {
-    const owedDebt: DebtSummary = { ...mockDebt, direction: "owed" };
+  it("renders a guest counterparty with a chip, no conversation link, and no pay action", () => {
     render(
       <DebtCard
-        debt={owedDebt}
+        debt={{ ...baseRow, counterpartyKind: "guest", counterpartyName: "Bruno Convidado" }}
         onPay={vi.fn()}
-        onCollect={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Cobrar via Pix")).toBeInTheDocument();
+    expect(screen.getByText("Convidado")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
