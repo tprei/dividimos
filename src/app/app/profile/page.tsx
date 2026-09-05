@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import { ProfileShareModal } from "@/components/profile/profile-share-modal";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Skeleton } from "@/components/shared/skeleton";
@@ -25,11 +27,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
+import { useMe } from "@/hooks/use-me";
+import { useAppStore } from "@/stores/app-store";
+import { updateProfile } from "@/lib/sync/mutations-group";
+import { getSupabase } from "@/lib/sync/client";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { updatePixKey } from "./actions";
-import toast from "react-hot-toast";
-import type { PixKeyType, User } from "@/types";
+import type { PixKeyType } from "@/types";
+import type { Me } from "@/types/ledger";
 
 const pixKeyTypeLabels: Record<string, string> = {
   cpf: "CPF",
@@ -66,7 +71,7 @@ function toPixKeyValue(type: PixKeyType, display: string): string {
 }
 
 export default function ProfilePage() {
-  const { user, status, userId, generation } = useAuth();
+  const me = useMe();
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof document === "undefined") return false;
     const stored = localStorage.getItem("theme");
@@ -85,7 +90,7 @@ export default function ProfilePage() {
     localStorage.setItem("theme", next ? "dark" : "light");
   };
 
-  if (status === "loading") {
+  if (!me) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
         <div className="flex items-center gap-4">
@@ -102,10 +107,8 @@ export default function ProfilePage() {
 
   return (
     <AuthenticatedProfilePage
-      key={`${generation}:${userId ?? "anonymous"}`}
-      user={user}
-      userId={userId}
-      generation={generation}
+      key={me.id}
+      me={me}
       darkMode={darkMode}
       onToggleDark={toggleDark}
     />
@@ -113,18 +116,23 @@ export default function ProfilePage() {
 }
 
 function AuthenticatedProfilePage({
-  user,
-  userId,
-  generation,
+  me,
   darkMode,
   onToggleDark,
 }: {
-  user: User | null;
-  userId: string | null;
-  generation: number;
+  me: Me;
   darkMode: boolean;
   onToggleDark: () => void;
 }) {
+  const router = useRouter();
+  const userId = me.id;
+
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [handleInput, setHandleInput] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   const [editingPix, setEditingPix] = useState(false);
   const [pixType, setPixType] = useState<PixKeyType>("email");
   const [pixInput, setPixInput] = useState("");
@@ -132,14 +140,8 @@ function AuthenticatedProfilePage({
   const [isPending, startTransition] = useTransition();
   const [shareOpen, setShareOpen] = useState(false);
 
-  // Flipped to false when this keyed instance unmounts. An identity boundary
-  // changes the key, unmounting this whole subtree, so a save continuation
-  // that resumes afterwards sees this and bails before any side effect.
   const aliveRef = useRef(true);
-  // Mirror the identity this instance is mounted for so a resuming
-  // continuation can confirm it still matches what it was issued for. Updated
-  // in an effect (never during render) so it stays out of the render output.
-  const identityRef = useRef({ userId, generation });
+  const identityRef = useRef({ userId });
 
   useEffect(() => {
     aliveRef.current = true;
@@ -149,17 +151,48 @@ function AuthenticatedProfilePage({
   }, []);
 
   useEffect(() => {
-    identityRef.current = { userId, generation };
+    identityRef.current = { userId };
   });
 
   const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    window.location.href = "/auth";
+    await getSupabase().auth.signOut();
+    useAppStore.getState().reset();
+    router.replace("/auth");
+  };
+
+  const startEditProfile = () => {
+    setNameInput(me.name);
+    setHandleInput(me.handle);
+    setProfileError("");
+    setEditingProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    const cleanName = nameInput.trim();
+    const cleanHandle = handleInput.trim().replace(/^@/, "");
+    if (!cleanName || !cleanHandle) return;
+
+    const ownerId = userId;
+    setIsSavingProfile(true);
+    setProfileError("");
+
+    try {
+      await updateProfile({ name: cleanName, handle: cleanHandle });
+      if (!aliveRef.current || identityRef.current.userId !== ownerId) return;
+      toast.success("Perfil atualizado");
+      setEditingProfile(false);
+    } catch (err) {
+      if (!aliveRef.current || identityRef.current.userId !== ownerId) return;
+      setProfileError(ledgerErrorMessage(err));
+    } finally {
+      if (aliveRef.current) {
+        setIsSavingProfile(false);
+      }
+    }
   };
 
   const startEditPix = () => {
-    setPixType(user?.pixKeyType ?? "email");
+    setPixType(me.pixKeyType ?? "email");
     setPixInput("");
     setPixError("");
     setEditingPix(true);
@@ -189,34 +222,32 @@ function AuthenticatedProfilePage({
     formData.set("pixKey", realValue);
     formData.set("pixKeyType", pixType);
 
-    // Snapshot the owner at dispatch time. The action treats this id as
-    // untrusted and re-checks server auth; locally it is used to ignore any
-    // result that outlives the identity it was issued for.
     const ownerId = userId;
-    const ownerGeneration = generation;
     if (!ownerId) return;
 
     startTransition(async () => {
       const result = await updatePixKey(ownerId, formData);
 
-      // If this keyed instance was replaced by an account switch, or no longer
-      // represents the same identity, drop the result without touching state,
-      // showing a toast, or reloading the page.
-      if (!aliveRef.current) return;
-      if (
-        identityRef.current.userId !== ownerId ||
-        identityRef.current.generation !== ownerGeneration
-      ) {
+      if (!aliveRef.current || identityRef.current.userId !== ownerId) {
         return;
       }
 
-      if (result.error) {
+      if ("error" in result) {
         setPixError(result.error);
         return;
       }
+
+      useAppStore.getState().patch((s) => ({
+        me: s.me
+          ? {
+              ...s.me,
+              pixKeyType: result.pixKeyType,
+              pixKeyHint: result.pixKeyHint,
+            }
+          : null,
+      }));
       toast.success("Chave Pix salva");
       setEditingPix(false);
-      window.location.reload();
     });
   };
 
@@ -238,26 +269,124 @@ function AuthenticatedProfilePage({
         className="flex items-center gap-4"
       >
         <UserAvatar
-          name={user?.name ?? ""}
-          avatarUrl={user?.avatarUrl}
+          name={me.name}
+          avatarUrl={me.avatarUrl}
           size="lg"
           priority
         />
-        <div className="flex-1">
-          <h1 className="text-xl font-bold">{user?.name}</h1>
-          <p className="text-sm text-muted-foreground">@{user?.handle}</p>
-          {user?.email && (
-            <p className="text-xs text-muted-foreground">{user.email}</p>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold truncate">{me.name}</h1>
+            {!editingProfile && (
+              <button
+                onClick={startEditProfile}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                aria-label="Editar perfil"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">@{me.handle}</p>
+          {me.email && (
+            <p className="text-xs text-muted-foreground truncate">{me.email}</p>
           )}
         </div>
         <button
           onClick={() => setShareOpen(true)}
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors hover:bg-primary/20"
           aria-label="Compartilhar perfil"
         >
           <QrCode className="h-5 w-5" />
         </button>
       </motion.div>
+
+      <AnimatePresence>
+        {editingProfile && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 overflow-hidden rounded-2xl border bg-card p-4 space-y-3"
+          >
+            <div className="space-y-1">
+              <Label htmlFor="profile-name" className="text-xs font-medium">
+                Nome
+              </Label>
+              <Input
+                id="profile-name"
+                value={nameInput}
+                onChange={(e) => {
+                  setNameInput(e.target.value);
+                  setProfileError("");
+                }}
+                placeholder="Seu nome"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="profile-handle" className="text-xs font-medium">
+                Handle (@)
+              </Label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                  @
+                </span>
+                <Input
+                  id="profile-handle"
+                  className="pl-7"
+                  value={handleInput}
+                  onChange={(e) => {
+                    setHandleInput(e.target.value.replace(/^@/, ""));
+                    setProfileError("");
+                  }}
+                  placeholder="seu_usuario"
+                />
+              </div>
+            </div>
+
+            {profileError && (
+              <p className="text-xs text-destructive">{profileError}</p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setEditingProfile(false);
+                  setProfileError("");
+                }}
+                disabled={isSavingProfile}
+                className="gap-1"
+              >
+                <X className="h-3.5 w-3.5" />
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveProfile}
+                disabled={
+                  isSavingProfile ||
+                  !nameInput.trim() ||
+                  !handleInput.trim()
+                }
+                className="gap-1"
+              >
+                {isSavingProfile ? (
+                  "Salvando..."
+                ) : (
+                  <>
+                    <Check className="h-3.5 w-3.5" />
+                    Salvar
+                  </>
+                )}
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -278,10 +407,10 @@ function AuthenticatedProfilePage({
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium">
-                {pixKeyTypeLabels[user?.pixKeyType ?? "email"]}
+                {pixKeyTypeLabels[me.pixKeyType ?? "email"]}
               </p>
               <p className="text-xs text-muted-foreground font-mono">
-                {user?.pixKeyHint || "Não cadastrada"}
+                {me.pixKeyHint || "Não cadastrada"}
               </p>
             </div>
             {!editingPix && (
@@ -303,7 +432,11 @@ function AuthenticatedProfilePage({
                   {PIX_KEY_OPTIONS.map((opt) => (
                     <button
                       key={opt.type}
-                      onClick={() => { setPixType(opt.type); setPixInput(""); setPixError(""); }}
+                      onClick={() => {
+                        setPixType(opt.type);
+                        setPixInput("");
+                        setPixError("");
+                      }}
                       className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                         pixType === opt.type
                           ? "bg-primary text-primary-foreground"
@@ -355,7 +488,9 @@ function AuthenticatedProfilePage({
                     disabled={!pixInput || isPending}
                     className="gap-1"
                   >
-                    {isPending ? "Salvando..." : (
+                    {isPending ? (
+                      "Salvando..."
+                    ) : (
                       <>
                         <Check className="h-3.5 w-3.5" />
                         Salvar
@@ -387,17 +522,23 @@ function AuthenticatedProfilePage({
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Handle
         </h2>
-        <div className="rounded-2xl border bg-card p-4">
+        <div
+          className="rounded-2xl border bg-card p-4 cursor-pointer"
+          onClick={!editingProfile ? startEditProfile : undefined}
+        >
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <AtSign className="h-5 w-5" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium">@{user?.handle}</p>
+              <p className="text-sm font-medium">@{me.handle}</p>
               <p className="text-xs text-muted-foreground">
                 Manda pra galera te achar aqui
               </p>
             </div>
+            {!editingProfile && (
+              <Pencil className="h-4 w-4 text-muted-foreground" />
+            )}
           </div>
         </div>
       </motion.div>
@@ -481,9 +622,9 @@ function AuthenticatedProfilePage({
       <ProfileShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
-        handle={user?.handle ?? ""}
-        name={user?.name ?? ""}
-        avatarUrl={user?.avatarUrl}
+        handle={me.handle}
+        name={me.name}
+        avatarUrl={me.avatarUrl}
       />
     </div>
   );

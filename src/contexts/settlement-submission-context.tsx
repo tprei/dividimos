@@ -17,7 +17,7 @@ import {
   SettlementOutcomeUnknownError,
 } from "@/lib/supabase/settlement-actions";
 import { notifySettlementRecorded } from "@/lib/push/push-notify";
-import { useUser } from "@/contexts/user-context";
+import { useUser } from "@/hooks/use-auth";
 import type {
   RecordSettlementsRequest,
   RecordSettlementsResult,

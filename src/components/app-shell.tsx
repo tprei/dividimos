@@ -1,25 +1,46 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Bell, Home, Loader2, MessageSquare, Plus, RefreshCw, Search, Settings, User, Users } from "lucide-react";
+import {
+  Bell,
+  Home,
+  Loader2,
+  MessageSquare,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+  User,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
-import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
-import { cn } from "@/lib/utils";
+import { DashboardSkeleton } from "@/components/shared/skeleton";
 import { UnreadBadge } from "@/components/shared/unread-badge";
-import { UserProvider } from "@/contexts/user-context";
 import { SettlementSubmissionProvider } from "@/contexts/settlement-submission-context";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
-import { useUnreadConversations } from "@/hooks/use-unread-conversations";
-import type { User as UserType } from "@/types";
+import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
+import { attachAuthListener } from "@/lib/sync/auth";
+import { attachVisibilityRefresh, runBootstrap } from "@/lib/sync/bootstrap";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import { startRealtime } from "@/lib/sync/realtime";
+import { cn } from "@/lib/utils";
+import { selectUnreadTotal } from "@/stores/app-selectors";
+import { useAppStore } from "@/stores/app-store";
 
 const navItems = [
   { href: "/app", icon: Home, label: "Início" },
-  { href: "/app/conversations", icon: MessageSquare, label: "Conversas", badge: true as const },
+  {
+    href: "/app/conversations",
+    icon: MessageSquare,
+    label: "Conversas",
+    badge: true as const,
+  },
   { href: "/app/bill/new", icon: Plus, label: "Nova", primary: true },
   { href: "/app/groups", icon: Users, label: "Grupos" },
   { href: "/app/profile", icon: User, label: "Perfil" },
@@ -28,12 +49,15 @@ const navItems = [
 function NavBar() {
   const pathname = usePathname();
   const keyboardOpen = useKeyboardVisible();
-  const unreadConversations = useUnreadConversations();
+  const unreadTotal = useAppStore(selectUnreadTotal);
 
   if (keyboardOpen) return null;
 
   return (
-    <nav data-tour="nav-bar" className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border/50 safe-bottom">
+    <nav
+      data-tour="nav-bar"
+      className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border/50 safe-bottom"
+    >
       <div className="mx-auto flex h-16 max-w-lg items-center justify-around px-2">
         {navItems.map((item) => {
           const isActive =
@@ -70,7 +94,7 @@ function NavBar() {
                   }`}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
-                {showBadge && <UnreadBadge count={unreadConversations} />}
+                {showBadge && <UnreadBadge count={unreadTotal} />}
               </motion.div>
               <span
                 className={`text-[10px] font-medium transition-colors ${
@@ -131,18 +155,44 @@ function usePullToRefresh(onRefresh: () => Promise<void>) {
   return { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd };
 }
 
-export function AppShell({
-  initialUser,
-  children,
-}: {
-  initialUser: UserType | null;
-  children: React.ReactNode;
-}) {
+export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const keyboardOpen = useKeyboardVisible();
   const [refreshing, setRefreshing] = useState(false);
   const [unread, setUnread] = useState(false);
+
+  const hydrated = useAppStore((s) => s.hydrated);
+  const me = useAppStore((s) => s.me);
+
+  useEffect(() => {
+    void useAppStore.persist.rehydrate();
+    runBootstrap().catch((err) => {
+      if (err instanceof LedgerError && err.code === "unauthenticated") {
+        router.replace("/auth");
+        return;
+      }
+      toast.error(ledgerErrorMessage(err));
+    });
+
+    const stopRealtime = startRealtime();
+    const stopVisibility = attachVisibilityRefresh();
+    const stopAuth = attachAuthListener(() => {
+      router.replace("/auth");
+    });
+
+    return () => {
+      stopRealtime();
+      stopVisibility();
+      stopAuth();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (hydrated && me && !me.onboarded) {
+      router.replace("/auth/onboard");
+    }
+  }, [hydrated, me, router]);
 
   useEffect(() => {
     if (pathname === "/app/activity") {
@@ -159,10 +209,6 @@ export function AppShell({
     return () => window.removeEventListener("activity-updated", onNewActivity);
   }, []);
 
-  // Deep-link on notification tap (native only). Capacitor's
-  // pushNotificationActionPerformed event fires when the user taps a
-  // notification that arrived while the app was in any state. The payload
-  // carries { data: { url: "/app/..." } } which we dispatched server-side.
   useEffect(() => {
     let handle: { remove: () => Promise<void> } | null = null;
     let cancelled = false;
@@ -199,17 +245,29 @@ export function AppShell({
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    window.dispatchEvent(new CustomEvent("app-refresh"));
-    router.refresh();
-    await new Promise((r) => setTimeout(r, 800));
-    setRefreshing(false);
+    try {
+      await runBootstrap();
+    } catch (err) {
+      if (err instanceof LedgerError && err.code === "unauthenticated") {
+        router.replace("/auth");
+        return;
+      }
+      toast.error(ledgerErrorMessage(err));
+    } finally {
+      setRefreshing(false);
+    }
   }, [router]);
 
-  const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(handleRefresh);
+  const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd } =
+    usePullToRefresh(handleRefresh);
 
   return (
-    <UserProvider initialUser={initialUser}>
-      <SettlementSubmissionProvider>
+    <SettlementSubmissionProvider>
+      {!hydrated ? (
+        <div className="px-4 py-6">
+          <DashboardSkeleton />
+        </div>
+      ) : (
         <div className="flex h-dvh flex-col overflow-hidden bg-background">
           <header className="sticky top-0 z-40 glass border-b border-border/50">
             <div className="flex h-14 items-center justify-between px-4">
@@ -255,7 +313,12 @@ export function AppShell({
 
           {(pulling || pullDistance > 0) && (
             <div className="flex justify-center py-2">
-              <Loader2 className={`h-5 w-5 text-muted-foreground ${pulling ? "animate-spin" : ""}`} style={{ opacity: pulling ? 1 : pullDistance / 80 }} />
+              <Loader2
+                className={`h-5 w-5 text-muted-foreground ${
+                  pulling ? "animate-spin" : ""
+                }`}
+                style={{ opacity: pulling ? 1 : pullDistance / 80 }}
+              />
             </div>
           )}
 
@@ -270,7 +333,7 @@ export function AppShell({
 
           <NavBar />
         </div>
-      </SettlementSubmissionProvider>
-    </UserProvider>
+      )}
+    </SettlementSubmissionProvider>
   );
 }

@@ -26,7 +26,7 @@ vi.mock("@/lib/push/push-notify", () => ({
   notifySettlementRecorded: mocks.notifySettlementRecorded,
 }));
 
-vi.mock("@/contexts/user-context", () => ({
+vi.mock("@/hooks/use-auth", () => ({
   useUser: () => mocks.user,
 }));
 
