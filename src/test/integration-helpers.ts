@@ -287,7 +287,7 @@ export async function getBalances(
 }
 
 export async function expectRpcError(
-  call: Promise<{ error: { message: string } | null }>,
+  call: PromiseLike<{ error: { message: string } | null }>,
 ): Promise<string> {
   const { error } = await call;
   if (!error) {

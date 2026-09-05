@@ -1,0 +1,595 @@
+import { describe, it, expect, beforeAll } from "vitest";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { isIntegrationTestReady } from "@/test/integration-setup";
+import {
+  createTestUsers,
+  authenticateAs,
+  createGroupWithMembers,
+  createExpense,
+  equalSplitPayload,
+  getBalances,
+  expectRpcError,
+  type TestUser,
+} from "@/test/integration-helpers";
+
+interface UserProfile {
+  id: string;
+  handle: string;
+  name: string;
+  avatarUrl: string | null;
+}
+
+interface MeProfile extends UserProfile {
+  email: string;
+  pixKeyType: string | null;
+  pixKeyHint: string | null;
+  onboarded: boolean;
+  notificationPreferences: Record<string, unknown> | null;
+}
+
+interface GroupMember {
+  groupId: string;
+  userId: string;
+  status: "invited" | "accepted";
+  invitedBy: string | null;
+  acceptedAt: string | null;
+  user: UserProfile;
+}
+
+interface GroupInfo {
+  id: string;
+  kind: "group" | "dm";
+  name: string;
+  creatorId: string;
+  dmUserA: string | null;
+  dmUserB: string | null;
+  ledgerVersion: number;
+  createdAt: string;
+}
+
+interface GroupSnapshot {
+  group: GroupInfo;
+  members: GroupMember[];
+  balances: Array<{ kind: string; participantId: string; netCents: number }>;
+  pendingSettlements: unknown[];
+  recentExpenses: unknown[];
+  lastEventId: number;
+  unreadCount: number;
+  lastMessage: unknown | null;
+  lastActivityAt: string;
+}
+
+interface BootstrapPayload {
+  me: MeProfile;
+  groups: GroupSnapshot[];
+  serverTime: string;
+}
+
+interface MutationAck {
+  groupId: string;
+  ledgerVersion: number;
+  eventId: number | null;
+}
+
+interface SettlementAck {
+  settlementId: string;
+  groupId: string;
+  ledgerVersion: number;
+  eventId: number;
+}
+
+interface DmAck {
+  groupId: string;
+  ledgerVersion: number;
+  eventId: null;
+  created: boolean;
+}
+
+interface InviteLinkAck {
+  groupId: string;
+  token: string;
+  expiresAt: string | null;
+  maxUses: number | null;
+}
+
+interface InviteLinkPreview {
+  groupName: string | null;
+  memberCount: number | null;
+  creatorName: string | null;
+  valid: boolean;
+}
+
+interface ActivityEvent {
+  id: number;
+  groupId: string;
+  actorId: string;
+  kind: string;
+  expenseId: string | null;
+  settlementId: string | null;
+  subjectUserId: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+async function rpc<T>(
+  client: SupabaseClient,
+  fn: string,
+  args: Record<string, unknown> = {},
+): Promise<T> {
+  const { data, error } = (await client.rpc(fn, args)) as {
+    data: T | null;
+    error: { message: string } | null;
+  };
+  if (error) {
+    throw new Error(`RPC ${fn} failed: ${error.message}`);
+  }
+  return data as T;
+}
+
+async function expectError(
+  call: PromiseLike<{ error: { message: string } | null }>,
+): Promise<string> {
+  return expectRpcError(Promise.resolve(call));
+}
+
+describe.skipIf(!isIntegrationTestReady)(
+  "Phase 1 ledger group RPCs integration tests",
+  () => {
+    let u1: TestUser;
+    let u2: TestUser;
+    let u3: TestUser;
+    let u4: TestUser;
+    let u5: TestUser;
+    let u6: TestUser;
+    let u7: TestUser;
+
+    let c1: SupabaseClient;
+    let c2: SupabaseClient;
+    let c3: SupabaseClient;
+    let c5: SupabaseClient;
+    let c6: SupabaseClient;
+    let c7: SupabaseClient;
+    let anonClient: SupabaseClient;
+
+    beforeAll(async () => {
+      const users = await createTestUsers(7);
+      [u1, u2, u3, u4, u5, u6, u7] = users;
+
+      c1 = authenticateAs(u1);
+      c2 = authenticateAs(u2);
+      c3 = authenticateAs(u3);
+      c5 = authenticateAs(u5);
+      c6 = authenticateAs(u6);
+      c7 = authenticateAs(u7);
+
+      anonClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+    });
+
+    describe("group creation, invitation, and membership lifecycle", () => {
+      it("fails with user_not_found when creating group with a nonexistent user id", async () => {
+        const fakeUserId = crypto.randomUUID();
+        const err = await expectError(
+          c1.rpc("create_group", {
+            p_name: "Invalid Member Group",
+            p_member_ids: [fakeUserId],
+          }),
+        );
+        expect(err).toBe("user_not_found");
+      });
+
+      it("handles creation with invitees, bootstrap status, accept, decline, re-accept, and invite by member", async () => {
+        const createData = await rpc<MutationAck>(c1, "create_group", {
+          p_name: "Projeto Viagem",
+          p_member_ids: [u2.id, u3.id],
+        });
+        const groupId = createData.groupId;
+        expect(groupId).toBeDefined();
+        expect(createData.ledgerVersion).toBeDefined();
+        expect(createData.eventId).not.toBeNull();
+
+        const snap1 = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: groupId,
+        });
+        expect(snap1.members).toHaveLength(3);
+
+        const m1 = snap1.members.find((m) => m.userId === u1.id);
+        const m2 = snap1.members.find((m) => m.userId === u2.id);
+        const m3 = snap1.members.find((m) => m.userId === u3.id);
+
+        expect(m1?.status).toBe("accepted");
+        expect(typeof m1?.acceptedAt).toBe("string");
+        expect(m2?.status).toBe("invited");
+        expect(m2?.acceptedAt).toBeNull();
+        expect(m2?.invitedBy).toBe(u1.id);
+        expect(m3?.status).toBe("invited");
+        expect(m3?.acceptedAt).toBeNull();
+        expect(m3?.invitedBy).toBe(u1.id);
+
+        const boot2 = await rpc<BootstrapPayload>(c2, "bootstrap");
+        const bootGroup2 = boot2.groups.find((g) => g.group.id === groupId);
+        expect(bootGroup2).toBeDefined();
+        const bootMember2 = bootGroup2?.members.find((m) => m.userId === u2.id);
+        expect(bootMember2?.status).toBe("invited");
+
+        const acceptAck = await rpc<MutationAck>(c2, "accept_invitation", {
+          p_group_id: groupId,
+        });
+        expect(acceptAck.groupId).toBe(groupId);
+
+        const snapAfterAccept = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: groupId,
+        });
+        const m2AfterAccept = snapAfterAccept.members.find(
+          (m) => m.userId === u2.id,
+        );
+        expect(m2AfterAccept?.status).toBe("accepted");
+        expect(typeof m2AfterAccept?.acceptedAt).toBe("string");
+
+        const declineAck = await rpc<MutationAck>(c3, "decline_invitation", {
+          p_group_id: groupId,
+        });
+        expect(declineAck.groupId).toBe(groupId);
+
+        const snapAfterDecline = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: groupId,
+        });
+        expect(
+          snapAfterDecline.members.some((m) => m.userId === u3.id),
+        ).toBe(false);
+
+        const reAcceptErr = await expectError(
+          c3.rpc("accept_invitation", { p_group_id: groupId }),
+        );
+        expect(reAcceptErr).toBe("not_invited");
+
+        const inviteData = await rpc<MutationAck>(c2, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: u4.id,
+        });
+        expect(inviteData.groupId).toBe(groupId);
+
+        const snapAfterInvite = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: groupId,
+        });
+        const m4 = snapAfterInvite.members.find((m) => m.userId === u4.id);
+        expect(m4?.status).toBe("invited");
+        expect(m4?.invitedBy).toBe(u2.id);
+
+        const reInviteData = await rpc<MutationAck>(c2, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: u4.id,
+        });
+        expect(reInviteData.groupId).toBe(groupId);
+        expect(reInviteData.eventId).toBeNull();
+
+        const alreadyErr = await expectError(
+          c1.rpc("invite_member", {
+            p_group_id: groupId,
+            p_user_id: u2.id,
+          }),
+        );
+        expect(alreadyErr).toBe("already_member");
+      });
+    });
+
+    describe("leave_group, remove_member, and delete_group", () => {
+      it("enforces not_creator on remove_member", async () => {
+        const groupId = await createGroupWithMembers(u1, [u2], "Removal Group");
+        const err = await expectError(
+          c2.rpc("remove_member", {
+            p_group_id: groupId,
+            p_user_id: u1.id,
+          }),
+        );
+        expect(err).toBe("not_creator");
+      });
+
+      it("blocks leave_group by outstanding_balance until confirmed settlement, then excludes group from bootstrap", async () => {
+        const groupId = await createGroupWithMembers(u1, [u2], "Leave Group");
+
+        await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: equalSplitPayload([u1.id, u2.id], 1000, 0),
+        });
+
+        const balancesBefore = await getBalances(groupId);
+        const leaverBalance = balancesBefore.find(
+          (b) => b.participant_id === u2.id,
+        );
+        expect(leaverBalance?.net_cents).toBe(-500);
+
+        const leaveErr = await expectError(
+          c2.rpc("leave_group", { p_group_id: groupId }),
+        );
+        expect(leaveErr).toBe("outstanding_balance");
+
+        const opId = crypto.randomUUID();
+        const recordData = await rpc<SettlementAck>(c2, "record_settlement", {
+          p_operation_id: opId,
+          p_group_id: groupId,
+          p_to_user_id: u1.id,
+          p_amount_cents: 500,
+        });
+        expect(recordData.settlementId).toBeDefined();
+
+        const confirmData = await rpc<SettlementAck>(
+          c1,
+          "confirm_settlement",
+          {
+            p_settlement_id: recordData.settlementId,
+          },
+        );
+        expect(confirmData.settlementId).toBe(recordData.settlementId);
+
+        const balancesAfter = await getBalances(groupId);
+        expect(balancesAfter).toHaveLength(0);
+
+        const leaveAck = await rpc<MutationAck>(c2, "leave_group", {
+          p_group_id: groupId,
+        });
+        expect(leaveAck.groupId).toBe(groupId);
+
+        const bootLeaver = await rpc<BootstrapPayload>(c2, "bootstrap");
+        const foundGroup = bootLeaver.groups.find(
+          (g) => g.group.id === groupId,
+        );
+        expect(foundGroup).toBeUndefined();
+      });
+
+      it("blocks delete_group with outstanding_balance then succeeds and removes group from creator bootstrap", async () => {
+        const groupId = await createGroupWithMembers(u1, [u2], "Delete Group");
+
+        await createExpense(u1, {
+          groupId,
+          totalCents: 600,
+          payload: equalSplitPayload([u1.id, u2.id], 600, 0),
+        });
+
+        const deleteErr = await expectError(
+          c1.rpc("delete_group", { p_group_id: groupId }),
+        );
+        expect(deleteErr).toBe("outstanding_balance");
+
+        const opId = crypto.randomUUID();
+        const settlement = await rpc<SettlementAck>(c2, "record_settlement", {
+          p_operation_id: opId,
+          p_group_id: groupId,
+          p_to_user_id: u1.id,
+          p_amount_cents: 300,
+        });
+
+        await rpc<SettlementAck>(c1, "confirm_settlement", {
+          p_settlement_id: settlement.settlementId,
+        });
+
+        const deleteAck = await rpc<{ groupId: string }>(c1, "delete_group", {
+          p_group_id: groupId,
+        });
+        expect(deleteAck.groupId).toBe(groupId);
+
+        const bootCreator = await rpc<BootstrapPayload>(c1, "bootstrap");
+        const found = bootCreator.groups.find((g) => g.group.id === groupId);
+        expect(found).toBeUndefined();
+      });
+    });
+
+    describe("direct messages (DM)", () => {
+      it("prevents self-DM with invalid_argument", async () => {
+        const err = await expectError(
+          c1.rpc("get_or_create_dm", { p_user_id: u1.id }),
+        );
+        expect(err).toBe("invalid_argument");
+      });
+
+      it("creates DM idempotently with canonical user ordering, kind dm, name empty, and blocks leave_group", async () => {
+        const dm1 = await rpc<DmAck>(c1, "get_or_create_dm", {
+          p_user_id: u2.id,
+        });
+        expect(dm1.created).toBe(true);
+        expect(dm1.groupId).toBeDefined();
+
+        const dm2 = await rpc<DmAck>(c2, "get_or_create_dm", {
+          p_user_id: u1.id,
+        });
+        expect(dm2.groupId).toBe(dm1.groupId);
+        expect(dm2.created).toBe(false);
+
+        const snap = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: dm1.groupId,
+        });
+        expect(snap.group.kind).toBe("dm");
+        expect(snap.group.name).toBe("");
+        expect(snap.group.dmUserA).toBeDefined();
+        expect(snap.group.dmUserB).toBeDefined();
+        expect(snap.group.dmUserA! < snap.group.dmUserB!).toBe(true);
+
+        const leaveErr = await expectError(
+          c1.rpc("leave_group", { p_group_id: dm1.groupId }),
+        );
+        expect(leaveErr).toBe("cannot_leave_dm");
+      });
+    });
+
+    describe("invite links lifecycle", () => {
+      it("handles creation, anon preview, outsider join with event, max_uses exhaustion, deactivation by second create, and deactivate_invite_link", async () => {
+        const groupId = await createGroupWithMembers(u1, [u2], "Link Group");
+
+        const link1 = await rpc<InviteLinkAck>(c1, "create_invite_link", {
+          p_group_id: groupId,
+          p_expires_at: null,
+          p_max_uses: 2,
+        });
+        const token1 = link1.token;
+        expect(typeof token1).toBe("string");
+        expect(token1.length).toBeGreaterThan(0);
+
+        const preview1 = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: token1 },
+        );
+        expect(preview1.valid).toBe(true);
+        expect(preview1.groupName).toBe("Link Group");
+        expect(preview1.memberCount).toBe(2);
+
+        const join5 = await rpc<MutationAck>(c5, "join_via_link", {
+          p_token: token1,
+        });
+        expect(join5.groupId).toBe(groupId);
+        expect(join5.eventId).not.toBeNull();
+
+        const boot5 = await rpc<BootstrapPayload>(c5, "bootstrap");
+        const g5 = boot5.groups.find((g) => g.group.id === groupId);
+        expect(g5).toBeDefined();
+        const m5 = g5?.members.find((m) => m.userId === u5.id);
+        expect(m5?.status).toBe("accepted");
+
+        const act5 = await rpc<ActivityEvent[]>(c5, "get_activity", {
+          p_before_id: null,
+          p_limit: 50,
+        });
+        const joinEvent = act5.find(
+          (e) =>
+            e.groupId === groupId &&
+            e.kind === "member_joined" &&
+            e.subjectUserId === u5.id,
+        );
+        expect(joinEvent).toBeDefined();
+
+        await rpc<MutationAck>(c6, "join_via_link", { p_token: token1 });
+
+        const exhaustedPreview = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: token1 },
+        );
+        expect(exhaustedPreview.valid).toBe(false);
+
+        const exhaustErr = await expectError(
+          c7.rpc("join_via_link", { p_token: token1 }),
+        );
+        expect(exhaustErr).toBe("invalid_link");
+
+        const group2Id = await createGroupWithMembers(
+          u1,
+          [u2],
+          "Deactivation Group",
+        );
+        const linkA = await rpc<InviteLinkAck>(c1, "create_invite_link", {
+          p_group_id: group2Id,
+          p_expires_at: null,
+          p_max_uses: null,
+        });
+        const tokenA = linkA.token;
+
+        const previewAActive = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: tokenA },
+        );
+        expect(previewAActive.valid).toBe(true);
+
+        const linkB = await rpc<InviteLinkAck>(c1, "create_invite_link", {
+          p_group_id: group2Id,
+          p_expires_at: null,
+          p_max_uses: null,
+        });
+        const tokenB = linkB.token;
+
+        const previewADeactivated = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: tokenA },
+        );
+        expect(previewADeactivated.valid).toBe(false);
+
+        const joinDeactivatedErr = await expectError(
+          c7.rpc("join_via_link", { p_token: tokenA }),
+        );
+        expect(joinDeactivatedErr).toBe("invalid_link");
+
+        const previewBActive = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: tokenB },
+        );
+        expect(previewBActive.valid).toBe(true);
+
+        const deactAck = await rpc<{ groupId: string }>(
+          c1,
+          "deactivate_invite_link",
+          { p_group_id: group2Id },
+        );
+        expect(deactAck.groupId).toBe(group2Id);
+
+        const previewBDeactivated = await rpc<InviteLinkPreview>(
+          anonClient,
+          "preview_invite_link",
+          { p_token: tokenB },
+        );
+        expect(previewBDeactivated.valid).toBe(false);
+      });
+    });
+
+    describe("user profile update and handle lookup", () => {
+      it("enforces handle uniqueness, length validation, and updates profile correctly", async () => {
+        const takenErr = await expectError(
+          c3.rpc("update_profile", {
+            p_name: null,
+            p_handle: u1.handle,
+            p_notification_preferences: null,
+          }),
+        );
+        expect(takenErr).toBe("handle_taken");
+
+        const invalidErr = await expectError(
+          c3.rpc("update_profile", {
+            p_name: null,
+            p_handle: "ab",
+            p_notification_preferences: null,
+          }),
+        );
+        expect(invalidErr).toBe("invalid_handle");
+
+        const newHandle = `user_${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
+        const newName = "Novo Nome Legal";
+
+        const updatedMe = await rpc<MeProfile>(c3, "update_profile", {
+          p_name: newName,
+          p_handle: newHandle,
+          p_notification_preferences: null,
+        });
+        expect(updatedMe.name).toBe(newName);
+        expect(updatedMe.handle).toBe(newHandle);
+        expect(updatedMe.onboarded).toBe(true);
+
+        const myProfile = await rpc<MeProfile>(c3, "get_my_profile");
+        expect(myProfile.name).toBe(newName);
+        expect(myProfile.handle).toBe(newHandle);
+        expect(myProfile.onboarded).toBe(true);
+
+        const foundUser = await rpc<UserProfile | null>(
+          c1,
+          "lookup_user_by_handle",
+          { p_handle: newHandle },
+        );
+        expect(foundUser).not.toBeNull();
+        expect(foundUser?.id).toBe(u3.id);
+        expect(foundUser?.handle).toBe(newHandle);
+        expect(foundUser?.name).toBe(newName);
+
+        const missingUser = await rpc<UserProfile | null>(
+          c1,
+          "lookup_user_by_handle",
+          { p_handle: "nonexistent_handle_xyz_123" },
+        );
+        expect(missingUser).toBeNull();
+      });
+    });
+  },
+);
