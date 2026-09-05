@@ -1,97 +1,221 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import QRCode from "qrcode";
+import toast from "react-hot-toast";
 import { GroupInviteModal } from "./group-invite-modal";
+import {
+  createInviteLink,
+  deactivateInviteLink,
+} from "@/lib/sync/mutations-group";
 
 vi.mock("qrcode", () => ({
-  default: { toCanvas: vi.fn() },
+  default: {
+    toCanvas: vi.fn(),
+  },
 }));
 
 vi.mock("react-hot-toast", () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("@/lib/contacts", () => ({
-  isContactPickerSupported: () => false,
-  pickContacts: vi.fn(),
-  buildWhatsAppLink: (msg: string, phone?: string) =>
-    phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`,
+vi.mock("@/lib/sync/mutations-group", () => ({
+  createInviteLink: vi.fn(),
+  deactivateInviteLink: vi.fn(),
 }));
 
+vi.mock("@/lib/contacts", () => ({
+  buildWhatsAppLink: vi.fn((text: string) => `https://wa.me?text=${encodeURIComponent(text)}`),
+  isContactPickerSupported: () => false,
+  pickContacts: vi.fn(),
+}));
+
+const groupId = "g1";
+const groupName = "Viagem";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: vi.fn().mockResolvedValue(undefined),
+    },
+  });
+  vi.spyOn(window, "open").mockImplementation(() => null);
+});
+
 describe("GroupInviteModal", () => {
-  const defaultProps = {
-    open: true,
-    onClose: vi.fn(),
-    groupName: "Churrasco",
-    token: "abc-123-token",
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("renders nothing when closed", () => {
+  it("não renderiza nada quando open é false", () => {
     const { container } = render(
-      <GroupInviteModal {...defaultProps} open={false} />,
+      <GroupInviteModal
+        open={false}
+        onClose={vi.fn()}
+        groupId={groupId}
+        groupName={groupName}
+      />,
     );
-    expect(container.innerHTML).toBe("");
+
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders group name and heading when open", () => {
-    render(<GroupInviteModal {...defaultProps} />);
-    expect(screen.getByText("Convite para o grupo")).toBeInTheDocument();
-    expect(screen.getByText("Churrasco")).toBeInTheDocument();
-  });
+  it("gera link de convite e desenha QR Code ao abrir", async () => {
+    const { promise, resolve } = Promise.withResolvers<{
+      groupId: string;
+      token: string;
+      expiresAt: string | null;
+      maxUses: number | null;
+    }>();
 
-  it("renders copy and WhatsApp buttons", () => {
-    render(<GroupInviteModal {...defaultProps} />);
-    expect(screen.getByText("Copiar link")).toBeInTheDocument();
-    expect(screen.getByText("Enviar pelo WhatsApp")).toBeInTheDocument();
-  });
+    vi.mocked(createInviteLink).mockReturnValue(promise);
 
-  it("copies link to clipboard on copy button click", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      value: { writeText },
-      writable: true,
-      configurable: true,
+    render(
+      <GroupInviteModal
+        open={true}
+        onClose={vi.fn()}
+        groupId={groupId}
+        groupName={groupName}
+      />,
+    );
+
+    expect(screen.getByText("Gerando link...")).toBeInTheDocument();
+
+    resolve({
+      groupId,
+      token: "tok123",
+      expiresAt: null,
+      maxUses: null,
     });
-
-    render(<GroupInviteModal {...defaultProps} />);
-    fireEvent.click(screen.getByText("Copiar link"));
 
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith(
-        expect.stringContaining("/join/abc-123-token"),
-      );
+      expect(createInviteLink).toHaveBeenCalledWith(groupId, null, null);
+      expect(QRCode.toCanvas).toHaveBeenCalled();
+    });
+
+    const canvasArgs = vi.mocked(QRCode.toCanvas).mock.calls[0];
+    expect(canvasArgs[1]).toBe(`${window.location.origin}/join/tok123`);
+  });
+
+  it("copia link de convite para a área de transferência", async () => {
+    vi.mocked(createInviteLink).mockResolvedValue({
+      groupId,
+      token: "tok123",
+      expiresAt: null,
+      maxUses: null,
+    });
+
+    render(
+      <GroupInviteModal
+        open={true}
+        onClose={vi.fn()}
+        groupId={groupId}
+        groupName={groupName}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Desativar link")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Copiar link" }));
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/join/tok123`,
+    );
+    expect(toast.success).toHaveBeenCalledWith("Link copiado!");
+  });
+
+  it("desativa o link e permite gerar novo", async () => {
+    vi.mocked(createInviteLink).mockResolvedValue({
+      groupId,
+      token: "tok123",
+      expiresAt: null,
+      maxUses: null,
+    });
+    vi.mocked(deactivateInviteLink).mockResolvedValue(undefined);
+
+    render(
+      <GroupInviteModal
+        open={true}
+        onClose={vi.fn()}
+        groupId={groupId}
+        groupName={groupName}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Desativar link")).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Desativar link" }));
+
+    await waitFor(() => {
+      expect(deactivateInviteLink).toHaveBeenCalledWith(groupId);
+      expect(toast.success).toHaveBeenCalledWith("Link desativado");
+      expect(screen.getByText("Gerar novo link")).toBeInTheDocument();
+    });
+
+    // Clica em gerar novo link
+    vi.mocked(createInviteLink).mockResolvedValueOnce({
+      groupId,
+      token: "tok456",
+      expiresAt: null,
+      maxUses: null,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Gerar novo link" }));
+
+    await waitFor(() => {
+      expect(createInviteLink).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Desativar link")).toBeInTheDocument();
     });
   });
 
-  it("calls onClose when X button is clicked", () => {
-    render(<GroupInviteModal {...defaultProps} />);
-    const closeButtons = screen.getAllByRole("button");
-    const xButton = closeButtons.find(
-      (btn) => btn.querySelector("svg") && !btn.textContent?.trim(),
+  it("mostra mensagem de erro se a criação do link falhar", async () => {
+    vi.mocked(createInviteLink).mockRejectedValueOnce(new Error("network"));
+
+    render(
+      <GroupInviteModal
+        open={true}
+        onClose={vi.fn()}
+        groupId={groupId}
+        groupName={groupName}
+      />,
     );
-    expect(xButton).toBeDefined();
-    fireEvent.click(xButton!);
-    expect(defaultProps.onClose).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalled();
+      expect(screen.getByText("Gerar novo link")).toBeInTheDocument();
+    });
   });
 
-  it("calls onClose when backdrop is clicked", () => {
-    render(<GroupInviteModal {...defaultProps} />);
-    const backdrop = screen.getByText("Convite para o grupo").closest(
-      ".fixed",
-    );
-    if (backdrop) {
-      fireEvent.click(backdrop);
-      expect(defaultProps.onClose).toHaveBeenCalled();
-    }
-  });
+  it("abre WhatsApp com mensagem formatada", async () => {
+    vi.mocked(createInviteLink).mockResolvedValue({
+      groupId,
+      token: "tok123",
+      expiresAt: null,
+      maxUses: null,
+    });
 
-  it("renders QR hint text", () => {
-    render(<GroupInviteModal {...defaultProps} />);
-    expect(
-      screen.getByText("Escaneie ou compartilhe o link para entrar no grupo"),
-    ).toBeInTheDocument();
+    render(
+      <GroupInviteModal
+        open={true}
+        onClose={vi.fn()}
+        groupId={groupId}
+        groupName={groupName}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Desativar link")).toBeInTheDocument();
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Enviar pelo WhatsApp" }),
+    );
+
+    expect(window.open).toHaveBeenCalledWith(
+      expect.stringContaining("https://wa.me?text="),
+      "_blank",
+    );
   });
 });
