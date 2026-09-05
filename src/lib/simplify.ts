@@ -1,5 +1,6 @@
 import { formatBRL } from "./currency";
 import { allocateByWeights, allocateEvenly } from "./expense-money";
+import { netAndMinimize } from "./ledger/transfers";
 import type { User } from "@/types";
 
 interface ExpenseInput {
@@ -72,42 +73,7 @@ export function consolidateEdges(edges: DebtEdge[]): DebtEdge[] {
   return Array.from(map.values()).filter((e) => e.amountCents > 0);
 }
 
-/**
- * Reduce a raw debt graph to the minimal set of transfers by pairing the
- * largest net debtor with the largest net creditor. Drives the wizard/demo
- * preview; the stored group balances arrive already minimized from the
- * database, written by the minimize_group_balances SQL helper.
- */
-export function netAndMinimize(edges: DebtEdge[]): DebtEdge[] {
-  const balances = new Map<string, number>();
-  for (const e of edges) {
-    balances.set(e.fromUserId, (balances.get(e.fromUserId) || 0) - e.amountCents);
-    balances.set(e.toUserId, (balances.get(e.toUserId) || 0) + e.amountCents);
-  }
-
-  const debtors: { id: string; amount: number }[] = [];
-  const creditors: { id: string; amount: number }[] = [];
-  for (const [id, balance] of balances) {
-    if (balance < 0) debtors.push({ id, amount: Math.abs(balance) });
-    if (balance > 0) creditors.push({ id, amount: balance });
-  }
-  debtors.sort((a, b) => b.amount - a.amount);
-  creditors.sort((a, b) => b.amount - a.amount);
-
-  const result: DebtEdge[] = [];
-  let di = 0;
-  let ci = 0;
-  while (di < debtors.length && ci < creditors.length) {
-    const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
-    if (transfer <= 0) break;
-    result.push({ fromUserId: debtors[di].id, toUserId: creditors[ci].id, amountCents: transfer });
-    debtors[di].amount -= transfer;
-    creditors[ci].amount -= transfer;
-    if (debtors[di].amount <= 0) di++;
-    if (creditors[ci].amount <= 0) ci++;
-  }
-  return result;
-}
+export { netAndMinimize };
 
 export function computeRawEdges(
   expense: ExpenseInput,

@@ -1551,14 +1551,15 @@ export function summarizeExpenseAllocations(
   const authoritativeShareByOrder: ExpenseCents[] = new Array(
     input.participantOrder.length,
   );
+  let nextUserSlot = 0;
+  let nextGuestSlot = 0;
   for (let p = 0; p < input.participantOrder.length; p += 1) {
-    const participant = input.participantOrder[p];
-    if (participant.kind === "user") {
-      authoritativeShareByOrder[p] =
-        userShareAmounts[userParticipantIndex.get(participant.userId) as number];
+    if (input.participantOrder[p].kind === "user") {
+      authoritativeShareByOrder[p] = userShareAmounts[nextUserSlot];
+      nextUserSlot += 1;
     } else {
-      authoritativeShareByOrder[p] =
-        guestShareAmounts[guestParticipantIndex.get(participant.guestLocalId) as number];
+      authoritativeShareByOrder[p] = guestShareAmounts[nextGuestSlot];
+      nextGuestSlot += 1;
     }
   }
 
