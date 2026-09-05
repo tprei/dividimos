@@ -55,7 +55,7 @@ describe("Edit Draft Flow", () => {
       expense,
       items,
       participants: [userAlice],
-      guests: [{ id: "guest-maria", name: "Maria" }],
+      guests: [{ id: "guest-maria", name: "Maria", remoteId: "guest-maria" }],
     });
 
     const state = useBillStore.getState();
@@ -74,7 +74,7 @@ describe("Edit Draft Flow", () => {
       expense,
       items: [],
       participants: [userAlice],
-      guests: [{ id: "guest-maria", name: "Maria" }],
+      guests: [{ id: "guest-maria", name: "Maria", remoteId: "guest-maria" }],
       billSplits,
     });
 
@@ -265,8 +265,8 @@ describe("mapLoadedGuestsForEditHydration (extracted from the wizard's edit-mode
 
     const itemized = mapLoadedGuestsForEditHydration(loadedGuests, "itemized");
     expect(itemized.guests).toEqual([
-      { id: "guest-1", name: "Maria" },
-      { id: "guest-2", name: "Joao" },
+      { id: "guest-1", name: "Maria", remoteId: "guest-1" },
+      { id: "guest-2", name: "Joao", remoteId: "guest-2" },
     ]);
     // Itemized per-item provenance is not persisted server-side (#477's
     // aggregate_only mode); billSplits is single_amount-only.
@@ -287,7 +287,7 @@ describe("mapLoadedGuestsForEditHydration (extracted from the wizard's edit-mode
     ];
 
     const result = mapLoadedGuestsForEditHydration(loadedGuests, "single_amount");
-    expect(result.guests).toEqual([{ id: "guest-unclaimed", name: "Maria" }]);
+    expect(result.guests).toEqual([{ id: "guest-unclaimed", name: "Maria", remoteId: "guest-unclaimed" }]);
     expect(result.guestBillSplits).toEqual([
       { userId: "guest-unclaimed", splitType: "fixed", value: 3000, computedAmountCents: 3000 },
     ]);

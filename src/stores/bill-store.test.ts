@@ -729,7 +729,7 @@ describe("guest management", () => {
     expect(guestId).toMatch(/^guest_/);
     const { guests } = useBillStore.getState();
     expect(guests).toHaveLength(1);
-    expect(guests[0]).toEqual({ id: guestId, name: "Diana" });
+    expect(guests[0]).toEqual({ id: guestId, name: "Diana", remoteId: null });
   });
 
   it("addGuest allows multiple guests", () => {
