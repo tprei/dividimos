@@ -61,7 +61,7 @@ beforeEach(() => {
 
 describe("getAuthUser", () => {
   it("returns null when there is no authenticated user and never calls the profile RPC", async () => {
-    // getUser() resolves { data: { user: null } } by default (no setUser call).
+    // getClaims() resolves { data: null } by default (no setUser call).
 
     const result = await getAuthUser();
 
