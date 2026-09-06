@@ -1,81 +1,108 @@
-import React from "react";
-import toast from "react-hot-toast";
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import {
-  ConversationsListContent,
-  type ConversationEntry,
-} from "./conversations-list-content";
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConversationsListContent } from "./conversations-list-content";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot, Me } from "@/types/ledger";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
-vi.mock("@/hooks/use-auth", () => ({
-  useUser: () => ({ id: "user-1", name: "Test User" }),
-}));
-
-vi.mock("@/components/ui/input", () => ({
-  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => (
-    <input {...props} />
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    ...props
+  }: {
+    children: React.ReactNode;
+    href: string;
+    [k: string]: unknown;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
   ),
 }));
 
 vi.mock("@/components/conversations/new-conversation-button", () => ({
-  NewConversationButton: () => <button data-testid="nova-conversa-btn">Nova conversa</button>,
+  NewConversationButton: () => <div data-testid="new-conv-button" />,
 }));
 
-const chainEq = () => {
-  const obj: Record<string, unknown> = {};
-  obj.eq = () => obj;
-  return obj as unknown as { eq: () => typeof obj } & Promise<{ error: null }>;
+vi.mock("@/components/conversations/conversation-share-modal", () => ({
+  ConversationShareModal: () => null,
+}));
+
+const me: Me = {
+  id: "user-me",
+  handle: "alice",
+  name: "Alice Souza",
+  avatarUrl: null,
+  email: "alice@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
 };
 
-const mockRpcFn = vi.fn(() =>
-  Promise.resolve<{ data: null; error: { message: string } | null }>({
-    data: null,
-    error: null,
-  }),
-);
+const carol = {
+  id: "user-carol",
+  handle: "carol",
+  name: "Carol Souza",
+  avatarUrl: null,
+};
 
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    from: () => ({
-      update: () => chainEq(),
-      delete: () => chainEq(),
-      select: () => ({
-        or: () => Promise.resolve({ data: [] }),
-        in: () => Promise.resolve({ data: [] }),
-      }),
-    }),
-    rpc: mockRpcFn,
-  }),
-}));
-
-vi.mock("react-hot-toast", () => ({
-  default: { success: vi.fn(), error: vi.fn() },
-}));
-
-vi.mock("@/lib/supabase/unread-actions", () => ({
-  getUnreadCounts: () => Promise.resolve(new Map()),
-}));
-
-function makeConversation(
-  overrides: Partial<ConversationEntry> = {},
-): ConversationEntry {
+function makeDmSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   return {
-    groupId: overrides.groupId ?? "dm-group-1",
-    counterparty: overrides.counterparty ?? {
-      id: "user-2",
-      handle: "maria",
-      name: "Maria Silva",
+    group: {
+      id: "dm-1",
+      kind: "dm",
+      name: "Carol Souza",
+      creatorId: me.id,
+      dmUserA: me.id,
+      dmUserB: carol.id,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
     },
-    lastMessageContent: overrides.lastMessageContent ?? null,
-    lastMessageAt: overrides.lastMessageAt ?? null,
-    netBalanceCents: overrides.netBalanceCents ?? 0,
-    unreadCount: overrides.unreadCount ?? 0,
-    callerStatus: overrides.callerStatus ?? "accepted",
-    counterpartyStatus: overrides.counterpartyStatus ?? "accepted",
+    members: [
+      { groupId: "dm-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+      { groupId: "dm-1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
+    ],
+    balances: [],
+    guests: [],
+    pendingSettlements: [],
+    recentExpenses: [],
+    lastEventId: 0,
+    unreadCount: 2,
+    lastMessage: { content: "Tudo certo?", senderId: carol.id, createdAt: "2026-01-01T10:00:00Z" },
+    lastActivityAt: "2026-01-01T10:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeGroupSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
+  return {
+    group: {
+      id: "group-1",
+      kind: "group",
+      name: "Churrasco",
+      creatorId: me.id,
+      dmUserA: null,
+      dmUserB: null,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    members: [
+      { groupId: "group-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+    ],
+    balances: [],
+    guests: [],
+    pendingSettlements: [],
+    recentExpenses: [],
+    lastEventId: 0,
+    unreadCount: 0,
+    lastMessage: { content: "Comprei o carvão", senderId: me.id, createdAt: "2026-01-01T09:00:00Z" },
+    lastActivityAt: "2026-01-01T09:00:00Z",
+    ...overrides,
   };
 }
 
@@ -84,519 +111,70 @@ describe("ConversationsListContent", () => {
     vi.clearAllMocks();
   });
 
-  it("renders empty state when no conversations", () => {
-    render(<ConversationsListContent initialConversations={[]} />);
+  it("renders DM rows with counterparty info and unread badge", () => {
+    const dm = makeDmSnapshot({ unreadCount: 5 });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [dm.group.id]: dm },
+      groupOrder: [dm.group.id],
+    });
 
-    expect(screen.getByText("Nenhuma conversa")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Conversas aparecem quando você divide contas diretamente com alguém.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Nenhuma conversa ainda")).toBeInTheDocument();
+    render(<ConversationsListContent />);
+
+    expect(screen.getByText("Carol Souza")).toBeDefined();
+    expect(screen.getByText("Tudo certo?")).toBeDefined();
+    expect(screen.getByTestId("unread-badge").textContent).toBe("5");
+
+    const rowLink = screen.getByTestId("conversation-row-dm");
+    expect(rowLink.getAttribute("href")).toBe(`/app/conversations/${carol.id}`);
   });
 
-  it("renders Nova conversa button always", () => {
-    render(<ConversationsListContent initialConversations={[]} />);
-    expect(screen.getByTestId("nova-conversa-btn")).toBeInTheDocument();
-  });
-
-  it("renders conversation list with counterparty names", () => {
-    const conversations = [
-      makeConversation({
-        groupId: "dm-1",
-        counterparty: { id: "u2", handle: "maria", name: "Maria Silva" },
-      }),
-      makeConversation({
-        groupId: "dm-2",
-        counterparty: { id: "u3", handle: "joao", name: "João Santos" },
-      }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    expect(screen.getByText("Maria Silva")).toBeInTheDocument();
-    expect(screen.getByText("João Santos")).toBeInTheDocument();
-    expect(screen.getByText("2 conversas")).toBeInTheDocument();
-  });
-
-  it("shows singular count for one conversation", () => {
-    render(
-      <ConversationsListContent
-        initialConversations={[makeConversation()]}
-      />,
-    );
-    expect(screen.getByText("1 conversa")).toBeInTheDocument();
-  });
-
-  it("displays last message content", () => {
-    const conversations = [
-      makeConversation({
-        lastMessageContent: "Oi, vamos dividir a conta?",
-        lastMessageAt: new Date().toISOString(),
-      }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    expect(
-      screen.getByText("Oi, vamos dividir a conta?"),
-    ).toBeInTheDocument();
-  });
-
-  it("shows 'Sem mensagens' when no last message", () => {
-    render(
-      <ConversationsListContent
-        initialConversations={[makeConversation()]}
-      />,
-    );
-
-    expect(screen.getByText("Sem mensagens")).toBeInTheDocument();
-  });
-
-  it("shows positive balance in green", () => {
-    const conversations = [
-      makeConversation({ netBalanceCents: 2500 }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    const balanceEl = screen.getByText("+R$ 25,00");
-    expect(balanceEl).toBeInTheDocument();
-    expect(balanceEl.className).toContain("text-emerald");
-  });
-
-  it("shows negative balance in red", () => {
-    const conversations = [
-      makeConversation({ netBalanceCents: -1500 }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    const balanceEl = screen.getByText("-R$ 15,00");
-    expect(balanceEl).toBeInTheDocument();
-    expect(balanceEl.className).toContain("text-red");
-  });
-
-  it("hides balance when zero", () => {
-    render(
-      <ConversationsListContent
-        initialConversations={[makeConversation({ netBalanceCents: 0 })]}
-      />,
-    );
-
-    expect(screen.queryByText(/R\$/)).not.toBeInTheDocument();
-  });
-
-  it("links to conversation thread via counterparty id", () => {
-    const conversations = [
-      makeConversation({ counterparty: { id: "user-2", handle: "maria", name: "Maria Silva" } }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    const link = screen.getByRole("link");
-    expect(link).toHaveAttribute(
-      "href",
-      "/app/conversations/user-2",
-    );
-  });
-
-  it("shows unread badge when unreadCount > 0", () => {
-    const conversations = [
-      makeConversation({ unreadCount: 3 }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    expect(screen.getByText("3")).toBeInTheDocument();
-  });
-
-  it("shows 99+ for large unread counts", () => {
-    const conversations = [
-      makeConversation({ unreadCount: 150 }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    expect(screen.getByText("99+")).toBeInTheDocument();
-  });
-
-  it("does not show unread badge when count is 0", () => {
-    const conversations = [
-      makeConversation({ unreadCount: 0 }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    expect(screen.queryByText("0")).not.toBeInTheDocument();
-  });
-
-  it("applies bold styling to unread conversations", () => {
-    const conversations = [
-      makeConversation({
-        unreadCount: 2,
-        lastMessageContent: "Nova mensagem",
-        lastMessageAt: new Date().toISOString(),
-      }),
-    ];
-
-    render(
-      <ConversationsListContent initialConversations={conversations} />,
-    );
-
-    const messageEl = screen.getByText("Nova mensagem");
-    expect(messageEl.className).toContain("font-medium");
-  });
-
-  describe("pending invites", () => {
-    it("shows incoming invite in 'Convites pendentes' section with accept/decline buttons", () => {
-      const conversations = [
-        makeConversation({
-          groupId: "dm-1",
-          counterparty: { id: "u2", handle: "joao", name: "João Santos" },
-          callerStatus: "invited",
-          counterpartyStatus: "accepted",
-        }),
-      ];
-
-      render(<ConversationsListContent initialConversations={conversations} />);
-
-      expect(screen.getByText("Convites pendentes")).toBeInTheDocument();
-      expect(screen.getByText("João Santos")).toBeInTheDocument();
-      expect(screen.getByText("Aceitar")).toBeInTheDocument();
+  it("renders group rows when they have messages, and ignores groups without messages", () => {
+    const groupWithMsg = makeGroupSnapshot({
+      group: {
+        id: "g-active",
+        kind: "group",
+        name: "Churrasco",
+        creatorId: me.id,
+        dmUserA: null,
+        dmUserB: null,
+        ledgerVersion: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+      lastMessage: { content: "Comprei o carvão", senderId: me.id, createdAt: "2026-01-01T09:00:00Z" },
+    });
+    const groupEmpty = makeGroupSnapshot({
+      group: {
+        id: "g-empty",
+        kind: "group",
+        name: "Viagem",
+        creatorId: me.id,
+        dmUserA: null,
+        dmUserB: null,
+        ledgerVersion: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+      lastMessage: null,
     });
 
-    it("shows outgoing pending invite with 'Aguardando resposta' badge", () => {
-      const conversations = [
-        makeConversation({
-          groupId: "dm-1",
-          counterparty: { id: "u2", handle: "ana", name: "Ana Lima" },
-          callerStatus: "accepted",
-          counterpartyStatus: "invited",
-        }),
-      ];
-
-      render(<ConversationsListContent initialConversations={conversations} />);
-
-      expect(screen.getByText("Aguardando resposta")).toBeInTheDocument();
-      expect(screen.queryByText("Convites pendentes")).not.toBeInTheDocument();
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: {
+        [groupWithMsg.group.id]: groupWithMsg,
+        [groupEmpty.group.id]: groupEmpty,
+      },
+      groupOrder: [groupWithMsg.group.id, groupEmpty.group.id],
     });
 
-    it("does not render declined invites", () => {
-      const conversations = [
-        makeConversation({
-          groupId: "dm-1",
-          counterparty: { id: "u2", handle: "carlos", name: "Carlos Mendes" },
-          callerStatus: "declined",
-          counterpartyStatus: "accepted",
-        }),
-      ];
+    render(<ConversationsListContent />);
 
-      render(<ConversationsListContent initialConversations={conversations} />);
+    expect(screen.getByText("Churrasco")).toBeDefined();
+    expect(screen.getByText("Comprei o carvão")).toBeDefined();
+    expect(screen.queryByText("Viagem")).toBeNull();
 
-      expect(screen.queryByText("Carlos Mendes")).not.toBeInTheDocument();
-    });
-
-    it("removes incoming invite on decline click", async () => {
-      const conversations = [
-        makeConversation({
-          groupId: "dm-invite",
-          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
-          callerStatus: "invited",
-          counterpartyStatus: "accepted",
-        }),
-      ];
-
-      render(<ConversationsListContent initialConversations={conversations} />);
-
-      expect(screen.getByText("Pedro Alves")).toBeInTheDocument();
-
-      const inviteCard = screen.getByText("Pedro Alves").closest(".rounded-2xl");
-      const buttons = inviteCard!.querySelectorAll("button");
-      const declineBtn = Array.from(buttons).find(
-        (b) => !b.textContent?.includes("Aceitar"),
-      );
-      fireEvent.click(declineBtn!);
-
-      await waitFor(() => {
-        expect(screen.queryByText("Pedro Alves")).not.toBeInTheDocument();
-      });
-    });
-
-    it("calls accept_group_invitation RPC when Aceitar is clicked", async () => {
-      const conversations = [
-        makeConversation({
-          groupId: "dm-invite",
-          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
-          callerStatus: "invited",
-          counterpartyStatus: "accepted",
-        }),
-      ];
-
-      render(<ConversationsListContent initialConversations={conversations} />);
-
-      fireEvent.click(screen.getByText("Aceitar"));
-
-      await waitFor(() => {
-        expect(mockRpcFn).toHaveBeenCalledWith("accept_group_invitation", {
-          p_group_id: "dm-invite",
-        });
-      });
-    });
-
-    it("keeps the invitation and shows retryable feedback when accept fails", async () => {
-      mockRpcFn.mockResolvedValueOnce({
-        data: null,
-        error: { message: "not_invited: only a pending invitation can be accepted" },
-      });
-      const conversations = [
-        makeConversation({
-          groupId: "dm-invite",
-          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
-          callerStatus: "invited",
-          counterpartyStatus: "accepted",
-        }),
-      ];
-
-      render(<ConversationsListContent initialConversations={conversations} />);
-
-      fireEvent.click(screen.getByText("Aceitar"));
-
-      await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith(
-          "Não foi possível aceitar o convite. Tente novamente.",
-        );
-      });
-      // The RLS-denied direct-update path silently no-oped forever; the
-      // RPC path surfaces failure and leaves the invite visible for retry.
-      expect(screen.getByText("Pedro Alves")).toBeInTheDocument();
-    });
-
-    it("keeps the invitation and shows retryable feedback when decline is guard-rejected", async () => {
-      mockRpcFn.mockResolvedValueOnce({
-        data: null,
-        error: { message: "has_outstanding_balance: you have an unsettled balance in this group" },
-      });
-      const conversations = [
-        makeConversation({
-          groupId: "dm-invite",
-          counterparty: { id: "u2", handle: "pedro", name: "Pedro Alves" },
-          callerStatus: "invited",
-          counterpartyStatus: "accepted",
-        }),
-      ];
-
-      render(<ConversationsListContent initialConversations={conversations} />);
-
-      const inviteCard = screen.getByText("Pedro Alves").closest(".rounded-2xl");
-      const buttons = inviteCard!.querySelectorAll("button");
-      const declineBtn = Array.from(buttons).find(
-        (b) => !b.textContent?.includes("Aceitar"),
-      );
-      fireEvent.click(declineBtn!);
-
-      await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith(
-          "Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.",
-        );
-      });
-      // The invitation is retained — never optimistically removed, and
-      // the guard rejection never called setConversations to filter it.
-      expect(screen.getByText("Pedro Alves")).toBeInTheDocument();
-    });
-
-    it("renders mixed active and pending conversations correctly", () => {
-      const conversations = [
-        makeConversation({
-          groupId: "dm-1",
-          counterparty: { id: "u2", handle: "alice", name: "Alice Costa" },
-          callerStatus: "accepted",
-          counterpartyStatus: "accepted",
-          lastMessageContent: "Oi",
-          lastMessageAt: new Date().toISOString(),
-        }),
-        makeConversation({
-          groupId: "dm-2",
-          counterparty: { id: "u3", handle: "bob", name: "Bob Ferreira" },
-          callerStatus: "invited",
-          counterpartyStatus: "accepted",
-        }),
-        makeConversation({
-          groupId: "dm-3",
-          counterparty: { id: "u4", handle: "carol", name: "Carol Lima" },
-          callerStatus: "accepted",
-          counterpartyStatus: "invited",
-        }),
-      ];
-
-      render(<ConversationsListContent initialConversations={conversations} />);
-
-      expect(screen.getByText("Alice Costa")).toBeInTheDocument();
-      expect(screen.getByText("Convites pendentes")).toBeInTheDocument();
-      expect(screen.getByText("Bob Ferreira")).toBeInTheDocument();
-      expect(screen.getByText("Aguardando resposta")).toBeInTheDocument();
-      expect(screen.getByText("Carol Lima")).toBeInTheDocument();
-    });
-  });
-
-  describe("search", () => {
-    const conversations = [
-      makeConversation({
-        groupId: "dm-1",
-        counterparty: { id: "u2", handle: "maria", name: "Maria Silva" },
-        lastMessageContent: "Oi, tudo bem?",
-        lastMessageAt: new Date().toISOString(),
-      }),
-      makeConversation({
-        groupId: "dm-2",
-        counterparty: { id: "u3", handle: "joao", name: "João Santos" },
-        lastMessageContent: "Vamos dividir a conta",
-        lastMessageAt: new Date().toISOString(),
-      }),
-      makeConversation({
-        groupId: "dm-3",
-        counterparty: { id: "u4", handle: "ana_luz", name: "Ana Luz" },
-        lastMessageContent: null,
-        lastMessageAt: null,
-      }),
-    ];
-
-    it("shows search input when active conversations exist", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-      expect(
-        screen.getByPlaceholderText("Buscar por nome, @handle ou mensagem..."),
-      ).toBeInTheDocument();
-    });
-
-    it("hides search input when no active conversations", () => {
-      render(<ConversationsListContent initialConversations={[]} />);
-      expect(
-        screen.queryByPlaceholderText("Buscar por nome, @handle ou mensagem..."),
-      ).not.toBeInTheDocument();
-    });
-
-    it("filters by counterparty name", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-
-      const input = screen.getByPlaceholderText(
-        "Buscar por nome, @handle ou mensagem...",
-      );
-      fireEvent.change(input, { target: { value: "Maria" } });
-
-      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
-      expect(screen.queryByText("João Santos")).not.toBeInTheDocument();
-      expect(screen.queryByText("Ana Luz")).not.toBeInTheDocument();
-    });
-
-    it("filters by counterparty handle", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-
-      const input = screen.getByPlaceholderText(
-        "Buscar por nome, @handle ou mensagem...",
-      );
-      fireEvent.change(input, { target: { value: "joao" } });
-
-      expect(screen.getByText("João Santos")).toBeInTheDocument();
-      expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
-    });
-
-    it("filters by last message content", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-
-      const input = screen.getByPlaceholderText(
-        "Buscar por nome, @handle ou mensagem...",
-      );
-      fireEvent.change(input, { target: { value: "dividir" } });
-
-      expect(screen.getByText("João Santos")).toBeInTheDocument();
-      expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
-    });
-
-    it("is case insensitive", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-
-      const input = screen.getByPlaceholderText(
-        "Buscar por nome, @handle ou mensagem...",
-      );
-      fireEvent.change(input, { target: { value: "MARIA" } });
-
-      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
-      expect(screen.queryByText("João Santos")).not.toBeInTheDocument();
-    });
-
-    it("shows empty state when no results match", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-
-      const input = screen.getByPlaceholderText(
-        "Buscar por nome, @handle ou mensagem...",
-      );
-      fireEvent.change(input, { target: { value: "zzzzz" } });
-
-      expect(screen.getByText("Nenhum resultado")).toBeInTheDocument();
-    });
-
-    it("does not filter with less than 2 characters", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-
-      const input = screen.getByPlaceholderText(
-        "Buscar por nome, @handle ou mensagem...",
-      );
-      fireEvent.change(input, { target: { value: "M" } });
-
-      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
-      expect(screen.getByText("João Santos")).toBeInTheDocument();
-      expect(screen.getByText("Ana Luz")).toBeInTheDocument();
-    });
-
-    it("clears search when X button is clicked", () => {
-      render(
-        <ConversationsListContent initialConversations={conversations} />,
-      );
-
-      const input = screen.getByPlaceholderText(
-        "Buscar por nome, @handle ou mensagem...",
-      );
-      fireEvent.change(input, { target: { value: "Maria" } });
-
-      expect(screen.queryByText("João Santos")).not.toBeInTheDocument();
-
-      const clearButton = screen.getByRole("button", { name: "" });
-      fireEvent.click(clearButton);
-
-      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
-      expect(screen.getByText("João Santos")).toBeInTheDocument();
-      expect(screen.getByText("Ana Luz")).toBeInTheDocument();
-    });
+    const rowLink = screen.getByTestId("conversation-row-group");
+    expect(rowLink.getAttribute("href")).toBe("/app/groups/g-active");
   });
 });

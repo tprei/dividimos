@@ -1,7 +1,7 @@
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { ChatThread } from "./chat-thread";
-import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
+import { ChatThread, mergeTimeline } from "./chat-thread";
+import type { ChatMessage, GroupEvent, UserProfile } from "@/types/ledger";
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -9,216 +9,107 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("next/image", () => ({
-  default: (props: Record<string, unknown>) => <img alt="" {...props} />,
-}));
-
-const alice: UserProfile = {
-  id: "user-1",
-  handle: "alice",
-  name: "Alice Silva",
-  avatarUrl: undefined,
-};
-
+const meId = "user-1";
 const bob: UserProfile = {
   id: "user-2",
   handle: "bob",
-  name: "Bob Santos",
-  avatarUrl: undefined,
+  name: "Bob Silva",
+  avatarUrl: null,
 };
 
-function makeTextMessage(
-  overrides: Partial<ChatMessageWithSender> = {},
-): ChatMessageWithSender {
+function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: "msg-1",
-    groupId: "group-1",
-    senderId: "user-2",
-    messageType: "text",
-    content: "Olá!",
-    createdAt: "2026-04-12T14:30:00Z",
+    clientId: "c-1",
+    groupId: "g-1",
+    senderId: bob.id,
+    content: "Oi Alice",
+    createdAt: "2026-01-01T12:00:00Z",
     sender: bob,
     ...overrides,
   };
 }
 
-function makeExpenseMessage(
-  expense: Expense,
-  sender: UserProfile,
-): ChatMessageWithSender {
+function makeEvent(overrides: Partial<GroupEvent> = {}): GroupEvent {
   return {
-    id: "msg-exp-1",
-    groupId: "group-1",
-    senderId: sender.id,
-    messageType: "system_expense",
-    content: "",
-    expenseId: expense.id,
-    createdAt: "2026-04-12T15:00:00Z",
-    sender,
+    id: 1,
+    groupId: "g-1",
+    actorId: bob.id,
+    kind: "member_joined",
+    expenseId: null,
+    settlementId: null,
+    subjectUserId: bob.id,
+    payload: {},
+    createdAt: "2026-01-01T10:00:00Z",
+    actor: bob,
+    expenseTitle: null,
+    ...overrides,
   };
 }
 
-function makeSettlementMessage(
-  settlement: Settlement,
-  sender: UserProfile,
-): ChatMessageWithSender {
-  return {
-    id: "msg-set-1",
-    groupId: "group-1",
-    senderId: sender.id,
-    messageType: "system_settlement",
-    content: "",
-    settlementId: settlement.id,
-    createdAt: "2026-04-12T16:00:00Z",
-    sender,
-  };
-}
+describe("mergeTimeline", () => {
+  it("sorts by createdAt asc and puts events first on ties", () => {
+    const msg: ChatMessage = makeMessage({ id: "m1", createdAt: "2026-01-01T10:00:00Z" });
+    const ev: GroupEvent = makeEvent({ id: 1, createdAt: "2026-01-01T10:00:00Z" });
+    const laterMsg: ChatMessage = makeMessage({ id: "m2", createdAt: "2026-01-01T11:00:00Z" });
 
-const testExpense: Expense = {
-  id: "exp-1",
-  groupId: "group-1",
-  creatorId: "user-1",
-  title: "Almoço no restaurante",
-  expenseType: "single_amount",
-  totalAmount: 5000,
-  serviceFeePercent: 0,
-  serviceFeeBasisPoints: 0,
-  fixedFees: 0,
-  status: "active",
-  createdAt: "2026-04-12T15:00:00Z",
-  updatedAt: "2026-04-12T15:00:00Z",
-};
-
-const testSettlement: Settlement = {
-  id: "set-1",
-  groupId: "group-1",
-  fromUserId: "user-2",
-  toUserId: "user-1",
-  amountCents: 2500,
-  status: "pending",
-  createdAt: "2026-04-12T16:00:00Z",
-};
+    const merged = mergeTimeline([laterMsg, msg], [ev]);
+    expect(merged).toHaveLength(3);
+    expect(merged[0]).toEqual({ kind: "event", at: "2026-01-01T10:00:00Z", event: ev });
+    expect(merged[1]).toEqual({ kind: "message", at: "2026-01-01T10:00:00Z", message: msg });
+    expect(merged[2]).toEqual({ kind: "message", at: "2026-01-01T11:00:00Z", message: laterMsg });
+  });
+});
 
 describe("ChatThread", () => {
-  it("renders empty state when no messages", () => {
+  it("renders empty state when there are no items", () => {
     render(
       <ChatThread
+        groupId="g-1"
+        meId={meId}
         messages={[]}
-        expenses={new Map()}
-        settlements={new Map()}
-        profiles={new Map()}
-        currentUserId="user-1"
+        events={[]}
+        settlements={[]}
+        nameOf={() => "Bob Silva"}
       />,
     );
-
-    expect(screen.getByText("Nenhuma mensagem")).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma mensagem")).toBeDefined();
   });
 
-  it("renders text messages", () => {
-    const profiles = new Map([
-      [alice.id, alice],
-      [bob.id, bob],
-    ]);
-
+  it("renders messages and events", () => {
+    const msg = makeMessage({ content: "Oi tudo bem?" });
+    const ev = makeEvent({ id: 2 });
     render(
       <ChatThread
-        messages={[makeTextMessage()]}
-        expenses={new Map()}
-        settlements={new Map()}
-        profiles={profiles}
-        currentUserId="user-1"
+        groupId="g-1"
+        meId={meId}
+        messages={[msg]}
+        events={[ev]}
+        settlements={[]}
+        nameOf={() => "Bob Silva"}
       />,
     );
-
-    expect(screen.getByText("Olá!")).toBeInTheDocument();
+    expect(screen.getByText("Oi tudo bem?")).toBeDefined();
+    expect(screen.getByText("Bob Silva entrou no grupo")).toBeDefined();
   });
 
-  it("renders system expense card for expense messages", () => {
-    const profiles = new Map([
-      [alice.id, alice],
-      [bob.id, bob],
-    ]);
-    const expenses = new Map([[testExpense.id, testExpense]]);
-
+  it("calls onLoadMore when clicking Carregar anteriores button", () => {
+    const onLoadMore = vi.fn();
+    const msg = makeMessage();
     render(
       <ChatThread
-        messages={[makeExpenseMessage(testExpense, alice)]}
-        expenses={expenses}
-        settlements={new Map()}
-        profiles={profiles}
-        currentUserId="user-2"
+        groupId="g-1"
+        meId={meId}
+        messages={[msg]}
+        events={[]}
+        settlements={[]}
+        nameOf={() => "Bob Silva"}
+        hasMore
+        onLoadMore={onLoadMore}
       />,
     );
-
-    expect(screen.getByText("Almoço no restaurante")).toBeInTheDocument();
-    expect(screen.getByText("Alice adicionou uma conta")).toBeInTheDocument();
-  });
-
-  it("renders system settlement card for settlement messages", () => {
-    const profiles = new Map([
-      [alice.id, alice],
-      [bob.id, bob],
-    ]);
-    const settlements = new Map([[testSettlement.id, testSettlement]]);
-
-    render(
-      <ChatThread
-        messages={[makeSettlementMessage(testSettlement, bob)]}
-        expenses={new Map()}
-        settlements={settlements}
-        profiles={profiles}
-        currentUserId="user-1"
-      />,
-    );
-
-    expect(screen.getByText("Pagamento registrado")).toBeInTheDocument();
-    expect(screen.getByText("R$ 25,00")).toBeInTheDocument();
-  });
-
-  it("groups messages by date with date separator", () => {
-    const profiles = new Map([[bob.id, bob]]);
-
-    const msg1 = makeTextMessage({
-      id: "msg-1",
-      content: "Mensagem dia 1",
-      createdAt: "2026-04-10T10:00:00Z",
-    });
-    const msg2 = makeTextMessage({
-      id: "msg-2",
-      content: "Mensagem dia 2",
-      createdAt: "2026-04-12T10:00:00Z",
-    });
-
-    render(
-      <ChatThread
-        messages={[msg1, msg2]}
-        expenses={new Map()}
-        settlements={new Map()}
-        profiles={profiles}
-        currentUserId="user-1"
-      />,
-    );
-
-    expect(screen.getByText("Mensagem dia 1")).toBeInTheDocument();
-    expect(screen.getByText("Mensagem dia 2")).toBeInTheDocument();
-    // Date separators should be present (exact text depends on locale)
-    const dateSeparators = screen.getAllByText(/abril/i);
-    expect(dateSeparators.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("shows loading spinner when loading", () => {
-    const { container } = render(
-      <ChatThread
-        messages={[makeTextMessage()]}
-        expenses={new Map()}
-        settlements={new Map()}
-        profiles={new Map([[bob.id, bob]])}
-        currentUserId="user-1"
-        loading={true}
-      />,
-    );
-
-    const spinner = container.querySelector(".animate-spin");
-    expect(spinner).toBeInTheDocument();
+    const btn = screen.getByTestId("chat-load-more");
+    fireEvent.click(btn);
+    expect(onLoadMore).toHaveBeenCalled();
   });
 });

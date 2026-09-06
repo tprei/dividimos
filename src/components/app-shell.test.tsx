@@ -21,12 +21,6 @@ vi.mock("@/lib/activity-badge", () => ({
   markActivityViewed: () => mockMarkViewed(),
 }));
 
-vi.mock("@/contexts/settlement-submission-context", () => ({
-  SettlementSubmissionProvider: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="settlement-submission-provider">{children}</div>
-  ),
-}));
-
 vi.mock("@/components/pwa/install-prompt", () => ({
   InstallPrompt: () => null,
 }));
@@ -109,7 +103,6 @@ describe("AppShell hydration & auth lifecycle", () => {
 
     expect(screen.getByTestId("dashboard-skeleton")).toBeDefined();
     expect(screen.queryByText("content")).toBeNull();
-    expect(screen.getByTestId("settlement-submission-provider")).toBeDefined();
   });
 
   it("renders children when hydrated with an onboarded user", () => {

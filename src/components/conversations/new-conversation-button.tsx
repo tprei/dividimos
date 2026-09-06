@@ -2,7 +2,9 @@
 
 import { Loader2, MessageSquarePlus, Search, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,151 +12,109 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { UserAvatar } from "@/components/shared/user-avatar";
-import { ContactRowSkeleton } from "@/components/shared/skeleton";
-import { createClient } from "@/lib/supabase/client";
-import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
-import { useUser } from "@/hooks/use-auth";
-import type { UserProfile } from "@/types";
-import type { Database } from "@/types/database";
+import { useMe } from "@/hooks/use-me";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { getOrCreateDm, lookupUserByHandle } from "@/lib/sync/mutations-group";
+import { useAppStore } from "@/stores/app-store";
+import type { UserProfile } from "@/types/ledger";
 
-type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
-
-interface KnownContact {
-  id: string;
-  handle: string;
-  name: string;
-  avatarUrl?: string;
-}
+type HandleSearchResult = UserProfile | "not_found" | null;
 
 export function NewConversationButton() {
   const router = useRouter();
-  const user = useUser();
+  const me = useMe();
+  const groupOrder = useAppStore((s) => s.groupOrder);
+  const groups = useAppStore((s) => s.groups);
   const [open, setOpen] = useState(false);
-  const [knownContacts, setKnownContacts] = useState<KnownContact[]>([]);
-  const [knownContactIds, setKnownContactIds] = useState<Set<string>>(new Set());
-  const [loadingContacts, setLoadingContacts] = useState(false);
   const [handleInput, setHandleInput] = useState("");
-  const [searchResult, setSearchResult] = useState<UserProfile | null | "not_found">(null);
+  const [searchResult, setSearchResult] = useState<HandleSearchResult>(null);
   const [searching, setSearching] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [creatingId, setCreatingId] = useState<string | null>(null);
+  const debounceRef = useRef<number | undefined>(undefined);
 
-  const [prevOpen, setPrevOpen] = useState(open);
-  if (open !== prevOpen) {
-    setPrevOpen(open);
-    if (open) {
-      setHandleInput("");
-      setSearchResult(null);
-      if (user) setLoadingContacts(true);
+  const { knownContacts, existingDmIds } = useMemo(() => {
+    const contacts = new Map<string, UserProfile>();
+    const dmIds = new Set<string>();
+    if (me) {
+      for (const groupId of groupOrder) {
+        const snapshot = groups[groupId];
+        if (!snapshot) continue;
+        if (snapshot.group.kind === "dm") {
+          const other = snapshot.members.find((m) => m.userId !== me.id);
+          if (other) dmIds.add(other.userId);
+          continue;
+        }
+        for (const member of snapshot.members) {
+          if (member.userId === me.id || member.status !== "accepted") continue;
+          if (!contacts.has(member.userId)) {
+            contacts.set(member.userId, member.user);
+          }
+        }
+      }
     }
-  }
+    return { knownContacts: [...contacts.values()], existingDmIds: dmIds };
+  }, [me, groupOrder, groups]);
 
   useEffect(() => {
-    if (!open || !user) return;
-    void (async () => {
-      const supabase = createClient();
-
-      const { data: dmPairs } = await supabase
-        .from("dm_pairs")
-        .select("user_a, user_b")
-        .or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
-
-      const existingDmIds = new Set<string>(
-        (dmPairs ?? []).map((p) => (p.user_a === user.id ? p.user_b : p.user_a)),
-      );
-
-      const { data: memberRows } = await supabase
-        .from("group_members")
-        .select("group_id, user_id")
-        .eq("user_id", user.id)
-        .eq("status", "accepted");
-
-      const myGroupIds = (memberRows ?? []).map((r) => r.group_id);
-
-      if (myGroupIds.length === 0) {
-        setKnownContacts([]);
-        setKnownContactIds(existingDmIds);
-        setLoadingContacts(false);
-        return;
-      }
-
-      const { data: otherMembers } = await supabase
-        .from("group_members")
-        .select("user_id")
-        .in("group_id", myGroupIds)
-        .eq("status", "accepted")
-        .neq("user_id", user.id);
-
-      const otherIds = [...new Set((otherMembers ?? []).map((m) => m.user_id))];
-
-      if (otherIds.length === 0) {
-        setKnownContacts([]);
-        setKnownContactIds(existingDmIds);
-        setLoadingContacts(false);
-        return;
-      }
-
-      const { data: profiles } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .in("id", otherIds);
-
-      const contacts = (profiles ?? [])
-        .map((p) => userProfileRowToUserProfile(p as UserProfileRow))
-        .filter((c) => !existingDmIds.has(c.id));
-
-      setKnownContacts(contacts);
-      setKnownContactIds(existingDmIds);
-      setLoadingContacts(false);
-    })();
-  }, [open, user]);
-
-  const [prevHandleInput, setPrevHandleInput] = useState(handleInput);
-  if (handleInput !== prevHandleInput) {
-    setPrevHandleInput(handleInput);
-    if (handleInput.trim().replace(/^@/, "").length < 2) {
-      setSearchResult(null);
-    }
-  }
+    if (!open) return;
+    setHandleInput("");
+    setSearchResult(null);
+  }, [open]);
 
   useEffect(() => {
     const trimmed = handleInput.trim().replace(/^@/, "");
-    if (trimmed.length < 2) return;
+    if (trimmed.length < 2 || !me) {
+      setSearchResult(null);
+      return;
+    }
 
+    let stale = false;
     clearTimeout(debounceRef.current);
 
-    debounceRef.current = setTimeout(async () => {
+    debounceRef.current = window.setTimeout(() => {
       setSearching(true);
       setSearchResult(null);
-
-      const supabase = createClient();
-      const { data } = await supabase
-        .rpc("lookup_user_by_handle", { p_handle: trimmed })
-        .maybeSingle();
-
-      setSearching(false);
-
-      const profile = data as UserProfileRow | null;
-
-      if (!profile || profile.id === user?.id) {
-        setSearchResult("not_found");
-        return;
-      }
-
-      setSearchResult(userProfileRowToUserProfile(profile));
+      lookupUserByHandle(trimmed)
+        .then((profile) => {
+          if (stale) return;
+          setSearchResult(!profile || profile.id === me.id ? "not_found" : profile);
+        })
+        .catch(() => {
+          if (!stale) setSearchResult("not_found");
+        })
+        .finally(() => {
+          if (!stale) setSearching(false);
+        });
     }, 500);
 
     return () => {
+      stale = true;
       clearTimeout(debounceRef.current);
     };
-  }, [handleInput, user]);
+  }, [handleInput, me]);
 
-  const handleSelect = useCallback((userId: string) => {
-    setOpen(false);
-    router.push(`/app/conversations/${userId}`);
-  }, [router]);
+  const handleSelect = useCallback(
+    async (userId: string) => {
+      setCreatingId(userId);
+      try {
+        await getOrCreateDm(userId);
+        setOpen(false);
+        router.push(`/app/conversations/${userId}`);
+      } catch (error) {
+        toast.error(ledgerErrorMessage(error));
+      } finally {
+        setCreatingId(null);
+      }
+    },
+    [router],
+  );
 
-  const hasExistingDm = (userId: string) => knownContactIds.has(userId);
+  const hasExistingDm = useCallback(
+    (userId: string) => existingDmIds.has(userId),
+    [existingDmIds],
+  );
+
+  const showSearchSection = handleInput.trim().length >= 2;
 
   return (
     <>
@@ -183,11 +143,14 @@ export function NewConversationButton() {
                 onChange={(e) => setHandleInput(e.target.value.replace(/ /g, "."))}
                 className="h-9 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
-              {searching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              {!searching && <Search className="h-4 w-4 text-muted-foreground" />}
+              {searching ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : (
+                <Search className="h-4 w-4 text-muted-foreground" />
+              )}
             </div>
 
-            {handleInput.trim().length >= 2 && (
+            {showSearchSection && (
               <div className="mt-3">
                 {searching && (
                   <p className="text-sm text-muted-foreground">Buscando...</p>
@@ -197,66 +160,72 @@ export function NewConversationButton() {
                     Nenhum usuário encontrado com @{handleInput.trim().replace(/^@/, "")}
                   </p>
                 )}
-                {!searching && searchResult && searchResult !== "not_found" && (
-                  <button
-                    type="button"
-                    onClick={() => handleSelect(searchResult.id)}
-                    disabled={hasExistingDm(searchResult.id)}
-                    className="flex w-full items-center gap-3 rounded-xl border bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
-                  >
-                    <UserAvatar name={searchResult.name} avatarUrl={searchResult.avatarUrl} size="sm" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{searchResult.name}</p>
-                      <p className="text-xs text-muted-foreground">@{searchResult.handle}</p>
-                      {!hasExistingDm(searchResult.id) && knownContacts.every((c) => c.id !== searchResult.id) && (
-                        <div className="mt-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                          <TriangleAlert className="h-3 w-3" />
-                          Novo contato — será necessário confirmar o convite
-                        </div>
+                {!searching &&
+                  searchResult &&
+                  searchResult !== "not_found" && (
+                    <button
+                      type="button"
+                      onClick={() => void handleSelect(searchResult.id)}
+                      disabled={creatingId !== null}
+                      className="flex w-full items-center gap-3 rounded-xl border bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
+                    >
+                      <UserAvatar
+                        name={searchResult.name}
+                        avatarUrl={searchResult.avatarUrl}
+                        size="sm"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{searchResult.name}</p>
+                        <p className="text-xs text-muted-foreground">@{searchResult.handle}</p>
+                        {hasExistingDm(searchResult.id) ? (
+                          <p className="text-xs text-muted-foreground">Conversa já existe</p>
+                        ) : (
+                          knownContacts.every((c) => c.id !== searchResult.id) && (
+                            <div className="mt-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                              <TriangleAlert className="h-3 w-3" />
+                              Novo contato — será necessário confirmar o convite
+                            </div>
+                          )
+                        )}
+                      </div>
+                      {creatingId === searchResult.id && (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                       )}
-                      {hasExistingDm(searchResult.id) && (
-                        <p className="text-xs text-muted-foreground">Conversa já existe</p>
-                      )}
-                    </div>
-                  </button>
-                )}
+                    </button>
+                  )}
               </div>
             )}
           </div>
 
-          {(loadingContacts || knownContacts.length > 0) && (
+          {(knownContacts.length > 0) && (
             <div className="mt-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Conhecidos
               </p>
               <div className="space-y-1">
-                {loadingContacts ? (
-                  <>
-                    {[1, 2, 3].map((i) => (
-                      <ContactRowSkeleton key={i} />
-                    ))}
-                  </>
-                ) : (
-                  knownContacts.map((contact) => (
-                    <button
-                      key={contact.id}
-                      type="button"
-                      onClick={() => handleSelect(contact.id)}
-                      className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-muted/50"
-                    >
-                      <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{contact.name}</p>
-                        <p className="text-xs text-muted-foreground">@{contact.handle}</p>
-                      </div>
-                    </button>
-                  ))
-                )}
+                {knownContacts.map((contact) => (
+                  <button
+                    key={contact.id}
+                    type="button"
+                    onClick={() => void handleSelect(contact.id)}
+                    disabled={creatingId !== null}
+                    className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
+                  >
+                    <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{contact.name}</p>
+                      <p className="text-xs text-muted-foreground">@{contact.handle}</p>
+                    </div>
+                    {creatingId === contact.id && (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
-          {!loadingContacts && knownContacts.length === 0 && handleInput.trim().length < 2 && (
+          {knownContacts.length === 0 && !showSearchSection && (
             <div className="mt-4 py-4 text-center">
               <p className="text-sm text-muted-foreground">
                 Busque por @handle para iniciar uma conversa
@@ -265,11 +234,7 @@ export function NewConversationButton() {
           )}
 
           <div className="mt-4">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => setOpen(false)}
-            >
+            <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
           </div>

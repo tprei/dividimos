@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import type { UserProfile } from "@/types";
+import type { UserProfile } from "@/types/ledger";
 
 interface ConversationHeaderProps {
   counterparty: UserProfile;

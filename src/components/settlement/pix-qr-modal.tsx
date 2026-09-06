@@ -31,6 +31,7 @@ interface PixQrModalProps {
   recipientName: string;
   amountCents: number;
   pixKey?: string;
+  fetchPayload?: () => Promise<string>;
   mode?: "pay" | "collect";
   onMarkPaid: (amountCents: number) => Promise<void>;
   onSettlementComplete?: () => void;
@@ -42,6 +43,7 @@ export function PixQrModal({
   recipientName,
   amountCents,
   pixKey,
+  fetchPayload,
   mode = "pay",
   onMarkPaid,
   onSettlementComplete,
@@ -54,6 +56,8 @@ export function PixQrModal({
   const [showSuccess, setShowSuccess] = useState(false);
   const [settledAmountCents, setSettledAmountCents] = useState(0);
   const [paymentCents, setPaymentCents] = useState(amountCents);
+  const [fetchedPayload, setFetchedPayload] = useState("");
+  const [payloadLoading, setPayloadLoading] = useState(false);
 
   const isFullPayment = paymentCents >= amountCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= amountCents;
@@ -99,8 +103,26 @@ export function PixQrModal({
       setPaymentCents(amountCents);
       setShowSuccess(false);
       setSettledAmountCents(0);
+      setFetchedPayload("");
     }
   }, [amountCents, isSettling, open]);
+
+  useEffect(() => {
+    if (!open || pixKey || !fetchPayload) return;
+    let cancelled = false;
+    setPayloadLoading(true);
+    fetchPayload()
+      .then((code) => {
+        if (!cancelled) setFetchedPayload(code);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPayloadLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, pixKey, fetchPayload]);
 
   useEffect(() => {
     return () => {
@@ -116,7 +138,7 @@ export function PixQrModal({
         merchantCity: "SAO PAULO",
         amountCents: qrAmountCents,
       })
-    : "";
+    : fetchedPayload;
 
   useEffect(() => {
     if (!copiaECola || !canvasRef.current) return;
@@ -334,7 +356,11 @@ export function PixQrModal({
                 transition={{ delay: 0.15 }}
                 className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
               >
-                {copiaECola ? (
+                {payloadLoading ? (
+                  <div className="flex h-[240px] w-[240px] items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : copiaECola ? (
                   <canvas ref={canvasRef} />
                 ) : (
                   <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">

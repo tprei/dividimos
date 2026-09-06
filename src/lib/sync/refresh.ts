@@ -4,6 +4,7 @@ import {
   decodeExpenseSummaries,
   decodeGroupEvents,
   decodeGroupSnapshot,
+  decodeVendorCharges,
 } from "@/lib/ledger/decode";
 import { useAppStore } from "@/stores/app-store";
 import type { ExpenseSummary, GroupSnapshot } from "@/types/ledger";
@@ -45,8 +46,9 @@ function refreshStaleDetails(
 }
 
 async function executeRefreshGroup(groupId: string): Promise<void> {
-  const prevVersion =
-    useAppStore.getState().groups[groupId]?.group.ledgerVersion ?? null;
+  const prev = useAppStore.getState().groups[groupId];
+  const prevVersion = prev?.group.ledgerVersion ?? null;
+  const prevEventId = prev?.lastEventId ?? null;
 
   const snapshot = await rpc(
     "get_group",
@@ -56,6 +58,11 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
 
   useAppStore.getState().applyGroup(snapshot);
   refreshStaleDetails(groupId, snapshot, prevVersion);
+  const conversation = useAppStore.getState().conversations[groupId];
+  const loaded = conversation !== undefined && conversation.oldestCursor !== null;
+  if (loaded && prevEventId !== null && snapshot.lastEventId > prevEventId) {
+    void loadConversation(groupId);
+  }
 }
 
 export function refreshGroup(groupId: string): Promise<void> {
@@ -133,4 +140,13 @@ export async function loadConversation(
     decodeConversation,
   );
   useAppStore.getState().applyConversation(groupId, data, before !== undefined);
+}
+
+export async function loadVendorCharges(limit = 50): Promise<void> {
+  const charges = await rpc(
+    "get_vendor_charges",
+    { p_limit: limit },
+    decodeVendorCharges,
+  );
+  useAppStore.getState().applyVendorCharges(charges);
 }

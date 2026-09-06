@@ -111,3 +111,22 @@ export function selectPendingSettlementsForMe(
   pendingSettlementsCache = { groups: state.groups, meId, pending };
   return pending;
 }
+
+export function findDmGroup(
+  state: AppState,
+  meId: string,
+  counterpartyId: string,
+): GroupSnapshot | null {
+  for (const groupId of state.groupOrder) {
+    const snapshot = state.groups[groupId];
+    if (!snapshot || snapshot.group.kind !== "dm") continue;
+    const { dmUserA, dmUserB } = snapshot.group;
+    if (
+      (dmUserA === meId && dmUserB === counterpartyId) ||
+      (dmUserA === counterpartyId && dmUserB === meId)
+    ) {
+      return snapshot;
+    }
+  }
+  return null;
+}

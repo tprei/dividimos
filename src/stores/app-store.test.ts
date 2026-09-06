@@ -7,6 +7,7 @@ import type {
   GroupEvent,
   GroupSnapshot,
   Me,
+  VendorCharge,
 } from "@/types/ledger";
 import { useAppStore } from "./app-store";
 
@@ -333,8 +334,56 @@ describe("reset", () => {
     expect(state.expenses).toEqual({});
     expect(state.expenseDetails).toEqual({});
     expect(state.conversations).toEqual({});
+    expect(state.vendorCharges).toEqual([]);
     expect(state.activity).toEqual({ items: [], oldestId: null });
     expect(state.lastBootstrapAt).toBeNull();
     expect(state.hydrated).toBe(true);
+  });
+});
+
+describe("vendor charges", () => {
+  const charge1: VendorCharge = {
+    id: "vc-1",
+    userId: "user-1",
+    amountCents: 1500,
+    description: "Taxa de entrega",
+    status: "pending",
+    createdAt: "2026-01-01T10:00:00Z",
+    confirmedAt: null,
+  };
+
+  const charge2: VendorCharge = {
+    id: "vc-2",
+    userId: "user-1",
+    amountCents: 3200,
+    description: "Lanche",
+    status: "received",
+    createdAt: "2026-01-01T11:00:00Z",
+    confirmedAt: "2026-01-01T11:05:00Z",
+  };
+
+  it("applies a list of vendor charges", () => {
+    useAppStore.getState().applyVendorCharges([charge1, charge2]);
+    expect(useAppStore.getState().vendorCharges).toEqual([charge1, charge2]);
+
+    useAppStore.getState().applyVendorCharges([charge1]);
+    expect(useAppStore.getState().vendorCharges).toEqual([charge1]);
+  });
+
+  it("upserts a new vendor charge at the beginning", () => {
+    useAppStore.getState().applyVendorCharges([charge1]);
+    useAppStore.getState().upsertVendorCharge(charge2);
+    expect(useAppStore.getState().vendorCharges).toEqual([charge2, charge1]);
+  });
+
+  it("updates an existing vendor charge in place", () => {
+    useAppStore.getState().applyVendorCharges([charge1, charge2]);
+    const updatedCharge1: VendorCharge = {
+      ...charge1,
+      status: "received",
+      confirmedAt: "2026-01-01T10:15:00Z",
+    };
+    useAppStore.getState().upsertVendorCharge(updatedCharge1);
+    expect(useAppStore.getState().vendorCharges).toEqual([updatedCharge1, charge2]);
   });
 });

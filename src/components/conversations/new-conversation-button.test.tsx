@@ -1,125 +1,124 @@
-import React from "react";
-import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
-}));
-
-vi.mock("@/hooks/use-auth", () => ({
-  useUser: () => ({ id: "user-1", name: "Test User" }),
-}));
-
-const mockContacts = [
-  { id: "u2", handle: "maria", name: "Maria Silva", avatar_url: null },
-  { id: "u3", handle: "joao", name: "João Santos", avatar_url: null },
-];
-
-let shouldHangDmPairs = true;
-let dmPairsResolve: ((v: { data: unknown[] }) => void) | null = null;
-
-function makeChain(result: Promise<{ data: unknown[] }>) {
-  const chain = {
-    eq: () => makeChain(result),
-    neq: () => makeChain(result),
-    in: () => makeChain(result),
-    or: () => makeChain(result),
-    maybeSingle: () => result,
-    then: (onf?: (v: unknown) => unknown, onr?: (e: unknown) => unknown) =>
-      result.then(onf, onr),
-  };
-  return chain;
-}
-
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    from: (table: string) => ({
-      select: () => {
-        if (table === "dm_pairs") {
-          if (shouldHangDmPairs) {
-            return makeChain(
-              new Promise<{ data: unknown[] }>((resolve) => {
-                dmPairsResolve = resolve;
-              }),
-            );
-          }
-          return makeChain(Promise.resolve({ data: [] }));
-        }
-        if (table === "group_members") {
-          return makeChain(
-            Promise.resolve({
-              data: [{ group_id: "g1", user_id: "u2" }],
-            }),
-          );
-        }
-        if (table === "user_profiles") {
-          return makeChain(
-            Promise.resolve({ data: mockContacts }),
-          );
-        }
-        return makeChain(Promise.resolve({ data: [] }));
-      },
-    }),
-    rpc: () => ({
-      maybeSingle: () => Promise.resolve({ data: null }),
-    }),
-  }),
-}));
-
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NewConversationButton } from "./new-conversation-button";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot, Me } from "@/types/ledger";
+
+const pushMock = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: pushMock }),
+}));
+
+const mutationsGroup = vi.hoisted(() => ({
+  getOrCreateDm: vi.fn().mockResolvedValue({ groupId: "dm-new", created: true }),
+  lookupUserByHandle: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/lib/sync/mutations-group", () => mutationsGroup);
+
+const me: Me = {
+  id: "user-me",
+  handle: "alice",
+  name: "Alice Souza",
+  avatarUrl: null,
+  email: "alice@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
+};
+
+const bob = { id: "user-bob", handle: "bob", name: "Bob Silva", avatarUrl: null };
+const carol = { id: "user-carol", handle: "carol", name: "Carol Souza", avatarUrl: null };
+
+function seedStoreWithContacts() {
+  const group: GroupSnapshot = {
+    group: {
+      id: "g-1",
+      kind: "group",
+      name: "Viagem",
+      creatorId: me.id,
+      dmUserA: null,
+      dmUserB: null,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    members: [
+      { groupId: "g-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+      { groupId: "g-1", userId: bob.id, status: "accepted", invitedBy: null, acceptedAt: null, user: bob },
+      { groupId: "g-1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
+    ],
+    balances: [],
+    guests: [],
+    pendingSettlements: [],
+    recentExpenses: [],
+    lastEventId: 0,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt: "2026-01-01T00:00:00Z",
+  };
+
+  useAppStore.setState({
+    hydrated: true,
+    me,
+    groups: { [group.group.id]: group },
+    groupOrder: [group.group.id],
+  });
+}
 
 describe("NewConversationButton", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    shouldHangDmPairs = true;
-    dmPairsResolve = null;
+    seedStoreWithContacts();
   });
 
-  afterEach(() => {
-    cleanup();
-    if (dmPairsResolve) {
-      dmPairsResolve({ data: [] });
-      dmPairsResolve = null;
-    }
-  });
-
-  it("shows ContactRowSkeleton placeholders while loading known contacts", async () => {
+  it("opens dialog on click and displays known contacts from store groups", async () => {
     render(<NewConversationButton />);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Nova conversa" }),
-    );
+    const fab = screen.getByLabelText("Nova conversa");
+    fireEvent.click(fab);
 
-    await waitFor(() => {
-      expect(screen.getByText("Conhecidos")).toBeInTheDocument();
-    });
-
-    const section = screen.getByText("Conhecidos").parentElement!;
-    const avatarSkeletons = section.querySelectorAll(
-      "[class*='rounded-full']",
-    );
-    expect(avatarSkeletons.length).toBe(3);
-
-    expect(screen.queryByText("Maria Silva")).not.toBeInTheDocument();
-    expect(screen.queryByText("Carregando...")).not.toBeInTheDocument();
+    expect(screen.getByText("Nova conversa")).toBeDefined();
+    expect(screen.getByText("Bob Silva")).toBeDefined();
+    expect(screen.getByText("Carol Souza")).toBeDefined();
   });
 
-  it("replaces skeletons with real contacts after loading completes", async () => {
-    shouldHangDmPairs = false;
+  it("clicking a contact initiates DM creation and navigates", async () => {
+    render(<NewConversationButton />);
+
+    fireEvent.click(screen.getByLabelText("Nova conversa"));
+
+    const bobBtn = screen.getByText("Bob Silva");
+    fireEvent.click(bobBtn);
+
+    await waitFor(() => {
+      expect(mutationsGroup.getOrCreateDm).toHaveBeenCalledWith(bob.id);
+      expect(pushMock).toHaveBeenCalledWith(`/app/conversations/${bob.id}`);
+    });
+  });
+
+  it("searches users by handle with debounce", async () => {
+    const user = userEvent.setup();
+    mutationsGroup.lookupUserByHandle.mockResolvedValue({
+      id: "user-daniel",
+      handle: "daniel",
+      name: "Daniel Santos",
+      avatarUrl: null,
+    });
 
     render(<NewConversationButton />);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Nova conversa" }),
+    fireEvent.click(screen.getByLabelText("Nova conversa"));
+
+    const input = screen.getByPlaceholderText("buscar por handle");
+    await user.type(input, "daniel");
+
+    await waitFor(
+      () => {
+        expect(mutationsGroup.lookupUserByHandle).toHaveBeenCalledWith("daniel");
+        expect(screen.getByText("Daniel Santos")).toBeDefined();
+      },
+      { timeout: 1500 },
     );
-
-    await waitFor(() => {
-      expect(screen.getByText("Maria Silva")).toBeInTheDocument();
-    });
-
-    expect(screen.getByText("João Santos")).toBeInTheDocument();
-    expect(screen.getByText("@maria")).toBeInTheDocument();
-    expect(screen.getByText("@joao")).toBeInTheDocument();
   });
 });
