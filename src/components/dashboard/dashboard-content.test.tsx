@@ -11,11 +11,17 @@ const mutations = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/sync/mutations", () => mutations);
 
+const groupMutations = vi.hoisted(() => ({
+  sendNudge: vi.fn(),
+}));
+vi.mock("@/lib/sync/mutations-group", () => groupMutations);
+
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
 vi.mock("react-hot-toast", () => ({
   default: {
     error: (message: string) => toastError(message),
-    success: vi.fn(),
+    success: (message: string) => toastSuccess(message),
   },
 }));
 
@@ -243,5 +249,46 @@ describe("DashboardContent", () => {
 
     expect(screen.getByText("Convidado")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pagar via Pix" })).not.toBeInTheDocument();
+  });
+
+  it("sends a nudge to a debtor from the Você recebe tab", async () => {
+    groupMutations.sendNudge.mockResolvedValue({ groupId: "g1", ledgerVersion: 1, eventId: 10 });
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /você recebe/i }));
+    fireEvent.click(screen.getByRole("button", { name: /lembrar/i }));
+
+    await waitFor(() => {
+      expect(groupMutations.sendNudge).toHaveBeenCalledWith("g1", carol.id);
+      expect(toastSuccess).toHaveBeenCalledWith("Lembrete enviado");
+    });
+  });
+
+  it("shows an error toast when sending a nudge fails with cooldown", async () => {
+    groupMutations.sendNudge.mockRejectedValue(new LedgerError("nudge_cooldown"));
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /você recebe/i }));
+    fireEvent.click(screen.getByRole("button", { name: /lembrar/i }));
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Você já lembrou essa pessoa hoje.");
+    });
   });
 });

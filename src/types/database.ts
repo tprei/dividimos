@@ -993,6 +993,10 @@ export type Database = {
         Args: { p_client_id: string; p_content: string; p_group_id: string }
         Returns: Json
       }
+      send_nudge: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: Json
+      }
       update_profile: {
         Args: {
           p_handle?: string

@@ -16,6 +16,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
 }));
 
+vi.mock("qrcode", () => ({
+  default: { toCanvas: vi.fn() },
+}));
+
 vi.mock("react-hot-toast", () => ({
   default: { success: vi.fn(), error: vi.fn() },
 }));
@@ -26,12 +30,14 @@ vi.mock("@/lib/sync/mutations-group", () => ({
   deleteGroup: vi.fn(),
   lookupUserByHandle: vi.fn(),
   inviteMember: vi.fn(),
+  issueGuestClaimToken: vi.fn(),
 }));
 
 import toast from "react-hot-toast";
 import {
   deleteGroup,
   inviteMember,
+  issueGuestClaimToken,
   leaveGroup,
   lookupUserByHandle,
   removeMember,
@@ -213,6 +219,27 @@ describe("GroupMembersSection", () => {
       expect(deleteGroup).toHaveBeenCalledWith(groupId);
       expect(onDepart).toHaveBeenCalled();
       expect(routerMock.replace).toHaveBeenCalledWith("/app/groups");
+    });
+  });
+
+  it("permite compartilhar convite para um convidado", async () => {
+    vi.mocked(issueGuestClaimToken).mockResolvedValue("claim_token_xyz");
+
+    render(
+      <GroupMembersSection
+        snapshot={snapshot()}
+        meId={meId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    const shareButton = screen.getByRole("button", { name: /Compartilhar convite/i });
+    expect(shareButton).toBeInTheDocument();
+
+    await userEvent.click(shareButton);
+
+    await waitFor(() => {
+      expect(issueGuestClaimToken).toHaveBeenCalledWith("guest-1");
     });
   });
 });

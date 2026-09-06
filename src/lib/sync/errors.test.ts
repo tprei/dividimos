@@ -8,7 +8,7 @@ import {
 
 describe("errors", () => {
   it("every LedgerErrorCode has non-empty copy", () => {
-    expect(LEDGER_ERROR_CODES.length).toBe(43);
+    expect(LEDGER_ERROR_CODES.length).toBe(45);
 
     for (const code of LEDGER_ERROR_CODES) {
       const err = new LedgerError(code);
@@ -24,6 +24,8 @@ describe("errors", () => {
     expect(codeFromMessage("stale_version")).toBe("stale_version");
     expect(codeFromMessage("unauthenticated")).toBe("unauthenticated");
     expect(codeFromMessage("outstanding_balance")).toBe("outstanding_balance");
+    expect(codeFromMessage("no_debt")).toBe("no_debt");
+    expect(codeFromMessage("nudge_cooldown")).toBe("nudge_cooldown");
   });
 
   it("codeFromMessage falls back to unknown for arbitrary text", () => {

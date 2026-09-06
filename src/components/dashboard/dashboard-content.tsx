@@ -35,6 +35,7 @@ import {
   recordSettlement,
   voidSettlement,
 } from "@/lib/sync/mutations";
+import { sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
 import { selectPendingSettlementsForMe } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
@@ -154,6 +155,15 @@ export function DashboardContent() {
       amountCents,
     });
   };
+  const handleNudge = async (groupId: string, counterpartyId: string) => {
+    try {
+      await sendNudge(groupId, counterpartyId);
+      toast.success("Lembrete enviado");
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    }
+  };
+
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -443,7 +453,15 @@ export function DashboardContent() {
               key={`${debt.groupId}-${debt.counterpartyId}`}
               variants={staggerItem}
             >
-              <DebtCard debt={debt} onPay={setPayingDebt} />
+              <DebtCard
+                debt={debt}
+                onPay={setPayingDebt}
+                onNudge={
+                  debt.direction === "owed" && debt.counterpartyKind === "user"
+                    ? () => handleNudge(debt.groupId, debt.counterpartyId)
+                    : undefined
+                }
+              />
             </motion.div>
           ))}
         </motion.div>

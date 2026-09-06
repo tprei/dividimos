@@ -64,4 +64,30 @@ describe("DebtCard", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
+
+  it("calls onNudge when the user is owed and presses Lembrar", () => {
+    const onNudge = vi.fn();
+    render(
+      <DebtCard
+        debt={{ ...baseRow, direction: "owed" }}
+        onPay={vi.fn()}
+        onNudge={onNudge}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Lembrar/ }));
+    expect(onNudge).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render Lembrar button for guest debts even when onNudge is provided", () => {
+    render(
+      <DebtCard
+        debt={{ ...baseRow, direction: "owed", counterpartyKind: "guest", counterpartyName: "Bruno Convidado" }}
+        onPay={vi.fn()}
+        onNudge={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
 });

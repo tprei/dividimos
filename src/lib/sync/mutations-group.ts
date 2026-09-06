@@ -88,6 +88,12 @@ export async function removeMember(groupId: string, userId: string): Promise<Mut
   return ack;
 }
 
+export async function sendNudge(groupId: string, userId: string): Promise<MutationAck> {
+  const ack = await rpc("send_nudge", { p_group_id: groupId, p_user_id: userId }, decodeMutationAck);
+  notify(ack.eventId);
+  return ack;
+}
+
 export async function deleteGroup(groupId: string): Promise<void> {
   await rpc("delete_group", { p_group_id: groupId }, decodeGroupId);
   useAppStore.getState().removeGroup(groupId);
