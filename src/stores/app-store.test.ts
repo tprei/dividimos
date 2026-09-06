@@ -315,6 +315,34 @@ describe("applyConversation", () => {
   });
 });
 
+describe("applyGroup", () => {
+  it("drops snapshots strictly older than the stored ledgerVersion", () => {
+    const v6 = snapshot("g1", []);
+    v6.group.ledgerVersion = 6;
+    useAppStore.getState().applyGroup(v6);
+
+    const v5 = snapshot("g1", recentExpenses(1, "g1"), { lastEventId: 99 });
+    v5.group.ledgerVersion = 5;
+    useAppStore.getState().applyGroup(v5);
+
+    expect(useAppStore.getState().groups.g1).toBe(v6);
+    expect(useAppStore.getState().groups.g1?.group.ledgerVersion).toBe(6);
+  });
+
+  it("applies snapshots at the same ledgerVersion", () => {
+    const v6 = snapshot("g1", []);
+    v6.group.ledgerVersion = 6;
+    useAppStore.getState().applyGroup(v6);
+
+    const v6b = snapshot("g1", recentExpenses(1, "g1"), { lastEventId: 42 });
+    v6b.group.ledgerVersion = 6;
+    useAppStore.getState().applyGroup(v6b);
+
+    expect(useAppStore.getState().groups.g1).toBe(v6b);
+    expect(useAppStore.getState().groups.g1?.recentExpenses).toHaveLength(1);
+  });
+});
+
 describe("reset", () => {
   it("restores the initial state, keeps hydrated and clears persisted storage", () => {
     useAppStore.getState().applyBootstrap({

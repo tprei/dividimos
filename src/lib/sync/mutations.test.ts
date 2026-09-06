@@ -10,7 +10,7 @@ import type {
 } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { rpc, rpcVoid } from "./client";
-import { refreshExpense, refreshGroup } from "./refresh";
+import { loadConversation, refreshExpense, refreshGroup } from "./refresh";
 import {
   confirmSettlement,
   createExpense,
@@ -222,7 +222,7 @@ describe("mutations", () => {
       );
     });
 
-    it("restores exact previous expenses, expenseLists, and balances on rejection", async () => {
+    it("on rejection removes only the optimistic summary and triggers refreshGroup", async () => {
       const g1 = makeGroupSnapshot("g1");
       useAppStore.setState({
         hydrated: true,
@@ -254,10 +254,7 @@ describe("mutations", () => {
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
 
-      const prevExpenses = useAppStore.getState().expenses;
-      const prevExpenseLists = useAppStore.getState().expenseLists;
-      const prevBalances = useAppStore.getState().groups.g1?.balances;
-
+      const prevGroup = useAppStore.getState().groups.g1;
       vi.mocked(rpc).mockRejectedValueOnce(new Error("network"));
 
       await expect(
@@ -265,9 +262,77 @@ describe("mutations", () => {
       ).rejects.toThrow("network");
 
       const state = useAppStore.getState();
-      expect(state.expenses).toBe(prevExpenses);
-      expect(state.expenseLists).toBe(prevExpenseLists);
-      expect(state.groups.g1?.balances).toBe(prevBalances);
+      expect(Object.keys(state.expenses)).toEqual(["old-exp"]);
+      expect(state.expenses["old-exp"]?.title).toBe("Antiga");
+      expect(state.expenseLists.g1?.ids).toEqual(["old-exp"]);
+      expect(state.groups.g1).toBe(prevGroup);
+      expect(refreshGroup).toHaveBeenCalledWith("g1");
+    });
+
+    it("on rejection keeps an unrelated group refreshed mid-flight", async () => {
+      const g1 = makeGroupSnapshot("g1");
+      const g2 = makeGroupSnapshot("g2");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1, g2 },
+        groupOrder: ["g1", "g2"],
+        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenses: {},
+        expenseDetails: {},
+        activity: { items: [], oldestId: null },
+        conversations: {},
+        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      vi.mocked(rpc).mockImplementationOnce(async () => {
+        const refreshed = makeGroupSnapshot("g2");
+        refreshed.group.ledgerVersion = 9;
+        refreshed.balances = [{ kind: "user", participantId: ME.id, netCents: -900 }];
+        useAppStore.getState().applyGroup(refreshed);
+        throw new Error("network");
+      });
+
+      await expect(
+        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+      ).rejects.toThrow("network");
+
+      const state = useAppStore.getState();
+      expect(state.groups.g2?.group.ledgerVersion).toBe(9);
+      expect(state.groups.g2?.balances).toEqual([{ kind: "user", participantId: ME.id, netCents: -900 }]);
+      expect(state.expenses).toEqual({});
+      expect(refreshGroup).toHaveBeenCalledWith("g1");
+    });
+
+    it("on rejection skips the group restore when a refresh replaced the group mid-flight", async () => {
+      const g1 = makeGroupSnapshot("g1");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1 },
+        groupOrder: ["g1"],
+        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenses: {},
+        expenseDetails: {},
+        activity: { items: [], oldestId: null },
+        conversations: {},
+        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const refreshed = makeGroupSnapshot("g1");
+      refreshed.group.ledgerVersion = 9;
+      refreshed.balances = [{ kind: "user", participantId: ME.id, netCents: -900 }];
+      vi.mocked(rpc).mockImplementationOnce(async () => {
+        useAppStore.getState().applyGroup(refreshed);
+        throw new Error("network");
+      });
+
+      await expect(
+        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+      ).rejects.toThrow("network");
+
+      expect(useAppStore.getState().groups.g1).toBe(refreshed);
+      expect(refreshGroup).toHaveBeenCalledWith("g1");
     });
   });
 
@@ -388,7 +453,7 @@ describe("mutations", () => {
       expect(conversation?.messages[1]?.clientId).toBe(message.clientId);
     });
 
-    it("rolls back optimistic message on failure", async () => {
+    it("on failure removes the optimistic message and reloads the conversation", async () => {
       useAppStore.setState({
         hydrated: true,
         me: ME,
@@ -400,20 +465,31 @@ describe("mutations", () => {
         activity: { items: [], oldestId: null },
         conversations: {
           g1: {
-            messages: [],
+            messages: [
+              {
+                id: "msg-old",
+                clientId: "msg-old-client",
+                groupId: "g1",
+                senderId: USER_2.id,
+                content: "Oi",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                sender: USER_2,
+              },
+            ],
             events: [],
-            oldestCursor: null,
+            oldestCursor: "2026-01-01T00:00:00.000Z",
           },
         },
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
 
-      const prevConversations = useAppStore.getState().conversations;
       vi.mocked(rpc).mockRejectedValueOnce(new Error("network"));
 
       await expect(sendMessage("g1", "Falha")).rejects.toThrow("network");
 
-      expect(useAppStore.getState().conversations).toBe(prevConversations);
+      const conversation = useAppStore.getState().conversations.g1;
+      expect(conversation?.messages.map((m) => m.id)).toEqual(["msg-old"]);
+      expect(loadConversation).toHaveBeenCalledWith("g1");
     });
   });
 
@@ -490,7 +566,6 @@ describe("mutations", () => {
 
       vi.mocked(rpc).mockRejectedValueOnce(new Error("stale_version"));
 
-      const prevExpenses = useAppStore.getState().expenses;
       await expect(
         editExpense({
           expenseId: "exp-1",
@@ -499,7 +574,7 @@ describe("mutations", () => {
           payload: newPayload,
         }),
       ).rejects.toThrow("stale_version");
-      expect(useAppStore.getState().expenses).toBe(prevExpenses);
+      expect(useAppStore.getState().expenses["exp-1"]).toBe(initialSummary);
 
       vi.mocked(rpc).mockResolvedValueOnce({
         groupId: "g1",
@@ -712,6 +787,7 @@ describe("mutations", () => {
       vi.mocked(rpcVoid).mockRejectedValueOnce(new Error("failed"));
       await expect(markRead("g1")).rejects.toThrow("failed");
       expect(useAppStore.getState().groups.g1?.unreadCount).toBe(3);
+      expect(refreshGroup).toHaveBeenCalledWith("g1");
 
       vi.mocked(rpcVoid).mockResolvedValueOnce(undefined);
       await markRead("g1");

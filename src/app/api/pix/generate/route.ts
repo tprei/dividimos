@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -6,17 +5,7 @@ import { decryptPixKey } from "@/lib/crypto";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { transfersFromBalances } from "@/lib/ledger/transfers";
 import type { BalanceRow, ParticipantKind } from "@/types/ledger";
-
-/**
- * Every response is private and never cached — the body may carry a decrypted
- * Pix key embedded in the BR Code.
- */
-function jsonResponse(body: unknown, status: number): NextResponse {
-  return NextResponse.json(body, {
-    status,
-    headers: { "Cache-Control": "private, no-store" },
-  });
-}
+import { jsonResponse } from "../response";
 
 // One byte-identical denial for every pre-edge refusal. Returning distinct
 // messages would let a caller probe whether a co-member has a key configured,

@@ -128,6 +128,8 @@ export const useAppStore = create<AppState>()(
       applyGroup: (s) =>
         set((state) => {
           const id = s.group.id;
+          const current = state.groups[id];
+          if (current && s.group.ledgerVersion < current.group.ledgerVersion) return {};
           const groups = { ...state.groups, [id]: s };
           const expenses = upsertSummaries(state.expenses, s.recentExpenses);
           return {

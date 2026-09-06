@@ -79,16 +79,3 @@ export async function rpcVoid<
   }
 }
 
-export async function notify(eventId: number | null): Promise<void> {
-  if (eventId === null) return;
-  try {
-    await fetch("/api/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ eventId }),
-      keepalive: true,
-    });
-  } catch {
-    // Push delivery is best effort; the mutation already succeeded.
-  }
-}

@@ -11,6 +11,7 @@ import type { ExpenseSummary, GroupSnapshot } from "@/types/ledger";
 import { rpc } from "./client";
 
 const inFlightGroups = new Map<string, Promise<void>>();
+const pendingGroups = new Map<string, Promise<void>>();
 const inFlightExpensePages = new Map<string, Promise<void>>();
 
 function refreshStaleDetails(
@@ -65,16 +66,29 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
   }
 }
 
-export function refreshGroup(groupId: string): Promise<void> {
-  const existing = inFlightGroups.get(groupId);
-  if (existing) return existing;
-
+function runGroupRefresh(groupId: string): Promise<void> {
   const task = executeRefreshGroup(groupId).finally(() => {
     inFlightGroups.delete(groupId);
+    const followUp = pendingGroups.get(groupId);
+    if (followUp) {
+      pendingGroups.delete(groupId);
+      inFlightGroups.set(groupId, followUp);
+    }
   });
-
   inFlightGroups.set(groupId, task);
   return task;
+}
+
+export function refreshGroup(groupId: string): Promise<void> {
+  const current = inFlightGroups.get(groupId);
+  if (!current) return runGroupRefresh(groupId);
+
+  const scheduled = pendingGroups.get(groupId);
+  if (scheduled) return scheduled;
+
+  const followUp = current.catch(() => undefined).then(() => runGroupRefresh(groupId));
+  pendingGroups.set(groupId, followUp);
+  return followUp;
 }
 
 export async function refreshExpense(expenseId: string): Promise<void> {
