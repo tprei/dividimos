@@ -574,8 +574,8 @@ DECLARE
   v_id uuid;
   v_old_payers jsonb;
   v_new_payers jsonb;
-  v_old_norm jsonb;
-  v_new_norm jsonb;
+  v_old_norm jsonb := '[]'::jsonb;
+  v_new_norm jsonb := '[]'::jsonb;
   v_old_total bigint := 0;
   v_new_total bigint := 0;
   v_participants jsonb;
@@ -672,29 +672,13 @@ BEGIN
     'participantsRemoved', COALESCE(to_jsonb(v_removed), '[]'::jsonb),
     'payersChanged', NOT (
       v_old_total = v_new_total
-      AND (
-        (v_old_norm IS NULL AND v_new_norm IS NULL)
-        OR (
-          v_old_norm IS NOT NULL AND v_new_norm IS NOT NULL
-          AND (
-            SELECT count(*) = 0
-            FROM jsonb_array_elements(v_old_norm) WITH ORDINALITY AS o(e, ord)
-            WHERE NOT EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(v_new_norm) n
-              WHERE n = o.e
-            )
-          )
-          AND (
-            SELECT count(*) = 0
-            FROM jsonb_array_elements(v_new_norm) WITH ORDINALITY AS n2(e, ord)
-            WHERE NOT EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(v_old_norm) o2
-              WHERE o2 = n2.e
-            )
-          )
-        )
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(v_old_norm) o(e)
+        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_new_norm) n(e) WHERE n.e = o.e)
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(v_new_norm) n2(e)
+        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_old_norm) o2(e) WHERE o2.e = n2.e)
       )
     )
   );

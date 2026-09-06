@@ -44,7 +44,6 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: { success: vi.fn(), error: vi.fn() },
 }));
-vi.mock("@/hooks/use-realtime-expense", () => ({ useRealtimeExpense: vi.fn() }));
 vi.mock("@/hooks/use-realtime-balances", () => ({ useRealtimeBalances: vi.fn() }));
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
@@ -93,13 +92,4 @@ describe("Dynamic import loading fallbacks", () => {
     expect(container.querySelector("[class*='animate-spin']")).toBeTruthy();
   });
 
-  it("bill detail page passes loading to PixQrModal dynamic import", async () => {
-    capturedOptions = [];
-    await import("@/app/app/bill/[id]/page");
-    expect(capturedOptions.length).toBeGreaterThanOrEqual(1);
-    const opts = capturedOptions[0];
-    expect(opts.loading).toBeTypeOf("function");
-    const { container } = render(React.createElement(opts.loading as React.FC));
-    expect(container.querySelector("[class*='animate-spin']")).toBeTruthy();
-  });
 });

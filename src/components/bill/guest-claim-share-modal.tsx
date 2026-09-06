@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Copy, ExternalLink, X } from "lucide-react";
 import { useEffect, useRef } from "react";
@@ -16,9 +17,9 @@ interface GuestClaimShareModalProps {
   guestName: string;
   /** Transient credential from the issuer response; null while closed. */
   token: string | null;
-  generation: number;
   shareAmountCents?: number;
   expenseTitle: string;
+  footer?: ReactNode;
 }
 
 export function GuestClaimShareModal({
@@ -28,6 +29,7 @@ export function GuestClaimShareModal({
   token,
   shareAmountCents,
   expenseTitle,
+  footer,
 }: GuestClaimShareModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canShare = useClientOnly(
@@ -141,6 +143,7 @@ export function GuestClaimShareModal({
               Copiar link
             </Button>
           </div>
+          {footer}
         </motion.div>
       </motion.div>
     </AnimatePresence>
