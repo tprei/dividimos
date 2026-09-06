@@ -242,13 +242,13 @@ describe("fetchSefazReceipt", () => {
   it("throws generic Error when response fails without fallback flag", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
-        JSON.stringify({ error: "Nao autenticado" }),
+        JSON.stringify({ error: "Não autenticado" }),
         { status: 401, headers: { "Content-Type": "application/json" } },
       ),
     );
 
     const promise = fetchSefazReceipt("https://example.com");
-    await expect(promise).rejects.toThrow("Nao autenticado");
+    await expect(promise).rejects.toThrow("Não autenticado");
     await expect(fetchSefazReceipt("https://example.com")).rejects.not.toThrow(SefazFallbackError);
 
     fetchSpy.mockRestore();

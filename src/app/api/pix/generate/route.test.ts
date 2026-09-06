@@ -76,7 +76,7 @@ describe("POST /api/pix/generate", () => {
     const response = await POST(makeRequest({}));
     expect(response.status).toBe(400);
     const body = await response.json();
-    expect(body.error).toBe("Dados invalidos");
+    expect(body.error).toBe("Dados inválidos");
   });
 
   it("returns 400 when groupId is not provided", async () => {

@@ -14,7 +14,7 @@ export async function POST(request: Request) {
 
   const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
   if (claimsError || !claimsData) {
-    return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
   const body = await request.json().catch(() => null);
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   if (!fetchResult.ok || !fetchResult.html) {
     return NextResponse.json(
       {
-        error: fetchResult.error ?? "Falha ao acessar pagina da SEFAZ",
+        error: fetchResult.error ?? "Falha ao acessar página da SEFAZ",
         fallback: true,
       },
       { status: 502 },
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   if (!result || result.items.length === 0) {
     return NextResponse.json(
       {
-        error: "Nao foi possivel extrair itens da pagina",
+        error: "Não foi possível extrair itens da página",
         fallback: true,
       },
       { status: 422 },

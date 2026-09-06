@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       ? (claimsData.claims.sub as string)
       : null;
   if (!callerId) {
-    return jsonResponse({ error: "Nao autenticado" }, 401);
+    return jsonResponse({ error: "Não autenticado" }, 401);
   }
 
   const body = await request.json();
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     amountCents > 100_000_00 ||
     !groupId
   ) {
-    return jsonResponse({ error: "Dados invalidos" }, 400);
+    return jsonResponse({ error: "Dados inválidos" }, 400);
   }
 
   // Authorization first. The encrypted key is never read before this resolves.
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
       {
         error: isSelf
           ? "Erro ao processar sua chave Pix"
-          : "Erro ao processar chave Pix do destinatario",
+          : "Erro ao processar chave Pix do destinatário",
       },
       500,
     );

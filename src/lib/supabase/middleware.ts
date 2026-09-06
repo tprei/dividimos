@@ -56,7 +56,9 @@ export async function updateSession(request: NextRequest) {
   const { data, error } = await supabase.auth.getClaims();
   const user = error || !data ? null : { id: data.claims.sub };
 
-  if (!user && !isPublicPath(pathname)) {
+  // API routes answer with their own JSON status; redirecting them to /auth
+  // would turn a 401 into a 307 that fetch() silently follows.
+  if (!user && !isPublicPath(pathname) && !pathname.startsWith("/api/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth";
     url.search = `?next=${encodeURIComponent(pathname)}`;

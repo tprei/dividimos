@@ -50,7 +50,7 @@ describe("POST /api/receipt/sefaz", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe("Nao autenticado");
+    expect(body.error).toBe("Não autenticado");
   });
 
   it("returns 400 when url is missing", async () => {
@@ -216,7 +216,7 @@ describe("POST /api/receipt/sefaz", () => {
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.fallback).toBe(true);
-    expect(body.error).toBe("Nao foi possivel extrair itens da pagina");
+    expect(body.error).toBe("Não foi possível extrair itens da página");
   });
 
   it("returns 422 with fallback when parser returns null", async () => {
