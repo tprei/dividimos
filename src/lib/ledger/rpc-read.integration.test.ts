@@ -4,6 +4,8 @@ import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   createTestUsers,
   authenticateAs,
+  createGroup,
+  acceptInvitation,
   createGroupWithMembers,
   createExpense,
   equalSplitPayload,
@@ -528,3 +530,100 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     }
   });
 });
+
+describe.skipIf(!isIntegrationTestReady)(
+  "ledger read RPCs — invited viewer scoping",
+  () => {
+    let inviter!: TestUser;
+    let invited!: TestUser;
+    let member!: TestUser;
+    let groupId!: string;
+
+    const MESSAGE = "mensagem para aceitos";
+
+    beforeAll(async () => {
+      [inviter, invited, member] = await createTestUsers(3);
+
+      groupId = (await createGroup(inviter, "Convite restrito", [invited.id, member.id]))
+        .groupId;
+      await acceptInvitation(member, groupId);
+
+      await createExpense(inviter, {
+        groupId,
+        title: "Churrasco fechado",
+        totalCents: 1000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: inviter.id },
+            { kind: "user", userId: member.id },
+            { kind: "guest", guestId: null, displayName: "Zé" },
+          ],
+          shares: [333, 333, 334],
+          payers: [{ participantIndex: 0, amountCents: 1000 }],
+          itemAssignments: null,
+        },
+      });
+
+      await rpcOk<{ settlementId: string }>(authenticateAs(member), "record_settlement", {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: groupId,
+        p_to_user_id: inviter.id,
+        p_amount_cents: 100,
+      });
+      await rpcOk<ChatMessage>(authenticateAs(inviter), "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: groupId,
+        p_content: MESSAGE,
+      });
+    });
+
+    it("shows an invited viewer only their invitation: no money, guests or chat", async () => {
+      const snap = await rpcOk<GroupSnapshot>(authenticateAs(invited), "get_group", {
+        p_group_id: groupId,
+      });
+      expect(snap.balances).toEqual([]);
+      expect(snap.guests).toEqual([]);
+      expect(snap.pendingSettlements).toEqual([]);
+      expect(snap.recentExpenses).toEqual([]);
+      expect(snap.unreadCount).toBe(0);
+      expect(snap.lastMessage).toBeNull();
+      expect(snap.members.map((m) => m.userId).sort()).toEqual(
+        [invited.id, inviter.id].sort(),
+      );
+      const invitedRow = snap.members.find((m) => m.userId === invited.id);
+      expect(invitedRow?.status).toBe("invited");
+      expect(invitedRow?.invitedBy).toBe(inviter.id);
+    });
+
+    it("still exposes the full snapshot to an accepted member", async () => {
+      const snap = await rpcOk<GroupSnapshot>(authenticateAs(member), "get_group", {
+        p_group_id: groupId,
+      });
+      expect(snap.members.map((m) => m.userId).sort()).toEqual(
+        [inviter.id, invited.id, member.id].sort(),
+      );
+      expect(snap.balances).toHaveLength(3);
+      expect(snap.guests).toHaveLength(1);
+      expect(snap.pendingSettlements).toHaveLength(1);
+      expect(snap.recentExpenses).toHaveLength(1);
+      expect(snap.unreadCount).toBe(1);
+      expect(snap.lastMessage?.content).toBe(MESSAGE);
+    });
+
+    it("applies the same invitation scoping inside bootstrap", async () => {
+      const boot = await rpcOk<BootstrapPayload>(authenticateAs(invited), "bootstrap", {});
+      const snap = boot.groups.find((g) => g.group.id === groupId);
+      if (!snap) throw new Error("invited group missing from bootstrap");
+      expect(snap.balances).toEqual([]);
+      expect(snap.guests).toEqual([]);
+      expect(snap.pendingSettlements).toEqual([]);
+      expect(snap.recentExpenses).toEqual([]);
+      expect(snap.unreadCount).toBe(0);
+      expect(snap.lastMessage).toBeNull();
+      expect(snap.members.map((m) => m.userId).sort()).toEqual(
+        [invited.id, inviter.id].sort(),
+      );
+    });
+  },
+);

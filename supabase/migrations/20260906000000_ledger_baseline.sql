@@ -1,20 +1,9 @@
--- Ledger rebuild: replaces the legacy pair-balance schema with the
--- expense_versions/settlements ledger (docs: rebuild spec, Phase 1).
--- Legacy data does not survive this migration; production is cut over by
--- restoring into a fresh database and running scripts/migrate-ledger.ts.
--- Everything below the preamble is the concatenation of supabase/schemas/*.sql.
-
-DROP TRIGGER IF EXISTS "000_financial_maintenance_gate" ON auth.users;
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-DROP POLICY IF EXISTS expense_wake_broadcast_authz ON realtime.messages;
-DROP SCHEMA IF EXISTS financial_internal CASCADE;
-DROP SCHEMA IF EXISTS graph_internal CASCADE;
-DROP SCHEMA IF EXISTS guest_credentials CASCADE;
-DROP SCHEMA public CASCADE;
-CREATE SCHEMA public;
-COMMENT ON SCHEMA public IS 'standard public schema';
-GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
-GRANT CREATE ON SCHEMA public TO postgres;
+-- Ledger baseline. This file is the concatenation of supabase/schemas/*.sql in
+-- lexical order and is regenerated whenever a schema file changes:
+--
+--   ./scripts/build-baseline.sh
+--
+-- The declarative files under supabase/schemas/ are the source of truth.
 
 -- ---- 00_extensions.sql ----
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
@@ -595,6 +584,11 @@ BEGIN
     IF jsonb_typeof(v_item_assignments) <> 'array' THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    -- 100 items x 50 participants is the structural maximum; without a cap the
+    -- reconciliation below runs while lock_group is held.
+    IF jsonb_array_length(v_item_assignments) > 5000 THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
     v_i := 0;
     WHILE v_i < jsonb_array_length(v_item_assignments) LOOP
       v_assignment := v_item_assignments->v_i;
@@ -629,23 +623,31 @@ BEGIN
       END IF;
       v_i := v_i + 1;
     END LOOP;
-    v_i := 0;
-    WHILE v_i < jsonb_array_length(v_items) LOOP
-      v_item_total := (v_items->v_i->>'totalPriceCents')::integer;
-      v_assignment_sum := 0;
-      v_j := 0;
-      WHILE v_j < jsonb_array_length(v_item_assignments) LOOP
-        v_assignment := v_item_assignments->v_j;
-        IF (v_assignment->>'itemIndex')::integer = v_i THEN
-          v_assignment_sum := v_assignment_sum + (v_assignment->>'amountCents')::integer;
-        END IF;
-        v_j := v_j + 1;
-      END LOOP;
-      IF v_assignment_sum <> v_item_total THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
-      END IF;
-      v_i := v_i + 1;
-    END LOOP;
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(v_item_assignments) AS a(e)
+      GROUP BY (a.e->>'itemIndex'), (a.e->>'participantIndex')
+      HAVING count(*) > 1
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    IF EXISTS (
+      WITH assigned AS (
+        SELECT (a.e->>'itemIndex')::integer AS item_index,
+               sum((a.e->>'amountCents')::integer) AS assigned_cents
+        FROM jsonb_array_elements(v_item_assignments) AS a(e)
+        GROUP BY 1
+      ), items AS (
+        SELECT (ord - 1)::integer AS item_index,
+               (x->>'totalPriceCents')::integer AS total_cents
+        FROM jsonb_array_elements(v_items) WITH ORDINALITY AS t(x, ord)
+      )
+      SELECT 1 FROM items i
+      FULL JOIN assigned a ON a.item_index = i.item_index
+      WHERE COALESCE(a.assigned_cents, 0) <> COALESCE(i.total_cents, -1)
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
   ELSE
     v_item_assignments := NULL;
   END IF;
@@ -797,6 +799,16 @@ BEGIN
     END IF;
     v_i := v_i + 1;
   END LOOP;
+
+  -- An unclaimed guest with no participant slot left is unreachable; its
+  -- claim token would otherwise still redeem into group membership.
+  DELETE FROM guests g
+  WHERE g.expense_id = p_expense_id
+    AND g.claimed_by IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM expense_participants ep
+      WHERE ep.expense_id = p_expense_id AND ep.guest_id = g.id
+    );
 
   v_out := jsonb_set(p_payload, '{participants}', v_out_participants);
   RETURN v_out;
@@ -989,8 +1001,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;
 GRANT USAGE ON SCHEMA guest_credentials TO service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA guest_credentials TO service_role;
 
-GRANT EXECUTE ON FUNCTION public.is_member(uuid, uuid) TO authenticated;
-
 -- ---- 03_rpc_read.sql ----
 CREATE FUNCTION public.ledger_user_profile_json(p_user_id uuid) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
@@ -1177,6 +1187,7 @@ CREATE FUNCTION public.ledger_group_snapshot_json(p_group_id uuid, p_viewer uuid
 AS $$
 DECLARE
   v_out jsonb;
+  v_status public.member_status;
 BEGIN
   SELECT jsonb_build_object(
     'group', jsonb_build_object(
@@ -1261,6 +1272,34 @@ BEGIN
   ) INTO v_out
   FROM groups g
   WHERE g.id = p_group_id;
+
+  SELECT status INTO v_status
+  FROM group_members
+  WHERE group_id = p_group_id AND user_id = p_viewer;
+
+  -- An invited user has not consented yet: they see who invited them and
+  -- nothing about the group's money or conversation.
+  IF v_status = 'invited' THEN
+    v_out := v_out
+      || jsonb_build_object(
+           'members', (
+             SELECT COALESCE(jsonb_agg(m ORDER BY m ->> 'userId'), '[]'::jsonb)
+             FROM jsonb_array_elements(v_out -> 'members') AS t(m)
+             WHERE m ->> 'userId' IN (
+               p_viewer::text,
+               (SELECT invited_by::text FROM group_members
+                WHERE group_id = p_group_id AND user_id = p_viewer)
+             )
+           ),
+           'balances', '[]'::jsonb,
+           'guests', '[]'::jsonb,
+           'pendingSettlements', '[]'::jsonb,
+           'recentExpenses', '[]'::jsonb,
+           'unreadCount', 0,
+           'lastMessage', 'null'::jsonb
+         );
+  END IF;
+
   RETURN v_out;
 END;
 $$;
@@ -1614,14 +1653,18 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id, status, current_version_no INTO v_group_id, v_status, v_current_version_no
-  FROM expenses WHERE id = p_expense_id;
+  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
+
+  -- Re-read under the lock: an unlocked read lets two racing edits both pass
+  -- the version check and collide on expense_versions_pkey.
+  SELECT status, current_version_no INTO v_status, v_current_version_no
+  FROM expenses WHERE id = p_expense_id;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -1696,14 +1739,16 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id, status, current_version_no INTO v_group_id, v_status, v_version_no
-  FROM expenses WHERE id = p_expense_id;
+  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
+
+  SELECT status, current_version_no INTO v_status, v_version_no
+  FROM expenses WHERE id = p_expense_id;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -1751,14 +1796,16 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id, status, current_version_no INTO v_group_id, v_status, v_version_no
-  FROM expenses WHERE id = p_expense_id;
+  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
+
+  SELECT status, current_version_no INTO v_status, v_version_no
+  FROM expenses WHERE id = p_expense_id;
 
   IF v_status = 'active' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
@@ -1838,7 +1885,8 @@ BEGIN
 
   SELECT * INTO v_existing FROM settlements WHERE operation_id = p_operation_id;
   IF FOUND THEN
-    IF v_existing.from_user_id <> v_actor OR v_existing.group_id <> p_group_id THEN
+    IF v_existing.from_user_id <> v_actor OR v_existing.group_id <> p_group_id
+       OR v_existing.to_user_id <> p_to_user_id OR v_existing.amount_cents <> p_amount_cents THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
     END IF;
 
@@ -2796,9 +2844,20 @@ BEGIN
     RETURN public.ledger_chat_message_json(v_existing_id);
   END IF;
 
+  -- Concurrent retries of the same client_id must both resolve to one row.
   INSERT INTO chat_messages (client_id, group_id, sender_id, content)
   VALUES (p_client_id, p_group_id, v_actor, v_content)
+  ON CONFLICT (client_id) DO NOTHING
   RETURNING id INTO v_message_id;
+
+  IF v_message_id IS NULL THEN
+    SELECT id, sender_id, group_id INTO v_existing_id, v_existing_sender, v_existing_group
+    FROM chat_messages WHERE client_id = p_client_id;
+    IF v_existing_sender <> v_actor OR v_existing_group <> p_group_id THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+    END IF;
+    RETURN public.ledger_chat_message_json(v_existing_id);
+  END IF;
 
   v_result := public.ledger_chat_message_json(v_message_id);
 
@@ -3010,6 +3069,15 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
   END IF;
 
+  -- A guest dropped by a later edit keeps its row but no participant slot;
+  -- redeeming that orphaned token would hand group membership to a stranger.
+  IF NOT EXISTS (
+    SELECT 1 FROM expense_participants
+    WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
+  END IF;
+
   IF EXISTS (
     SELECT 1 FROM expense_participants
     WHERE expense_id = v_rec.expense_id AND user_id = v_actor AND kind = 'user'
@@ -3087,12 +3155,26 @@ REVOKE ALL ON FUNCTION public.claim_guest(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.claim_guest(text) TO authenticated;
 
 -- ---- 09_realtime.sql ----
+-- Topic ids are matched as uuids: a malformed topic yields a clean denial
+-- instead of an "invalid input syntax for type uuid" during policy evaluation.
+CREATE FUNCTION public.current_user_is_member(p_group_id uuid) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM group_members
+    WHERE group_id = p_group_id AND user_id = auth.uid() AND status = 'accepted'
+  )
+$$;
+
+REVOKE ALL ON FUNCTION public.current_user_is_member(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.current_user_is_member(uuid) TO authenticated;
+
 DROP POLICY IF EXISTS group_broadcast_authz ON realtime.messages;
 CREATE POLICY group_broadcast_authz ON realtime.messages FOR SELECT TO authenticated
 USING (
-  (realtime.topic() LIKE 'group:%' AND public.is_member(substring(realtime.topic() FROM 'group:(.*)')::uuid, auth.uid()))
-  OR
-  (realtime.topic() LIKE 'chat:%' AND public.is_member(substring(realtime.topic() FROM 'chat:(.*)')::uuid, auth.uid()))
+  public.current_user_is_member(
+    substring(realtime.topic() FROM '^(?:group|chat):([0-9a-fA-F-]{36})$')::uuid
+  )
 );
 
 -- ---- 11_vendor_charges.sql ----
@@ -3423,6 +3505,9 @@ CREATE TRIGGER set_users_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION public.set_updated_at();
 
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.set_updated_at() FROM public, anon, authenticated;
+
 -- ---- 14_rpc_nudge.sql ----
 CREATE FUNCTION public.send_nudge(
   p_group_id uuid,
@@ -3463,7 +3548,8 @@ BEGIN
 
   IF EXISTS (
     SELECT 1 FROM group_events
-    WHERE kind = 'nudge'
+    WHERE group_id = p_group_id
+      AND kind = 'nudge'
       AND actor_id = v_actor
       AND subject_user_id = p_user_id
       AND created_at > now() - interval '24 hours'

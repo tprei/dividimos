@@ -8,6 +8,7 @@ import {
   createExpense,
   getBalances,
   expectRpcError,
+  withPg,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -391,6 +392,131 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(netOf(member.id)).toBe(-3000);
       expect(netOf(outsider.id)).toBe(-3000);
       expect(balances.reduce((sum, row) => sum + row.net_cents, 0)).toBe(0);
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "orphaned guest claim tokens cannot grant membership",
+  () => {
+    let payer: TestUser;
+    let member: TestUser;
+    let stranger: TestUser;
+    let payerClient: SupabaseClient;
+    let strangerClient: SupabaseClient;
+    let anonClient: SupabaseClient;
+    let groupId: string;
+    let guestId: string;
+    let token: string;
+
+    beforeAll(async () => {
+      [payer, member, stranger] = await createTestUsers(3);
+      payerClient = authenticateAs(payer);
+      strangerClient = authenticateAs(stranger);
+      anonClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+
+      groupId = await createGroupWithMembers(payer, [member], "Grupo órfãos");
+      const created = await createExpense(payer, {
+        groupId,
+        title: "Convidado depois removido",
+        totalCents: 6000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: payer.id },
+            { kind: "user", userId: member.id },
+            { kind: "guest", guestId: null, displayName: "Zé órfão" },
+          ],
+          shares: [2000, 2000, 2000],
+          payers: [{ participantIndex: 0, amountCents: 6000 }],
+          itemAssignments: null,
+        },
+      });
+
+      const detail = await getExpenseDetail(payerClient, created.expenseId);
+      const guestParticipant = detail.current.payload.participants[2];
+      if (
+        !guestParticipant ||
+        guestParticipant.kind !== "guest" ||
+        !guestParticipant.guestId
+      ) {
+        throw new Error("Fixture failure: guest was not materialized");
+      }
+      guestId = guestParticipant.guestId;
+
+      token = await rpc<string>(payerClient, "issue_guest_claim_token", {
+        p_guest_id: guestId,
+      });
+
+      const ack = await rpc<EditAck>(payerClient, "edit_expense", {
+        p_expense_id: created.expenseId,
+        p_expected_version_no: 1,
+        p_occurred_on: new Date().toISOString().slice(0, 10),
+        p_title: "Convidado depois removido",
+        p_merchant_name: null,
+        p_expense_type: "single_amount",
+        p_total_cents: 6000,
+        p_service_fee_bps: 0,
+        p_fixed_fee_cents: 0,
+        p_payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: payer.id },
+            { kind: "user", userId: member.id },
+          ],
+          shares: [3000, 3000],
+          payers: [{ participantIndex: 0, amountCents: 6000 }],
+          itemAssignments: null,
+        },
+      });
+      expect(ack.versionNo).toBe(2);
+    });
+
+    it("drops the unclaimed guest, its claim token, and stops resolving the token", async () => {
+      const counts = await withPg(async (client) => {
+        const guests = await client.query<{ count: number }>(
+          "select count(*)::int as count from public.guests where id = $1",
+          [guestId],
+        );
+        const tokens = await client.query<{ count: number }>(
+          "select count(*)::int as count from guest_credentials.claim_tokens " +
+            "where token_digest = extensions.digest(convert_to($1, 'utf8'), 'sha256')",
+          [token],
+        );
+        return { guests: guests.rows[0]?.count ?? 0, tokens: tokens.rows[0]?.count ?? 0 };
+      });
+      expect(counts.guests).toBe(0);
+      expect(counts.tokens).toBe(0);
+
+      const resolved = await rpc<GuestClaimResolve>(anonClient, "resolve_guest_claim_token", {
+        p_token: token,
+      });
+      expect(resolved.status).toBe("not_found");
+      expect(resolved.guestId).toBeNull();
+    });
+
+    it("rejects claiming the orphaned token with invalid_token and no membership appears", async () => {
+      const code = await expectRpcError(
+        Promise.resolve(strangerClient.rpc("claim_guest", { p_token: token })),
+      );
+      expect(code).toBe("invalid_token");
+
+      const memberCount = await withPg(async (client) => {
+        const memberships = await client.query<{ count: number }>(
+          "select count(*)::int as count from public.group_members " +
+            "where group_id = $1 and user_id = $2",
+          [groupId, stranger.id],
+        );
+        return memberships.rows[0]?.count ?? 0;
+      });
+      expect(memberCount).toBe(0);
+
+      const balances = await getBalances(groupId);
+      expect(balances.filter((row) => row.kind === "guest")).toHaveLength(0);
     });
   },
 );

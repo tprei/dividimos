@@ -118,14 +118,18 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id, status, current_version_no INTO v_group_id, v_status, v_current_version_no
-  FROM expenses WHERE id = p_expense_id;
+  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
+
+  -- Re-read under the lock: an unlocked read lets two racing edits both pass
+  -- the version check and collide on expense_versions_pkey.
+  SELECT status, current_version_no INTO v_status, v_current_version_no
+  FROM expenses WHERE id = p_expense_id;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -200,14 +204,16 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id, status, current_version_no INTO v_group_id, v_status, v_version_no
-  FROM expenses WHERE id = p_expense_id;
+  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
+
+  SELECT status, current_version_no INTO v_status, v_version_no
+  FROM expenses WHERE id = p_expense_id;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -255,14 +261,16 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id, status, current_version_no INTO v_group_id, v_status, v_version_no
-  FROM expenses WHERE id = p_expense_id;
+  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
+
+  SELECT status, current_version_no INTO v_status, v_version_no
+  FROM expenses WHERE id = p_expense_id;
 
   IF v_status = 'active' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';

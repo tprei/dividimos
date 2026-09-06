@@ -35,9 +35,20 @@ BEGIN
     RETURN public.ledger_chat_message_json(v_existing_id);
   END IF;
 
+  -- Concurrent retries of the same client_id must both resolve to one row.
   INSERT INTO chat_messages (client_id, group_id, sender_id, content)
   VALUES (p_client_id, p_group_id, v_actor, v_content)
+  ON CONFLICT (client_id) DO NOTHING
   RETURNING id INTO v_message_id;
+
+  IF v_message_id IS NULL THEN
+    SELECT id, sender_id, group_id INTO v_existing_id, v_existing_sender, v_existing_group
+    FROM chat_messages WHERE client_id = p_client_id;
+    IF v_existing_sender <> v_actor OR v_existing_group <> p_group_id THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+    END IF;
+    RETURN public.ledger_chat_message_json(v_existing_id);
+  END IF;
 
   v_result := public.ledger_chat_message_json(v_message_id);
 

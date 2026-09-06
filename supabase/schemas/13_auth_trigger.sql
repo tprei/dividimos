@@ -63,3 +63,6 @@ CREATE TRIGGER set_users_updated_at
   BEFORE UPDATE ON public.users
   FOR EACH ROW
   EXECUTE FUNCTION public.set_updated_at();
+
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.set_updated_at() FROM public, anon, authenticated;

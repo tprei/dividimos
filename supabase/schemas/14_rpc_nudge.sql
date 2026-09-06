@@ -37,7 +37,8 @@ BEGIN
 
   IF EXISTS (
     SELECT 1 FROM group_events
-    WHERE kind = 'nudge'
+    WHERE group_id = p_group_id
+      AND kind = 'nudge'
       AND actor_id = v_actor
       AND subject_user_id = p_user_id
       AND created_at > now() - interval '24 hours'
