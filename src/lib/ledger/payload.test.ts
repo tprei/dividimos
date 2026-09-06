@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useBillStore } from "@/stores/bill-store";
 import { buildExpensePayload } from "./payload";
+import {
+  makeExpenseDetail,
+  makeExpenseVersion,
+  makeGuestParticipant,
+  makeUserParticipant,
+} from "@/test/fixtures";
 import type { User } from "@/types";
 
 const userAlice: User = {
@@ -172,33 +178,36 @@ describe("buildExpensePayload", () => {
     expect(payload.shares.reduce((sum, s) => sum + s, 0)).toBe(4400);
   });
 
-  it("retains persisted guest remoteId when hydrated from server", () => {
+  it("retains persisted guest remoteId when hydrated from an expense detail", () => {
     const store = useBillStore.getState();
-    const now = "2026-09-05T12:00:00Z";
-    store.hydrateFromServer({
-      expense: {
-        id: "exp-loaded",
-        groupId: "group-1",
-        creatorId: userAlice.id,
-        expenseType: "single_amount",
-        title: "Passeio",
-        totalAmount: 10000,
-        serviceFeePercent: 0,
-        serviceFeeBasisPoints: 0,
-        fixedFees: 0,
-        status: "draft",
-        createdAt: now,
-        updatedAt: now,
-      },
-      items: [],
-      participants: [userAlice],
-      guests: [{ id: "guest-persisted", name: "Helena", remoteId: "uuid-guest-helena" }],
-      billSplits: [
-        { userId: userAlice.id, splitType: "fixed", value: 5000, computedAmountCents: 5000 },
-        { userId: "guest-persisted", splitType: "fixed", value: 5000, computedAmountCents: 5000 },
-      ],
-      payers: [{ expenseId: "exp-loaded", userId: userAlice.id, amountCents: 10000 }],
-    });
+    store.hydrateFromDetail(
+      makeExpenseDetail({
+        expense: { id: "exp-loaded", groupId: "group-1" },
+        current: makeExpenseVersion({
+          expenseId: "exp-loaded",
+          title: "Passeio",
+          expenseType: "single_amount",
+          totalCents: 10000,
+          serviceFeeBasisPoints: 0,
+          payload: {
+            items: [],
+            participants: [
+              { kind: "user", userId: "user-alice" },
+              { kind: "guest", guestId: "uuid-guest-helena", displayName: "Helena" },
+            ],
+            shares: [5000, 5000],
+            payers: [{ participantIndex: 0, amountCents: 10000 }],
+            itemAssignments: null,
+          },
+        }),
+        participants: [
+          makeUserParticipant(0, 5000, 10000),
+          makeGuestParticipant(1, 5000, { id: "uuid-guest-helena", displayName: "Helena", claimedBy: null }),
+        ],
+      }),
+      [],
+    );
+    expect(useBillStore.getState().expense?.id).toBe("exp-loaded");
 
     const result = buildExpensePayload(useBillStore.getState(), "2026-09-05");
     expect(result.ok).toBe(true);

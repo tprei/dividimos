@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
 import type { ExpenseAllocationIssue } from "@/lib/expense-money";
 import type {
@@ -13,6 +14,7 @@ import type {
   SplitType,
   User,
 } from "@/types";
+import type { ExpenseDetail, GroupMember, UserProfile } from "@/types/ledger";
 
 export interface ExpenseSplit {
   id: string;
@@ -58,12 +60,11 @@ export interface ExpenseState {
   splits: ExpenseSplit[];
   /** Whole-expense split assignments (single_amount wizard). */
   billSplits: AmountSplit[];
-  /** Users protected from removal because their share came from a claimed
-   *  guest (#495). Populated only when editing an existing draft that has
-   *  one; empty for new/active/settled expenses. */
-  draftClaimProtectedUserIds: string[];
+  /** Wizard "Data" input (YYYY-MM-DD); null until the wizard sets it. */
+  occurredOn: string | null;
 
   setCurrentUser: (user: User) => void;
+  setOccurredOn: (date: string) => void;
 
   createExpense: (title: string, expenseType: ExpenseType, merchantName?: string, groupId?: string) => void;
   updateExpense: (updates: Partial<Expense> & { totalAmountInput?: number }) => void;
@@ -121,22 +122,11 @@ export interface ExpenseState {
    */
   hydrateFromChatDraft: (result: ChatExpenseResult, groupId: string, counterparty: User) => void;
   /**
-   * Hydrates the store from a server-loaded expense snapshot.
-   * Clears all wizard state before applying the new data to prevent zombie
-   * state from a prior session.
+   * Hydrates the store from a store-cached expense detail so the wizard can
+   * edit it. `members` of the expense's group backfill profiles for user
+   * participants whose `user` snapshot is missing.
    */
-  hydrateFromServer: (input: {
-    expense: Expense;
-    items: ExpenseItem[];
-    participants?: User[];
-    guests?: Guest[];
-    payers?: ExpensePayer[];
-    billSplits?: AmountSplit[];
-    /** Users whose share came from a claimed guest -- see #495 spec: their
-     *  removal control must be hidden and their removal is a whole-state
-     *  no-op (the server rejects it with `claimed_guest_not_participant`). */
-    draftClaimProtectedUserIds?: string[];
-  }) => void;
+  hydrateFromDetail: (detail: ExpenseDetail, members: GroupMember[]) => void;
   reset: () => void;
 }
 
@@ -248,7 +238,7 @@ export function computeConsumption(
  * Memoized wrapper around computeConsumption.
  *
  * Outer key: the expense object reference (WeakMap invalidates automatically
- * when expense is replaced via createExpense / hydrateFromServer / reset).
+ * when expense is replaced via createExpense / hydrateFromDetail / reset).
  * Inner key: reference tuple of the five mutable slices so mutations to
  * participants/guests/items/splits/billSplits also bust the cache.
  */
@@ -347,59 +337,171 @@ export function selectPreviewDebts(state: ExpenseState): DebtEdge[] {
   return debts;
 }
 
-/**
- * Pure mapper: turns a loaded expense's raw guest rows (as returned by
- * `loadExpense`) into the store-shaped `guests` list and, for
- * `single_amount` expenses, the guest portion of `billSplits`.
- *
- * Extracted from the wizard's edit-mode hydration effect so this exact
- * mapping is directly unit-testable, independent of the page component.
- * A prior version of that inline logic silently dropped every guest
- * (hardcoded `guests: []`), deleting them permanently on the next save;
- * regression coverage for that class of bug belongs here, not only in
- * `hydrateFromServer` itself, so a future revert of the wizard's call
- * site is caught even if `hydrateFromServer` keeps behaving correctly.
- *
- * Already-claimed guests are excluded: a claimed guest is no longer a
- * mutable, unclaimed placeholder and must never be resubmitted as
- * `p_guests` on the next save.
- */
-export function mapLoadedGuestsForEditHydration(
-  loadedGuests: readonly {
-    id: string;
-    displayName: string;
-    claimedBy?: string;
-    share?: { shareAmountCents: number };
-  }[],
-  expenseType: ExpenseType,
-): { guests: Guest[]; guestBillSplits: AmountSplit[] } {
-  const unclaimed = loadedGuests.filter((g) => !g.claimedBy);
-  const guests: Guest[] = unclaimed.map((g) => ({ id: g.id, name: g.displayName, remoteId: g.id }));
-  const guestBillSplits: AmountSplit[] =
-    expenseType === "single_amount"
-      ? unclaimed.map((g) => ({
-          userId: g.id,
-          splitType: "fixed" as const,
-          value: g.share?.shareAmountCents ?? 0,
-          computedAmountCents: g.share?.shareAmountCents ?? 0,
-        }))
-      : [];
-  return { guests, guestBillSplits };
+function profileToUser(profile: UserProfile | null, userId: string): User {
+  return {
+    id: profile?.id ?? userId,
+    email: "",
+    handle: profile?.handle ?? "",
+    name: profile?.name ?? "Alguém",
+    pixKeyType: "email",
+    pixKeyHint: "",
+    avatarUrl: profile?.avatarUrl ?? undefined,
+    onboarded: true,
+    createdAt: "",
+  };
 }
 
-export const useBillStore = create<ExpenseState>((set, get) => ({
-  currentUser: null,
-  expense: null,
-  totalAmountInput: 0,
-  participants: [],
-  guests: [],
-  items: [],
-  payers: [],
-  splits: [],
-  billSplits: [],
-  draftClaimProtectedUserIds: [],
+type WizardHydrationState = Pick<
+  ExpenseState,
+  | "expense"
+  | "totalAmountInput"
+  | "participants"
+  | "guests"
+  | "items"
+  | "payers"
+  | "splits"
+  | "billSplits"
+  | "occurredOn"
+>;
 
-  setCurrentUser: (user) => set({ currentUser: user }),
+function detailToWizardState(
+  detail: ExpenseDetail,
+  members: GroupMember[],
+): WizardHydrationState {
+  const record = detail.expense;
+  const current = detail.current;
+  const payload = current.payload;
+
+  const localIdByIndex = new Map<number, string>();
+  const participants: User[] = [];
+  const guests: Guest[] = [];
+  for (const participant of detail.participants) {
+    const ref = payload.participants[participant.participantIndex];
+    if (participant.kind === "user") {
+      const userId = ref?.kind === "user" ? ref.userId : "";
+      const profile =
+        participant.user ?? members.find((m) => m.userId === userId)?.user ?? null;
+      participants.push(profileToUser(profile, userId));
+      localIdByIndex.set(participant.participantIndex, profile?.id ?? userId);
+    } else {
+      const guestId =
+        participant.guest?.id ?? (ref?.kind === "guest" ? ref.guestId : null);
+      const displayName =
+        participant.guest?.displayName ?? (ref?.kind === "guest" ? ref.displayName : "Convidado");
+      if (!guestId) continue;
+      guests.push({ id: guestId, name: displayName, remoteId: guestId });
+      localIdByIndex.set(participant.participantIndex, guestId);
+    }
+  }
+
+  const items: ExpenseItem[] = payload.items.map((item) => ({
+    id: generateId(),
+    expenseId: record.id,
+    description: item.description,
+    quantity: item.quantityMilliunits,
+    unitPriceCents: item.unitPriceCents,
+    totalPriceCents: item.totalPriceCents,
+    createdAt: current.createdAt,
+  }));
+
+  const payers: ExpensePayer[] = payload.payers.flatMap((payer) => {
+    const userId = localIdByIndex.get(payer.participantIndex);
+    return userId ? [{ expenseId: record.id, userId, amountCents: payer.amountCents }] : [];
+  });
+
+  const billSplits: AmountSplit[] =
+    current.expenseType === "single_amount"
+      ? detail.participants.flatMap((participant) => {
+          const userId = localIdByIndex.get(participant.participantIndex);
+          return userId
+            ? [{
+                userId,
+                splitType: "fixed" as SplitType,
+                value: participant.shareCents,
+                computedAmountCents: participant.shareCents,
+              }]
+            : [];
+        })
+      : [];
+
+  let splits: ExpenseSplit[] = [];
+  if (current.expenseType === "itemized") {
+    const allPersonIds = [...participants.map((p) => p.id), ...guests.map((g) => g.id)];
+    if (payload.itemAssignments) {
+      splits = payload.itemAssignments.flatMap((row) => {
+        const item = items[row.itemIndex];
+        const userId = localIdByIndex.get(row.participantIndex);
+        if (!item || !userId) return [];
+        return [{
+          id: generateId(),
+          itemId: item.id,
+          userId,
+          splitType: "fixed" as SplitType,
+          value: row.amountCents,
+          computedAmountCents: row.amountCents,
+        }];
+      });
+    } else if (allPersonIds.length > 0) {
+      for (const item of items) {
+        const perPerson = Math.floor(item.totalPriceCents / allPersonIds.length);
+        const remainder = item.totalPriceCents - perPerson * allPersonIds.length;
+        allPersonIds.forEach((userId, idx) => {
+          splits.push({
+            id: generateId(),
+            itemId: item.id,
+            userId,
+            splitType: "equal",
+            value: 100 / allPersonIds.length,
+            computedAmountCents: perPerson + (idx < remainder ? 1 : 0),
+          });
+        });
+      }
+    }
+  }
+
+  return {
+    expense: {
+      id: record.id,
+      groupId: record.groupId,
+      creatorId: record.creatorId,
+      title: current.title,
+      merchantName: current.merchantName ?? undefined,
+      expenseType: current.expenseType,
+      totalAmount: current.totalCents,
+      serviceFeePercent: current.serviceFeeBasisPoints / 100,
+      serviceFeeBasisPoints: current.serviceFeeBasisPoints,
+      fixedFees: current.fixedFeeCents,
+      status: "active",
+      createdAt: record.createdAt,
+      updatedAt: current.createdAt,
+    },
+    totalAmountInput: current.expenseType === "single_amount" ? current.totalCents : 0,
+    participants,
+    guests,
+    items,
+    payers,
+    splits,
+    billSplits,
+    occurredOn: record.occurredOn,
+  };
+}
+
+export const useBillStore = create<ExpenseState>()(
+  persist(
+    (set, get) => ({
+      currentUser: null,
+      expense: null,
+      totalAmountInput: 0,
+      participants: [],
+      guests: [],
+      items: [],
+      payers: [],
+      splits: [],
+      billSplits: [],
+      occurredOn: null,
+
+      setCurrentUser: (user) => set({ currentUser: user }),
+      setOccurredOn: (date) => set({ occurredOn: date }),
 
   createExpense: (title, expenseType, merchantName, groupId) => {
     const now = new Date().toISOString();
@@ -428,7 +530,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
-      draftClaimProtectedUserIds: [],
+      occurredOn: null,
     });
   },
 
@@ -515,10 +617,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
 
   removeParticipant: (userId) => {
     set((state) => {
-      if (
-        !state.participants.some((participant) => participant.id === userId) ||
-        state.draftClaimProtectedUserIds.includes(userId)
-      ) {
+      if (!state.participants.some((participant) => participant.id === userId)) {
         return {};
       }
 
@@ -925,7 +1024,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
-      draftClaimProtectedUserIds: [],
+      occurredOn: null,
     });
   },
 
@@ -988,30 +1087,12 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers,
       splits: [],
       billSplits: [],
-      draftClaimProtectedUserIds: [],
+      occurredOn: null,
     });
   },
 
-  hydrateFromServer: ({
-    expense,
-    items,
-    participants,
-    guests,
-    payers,
-    billSplits,
-    draftClaimProtectedUserIds,
-  }) => {
-    set({
-      expense,
-      items,
-      totalAmountInput: expense.expenseType === "single_amount" ? expense.totalAmount : 0,
-      participants: participants ?? [],
-      guests: guests ?? [],
-      payers: payers ?? [],
-      splits: [],
-      billSplits: billSplits ?? [],
-      draftClaimProtectedUserIds: draftClaimProtectedUserIds ?? [],
-    });
+  hydrateFromDetail: (detail, members) => {
+    set(detailToWizardState(detail, members));
   },
 
   reset: () => {
@@ -1024,7 +1105,25 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
       payers: [],
       splits: [],
       billSplits: [],
-      draftClaimProtectedUserIds: [],
+      occurredOn: null,
     });
   },
-}));
+    }),
+    {
+      name: "dividimos-draft",
+      storage: createJSONStorage(() => localStorage),
+      version: 1,
+      partialize: (state) => ({
+        expense: state.expense,
+        totalAmountInput: state.totalAmountInput,
+        participants: state.participants,
+        guests: state.guests,
+        items: state.items,
+        payers: state.payers,
+        splits: state.splits,
+        billSplits: state.billSplits,
+        occurredOn: state.occurredOn,
+      }),
+    },
+  ),
+);

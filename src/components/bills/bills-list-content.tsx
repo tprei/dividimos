@@ -4,10 +4,11 @@ import { motion } from "framer-motion";
 import { Loader2, Receipt, Search } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+import { useShallow } from "zustand/react/shallow";
 import { SwipeableBillCard } from "@/components/bill/swipeable-bill-card";
 import { EmptyState } from "@/components/shared/empty-state";
-import { staggerContainer, staggerItem } from "@/lib/animations";
+import { BillCardSkeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,75 +20,100 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
-import { deleteExpense } from "@/lib/supabase/expense-actions";
-import { useUser } from "@/hooks/use-auth";
-import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
-import type { ExpenseStatus } from "@/types";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { deleteExpense } from "@/lib/sync/mutations";
+import { useMe } from "@/hooks/use-me";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot } from "@/types/ledger";
 
-interface BillEntry {
+interface BillRow {
   id: string;
   title: string;
-  date: string;
-  total: number;
-  participants: number;
-  status: ExpenseStatus;
-  creatorId: string;
+  merchantName: string | null;
+  occurredOn: string;
+  createdAt: string;
+  totalCents: number;
+  deleted: boolean;
+  groupName: string;
 }
 
-const statusConfig: Record<ExpenseStatus, { label: string; color: string }> = {
-  draft: { label: "Rascunho", color: "bg-muted text-muted-foreground" },
-  active: { label: "Pendente", color: "bg-warning/15 text-warning-foreground" },
-  settled: { label: "Quitada", color: "bg-success/15 text-success" },
-};
-
-type FilterType = "all" | ExpenseStatus;
-
-const filters: { key: FilterType; label: string }[] = [
-  { key: "all", label: "Todas" },
-  { key: "active", label: "Pendentes" },
-  { key: "settled", label: "Quitadas" },
-];
-
-interface BillsListContentProps {
-  initialBills: BillEntry[];
+function formatOccurredOn(occurredOn: string): string {
+  const [year, month, day] = occurredOn.split("-");
+  if (!year || !month || !day) return occurredOn;
+  return `${day}/${month}/${year}`;
 }
 
-export function BillsListContent({ initialBills }: BillsListContentProps) {
-  const router = useRouter();
-  const user = useUser();
+function groupNameOf(snapshot: GroupSnapshot | undefined, meId: string): string {
+  if (!snapshot) return "";
+  if (snapshot.group.kind === "dm") {
+    const other = snapshot.members.find((m) => m.userId !== meId);
+    if (other) return other.user.name;
+  }
+  return snapshot.group.name;
+}
+
+export function BillsListContent() {
+  const me = useMe();
+  const { hydrated, expenses, groups } = useAppStore(
+    useShallow((s) => ({
+      hydrated: s.hydrated,
+      expenses: s.expenses,
+      groups: s.groups,
+    })),
+  );
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterType>("all");
-  const [bills, setBills] = useState<BillEntry[]>(initialBills);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Prefetch bill detail and draft-edit routes for visible bills
-  const billRoutes = useMemo(
-    () => bills.map((b) => `/app/bill/${b.id}`),
-    [bills],
-  );
-  usePrefetchRoutes(billRoutes);
+  const bills = useMemo<BillRow[]>(() => {
+    if (!me) return [];
+    return Object.values(expenses)
+      .map((e) => ({
+        id: e.id,
+        title: e.title,
+        merchantName: e.merchantName,
+        occurredOn: e.occurredOn,
+        createdAt: e.createdAt,
+        totalCents: e.totalCents,
+        deleted: e.status === "deleted",
+        groupName: groupNameOf(groups[e.groupId], me.id),
+      }))
+      .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt));
+  }, [expenses, groups, me]);
+
+  const filtered = bills.filter((bill) => {
+    const query = search.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      bill.title.toLowerCase().includes(query) ||
+      (bill.merchantName?.toLowerCase().includes(query) ?? false)
+    );
+  });
+
+  if (!hydrated || !me) {
+    return (
+      <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
+        {[1, 2, 3].map((i) => (
+          <BillCardSkeleton key={i} />
+        ))}
+      </div>
+    );
+  }
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
-    const targetId = deleteTarget;
-    const removed = bills.find((b) => b.id === targetId);
-    setBills((prev) => prev.filter((b) => b.id !== targetId));
-    setDeleteTarget(null);
-    const result = await deleteExpense(targetId);
-    if (result.error && removed) {
-      setBills((prev) => [...prev, removed]);
+    try {
+      await deleteExpense(deleteTarget);
+      setDeleteTarget(null);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setDeleting(false);
     }
-    setDeleting(false);
   };
-
-  const filtered = bills.filter((bill) => {
-    const matchesSearch = bill.title.toLowerCase().includes(search.toLowerCase());
-    const matchesFilter = filter === "all" || bill.status === filter;
-    return matchesSearch && matchesFilter;
-  });
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -111,7 +137,7 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar..."
+            placeholder="Buscar por título ou estabelecimento..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -120,69 +146,40 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
       </motion.div>
 
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1, duration: 0.4 }}
-        className="mt-3 flex gap-2 overflow-x-auto pb-1"
-      >
-        {filters.map((f) => (
-          <Button
-            key={f.key}
-            size="sm"
-            variant={filter === f.key ? "default" : "outline"}
-            onClick={() => setFilter(f.key)}
-            className="shrink-0 text-xs"
-          >
-            {f.label}
-          </Button>
-        ))}
-      </motion.div>
-
-      <motion.div
         variants={staggerContainer}
         initial="hidden"
         animate="visible"
         className="mt-6 space-y-3"
       >
-        {filtered.map((bill) => {
-          const status = statusConfig[bill.status];
-          const isDraft = bill.status === "draft" && bill.creatorId === user?.id;
-          return (
-            <motion.div key={bill.id} variants={staggerItem}>
-              <SwipeableBillCard
-                enabled={isDraft}
-                onEdit={() => router.push(`/app/bill/new?draft=${bill.id}`)}
-                onDelete={() => setDeleteTarget(bill.id)}
-              >
-                <Link href={`/app/bill/${bill.id}`}>
-                  <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
-                      <Receipt className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{bill.title}</p>
-                      <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{bill.date}</span>
-                        <span>·</span>
-                        <span>{bill.participants} pessoas</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold tabular-nums">
-                        {formatBRL(bill.total)}
-                      </p>
-                      <span
-                        className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${status.color}`}
-                      >
-                        {status.label}
-                      </span>
+        {filtered.map((bill) => (
+          <motion.div key={bill.id} variants={staggerItem}>
+            <SwipeableBillCard enabled={!bill.deleted} onDelete={() => setDeleteTarget(bill.id)}>
+              <Link href={`/app/bill/${bill.id}`}>
+                <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
+                    <Receipt className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{bill.title}</p>
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{formatOccurredOn(bill.occurredOn)}</span>
+                      <span>·</span>
+                      <span className="truncate">{bill.groupName}</span>
                     </div>
                   </div>
-                </Link>
-              </SwipeableBillCard>
-            </motion.div>
-          );
-        })}
+                  <div className="text-right">
+                    <p className="font-semibold tabular-nums">{formatBRL(bill.totalCents)}</p>
+                    {bill.deleted && (
+                      <span className="mt-0.5 inline-block rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-medium text-destructive">
+                        Excluída
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            </SwipeableBillCard>
+          </motion.div>
+        ))}
 
         {filtered.length === 0 && (
           <EmptyState
@@ -207,10 +204,8 @@ export function BillsListContent({ initialBills }: BillsListContentProps) {
       >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Apagar rascunho?</DialogTitle>
-            <DialogDescription>
-              Essa ação não tem volta.
-            </DialogDescription>
+            <DialogTitle>Excluir conta?</DialogTitle>
+            <DialogDescription>Essa ação não tem volta.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <DialogClose
