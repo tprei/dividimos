@@ -248,7 +248,7 @@ const PUBLIC_TABLES = [
   "push_subscriptions",
   "rate_limit_counters",
   "vendor_charges",
-];
+] as const;
 
 describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () => {
   let userA!: TestUser;

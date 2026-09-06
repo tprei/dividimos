@@ -3,24 +3,24 @@
  * These provide both compile-time and runtime safety for type assertions.
  */
 import type {
-  GroupMemberStatus,
   PixKeyType,
   SplitType,
 } from "@/types";
+import type { MemberStatus } from "@/types/ledger";
 
 const GROUP_MEMBER_STATUSES = ["invited", "accepted"] as const;
 const PIX_KEY_TYPES = ["cpf", "email", "phone", "random"] as const;
 const SPLIT_TYPES = ["equal", "percentage", "fixed"] as const;
 
 /**
- * Type guard for GroupMemberStatus enum.
+ * Type guard for MemberStatus enum.
  * @param value - The value to check
- * @returns true if value is a valid GroupMemberStatus
+ * @returns true if value is a valid MemberStatus
  */
-export function isGroupMemberStatus(value: unknown): value is GroupMemberStatus {
+export function isGroupMemberStatus(value: unknown): value is MemberStatus {
   return (
     typeof value === "string" &&
-    GROUP_MEMBER_STATUSES.includes(value as GroupMemberStatus)
+    GROUP_MEMBER_STATUSES.includes(value as MemberStatus)
   );
 }
 

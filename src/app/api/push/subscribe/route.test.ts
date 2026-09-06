@@ -16,6 +16,7 @@ const mockDecrypt = vi.fn<(value: string) => string>(() => "decrypted");
 vi.mock("@/lib/crypto", () => ({
   encryptPixKey: (val: string) => mockEncrypt(val),
   decryptPixKey: (val: string) => mockDecrypt(val),
+  hashEndpoint: (val: string) => `\\x${val}`,
 }));
 
 import { POST } from "./route";
@@ -103,8 +104,8 @@ describe("POST /api/push/subscribe", () => {
 
     adminMock.onTable("push_subscriptions", {
       data: [
-        { id: "dup-1", subscription: "enc-dup" },
-        { id: "other-1", subscription: "enc-other" },
+        { id: "dup-1", subscription_encrypted: "enc-dup" },
+        { id: "other-1", subscription_encrypted: "enc-other" },
       ],
     });
     adminMock.onTable("push_subscriptions", { data: null, error: null });
@@ -125,7 +126,7 @@ describe("POST /api/push/subscribe", () => {
     });
 
     adminMock.onTable("push_subscriptions", {
-      data: [{ id: "bad-1", subscription: "garbage" }],
+      data: [{ id: "bad-1", subscription_encrypted: "garbage" }],
     });
     adminMock.onTable("push_subscriptions", { data: null, error: null });
 

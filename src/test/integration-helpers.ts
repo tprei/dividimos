@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Client } from "pg";
+import type { Database } from "@/types/database";
 import {
   adminClient,
   registerTestUser,
@@ -109,7 +110,7 @@ export async function createTestUser(
   };
 }
 
-export function authenticateAs(user: TestUser): SupabaseClient {
+export function authenticateAs(user: TestUser): SupabaseClient<Database> {
   if (!isIntegrationTestReady) {
     throw new Error(
       "Integration tests require Supabase environment variables. " +
@@ -121,7 +122,7 @@ export function authenticateAs(user: TestUser): SupabaseClient {
     throw new Error(`User ${user.handle} has no access token`);
   }
 
-  return createClient(
+  return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -149,11 +150,11 @@ export async function createTestUsers(
 }
 
 async function callRpc<T>(
-  client: SupabaseClient,
+  client: SupabaseClient<Database>,
   fn: string,
   args: Record<string, unknown>,
 ): Promise<T> {
-  const { data, error } = await client.rpc(fn, args);
+  const { data, error } = await client.rpc(fn as never, args as never);
   if (error) {
     throw new Error(error.message);
   }

@@ -9,7 +9,6 @@ import {
   parseAllocationPercentText,
   parseExpenseCents,
   parseExpenseCentsText,
-  parseGraphRevision,
   parseServiceFeeBasisPoints,
   parseServiceFeeBasisPointsText,
   parseSignedExpenseCents,
@@ -78,21 +77,6 @@ describe("parseSignedExpenseCents", () => {
   });
 });
 
-describe("parseGraphRevision", () => {
-  it("accepts [0, 2_147_483_647]", () => {
-    expect(parseGraphRevision(0)).toEqual({ ok: true, value: 0 });
-    expect(parseGraphRevision(2_147_483_647)).toEqual({
-      ok: true,
-      value: 2_147_483_647,
-    });
-  });
-
-  it("rejects negative, fractional, and exhausted revisions", () => {
-    expect(parseGraphRevision(-1).ok).toBe(false);
-    expect(parseGraphRevision(2_147_483_648).ok).toBe(false);
-    expect(parseGraphRevision(1.5).ok).toBe(false);
-  });
-});
 
 describe("parseServiceFeeBasisPoints", () => {
   it("accepts [0, 10_000]", () => {

@@ -5,15 +5,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
-import { notifyGroupAccepted } from "@/lib/push/push-notify";
 
 interface JoinActionsProps {
   token: string;
   isAuthenticated: boolean;
-  isInvalid: boolean;
-  isExpired: boolean;
-  isExhausted: boolean;
-  isInactive: boolean;
+  isInvalid?: boolean;
+  isExpired?: boolean;
+  isExhausted?: boolean;
+  isInactive?: boolean;
 }
 
 export function JoinActions({
@@ -68,13 +67,13 @@ export function JoinActions({
 
     const supabase = createClient();
     const { data, error: rpcError } = await supabase.rpc(
-      "join_group_via_link",
+      "join_via_link",
       { p_token: token },
     );
 
     if (rpcError) {
       const msg = rpcError.message;
-      if (msg.includes("invalid_token")) {
+      if (msg.includes("invalid_link") || msg.includes("invalid_token")) {
         setError("Convite inválido ou não encontrado.");
       } else if (msg.includes("link_inactive")) {
         setError("Este convite foi desativado.");
@@ -89,23 +88,9 @@ export function JoinActions({
       return;
     }
 
-    const result = data as { group_id: string; already_member: boolean };
-
-    if (result.already_member) {
-      router.push(`/app/groups/${result.group_id}`);
-      return;
-    }
-
-    // Notify the inviter/creator that someone joined via the invite link.
-    // The join_group_via_link RPC creates the membership, but doesn't fire
-    // notifications — that has to happen client-side from the joiner.
-    const { data: sessionData } = await supabase.auth.getUser();
-    const joinerId = sessionData.user?.id;
-    if (joinerId) {
-      notifyGroupAccepted(result.group_id, joinerId).catch(() => {});
-    }
-
-    router.push(`/app/groups/${result.group_id}`);
+    const result = data as { groupId?: string; group_id?: string } | null;
+    const groupId = result?.groupId ?? result?.group_id;
+    router.push(`/app/groups/${groupId}`);
   };
 
   return (

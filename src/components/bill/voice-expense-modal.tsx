@@ -12,7 +12,7 @@ import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import type { UserProfile } from "@/types";
 
 export type ResolvedParticipant =
-  | { type: "member"; userId: string; handle: string; name: string; avatarUrl?: string }
+  | { type: "member"; userId: string; handle: string; name: string; avatarUrl?: string | null }
   | { type: "guest"; name: string };
 
 interface VoiceExpenseModalProps {

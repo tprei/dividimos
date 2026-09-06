@@ -80,8 +80,8 @@ describe("POST /api/push/unsubscribe", () => {
 
     adminMock.onTable("push_subscriptions", {
       data: [
-        { id: "match-1", subscription: "enc-match" },
-        { id: "other-1", subscription: "enc-other" },
+        { id: "match-1", subscription_encrypted: "enc-match" },
+        { id: "other-1", subscription_encrypted: "enc-other" },
       ],
     });
     adminMock.onTable("push_subscriptions", { data: null, error: null });
@@ -101,7 +101,7 @@ describe("POST /api/push/unsubscribe", () => {
     mockDecrypt.mockReturnValue(JSON.stringify({ endpoint: "https://other.com/sub" }));
 
     adminMock.onTable("push_subscriptions", {
-      data: [{ id: "row-1", subscription: "enc-1" }],
+      data: [{ id: "row-1", subscription_encrypted: "enc-1" }],
     });
 
     const res = await POST(makeRequest({ endpoint: "https://no-match.com/sub" }));
@@ -124,8 +124,8 @@ describe("POST /api/push/unsubscribe", () => {
 
     adminMock.onTable("push_subscriptions", {
       data: [
-        { id: "bad-1", subscription: "garbage" },
-        { id: "good-1", subscription: "enc-good" },
+        { id: "bad-1", subscription_encrypted: "garbage" },
+        { id: "good-1", subscription_encrypted: "enc-good" },
       ],
     });
     adminMock.onTable("push_subscriptions", { data: null, error: null });

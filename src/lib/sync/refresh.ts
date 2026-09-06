@@ -91,6 +91,10 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
   if (!list || list.complete || inFlightExpensePages.has(groupId)) {
     return;
   }
+  const before = list.oldestCursor;
+  if (before === null) {
+    return;
+  }
 
   const task = (async () => {
     try {
@@ -98,7 +102,7 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
         "get_group_expenses",
         {
           p_group_id: groupId,
-          p_before: list.oldestCursor,
+          p_before: before,
           p_limit: 30,
         },
         decodeExpenseSummaries,
@@ -118,7 +122,7 @@ export async function loadActivity(before?: number): Promise<void> {
   const items = await rpc(
     "get_activity",
     {
-      p_before_id: before ?? null,
+      p_before_id: before ?? Number.MAX_SAFE_INTEGER,
       p_limit: 50,
     },
     decodeGroupEvents,
@@ -134,7 +138,7 @@ export async function loadConversation(
     "get_conversation",
     {
       p_group_id: groupId,
-      p_before: before ?? null,
+      p_before: before ?? "9999-12-31T23:59:59.999Z",
       p_limit: 50,
     },
     decodeConversation,

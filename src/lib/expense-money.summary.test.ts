@@ -5,15 +5,13 @@ import {
   brandExpenseCents,
   summarizeExpenseAllocations,
   validateExpenseMoney,
+  type CanonicalGuestShareRow,
+  type CanonicalPayerRow,
+  type CanonicalShareRow,
   type CompleteExpenseMoney,
   type ExpenseAllocationSummary,
+  type ParticipantOrderEntry,
 } from "./expense-money";
-import type {
-  CanonicalGuestShareRow,
-  CanonicalPayerRow,
-  CanonicalShareRow,
-  ParticipantOrderEntry,
-} from "./expense-graph";
 
 // Build a single_amount CompleteExpenseMoney with the given total (no fees).
 function singleAmount(total: number): CompleteExpenseMoney {

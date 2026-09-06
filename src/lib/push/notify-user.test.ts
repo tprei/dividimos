@@ -59,8 +59,8 @@ describe("notifyUser", () => {
     const subJson = JSON.stringify({ endpoint: "https://fcm.example.com/abc" });
     mockEq.mockResolvedValue({
       data: [
-        { id: "sub-1", subscription: "encrypted-1", channel: "web" },
-        { id: "sub-2", subscription: "encrypted-2", channel: "web" },
+        { id: "sub-1", subscription_encrypted: "encrypted-1", channel: "web" },
+        { id: "sub-2", subscription_encrypted: "encrypted-2", channel: "web" },
       ],
       error: null,
     });
@@ -78,7 +78,7 @@ describe("notifyUser", () => {
   it("sends to FCM subscriptions via sendFcmNotification", async () => {
     mockEq.mockResolvedValue({
       data: [
-        { id: "sub-1", subscription: "encrypted-fcm-token", channel: "fcm" },
+        { id: "sub-1", subscription_encrypted: "encrypted-fcm-token", channel: "fcm" },
       ],
       error: null,
     });
@@ -99,8 +99,8 @@ describe("notifyUser", () => {
 
     mockEq.mockResolvedValue({
       data: [
-        { id: "web-1", subscription: "encrypted-web", channel: "web" },
-        { id: "fcm-1", subscription: "encrypted-fcm", channel: "fcm" },
+        { id: "web-1", subscription_encrypted: "encrypted-web", channel: "web" },
+        { id: "fcm-1", subscription_encrypted: "encrypted-fcm", channel: "fcm" },
       ],
       error: null,
     });
@@ -127,7 +127,7 @@ describe("notifyUser", () => {
 
     mockEq.mockResolvedValue({
       data: [
-        { id: "fcm-1", subscription: "encrypted-fcm", channel: "fcm" },
+        { id: "fcm-1", subscription_encrypted: "encrypted-fcm", channel: "fcm" },
       ],
       error: null,
     });
@@ -144,8 +144,8 @@ describe("notifyUser", () => {
     const subJson = JSON.stringify({ endpoint: "https://fcm.example.com/abc" });
     mockEq.mockResolvedValue({
       data: [
-        { id: "sub-1", subscription: "encrypted-1", channel: "web" },
-        { id: "sub-2", subscription: "encrypted-2", channel: "web" },
+        { id: "sub-1", subscription_encrypted: "encrypted-1", channel: "web" },
+        { id: "sub-2", subscription_encrypted: "encrypted-2", channel: "web" },
       ],
       error: null,
     });
@@ -165,7 +165,7 @@ describe("notifyUser", () => {
   it("cleans up stale FCM subscriptions", async () => {
     mockEq.mockResolvedValue({
       data: [
-        { id: "fcm-1", subscription: "encrypted-fcm", channel: "fcm" },
+        { id: "fcm-1", subscription_encrypted: "encrypted-fcm", channel: "fcm" },
       ],
       error: null,
     });
@@ -181,7 +181,7 @@ describe("notifyUser", () => {
 
   it("cleans up subscriptions that fail to decrypt", async () => {
     mockEq.mockResolvedValue({
-      data: [{ id: "sub-1", subscription: "corrupted", channel: "web" }],
+      data: [{ id: "sub-1", subscription_encrypted: "corrupted", channel: "web" }],
       error: null,
     });
 
@@ -207,7 +207,7 @@ describe("notifyUser", () => {
     const subJson = JSON.stringify({ endpoint: "https://push.example.com/abc" });
     mockEq.mockResolvedValue({
       data: [
-        { id: "sub-1", subscription: "encrypted-1", channel: null },
+        { id: "sub-1", subscription_encrypted: "encrypted-1", channel: null },
       ],
       error: null,
     });

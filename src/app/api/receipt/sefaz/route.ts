@@ -12,10 +12,8 @@ export const maxDuration = 15;
 export async function POST(request: Request) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  if (claimsError || !claimsData) {
     return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
   }
 

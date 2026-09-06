@@ -2,9 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock supabase server client
 const mockGetUser = vi.fn();
+const mockGetClaims = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
-    auth: { getUser: () => mockGetUser() },
+    auth: {
+      getUser: () => mockGetUser(),
+      getClaims: () => mockGetClaims(),
+    },
   }),
 }));
 
@@ -35,10 +39,12 @@ describe("POST /api/receipt/sefaz", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetUser.mockResolvedValue(authenticatedUser);
+    mockGetClaims.mockResolvedValue({ data: { claims: { sub: "user-123" } }, error: null });
   });
 
   it("returns 401 when not authenticated", async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
+    mockGetClaims.mockResolvedValue({ data: null, error: null });
 
     const res = await POST(jsonRequest({ url: "https://nfce.sefaz.sp.gov.br/consulta" }));
 

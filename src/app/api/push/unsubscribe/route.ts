@@ -6,12 +6,11 @@ import { decryptPixKey as decrypt } from "@/lib/crypto";
 export async function POST(request: Request) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  if (claimsError || !claimsData) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
+  const userId = claimsData.claims.sub;
 
   let body: { endpoint?: string; token?: string; channel?: "web" | "fcm" };
   try {
@@ -32,8 +31,8 @@ export async function POST(request: Request) {
 
     const { data: rows, error: fetchError } = await admin
       .from("push_subscriptions")
-      .select("id, subscription")
-      .eq("user_id", user.id)
+      .select("id, subscription_encrypted")
+      .eq("user_id", userId)
       .eq("channel", "fcm");
 
     if (fetchError || !rows) {
@@ -43,7 +42,7 @@ export async function POST(request: Request) {
     const idsToDelete: string[] = [];
     for (const row of rows) {
       try {
-        const decrypted = decrypt(row.subscription);
+        const decrypted = decrypt(row.subscription_encrypted);
         if (decrypted === token) {
           idsToDelete.push(row.id);
         }
@@ -67,8 +66,8 @@ export async function POST(request: Request) {
 
   const { data: rows, error: fetchError } = await admin
     .from("push_subscriptions")
-    .select("id, subscription")
-    .eq("user_id", user.id)
+    .select("id, subscription_encrypted")
+    .eq("user_id", userId)
     .eq("channel", "web");
 
   if (fetchError || !rows) {
@@ -78,7 +77,7 @@ export async function POST(request: Request) {
   const idsToDelete: string[] = [];
   for (const row of rows) {
     try {
-      const sub = JSON.parse(decrypt(row.subscription)) as { endpoint: string };
+      const sub = JSON.parse(decrypt(row.subscription_encrypted)) as { endpoint: string };
       if (sub.endpoint === endpoint) {
         idsToDelete.push(row.id);
       }

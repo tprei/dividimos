@@ -13,12 +13,11 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 export async function POST(request: Request) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  if (claimsError || !claimsData) {
     return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
   }
+  const userId = claimsData.claims.sub;
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -72,7 +71,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await enforceRateLimit("receipt.ocr", user.id);
+    await enforceRateLimit("receipt.ocr", userId);
   } catch (error) {
     if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
       return NextResponse.json(

@@ -74,35 +74,35 @@ export interface Transfer {
   amountCents: number;
 }
 
-export interface ExpenseItemPayload {
+export type ExpenseItemPayload = {
   description: string;
   quantityMilliunits: number;
   unitPriceCents: number;
   totalPriceCents: number;
-}
+};
 
 export type ParticipantRef =
   | { kind: "user"; userId: string }
   | { kind: "guest"; guestId: string | null; displayName: string };
 
-export interface ExpensePayerPayload {
+export type ExpensePayerPayload = {
   participantIndex: number;
   amountCents: number;
-}
+};
 
-export interface ExpenseItemAssignmentPayload {
+export type ExpenseItemAssignmentPayload = {
   itemIndex: number;
   participantIndex: number;
   amountCents: number;
-}
+};
 
-export interface ExpensePayload {
+export type ExpensePayload = {
   items: ExpenseItemPayload[];
   participants: ParticipantRef[];
   shares: number[];
   payers: ExpensePayerPayload[];
   itemAssignments: ExpenseItemAssignmentPayload[] | null;
-}
+};
 
 export interface ExpenseHeader {
   occurredOn: string;

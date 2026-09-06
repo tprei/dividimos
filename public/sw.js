@@ -3,6 +3,7 @@
 const CACHE_VERSION = "v4";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
+const SHELL_CACHE = `dividimos-shell-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
 // Assets to precache on install — keep this list small and static.
@@ -26,7 +27,7 @@ self.addEventListener("install", (event) => {
 // ── Activate ─────────────────────────────────────────────────────────
 // Clean up old caches from previous versions.
 self.addEventListener("activate", (event) => {
-  const CURRENT_CACHES = new Set([STATIC_CACHE, RUNTIME_CACHE]);
+  const CURRENT_CACHES = new Set([STATIC_CACHE, RUNTIME_CACHE, SHELL_CACHE]);
   event.waitUntil(
     caches
       .keys()
@@ -42,10 +43,10 @@ self.addEventListener("activate", (event) => {
 });
 
 // ── Fetch ────────────────────────────────────────────────────────────
-// Strategy: network-first for navigation requests (HTML pages) and
-// immutable static assets. All other same-origin requests pass through
-// uncached so that authenticated responses (RSC payloads, etc.) are
-// never stored and never served to a different session.
+// Strategy: cache-first with background revalidation for /app navigations
+// (the static shell); network-first for other navigations and immutable static
+// assets. All other same-origin requests pass through uncached so that
+// authenticated responses (RSC payloads, etc.) are never stored.
 
 // Only immutable, content-hashed assets are eligible for runtime caching.
 // request.destination reflects the loading context (script/style/font/image
@@ -74,8 +75,40 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
   if (url.pathname === "/claim" || url.pathname.startsWith("/claim/")) return;
 
-  // Navigation requests (HTML pages) — network-first, offline fallback only
+  // Navigation requests (HTML pages)
   if (request.mode === "navigate") {
+    // /app/** shell — respond cache-first and revalidate in the background
+    if (url.pathname.startsWith("/app")) {
+      event.respondWith(
+        caches.open(SHELL_CACHE).then((cache) =>
+          cache.match(request).then((cached) => {
+            const revalidate = fetch(request)
+              .then((response) => {
+                if (response.ok) {
+                  cache.put(request, response.clone());
+                }
+                return response;
+              })
+              .catch(() => null);
+
+            if (cached) {
+              if (typeof event.waitUntil === "function") {
+                event.waitUntil(revalidate);
+              }
+              return cached;
+            }
+
+            return revalidate.then(
+              (networkResponse) =>
+                networkResponse || caches.match(OFFLINE_URL)
+            );
+          })
+        )
+      );
+      return;
+    }
+
+    // Other navigations — network-first, offline fallback only
     event.respondWith(
       fetch(request)
         .catch(() => caches.match(OFFLINE_URL))

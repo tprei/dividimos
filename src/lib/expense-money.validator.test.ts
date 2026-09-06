@@ -152,9 +152,9 @@ describe("validateExpenseMoney — structural decode", () => {
 
 describe("validateExpenseMoney — totalAmountCents boundaries", () => {
   it("accepts 1 and MAX_EXPENSE_CENTS for a single amount", () => {
-    expect(validateExpenseMoney(singleAmount(1), "activation").ok).toBe(true);
+    expect(validateExpenseMoney(singleAmount(1), "scan_review").ok).toBe(true);
     expect(
-      validateExpenseMoney(singleAmount(MAX_EXPENSE_CENTS), "activation").ok,
+      validateExpenseMoney(singleAmount(MAX_EXPENSE_CENTS), "scan_review").ok,
     ).toBe(true);
   });
 
@@ -571,8 +571,6 @@ describe("validateExpenseMoney — variants", () => {
       "source_parse",
       "scan_review",
       "draft",
-      "activation",
-      "chat_confirmation",
     ];
     for (const mode of modes) {
       const r = validateExpenseMoney(
@@ -604,8 +602,6 @@ describe("validateExpenseMoney — mode matrix", () => {
     "source_parse",
     "scan_review",
     "draft",
-    "activation",
-    "chat_confirmation",
   ];
 
   describe("empty single_amount (total 0)", () => {
@@ -676,15 +672,15 @@ describe("validateExpenseMoney — mode matrix", () => {
     });
   });
 
-  it("activation of an incomplete (empty) draft is rejected", () => {
-    const r = validateExpenseMoney(singleAmount(0), "activation");
+  it("scan_review of an incomplete (empty) draft is rejected", () => {
+    const r = validateExpenseMoney(singleAmount(0), "scan_review");
     expect(issueOf(r as { ok: false; issue: Record<string, unknown> })).toEqual({
       code: "incomplete_expense",
     });
   });
 
-  it("exact complete activation succeeds", () => {
-    const r = validateExpenseMoney(itemized51(), "activation");
+  it("exact complete scan_review succeeds", () => {
+    const r = validateExpenseMoney(itemized51(), "scan_review");
     expect(r.ok).toBe(true);
   });
 });

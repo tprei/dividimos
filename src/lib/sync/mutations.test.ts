@@ -364,7 +364,10 @@ describe("mutations", () => {
       });
 
       vi.mocked(rpc).mockImplementationOnce(async (_name, args) => {
-        const clientId = args.p_client_id as string;
+        const clientId =
+          typeof args === "object" && args !== null && "p_client_id" in args && typeof args.p_client_id === "string"
+            ? args.p_client_id
+            : "msg-client";
         return {
           id: "msg-server-id",
           clientId,

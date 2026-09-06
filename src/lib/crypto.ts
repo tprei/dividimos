@@ -1,5 +1,5 @@
 import "server-only";
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -38,4 +38,8 @@ export function decryptPixKey(stored: string): string {
   const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
   decipher.setAuthTag(authTag);
   return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
+}
+
+export function hashEndpoint(endpoint: string): string {
+  return "\\x" + createHash("sha256").update(endpoint, "utf8").digest("hex");
 }

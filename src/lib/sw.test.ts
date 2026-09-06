@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
@@ -304,6 +304,54 @@ describe("Service Worker", () => {
       const event = makeFetchEvent("https://dividimos.app/groups/abc/data");
       env.listeners["fetch"]![0]!(event);
       expect(event._response).toBeUndefined();
+    });
+
+    it("serves /app navigations cache-first from shell cache when cached", async () => {
+      const shellCache = await env.cacheStorage.open("dividimos-shell-v4");
+      const cachedRes = new MockResponse("cached-shell", { status: 200 });
+      const appUrl = "https://dividimos.app/app";
+      await shellCache.put(appUrl, cachedRes);
+
+      const freshRes = new MockResponse("fresh-shell", { status: 200 });
+      (env.env.fetch as Mock).mockResolvedValue(freshRes);
+
+      const event = makeFetchEvent(appUrl, { mode: "navigate" });
+      env.listeners["fetch"]![0]!(event);
+
+      const response = await event._response;
+      expect(response).toBe(cachedRes);
+    });
+
+    it("caches /app navigation in shell cache on first visit", async () => {
+      const freshRes = new MockResponse("fresh-shell", { status: 200 });
+      (env.env.fetch as Mock).mockResolvedValue(freshRes);
+
+      const appUrl = "https://dividimos.app/app/groups";
+      const event = makeFetchEvent(appUrl, { mode: "navigate" });
+      env.listeners["fetch"]![0]!(event);
+
+      const response = await event._response;
+      expect(response).toBe(freshRes);
+
+      const shellCache = await env.cacheStorage.open("dividimos-shell-v4");
+      await vi.waitFor(() => {
+        expect(shellCache.put).toHaveBeenCalled();
+      });
+    });
+
+    it("keeps non-/app navigations network-first without caching", async () => {
+      const freshRes = new MockResponse("user-page", { status: 200 });
+      (env.env.fetch as Mock).mockResolvedValue(freshRes);
+
+      const event = makeFetchEvent("https://dividimos.app/u/alice", { mode: "navigate" });
+      env.listeners["fetch"]![0]!(event);
+
+      const response = await event._response;
+      expect(response).toBe(freshRes);
+
+      const shellCache = await env.cacheStorage.open("dividimos-shell-v4");
+      await Promise.resolve();
+      expect(shellCache.put).not.toHaveBeenCalled();
     });
   });
 });

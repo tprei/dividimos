@@ -2,9 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock supabase server client
 const mockGetUser = vi.fn();
+const mockGetClaims = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
-    auth: { getUser: () => mockGetUser() },
+    auth: {
+      getUser: () => mockGetUser(),
+      getClaims: () => mockGetClaims(),
+    },
   }),
 }));
 
@@ -47,6 +51,7 @@ describe("POST /api/receipt/ocr", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetUser.mockResolvedValue(authenticatedUser);
+    mockGetClaims.mockResolvedValue({ data: { claims: { sub: "user-123" } }, error: null });
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     // vi.clearAllMocks() clears call history but not a queued rejection
     // implementation from a prior test — reset the default to success here.
@@ -56,6 +61,7 @@ describe("POST /api/receipt/ocr", () => {
 
   it("returns 401 when not authenticated", async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
+    mockGetClaims.mockResolvedValue({ data: null, error: null });
 
     const res = await POST(jsonRequest({ image: "abc" }));
 

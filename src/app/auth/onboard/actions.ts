@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
 import type { PixKeyType } from "@/types";
@@ -23,10 +24,9 @@ export async function completeOnboarding(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const userId = !claimsError && claimsData?.claims?.sub ? (claimsData.claims.sub as string) : null;
+  if (!userId) {
     return { error: "Sessao expirada" };
   }
 
@@ -45,10 +45,11 @@ export async function completeOnboarding(formData: FormData) {
     updates.name = name.trim();
   }
 
-  const { error } = await supabase
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("users")
     .update(updates)
-    .eq("id", user.id);
+    .eq("id", userId);
 
   if (error) {
     if (error.code === "23505") {
