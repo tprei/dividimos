@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptPixKey } from "@/lib/crypto";
 import { generatePixCopiaECola } from "@/lib/pix";
-import { amountCallerOwesRecipient } from "@/lib/group-balances";
+import { transfersFromBalances } from "@/lib/ledger/transfers";
+import type { BalanceRow, ParticipantKind } from "@/types/ledger";
 
 /**
  * Every response is private and never cached — the body may carry a decrypted
@@ -19,16 +21,23 @@ function jsonResponse(body: unknown, status: number): NextResponse {
 // One byte-identical denial for every pre-edge refusal. Returning distinct
 // messages would let a caller probe whether a co-member has a key configured,
 // owes them, etc. By the time a caller has proven a real payable edge (or is
-// requesting their own key), key-specific outcomes are safe to surface.
 const DENIED = { error: "Acesso negado" } as const;
+
+interface GroupBalanceDbRow {
+  kind: ParticipantKind;
+  participant_id: string;
+  net_cents: number | string;
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const callerId =
+    !claimsError && claimsData?.claims?.sub
+      ? (claimsData.claims.sub as string)
+      : null;
+  if (!callerId) {
     return jsonResponse({ error: "Nao autenticado" }, 401);
   }
 
@@ -51,63 +60,53 @@ export async function POST(request: Request) {
   }
 
   // Authorization first. The encrypted key is never read before this resolves.
-  const [{ data: memberRows }, { data: groupRow }] = await Promise.all([
-    supabase
-      .from("group_members")
-      .select("user_id")
-      .eq("group_id", groupId)
-      .eq("status", "accepted")
-      .in("user_id", [user.id, recipientUserId]),
-    supabase.from("groups").select("creator_id").eq("id", groupId).single(),
-  ]);
+  const admin = createAdminClient();
+  const { data: memberRows } = await admin
+    .from("group_members")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .eq("status", "accepted")
+    .in("user_id", [callerId, recipientUserId]);
 
-  const callerIsCreator = groupRow?.creator_id === user.id;
-  const recipientIsCreator = groupRow?.creator_id === recipientUserId;
-  const callerIsAcceptedMember =
-    callerIsCreator || memberRows?.some((m) => m.user_id === user.id);
-  const recipientIsAcceptedMember =
-    recipientIsCreator || memberRows?.some((m) => m.user_id === recipientUserId);
+  const callerIsAccepted = memberRows?.some((m) => m.user_id === callerId);
+  const recipientIsAccepted = memberRows?.some((m) => m.user_id === recipientUserId);
 
-  if (!callerIsAcceptedMember || !recipientIsAcceptedMember) {
+  if (!callerIsAccepted || !recipientIsAccepted) {
     return jsonResponse(DENIED, 403);
   }
 
-  const isSelf = recipientUserId === user.id;
+  const isSelf = recipientUserId === callerId;
 
   // A third party's key is disclosed only across a real payable edge: the
   // recipient must be the net creditor of the caller, and the requested amount
   // must not exceed what the caller actually owes. Requesting your own key
   // discloses no third-party secret, so self-collection skips this gate.
   if (!isSelf) {
-    const [userA, userB] =
-      user.id < recipientUserId ? [user.id, recipientUserId] : [recipientUserId, user.id];
-    const { data: balanceRow } = await supabase
-      .from("balances")
-      .select("group_id, user_a, user_b, amount_cents")
-      .eq("group_id", groupId)
-      .eq("user_a", userA)
-      .eq("user_b", userB)
-      .maybeSingle();
+    // Generated Database types do not yet reflect the Phase 4 group_balances table.
+    const untypedAdmin = admin as unknown as SupabaseClient;
+    const { data: balanceRows } = await untypedAdmin
+      .from("group_balances")
+      .select("kind, participant_id, net_cents")
+      .eq("group_id", groupId);
 
-    const callerOwes = amountCallerOwesRecipient(
-      balanceRow
-        ? {
-            userA: balanceRow.user_a,
-            userB: balanceRow.user_b,
-            amountCents: balanceRow.amount_cents,
-          }
-        : null,
-      user.id,
-      recipientUserId,
+    const rawRows = (balanceRows ?? []) as unknown as GroupBalanceDbRow[];
+    const balances: BalanceRow[] = rawRows.map((row) => ({
+      kind: row.kind,
+      participantId: row.participant_id,
+      netCents: Number(row.net_cents),
+    }));
+
+    const transfers = transfersFromBalances(balances);
+    const transfer = transfers.find(
+      (t) => t.fromId === callerId && t.toId === recipientUserId,
     );
 
-    if (callerOwes <= 0 || amountCents > callerOwes) {
+    if (!transfer || amountCents > transfer.amountCents) {
       return jsonResponse(DENIED, 403);
     }
   }
 
   // Only now — after every gate has passed — read and decrypt the key.
-  const admin = createAdminClient();
   const { data: recipient } = await admin
     .from("users")
     .select("pix_key_encrypted, name")
@@ -129,7 +128,14 @@ export async function POST(request: Request) {
   try {
     pixKey = decryptPixKey(recipient.pix_key_encrypted);
   } catch {
-    return jsonResponse({ error: "Erro ao processar chave Pix do destinatario" }, 500);
+    return jsonResponse(
+      {
+        error: isSelf
+          ? "Erro ao processar sua chave Pix"
+          : "Erro ao processar chave Pix do destinatario",
+      },
+      500,
+    );
   }
 
   const copiaECola = generatePixCopiaECola({

@@ -1,10 +1,7 @@
+"use client";
+
 import { SearchContent } from "@/components/search/search-content";
-import { getAuthUser } from "@/lib/auth";
 
-export default async function SearchPage() {
-  const user = await getAuthUser();
-
-  if (!user) return null;
-
+export default function SearchPage() {
   return <SearchContent />;
 }

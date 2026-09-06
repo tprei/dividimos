@@ -7,10 +7,12 @@ import { generatePixCopiaECola } from "@/lib/pix";
 export async function POST(request: Request) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  const callerId =
+    !claimsError && claimsData?.claims?.sub
+      ? (claimsData.claims.sub as string)
+      : null;
+  if (!callerId) {
     return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
   }
 
@@ -30,7 +32,7 @@ export async function POST(request: Request) {
   const { data: userData } = await admin
     .from("users")
     .select("pix_key_encrypted, name")
-    .eq("id", user.id)
+    .eq("id", callerId)
     .single();
 
   if (!userData?.pix_key_encrypted) {

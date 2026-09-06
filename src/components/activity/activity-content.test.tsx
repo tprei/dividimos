@@ -1,265 +1,326 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ActivityContent } from "./activity-content";
-import type {
-  ActivityItem,
-  ExpenseActivatedActivity,
-  SettlementRecordedActivity,
-  SettlementConfirmedActivity,
-  MemberJoinedActivity,
-  UserProfile,
-} from "@/types";
+import { markActivityViewed } from "@/lib/activity-badge";
+import { voidSettlement } from "@/lib/sync/mutations";
+import { loadActivity } from "@/lib/sync/refresh";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupEvent, GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 
-vi.mock("@/lib/supabase/activity-actions", () => ({
-  fetchActivityFeed: vi.fn().mockResolvedValue([]),
+vi.mock("@/lib/sync/refresh", () => ({
+  loadActivity: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+vi.mock("@/lib/sync/mutations", () => ({
+  voidSettlement: vi.fn().mockResolvedValue({
+    groupId: "group-dm",
+    ledgerVersion: 2,
+    eventId: 99,
+  }),
 }));
 
-const actor: UserProfile = {
-  id: "user-a",
+vi.mock("@/lib/activity-badge", () => ({
+  markActivityViewed: vi.fn(),
+}));
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    className,
+  }: {
+    children: React.ReactNode;
+    href: string;
+    className?: string;
+  }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  ),
+}));
+
+
+const me: Me = {
+  id: "me-id",
+  handle: "me",
+  name: "Eu Mesmo",
+  avatarUrl: null,
+  email: "me@example.com",
+  pixKeyType: "email",
+  pixKeyHint: "me@example.com",
+  onboarded: true,
+  notificationPreferences: {
+    expenses: true,
+    settlements: true,
+    nudges: true,
+  },
+};
+
+const alice: UserProfile = {
+  id: "user-alice",
   handle: "alice",
   name: "Alice",
-  avatarUrl: undefined,
+  avatarUrl: null,
 };
 
-const otherUser: UserProfile = {
-  id: "user-b",
+const bob: UserProfile = {
+  id: "user-bob",
   handle: "bob",
   name: "Bob",
-  avatarUrl: undefined,
+  avatarUrl: null,
 };
 
-function makeExpenseActivity(
-  overrides?: Partial<ExpenseActivatedActivity>,
-): ExpenseActivatedActivity {
-  return {
-    id: "expense-1",
-    type: "expense_activated",
-    groupId: "group-1",
-    groupName: "Amigos",
-    actorId: actor.id,
-    actor,
-    timestamp: "2026-04-09T10:00:00Z",
-    expenseId: "exp-1",
-    expenseTitle: "Almoço",
-    totalAmount: 5000,
-    ...overrides,
-  };
-}
+const groupNormal: GroupSnapshot = {
+  group: {
+    id: "group-1",
+    name: "Amigos da Praia",
+    kind: "group",
+    ledgerVersion: 1,
+    creatorId: "me-id",
+    dmUserA: null,
+    dmUserB: null,
+    createdAt: "2026-09-01T00:00:00Z",
+  },
+  members: [
+    {
+      groupId: "group-1",
+      userId: me.id,
+      status: "accepted",
+      invitedBy: null,
+      acceptedAt: "2026-09-01T00:00:00Z",
+      user: me,
+    },
+    {
+      groupId: "group-1",
+      userId: alice.id,
+      status: "accepted",
+      invitedBy: null,
+      acceptedAt: "2026-09-01T00:00:00Z",
+      user: alice,
+    },
+  ],
+  balances: [],
+  guests: [],
+  pendingSettlements: [],
+  recentExpenses: [],
+  lastEventId: 10,
+  unreadCount: 0,
+  lastMessage: null,
+  lastActivityAt: "2026-09-06T12:00:00Z",
+};
 
-function makeSettlementRecorded(
-  overrides?: Partial<SettlementRecordedActivity>,
-): SettlementRecordedActivity {
-  return {
-    id: "settlement-rec-1",
-    type: "settlement_recorded",
-    groupId: "group-1",
-    groupName: "Amigos",
-    actorId: actor.id,
-    actor,
-    timestamp: "2026-04-09T11:00:00Z",
-    settlementId: "sett-1",
-    toUserId: otherUser.id,
-    toUser: otherUser,
-    amountCents: 2500,
-    ...overrides,
-  };
-}
+const groupDm: GroupSnapshot = {
+  group: {
+    id: "group-dm",
+    name: "DM com Bob",
+    kind: "dm",
+    ledgerVersion: 1,
+    creatorId: "me-id",
+    dmUserA: me.id,
+    dmUserB: bob.id,
+    createdAt: "2026-09-01T00:00:00Z",
+  },
+  members: [
+    {
+      groupId: "group-dm",
+      userId: me.id,
+      status: "accepted",
+      invitedBy: null,
+      acceptedAt: "2026-09-01T00:00:00Z",
+      user: me,
+    },
+    {
+      groupId: "group-dm",
+      userId: bob.id,
+      status: "accepted",
+      invitedBy: null,
+      acceptedAt: "2026-09-01T00:00:00Z",
+      user: bob,
+    },
+  ],
+  balances: [],
+  guests: [],
+  pendingSettlements: [],
+  recentExpenses: [],
+  lastEventId: 11,
+  unreadCount: 0,
+  lastMessage: null,
+  lastActivityAt: "2026-09-06T12:00:00Z",
+};
 
-function makeSettlementConfirmed(
-  overrides?: Partial<SettlementConfirmedActivity>,
-): SettlementConfirmedActivity {
-  return {
-    id: "settlement-conf-1",
-    type: "settlement_confirmed",
-    groupId: "group-1",
-    groupName: "Amigos",
-    actorId: otherUser.id,
-    actor: otherUser,
-    timestamp: "2026-04-09T12:00:00Z",
-    settlementId: "sett-1",
-    fromUserId: actor.id,
-    fromUser: actor,
-    amountCents: 2500,
-    ...overrides,
-  };
-}
+const expenseCreatedEvent: GroupEvent = {
+  id: 101,
+  groupId: "group-1",
+  actorId: "user-alice",
+  kind: "expense_created",
+  expenseId: "exp-123",
+  settlementId: null,
+  subjectUserId: null,
+  payload: { totalCents: 5000 },
+  createdAt: "2026-09-06T12:00:00Z",
+  actor: alice,
+  expenseTitle: "Almoço",
+};
 
-function makeMemberJoined(
-  overrides?: Partial<MemberJoinedActivity>,
-): MemberJoinedActivity {
-  return {
-    id: "member-group1-userb",
-    type: "member_joined",
-    groupId: "group-1",
-    groupName: "Amigos",
-    actorId: otherUser.id,
-    actor: otherUser,
-    timestamp: "2026-04-09T09:00:00Z",
-    ...overrides,
-  };
-}
+const dmEvent: GroupEvent = {
+  id: 102,
+  groupId: "group-dm",
+  actorId: "user-bob",
+  kind: "expense_created",
+  expenseId: "exp-456",
+  settlementId: null,
+  subjectUserId: null,
+  payload: { totalCents: 2000 },
+  createdAt: "2026-09-06T12:30:00Z",
+  actor: bob,
+  expenseTitle: "Café",
+};
+
+const confirmedSettlementEvent: GroupEvent = {
+  id: 103,
+  groupId: "group-dm",
+  actorId: "me-id",
+  kind: "settlement_confirmed",
+  expenseId: null,
+  settlementId: "sett-789",
+  subjectUserId: "user-bob",
+  payload: {
+    amountCents: 3500,
+    fromUserId: "user-bob",
+    toUserId: "me-id",
+  },
+  createdAt: "2026-09-06T13:00:00Z",
+  actor: me,
+  expenseTitle: null,
+};
 
 describe("ActivityContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: {
+        "group-1": groupNormal,
+        "group-dm": groupDm,
+      },
+      activity: {
+        items: [confirmedSettlementEvent, dmEvent, expenseCreatedEvent],
+        oldestId: 101,
+      },
+    });
   });
 
-  it("renders page title", () => {
-    render(<ActivityContent initialItems={[]} userId="user-a" />);
-    expect(screen.getByText("Atividade")).toBeInTheDocument();
-  });
+  it("renders activity feed with sentences and group labels (DM displays counterparty name)", () => {
+    render(<ActivityContent />);
 
-  it("shows empty state when no items", () => {
-    render(<ActivityContent initialItems={[]} userId="user-a" />);
-    expect(screen.getByText("Nenhuma atividade")).toBeInTheDocument();
-  });
-
-  it("renders expense activity with correct description for current user", () => {
-    const items: ActivityItem[] = [makeExpenseActivity()];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
     expect(
-      screen.getByText(/Você criou "Almoço" · R\$ 50,00/),
+      screen.getByText(/Alice adicionou Almoço.*50,00/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Bob adicionou Café.*20,00/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Eu Mesmo confirmou o pagamento de.*35,00 de Bob/),
+    ).toBeInTheDocument();
+
+    expect(screen.getByText("Amigos da Praia")).toBeInTheDocument();
+    expect(screen.getAllByText("Bob").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("links expense rows to /app/bill/<expenseId>", () => {
+    render(<ActivityContent />);
+
+    const expense1Link = screen
+      .getByText(/Alice adicionou Almoço.*50,00/)
+      .closest("a");
+    expect(expense1Link).toHaveAttribute("href", "/app/bill/exp-123");
+
+    const expense2Link = screen
+      .getByText(/Bob adicionou Café.*20,00/)
+      .closest("a");
+    expect(expense2Link).toHaveAttribute("href", "/app/bill/exp-456");
+  });
+
+  it("calls loadActivity and markActivityViewed on mount", () => {
+    render(<ActivityContent />);
+
+    expect(markActivityViewed).toHaveBeenCalled();
+    expect(loadActivity).toHaveBeenCalledWith();
+  });
+
+  it("calls loadActivity(oldestId) when 'Carregar mais' is clicked", async () => {
+    render(<ActivityContent />);
+    const loadMoreButton = screen.getByRole("button", { name: "Carregar mais" });
+    fireEvent.click(loadMoreButton);
+
+    await waitFor(() => {
+      expect(loadActivity).toHaveBeenCalledWith(101);
+    });
+  });
+
+  it("shows 'Desfazer' on confirmed settlement and calls voidSettlement(groupId, settlementId, true)", async () => {
+    render(<ActivityContent />);
+    const undoButton = screen.getByRole("button", { name: /Desfazer/i });
+    expect(undoButton).toBeInTheDocument();
+
+    fireEvent.click(undoButton);
+
+    await waitFor(() => {
+      expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789", true);
+    });
+  });
+
+  it("does not show 'Desfazer' if the latest event for that settlement is settlement_voided", () => {
+    const voidedEvent: GroupEvent = {
+      id: 104,
+      groupId: "group-dm",
+      actorId: "me-id",
+      kind: "settlement_voided",
+      expenseId: null,
+      settlementId: "sett-789",
+      subjectUserId: "user-bob",
+      payload: { amountCents: 3500, wasConfirmed: true },
+      createdAt: "2026-09-06T14:00:00Z",
+      actor: me,
+      expenseTitle: null,
+    };
+
+    useAppStore.setState({
+      activity: {
+        items: [voidedEvent, confirmedSettlementEvent],
+        oldestId: 101,
+      },
+    });
+
+    render(<ActivityContent />);
+
+    expect(screen.queryByRole("button", { name: /Desfazer/i })).not.toBeInTheDocument();
+  });
+
+  it("renders empty state when items is empty", () => {
+    useAppStore.setState({
+      activity: {
+        items: [],
+        oldestId: null,
+      },
+    });
+
+    render(<ActivityContent />);
+
+    expect(screen.getByText("Nenhuma atividade ainda")).toBeInTheDocument();
+    expect(
+      screen.getByText("As atividades dos seus grupos aparecerão aqui."),
     ).toBeInTheDocument();
   });
 
-  it("renders expense activity with actor name for other user", () => {
-    const items: ActivityItem[] = [
-      makeExpenseActivity({ actorId: "user-b", actor: otherUser }),
-    ];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-    expect(
-      screen.getByText(/Bob criou "Almoço" · R\$ 50,00/),
-    ).toBeInTheDocument();
-  });
+  it("renders skeleton when not hydrated", () => {
+    useAppStore.setState({
+      hydrated: false,
+    });
 
-  it("renders settlement recorded for current user", () => {
-    const items: ActivityItem[] = [makeSettlementRecorded()];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-    expect(
-      screen.getByText(/Você registrou pagamento de R\$ 25,00 para Bob/),
-    ).toBeInTheDocument();
-  });
+    const { container } = render(<ActivityContent />);
 
-  it("renders settlement confirmed for current user", () => {
-    const items: ActivityItem[] = [
-      makeSettlementConfirmed({
-        actorId: "user-a",
-        actor,
-        fromUserId: otherUser.id,
-        fromUser: otherUser,
-      }),
-    ];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-    expect(
-      screen.getByText(/Você confirmou pagamento de R\$ 25,00 de Bob/),
-    ).toBeInTheDocument();
-  });
-
-  it("renders member joined activity", () => {
-    const items: ActivityItem[] = [makeMemberJoined()];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-    expect(
-      screen.getByText(/Bob entrou no grupo/),
-    ).toBeInTheDocument();
-  });
-
-  it("displays group name badge for each item", () => {
-    const items: ActivityItem[] = [makeExpenseActivity()];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-    expect(screen.getByText("Amigos")).toBeInTheDocument();
-  });
-
-  it("filters to show only expenses", async () => {
-    const user = userEvent.setup();
-    const items: ActivityItem[] = [
-      makeExpenseActivity(),
-      makeMemberJoined(),
-    ];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-
-    await user.click(screen.getByText("Despesas"));
-
-    expect(screen.getByText(/Almoço/)).toBeInTheDocument();
-    expect(screen.queryByText(/entrou no grupo/)).not.toBeInTheDocument();
-  });
-
-  it("filters settlements include both recorded and confirmed", async () => {
-    const user = userEvent.setup();
-    const items: ActivityItem[] = [
-      makeSettlementRecorded(),
-      makeSettlementConfirmed(),
-      makeExpenseActivity(),
-    ];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-
-    await user.click(screen.getByText("Pagamentos"));
-
-    expect(screen.getByText(/registrou pagamento/)).toBeInTheDocument();
-    expect(screen.getByText(/confirmou pagamento/)).toBeInTheDocument();
-    expect(screen.queryByText(/Almoço/)).not.toBeInTheDocument();
-  });
-
-  it("filters to show only member joins", async () => {
-    const user = userEvent.setup();
-    const items: ActivityItem[] = [
-      makeExpenseActivity(),
-      makeMemberJoined(),
-    ];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-
-    await user.click(screen.getByText("Membros"));
-
-    expect(screen.getByText(/entrou no grupo/)).toBeInTheDocument();
-    expect(screen.queryByText(/Almoço/)).not.toBeInTheDocument();
-  });
-
-  it("shows all items when 'Tudo' filter is selected", async () => {
-    const user = userEvent.setup();
-    const items: ActivityItem[] = [
-      makeExpenseActivity(),
-      makeMemberJoined(),
-    ];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-
-    await user.click(screen.getByText("Membros"));
-    await user.click(screen.getByText("Tudo"));
-
-    expect(screen.getByText(/Almoço/)).toBeInTheDocument();
-    expect(screen.getByText(/entrou no grupo/)).toBeInTheDocument();
-  });
-
-  it("shows 'Carregar mais' button when 30+ items", () => {
-    const items: ActivityItem[] = Array.from({ length: 30 }, (_, i) =>
-      makeExpenseActivity({
-        id: `expense-${i}`,
-        expenseId: `exp-${i}`,
-        timestamp: `2026-04-0${(i % 9) + 1}T10:00:00Z`,
-      }),
-    );
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-    expect(screen.getByText("Carregar mais")).toBeInTheDocument();
-  });
-
-  it("hides 'Carregar mais' when fewer than 30 items", () => {
-    const items: ActivityItem[] = [makeExpenseActivity()];
-    render(<ActivityContent initialItems={items} userId="user-a" />);
-    expect(screen.queryByText("Carregar mais")).not.toBeInTheDocument();
-  });
-
-  it("refresh button has spinner layout class", () => {
-    render(
-      <ActivityContent
-        initialItems={[makeExpenseActivity()]}
-        userId="user-a"
-      />,
-    );
-
-    const refreshButton = screen.getByText("Atualizar");
-    expect(refreshButton).toHaveClass("inline-flex", "items-center", "gap-1.5");
+    expect(container.querySelectorAll(".animate-pulse, [class*='shimmer']").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Nenhuma atividade ainda")).not.toBeInTheDocument();
   });
 });
