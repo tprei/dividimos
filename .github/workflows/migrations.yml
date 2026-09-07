@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - 'supabase/migrations/**'
-      - 'supabase/tests/**'
+      - 'supabase/schemas/**'
+      - 'scripts/build-baseline.sh'
+      - 'scripts/check-migration-history.mjs'
       - '.github/workflows/migrations.yml'
 
 permissions:
@@ -37,11 +39,42 @@ jobs:
       - name: Reset and replay migrations
         run: supabase db reset --local
 
-      - name: Run pgTAP catalog tests
-        run: supabase test db
+  baseline-freshness:
+    name: Baseline matches supabase/schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
-  filename-immutability:
-    name: No renamed or deleted migrations
+      - name: Regenerate the baseline and diff it
+        run: |
+          BASELINE=supabase/migrations/20260906000000_ledger_baseline.sql
+          if ! git ls-files --error-unmatch "$BASELINE" >/dev/null 2>&1; then
+            echo "::error::$BASELINE is not tracked; the baseline must be committed."
+            exit 1
+          fi
+          ./scripts/build-baseline.sh
+          if [ ! -f "$BASELINE" ]; then
+            echo "::error::the generator did not produce $BASELINE."
+            exit 1
+          fi
+          UNTRACKED=$(git ls-files --others --exclude-standard -- supabase/migrations)
+          if ! git diff --quiet -- supabase/migrations || [ -n "$UNTRACKED" ]; then
+            echo "::error::supabase/migrations does not match supabase/schemas."
+            git diff --stat -- supabase/migrations
+            if [ -n "$UNTRACKED" ]; then
+              echo "Untracked generated migrations:"
+              echo "$UNTRACKED"
+            fi
+            echo ""
+            echo "Fix: run ./scripts/build-baseline.sh and commit the result."
+            exit 1
+          fi
+          echo "OK: baseline matches supabase/schemas."
+
+  migration-history:
+    name: No unauthorized renamed or deleted migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -49,19 +82,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Reject renames or deletions under supabase/migrations
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Reject unauthorized renames or deletions under supabase/migrations
         run: |
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
-          CHANGES=$(git diff --name-status --diff-filter=RD "$BASE_SHA"...HEAD -- 'supabase/migrations/*.sql')
-          if [ -n "$CHANGES" ]; then
-            echo "::error::Existing migration files must not be renamed or deleted in a PR."
-            echo "$CHANGES"
-            echo ""
-            echo "Why: the remote DB records each migration by its filename timestamp."
-            echo "Renaming on the feature branch after pushing to remote creates phantom"
-            echo "versions in supabase_migrations.schema_migrations and breaks 'db push'."
-            echo ""
-            echo "Fix: add a new migration that reverses or supersedes the change instead."
-            exit 1
-          fi
-          echo "OK: no migrations renamed or deleted."
+          node scripts/check-migration-history.mjs \
+            "${{ github.event.pull_request.base.sha }}" \
+            "$(git rev-parse HEAD)"
