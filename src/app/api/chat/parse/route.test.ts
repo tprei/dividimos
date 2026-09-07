@@ -3,7 +3,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockGetUser = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
-    auth: { getUser: () => mockGetUser() },
+    auth: {
+      getUser: () => mockGetUser(),
+      getClaims: async () => {
+        const u = await mockGetUser();
+        return u?.data?.user
+          ? { data: { claims: { sub: u.data.user.id } }, error: null }
+          : { data: null, error: null };
+      },
+    },
   }),
 }));
 

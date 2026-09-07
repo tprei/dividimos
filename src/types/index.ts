@@ -2,21 +2,7 @@ export type PixKeyType = "cpf" | "email" | "phone" | "random";
 
 export type SplitType = "equal" | "percentage" | "fixed";
 
-export type GroupMemberStatus = "invited" | "accepted";
-
-// ============================================================
-// New Expense-based types (Splitwise model)
-// ============================================================
-
-export type ExpenseStatus = "draft" | "active" | "settled";
-
 export type ExpenseType = "itemized" | "single_amount";
-
-export type SettlementStatus = "pending" | "confirmed";
-
-// ============================================================
-// Notification preference categories
-// ============================================================
 
 export type NotificationCategory =
   | "expenses"
@@ -25,107 +11,44 @@ export type NotificationCategory =
   | "groups"
   | "messages";
 
-/** Per-category push notification opt-out. Missing key = enabled. */
 export type NotificationPreferences = Partial<Record<NotificationCategory, boolean>>;
-
-// ============================================================
-// User types
-// ============================================================
 
 export interface User {
   id: string;
   email: string;
   handle: string;
   name: string;
-  pixKeyType: PixKeyType;
-  pixKeyHint: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
+  pixKeyType?: PixKeyType | null;
+  pixKeyHint?: string | null;
+  notificationPreferences?: NotificationPreferences | null;
   onboarded: boolean;
   createdAt: string;
-  notificationPreferences?: NotificationPreferences;
 }
 
 export interface UserProfile {
   id: string;
   handle: string;
   name: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
 }
 
-// ============================================================
-// Group types (unchanged)
-// ============================================================
-
-export interface Group {
-  id: string;
-  name: string;
-  creatorId: string;
-  isDm: boolean;
-  createdAt: string;
-}
-
-export interface GroupMember {
-  groupId: string;
-  userId: string;
-  status: GroupMemberStatus;
-  invitedBy: string;
-  createdAt: string;
-  acceptedAt?: string;
-  user?: UserProfile;
-}
-
-export interface GroupWithMembers extends Group {
-  members: (GroupMember & { user: UserProfile })[];
-}
-
-// ============================================================
-// Group invite link types
-// ============================================================
-
-/** A shareable invite link for a group. One active link per group at a time. */
-export interface GroupInviteLink {
-  id: string;
-  groupId: string;
-  token: string;
-  createdBy: string;
-  isActive: boolean;
-  maxUses: number | null;
-  useCount: number;
-  expiresAt: string | null;
-  createdAt: string;
-}
-
-/** Result returned by the join_group_via_link RPC function. */
-export interface JoinGroupViaLinkResult {
-  groupId: string;
-  groupName: string;
-  alreadyMember: boolean;
-}
-
-// ============================================================
-// Expense types (replace Bill)
-// ============================================================
-
-/** An expense within a group. Every expense belongs to exactly one group. */
 export interface Expense {
   id: string;
   groupId: string;
   creatorId: string;
   title: string;
-  merchantName?: string;
+  merchantName?: string | null;
   expenseType: ExpenseType;
   totalAmount: number;
-  /** Display-only; may lose precision vs the DB's exact basis points. Never use to compute a fee amount — use `serviceFeeBasisPoints`. */
   serviceFeePercent: number;
-  /** Exact integer basis points (0-10000) from the DB. The only field money computations may use. */
   serviceFeeBasisPoints: number;
   fixedFees: number;
-  status: ExpenseStatus;
+  status: "draft" | "active" | "settled";
   createdAt: string;
   updatedAt: string;
 }
 
-/** A line item within an itemized expense. */
 export interface ExpenseItem {
   id: string;
   expenseId: string;
@@ -136,7 +59,6 @@ export interface ExpenseItem {
   createdAt: string;
 }
 
-/** A user's computed share of an expense (what they owe). */
 export interface ExpenseShare {
   id: string;
   expenseId: string;
@@ -144,387 +66,14 @@ export interface ExpenseShare {
   shareAmountCents: number;
 }
 
-/** A user who paid for an expense (who fronted the money). */
 export interface ExpensePayer {
   expenseId: string;
   userId: string;
   amountCents: number;
 }
 
-// ============================================================
-// Guest types (placeholder participants without accounts)
-// ============================================================
-
-/** A guest placeholder on an expense. The creator issues a claim credential on demand. */
-export interface ExpenseGuest {
-  id: string;
-  expenseId: string;
-  displayName: string;
-  claimedBy?: string;
-  claimedAt?: string;
-  createdAt: string;
-}
-
-/** A guest's computed share of an expense (parallel to ExpenseShare). */
-export interface ExpenseGuestShare {
-  id: string;
-  expenseId: string;
-  guestId: string;
-  shareAmountCents: number;
-}
-
-// ============================================================
-// Balance types (running net balances per group pair)
-// ============================================================
-
-/**
- * Running net balance between two users in a group.
- * Convention: userA < userB (UUID ordering).
- * Positive amountCents = userA owes userB.
- * Negative amountCents = userB owes userA.
- */
-export interface Balance {
-  groupId: string;
-  userA: string;
-  userB: string;
-  amountCents: number;
-  updatedAt: string;
-}
-
-// ============================================================
-// Settlement types (replace GroupSettlement, LedgerEntry, Payment)
-// ============================================================
-
-/** A payment from one user to another to settle a debt within a group. */
-export interface Settlement {
-  id: string;
-  groupId: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-  status: SettlementStatus;
-  createdAt: string;
-  confirmedAt?: string;
-}
-
-// ============================================================
-// RPC request / result types (type-safe Supabase RPC calls)
-// ============================================================
-
-/** Request payload for the `activate_saved_expense` RPC function. */
-export interface ActivateExpenseRequest {
-  /** The expense to transition from draft → active. */
-  expense_id: string;
-}
-
-/**
- * Result shape built from the `activate_saved_expense` RPC response.
- * The RPC re-validates the locked persisted graph (including payer
- * reachability), is guarded by a `graph_revision` compare-and-swap,
- * transitions the expense to active, and atomically updates balances.
- */
-export interface ActivateExpenseResult {
-  /** The activated expense ID. */
-  expenseId: string;
-  /** New status (always "active" on success). */
-  status: "active";
-  /** Balances that were created or updated by this activation. */
-  updatedBalances: ActivateExpenseBalanceUpdate[];
-}
-
-/** A single balance row that was upserted during activation. */
-export interface ActivateExpenseBalanceUpdate {
-  groupId: string;
-  userA: string;
-  userB: string;
-  /** The new net balance after this expense was applied. */
-  newAmountCents: number;
-  /** The delta applied by this expense (positive = increased A's debt to B). */
-  deltaCents: number;
-}
-
-/** Result returned by the claim_guest_spot RPC function. */
-export interface ClaimGuestSpotResult {
-  guestId: string;
-  expenseId: string;
-  alreadyClaimed: boolean;
-}
-
-export interface SettlementAllocation {
-  groupId: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-}
-
-export interface RecordSettlementsRequest {
-  operationId: string;
-  allocations: readonly SettlementAllocation[];
-}
-
-export interface RecordSettlementsResult {
-  operationId: string;
-  settlements: Settlement[];
-  replayed: boolean;
-}
-
-// ============================================================
-// Chat message types
-// ============================================================
-
-export type ChatMessageType = "text" | "system_expense" | "system_settlement";
-
-/** A message within a group conversation (DM or regular group). */
-export interface ChatMessage {
-  id: string;
-  groupId: string;
-  senderId: string;
-  messageType: ChatMessageType;
-  content: string;
-  expenseId?: string;
-  settlementId?: string;
-  createdAt: string;
-}
-
-/** Chat message with resolved sender profile for display. */
-export interface ChatMessageWithSender extends ChatMessage {
-  sender: UserProfile;
-}
-
-// ============================================================
-// Activity feed types
-// ============================================================
-
-export type ActivityType =
-  | "expense_activated"
-  | "settlement_recorded"
-  | "settlement_confirmed"
-  | "member_joined";
-
-export interface ActivityItemBase {
-  id: string;
-  type: ActivityType;
-  groupId: string;
-  groupName: string;
-  actorId: string;
-  actor: UserProfile;
-  timestamp: string;
-}
-
-export interface ExpenseActivatedActivity extends ActivityItemBase {
-  type: "expense_activated";
-  expenseId: string;
-  expenseTitle: string;
-  totalAmount: number;
-}
-
-export interface SettlementRecordedActivity extends ActivityItemBase {
-  type: "settlement_recorded";
-  settlementId: string;
-  toUserId: string;
-  toUser: UserProfile;
-  amountCents: number;
-}
-
-export interface SettlementConfirmedActivity extends ActivityItemBase {
-  type: "settlement_confirmed";
-  settlementId: string;
-  fromUserId: string;
-  fromUser: UserProfile;
-  amountCents: number;
-}
-
-export interface MemberJoinedActivity extends ActivityItemBase {
-  type: "member_joined";
-}
-
-export type ActivityItem =
-  | ExpenseActivatedActivity
-  | SettlementRecordedActivity
-  | SettlementConfirmedActivity
-  | MemberJoinedActivity;
-
-// ============================================================
-// Vendor charge types (standalone QR code payments)
-// ============================================================
-
-export type VendorChargeStatus = "pending" | "received";
-
-/** A standalone charge generated via "Cobrar rápido" — not tied to any group. */
-export interface VendorCharge {
-  id: string;
-  userId: string;
-  amountCents: number;
-  description?: string;
-  status: VendorChargeStatus;
-  createdAt: string;
-  confirmedAt?: string;
-}
-
-// ============================================================
-// Composite types for UI consumption
-// ============================================================
-
-/** Expense with all related data for the detail view. */
-export interface ExpenseWithDetails extends Expense {
-  items: ExpenseItem[];
-  shares: (ExpenseShare & { user: UserProfile })[];
-  payers: (ExpensePayer & { user: UserProfile })[];
-  guests: (ExpenseGuest & { share?: ExpenseGuestShare })[];
-}
-
-/** Summary of what a participant owes/is owed for a single expense. */
-export interface ExpenseParticipantSummary {
-  userId: string;
-  user: UserProfile;
-  shareAmountCents: number;
-  paidAmountCents: number;
-  /** Positive = this user is owed money. Negative = this user owes money. */
-  netCents: number;
-}
-
-/** A directed debt edge between two users (for settlement display). */
 export interface DebtEdge {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
-}
-
-/** Group balance summary with all debts between members. */
-export interface GroupBalanceSummary {
-  groupId: string;
-  debts: DebtEdge[];
-  /** Total amount owed across all pairs. */
-  totalDebtCents: number;
-}
-
-export interface DebtSummary {
-  groupId: string;
-  groupName: string;
-  isDm: boolean;
-  counterpartyId: string;
-  counterpartyName: string;
-  counterpartyAvatarUrl: string | null;
-  amountCents: number;
-  direction: "owes" | "owed";
-}
-
-// ============================================================
-// Legacy type aliases (for gradual migration of components)
-// ============================================================
-
-/** @deprecated Use ExpenseType instead */
-export type BillType = ExpenseType;
-
-/** @deprecated Use ExpenseStatus instead */
-export type BillStatus = ExpenseStatus | "partially_settled";
-
-/** @deprecated Use ExpensePayer instead */
-export interface BillPayer {
-  userId: string;
-  amountCents: number;
-}
-
-/** @deprecated Use Expense instead */
-export interface Bill {
-  id: string;
-  creatorId: string;
-  billType: BillType;
-  title: string;
-  merchantName?: string;
-  status: BillStatus;
-  serviceFeePercent: number;
-  fixedFees: number;
-  totalAmount: number;
-  totalAmountInput: number;
-  payers: BillPayer[];
-  groupId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** @deprecated Use ExpenseItem instead */
-export interface BillItem {
-  id: string;
-  billId: string;
-  description: string;
-  quantity: number;
-  unitPriceCents: number;
-  totalPriceCents: number;
-  createdAt: string;
-}
-
-/** @deprecated */
-export interface BillSplit {
-  userId: string;
-  splitType: SplitType;
-  value: number;
-  computedAmountCents: number;
-}
-
-/** @deprecated */
-export interface ItemSplit {
-  id: string;
-  itemId: string;
-  userId: string;
-  splitType: SplitType;
-  value: number;
-  computedAmountCents: number;
-}
-
-/** @deprecated Use Settlement instead */
-export type DebtStatus = "pending" | "partially_paid" | "settled";
-
-/** @deprecated */
-export type LedgerEntryType = "debt" | "payment";
-
-/** @deprecated */
-export type BillParticipantStatus = "invited" | "accepted" | "declined";
-
-/** @deprecated */
-export interface GroupSettlement {
-  id: string;
-  groupId: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-  paidAmountCents: number;
-  status: DebtStatus;
-  paidAt?: string;
-  createdAt: string;
-}
-
-/** @deprecated */
-export interface BillParticipant {
-  billId: string;
-  userId: string;
-  status: BillParticipantStatus;
-  invitedBy?: string;
-  respondedAt?: string;
-  user?: User;
-  joinedAt: string;
-}
-
-/** @deprecated */
-export interface LedgerEntry {
-  id: string;
-  billId?: string;
-  entryType: LedgerEntryType;
-  groupId?: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-  paidAmountCents: number;
-  status: DebtStatus;
-  paidAt?: string;
-  createdAt: string;
-}
-
-
-/** @deprecated Use ExpenseWithDetails instead */
-export interface BillWithDetails extends Bill {
-  participants: (BillParticipant & { user: User })[];
-  items: (BillItem & { splits: (ItemSplit & { user: User })[] })[];
-  ledger: LedgerEntry[];
-  billSplits: BillSplit[];
 }

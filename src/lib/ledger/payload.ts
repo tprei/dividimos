@@ -1,7 +1,11 @@
 import type {
+  CanonicalGuestShareRow,
+  CanonicalPayerRow,
+  CanonicalShareRow,
   ExpenseAllocationIssue,
-  ExpenseMoneyInput,
   ExpenseItemAssignmentInput,
+  ExpenseMoneyInput,
+  ParticipantOrderEntry,
   ValidationResult,
 } from "@/lib/expense-money";
 import {
@@ -10,12 +14,6 @@ import {
   brandExpenseCents,
   computeServiceFeeCents,
 } from "@/lib/expense-money";
-import type {
-  CanonicalGuestShareRow,
-  CanonicalPayerRow,
-  CanonicalShareRow,
-  ParticipantOrderEntry,
-} from "@/lib/expense-graph";
 import type {
   ExpenseHeader,
   ExpenseItemAssignmentPayload,

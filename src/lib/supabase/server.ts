@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/database";
-import { CURRENT_FINANCIAL_SCHEMA_VERSION, FINANCIAL_SCHEMA_HEADER_NAME } from "@/lib/financial-compatibility";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -23,9 +22,6 @@ export async function createClient() {
             // server component - can't set cookies
           }
         },
-      },
-      global: {
-        headers: { [FINANCIAL_SCHEMA_HEADER_NAME]: String(CURRENT_FINANCIAL_SCHEMA_VERSION) },
       },
     },
   );

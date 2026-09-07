@@ -1,7 +1,6 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { CURRENT_FINANCIAL_SCHEMA_VERSION, FINANCIAL_SCHEMA_HEADER_NAME } from "@/lib/financial-compatibility";
 
 export function createAdminClient() {
   return createClient<Database>(
@@ -9,9 +8,6 @@ export function createAdminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       auth: { autoRefreshToken: false, persistSession: false },
-      global: {
-        headers: { [FINANCIAL_SCHEMA_HEADER_NAME]: String(CURRENT_FINANCIAL_SCHEMA_VERSION) },
-      },
     },
   );
 }

@@ -1,11 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeRedirect } from "@/lib/safe-redirect";
-import {
-  CURRENT_FINANCIAL_SCHEMA_VERSION,
-  FINANCIAL_SCHEMA_HEADER_NAME,
-  evaluateServerFinancialGate,
-} from "@/lib/financial-compatibility";
+import { evaluateServerFinancialGate } from "@/lib/financial-compatibility";
 
 const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u", "/manutencao"];
 
@@ -47,9 +43,6 @@ export async function updateSession(request: NextRequest) {
             supabaseResponse.cookies.set(name, value, options),
           );
         },
-      },
-      global: {
-        headers: { [FINANCIAL_SCHEMA_HEADER_NAME]: String(CURRENT_FINANCIAL_SCHEMA_VERSION) },
       },
     },
   );
@@ -95,7 +88,9 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  supabaseResponse.headers.set("Cache-Control", "private, no-store");
+  if (!pathname.startsWith("/app")) {
+    supabaseResponse.headers.set("Cache-Control", "private, no-store");
+  }
 
   return supabaseResponse;
 }

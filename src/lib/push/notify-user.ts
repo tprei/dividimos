@@ -27,7 +27,7 @@ export async function notifyUser(
 
   const { data: rows, error } = await admin
     .from("push_subscriptions")
-    .select("id, subscription, channel")
+    .select("id, subscription_encrypted, channel")
     .eq("user_id", userId);
 
   if (error || !rows || rows.length === 0) {
@@ -48,7 +48,7 @@ export async function notifyUser(
 
       let decrypted: string;
       try {
-        decrypted = decryptSubscription(row.subscription);
+        decrypted = decryptSubscription(row.subscription_encrypted);
       } catch {
         staleIds.push(row.id);
         return;

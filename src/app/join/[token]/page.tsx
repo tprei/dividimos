@@ -1,7 +1,6 @@
 import { ArrowLeft, Users } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { JoinActions } from "./join-actions";
 
@@ -11,40 +10,26 @@ export default async function JoinPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const admin = createAdminClient();
-
-  const { data: link } = await admin
-    .from("group_invite_links")
-    .select("group_id, is_active, expires_at, max_uses, use_count, created_by")
-    .eq("token", token)
-    .single();
-
-  if (!link) notFound();
-
-  const [{ data: group }, { data: creator }] = await Promise.all([
-    admin.from("groups").select("name").eq("id", link.group_id).single(),
-    admin
-      .from("user_profiles")
-      .select("name, handle")
-      .eq("id", link.created_by)
-      .single(),
-  ]);
-
-  if (!group) notFound();
-
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  const isExpired =
-    link.expires_at != null && new Date(link.expires_at) < new Date();
-  const isExhausted =
-    link.max_uses != null && link.use_count >= link.max_uses;
-  const isInvalid = !link.is_active || isExpired || isExhausted;
+  const { data: previewData } = await supabase.rpc("preview_invite_link", {
+    p_token: token,
+  });
 
-  const creatorName = creator?.name ?? "Alguém";
+  const preview = previewData as {
+    groupName: string | null;
+    memberCount: number | null;
+    creatorName: string | null;
+    valid: boolean;
+  } | null;
 
+  if (!preview || !preview.groupName) notFound();
+
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const isAuthenticated = Boolean(claimsData?.claims?.sub);
+
+  const creatorName = preview.creatorName ?? "Alguém";
+  const isInvalid = !preview.valid;
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
@@ -59,12 +44,11 @@ export default async function JoinPage({
 
       <div className="mt-6 rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
         <p className="text-sm text-white/70">Convite para o grupo</p>
-        <p className="mt-2 text-3xl font-bold">{group.name}</p>
+        <p className="mt-2 text-3xl font-bold">{preview.groupName}</p>
         <div className="mt-3 flex gap-4 text-sm text-white/70">
           <span className="flex items-center gap-1">
             <Users className="h-3.5 w-3.5" />
             Convite de {creatorName}
-            {creator?.handle ? ` (@${creator.handle})` : ""}
           </span>
         </div>
       </div>
@@ -83,11 +67,8 @@ export default async function JoinPage({
       <div className="mt-5">
         <JoinActions
           token={token}
-          isAuthenticated={!!user}
+          isAuthenticated={isAuthenticated}
           isInvalid={isInvalid}
-          isExpired={isExpired}
-          isExhausted={isExhausted}
-          isInactive={!link.is_active}
         />
       </div>
     </div>

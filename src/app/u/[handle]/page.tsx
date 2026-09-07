@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { UserCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { decodeUserProfileOrNull } from "@/lib/ledger/decode";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton } from "./profile-actions";
@@ -15,25 +16,20 @@ export default async function PublicProfilePage({
   const normalizedHandle = handle.toLowerCase().trim();
 
   const supabase = await createClient();
-  const [profileResult, authResult] = await Promise.all([
+  const [profileResult, claimsResult] = await Promise.all([
     supabase.rpc("lookup_user_by_handle", { p_handle: normalizedHandle }),
-    supabase.auth.getUser(),
+    supabase.auth.getClaims(),
   ]);
 
-  const profile = profileResult.data?.[0] ?? null;
+  const decoded = decodeUserProfileOrNull(profileResult.data);
+  const profile = decoded.ok ? decoded.value : null;
   if (!profile) notFound();
 
-  const typedProfile = {
-    id: profile.id,
-    handle: profile.handle,
-    name: profile.name,
-    avatarUrl: profile.avatar_url ?? undefined,
-  };
+  const callerId = !claimsResult.error && claimsResult.data?.claims?.sub
+    ? (claimsResult.data.claims.sub as string)
+    : null;
 
-  const authUser = authResult.data.user;
-
-  const isSelf = authUser?.id === typedProfile.id;
-
+  const isSelf = callerId === profile.id;
   return (
     <div className="flex min-h-[80vh] items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-6">
@@ -41,7 +37,7 @@ export default async function PublicProfilePage({
           <div className="rounded-full bg-card p-1 shadow-lg">
             <UserAvatar
               name={profile.name || normalizedHandle}
-              avatarUrl={profile.avatar_url}
+              avatarUrl={profile.avatarUrl ?? null}
               size="lg"
               className="h-24 w-24 text-2xl"
             />
@@ -58,7 +54,7 @@ export default async function PublicProfilePage({
           </div>
         </div>
 
-        {!authUser && (
+        {!callerId && (
           <div className="space-y-3">
             <Link
               href={`/auth?next=${encodeURIComponent(`/u/${profile.handle}`)}`}
@@ -72,10 +68,10 @@ export default async function PublicProfilePage({
           </div>
         )}
 
-        {authUser && !isSelf && (
+        {callerId && !isSelf && (
           <SendMessageButton
-            targetUserId={typedProfile.id}
-            targetName={typedProfile.name}
+            targetUserId={profile.id}
+            targetName={profile.name}
           />
         )}
 

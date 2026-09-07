@@ -34,186 +34,32 @@ export type Database = {
   }
   public: {
     Tables: {
-      balances: {
-        Row: {
-          amount_cents: number
-          group_id: string
-          updated_at: string
-          user_a: string
-          user_b: string
-        }
-        Insert: {
-          amount_cents?: number
-          group_id: string
-          updated_at?: string
-          user_a: string
-          user_b: string
-        }
-        Update: {
-          amount_cents?: number
-          group_id?: string
-          updated_at?: string
-          user_a?: string
-          user_b?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "balances_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "balances_user_a_fkey"
-            columns: ["user_a"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "balances_user_a_fkey"
-            columns: ["user_a"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "balances_user_b_fkey"
-            columns: ["user_b"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "balances_user_b_fkey"
-            columns: ["user_b"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      chat_expense_confirmation_operations: {
-        Row: {
-          cancelled_at: string | null
-          canonical_request: Json | null
-          committed_at: string | null
-          created_at: string
-          expense_id: string | null
-          group_id: string | null
-          id: string
-          initiated_by_user_id: string | null
-          outcome: string
-          retired_at: string | null
-          system_message_id: string | null
-          terminal_code: string | null
-        }
-        Insert: {
-          cancelled_at?: string | null
-          canonical_request?: Json | null
-          committed_at?: string | null
-          created_at?: string
-          expense_id?: string | null
-          group_id?: string | null
-          id: string
-          initiated_by_user_id?: string | null
-          outcome: string
-          retired_at?: string | null
-          system_message_id?: string | null
-          terminal_code?: string | null
-        }
-        Update: {
-          cancelled_at?: string | null
-          canonical_request?: Json | null
-          committed_at?: string | null
-          created_at?: string
-          expense_id?: string | null
-          group_id?: string | null
-          id?: string
-          initiated_by_user_id?: string | null
-          outcome?: string
-          retired_at?: string | null
-          system_message_id?: string | null
-          terminal_code?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "chat_expense_confirmation_operations_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: true
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_expense_confirmation_operations_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_expense_confirmation_operations_initiated_by_user_id_fkey"
-            columns: ["initiated_by_user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_expense_confirmation_operations_initiated_by_user_id_fkey"
-            columns: ["initiated_by_user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_expense_confirmation_operations_system_message_id_fkey"
-            columns: ["system_message_id"]
-            isOneToOne: true
-            referencedRelation: "chat_messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       chat_messages: {
         Row: {
+          client_id: string
           content: string
           created_at: string
-          expense_id: string | null
           group_id: string
           id: string
-          message_type: Database["public"]["Enums"]["chat_message_type"]
           sender_id: string
-          settlement_id: string | null
         }
         Insert: {
-          content?: string
+          client_id: string
+          content: string
           created_at?: string
-          expense_id?: string | null
           group_id: string
           id?: string
-          message_type?: Database["public"]["Enums"]["chat_message_type"]
           sender_id: string
-          settlement_id?: string | null
         }
         Update: {
+          client_id?: string
           content?: string
           created_at?: string
-          expense_id?: string | null
           group_id?: string
           id?: string
-          message_type?: Database["public"]["Enums"]["chat_message_type"]
           sender_id?: string
-          settlement_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "chat_messages_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "chat_messages_group_id_fkey"
             columns: ["group_id"]
@@ -225,26 +71,12 @@ export type Database = {
             foreignKeyName: "chat_messages_sender_id_fkey"
             columns: ["sender_id"]
             isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_messages_sender_id_fkey"
-            columns: ["sender_id"]
-            isOneToOne: false
             referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_messages_settlement_id_fkey"
-            columns: ["settlement_id"]
-            isOneToOne: false
-            referencedRelation: "settlements"
             referencedColumns: ["id"]
           },
         ]
       }
-      conversation_read_receipts: {
+      conversation_reads: {
         Row: {
           group_id: string
           last_read_at: string
@@ -262,21 +94,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "conversation_read_receipts_group_id_fkey"
+            foreignKeyName: "conversation_reads_group_id_fkey"
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "groups"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "conversation_read_receipts_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "conversation_read_receipts_user_id_fkey"
+            foreignKeyName: "conversation_reads_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
@@ -284,261 +109,172 @@ export type Database = {
           },
         ]
       }
-      dm_pairs: {
+      expense_participants: {
         Row: {
-          group_id: string
-          user_a: string
-          user_b: string
-        }
-        Insert: {
-          group_id: string
-          user_a: string
-          user_b: string
-        }
-        Update: {
-          group_id?: string
-          user_a?: string
-          user_b?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dm_pairs_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: true
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dm_pairs_user_a_fkey"
-            columns: ["user_a"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dm_pairs_user_a_fkey"
-            columns: ["user_a"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dm_pairs_user_b_fkey"
-            columns: ["user_b"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dm_pairs_user_b_fkey"
-            columns: ["user_b"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      expense_allocation_entities: {
-        Row: {
-          entity_kind: string
           expense_id: string
           guest_id: string | null
-          net_amount_cents: number
+          kind: Database["public"]["Enums"]["participant_kind"]
+          paid_cents: number
           participant_index: number
-          payer_amount_cents: number
-          share_amount_cents: number
+          share_cents: number
           user_id: string | null
         }
         Insert: {
-          entity_kind: string
           expense_id: string
           guest_id?: string | null
-          net_amount_cents: number
+          kind: Database["public"]["Enums"]["participant_kind"]
+          paid_cents?: number
           participant_index: number
-          payer_amount_cents: number
-          share_amount_cents: number
+          share_cents: number
           user_id?: string | null
         }
         Update: {
-          entity_kind?: string
           expense_id?: string
           guest_id?: string | null
-          net_amount_cents?: number
+          kind?: Database["public"]["Enums"]["participant_kind"]
+          paid_cents?: number
           participant_index?: number
-          payer_amount_cents?: number
-          share_amount_cents?: number
+          share_cents?: number
           user_id?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "expense_allocation_entities_expense_id_fkey"
+            foreignKeyName: "expense_participants_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: false
             referencedRelation: "expenses"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "expense_participants_guest_id_fkey"
+            columns: ["guest_id"]
+            isOneToOne: false
+            referencedRelation: "guests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
       }
-      expense_balance_allocation_plans: {
+      expense_versions: {
         Row: {
-          algorithm_version: number
+          author_id: string
+          change_summary: Json | null
           created_at: string
-          edge_count: number
-          entity_count: number
           expense_id: string
-          source_digest: string
+          expense_type: Database["public"]["Enums"]["expense_type"]
+          fixed_fee_cents: number
+          merchant_name: string | null
+          payload: Json
+          service_fee_bps: number
+          title: string
           total_cents: number
+          version_no: number
         }
         Insert: {
-          algorithm_version: number
+          author_id: string
+          change_summary?: Json | null
           created_at?: string
-          edge_count: number
-          entity_count: number
           expense_id: string
-          source_digest: string
+          expense_type: Database["public"]["Enums"]["expense_type"]
+          fixed_fee_cents?: number
+          merchant_name?: string | null
+          payload: Json
+          service_fee_bps?: number
+          title: string
           total_cents: number
+          version_no: number
         }
         Update: {
-          algorithm_version?: number
+          author_id?: string
+          change_summary?: Json | null
           created_at?: string
-          edge_count?: number
-          entity_count?: number
           expense_id?: string
-          source_digest?: string
+          expense_type?: Database["public"]["Enums"]["expense_type"]
+          fixed_fee_cents?: number
+          merchant_name?: string | null
+          payload?: Json
+          service_fee_bps?: number
+          title?: string
           total_cents?: number
+          version_no?: number
         }
         Relationships: [
           {
-            foreignKeyName: "expense_balance_allocation_plans_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: true
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      expense_balance_allocations: {
-        Row: {
-          allocation_index: number
-          amount_cents: number
-          applied_at: string | null
-          applied_to_user_id: string | null
-          creditor_index: number
-          debtor_index: number
-          expense_id: string
-        }
-        Insert: {
-          allocation_index: number
-          amount_cents: number
-          applied_at?: string | null
-          applied_to_user_id?: string | null
-          creditor_index: number
-          debtor_index: number
-          expense_id: string
-        }
-        Update: {
-          allocation_index?: number
-          amount_cents?: number
-          applied_at?: string | null
-          applied_to_user_id?: string | null
-          creditor_index?: number
-          debtor_index?: number
-          expense_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expense_balance_allocations_creditor_entity_fkey"
-            columns: ["expense_id", "creditor_index"]
-            isOneToOne: false
-            referencedRelation: "expense_allocation_entities"
-            referencedColumns: ["expense_id", "participant_index"]
-          },
-          {
-            foreignKeyName: "expense_balance_allocations_debtor_entity_fkey"
-            columns: ["expense_id", "debtor_index"]
-            isOneToOne: false
-            referencedRelation: "expense_allocation_entities"
-            referencedColumns: ["expense_id", "participant_index"]
-          },
-          {
-            foreignKeyName: "expense_balance_allocations_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "expense_balance_allocation_plans"
-            referencedColumns: ["expense_id"]
-          },
-        ]
-      }
-      expense_graph_save_operations: {
-        Row: {
-          caller_id: string | null
-          canonical_request: Json | null
-          created_at: string
-          expense_id: string | null
-          graph_revision: number | null
-          group_id: string | null
-          operation_id: string
-          outcome: string
-          request_digest: string | null
-          result: Json | null
-          result_created_at: string | null
-          retired_at: string | null
-          retired_reason: string | null
-        }
-        Insert: {
-          caller_id?: string | null
-          canonical_request?: Json | null
-          created_at?: string
-          expense_id?: string | null
-          graph_revision?: number | null
-          group_id?: string | null
-          operation_id: string
-          outcome: string
-          request_digest?: string | null
-          result?: Json | null
-          result_created_at?: string | null
-          retired_at?: string | null
-          retired_reason?: string | null
-        }
-        Update: {
-          caller_id?: string | null
-          canonical_request?: Json | null
-          created_at?: string
-          expense_id?: string | null
-          graph_revision?: number | null
-          group_id?: string | null
-          operation_id?: string
-          outcome?: string
-          request_digest?: string | null
-          result?: Json | null
-          result_created_at?: string | null
-          retired_at?: string | null
-          retired_reason?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expense_graph_save_operations_caller_id_fkey"
-            columns: ["caller_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_graph_save_operations_caller_id_fkey"
-            columns: ["caller_id"]
+            foreignKeyName: "expense_versions_author_id_fkey"
+            columns: ["author_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "expense_graph_save_operations_expense_id_fkey"
+            foreignKeyName: "expense_versions_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: false
             referencedRelation: "expenses"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      expenses: {
+        Row: {
+          client_id: string
+          created_at: string
+          creator_id: string
+          current_version_no: number
+          deleted_at: string | null
+          deleted_by: string | null
+          group_id: string
+          id: string
+          occurred_on: string
+          status: Database["public"]["Enums"]["expense_status"]
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          creator_id: string
+          current_version_no?: number
+          deleted_at?: string | null
+          deleted_by?: string | null
+          group_id: string
+          id?: string
+          occurred_on: string
+          status?: Database["public"]["Enums"]["expense_status"]
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          creator_id?: string
+          current_version_no?: number
+          deleted_at?: string | null
+          deleted_by?: string | null
+          group_id?: string
+          id?: string
+          occurred_on?: string
+          status?: Database["public"]["Enums"]["expense_status"]
+        }
+        Relationships: [
           {
-            foreignKeyName: "expense_graph_save_operations_group_id_fkey"
+            foreignKeyName: "expenses_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_deleted_by_fkey"
+            columns: ["deleted_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_group_id_fkey"
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "groups"
@@ -546,43 +282,266 @@ export type Database = {
           },
         ]
       }
-      expense_guest_shares: {
+      group_balances: {
         Row: {
-          expense_id: string
-          guest_id: string
-          id: string
-          share_amount_cents: number
+          group_id: string
+          kind: Database["public"]["Enums"]["participant_kind"]
+          net_cents: number
+          participant_id: string
         }
         Insert: {
-          expense_id: string
-          guest_id: string
-          id?: string
-          share_amount_cents: number
+          group_id: string
+          kind: Database["public"]["Enums"]["participant_kind"]
+          net_cents: number
+          participant_id: string
         }
         Update: {
-          expense_id?: string
-          guest_id?: string
-          id?: string
-          share_amount_cents?: number
+          group_id?: string
+          kind?: Database["public"]["Enums"]["participant_kind"]
+          net_cents?: number
+          participant_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "expense_guest_shares_expense_id_fkey"
+            foreignKeyName: "group_balances_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_events: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          expense_id: string | null
+          group_id: string
+          id: number
+          kind: Database["public"]["Enums"]["event_kind"]
+          notified_at: string | null
+          payload: Json
+          settlement_id: string | null
+          subject_user_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          expense_id?: string | null
+          group_id: string
+          id?: never
+          kind: Database["public"]["Enums"]["event_kind"]
+          notified_at?: string | null
+          payload?: Json
+          settlement_id?: string | null
+          subject_user_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          expense_id?: string | null
+          group_id?: string
+          id?: never
+          kind?: Database["public"]["Enums"]["event_kind"]
+          notified_at?: string | null
+          payload?: Json
+          settlement_id?: string | null
+          subject_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_events_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: false
             referencedRelation: "expenses"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "expense_guest_shares_guest_id_fkey"
-            columns: ["guest_id"]
+            foreignKeyName: "group_events_group_id_fkey"
+            columns: ["group_id"]
             isOneToOne: false
-            referencedRelation: "expense_guests"
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_events_settlement_id_fkey"
+            columns: ["settlement_id"]
+            isOneToOne: false
+            referencedRelation: "settlements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_events_subject_user_id_fkey"
+            columns: ["subject_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
       }
-      expense_guests: {
+      group_invite_links: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          group_id: string
+          id: string
+          is_active: boolean
+          max_uses: number | null
+          token: string
+          use_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          group_id: string
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          token: string
+          use_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          group_id?: string
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          token?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_invite_links_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_invite_links_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_members: {
+        Row: {
+          accepted_at: string | null
+          created_at: string
+          group_id: string
+          invited_by: string | null
+          status: Database["public"]["Enums"]["member_status"]
+          user_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string
+          group_id: string
+          invited_by?: string | null
+          status?: Database["public"]["Enums"]["member_status"]
+          user_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string
+          group_id?: string
+          invited_by?: string | null
+          status?: Database["public"]["Enums"]["member_status"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_members_invited_by_fkey"
+            columns: ["invited_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      groups: {
+        Row: {
+          created_at: string
+          creator_id: string
+          dm_user_a: string | null
+          dm_user_b: string | null
+          id: string
+          kind: Database["public"]["Enums"]["group_kind"]
+          ledger_version: number
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          dm_user_a?: string | null
+          dm_user_b?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["group_kind"]
+          ledger_version?: number
+          name: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          dm_user_a?: string | null
+          dm_user_b?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["group_kind"]
+          ledger_version?: number
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "groups_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "groups_dm_user_a_fkey"
+            columns: ["dm_user_a"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "groups_dm_user_b_fkey"
+            columns: ["dm_user_b"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      guests: {
         Row: {
           claimed_at: string | null
           claimed_by: string | null
@@ -609,442 +568,17 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "expense_guests_claimed_by_fkey"
-            columns: ["claimed_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_guests_claimed_by_fkey"
+            foreignKeyName: "guests_claimed_by_fkey"
             columns: ["claimed_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "expense_guests_expense_id_fkey"
+            foreignKeyName: "guests_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: false
             referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      expense_items: {
-        Row: {
-          created_at: string
-          description: string
-          expense_id: string
-          id: string
-          quantity: number
-          total_price_cents: number
-          unit_price_cents: number
-        }
-        Insert: {
-          created_at?: string
-          description: string
-          expense_id: string
-          id?: string
-          quantity?: number
-          total_price_cents: number
-          unit_price_cents: number
-        }
-        Update: {
-          created_at?: string
-          description?: string
-          expense_id?: string
-          id?: string
-          quantity?: number
-          total_price_cents?: number
-          unit_price_cents?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expense_items_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      expense_payers: {
-        Row: {
-          amount_cents: number
-          expense_id: string
-          user_id: string
-        }
-        Insert: {
-          amount_cents: number
-          expense_id: string
-          user_id: string
-        }
-        Update: {
-          amount_cents?: number
-          expense_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expense_payers_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_payers_participant_fkey"
-            columns: ["expense_id", "user_id"]
-            isOneToOne: true
-            referencedRelation: "expense_shares"
-            referencedColumns: ["expense_id", "user_id"]
-          },
-          {
-            foreignKeyName: "expense_payers_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_payers_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      expense_shares: {
-        Row: {
-          expense_id: string
-          id: string
-          share_amount_cents: number
-          user_id: string
-        }
-        Insert: {
-          expense_id: string
-          id?: string
-          share_amount_cents: number
-          user_id: string
-        }
-        Update: {
-          expense_id?: string
-          id?: string
-          share_amount_cents?: number
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expense_shares_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_shares_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_shares_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      expenses: {
-        Row: {
-          activation_notified_at: string | null
-          created_at: string
-          creator_id: string
-          expense_type: Database["public"]["Enums"]["expense_type"]
-          fixed_fees: number
-          graph_revision: number
-          group_id: string
-          id: string
-          merchant_name: string | null
-          service_fee_basis_points: number
-          status: Database["public"]["Enums"]["expense_status"]
-          title: string
-          total_amount: number
-          updated_at: string
-        }
-        Insert: {
-          activation_notified_at?: string | null
-          created_at?: string
-          creator_id: string
-          expense_type?: Database["public"]["Enums"]["expense_type"]
-          fixed_fees?: number
-          graph_revision?: number
-          group_id: string
-          id?: string
-          merchant_name?: string | null
-          service_fee_basis_points?: number
-          status?: Database["public"]["Enums"]["expense_status"]
-          title: string
-          total_amount?: number
-          updated_at?: string
-        }
-        Update: {
-          activation_notified_at?: string | null
-          created_at?: string
-          creator_id?: string
-          expense_type?: Database["public"]["Enums"]["expense_type"]
-          fixed_fees?: number
-          graph_revision?: number
-          group_id?: string
-          id?: string
-          merchant_name?: string | null
-          service_fee_basis_points?: number
-          status?: Database["public"]["Enums"]["expense_status"]
-          title?: string
-          total_amount?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expenses_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expenses_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expenses_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      group_invite_links: {
-        Row: {
-          created_at: string
-          created_by: string
-          expires_at: string | null
-          group_id: string
-          id: string
-          is_active: boolean
-          max_uses: number | null
-          token: string
-          use_count: number
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string
-          expires_at?: string | null
-          group_id: string
-          id?: string
-          is_active?: boolean
-          max_uses?: number | null
-          token?: string
-          use_count?: number
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          expires_at?: string | null
-          group_id?: string
-          id?: string
-          is_active?: boolean
-          max_uses?: number | null
-          token?: string
-          use_count?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "group_invite_links_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_invite_links_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_invite_links_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      group_members: {
-        Row: {
-          accepted_at: string | null
-          created_at: string
-          group_id: string
-          invited_by: string
-          status: Database["public"]["Enums"]["group_member_status"]
-          user_id: string
-        }
-        Insert: {
-          accepted_at?: string | null
-          created_at?: string
-          group_id: string
-          invited_by: string
-          status?: Database["public"]["Enums"]["group_member_status"]
-          user_id: string
-        }
-        Update: {
-          accepted_at?: string | null
-          created_at?: string
-          group_id?: string
-          invited_by?: string
-          status?: Database["public"]["Enums"]["group_member_status"]
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "group_members_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_members_invited_by_fkey"
-            columns: ["invited_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_members_invited_by_fkey"
-            columns: ["invited_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_members_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "group_members_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      groups: {
-        Row: {
-          created_at: string
-          creator_id: string
-          id: string
-          is_dm: boolean
-          name: string
-        }
-        Insert: {
-          created_at?: string
-          creator_id: string
-          id?: string
-          is_dm?: boolean
-          name: string
-        }
-        Update: {
-          created_at?: string
-          creator_id?: string
-          id?: string
-          is_dm?: boolean
-          name?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "groups_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "groups_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      nudge_cooldowns: {
-        Row: {
-          creditor_id: string
-          debtor_id: string
-          group_id: string
-          nudged_at: string
-        }
-        Insert: {
-          creditor_id: string
-          debtor_id: string
-          group_id: string
-          nudged_at?: string
-        }
-        Update: {
-          creditor_id?: string
-          debtor_id?: string
-          group_id?: string
-          nudged_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "nudge_cooldowns_creditor_id_fkey"
-            columns: ["creditor_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nudge_cooldowns_creditor_id_fkey"
-            columns: ["creditor_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nudge_cooldowns_debtor_id_fkey"
-            columns: ["debtor_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nudge_cooldowns_debtor_id_fkey"
-            columns: ["debtor_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nudge_cooldowns_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "groups"
             referencedColumns: ["id"]
           },
         ]
@@ -1053,32 +587,28 @@ export type Database = {
         Row: {
           channel: string
           created_at: string
+          endpoint_digest: string
           id: string
-          subscription: string
+          subscription_encrypted: string
           user_id: string
         }
         Insert: {
-          channel?: string
+          channel: string
           created_at?: string
+          endpoint_digest: string
           id?: string
-          subscription: string
+          subscription_encrypted: string
           user_id: string
         }
         Update: {
           channel?: string
           created_at?: string
+          endpoint_digest?: string
           id?: string
-          subscription?: string
+          subscription_encrypted?: string
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "push_subscriptions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "push_subscriptions_user_id_fkey"
             columns: ["user_id"]
@@ -1109,115 +639,55 @@ export type Database = {
         }
         Relationships: []
       }
-      settlement_operation_items: {
-        Row: {
-          allocation_index: number
-          operation_id: string
-          settlement_id: string
-        }
-        Insert: {
-          allocation_index: number
-          operation_id: string
-          settlement_id: string
-        }
-        Update: {
-          allocation_index?: number
-          operation_id?: string
-          settlement_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "settlement_operation_items_operation_id_fkey"
-            columns: ["operation_id"]
-            isOneToOne: false
-            referencedRelation: "settlement_operations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "settlement_operation_items_settlement_id_fkey"
-            columns: ["settlement_id"]
-            isOneToOne: true
-            referencedRelation: "settlements"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      settlement_operations: {
-        Row: {
-          canonical_request: Json
-          created_at: string
-          id: string
-          initiated_by: string
-        }
-        Insert: {
-          canonical_request: Json
-          created_at?: string
-          id: string
-          initiated_by: string
-        }
-        Update: {
-          canonical_request?: Json
-          created_at?: string
-          id?: string
-          initiated_by?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "settlement_operations_initiated_by_fkey"
-            columns: ["initiated_by"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "settlement_operations_initiated_by_fkey"
-            columns: ["initiated_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       settlements: {
         Row: {
           amount_cents: number
           confirmed_at: string | null
           created_at: string
+          created_by: string
           from_user_id: string
           group_id: string
           id: string
-          notification_sent_at: string | null
+          operation_id: string
           status: Database["public"]["Enums"]["settlement_status"]
           to_user_id: string
+          voided_at: string | null
+          voided_by: string | null
         }
         Insert: {
           amount_cents: number
           confirmed_at?: string | null
           created_at?: string
+          created_by: string
           from_user_id: string
           group_id: string
           id?: string
-          notification_sent_at?: string | null
+          operation_id: string
           status?: Database["public"]["Enums"]["settlement_status"]
           to_user_id: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Update: {
           amount_cents?: number
           confirmed_at?: string | null
           created_at?: string
+          created_by?: string
           from_user_id?: string
           group_id?: string
           id?: string
-          notification_sent_at?: string | null
+          operation_id?: string
           status?: Database["public"]["Enums"]["settlement_status"]
           to_user_id?: string
+          voided_at?: string | null
+          voided_by?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "settlements_from_user_id_fkey"
-            columns: ["from_user_id"]
+            foreignKeyName: "settlements_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
-            referencedRelation: "user_profiles"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
@@ -1238,12 +708,12 @@ export type Database = {
             foreignKeyName: "settlements_to_user_id_fkey"
             columns: ["to_user_id"]
             isOneToOne: false
-            referencedRelation: "user_profiles"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "settlements_to_user_id_fkey"
-            columns: ["to_user_id"]
+            foreignKeyName: "settlements_voided_by_fkey"
+            columns: ["voided_by"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -1254,41 +724,44 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
-          email: string | null
-          handle: string | null
+          email: string
+          handle: string
           id: string
           name: string
           notification_preferences: Json
           onboarded: boolean
-          pix_key_encrypted: string
-          pix_key_hint: string
-          pix_key_type: Database["public"]["Enums"]["pix_key_type"]
+          pix_key_encrypted: string | null
+          pix_key_hint: string | null
+          pix_key_type: Database["public"]["Enums"]["pix_key_type"] | null
+          updated_at: string
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
-          email?: string | null
-          handle?: string | null
-          id?: string
+          email: string
+          handle: string
+          id: string
           name: string
           notification_preferences?: Json
           onboarded?: boolean
-          pix_key_encrypted: string
-          pix_key_hint?: string
-          pix_key_type?: Database["public"]["Enums"]["pix_key_type"]
+          pix_key_encrypted?: string | null
+          pix_key_hint?: string | null
+          pix_key_type?: Database["public"]["Enums"]["pix_key_type"] | null
+          updated_at?: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
-          email?: string | null
-          handle?: string | null
+          email?: string
+          handle?: string
           id?: string
           name?: string
           notification_preferences?: Json
           onboarded?: boolean
-          pix_key_encrypted?: string
-          pix_key_hint?: string
-          pix_key_type?: Database["public"]["Enums"]["pix_key_type"]
+          pix_key_encrypted?: string | null
+          pix_key_hint?: string | null
+          pix_key_type?: Database["public"]["Enums"]["pix_key_type"] | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1325,13 +798,6 @@ export type Database = {
             foreignKeyName: "vendor_charges_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "vendor_charges_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -1339,169 +805,115 @@ export type Database = {
       }
     }
     Views: {
-      user_profiles: {
-        Row: {
-          avatar_url: string | null
-          handle: string | null
-          id: string | null
-          name: string | null
-        }
-        Insert: {
-          avatar_url?: string | null
-          handle?: string | null
-          id?: string | null
-          name?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          handle?: string | null
-          id?: string | null
-          name?: string | null
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Functions: {
-      accept_group_invitation: {
-        Args: { p_group_id: string }
-        Returns: undefined
-      }
-      activate_expense: { Args: { p_expense_id: string }; Returns: undefined }
-      activate_saved_expense: {
-        Args: { p_expected_graph_revision: number; p_expense_id: string }
-        Returns: Json
-      }
-      assert_dm_actor: {
+      accept_invitation: { Args: { p_group_id: string }; Returns: Json }
+      assert_member: {
         Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
       }
-      assert_dm_group_shape: {
-        Args: { p_allow_missing: boolean; p_group_id: string }
+      assert_member_or_invited: {
+        Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
       }
-      assert_dm_participants: {
-        Args: { p_group_id: string; p_user_ids: string[] }
-        Returns: undefined
-      }
-      begin_expense_graph_direct_mutation: {
-        Args: { p_expense_ids: string[] }
-        Returns: string
-      }
-      build_expense_allocation_plan_edges: {
-        Args: { p_expense_id: string }
-        Returns: {
-          allocation_index: number
-          amount_cents: number
-          creditor_index: number
-          debtor_index: number
-        }[]
-      }
-      calculate_service_fee_cents: {
-        Args: { p_basis_points: number; p_subtotal: number }
-        Returns: number
-      }
-      cancel_chat_expense_confirmation: {
+      bootstrap: { Args: never; Returns: Json }
+      broadcast_group: {
         Args: {
-          p_operation_id: string
-          p_request: Json
-          p_terminal_code: string
+          p_event_id: number
+          p_group_id: string
+          p_ledger_version: number
+        }
+        Returns: undefined
+      }
+      claim_guest: { Args: { p_token: string }; Returns: Json }
+      cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
+      confirm_settlement: { Args: { p_settlement_id: string }; Returns: Json }
+      confirm_vendor_charge: { Args: { p_charge_id: string }; Returns: Json }
+      create_expense: {
+        Args: {
+          p_client_id: string
+          p_expense_type: Database["public"]["Enums"]["expense_type"]
+          p_fixed_fee_cents: number
+          p_group_id: string
+          p_merchant_name: string
+          p_occurred_on: string
+          p_payload: Json
+          p_service_fee_bps: number
+          p_title: string
+          p_total_cents: number
         }
         Returns: Json
       }
-      claim_guest_spot: { Args: { p_claim_token: string }; Returns: Json }
-      claim_nudge: {
-        Args: { p_debtor_id: string; p_group_id: string }
-        Returns: {
-          amount_cents: number
-        }[]
+      create_group: {
+        Args: { p_member_ids: string[]; p_name: string }
+        Returns: Json
       }
-      cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
-      compute_expense_line_total_cents: {
-        Args: { p_quantity_milliunits: number; p_unit_price_cents: number }
+      create_invite_link: {
+        Args: { p_expires_at?: string; p_group_id: string; p_max_uses?: number }
+        Returns: Json
+      }
+      current_user_id: { Args: never; Returns: string }
+      deactivate_invite_link: { Args: { p_group_id: string }; Returns: Json }
+      decline_invitation: { Args: { p_group_id: string }; Returns: Json }
+      delete_expense: { Args: { p_expense_id: string }; Returns: Json }
+      delete_group: { Args: { p_group_id: string }; Returns: Json }
+      edit_expense: {
+        Args: {
+          p_expected_version_no: number
+          p_expense_id: string
+          p_expense_type: Database["public"]["Enums"]["expense_type"]
+          p_fixed_fee_cents: number
+          p_merchant_name: string
+          p_occurred_on: string
+          p_payload: Json
+          p_service_fee_bps: number
+          p_title: string
+          p_total_cents: number
+        }
+        Returns: Json
+      }
+      emit_event: {
+        Args: {
+          p_actor: string
+          p_expense_id?: string
+          p_group_id: string
+          p_kind: Database["public"]["Enums"]["event_kind"]
+          p_payload?: Json
+          p_settlement_id?: string
+          p_subject_user_id?: string
+        }
         Returns: number
       }
-      confirm_chat_expense: {
-        Args: { p_operation_id: string; p_request: Json }
+      expense_change_summary: {
+        Args: { p_expense_id: string; p_from: number; p_to: number }
         Returns: Json
       }
-      confirm_settlement: {
-        Args: { p_settlement_id: string }
-        Returns: undefined
+      get_activity: {
+        Args: { p_before_id: number; p_limit?: number }
+        Returns: Json
       }
-      confirm_vendor_charge: {
-        Args: { p_charge_id: string }
-        Returns: undefined
+      get_conversation: {
+        Args: { p_before: string; p_group_id: string; p_limit?: number }
+        Returns: Json
       }
-      deactivate_group_invite_link: {
-        Args: { p_link_id: string }
-        Returns: undefined
+      get_expense: { Args: { p_expense_id: string }; Returns: Json }
+      get_group: { Args: { p_group_id: string }; Returns: Json }
+      get_group_expenses: {
+        Args: { p_before: string; p_group_id: string; p_limit?: number }
+        Returns: Json
       }
-      decline_group_invitation: {
+      get_my_profile: { Args: never; Returns: Json }
+      get_or_create_dm: { Args: { p_user_id: string }; Returns: Json }
+      get_vendor_charges: { Args: { p_limit?: number }; Returns: Json }
+      group_transfers: {
         Args: { p_group_id: string }
-        Returns: undefined
-      }
-      delete_draft_expense: {
-        Args: { p_expense_id: string }
-        Returns: undefined
-      }
-      delete_group: { Args: { p_group_id: string }; Returns: undefined }
-      expense_money_max_cents: { Args: never; Returns: number }
-      get_chat_expense_confirmation: {
-        Args: { p_operation_id: string }
-        Returns: Json
-      }
-      get_dm_previews: {
-        Args: { p_group_ids: string[] }
         Returns: {
-          content: string
-          created_at: string
-          group_id: string
-          message_type: string
-        }[]
-      }
-      get_my_profile: {
-        Args: never
-        Returns: {
-          avatar_url: string
-          created_at: string
-          email: string
-          handle: string
-          id: string
-          name: string
-          notification_preferences: Json
-          onboarded: boolean
-          pix_key_hint: string
-          pix_key_type: Database["public"]["Enums"]["pix_key_type"]
-        }[]
-      }
-      get_or_create_dm_group: {
-        Args: { p_other_user_id: string }
-        Returns: string
-      }
-      get_settlement_operation: {
-        Args: { p_operation_id: string }
-        Returns: {
-          allocation_index: number
           amount_cents: number
-          confirmed_at: string
-          created_at: string
-          from_user_id: string
-          group_id: string
-          settlement_id: string
-          status: Database["public"]["Enums"]["settlement_status"]
-          to_user_id: string
+          from_id: string
+          from_kind: Database["public"]["Enums"]["participant_kind"]
+          to_id: string
         }[]
-      }
-      get_unread_counts: {
-        Args: { p_group_ids: string[] }
-        Returns: {
-          group_id: string
-          unread_count: number
-        }[]
-      }
-      has_outstanding_balance: {
-        Args: { p_group_id: string; p_user_id: string }
-        Returns: boolean
       }
       increment_rate_limit: {
         Args: {
@@ -1512,84 +924,117 @@ export type Database = {
         }
         Returns: boolean
       }
-      issue_guest_claim_token: {
-        Args: {
-          p_expected_generation: number
-          p_guest_id: string
-          p_rotate: boolean
-        }
-        Returns: Json
-      }
-      join_group_via_link: { Args: { p_token: string }; Returns: Json }
-      leave_group: { Args: { p_group_id: string }; Returns: undefined }
-      load_expense_graph_snapshot: {
-        Args: { p_expense_id: string }
-        Returns: Json
-      }
-      lookup_user_by_handle: {
-        Args: { p_handle: string }
-        Returns: {
-          avatar_url: string
-          handle: string
-          id: string
-          name: string
-        }[]
-      }
-      my_accepted_group_ids: { Args: never; Returns: string[] }
-      my_group_ids: { Args: never; Returns: string[] }
-      record_settlements: {
-        Args: { p_allocations: Json; p_operation_id: string }
-        Returns: {
-          allocation_index: number
-          amount_cents: number
-          confirmed_at: string
-          created_at: string
-          from_user_id: string
-          group_id: string
-          settlement_id: string
-          status: Database["public"]["Enums"]["settlement_status"]
-          to_user_id: string
-          was_replay: boolean
-        }[]
-      }
-      remove_group_member: {
+      invite_member: {
         Args: { p_group_id: string; p_user_id: string }
-        Returns: undefined
-      }
-      resolve_expense_graph_save_result: {
-        Args: { p_group_id: string; p_save_operation_id: string }
         Returns: Json
       }
-      resolve_guest_claim_token: {
-        Args: { p_claim_token: string }
-        Returns: {
-          expense_id: string
-          group_id: string
-          guest_id: string
-        }[]
+      is_member: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: boolean
       }
-      save_expense_draft_graph: {
+      issue_guest_claim_token: { Args: { p_guest_id: string }; Returns: string }
+      join_via_link: { Args: { p_token: string }; Returns: Json }
+      leave_group: { Args: { p_group_id: string }; Returns: Json }
+      ledger_chat_message_json: {
+        Args: { p_message_id: string }
+        Returns: Json
+      }
+      ledger_event_json: { Args: { p_event_id: number }; Returns: Json }
+      ledger_expense_summary_json: {
+        Args: { p_expense_id: string; p_viewer: string }
+        Returns: Json
+      }
+      ledger_expense_version_json: {
+        Args: { p_expense_id: string; p_version_no: number }
+        Returns: Json
+      }
+      ledger_group_snapshot_json: {
+        Args: { p_group_id: string; p_viewer: string }
+        Returns: Json
+      }
+      ledger_me_json: { Args: { p_user_id: string }; Returns: Json }
+      ledger_settlement_json: {
+        Args: { p_settlement_id: string }
+        Returns: Json
+      }
+      ledger_user_profile_json: { Args: { p_user_id: string }; Returns: Json }
+      lock_group: { Args: { p_group_id: string }; Returns: undefined }
+      lookup_user_by_handle: { Args: { p_handle: string }; Returns: Json }
+      mark_read: { Args: { p_group_id: string }; Returns: undefined }
+      materialize_participants: {
+        Args: { p_author: string; p_expense_id: string; p_payload: Json }
+        Returns: Json
+      }
+      preview_invite_link: { Args: { p_token: string }; Returns: Json }
+      recompute_group_balances: {
+        Args: { p_group_id: string }
+        Returns: number
+      }
+      record_settlement: {
         Args: {
-          p_expected_graph_revision: number
-          p_expense: Json
-          p_guest_shares: Json
-          p_guests: Json
-          p_items: Json
-          p_participant_order: Json
-          p_payers: Json
-          p_save_operation_id: string
-          p_shares: Json
+          p_amount_cents: number
+          p_group_id: string
+          p_operation_id: string
+          p_to_user_id: string
         }
         Returns: Json
       }
+      record_vendor_charge: {
+        Args: { p_amount_cents: number; p_description?: string }
+        Returns: Json
+      }
+      remove_member: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: Json
+      }
+      resolve_guest_claim_token: { Args: { p_token: string }; Returns: Json }
+      restore_expense: { Args: { p_expense_id: string }; Returns: Json }
+      send_message: {
+        Args: { p_client_id: string; p_content: string; p_group_id: string }
+        Returns: Json
+      }
+      update_profile: {
+        Args: {
+          p_handle?: string
+          p_name?: string
+          p_notification_preferences?: Json
+        }
+        Returns: Json
+      }
+      validate_expense_payload: {
+        Args: {
+          p: Json
+          p_expense_type: Database["public"]["Enums"]["expense_type"]
+          p_fee_bps: number
+          p_fixed_fee: number
+          p_total: number
+        }
+        Returns: Json
+      }
+      void_settlement: { Args: { p_settlement_id: string }; Returns: Json }
     }
     Enums: {
-      chat_message_type: "text" | "system_expense" | "system_settlement"
-      expense_status: "draft" | "active" | "settled"
+      event_kind:
+        | "expense_created"
+        | "expense_edited"
+        | "expense_deleted"
+        | "expense_restored"
+        | "settlement_recorded"
+        | "settlement_confirmed"
+        | "settlement_voided"
+        | "member_invited"
+        | "member_joined"
+        | "member_left"
+        | "member_removed"
+        | "guest_claimed"
+        | "nudge"
+      expense_status: "active" | "deleted"
       expense_type: "itemized" | "single_amount"
-      group_member_status: "invited" | "accepted"
-      pix_key_type: "cpf" | "email" | "random" | "phone"
-      settlement_status: "pending" | "confirmed"
+      group_kind: "group" | "dm"
+      member_status: "invited" | "accepted"
+      participant_kind: "user" | "guest"
+      pix_key_type: "cpf" | "email" | "phone" | "random"
+      settlement_status: "pending" | "confirmed" | "voided"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1720,12 +1165,28 @@ export const Constants = {
   },
   public: {
     Enums: {
-      chat_message_type: ["text", "system_expense", "system_settlement"],
-      expense_status: ["draft", "active", "settled"],
+      event_kind: [
+        "expense_created",
+        "expense_edited",
+        "expense_deleted",
+        "expense_restored",
+        "settlement_recorded",
+        "settlement_confirmed",
+        "settlement_voided",
+        "member_invited",
+        "member_joined",
+        "member_left",
+        "member_removed",
+        "guest_claimed",
+        "nudge",
+      ],
+      expense_status: ["active", "deleted"],
       expense_type: ["itemized", "single_amount"],
-      group_member_status: ["invited", "accepted"],
-      pix_key_type: ["cpf", "email", "random", "phone"],
-      settlement_status: ["pending", "confirmed"],
+      group_kind: ["group", "dm"],
+      member_status: ["invited", "accepted"],
+      participant_kind: ["user", "guest"],
+      pix_key_type: ["cpf", "email", "phone", "random"],
+      settlement_status: ["pending", "confirmed", "voided"],
     },
   },
 } as const

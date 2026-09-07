@@ -1,48 +1,23 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import type {
   Expense,
   ExpenseItem,
   ExpenseShare,
   ExpensePayer,
-  Balance,
-  Settlement,
-  ExpenseWithDetails,
-  ExpenseParticipantSummary,
   DebtEdge,
-  GroupBalanceSummary,
-  ExpenseStatus,
   ExpenseType,
-  SettlementStatus,
-  ActivateExpenseRequest,
-  ActivateExpenseResult,
-  ActivateExpenseBalanceUpdate,
-  SettlementAllocation,
-  RecordSettlementsRequest,
-  RecordSettlementsResult,
-  GroupInviteLink,
-  JoinGroupViaLinkResult,
-  // Legacy aliases
-  Bill,
-  BillType,
-  BillStatus,
-  BillPayer,
-  BillItem,
+  PixKeyType,
+  SplitType,
+  NotificationCategory,
+  NotificationPreferences,
+  User,
+  UserProfile,
 } from "./index";
 
 describe("Expense types", () => {
-  it("ExpenseStatus covers all valid statuses", () => {
-    const statuses: ExpenseStatus[] = ["draft", "active", "settled"];
-    expect(statuses).toHaveLength(3);
-  });
-
   it("ExpenseType covers both types", () => {
     const types: ExpenseType[] = ["itemized", "single_amount"];
     expect(types).toHaveLength(2);
-  });
-
-  it("SettlementStatus covers both statuses", () => {
-    const statuses: SettlementStatus[] = ["pending", "confirmed"];
-    expect(statuses).toHaveLength(2);
   });
 
   it("Expense interface matches database schema shape", () => {
@@ -97,363 +72,75 @@ describe("Expense types", () => {
     expect(payer.amountCents).toBe(10000);
   });
 
-  it("Balance interface enforces canonical user ordering concept", () => {
-    const balance: Balance = {
-      groupId: "group-1",
-      userA: "aaa-user",
-      userB: "bbb-user",
-      amountCents: 5000,
-      updatedAt: "2026-03-28T00:00:00Z",
-    };
-    // Convention: userA < userB, positive = A owes B
-    expect(balance.userA < balance.userB).toBe(true);
-    expect(balance.amountCents).toBe(5000);
-  });
-
-  it("Settlement interface matches database schema shape", () => {
-    const settlement: Settlement = {
-      id: "settlement-1",
-      groupId: "group-1",
-      fromUserId: "user-1",
-      toUserId: "user-2",
-      amountCents: 5000,
-      status: "pending",
-      createdAt: "2026-03-28T00:00:00Z",
-    };
-    expect(settlement.confirmedAt).toBeUndefined();
-    expect(settlement.status).toBe("pending");
-  });
-
-  it("ExpenseWithDetails extends Expense with nested data", () => {
-    const detailed: ExpenseWithDetails = {
-      id: "uuid-1",
-      groupId: "group-1",
-      creatorId: "user-1",
-      title: "Jantar",
-      expenseType: "itemized",
-      totalAmount: 10000,
-      serviceFeePercent: 0,
-      serviceFeeBasisPoints: 0,
-      fixedFees: 0,
-      status: "active",
-      createdAt: "2026-03-28T00:00:00Z",
-      updatedAt: "2026-03-28T00:00:00Z",
-      items: [
-        {
-          id: "item-1",
-          expenseId: "uuid-1",
-          description: "Pizza",
-          quantity: 1000,
-          unitPriceCents: 5000,
-          totalPriceCents: 5000,
-          createdAt: "2026-03-28T00:00:00Z",
-        },
-      ],
-      shares: [
-        {
-          id: "share-1",
-          expenseId: "uuid-1",
-          userId: "user-2",
-          shareAmountCents: 5000,
-          user: { id: "user-2", handle: "bob", name: "Bob", avatarUrl: undefined },
-        },
-      ],
-      payers: [
-        {
-          expenseId: "uuid-1",
-          userId: "user-1",
-          amountCents: 10000,
-          user: {
-            id: "user-1",
-            handle: "alice",
-            name: "Alice",
-            avatarUrl: undefined,
-          },
-        },
-      ],
-      guests: [],
-    };
-    expect(detailed.items).toHaveLength(1);
-    expect(detailed.shares).toHaveLength(1);
-    expect(detailed.payers).toHaveLength(1);
-    expect(detailed.guests).toHaveLength(0);
-    expect(detailed.shares[0].user.handle).toBe("bob");
-  });
-
-  it("ExpenseParticipantSummary computes net correctly", () => {
-    const summary: ExpenseParticipantSummary = {
-      userId: "user-1",
-      user: { id: "user-1", handle: "alice", name: "Alice" },
-      shareAmountCents: 5000,
-      paidAmountCents: 10000,
-      netCents: 5000, // paid 100, owes 50 → is owed 50
-    };
-    expect(summary.netCents).toBe(summary.paidAmountCents - summary.shareAmountCents);
-  });
-
-  it("DebtEdge represents a directed debt", () => {
+  it("DebtEdge interface represents directed debt", () => {
     const edge: DebtEdge = {
       fromUserId: "user-1",
       toUserId: "user-2",
-      amountCents: 3000,
+      amountCents: 2500,
     };
-    expect(edge.amountCents).toBeGreaterThan(0);
-  });
-
-  it("GroupBalanceSummary aggregates debts", () => {
-    const summary: GroupBalanceSummary = {
-      groupId: "group-1",
-      debts: [
-        { fromUserId: "user-1", toUserId: "user-2", amountCents: 3000 },
-        { fromUserId: "user-3", toUserId: "user-2", amountCents: 2000 },
-      ],
-      totalDebtCents: 5000,
-    };
-    expect(summary.debts).toHaveLength(2);
-    expect(summary.totalDebtCents).toBe(
-      summary.debts.reduce((sum, d) => sum + d.amountCents, 0)
-    );
+    expect(edge.fromUserId).toBe("user-1");
+    expect(edge.toUserId).toBe("user-2");
+    expect(edge.amountCents).toBe(2500);
   });
 });
 
-describe("RPC request/result types", () => {
-  it("ActivateExpenseRequest has expense_id", () => {
-    const req: ActivateExpenseRequest = {
-      expense_id: "uuid-1",
-    };
-    expect(req.expense_id).toBe("uuid-1");
-  });
-
-  it("ActivateExpenseResult has expected shape", () => {
-    const result: ActivateExpenseResult = {
-      expenseId: "uuid-1",
-      status: "active",
-      updatedBalances: [
-        {
-          groupId: "group-1",
-          userA: "aaa-user",
-          userB: "bbb-user",
-          newAmountCents: 5000,
-          deltaCents: 5000,
-        },
-      ],
-    };
-    expect(result.status).toBe("active");
-    expect(result.updatedBalances).toHaveLength(1);
-    expect(result.updatedBalances[0].deltaCents).toBe(5000);
-  });
-
-  it("ActivateExpenseBalanceUpdate tracks delta and new amount", () => {
-    const update: ActivateExpenseBalanceUpdate = {
-      groupId: "group-1",
-      userA: "aaa-user",
-      userB: "bbb-user",
-      newAmountCents: 3000,
-      deltaCents: -2000,
-    };
-    // Negative delta means A's debt to B decreased (A was a payer)
-    expect(update.deltaCents).toBeLessThan(0);
-    expect(update.newAmountCents).toBe(3000);
-  });
-
-  it("ActivateExpenseResult with multiple balance updates", () => {
-    // Expense with 3 participants creates up to 3 balance pairs
-    const result: ActivateExpenseResult = {
-      expenseId: "uuid-1",
-      status: "active",
-      updatedBalances: [
-        {
-          groupId: "group-1",
-          userA: "aaa",
-          userB: "bbb",
-          newAmountCents: 3000,
-          deltaCents: 3000,
-        },
-        {
-          groupId: "group-1",
-          userA: "aaa",
-          userB: "ccc",
-          newAmountCents: 2000,
-          deltaCents: 2000,
-        },
-        {
-          groupId: "group-1",
-          userA: "bbb",
-          userB: "ccc",
-          newAmountCents: -1000,
-          deltaCents: -1000,
-        },
-      ],
-    };
-    expect(result.updatedBalances).toHaveLength(3);
-    // All balances should reference the same group
-    expect(
-      result.updatedBalances.every((b) => b.groupId === "group-1")
-    ).toBe(true);
-  });
-
-  it("RecordSettlementsRequest contains one immutable batch operation", () => {
-    const allocation: SettlementAllocation = {
-      groupId: "group-1",
-      fromUserId: "user-debtor",
-      toUserId: "user-creditor",
-      amountCents: 5000,
-    };
-    const request: RecordSettlementsRequest = {
-      operationId: "operation-1",
-      allocations: [allocation],
-    };
-
-    expect(request.operationId).toBe("operation-1");
-    expect(request.allocations).toEqual([allocation]);
-  });
-
-  it("RecordSettlementsResult contains canonical committed settlements", () => {
-    const result: RecordSettlementsResult = {
-      operationId: "operation-1",
-      settlements: [
-        {
-          id: "settlement-1",
-          groupId: "group-1",
-          fromUserId: "user-debtor",
-          toUserId: "user-creditor",
-          amountCents: 5000,
-          status: "confirmed",
-          createdAt: "2026-07-16T00:00:00Z",
-          confirmedAt: "2026-07-16T00:00:00Z",
-        },
-      ],
-      replayed: false,
-    };
-
-    expect(result.settlements).toHaveLength(1);
-    expect(result.settlements[0].status).toBe("confirmed");
-    expect(result.replayed).toBe(false);
-  });
-});
-
-describe("Group invite link types", () => {
-  it("GroupInviteLink interface matches database schema shape", () => {
-    const link: GroupInviteLink = {
-      id: "link-1",
-      groupId: "group-1",
-      token: "abc123token",
-      createdBy: "user-1",
-      isActive: true,
-      maxUses: null,
-      useCount: 0,
-      expiresAt: null,
-      createdAt: "2026-04-01T00:00:00Z",
-    };
-    expect(link.id).toBe("link-1");
-    expect(link.groupId).toBe("group-1");
-    expect(link.token).toBe("abc123token");
-    expect(link.isActive).toBe(true);
-    expect(link.maxUses).toBeNull();
-    expect(link.useCount).toBe(0);
-    expect(link.expiresAt).toBeNull();
-  });
-
-  it("GroupInviteLink supports max_uses and expires_at", () => {
-    const link: GroupInviteLink = {
-      id: "link-2",
-      groupId: "group-1",
-      token: "xyz789token",
-      createdBy: "user-1",
-      isActive: true,
-      maxUses: 10,
-      useCount: 3,
-      expiresAt: "2026-05-01T00:00:00Z",
-      createdAt: "2026-04-01T00:00:00Z",
-    };
-    expect(link.maxUses).toBe(10);
-    expect(link.useCount).toBeLessThan(link.maxUses!);
-    expect(link.expiresAt).toBeDefined();
-  });
-
-  it("GroupInviteLink can be deactivated", () => {
-    const link: GroupInviteLink = {
-      id: "link-3",
-      groupId: "group-1",
-      token: "deactivated-token",
-      createdBy: "user-1",
-      isActive: false,
-      maxUses: null,
-      useCount: 5,
-      expiresAt: null,
-      createdAt: "2026-04-01T00:00:00Z",
-    };
-    expect(link.isActive).toBe(false);
-    expect(link.useCount).toBe(5);
-  });
-
-  it("JoinGroupViaLinkResult has expected shape", () => {
-    const result: JoinGroupViaLinkResult = {
-      groupId: "group-1",
-      groupName: "Apartamento",
-      alreadyMember: false,
-    };
-    expect(result.groupId).toBe("group-1");
-    expect(result.groupName).toBe("Apartamento");
-    expect(result.alreadyMember).toBe(false);
-  });
-
-  it("JoinGroupViaLinkResult indicates already_member", () => {
-    const result: JoinGroupViaLinkResult = {
-      groupId: "group-1",
-      groupName: "Apartamento",
-      alreadyMember: true,
-    };
-    expect(result.alreadyMember).toBe(true);
-  });
-});
-
-describe("Legacy type aliases", () => {
-  it("BillType is an alias for ExpenseType", () => {
-    const t: BillType = "itemized";
-    const e: ExpenseType = t;
-    expect(e).toBe("itemized");
-  });
-
-  it("BillStatus is an alias for ExpenseStatus", () => {
-    const s: BillStatus = "active";
-    const e: ExpenseStatus = s;
-    expect(e).toBe("active");
-  });
-
-  it("Bill interface still works for gradual migration", () => {
-    const bill: Bill = {
-      id: "bill-1",
-      creatorId: "user-1",
-      billType: "single_amount",
-      title: "Test",
-      status: "draft",
-      serviceFeePercent: 0,
-      fixedFees: 0,
-      totalAmount: 10000,
-      totalAmountInput: 10000,
-      payers: [{ userId: "user-1", amountCents: 10000 }],
-      createdAt: "2026-03-28T00:00:00Z",
-      updatedAt: "2026-03-28T00:00:00Z",
-    };
-    expect(bill.payers).toHaveLength(1);
-  });
-
-  it("BillPayer still works for gradual migration", () => {
-    const payer: BillPayer = { userId: "user-1", amountCents: 5000 };
-    expect(payer.amountCents).toBe(5000);
-  });
-
-  it("BillItem still works for gradual migration", () => {
-    const item: BillItem = {
-      id: "item-1",
-      billId: "bill-1",
-      description: "Test",
-      quantity: 1000,
-      unitPriceCents: 1000,
-      totalPriceCents: 1000,
+describe("User types", () => {
+  it("User interface matches user profile with auth data", () => {
+    const user: User = {
+      id: "user-1",
+      email: "user@example.com",
+      handle: "usuario",
+      name: "Usuario Teste",
+      avatarUrl: "https://example.com/avatar.png",
+      pixKeyType: "cpf",
+      pixKeyHint: "123.***.***-00",
+      notificationPreferences: { expenses: true, settlements: false },
+      onboarded: true,
       createdAt: "2026-03-28T00:00:00Z",
     };
-    expect(item.totalPriceCents).toBe(1000);
+    expect(user.id).toBe("user-1");
+    expect(user.pixKeyType).toBe("cpf");
+  });
+
+  it("UserProfile interface has minimal public profile data", () => {
+    const profile: UserProfile = {
+      id: "user-1",
+      handle: "usuario",
+      name: "Usuario Teste",
+      avatarUrl: null,
+    };
+    expect(profile.id).toBe("user-1");
+  });
+});
+
+describe("Utility types", () => {
+  it("PixKeyType covers all supported formats", () => {
+    const types: PixKeyType[] = ["cpf", "email", "phone", "random"];
+    expect(types).toHaveLength(4);
+  });
+
+  it("SplitType covers all split methods", () => {
+    const types: SplitType[] = ["equal", "percentage", "fixed"];
+    expect(types).toHaveLength(3);
+  });
+
+  it("NotificationCategory covers all categories", () => {
+    const categories: NotificationCategory[] = [
+      "expenses",
+      "settlements",
+      "nudges",
+      "groups",
+      "messages",
+    ];
+    expect(categories).toHaveLength(5);
+  });
+
+  it("NotificationPreferences allows partial overrides", () => {
+    const prefs: NotificationPreferences = {
+      expenses: false,
+      nudges: true,
+    };
+    expect(prefs.expenses).toBe(false);
+    expect(prefs.settlements).toBeUndefined();
   });
 });

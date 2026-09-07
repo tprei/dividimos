@@ -82,11 +82,26 @@ function OnboardPageContent() {
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
+    const init = async () => {
+      let email = "";
+      let fullName = "";
 
-      const email = user.email ?? "";
-      const fullName = user.user_metadata?.full_name ?? "";
+      if (typeof supabase.auth.getClaims === "function") {
+        const { data } = await supabase.auth.getClaims();
+        if (data?.claims) {
+          email = (data.claims.email as string) ?? "";
+          fullName = ((data.claims.user_metadata as Record<string, unknown>)?.full_name as string) ?? "";
+        }
+      }
+      if (!email && typeof supabase.auth.getUser === "function") {
+        const { data } = await supabase.auth.getUser();
+        if (data?.user) {
+          email = data.user.email ?? "";
+          fullName = (data.user.user_metadata?.full_name as string) ?? "";
+        }
+      }
+
+      if (!email && !fullName) return;
 
       setUserEmail(email);
       setPixKeyType("email");
@@ -96,20 +111,21 @@ function OnboardPageContent() {
         setHandle(nameToHandle(fullName));
       }
 
-      supabase
-        .from("users")
-        .select("handle, name")
-        .eq("id", user.id)
-        .single()
-        .then(({ data }) => {
-          if (data?.name && !fullName) {
-            setName(data.name);
+      if (typeof supabase.rpc === "function") {
+        try {
+          const { data: profile } = await supabase.rpc("get_my_profile");
+          if (profile && typeof profile === "object") {
+            const p = profile as Record<string, unknown>;
+            if (p.name && !fullName) setName(p.name as string);
+            if (p.handle) setHandle(p.handle as string);
           }
-          if (data?.handle) {
-            setHandle(data.handle);
-          }
-        });
-    });
+        } catch {
+          // RPC fallback
+        }
+      }
+    };
+
+    void init();
   }, [supabase]);
 
   const handleNameChange = (value: string) => {

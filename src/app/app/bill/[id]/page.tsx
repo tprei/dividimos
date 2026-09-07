@@ -1,9 +1,11 @@
-"use client";
+import { ExpenseDetailPage } from "./expense-detail-page";
 
-import { useParams } from "next/navigation";
-import { ExpenseDetail } from "@/components/expense/expense-detail";
+export function generateStaticParams() {
+  return [];
+}
 
-export default function BillDetailPage() {
-  const params = useParams<{ id: string }>();
-  return <ExpenseDetail expenseId={params.id} />;
+export const dynamicParams = true;
+
+export default function Page() {
+  return <ExpenseDetailPage />;
 }

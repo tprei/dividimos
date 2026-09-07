@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const rpcMock = vi.fn().mockResolvedValue({
-  data: { group_id: "group-1", already_member: false },
+  data: { groupId: "group-1" },
   error: null,
 });
 const getUserMock = vi.fn().mockResolvedValue({
@@ -25,16 +25,13 @@ vi.mock("@/lib/supabase/client", () => ({
   }),
 }));
 
-vi.mock("@/lib/push/push-notify", () => ({
-  notifyGroupAccepted: vi.fn().mockResolvedValue(undefined),
-}));
 
 beforeEach(() => {
   pushMock.mockClear();
   rpcMock.mockClear();
   getUserMock.mockClear();
   rpcMock.mockResolvedValue({
-    data: { group_id: "group-1", already_member: false },
+    data: { groupId: "group-1" },
     error: null,
   });
   getUserMock.mockResolvedValue({
@@ -130,7 +127,7 @@ describe("JoinActions", () => {
 
     await user.click(screen.getByText("Entrar no grupo"));
 
-    expect(rpcMock).toHaveBeenCalledWith("join_group_via_link", {
+    expect(rpcMock).toHaveBeenCalledWith("join_via_link", {
       p_token: "abc-123",
     });
     expect(pushMock).toHaveBeenCalledWith("/app/groups/group-1");
@@ -138,7 +135,7 @@ describe("JoinActions", () => {
 
   it("redirects to group when already a member", async () => {
     rpcMock.mockResolvedValue({
-      data: { group_id: "group-1", already_member: true },
+      data: { groupId: "group-1", already_member: true },
       error: null,
     });
     const user = userEvent.setup();

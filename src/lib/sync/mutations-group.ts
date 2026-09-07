@@ -106,7 +106,7 @@ export async function createInviteLink(
 ): Promise<InviteLink> {
   return await rpc(
     "create_invite_link",
-    { p_group_id: groupId, p_expires_at: expiresAt, p_max_uses: maxUses },
+    { p_group_id: groupId, p_expires_at: expiresAt ?? undefined, p_max_uses: maxUses ?? undefined },
     decodeInviteLink,
   );
 }
@@ -130,9 +130,9 @@ export async function updateProfile(input: {
   const me = await rpc(
     "update_profile",
     {
-      p_name: input.name ?? null,
-      p_handle: input.handle ?? null,
-      p_notification_preferences: input.notificationPreferences ?? null,
+      p_name: input.name,
+      p_handle: input.handle,
+      p_notification_preferences: input.notificationPreferences,
     },
     decodeMe,
   );
@@ -161,7 +161,7 @@ export async function recordVendorCharge(
 ): Promise<VendorCharge> {
   return await rpc(
     "record_vendor_charge",
-    { p_amount_cents: amountCents, p_description: description },
+    { p_amount_cents: amountCents, p_description: description ?? undefined },
     decodeVendorCharge,
   );
 }

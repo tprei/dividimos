@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   encryptPixKey as encrypt,
   decryptPixKey as decrypt,
+  hashEndpoint,
 } from "@/lib/crypto";
 
 type SubscribeBody =
@@ -13,12 +14,11 @@ type SubscribeBody =
 export async function POST(request: Request) {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
+  if (claimsError || !claimsData) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
+  const userId = claimsData.claims.sub;
 
   let body: SubscribeBody;
   try {
@@ -42,14 +42,14 @@ export async function POST(request: Request) {
 
     const { data: existing } = await admin
       .from("push_subscriptions")
-      .select("id, subscription")
-      .eq("user_id", user.id)
+      .select("id, subscription_encrypted")
+      .eq("user_id", userId)
       .eq("channel", "fcm");
 
     const duplicateIds: string[] = [];
     for (const row of existing ?? []) {
       try {
-        const decrypted = decrypt(row.subscription);
+        const decrypted = decrypt(row.subscription_encrypted);
         if (decrypted === fcmBody.token) {
           duplicateIds.push(row.id);
         }
@@ -65,8 +65,9 @@ export async function POST(request: Request) {
     const encrypted = encrypt(fcmBody.token);
 
     const { error } = await admin.from("push_subscriptions").insert({
-      user_id: user.id,
-      subscription: encrypted,
+      user_id: userId,
+      endpoint_digest: hashEndpoint(fcmBody.token),
+      subscription_encrypted: encrypted,
       channel: "fcm",
     });
 
@@ -98,14 +99,14 @@ export async function POST(request: Request) {
 
   const { data: existing } = await admin
     .from("push_subscriptions")
-    .select("id, subscription")
-    .eq("user_id", user.id)
+    .select("id, subscription_encrypted")
+    .eq("user_id", userId)
     .eq("channel", "web");
 
   const duplicateIds: string[] = [];
   for (const row of existing ?? []) {
     try {
-      const sub = JSON.parse(decrypt(row.subscription)) as {
+      const sub = JSON.parse(decrypt(row.subscription_encrypted)) as {
         endpoint: string;
       };
       if (sub.endpoint === subscription.endpoint) {
@@ -123,8 +124,9 @@ export async function POST(request: Request) {
   const encrypted = encrypt(JSON.stringify(subscription));
 
   const { error } = await admin.from("push_subscriptions").insert({
-    user_id: user.id,
-    subscription: encrypted,
+    user_id: userId,
+    endpoint_digest: hashEndpoint(subscription.endpoint),
+    subscription_encrypted: encrypted,
     channel: "web",
   });
 

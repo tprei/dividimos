@@ -27,7 +27,9 @@ let currentUserId = "";
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn().mockResolvedValue({
-    auth: { getUser: () => Promise.resolve({ data: { user: { id: currentUserId } } }) },
+    auth: {
+      getClaims: () => Promise.resolve({ data: { claims: { sub: currentUserId } }, error: null }),
+    },
   }),
 }));
 

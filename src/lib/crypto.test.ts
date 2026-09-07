@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { decryptPixKey, encryptPixKey } from "./crypto";
+import { decryptPixKey, encryptPixKey, hashEndpoint } from "./crypto";
 
 const TEST_KEY = "aa".repeat(32);
 
@@ -78,5 +78,17 @@ describe("decryptPixKey error handling", () => {
     const parts = encrypted.split(":");
     const tampered = parts[0] + ":" + parts[1] + ":" + "AAAA" + parts[2].slice(4);
     expect(() => decryptPixKey(tampered)).toThrow();
+  });
+});
+
+describe("hashEndpoint", () => {
+  it("returns \\x prefixed sha256 hex digest", () => {
+    const digest = hashEndpoint("https://push.example.com/sub/123");
+    expect(digest).toMatch(/^\\x[0-9a-f]{64}$/);
+  });
+
+  it("is deterministic", () => {
+    const url = "https://push.example.com/sub/123";
+    expect(hashEndpoint(url)).toBe(hashEndpoint(url));
   });
 });

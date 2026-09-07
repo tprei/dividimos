@@ -14,21 +14,14 @@ import { Button } from "@/components/ui/button";
 import { formatBRL } from "@/lib/currency";
 import { CLAIM_TOKEN_RE } from "@/lib/claim-qr";
 import { createClient } from "@/lib/supabase/client";
+import { claimGuest } from "@/lib/sync/mutations-group";
+import { refreshGroup } from "@/lib/sync/refresh";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { previewGuestClaim, type ClaimPreview } from "./claim-preview-actions";
 
 const HANDOFF_KEY = "dividimos.claim.handoff";
 const HANDOFF_MAX_AGE_MS = 30 * 60 * 1000;
 
-const CLAIM_ERROR_MESSAGES: Record<string, string> = {
-  PST01: "Entre na sua conta para confirmar a participação.",
-  PST02: "Convite inválido ou expirado.",
-  PST04: "Você já está incluso nesta despesa.",
-  PST05: "Convite inválido, expirado ou já utilizado.",
-  PST07: "Não foi possível confirmar agora. Tente novamente.",
-  PST08: "Este convite não está mais disponível.",
-  "22P02": "Convite inválido ou expirado.",
-};
-const CLAIM_ERROR_GENERIC = "Erro ao confirmar participação. Tente novamente.";
 
 interface ClaimState {
   token: string | null;
@@ -158,23 +151,27 @@ export function ClaimPageClient() {
   const handleClaim = useCallback(async () => {
     if (state.preview?.kind !== "ready" || !state.token) return;
     const token = state.token;
-    const expenseId = state.preview.expenseId;
-    setClaiming(true);
-    setClaimError(null);
+
     const supabase = createClient();
-    const { error } = await supabase.rpc("claim_guest_spot", {
-      p_claim_token: token,
-    });
-    if (error) {
-      setClaimError(
-        CLAIM_ERROR_MESSAGES[error.code ?? ""] ?? CLAIM_ERROR_GENERIC,
-      );
-      setClaiming(false);
+    const { data: claimsData } = await supabase.auth.getClaims();
+    if (!claimsData?.claims?.sub) {
+      handleSignIn();
       return;
     }
-    setState((prev) => ({ token: null, preview: prev.preview }));
-    router.push(`/app/bill/${expenseId}`);
-  }, [router, state.preview, state.token]);
+
+    setClaiming(true);
+    setClaimError(null);
+
+    try {
+      const ack = await claimGuest(token);
+      await refreshGroup(ack.groupId);
+      setState((prev) => ({ token: null, preview: prev.preview }));
+      router.replace(`/app/bill/${ack.expenseId}`);
+    } catch (err) {
+      setClaimError(ledgerErrorMessage(err));
+      setClaiming(false);
+    }
+  }, [handleSignIn, router, state.preview, state.token]);
 
   const { preview } = state;
 
@@ -237,7 +234,7 @@ export function ClaimPageClient() {
               <p className="text-sm">{preview.expenseTitle}</p>
             </div>
             <p className="mt-2 text-3xl font-bold tabular-nums">
-              {formatBRL(preview.shareAmountCents)}
+              {formatBRL(preview.shareCents)}
             </p>
             <p className="mt-1 text-sm text-white/70">Sua parte na conta</p>
           </div>
@@ -245,16 +242,16 @@ export function ClaimPageClient() {
           <div className="mt-5 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-                {preview.creatorName.charAt(0)}
+                {preview.groupName.charAt(0) || "G"}
               </div>
               <div>
-                <p className="text-sm font-medium">{preview.creatorName}</p>
-                <p className="text-xs text-muted-foreground">criou esta conta</p>
+                <p className="text-sm font-medium">{preview.groupName}</p>
+                <p className="text-xs text-muted-foreground">grupo desta conta</p>
               </div>
             </div>
             <div className="mt-4 rounded-xl bg-muted/50 p-3">
               <p className="text-sm">
-                <span className="font-medium">{preview.guestName}</span>, você
+                <span className="font-medium">{preview.displayName}</span>, você
                 foi convidado(a) pra participar desta conta.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">

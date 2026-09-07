@@ -1,9 +1,11 @@
-"use client";
+import { ConversationDetailPage } from "./conversation-detail-page";
 
-import { useParams } from "next/navigation";
-import { ConversationPageClient } from "./conversation-page-client";
+export function generateStaticParams() {
+  return [];
+}
+
+export const dynamicParams = true;
 
 export default function ConversationPage() {
-  const params = useParams<{ counterpartyId: string }>();
-  return <ConversationPageClient counterpartyId={params.counterpartyId} />;
+  return <ConversationDetailPage />;
 }

@@ -1,14 +1,21 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import type { ValidationResult } from "@/lib/expense-money";
 import type { WireIssue } from "@/types/ledger";
 import { LedgerError, codeFromMessage } from "./errors";
 
-let clientInstance: SupabaseClient | null = null;
+type Functions = Database["public"]["Functions"];
 
-export function getSupabase(): SupabaseClient {
+type FunctionArgs<Fn extends keyof Functions> = [Functions[Fn]["Args"]] extends [never]
+  ? Record<string, never> | undefined
+  : Functions[Fn]["Args"];
+
+let clientInstance: SupabaseClient<Database> | null = null;
+
+export function getSupabase(): SupabaseClient<Database> {
   if (!clientInstance) {
-    clientInstance = createBrowserClient(
+    clientInstance = createBrowserClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
@@ -25,14 +32,17 @@ function normalizeError(error: unknown): LedgerError {
   return new LedgerError("unknown", { cause: error });
 }
 
-export async function rpc<T>(
-  name: string,
-  args: Record<string, unknown>,
+export async function rpc<
+  T,
+  Fn extends keyof Functions = keyof Functions,
+>(
+  name: Fn,
+  args: FunctionArgs<Fn>,
   decode: (raw: unknown) => ValidationResult<T, WireIssue>,
 ): Promise<T> {
   let result: { data: unknown; error: unknown };
   try {
-    const res = await getSupabase().rpc(name, args);
+    const res = await getSupabase().rpc(name, args as never);
     result = { data: res.data, error: res.error };
   } catch (caught) {
     throw normalizeError(caught);
@@ -50,13 +60,15 @@ export async function rpc<T>(
   return decoded.value;
 }
 
-export async function rpcVoid(
-  name: string,
-  args: Record<string, unknown>,
+export async function rpcVoid<
+  Fn extends keyof Functions = keyof Functions,
+>(
+  name: Fn,
+  args: FunctionArgs<Fn>,
 ): Promise<void> {
   let result: { error: unknown };
   try {
-    const res = await getSupabase().rpc(name, args);
+    const res = await getSupabase().rpc(name, args as never);
     result = { error: res.error };
   } catch (caught) {
     throw normalizeError(caught);
