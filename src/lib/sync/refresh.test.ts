@@ -46,13 +46,6 @@ type SnapshotResolver = (value: GroupSnapshot | PromiseLike<GroupSnapshot>) => v
 
 const resolvers: SnapshotResolver[] = [];
 
-/** Drains microtasks until the mock has recorded `count` rpc calls; the follow-up's own RPC is the awaited signal. */
-async function untilRpcCalls(count: number): Promise<void> {
-  while (resolvers.length < count) {
-    await Promise.resolve();
-  }
-}
-
 describe("refreshGroup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -77,7 +70,7 @@ describe("refreshGroup", () => {
 
     resolvers[0]?.(snapshot("g1", 5));
     await first;
-    await untilRpcCalls(2);
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
 
     expect(rpc).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().groups.g1?.group.ledgerVersion).toBe(6);
@@ -98,7 +91,7 @@ describe("refreshGroup", () => {
     expect(second).toBe(third);
 
     resolvers[0]?.(snapshot("g1", 7));
-    await untilRpcCalls(2);
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
     expect(rpc).toHaveBeenCalledTimes(2);
 
     resolvers[1]?.(snapshot("g1", 8));
