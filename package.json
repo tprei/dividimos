@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint --max-warnings 0",
     "test": "vitest run",
+    "test:v2": "vitest run --config vitest.v2.config.mts",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:all": "npm run test && npm run test:integration",
