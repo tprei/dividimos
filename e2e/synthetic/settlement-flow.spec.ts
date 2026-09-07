@@ -165,7 +165,7 @@ test.describe("Settlement Flow", () => {
     await expect(page.getByText("Você deve")).toBeVisible();
   });
 
-  test("creditor sees an awaiting-payment row without a pay button", async ({
+  test("creditor sees a charge row and can record the receipt", async ({
     page,
     seed,
     loginAs,
@@ -187,10 +187,14 @@ test.describe("Settlement Flow", () => {
     await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("Você recebe")).toBeVisible();
-    await expect(page.getByText("Aguardando pagamento")).toBeVisible();
     await expect(page.getByText("R$ 50,00").first()).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Pagar via Pix/i }),
     ).not.toBeVisible();
+
+    await page.getByRole("button", { name: /Cobrar via Pix/i }).click();
+    await page.getByRole("button", { name: /Já recebi/i }).click();
+
+    await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 15000 });
   });
 });

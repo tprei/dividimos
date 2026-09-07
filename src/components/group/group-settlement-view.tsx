@@ -25,6 +25,7 @@ interface PixTarget {
   counterpartyId: string;
   recipientName: string;
   amountCents: number;
+  mode: "pay" | "collect";
 }
 
 export function GroupSettlementView({ groupId, rows, meId }: GroupSettlementViewProps) {
@@ -90,6 +91,7 @@ export function GroupSettlementView({ groupId, rows, meId }: GroupSettlementView
                       counterpartyId: row.counterpartyId,
                       recipientName: row.counterpartyName,
                       amountCents: row.amountCents,
+                      mode: "pay",
                     })
                   }
                 >
@@ -97,9 +99,21 @@ export function GroupSettlementView({ groupId, rows, meId }: GroupSettlementView
                 </Button>
               )}
               {isUser && !iOwe && (
-                <div className="flex-1 py-2 text-center text-xs text-muted-foreground">
-                  Aguardando pagamento
-                </div>
+                <Button
+                  className="flex-1"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setPixTarget({
+                      counterpartyId: row.counterpartyId,
+                      recipientName: row.counterpartyName,
+                      amountCents: row.amountCents,
+                      mode: "collect",
+                    })
+                  }
+                >
+                  Cobrar via Pix
+                </Button>
               )}
               {!isUser && (
                 <div className="flex-1 py-2 text-center text-xs text-muted-foreground">
@@ -117,14 +131,18 @@ export function GroupSettlementView({ groupId, rows, meId }: GroupSettlementView
           onClose={() => setPixTarget(null)}
           recipientName={pixTarget.recipientName}
           amountCents={pixTarget.amountCents}
-          recipientUserId={pixTarget.counterpartyId}
+          recipientUserId={
+            pixTarget.mode === "pay" ? pixTarget.counterpartyId : meId
+          }
           groupId={groupId}
-          mode="pay"
+          mode={pixTarget.mode}
           onMarkPaid={(amountCents: number) =>
             recordSettlement({
               groupId,
-              fromUserId: meId,
-              toUserId: pixTarget.counterpartyId,
+              fromUserId:
+                pixTarget.mode === "pay" ? meId : pixTarget.counterpartyId,
+              toUserId:
+                pixTarget.mode === "pay" ? pixTarget.counterpartyId : meId,
               amountCents,
             }).then(() => undefined)
           }

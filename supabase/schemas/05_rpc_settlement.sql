@@ -12,6 +12,8 @@ DECLARE
   v_existing RECORD;
   v_settlement_id uuid;
   v_ledger_version bigint;
+  v_from_net bigint;
+  v_to_net bigint;
   v_event_id bigint;
   v_subject_user_id uuid;
 BEGIN
@@ -44,6 +46,10 @@ BEGIN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
     END IF;
 
+    IF v_existing.status = 'voided' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_voided';
+    END IF;
+
     SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = p_group_id;
     RETURN jsonb_build_object(
       'settlementId', v_existing.id,
@@ -55,6 +61,20 @@ BEGIN
 
   IF NOT is_member(p_group_id, CASE WHEN v_actor = p_from_user_id THEN p_to_user_id ELSE p_from_user_id END) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'counterparty_not_member';
+  END IF;
+
+  SELECT COALESCE((
+    SELECT net_cents FROM group_balances
+    WHERE group_id = p_group_id AND kind = 'user' AND participant_id = p_from_user_id
+  ), 0) INTO v_from_net;
+  SELECT COALESCE((
+    SELECT net_cents FROM group_balances
+    WHERE group_id = p_group_id AND kind = 'user' AND participant_id = p_to_user_id
+  ), 0) INTO v_to_net;
+
+  IF v_from_net >= 0 OR p_amount_cents > -v_from_net
+     OR v_to_net <= 0 OR p_amount_cents > v_to_net THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'amount_exceeds_debt';
   END IF;
 
   INSERT INTO settlements (operation_id, group_id, from_user_id, to_user_id, amount_cents, status, confirmed_at, created_by)
@@ -114,6 +134,13 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_party';
   END IF;
 
+  PERFORM assert_member(v_s.group_id, v_actor);
+
+  v_other_party := CASE WHEN v_actor = v_s.from_user_id THEN v_s.to_user_id ELSE v_s.from_user_id END;
+  IF NOT is_member(v_s.group_id, v_other_party) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'counterparty_not_member';
+  END IF;
+
   IF v_s.status = 'voided' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_voided';
   END IF;
@@ -123,8 +150,6 @@ BEGIN
   WHERE id = p_settlement_id;
 
   v_ledger_version := recompute_group_balances(v_s.group_id);
-
-  v_other_party := CASE WHEN v_actor = v_s.from_user_id THEN v_s.to_user_id ELSE v_s.from_user_id END;
 
   v_event_id := emit_event(
     v_s.group_id,

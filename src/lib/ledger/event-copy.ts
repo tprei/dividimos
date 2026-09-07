@@ -159,17 +159,22 @@ export function describeEvent(event: GroupEvent, ctx: EventCopyContext): string 
           ? event.payload.amountCents
           : 0;
       const amount = formatBRL(amountCents);
+      const fromUserId =
+        typeof event.payload?.fromUserId === "string"
+          ? event.payload.fromUserId
+          : null;
       const toUserId =
-        (typeof event.payload?.toUserId === "string"
+        typeof event.payload?.toUserId === "string"
           ? event.payload.toUserId
-          : null) ??
-        event.subjectUserId ??
-        "";
+          : null;
 
-      if (toUserId && toUserId === ctx.viewerId) {
-        return `${actor} pagou ${amount} pra você`;
+      if (fromUserId === ctx.viewerId) {
+        return `Você pagou ${amount} para ${resolveName(ctx.nameOf, toUserId)}`;
       }
-      return `${actor} pagou ${amount} para ${resolveName(ctx.nameOf, toUserId)}`;
+      if (toUserId === ctx.viewerId) {
+        return `${resolveName(ctx.nameOf, fromUserId)} pagou ${amount} pra você`;
+      }
+      return `${resolveName(ctx.nameOf, fromUserId)} pagou ${amount} para ${resolveName(ctx.nameOf, toUserId)}`;
     }
 
     case "settlement_voided": {

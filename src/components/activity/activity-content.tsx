@@ -102,21 +102,11 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
     if (!event.settlementId || event.kind !== "settlement_recorded") return false;
 
     const fromUserId =
-      (typeof event.payload?.fromUserId === "string"
-        ? event.payload.fromUserId
-        : null) ?? event.subjectUserId;
+      typeof event.payload?.fromUserId === "string" ? event.payload.fromUserId : null;
     const toUserId =
-      (typeof event.payload?.toUserId === "string"
-        ? event.payload.toUserId
-        : null) ?? event.actorId;
-    const isParty =
-      Boolean(meId) &&
-      (meId === fromUserId ||
-        meId === toUserId ||
-        meId === event.actorId ||
-        meId === event.subjectUserId);
+      typeof event.payload?.toUserId === "string" ? event.payload.toUserId : null;
 
-    if (!isParty) return false;
+    if (meId !== fromUserId && meId !== toUserId) return false;
 
     return (
       groups[event.groupId]?.settlements.some(

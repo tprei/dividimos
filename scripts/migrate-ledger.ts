@@ -150,7 +150,6 @@ type OldSettlement = {
   from_user_id: string;
   to_user_id: string;
   amount_cents: number;
-  status: string;
   created_at: Date;
   confirmed_at: Date | null;
 };
@@ -161,7 +160,6 @@ type MigratedSettlement = {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
-  status: string;
   confirmedAt: Date | null;
   createdAt: Date;
 };
@@ -792,9 +790,13 @@ async function migrateSettlements(
   newDb: Client,
 ): Promise<{ count: number; migrated: MigratedSettlement[] }> {
   const { rows } = await oldDb.query<OldSettlement>(
-    `SELECT id, group_id, from_user_id, to_user_id, amount_cents, status, created_at, confirmed_at
+    `SELECT id, group_id, from_user_id, to_user_id, amount_cents, created_at, confirmed_at
        FROM public.settlements
+      WHERE status = 'confirmed'
       ORDER BY id`,
+  );
+  const { rows: pendingRows } = await oldDb.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM public.settlements WHERE status = 'pending'",
   );
   const migrated: MigratedSettlement[] = [];
   const rows_ = rows.map((row) => {
@@ -805,7 +807,6 @@ async function migrateSettlements(
       fromUserId: row.from_user_id,
       toUserId: row.to_user_id,
       amountCents: row.amount_cents,
-      status: row.status,
       confirmedAt: row.confirmed_at,
       createdAt: row.created_at,
     });
@@ -816,7 +817,7 @@ async function migrateSettlements(
       row.from_user_id,
       row.to_user_id,
       row.amount_cents,
-      row.status,
+      "confirmed",
       row.from_user_id,
       row.created_at,
       row.confirmed_at,
@@ -840,6 +841,7 @@ async function migrateSettlements(
     rows_,
   );
   console.log(`  settlements: ${count}`);
+  console.log(`  skipped pending: ${pendingRows[0]?.n ?? 0}`);
   return { count, migrated };
 }
 
@@ -893,19 +895,13 @@ async function migrateChatAndEvents(
     ]);
   }
   for (const settlement of migratedSettlements) {
-    if (settlement.status !== "confirmed") {
-      continue;
-    }
-    if (settlement.confirmedAt === null && settlement.createdAt === null) {
-      throw new Error(`settlement ${settlement.settlementId} has no timestamp for its confirmation event`);
-    }
     eventRows.push([
       settlement.groupId,
-      settlement.toUserId,
-      "settlement_confirmed",
+      settlement.fromUserId,
+      "settlement_recorded",
       null,
       settlement.settlementId,
-      settlement.fromUserId,
+      settlement.toUserId,
       {
         amountCents: settlement.amountCents,
         fromUserId: settlement.fromUserId,

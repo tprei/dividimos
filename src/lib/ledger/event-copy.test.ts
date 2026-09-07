@@ -153,10 +153,10 @@ describe("describeEvent", () => {
   });
 
   describe("settlement_recorded", () => {
-    it("describes settlement recorded when viewer is not payee", () => {
+    it("describes settlement recorded when viewer is neither party", () => {
       const event = makeEvent({
         kind: "settlement_recorded",
-        payload: { amountCents: 3000, toUserId: "u2" },
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "u2" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
         "Alice pagou R$\u00A030,00 para Bruno",
@@ -166,9 +166,41 @@ describe("describeEvent", () => {
     it("describes settlement recorded when viewer is payee", () => {
       const event = makeEvent({
         kind: "settlement_recorded",
-        payload: { amountCents: 3000, toUserId: "viewer-id" },
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "viewer-id" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
+        "Alice pagou R$\u00A030,00 pra você",
+      );
+    });
+
+    it("addresses the payer directly when the creditor records the settlement", () => {
+      const event = makeEvent({
+        actorId: "u2",
+        kind: "settlement_recorded",
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "u2" },
+      });
+      const debtorCtx: EventCopyContext = {
+        ...baseCtx,
+        actorName: "Bruno",
+        viewerId: "u1",
+      };
+      expect(describeEvent(event, debtorCtx)).toBe(
+        "Você pagou R$\u00A030,00 para Bruno",
+      );
+    });
+
+    it("addresses the payee directly when the creditor records the settlement", () => {
+      const event = makeEvent({
+        actorId: "u2",
+        kind: "settlement_recorded",
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "u2" },
+      });
+      const creditorCtx: EventCopyContext = {
+        ...baseCtx,
+        actorName: "Bruno",
+        viewerId: "u2",
+      };
+      expect(describeEvent(event, creditorCtx)).toBe(
         "Alice pagou R$\u00A030,00 pra você",
       );
     });
@@ -265,13 +297,13 @@ describe("describeEvent", () => {
       );
     });
 
-    it("falls back to 'alguém' when nameOf returns 'alguém' for unknown user id", () => {
+    it("falls back to 'alguém' for unresolvable settlement parties", () => {
       const event = makeEvent({
         kind: "settlement_recorded",
         payload: { amountCents: 2000, toUserId: "unknown-user-id" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
-        "Alice pagou R$\u00A020,00 para alguém",
+        "alguém pagou R$\u00A020,00 para alguém",
       );
     });
   });
