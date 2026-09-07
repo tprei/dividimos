@@ -176,7 +176,7 @@ beforeEach(() => {
 });
 
 describe("GroupDetailContent", () => {
-  it("mostra skeleton antes da hidratação e não busca", () => {
+  it("shows a skeleton before hydration and does not fetch", () => {
     useAppStore.setState({ hydrated: false, me: null, groups: {}, groupOrder: [] });
 
     render(<GroupDetailContent groupId={groupId} />);
@@ -185,7 +185,7 @@ describe("GroupDetailContent", () => {
     expect(refreshGroup).not.toHaveBeenCalled();
   });
 
-  it("busca o grupo quando hidratado sem snapshot", async () => {
+  it("fetches the group when hydrated without a snapshot", async () => {
     useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
 
     render(<GroupDetailContent groupId={groupId} />);
@@ -196,7 +196,7 @@ describe("GroupDetailContent", () => {
     });
   });
 
-  it("mostra estado vazio quando o grupo não está mais disponível", async () => {
+  it("shows the empty state when the group is no longer available", async () => {
     useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
     vi.mocked(refreshGroup).mockRejectedValueOnce(
       new LedgerError("group_not_found"),
@@ -209,7 +209,7 @@ describe("GroupDetailContent", () => {
     ).toBeInTheDocument();
   });
 
-  it("mostra toast de erro para falhas não relacionadas à associação", async () => {
+  it("shows an error toast for failures unrelated to membership", async () => {
     useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
     vi.mocked(refreshGroup).mockRejectedValueOnce(new Error("network"));
 
@@ -220,7 +220,7 @@ describe("GroupDetailContent", () => {
     });
   });
 
-  it("renderiza header, saldos, contas e membros a partir do snapshot", () => {
+  it("renders header, balances, bills and members from the snapshot", () => {
     seedLoaded();
 
     render(<GroupDetailContent groupId={groupId} />);
@@ -248,7 +248,7 @@ describe("GroupDetailContent", () => {
     expect(screen.getByText("Convidado")).toBeInTheDocument();
   });
 
-  it("abre o modal de convite pelo link a partir do header", async () => {
+  it("opens the link invite modal from the header", async () => {
     seedLoaded();
 
     render(<GroupDetailContent groupId={groupId} />);
@@ -265,7 +265,7 @@ describe("GroupDetailContent", () => {
     expect(props.groupName).toBe("Viagem");
   });
 
-  it("abre o painel de convite por handle a partir do header", async () => {
+  it("opens the handle invite panel from the header", async () => {
     seedLoaded();
 
     render(<GroupDetailContent groupId={groupId} />);

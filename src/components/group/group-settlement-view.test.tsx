@@ -51,14 +51,14 @@ beforeEach(() => {
 });
 
 describe("GroupSettlementView", () => {
-  it("mostra estado liquidado sem dívidas", () => {
+  it("shows the settled state when there are no debts", () => {
     render(<GroupSettlementView groupId={groupId} rows={[]} meId={meId} />);
 
     expect(screen.getByText("Tudo liquidado!")).toBeInTheDocument();
     expect(screen.queryByTestId("pix-modal")).not.toBeInTheDocument();
   });
 
-  it("mostra dívida ativa com botão de pagamento", () => {
+  it("shows an active debt with a payment button", () => {
     render(
       <GroupSettlementView
         groupId={groupId}
@@ -73,7 +73,7 @@ describe("GroupSettlementView", () => {
     expect(screen.queryByText("Aguardando pagamento")).not.toBeInTheDocument();
   });
 
-  it("abre o PixQrModal em modo pagamento ao clicar em Pagar", async () => {
+  it("opens PixQrModal in payment mode when Pagar is clicked", async () => {
     render(
       <GroupSettlementView
         groupId={groupId}
@@ -91,7 +91,7 @@ describe("GroupSettlementView", () => {
     expect(props.mode).toBe("pay");
   });
 
-  it("confirma o pagamento via recordSettlement", async () => {
+  it("records the payment via recordSettlement", async () => {
     render(
       <GroupSettlementView
         groupId={groupId}
@@ -115,7 +115,7 @@ describe("GroupSettlementView", () => {
     });
   });
 
-  it("mostra cobrança aguardando quando o outro me deve", () => {
+  it("shows a pending charge when the counterparty owes me", () => {
     render(
       <GroupSettlementView
         groupId={groupId}
@@ -132,7 +132,7 @@ describe("GroupSettlementView", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renderiza convidado sem botão de pagamento", () => {
+  it("renders a guest without a payment button", () => {
     render(
       <GroupSettlementView
         groupId={groupId}

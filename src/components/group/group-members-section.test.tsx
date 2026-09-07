@@ -96,7 +96,7 @@ beforeEach(() => {
 });
 
 describe("GroupMembersSection", () => {
-  it("renderiza membros com chips de status, você, criador e convidados", () => {
+  it("renders members with status chips for self, creator and guests", () => {
     render(
       <GroupMembersSection
         snapshot={snapshot()}
@@ -115,7 +115,7 @@ describe("GroupMembersSection", () => {
     expect(screen.getByText("Convidado")).toBeInTheDocument();
   });
 
-  it("membro não criador vê botão Sair do grupo, não Excluir", () => {
+  it("shows Leave group and not Delete for a non-creator member", () => {
     render(
       <GroupMembersSection
         snapshot={snapshot()}
@@ -128,7 +128,7 @@ describe("GroupMembersSection", () => {
     expect(screen.queryByRole("button", { name: /Excluir grupo/ })).not.toBeInTheDocument();
   });
 
-  it("criador vê botão Excluir grupo e botões de remover membros", () => {
+  it("shows Delete group and per-member remove buttons for the creator", () => {
     render(
       <GroupMembersSection
         snapshot={snapshot()}
@@ -144,7 +144,7 @@ describe("GroupMembersSection", () => {
     ).toBeInTheDocument();
   });
 
-  it("criador remove um membro com confirmação", async () => {
+  it("lets the creator remove a member after confirming", async () => {
     vi.mocked(removeMember).mockResolvedValue({
       groupId,
       ledgerVersion: 2,
@@ -170,7 +170,7 @@ describe("GroupMembersSection", () => {
     });
   });
 
-  it("membro sai do grupo e chama onDepart", async () => {
+  it("lets a member leave the group and calls onDepart", async () => {
     vi.mocked(leaveGroup).mockResolvedValue({
       groupId,
       ledgerVersion: 2,
@@ -198,7 +198,7 @@ describe("GroupMembersSection", () => {
     });
   });
 
-  it("criador exclui o grupo", async () => {
+  it("lets the creator delete the group", async () => {
     vi.mocked(deleteGroup).mockResolvedValue(undefined);
     const onDepart = vi.fn();
 
@@ -222,7 +222,7 @@ describe("GroupMembersSection", () => {
     });
   });
 
-  it("permite compartilhar convite para um convidado", async () => {
+  it("allows sharing an invite with a guest", async () => {
     vi.mocked(issueGuestClaimToken).mockResolvedValue("claim_token_xyz");
 
     render(
@@ -247,7 +247,7 @@ describe("GroupMembersSection", () => {
 describe("InviteByHandlePanel", () => {
   const members = [member(meId, "Eu"), member("u2", "Carol")];
 
-  it("busca usuário por handle e envia convite", async () => {
+  it("looks up a user by handle and sends an invite", async () => {
     const profile: UserProfile = {
       id: "u-found",
       handle: "dave",
@@ -289,7 +289,7 @@ describe("InviteByHandlePanel", () => {
     });
   });
 
-  it("mostra mensagem quando o usuário não é encontrado", async () => {
+  it("shows a message when the user is not found", async () => {
     vi.mocked(lookupUserByHandle).mockResolvedValue(null);
 
     render(
@@ -312,7 +312,7 @@ describe("InviteByHandlePanel", () => {
     });
   });
 
-  it("avisa quando o usuário já é membro", async () => {
+  it("warns when the user is already a member", async () => {
     const profile: UserProfile = {
       id: "u2",
       handle: "carol",
