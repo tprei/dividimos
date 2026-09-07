@@ -1,147 +1,119 @@
-import { describe, it, expect, vi } from "vitest";
-import { distributeSettlement } from "./conversation-pay-button";
-import type { Balance } from "@/types";
-const submission = vi.hoisted(() => ({
-  error: null,
-  finish: vi.fn(),
-  phase: "idle",
-  ready: true,
-  reconcile: vi.fn(),
-  request: null,
-  reservedEdgeKeys: new Set<string>(),
-  result: null,
-  submit: vi.fn(),
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConversationPayButton } from "./conversation-pay-button";
+import type { DebtRow } from "@/lib/ledger/debt-rows";
+
+const mutations = vi.hoisted(() => ({
+  recordSettlement: vi.fn().mockResolvedValue({ eventId: 1 }),
+}));
+vi.mock("@/lib/sync/mutations", () => mutations);
+
+const pixModalProps = vi.hoisted(() => ({
+  current: null as Record<string, unknown> | null,
 }));
 
-
-vi.mock("@/lib/supabase/settlement-actions", () => ({
-  queryBalancesBetweenUsers: vi.fn(),
+vi.mock("@/components/settlement/pix-qr-modal", () => ({
+  PixQrModal: (props: Record<string, unknown>) => {
+    pixModalProps.current = props;
+    return (
+      <div data-testid="pix-modal">
+        <button
+          onClick={() => {
+            const onMarkPaid = props.onMarkPaid as (cents: number) => Promise<void>;
+            void onMarkPaid(props.amountCents as number);
+          }}
+          data-testid="pix-confirm"
+        >
+          Confirm
+        </button>
+      </div>
+    );
+  },
 }));
 
-vi.mock("@/contexts/settlement-submission-context", () => ({
-  settlementEdgeKey: ({
-    groupId,
-    fromUserId,
-    toUserId,
-  }: {
-    groupId: string;
-    fromUserId: string;
-    toUserId: string;
-  }) => `${groupId}:${fromUserId}:${toUserId}`,
-  useSettlementSubmission: () => submission,
-}));
-
-vi.mock("@/hooks/use-haptics", () => ({
-  haptics: { success: vi.fn(), error: vi.fn() },
-}));
-
-
-
-const USER_A = "aaa-aaa"; // canonical first (a < b)
-const USER_B = "bbb-bbb";
-
-function makeBalance(groupId: string, amountCents: number): Balance {
+function makeDebtRow(direction: "owes" | "owed", amountCents: number): DebtRow {
   return {
-    groupId,
-    userA: USER_A,
-    userB: USER_B,
+    groupId: "g-1",
+    groupName: "Bob Silva",
+    isDm: true,
+    counterpartyKind: "user",
+    counterpartyId: "user-bob",
+    counterpartyName: "Bob Silva",
+    counterpartyAvatarUrl: null,
     amountCents,
-    updatedAt: new Date().toISOString(),
+    direction,
   };
 }
 
-describe("distributeSettlement", () => {
-  it("settles a single group debt fully (pay mode)", () => {
-    // amountCents > 0 → userA owes userB
-    const balances = [makeBalance("g1", 5000)];
-
-    const result = distributeSettlement(balances, USER_A, USER_B, 5000, "pay");
-
-    expect(result).toEqual([
-      { groupId: "g1", fromUserId: USER_A, toUserId: USER_B, amountCents: 5000 },
-    ]);
+describe("ConversationPayButton", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    pixModalProps.current = null;
   });
 
-  it("settles a single group debt fully (collect mode)", () => {
-    // amountCents > 0 → userA owes userB → userB collects from userA
-    const balances = [makeBalance("g1", 5000)];
-
-    const result = distributeSettlement(balances, USER_B, USER_A, 5000, "collect");
-
-    expect(result).toEqual([
-      { groupId: "g1", fromUserId: USER_A, toUserId: USER_B, amountCents: 5000 },
-    ]);
+  it("renders null when balance is zero", () => {
+    const { container } = render(
+      <ConversationPayButton
+        groupId="g-1"
+        meId="user-me"
+        counterpartyId="user-bob"
+        counterpartyName="Bob Silva"
+        rows={[]}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
   });
 
-  it("distributes across multiple groups, largest first", () => {
-    const balances = [
-      makeBalance("g1", 2000), // userA owes 2000
-      makeBalance("g2", 8000), // userA owes 8000
-      makeBalance("g3", 3000), // userA owes 3000
-    ];
-
-    const result = distributeSettlement(balances, USER_A, USER_B, 10000, "pay");
-
-    // Should settle g2 (8000) first, then g3 (3000) partially (2000)
-    expect(result).toEqual([
-      { groupId: "g2", fromUserId: USER_A, toUserId: USER_B, amountCents: 8000 },
-      { groupId: "g3", fromUserId: USER_A, toUserId: USER_B, amountCents: 2000 },
-    ]);
+  it("renders Pagar button when user owes counterparty", () => {
+    render(
+      <ConversationPayButton
+        groupId="g-1"
+        meId="user-me"
+        counterpartyId="user-bob"
+        counterpartyName="Bob Silva"
+        rows={[makeDebtRow("owes", 5000)]}
+      />,
+    );
+    expect(screen.getByText(/Pagar R\$\s*50,00/)).toBeDefined();
   });
 
-  it("handles partial payment within a single group", () => {
-    const balances = [makeBalance("g1", 10000)];
-
-    const result = distributeSettlement(balances, USER_A, USER_B, 3000, "pay");
-
-    expect(result).toEqual([
-      { groupId: "g1", fromUserId: USER_A, toUserId: USER_B, amountCents: 3000 },
-    ]);
+  it("renders Cobrar button when counterparty owes user", () => {
+    render(
+      <ConversationPayButton
+        groupId="g-1"
+        meId="user-me"
+        counterpartyId="user-bob"
+        counterpartyName="Bob Silva"
+        rows={[makeDebtRow("owed", 3000)]}
+      />,
+    );
+    expect(screen.getByText(/Cobrar R\$\s*30,00/)).toBeDefined();
   });
 
-  it("skips groups where the debt goes the other direction", () => {
-    const balances = [
-      makeBalance("g1", 5000),  // userA owes userB
-      makeBalance("g2", -3000), // userB owes userA (negative)
-    ];
+  it("opens modal and marks payment on confirm", async () => {
+    render(
+      <ConversationPayButton
+        groupId="g-1"
+        meId="user-me"
+        counterpartyId="user-bob"
+        counterpartyName="Bob Silva"
+        rows={[makeDebtRow("owes", 5000)]}
+      />,
+    );
 
-    // userA paying → only g1 applies
-    const result = distributeSettlement(balances, USER_A, USER_B, 5000, "pay");
+    fireEvent.click(screen.getByRole("button"));
 
-    expect(result).toEqual([
-      { groupId: "g1", fromUserId: USER_A, toUserId: USER_B, amountCents: 5000 },
-    ]);
-  });
+    const modal = await screen.findByTestId("pix-modal");
+    expect(modal).toBeDefined();
+    expect(pixModalProps.current?.amountCents).toBe(5000);
+    expect(pixModalProps.current?.mode).toBe("pay");
 
-  it("returns empty array when no matching debts exist", () => {
-    const balances = [makeBalance("g1", -5000)]; // userB owes userA
+    fireEvent.click(screen.getByTestId("pix-confirm"));
 
-    // userA trying to pay → no debt from A to B
-    const result = distributeSettlement(balances, USER_A, USER_B, 5000, "pay");
-
-    expect(result).toEqual([]);
-  });
-
-  it("handles collect mode with reversed user positions", () => {
-    // amountCents = -3000 → userB owes userA 3000
-    const balances = [makeBalance("g1", -3000)];
-
-    // userA collecting from userB
-    const result = distributeSettlement(balances, USER_A, USER_B, 3000, "collect");
-
-    expect(result).toEqual([
-      { groupId: "g1", fromUserId: USER_B, toUserId: USER_A, amountCents: 3000 },
-    ]);
-  });
-
-  it("caps settlement at available debt", () => {
-    const balances = [makeBalance("g1", 2000)];
-
-    // Trying to pay more than owed
-    const result = distributeSettlement(balances, USER_A, USER_B, 5000, "pay");
-
-    expect(result).toEqual([
-      { groupId: "g1", fromUserId: USER_A, toUserId: USER_B, amountCents: 2000 },
-    ]);
+    expect(mutations.recordSettlement).toHaveBeenCalledWith({
+      groupId: "g-1",
+      toUserId: "user-bob",
+      amountCents: 5000,
+    });
   });
 });
