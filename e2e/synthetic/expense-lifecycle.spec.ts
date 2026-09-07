@@ -43,7 +43,11 @@ test.describe("Expense Lifecycle", () => {
     await bobPage.waitForLoadState("networkidle");
 
     await expect(bobPage.getByText("Lifecycle Test")).toBeVisible();
+
+    await bobPage.getByRole("tab", { name: "Contas" }).click();
     await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
+
+    await bobPage.getByRole("tab", { name: "Saldos" }).click();
     await expect(bobPage.getByText("Você deve")).toBeVisible();
     await expect(bobPage.getByText("R$ 50,00").first()).toBeVisible({
       timeout: 10000,

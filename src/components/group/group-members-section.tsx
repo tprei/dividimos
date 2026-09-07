@@ -128,8 +128,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
   };
 
   return (
-    <section className="mt-8">
-      <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Membros</h2>
+    <section>
       <div className="space-y-2">
         {snapshot.members.map((member) => (
           <motion.div

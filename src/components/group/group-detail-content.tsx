@@ -11,10 +11,12 @@ import { GroupInviteModal } from "@/components/group/group-invite-modal";
 import { InviteByHandlePanel } from "@/components/group/group-invite-panel";
 import { GroupMembersSection } from "@/components/group/group-members-section";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
+import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { EmptyState } from "@/components/shared/empty-state";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -154,24 +156,34 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         )}
       </AnimatePresence>
 
-      <section className="mt-6">
-        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Saldos</h2>
-        <GroupSettlementView
-          groupId={groupId}
-          rows={debtRows}
-          meId={meId ?? ""}
-        />
-      </section>
+      <NotificationPrompt />
 
-      <GroupExpensesSection groupId={groupId} members={members} />
-
-      <GroupMembersSection
-        snapshot={snapshot}
-        meId={meId ?? ""}
-        onDepart={() => {
-          departedRef.current = true;
-        }}
-      />
+      <Tabs defaultValue="saldos" className="mt-5">
+        <TabsList className="w-full">
+          <TabsTrigger value="saldos">Saldos</TabsTrigger>
+          <TabsTrigger value="contas">Contas</TabsTrigger>
+          <TabsTrigger value="membros">Membros</TabsTrigger>
+        </TabsList>
+        <TabsContent value="saldos" className="mt-4">
+          <GroupSettlementView
+            groupId={groupId}
+            rows={debtRows}
+            meId={meId ?? ""}
+          />
+        </TabsContent>
+        <TabsContent value="contas" className="mt-4">
+          <GroupExpensesSection groupId={groupId} members={members} />
+        </TabsContent>
+        <TabsContent value="membros" className="mt-4">
+          <GroupMembersSection
+            snapshot={snapshot}
+            meId={meId ?? ""}
+            onDepart={() => {
+              departedRef.current = true;
+            }}
+          />
+        </TabsContent>
+      </Tabs>
 
       <GroupInviteModal
         open={showInviteModal}

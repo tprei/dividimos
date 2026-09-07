@@ -32,7 +32,7 @@ test.describe("Group Invite & Accept", () => {
     await expect(page.getByTestId("lookup-result")).not.toBeVisible({ timeout: 10000 });
 
     // Alice sees Bob as "Pendente" in the members tab
-    await expect(page.getByText("Membros")).toBeVisible();
+    await page.getByRole("tab", { name: "Membros" }).click();
     await expect(page.getByText("Bob Invite")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
 
@@ -57,6 +57,8 @@ test.describe("Group Invite & Accept", () => {
     // Bob navigates to the group — sees himself as a member
     await bobPage.getByText("Invite Test Group").click();
     await bobPage.waitForLoadState("networkidle");
+
+    await bobPage.getByRole("tab", { name: "Membros" }).click();
 
     await expect(bobPage.getByText("Alice Invite")).toBeVisible({ timeout: 10000 });
     await expect(bobPage.getByText("Bob Invite")).toBeVisible();
@@ -130,6 +132,8 @@ test.describe("Group Invite & Accept", () => {
     await loginAs(alice);
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
+
+    await page.getByRole("tab", { name: "Membros" }).click();
 
     await expect(page.getByText("Alice Pending")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Bob Pending")).toBeVisible();

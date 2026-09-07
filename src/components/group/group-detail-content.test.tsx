@@ -220,14 +220,14 @@ describe("GroupDetailContent", () => {
     });
   });
 
-  it("renders header, balances, bills and members from the snapshot", () => {
+  it("renders the header and shows the Saldos panel on mount", () => {
     seedLoaded();
 
     render(<GroupDetailContent groupId={groupId} />);
 
     expect(screen.getAllByText("Viagem").length).toBeGreaterThan(0);
     expect(screen.getByText(/2 membros/)).toBeInTheDocument();
-    expect(screen.getByText("Saldos")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Saldos" })).toBeInTheDocument();
     expect(screen.getByTestId("settlement-stub")).toBeInTheDocument();
 
     const props = settlementProps.at(-1)!;
@@ -240,10 +240,29 @@ describe("GroupDetailContent", () => {
         direction: "owes",
       }),
     ]);
+  });
 
-    expect(screen.getByText("Contas")).toBeInTheDocument();
+  it("reveals the bills panel when the Contas tab is selected", async () => {
+    seedLoaded();
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.queryByText("Jantar")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Contas" }));
+
     expect(screen.getByText("Jantar")).toBeInTheDocument();
-    expect(screen.getByText("Membros")).toBeInTheDocument();
+  });
+
+  it("reveals the members panel when the Membros tab is selected", async () => {
+    seedLoaded();
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.queryByText("Pendente")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
+
     expect(screen.getByText("Pendente")).toBeInTheDocument();
     expect(screen.getByText("Convidado")).toBeInTheDocument();
   });

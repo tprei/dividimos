@@ -127,8 +127,7 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
   }, []);
 
   return (
-    <section className="mt-8">
-      <h2 className="mb-3 text-sm font-semibold text-muted-foreground">Contas</h2>
+    <section>
       <div className="space-y-3">
         <div className="flex gap-2">
           <Button
