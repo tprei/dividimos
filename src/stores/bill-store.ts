@@ -40,9 +40,11 @@ export interface Guest {
   name: string;
   /** Phone number from contact picker, used for WhatsApp claim link delivery. */
   phone?: string;
+  /** Persisted guest UUID when loaded from server; null for locally-created guests. */
+  remoteId: string | null;
 }
 
-interface ExpenseState {
+export interface ExpenseState {
   currentUser: User | null;
   expense: Expense | null;
   /** User-entered total for single_amount expenses (before computing shares). */
@@ -197,7 +199,7 @@ function validatePayerCandidates(
  * Pure function that computes each participant's consumption in centavos.
  * Shared by selectPreviewDebts, getExpenseShares, wouldProduceNoEdges, and getParticipantTotal.
  */
-function computeConsumption(
+export function computeConsumption(
   expense: Expense,
   allPersonIds: string[],
   items: ExpenseItem[],
@@ -372,7 +374,7 @@ export function mapLoadedGuestsForEditHydration(
   expenseType: ExpenseType,
 ): { guests: Guest[]; guestBillSplits: AmountSplit[] } {
   const unclaimed = loadedGuests.filter((g) => !g.claimedBy);
-  const guests: Guest[] = unclaimed.map((g) => ({ id: g.id, name: g.displayName }));
+  const guests: Guest[] = unclaimed.map((g) => ({ id: g.id, name: g.displayName, remoteId: g.id }));
   const guestBillSplits: AmountSplit[] =
     expenseType === "single_amount"
       ? unclaimed.map((g) => ({
@@ -531,7 +533,7 @@ export const useBillStore = create<ExpenseState>((set, get) => ({
 
   addGuest: (name, phone) => {
     const id = `guest_${generateId()}`;
-    const guest: Guest = { id, name, phone };
+    const guest: Guest = { id, name, phone, remoteId: null };
     set((state) => ({ guests: [...state.guests, guest] }));
     return id;
   },
