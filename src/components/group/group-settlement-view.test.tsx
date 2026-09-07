@@ -109,13 +109,14 @@ describe("GroupSettlementView", () => {
       await onMarkPaid(3000);
       expect(recordSettlement).toHaveBeenCalledWith({
         groupId,
+        fromUserId: meId,
         toUserId: "user-2",
         amountCents: 3000,
       });
     });
   });
 
-  it("shows a pending charge when the counterparty owes me", () => {
+  it("lets me record a receipt when the counterparty owes me", async () => {
     render(
       <GroupSettlementView
         groupId={groupId}
@@ -125,11 +126,26 @@ describe("GroupSettlementView", () => {
     );
 
     expect(screen.getByText("Carol → Você")).toBeInTheDocument();
-    expect(screen.getByText(/Você recebe/)).toBeInTheDocument();
-    expect(screen.getByText("Aguardando pagamento")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Pagar via Pix" }),
     ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Cobrar via Pix" }));
+
+    expect(pixModalProps.at(-1)!.mode).toBe("collect");
+
+    const onMarkPaid = pixModalProps.at(-1)!.onMarkPaid as (
+      cents: number,
+    ) => Promise<void>;
+    await waitFor(async () => {
+      await onMarkPaid(3000);
+      expect(recordSettlement).toHaveBeenCalledWith({
+        groupId,
+        fromUserId: "user-2",
+        toUserId: meId,
+        amountCents: 3000,
+      });
+    });
   });
 
   it("renders a guest without a payment button", () => {

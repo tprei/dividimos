@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  Check,
   CheckCheck,
   Eye,
   EyeOff,
@@ -15,11 +14,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import toast from "react-hot-toast";
-import { useShallow } from "zustand/react/shallow";
 import { DebtCard } from "@/components/dashboard/debt-card";
-import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import {
   DashboardSkeleton,
@@ -30,16 +27,10 @@ import { formatBRL } from "@/lib/currency";
 import { selectDebtRows } from "@/lib/ledger/debt-rows";
 import type { DebtRow } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
-import {
-  confirmSettlement,
-  recordSettlement,
-  voidSettlement,
-} from "@/lib/sync/mutations";
+import { recordSettlement } from "@/lib/sync/mutations";
 import { sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
-import { selectPendingSettlementsForMe } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
-import type { GroupSnapshot, Settlement } from "@/types/ledger";
 
 const PixQrModal = dynamic(
   () =>
@@ -64,47 +55,14 @@ function getGreeting(): string {
   return "Boa noite";
 }
 
-function memberName(snapshot: GroupSnapshot | undefined, userId: string): string {
-  return (
-    snapshot?.members.find((member) => member.userId === userId)?.user.name ??
-    "Alguém"
-  );
-}
-
-interface PendingRow {
-  groupId: string;
-  settlement: Settlement;
-}
-
 export function DashboardContent() {
   const me = useMe();
-  const { hydrated, groupOrder, groups } = useAppStore(
-    useShallow((s) => ({
-      hydrated: s.hydrated,
-      groupOrder: s.groupOrder,
-      groups: s.groups,
-    })),
-  );
+  const hydrated = useAppStore((s) => s.hydrated);
   const debtRows = useAppStore(selectDebtRows);
-  const pendingIncoming = useAppStore(selectPendingSettlementsForMe);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [activeTab, setActiveTab] = useState<"owes" | "owed">("owes");
   const [payingDebt, setPayingDebt] = useState<DebtRow | null>(null);
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
-  const [actingId, setActingId] = useState<string | null>(null);
-
-  const pendingOutgoing = useMemo<PendingRow[]>(() => {
-    if (!me) return [];
-    const rows: PendingRow[] = [];
-    for (const groupId of groupOrder) {
-      const snapshot = groups[groupId];
-      if (!snapshot) continue;
-      for (const settlement of snapshot.pendingSettlements) {
-        if (settlement.fromUserId === me.id) rows.push({ groupId, settlement });
-      }
-    }
-    return rows;
-  }, [groupOrder, groups, me]);
 
   if (!hydrated || !me) {
     return (
@@ -123,34 +81,12 @@ export function DashboardContent() {
   );
   const isPositive = netBalance >= 0;
   const filteredDebts = debtRows.filter((row) => row.direction === activeTab);
-
-  const handleConfirm = async (groupId: string, settlementId: string) => {
-    setActingId(settlementId);
-    try {
-      await confirmSettlement(groupId, settlementId);
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    } finally {
-      setActingId(null);
-    }
-  };
-
-  const handleVoid = async (groupId: string, settlementId: string) => {
-    setActingId(settlementId);
-    try {
-      await voidSettlement(groupId, settlementId, false);
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    } finally {
-      setActingId(null);
-    }
-  };
-
   const handleMarkPaid = async (amountCents: number) => {
     const debt = payingDebt;
     if (!me || !debt) throw new LedgerError("unauthenticated");
     await recordSettlement({
       groupId: debt.groupId,
+      fromUserId: me.id,
       toUserId: debt.counterpartyId,
       amountCents,
     });
@@ -163,7 +99,6 @@ export function DashboardContent() {
       toast.error(ledgerErrorMessage(error));
     }
   };
-
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -264,94 +199,6 @@ export function DashboardContent() {
           </button>
         )}
       </motion.div>
-
-      {pendingIncoming.length > 0 && (
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.17, duration: 0.4 }}
-          className="mt-6"
-        >
-          <h2 className="text-lg font-semibold">Pendentes de confirmação</h2>
-          <div className="mt-3 space-y-2">
-            {pendingIncoming.map(({ groupId, settlement }) => (
-              <div
-                key={settlement.id}
-                className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-4"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {memberName(groups[groupId], settlement.fromUserId)} te pagou
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {groups[groupId]?.group.name}
-                  </p>
-                  <p className="text-sm font-semibold tabular-nums text-success">
-                    {formatBRL(settlement.amountCents)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button
-                    size="sm"
-                    disabled={actingId === settlement.id}
-                    onClick={() => void handleConfirm(groupId, settlement.id)}
-                  >
-                    <Check className="h-4 w-4" />
-                    Confirmar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={actingId === settlement.id}
-                    onClick={() => void handleVoid(groupId, settlement.id)}
-                  >
-                    Recusar
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.section>
-      )}
-
-      {pendingOutgoing.length > 0 && (
-        <motion.section
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.4 }}
-          className="mt-4"
-        >
-          <h2 className="text-lg font-semibold">Aguardando confirmação</h2>
-          <div className="mt-3 space-y-2">
-            {pendingOutgoing.map(({ groupId, settlement }) => (
-              <div
-                key={settlement.id}
-                className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-4"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {memberName(groups[groupId], settlement.toUserId)}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {groups[groupId]?.group.name}
-                  </p>
-                  <p className="text-sm font-semibold tabular-nums">
-                    {formatBRL(settlement.amountCents)}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={actingId === settlement.id}
-                  onClick={() => void handleVoid(groupId, settlement.id)}
-                >
-                  Cancelar
-                </Button>
-              </div>
-            ))}
-          </div>
-        </motion.section>
-      )}
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}

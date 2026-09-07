@@ -227,10 +227,14 @@ BEGIN
       JOIN expenses e ON e.id = gu.expense_id
       WHERE e.group_id = g.id AND e.status = 'active' AND gu.claimed_by IS NULL
     ), '[]'::jsonb),
-    'pendingSettlements', COALESCE((
+    'settlements', COALESCE((
       SELECT jsonb_agg(ledger_settlement_json(s.id) ORDER BY s.created_at DESC, s.id)
-      FROM settlements s
-      WHERE s.group_id = g.id AND s.status = 'pending'
+      FROM (
+        SELECT id, created_at FROM settlements
+        WHERE group_id = g.id AND status = 'confirmed'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 50
+      ) s
     ), '[]'::jsonb),
     'recentExpenses', COALESCE((
       SELECT jsonb_agg(ledger_expense_summary_json(e.id, p_viewer) ORDER BY e.created_at DESC, e.id DESC)
@@ -289,7 +293,7 @@ BEGIN
            ),
            'balances', '[]'::jsonb,
            'guests', '[]'::jsonb,
-           'pendingSettlements', '[]'::jsonb,
+           'settlements', '[]'::jsonb,
            'recentExpenses', '[]'::jsonb,
            'unreadCount', 0,
            'lastMessage', 'null'::jsonb

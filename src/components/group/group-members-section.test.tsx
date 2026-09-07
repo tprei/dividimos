@@ -81,7 +81,7 @@ function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
     ],
     balances: [],
     guests: [{ id: "guest-1", displayName: "Bruno", expenseId: "e1" }],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: 0,
     unreadCount: 0,

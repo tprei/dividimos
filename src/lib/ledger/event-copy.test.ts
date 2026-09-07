@@ -153,57 +153,67 @@ describe("describeEvent", () => {
   });
 
   describe("settlement_recorded", () => {
-    it("describes settlement recorded when viewer is not payee", () => {
+    it("describes settlement recorded when viewer is neither party", () => {
       const event = makeEvent({
         kind: "settlement_recorded",
-        payload: { amountCents: 3000, toUserId: "u2" },
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "u2" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
-        "Alice marcou um pagamento de R$\u00A030,00 para Bruno",
+        "Alice pagou R$\u00A030,00 para Bruno",
       );
     });
 
     it("describes settlement recorded when viewer is payee", () => {
       const event = makeEvent({
         kind: "settlement_recorded",
-        payload: { amountCents: 3000, toUserId: "viewer-id" },
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "viewer-id" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
-        "Alice marcou um pagamento de R$\u00A030,00 pra você",
+        "Alice pagou R$\u00A030,00 pra você",
       );
     });
-  });
 
-  describe("settlement_confirmed", () => {
-    it("describes settlement confirmation", () => {
+    it("addresses the payer directly when the creditor records the settlement", () => {
       const event = makeEvent({
-        kind: "settlement_confirmed",
-        payload: { amountCents: 4500, fromUserId: "u2" },
+        actorId: "u2",
+        kind: "settlement_recorded",
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "u2" },
       });
-      expect(describeEvent(event, baseCtx)).toBe(
-        "Alice confirmou o pagamento de R$\u00A045,00 de Bruno",
+      const debtorCtx: EventCopyContext = {
+        ...baseCtx,
+        actorName: "Bruno",
+        viewerId: "u1",
+      };
+      expect(describeEvent(event, debtorCtx)).toBe(
+        "Você pagou R$\u00A030,00 para Bruno",
+      );
+    });
+
+    it("addresses the payee directly when the creditor records the settlement", () => {
+      const event = makeEvent({
+        actorId: "u2",
+        kind: "settlement_recorded",
+        payload: { amountCents: 3000, fromUserId: "u1", toUserId: "u2" },
+      });
+      const creditorCtx: EventCopyContext = {
+        ...baseCtx,
+        actorName: "Bruno",
+        viewerId: "u2",
+      };
+      expect(describeEvent(event, creditorCtx)).toBe(
+        "Alice pagou R$\u00A030,00 pra você",
       );
     });
   });
 
   describe("settlement_voided", () => {
-    it("describes voided settlement that was confirmed", () => {
+    it("describes a voided settlement", () => {
       const event = makeEvent({
         kind: "settlement_voided",
-        payload: { amountCents: 2500, wasConfirmed: true },
+        payload: { amountCents: 2500 },
       });
       expect(describeEvent(event, baseCtx)).toBe(
         "Alice desfez um pagamento de R$\u00A025,00",
-      );
-    });
-
-    it("describes voided settlement that was pending (not confirmed)", () => {
-      const event = makeEvent({
-        kind: "settlement_voided",
-        payload: { amountCents: 2500, wasConfirmed: false },
-      });
-      expect(describeEvent(event, baseCtx)).toBe(
-        "Alice cancelou um pagamento de R$\u00A025,00",
       );
     });
   });
@@ -287,13 +297,13 @@ describe("describeEvent", () => {
       );
     });
 
-    it("falls back to 'alguém' when nameOf returns 'alguém' for unknown user id", () => {
+    it("falls back to 'alguém' for unresolvable settlement parties", () => {
       const event = makeEvent({
         kind: "settlement_recorded",
         payload: { amountCents: 2000, toUserId: "unknown-user-id" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
-        "Alice marcou um pagamento de R$\u00A020,00 para alguém",
+        "alguém pagou R$\u00A020,00 para alguém",
       );
     });
   });

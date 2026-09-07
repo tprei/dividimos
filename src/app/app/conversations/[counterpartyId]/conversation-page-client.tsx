@@ -356,7 +356,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         meId={me.id}
         messages={conversation?.messages ?? []}
         events={conversation?.events ?? []}
-        settlements={dm.pendingSettlements}
+        settlements={dm.settlements}
         nameOf={nameOf}
         hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
         onLoadMore={handleLoadMore}

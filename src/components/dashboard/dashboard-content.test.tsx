@@ -5,9 +5,7 @@ import { useAppStore } from "@/stores/app-store";
 import { LedgerError } from "@/lib/sync/errors";
 
 const mutations = vi.hoisted(() => ({
-  confirmSettlement: vi.fn(),
   recordSettlement: vi.fn(),
-  voidSettlement: vi.fn(),
 }));
 vi.mock("@/lib/sync/mutations", () => mutations);
 
@@ -62,24 +60,6 @@ const me: Me = {
 const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
 const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null };
 
-function settlement(overrides: Partial<GroupSnapshot["pendingSettlements"][number]> = {}) {
-  return {
-    id: "set-1",
-    operationId: "op-1",
-    groupId: "g1",
-    fromUserId: carol.id,
-    toUserId: me.id,
-    amountCents: 3000,
-    status: "pending" as const,
-    createdBy: carol.id,
-    createdAt: "2026-01-01T00:00:00Z",
-    confirmedAt: null,
-    voidedAt: null,
-    voidedBy: null,
-    ...overrides,
-  };
-}
-
 function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   const base: GroupSnapshot = {
     group: {
@@ -99,7 +79,7 @@ function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
     ],
     balances: [],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: 0,
     unreadCount: 0,
@@ -145,64 +125,6 @@ describe("DashboardContent", () => {
     expect(screen.getAllByText("R$ 30,00").length).toBeGreaterThan(0);
   });
 
-  it("confirms an incoming pending settlement", async () => {
-    mutations.confirmSettlement.mockResolvedValue({});
-    seedStore([
-      snapshot({ pendingSettlements: [settlement({ fromUserId: carol.id, toUserId: me.id })] }),
-    ]);
-    render(<DashboardContent />);
-
-    fireEvent.click(screen.getByRole("button", { name: /confirmar/i }));
-
-    await waitFor(() => {
-      expect(mutations.confirmSettlement).toHaveBeenCalledWith("g1", "set-1");
-    });
-  });
-
-  it("declines an incoming pending settlement with voidSettlement", async () => {
-    mutations.voidSettlement.mockResolvedValue({});
-    seedStore([
-      snapshot({ pendingSettlements: [settlement({ fromUserId: carol.id, toUserId: me.id })] }),
-    ]);
-    render(<DashboardContent />);
-
-    fireEvent.click(screen.getByRole("button", { name: /recusar/i }));
-
-    await waitFor(() => {
-      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1", false);
-    });
-  });
-
-  it("shows a toast when confirming fails", async () => {
-    mutations.confirmSettlement.mockRejectedValue(new LedgerError("network"));
-    seedStore([
-      snapshot({ pendingSettlements: [settlement({ fromUserId: carol.id, toUserId: me.id })] }),
-    ]);
-    render(<DashboardContent />);
-
-    fireEvent.click(screen.getByRole("button", { name: /confirmar/i }));
-
-    await waitFor(() => {
-      expect(toastError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
-    });
-  });
-
-  it("lets me cancel an outgoing pending settlement", async () => {
-    mutations.voidSettlement.mockResolvedValue({});
-    seedStore([
-      snapshot({ pendingSettlements: [settlement({ fromUserId: me.id, toUserId: dave.id })] }),
-    ]);
-    render(<DashboardContent />);
-
-    expect(screen.getByText("Aguardando confirmação")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /cancelar/i }));
-
-    await waitFor(() => {
-      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1", false);
-    });
-    expect(mutations.confirmSettlement).not.toHaveBeenCalled();
-  });
-
   it("opens the Pix modal in pay mode and records the settlement through it", async () => {
     mutations.recordSettlement.mockResolvedValue({});
     seedStore([
@@ -230,6 +152,7 @@ describe("DashboardContent", () => {
 
     expect(mutations.recordSettlement).toHaveBeenCalledWith({
       groupId: "g1",
+      fromUserId: me.id,
       toUserId: carol.id,
       amountCents: 3000,
     });

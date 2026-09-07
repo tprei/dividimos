@@ -125,7 +125,7 @@ function snapshot(): GroupSnapshot {
       { kind: "user", participantId: "user-2", netCents: 5000 },
     ],
     guests: [{ id: "guest-1", displayName: "Bruno", expenseId: "e1" }],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [
       {
         id: "e1",

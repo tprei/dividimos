@@ -471,7 +471,7 @@ export function PixQrModal({
                 <span>
                   {copiaECola
                     ? "Lê o QR code ou copia o código e cola no app do banco."
-                    : "Combine o pagamento por fora e confirma aqui embaixo."}
+                    : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
                 </span>
               </div>
             </motion.div>

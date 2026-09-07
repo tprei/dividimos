@@ -95,23 +95,6 @@ function computeMyShareAndPaid(
   return { myShareCents: payload.shares[idx] ?? 0, myPaidCents };
 }
 
-function findSettlementInEvents(
-  groupId: string,
-  settlementId: string,
-): { fromUserId: string; toUserId: string; amountCents: number } | null {
-  const s = useAppStore.getState();
-  const events = [...(s.conversations[groupId]?.events ?? []), ...s.activity.items];
-  for (const ev of events) {
-    if (ev.settlementId === settlementId && ev.payload) {
-      const { fromUserId, toUserId, amountCents } = ev.payload;
-      if (typeof fromUserId === "string" && typeof toUserId === "string" && typeof amountCents === "number") {
-        return { fromUserId, toUserId, amountCents };
-      }
-    }
-  }
-  return null;
-}
-
 export function notify(eventId: number | null): void {
   if (eventId === null) return;
   fetch("/api/notify", {
@@ -345,26 +328,28 @@ export async function restoreExpense(expenseId: string): Promise<MutationAck> {
 
 export async function recordSettlement(input: {
   groupId: string;
+  fromUserId: string;
   toUserId: string;
   amountCents: number;
 }): Promise<MutationAck> {
-  const { groupId, toUserId, amountCents } = input;
+  const { groupId, fromUserId, toUserId, amountCents } = input;
   const store = useAppStore.getState();
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
   const operationId = crypto.randomUUID();
+  const now = new Date().toISOString();
   const optimistic: Settlement = {
     id: operationId,
     operationId,
     groupId,
-    fromUserId: me.id,
+    fromUserId,
     toUserId,
     amountCents,
-    status: "pending",
+    status: "confirmed",
     createdBy: me.id,
-    createdAt: new Date().toISOString(),
-    confirmedAt: null,
+    createdAt: now,
+    confirmedAt: now,
     voidedAt: null,
     voidedBy: null,
   };
@@ -374,7 +359,8 @@ export async function recordSettlement(input: {
   if (priorGroup) {
     const patchedGroup: GroupSnapshot = {
       ...priorGroup,
-      pendingSettlements: [...priorGroup.pendingSettlements, optimistic],
+      settlements: [...priorGroup.settlements, optimistic],
+      balances: applySettlementDelta(priorGroup.balances, optimistic, 1),
     };
     store.patch((s) => ({
       groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
@@ -388,6 +374,7 @@ export async function recordSettlement(input: {
       {
         p_operation_id: operationId,
         p_group_id: groupId,
+        p_from_user_id: fromUserId,
         p_to_user_id: toUserId,
         p_amount_cents: amountCents,
       },
@@ -403,7 +390,7 @@ export async function recordSettlement(input: {
             ...s.groups,
             [groupId]: {
               ...group,
-              pendingSettlements: group.pendingSettlements.map((item) =>
+              settlements: group.settlements.map((item) =>
                 item.id === operationId ? { ...item, id: settlementId } : item,
               ),
             },
@@ -419,52 +406,23 @@ export async function recordSettlement(input: {
   }
 }
 
-export async function confirmSettlement(groupId: string, settlementId: string): Promise<MutationAck> {
-  const store = useAppStore.getState();
-  const priorGroup = store.groups[groupId];
-  const settlement = priorGroup?.pendingSettlements.find((s) => s.id === settlementId);
-
-  const rollback: RollbackStep[] = [];
-  if (priorGroup && settlement) {
-    const patchedGroup: GroupSnapshot = {
-      ...priorGroup,
-      pendingSettlements: priorGroup.pendingSettlements.filter((s) => s.id !== settlementId),
-      balances: applySettlementDelta(priorGroup.balances, settlement, 1),
-    };
-    store.patch((s) => ({
-      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
-    }));
-    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
-  }
-
-  try {
-    const ack = await rpc("confirm_settlement", { p_settlement_id: settlementId }, decodeMutationAck);
-    void refreshGroup(groupId);
-    notify(ack.eventId);
-    return ack;
-  } catch (error) {
-    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
-  }
-}
 
 export async function voidSettlement(
   groupId: string,
   settlementId: string,
-  wasConfirmed: boolean,
 ): Promise<MutationAck> {
   const store = useAppStore.getState();
   const priorGroup = store.groups[groupId];
 
   const rollback: RollbackStep[] = [];
   if (priorGroup) {
-    let balances = priorGroup.balances;
-    if (wasConfirmed) {
-      const parts = findSettlementInEvents(groupId, settlementId);
-      if (parts) balances = applySettlementDelta(balances, parts, -1);
-    }
+    const applied = priorGroup.settlements.find((s) => s.id === settlementId);
+    const balances = applied
+      ? applySettlementDelta(priorGroup.balances, applied, -1)
+      : priorGroup.balances;
     const patchedGroup: GroupSnapshot = {
       ...priorGroup,
-      pendingSettlements: priorGroup.pendingSettlements.filter((s) => s.id !== settlementId),
+      settlements: priorGroup.settlements.filter((s) => s.id !== settlementId),
       balances,
     };
     store.patch((s) => ({

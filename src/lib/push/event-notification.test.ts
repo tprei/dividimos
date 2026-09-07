@@ -80,7 +80,7 @@ describe("recipientsFor", () => {
       expense_id: null,
       settlement_id: "st-1",
       subject_user_id: "bruno",
-      payload: { amountCents: 3000 },
+      payload: { amountCents: 3000, fromUserId: "ana", toUserId: "bruno" },
     });
     expect(recipientsFor(row, members)).toEqual(["bruno"]);
   });
@@ -212,15 +212,30 @@ describe("eventNotification", () => {
         expense_id: null,
         settlement_id: "st-1",
         subject_user_id: "bruno",
-        payload: { amountCents: 3000, toUserId: "bruno" },
+        payload: { amountCents: 3000, fromUserId: "ana", toUserId: "bruno" },
       }),
       ctx("bruno"),
     );
-    expect(payload.body).toBe(
-      "Ana marcou um pagamento de R$\u00A030,00 pra você",
-    );
+    expect(payload.body).toBe("Ana pagou R$\u00A030,00 pra você");
     expect(payload.url).toBe("/app");
     expect(payload.category).toBe("settlements");
+  });
+
+  it("states the real payer and payee when the creditor records", () => {
+    const row = event({
+      kind: "settlement_recorded",
+      actor_id: "bruno",
+      expense_id: null,
+      settlement_id: "st-1",
+      subject_user_id: "ana",
+      payload: { amountCents: 3000, fromUserId: "ana", toUserId: "bruno" },
+    });
+    expect(eventNotification(row, ctx("ana")).body).toBe(
+      "Você pagou R$\u00A030,00 para Bruno",
+    );
+    expect(eventNotification(row, ctx("bruno")).body).toBe(
+      "Ana pagou R$\u00A030,00 pra você",
+    );
   });
 
   it("describes nudges for the subject", () => {

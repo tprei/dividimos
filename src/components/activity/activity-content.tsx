@@ -76,12 +76,11 @@ function makeNameOf(
 
 interface ActivityRowProps {
   event: GroupEvent;
-  items: GroupEvent[];
   groups: Record<string, GroupSnapshot>;
   meId: string | undefined;
 }
 
-function ActivityRow({ event, items, groups, meId }: ActivityRowProps) {
+function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const [isUndoing, setIsUndoing] = useState(false);
 
   const nameOf = useMemo(
@@ -100,31 +99,21 @@ function ActivityRow({ event, items, groups, meId }: ActivityRowProps) {
   const relativeTime = formatRelativeDate(event.createdAt);
 
   const canUndo = useMemo(() => {
-    if (!event.settlementId) return false;
-    if (event.kind !== "settlement_confirmed") return false;
+    if (!event.settlementId || event.kind !== "settlement_recorded") return false;
 
     const fromUserId =
-      (typeof event.payload?.fromUserId === "string"
-        ? event.payload.fromUserId
-        : null) ?? event.subjectUserId;
+      typeof event.payload?.fromUserId === "string" ? event.payload.fromUserId : null;
     const toUserId =
-      (typeof event.payload?.toUserId === "string"
-        ? event.payload.toUserId
-        : null) ?? event.actorId;
-    const isParty =
-      Boolean(meId) &&
-      (meId === fromUserId ||
-        meId === toUserId ||
-        meId === event.actorId ||
-        meId === event.subjectUserId);
+      typeof event.payload?.toUserId === "string" ? event.payload.toUserId : null;
 
-    if (!isParty) return false;
+    if (meId !== fromUserId && meId !== toUserId) return false;
 
-    const latestForSettlement = items.find(
-      (i) => i.settlementId === event.settlementId,
+    return (
+      groups[event.groupId]?.settlements.some(
+        (s) => s.id === event.settlementId,
+      ) ?? false
     );
-    return latestForSettlement?.kind === "settlement_confirmed";
-  }, [event, items, meId]);
+  }, [event, groups, meId]);
 
   const handleUndo = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -132,7 +121,7 @@ function ActivityRow({ event, items, groups, meId }: ActivityRowProps) {
     if (isUndoing || !event.settlementId) return;
     setIsUndoing(true);
     try {
-      await voidSettlement(event.groupId, event.settlementId, true);
+      await voidSettlement(event.groupId, event.settlementId);
       toast.success("Pagamento desfeito");
     } catch (err) {
       toast.error(ledgerErrorMessage(err));
@@ -257,7 +246,6 @@ export function ActivityContent() {
           <ActivityRow
             key={event.id}
             event={event}
-            items={items}
             groups={groups}
             meId={me?.id}
           />

@@ -30,7 +30,7 @@ test.describe("DM settlements", () => {
     ).not.toBeVisible();
   });
 
-  test("recording leaves balances untouched until the creditor confirms", async ({
+  test("recording applies the payment to balances immediately", async ({
     seed,
     adminClient,
   }) => {
@@ -61,32 +61,25 @@ test.describe("DM settlements", () => {
     const { error: recordError } = await aliceClient.rpc("record_settlement", {
       p_operation_id: crypto.randomUUID(),
       p_group_id: dm.id,
+      p_from_user_id: alice.id,
       p_to_user_id: bob.id,
       p_amount_cents: 2500,
     });
     expect(recordError).toBeNull();
 
-    const { data: pending } = await adminClient
+    const { data: settlements } = await adminClient
       .from("settlements")
       .select("id, status")
       .eq("group_id", dm.id)
       .eq("amount_cents", 2500);
-    expect(pending).toHaveLength(1);
-    expect(pending![0].status).toBe("pending");
-
-    expect(await netFor(alice.id)).toBe(-2500);
-    expect(await netFor(bob.id)).toBe(2500);
-
-    const settlementId = pending![0].id as string;
-    const bobClient = await seed.authenticateAs(bob.id);
-    const { error: confirmError } = await bobClient.rpc("confirm_settlement", {
-      p_settlement_id: settlementId,
-    });
-    expect(confirmError).toBeNull();
+    expect(settlements).toHaveLength(1);
+    expect(settlements![0].status).toBe("confirmed");
 
     expect(await netFor(alice.id)).toBe(0);
     expect(await netFor(bob.id)).toBe(0);
 
+    const settlementId = settlements![0].id as string;
+    const bobClient = await seed.authenticateAs(bob.id);
     const { error: voidError } = await bobClient.rpc("void_settlement", {
       p_settlement_id: settlementId,
     });
@@ -99,9 +92,8 @@ test.describe("DM settlements", () => {
       .from("group_events")
       .select("kind")
       .eq("group_id", dm.id)
-      .in("kind", ["settlement_recorded", "settlement_confirmed", "settlement_voided"]);
+      .in("kind", ["settlement_recorded", "settlement_voided"]);
     expect((events ?? []).map((e) => e.kind).sort()).toEqual([
-      "settlement_confirmed",
       "settlement_recorded",
       "settlement_voided",
     ]);
@@ -173,7 +165,7 @@ test.describe("DM settlements", () => {
       .eq("amount_cents", 2500);
     expect(settlementsError).toBeNull();
     expect(settlements).toHaveLength(1);
-    expect(settlements![0].status).toBe("pending");
+    expect(settlements![0].status).toBe("confirmed");
 
     const { data: events, error: eventsError } = await adminClient
       .from("group_events")
@@ -182,6 +174,17 @@ test.describe("DM settlements", () => {
       .eq("kind", "settlement_recorded");
     expect(eventsError).toBeNull();
     expect(events).toHaveLength(1);
+
+    const netFor = async (userId: string): Promise<number> => {
+      const { data } = await adminClient
+        .from("group_balances")
+        .select("net_cents")
+        .eq("group_id", dm.id)
+        .eq("participant_id", userId);
+      return data && data.length > 0 ? Number(data[0].net_cents) : 0;
+    };
+    expect(await netFor(alice.id)).toBe(0);
+    expect(await netFor(bob.id)).toBe(0);
   });
 
   test("shows the Charge button when the counterparty owes money", async ({
@@ -213,6 +216,53 @@ test.describe("DM settlements", () => {
     ).not.toBeVisible();
   });
 
+  test("creditor marks the payment as received and the balance clears", async ({
+    page,
+    seed,
+    loginAs,
+    adminClient,
+  }) => {
+    const alice = await seed.createUser({ name: "Alice DM Recebimento" });
+    const bob = await seed.createUser({ name: "Bob DM Recebimento" });
+    const dm = await seed.createDmGroup(alice, bob);
+
+    // alice pays R$ 30 split equally, so bob owes alice R$ 15
+    await seed.createExpense(dm.id, alice.id, [alice.id, bob.id], {
+      title: "Cinema",
+      totalCents: 3000,
+      expenseType: "single_amount",
+    });
+
+    const netFor = async (userId: string): Promise<number> => {
+      const { data } = await adminClient
+        .from("group_balances")
+        .select("net_cents")
+        .eq("group_id", dm.id)
+        .eq("participant_id", userId);
+      return data && data.length > 0 ? Number(data[0].net_cents) : 0;
+    };
+
+    expect(await netFor(alice.id)).toBe(1500);
+    expect(await netFor(bob.id)).toBe(-1500);
+
+    await loginAs(alice);
+    await page.goto(`/app/conversations/${bob.id}`);
+    await page.waitForLoadState("networkidle");
+
+    await page.getByRole("button", { name: /^Cobrar R\$\s*15,00$/i }).click();
+    await expect(page.getByText("Cobrar via Pix")).toBeVisible();
+    await page.getByRole("button", { name: /Já recebi/i }).click();
+
+    await expect
+      .poll(async () => netFor(bob.id), { timeout: 10000 })
+      .toBe(0);
+    expect(await netFor(alice.id)).toBe(0);
+
+    await expect(
+      page.getByRole("button", { name: /Cobrar.*R\$/i }),
+    ).not.toBeVisible({ timeout: 10000 });
+  });
+
   test("hides the payment button once the debt is fully settled", async ({
     page,
     seed,
@@ -222,8 +272,8 @@ test.describe("DM settlements", () => {
     const bob = await seed.createUser({ name: "Bob DM Zero" });
     const dm = await seed.createDmGroup(alice, bob);
 
-    // bob pays R$ 100, alice settles her R$ 50 and bob confirms, so the balance is zero
-    await seed.createExpenseWithConfirmedSettlements(
+    // bob pays R$ 100 and alice settles her R$ 50, so the balance is zero
+    await seed.createExpenseWithSettlements(
       dm.id,
       bob.id,
       [alice.id, bob.id],

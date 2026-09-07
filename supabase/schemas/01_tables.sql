@@ -3,11 +3,11 @@ CREATE TYPE public.member_status AS ENUM ('invited', 'accepted');
 CREATE TYPE public.expense_type AS ENUM ('itemized', 'single_amount');
 CREATE TYPE public.expense_status AS ENUM ('active', 'deleted');
 CREATE TYPE public.participant_kind AS ENUM ('user', 'guest');
-CREATE TYPE public.settlement_status AS ENUM ('pending', 'confirmed', 'voided');
+CREATE TYPE public.settlement_status AS ENUM ('confirmed', 'voided');
 CREATE TYPE public.pix_key_type AS ENUM ('cpf', 'email', 'phone', 'random');
 CREATE TYPE public.event_kind AS ENUM (
   'expense_created', 'expense_edited', 'expense_deleted', 'expense_restored',
-  'settlement_recorded', 'settlement_confirmed', 'settlement_voided',
+  'settlement_recorded', 'settlement_voided',
   'member_invited', 'member_joined', 'member_left', 'member_removed',
   'guest_claimed', 'nudge'
 );
@@ -133,7 +133,7 @@ CREATE TABLE public.settlements (
   from_user_id uuid NOT NULL REFERENCES public.users(id),
   to_user_id uuid NOT NULL REFERENCES public.users(id),
   amount_cents integer NOT NULL CHECK (amount_cents BETWEEN 1 AND 99999999),
-  status public.settlement_status NOT NULL DEFAULT 'pending',
+  status public.settlement_status NOT NULL DEFAULT 'confirmed',
   created_by uuid NOT NULL REFERENCES public.users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   confirmed_at timestamptz,

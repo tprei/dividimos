@@ -68,7 +68,7 @@ describe("decodeBootstrap", () => {
           },
         ],
         guests: [{ id: "guest-1", displayName: "Zé", expenseId: "exp-1" }],
-        pendingSettlements: [
+        settlements: [
           {
             id: "settle-1",
             operationId: "op-1",
@@ -76,7 +76,7 @@ describe("decodeBootstrap", () => {
             fromUserId: "user-2",
             toUserId: "user-1",
             amountCents: 1500,
-            status: "pending",
+            status: "confirmed",
             createdBy: "user-2",
             createdAt: "2026-09-02T10:00:00.000Z",
             confirmedAt: null,

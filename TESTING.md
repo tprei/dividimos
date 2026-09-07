@@ -24,7 +24,7 @@ supabase db reset
 npm run test:integration
 ```
 
-**What to test here:** RPC behavior (`create_expense`, `edit_expense` and its `stale_version` guard, `delete_expense`/`restore_expense`, `record_settlement`, `confirm_settlement`, `group_transfers`, `send_nudge`, `claim_guest`), `recompute_group_balances` correctness after each mutation, zero-policy RLS (tables reject direct access from `anon`/`authenticated`), realtime authorization, and constraint enforcement.
+**What to test here:** RPC behavior (`create_expense`, `edit_expense` and its `stale_version` guard, `delete_expense`/`restore_expense`, `record_settlement`, `group_transfers`, `send_nudge`, `claim_guest`), `recompute_group_balances` correctness after each mutation, zero-policy RLS (tables reject direct access from `anon`/`authenticated`), realtime authorization, and constraint enforcement.
 
 **What NOT to test here:** UI rendering, browser navigation, multi-step user journeys.
 
@@ -111,9 +111,8 @@ test("user can see their group", async ({ page, seed, loginAs }) => {
 | `createUser(options)` | Create an auth user + profile. Returns `SeededUser` with tokens. |
 | `createUsers(count, baseOptions)` | Create multiple users in parallel. |
 | `createGroup(creatorId, memberIds, name)` | Create group with all members accepted. |
-| `createExpense(groupId, creatorId, participantIds, options)` | Create a draft expense. |
-| `createActiveExpense(...)` | Create and activate an expense (updates balances). |
-| `createSettledExpense(...)` | Full lifecycle: draft → active → settled. |
+| `createExpense(groupId, creatorId, participantIds, options)` | Create an active expense (updates balances). |
+| `createExpenseWithSettlements(...)` | Create an expense and record one settlement per payable edge (balances clear). |
 | `authenticateAs(userId)` | Generate a fresh session for RPC calls. |
 | `cleanup()` | Delete all tracked entities in dependency order. Called automatically. |
 
@@ -129,7 +128,7 @@ test("bob sees alice's expense", async ({ page, seed, loginAs, browser }) => {
   const bob = await seed.createUser({ handle: "bob" });
   const group = await seed.createGroup(alice.id, [bob.id]);
 
-  await seed.createActiveExpense(group.id, alice.id, [alice.id, bob.id]);
+  await seed.createExpense(group.id, alice.id, [alice.id, bob.id]);
 
   // Alice's view
   await loginAs(alice);
@@ -163,7 +162,7 @@ This prevents data accumulation across test runs. If a test is interrupted (e.g.
 
 - Cross-cutting user journeys (UI + API + auth + database)
 - Multi-user interactions (invite/accept, settle debts)
-- Status transitions visible in the UI (draft → active → settled)
+- Status transitions visible in the UI (active ⇄ deleted)
 - Navigation flows and page state after actions
 
 ### What NOT to test synthetically

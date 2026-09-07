@@ -88,7 +88,7 @@ function snapshot(): GroupSnapshot {
     ],
     balances: [],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: 1,
     unreadCount: 0,
