@@ -1,6 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Client } from "pg";
-import type { Database } from "@/types/database";
+import { Client } from "pg";
 import {
   adminClient,
   registerTestUser,
@@ -85,7 +84,7 @@ export async function createTestUser(
   const password = `test_${testId}_pass!`;
   await adminClient.auth.admin.updateUserById(userId, { password });
 
-  const anonClient = createClient<Database>(
+  const anonClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { persistSession: false } },
@@ -110,7 +109,7 @@ export async function createTestUser(
   };
 }
 
-export function authenticateAs(user: TestUser): SupabaseClient<Database> {
+export function authenticateAs(user: TestUser): SupabaseClient {
   if (!isIntegrationTestReady) {
     throw new Error(
       "Integration tests require Supabase environment variables. " +
@@ -122,7 +121,7 @@ export function authenticateAs(user: TestUser): SupabaseClient<Database> {
     throw new Error(`User ${user.handle} has no access token`);
   }
 
-  return createClient<Database>(
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -149,453 +148,150 @@ export async function createTestUsers(
   );
 }
 
-export async function createTestGroup(
-  creatorId: string,
+async function callRpc<T>(
+  client: SupabaseClient,
+  fn: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  const { data, error } = await client.rpc(fn, args);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as T;
+}
+
+export async function createGroup(
+  creator: TestUser,
+  name: string,
   memberIds: string[] = [],
-): Promise<Database["public"]["Tables"]["groups"]["Row"]> {
-  if (!isIntegrationTestReady || !adminClient) {
-    throw new Error("Integration tests require Supabase environment variables.");
-  }
-
-  const testId = generateTestId();
-
-  const { data: groupData, error: groupError } = await adminClient
-    .from("groups")
-    .insert({
-      name: `Test Group ${testId.slice(0, 8)}`,
-      creator_id: creatorId,
-    })
-    .select()
-    .single();
-
-  if (groupError || !groupData) {
-    throw new Error(`Failed to create test group: ${groupError?.message}`);
-  }
-
-  const group = groupData as Database["public"]["Tables"]["groups"]["Row"];
-
-  await adminClient.from("group_members").insert({
-    group_id: group.id,
-    user_id: creatorId,
-    status: "accepted",
-    invited_by: creatorId,
+): Promise<{ groupId: string }> {
+  const client = authenticateAs(creator);
+  const data = await callRpc<{ groupId: string }>(client, "create_group", {
+    p_name: name,
+    p_member_ids: memberIds,
   });
-
-  if (memberIds.length > 0) {
-    await adminClient.from("group_members").insert(
-      memberIds.map((userId) => ({
-        group_id: group.id,
-        user_id: userId,
-        status: "invited" as const,
-        invited_by: creatorId,
-      })),
-    );
-  }
-
-  return group;
+  return { groupId: data.groupId };
 }
 
-/**
- * Creates a canonical DM group between two users via get_or_create_dm_group,
- * the sole trusted DM-creation path (#472). Never raw-inserts into `groups`
- * with is_dm=true or into `dm_pairs` directly — both are locked down at the
- * privilege boundary and only produce a shape the deferred DM invariant
- * triggers accept.
- */
-export async function createTestDmGroup(
-  userA: TestUser,
-  userB: TestUser,
-  options: { bothAccepted?: boolean } = {},
-): Promise<Database["public"]["Tables"]["groups"]["Row"]> {
-  if (!isIntegrationTestReady || !adminClient) {
-    throw new Error("Integration tests require Supabase environment variables.");
-  }
-
-  const { bothAccepted = true } = options;
-
-  const callerClient = authenticateAs(userA);
-  const { data: groupId, error } = await callerClient.rpc("get_or_create_dm_group", {
-    p_other_user_id: userB.id,
-  });
-
-  if (error || !groupId) {
-    throw new Error(`Failed to create test DM group: ${error?.message}`);
-  }
-
-  if (bothAccepted) {
-    const otherClient = authenticateAs(userB);
-    await otherClient.rpc("accept_group_invitation", { p_group_id: groupId });
-  }
-
-  const { data: groupData, error: groupError } = await adminClient
-    .from("groups")
-    .select()
-    .eq("id", groupId)
-    .single();
-
-  if (groupError || !groupData) {
-    throw new Error(`Failed to load test DM group: ${groupError?.message}`);
-  }
-
-  return groupData as Database["public"]["Tables"]["groups"]["Row"];
-}
-
-// ---------------------------------------------------------------------------
-// Expense helpers
-// ---------------------------------------------------------------------------
-
-export interface ExpenseShareInput {
-  userId: string;
-  amount: number;
-}
-
-export interface ExpensePayerInput {
-  userId: string;
-  amount: number;
-}
-
-export interface CreateAndActivateExpenseOptions {
-  creator: TestUser;
-  groupId: string;
-  shares: ExpenseShareInput[];
-  payers: ExpensePayerInput[];
-  title?: string;
-  expenseType?: "single_amount" | "itemized";
-  serviceFeePercent?: number;
-  fixedFees?: number;
-}
-
-/**
- * Creates an expense with shares and payers, then activates it, entirely
- * through the same public RPCs the real app uses (save_expense_draft_graph
- * then activate_saved_expense). Issue #477's expense-graph mutation-token
- * guard makes every direct INSERT/UPDATE/DELETE against expenses/
- * expense_items/expense_shares/expense_payers/expense_guests/
- * expense_guest_shares/expense_allocation_entities/
- * expense_balance_allocation_plans/expense_balance_allocations require an
- * already-open, per-session mutation token; a service_role PostgREST
- * client issuing separate HTTP requests never reliably shares one
- * database session, so raw table writes here are structurally
- * unreliable now. RPCs open/close their own token internally.
- * The total is computed as the sum of payer amounts.
- * Returns the expense id.
- */
-export async function createAndActivateExpense(
-  options: CreateAndActivateExpenseOptions,
-): Promise<string> {
-  if (!isIntegrationTestReady || !adminClient) {
-    throw new Error("Integration tests require Supabase environment variables.");
-  }
-
-  const {
-    creator,
-    groupId,
-    shares,
-    payers,
-    title,
-    expenseType = "single_amount",
-    serviceFeePercent = 0,
-    fixedFees = 0,
-  } = options;
-
-  const totalAmount = payers.reduce((sum, p) => sum + p.amount, 0);
-  const testId = Date.now().toString(36).slice(-4);
-
-  // Payers are participant rows. Preserve payer-only fixtures as explicit
-  // zero-share registered users rather than creating unreachable payers.
-  const reachableShares = new Map(shares.map((share) => [share.userId, share.amount]));
-  for (const payer of payers) {
-    if (!reachableShares.has(payer.userId)) {
-      reachableShares.set(payer.userId, 0);
-    }
-  }
-
-  const creatorClient = authenticateAs(creator);
-
-  const { data: saveResult, error: saveError } = await creatorClient.rpc("save_expense_draft_graph", {
-    p_expense: {
-      group_id: groupId,
-      title: title ?? `Test Expense ${testId}`,
-      merchant_name: null,
-      expense_type: expenseType,
-      total_amount: totalAmount,
-      service_fee_basis_points: Math.round(serviceFeePercent * 100),
-      fixed_fees: fixedFees,
-    },
-    p_items: [],
-    p_shares: [...reachableShares].map(([userId, amount]) => ({
-      user_id: userId,
-      share_amount_cents: amount,
-    })),
-    p_payers: payers.map((p) => ({ user_id: p.userId, amount_cents: p.amount })),
-    p_guests: [],
-    p_guest_shares: [],
-    p_participant_order: [],
-    p_expected_graph_revision: 0,
-    p_save_operation_id: crypto.randomUUID(),
-  });
-
-  if (saveError || !saveResult) {
-    throw new Error(`Failed to create expense: ${saveError?.message}`);
-  }
-
-  const expenseId = (saveResult as { id: string; graph_revision: number }).id;
-  const graphRevision = (saveResult as { id: string; graph_revision: number }).graph_revision;
-
-  const { error: rpcError } = await creatorClient.rpc("activate_saved_expense", {
-    p_expense_id: expenseId,
-    p_expected_graph_revision: graphRevision,
-  });
-
-  if (rpcError) {
-    throw new Error(`Failed to activate expense: ${rpcError.message}`);
-  }
-
-  return expenseId;
-}
-
-/**
- * Deletes test expenses directly, for suites that need raw teardown rather
- * than the app's own delete paths. #477's expense-graph mutation-token
- * guard requires an already-open direct token for any raw DELETE against
- * `expenses` (and its cascading children); `pg_temp`'s `ON COMMIT DELETE
- * ROWS` wipes that token at the end of the transaction it opened in, so
- * the open and the delete must share one explicit transaction, never two
- * separate autocommit statements. Also scrubs any live `committed`
- * expense_graph_save_operations ledger rows first: that table's
- * expense_id FK is `ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED`, so
- * an un-scrubbed row aborts the delete at COMMIT.
- */
-export async function deleteTestExpenses(pg: Client, expenseIds: string[]): Promise<void> {
-  if (expenseIds.length === 0) return;
-  await pg.query("BEGIN");
-  try {
-    await pg.query("select public.begin_expense_graph_direct_mutation($1::uuid[])", [expenseIds]);
-    await pg.query(
-      `update public.expense_graph_save_operations
-          set outcome = 'retired',
-              canonical_request = null,
-              request_digest = null,
-              expense_id = null,
-              graph_revision = null,
-              result = null,
-              result_created_at = null,
-              retired_reason = 'expense_deleted',
-              retired_at = statement_timestamp()
-        where expense_id = any($1::uuid[]) and outcome = 'committed'`,
-      [expenseIds],
-    );
-    await pg.query("delete from public.expenses where id = any($1::uuid[])", [expenseIds]);
-    await pg.query("COMMIT");
-  } catch (error) {
-    await pg.query("ROLLBACK").catch(() => {});
-    throw error;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Settlement helpers
-// ---------------------------------------------------------------------------
-
-export interface SettleDebtOptions {
-  caller: TestUser;
-  groupId: string;
-  fromUserId: string;
-  toUserId: string;
-  amountCents: number;
-  operationId?: string;
-}
-
-/**
- * Calls the replay-safe batch settlement RPC and returns its one settlement ID.
- */
-export async function settleDebt(options: SettleDebtOptions): Promise<string> {
-  if (!isIntegrationTestReady) {
-    throw new Error("Integration tests require Supabase environment variables.");
-  }
-
-  const {
-    caller,
-    groupId,
-    fromUserId,
-    toUserId,
-    amountCents,
-    operationId = crypto.randomUUID(),
-  } = options;
-  const callerClient = authenticateAs(caller);
-
-  const { data, error } = await callerClient.rpc("record_settlements", {
-    p_allocations: [{
-      group_id: groupId,
-      from_user_id: fromUserId,
-      to_user_id: toUserId,
-      amount_cents: amountCents,
-    }],
-    p_operation_id: operationId,
-  });
-
-  if (error) {
-    throw new Error(`record_settlements failed: ${error.message}`);
-  }
-  if (!data || data.length !== 1 || typeof data[0].settlement_id !== "string") {
-    throw new Error("record_settlements did not return exactly one settlement.");
-  }
-
-  return data[0].settlement_id;
-}
-
-// ---------------------------------------------------------------------------
-// Balance helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Gets the balance between two users in a group.
- * Returns a signed value: positive means userX owes userY,
- * negative means userY owes userX.
- * Returns 0 if no balance row exists.
- */
-export async function getBalanceBetween(
-  groupId: string,
-  userX: string,
-  userY: string,
-): Promise<number> {
-  if (!isIntegrationTestReady || !adminClient) {
-    throw new Error("Integration tests require Supabase environment variables.");
-  }
-
-  // Canonical ordering: user_a < user_b
-  const [userA, userB] = userX < userY ? [userX, userY] : [userY, userX];
-
-  const { data, error } = await adminClient
-    .from("balances")
-    .select("amount_cents")
-    .eq("group_id", groupId)
-    .eq("user_a", userA)
-    .eq("user_b", userB)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Failed to query balance: ${error.message}`);
-  }
-
-  if (!data) return 0;
-
-  // If userX is the canonical user_a, return as-is (positive = userX owes userY).
-  // If userX is user_b, flip the sign (positive = userX owes userY).
-  return (userX < userY ? data.amount_cents : -data.amount_cents) || 0;
-}
-
-/**
- * Computes a user's net position across all their balance rows in a group:
- * the total they are owed minus the total they owe.
- * Positive = net creditor, negative = net debtor.
- *
- * `amount_cents` is signed (positive = user_a owes user_b, per the balances
- * convention), so the user_b side is the creditor and the user_a side the
- * debtor. Unlike the pairwise {@link getBalanceBetween}, the net position is
- * an invariant of balance-ledger normalization — the greedy minimized
- * transfer set preserves every user's net — so it stays stable regardless of
- * how debts get re-paired.
- */
-export async function getNetPosition(
-  groupId: string,
-  userId: string,
-): Promise<number> {
-  if (!isIntegrationTestReady || !adminClient) {
-    throw new Error("Integration tests require Supabase environment variables.");
-  }
-
-  const { data, error } = await adminClient
-    .from("balances")
-    .select("user_a, user_b, amount_cents")
-    .eq("group_id", groupId);
-
-  if (error) {
-    throw new Error(`Failed to query net position: ${error.message}`);
-  }
-
-  return (data ?? [])
-    .filter((r) => r.user_a === userId || r.user_b === userId)
-    .reduce(
-      (sum, r) => sum + (r.user_b === userId ? r.amount_cents : -r.amount_cents),
-      0,
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Group membership helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Accepts a group invitation for the given user.
- * Uses the user's authenticated client so RLS policies are respected.
- */
-export async function acceptGroupInvite(
+export async function acceptInvitation(
   user: TestUser,
   groupId: string,
 ): Promise<void> {
-  const userClient = authenticateAs(user);
-
-  const { error } = await userClient.rpc("accept_group_invitation", {
-    p_group_id: groupId,
-  });
-
-  if (error) {
-    throw new Error(
-      `Failed to accept group invite for ${user.handle}: ${error.message}`,
-    );
-  }
+  const client = authenticateAs(user);
+  await callRpc<unknown>(client, "accept_invitation", { p_group_id: groupId });
 }
 
-/**
- * Creates a group with accepted members in one step.
- * Convenience wrapper that creates the group, invites members, and accepts all invites.
- */
-export async function createTestGroupWithMembers(
+export async function createGroupWithMembers(
   creator: TestUser,
   members: TestUser[],
-): Promise<Database["public"]["Tables"]["groups"]["Row"]> {
-  const memberIds = members.map((m) => m.id);
-  const group = await createTestGroup(creator.id, memberIds);
-
-  // Accept all invitations in parallel
-  await Promise.all(members.map((m) => acceptGroupInvite(m, group.id)));
-
-  return group;
+  name = "Grupo teste",
+): Promise<string> {
+  const { groupId } = await createGroup(
+    creator,
+    name,
+    members.map((member) => member.id),
+  );
+  for (const member of members) {
+    await acceptInvitation(member, groupId);
+  }
+  return groupId;
 }
 
-/**
- * Issue a v1 guest-claim credential (gst1_...) as the expense creator.
- * Replaces the legacy group-readable expense_guests.claim_token: an
- * unclaimed active guest now has no usable token until the creator
- * explicitly issues one through issue_guest_claim_token (#581). Used by
- * integration tests to obtain a claimable bearer before calling
- * claim_guest_spot(text). Throws on any error or non-`issued` outcome.
- */
-export async function issueGuestClaimToken(
-  creator: TestUser,
-  guestId: string,
-): Promise<string> {
-  const client = authenticateAs(creator);
-  const { data, error } = await client.rpc("issue_guest_claim_token", {
-    p_guest_id: guestId,
-    p_rotate: false,
-    // SQL arg is nullable integer; gen-types renders it as non-null number,
-    // so cast. Initial issue requires NULL here (see issue_guest_claim_token).
-    p_expected_generation: null as unknown as number,
+export interface CreateExpenseInput {
+  groupId: string;
+  title?: string;
+  occurredOn?: string;
+  expenseType?: "itemized" | "single_amount";
+  totalCents: number;
+  serviceFeeBps?: number;
+  fixedFeeCents?: number;
+  payload: unknown;
+  clientId?: string;
+}
+
+export async function createExpense(
+  actor: TestUser,
+  input: CreateExpenseInput,
+): Promise<{
+  expenseId: string;
+  versionNo: number;
+  ledgerVersion: number;
+  eventId: number;
+}> {
+  const client = authenticateAs(actor);
+  return callRpc(client, "create_expense", {
+    p_client_id: input.clientId ?? crypto.randomUUID(),
+    p_group_id: input.groupId,
+    p_occurred_on: input.occurredOn ?? new Date().toISOString().slice(0, 10),
+    p_title: input.title ?? "Despesa",
+    p_merchant_name: null,
+    p_expense_type: input.expenseType ?? "single_amount",
+    p_total_cents: input.totalCents,
+    p_service_fee_bps: input.serviceFeeBps ?? 0,
+    p_fixed_fee_cents: input.fixedFeeCents ?? 0,
+    p_payload: input.payload,
   });
-  if (error || !data) {
-    throw new Error(`Failed to issue guest claim token: ${error?.message}`);
-  }
-  const result = data as {
-    outcome: string;
-    token?: string;
-    generation?: number;
+}
+
+export function equalSplitPayload(
+  userIds: string[],
+  totalCents: number,
+  payerIndex = 0,
+): unknown {
+  const base = Math.floor(totalCents / userIds.length);
+  const remainder = totalCents % userIds.length;
+  const shares = userIds.map((_, index) => (index < remainder ? base + 1 : base));
+  return {
+    items: [],
+    participants: userIds.map((userId) => ({ kind: "user", userId })),
+    shares,
+    payers: [{ participantIndex: payerIndex, amountCents: totalCents }],
+    itemAssignments: null,
   };
-  if (result.outcome !== "issued" || typeof result.token !== "string") {
+}
+
+export async function withPg<T>(
+  fn: (client: Client) => Promise<T>,
+): Promise<T> {
+  const dbUrl = process.env.SUPABASE_DB_URL;
+  if (!dbUrl) {
     throw new Error(
-      `issue_guest_claim_token returned unexpected outcome: ${JSON.stringify(result)}`,
+      "SUPABASE_DB_URL is not set; direct database access is required.",
     );
   }
-  return result.token;
+  const client = new Client(dbUrl);
+  await client.connect();
+  try {
+    return await fn(client);
+  } finally {
+    await client.end();
+  }
+}
+
+export async function getBalances(
+  groupId: string,
+): Promise<Array<{ kind: string; participant_id: string; net_cents: number }>> {
+  return withPg(async (client) => {
+    const result = await client.query<{
+      kind: string;
+      participant_id: string;
+      net_cents: number;
+    }>(
+      "select kind, participant_id, net_cents::int " +
+        "from public.group_balances where group_id = $1 " +
+        "order by kind, participant_id",
+      [groupId],
+    );
+    return result.rows;
+  });
+}
+
+export async function expectRpcError(
+  call: PromiseLike<{ error: { message: string } | null }>,
+): Promise<string> {
+  const { error } = await call;
+  if (!error) {
+    throw new Error("Expected RPC to fail, but it succeeded");
+  }
+  return error.message;
 }
