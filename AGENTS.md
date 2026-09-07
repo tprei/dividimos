@@ -6,7 +6,7 @@ This file is for AI coding agents working in this repository. Follow it unless a
 
 ## Mission
 
-Build Dividimos as a sovereign, Brazil-first expense-splitting app. Every expense belongs to a group; activating an expense atomically updates running net balances between user pairs (Splitwise-inspired). Settlements happen via Pix. Optimize for reviewability, product learning, and operational simplicity. Do not optimize for scale before the product asks for it.
+Build Dividimos as a sovereign, Brazil-first expense-splitting app. Every expense belongs to a group; the ledger keeps a signed net balance per participant as a projection that every financial RPC recomputes in-transaction (Splitwise-inspired). Settlements happen via Pix. Optimize for reviewability, product learning, and operational simplicity. Do not optimize for scale before the product asks for it.
 
 ## Current Stack Decision
 
@@ -65,14 +65,14 @@ Use product language in code and boundaries:
 - `pix key`
 - `handle`
 - `user`
-- lifecycle: `draft` → `active` → `settled`
+- lifecycle: `active` ⇄ `deleted` (soft delete, version history)
 
 Keep domain rules separate from delivery mechanisms:
 
 - Next.js API routes and Supabase RPC functions translate requests, enforce atomicity, and persist data.
 - Pure domain math — currency conversion, debt simplification, Pix EMV encoding — lives in `src/lib` functions with no I/O.
 - Zustand stores and React components present state and collect intent; they do not own business rules.
-- Supabase migrations persist and query data under RLS.
+- Declarative SQL schemas (`supabase/schemas/`, regenerated baseline) persist and query data; access is RPC-only.
 
 Do not create generic `manager`, `processor`, `util`, or `service` packages when a domain name would be clearer.
 
@@ -82,7 +82,7 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 - Keep business logic out of JSX. Move reusable presentation into components; keep screens as orchestration.
 - All hooks must run before any early returns.
 - Zustand is the client state library. Consolidate data fetching at the load boundary; components receive data as props or read from the store.
-- Put API and Supabase calls in `src/lib/supabase/` modules or feature-specific API modules. Never scatter queries across components.
+- Screens never call Supabase. All network lives in `src/lib/sync/` (`client`, `bootstrap`, `refresh`, `realtime`, `auth`, `mutations`, `mutations-group`); components read the Zustand store or receive data as props.
 - Use design-system tokens and shadcn/ui primitives. Do not scatter raw colors, spacing, or typography.
 - Range inputs use global CSS styling in `globals.css`, not inline classes.
 - Use the circular `UserAvatar` component for all user display. Never render square initial badges.
@@ -93,25 +93,30 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 
 ## Backend / Data Rules
 
-- Every Supabase table has Row-Level Security. Data is isolated by group and user; RLS is enforced, not optional.
-- Balances are never written directly. They are updated only by the `activate_saved_expense` and `confirm_settlement` RPC functions (`SECURITY DEFINER`). This prevents race conditions and ensures atomicity.
-- The `balances` table stores one row per `(group, user_a, user_b)` pair where `user_a < user_b` (canonical UUID ordering). Positive `amount_cents` means `user_a` owes `user_b`; negative means the reverse.
+- Every table has RLS enabled with zero policies and no `anon`/`authenticated` grants. Every read and write is a `SECURITY DEFINER` RPC that checks membership first (`supabase/schemas/03_rpc_read.sql` through `08_rpc_guest.sql`, `11_vendor_charges.sql`, `14_rpc_nudge.sql`).
+- `expense_versions` (one row per edit, with `payload` and `change_summary`) and `settlements` are the only financial facts. `group_balances` is a projection: one row per `(group, kind, participant)` with a signed `net_cents` (positive = the participant is owed). Guests are participants with `kind = 'guest'` and can carry a balance until claimed.
+- `group_balances` is never written directly. Every mutating ledger RPC calls `recompute_group_balances(group)` inside the same transaction, recomputing the projection from the facts.
+- Transfers are minimized at read time: `group_transfers(group)` in SQL and `transfersFromBalances` in TypeScript implement the same greedy two-pointer over the balances (parity-tested over 200 random ledgers). Never store transfer rows or a minimized graph.
+- Expense lifecycle is `active` ⇄ `deleted` (soft delete + version history). There is no draft state. Optimistic concurrency: mutations send `expected_version_no` and the RPC rejects a mismatch with `stale_version`.
+- The client is local-first: screens read the Zustand store (`src/stores/app-store.ts`, persisted to IndexedDB via `src/lib/idb-storage.ts`) and never query Supabase. All network lives in `src/lib/sync/`. Mutations patch the store optimistically, roll back per entry on failure, and reconcile with `refreshGroup`.
+- Realtime is broadcast-only: RPCs `realtime.send` to private `group:<id>` / `chat:<id>` topics authorized by a policy on `realtime.messages`. No tables in the publication.
+- The schema is declarative: edit `supabase/schemas/*.sql`, run `./scripts/build-baseline.sh`, and commit both. Never hand-edit `supabase/migrations/20260906000000_ledger_baseline.sql`; CI fails if it is stale.
 - The per-expense cap is `MAX_EXPENSE_CENTS = 99_999_999` cents (`src/lib/expense-money.ts` is the sole owner of this cap and the fee formula). Service fee is integer basis points, computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000`, identically in TypeScript and SQL. Persisted item/share/payer/fee equality is exact — never a tolerance, a client-side re-derivation the RPC then overwrites, or a second rounding convention.
-- Migrations with semantic logic must be covered by integration tests (see Tests).
+- Schema changes with semantic logic must be covered by integration tests (see Tests).
 
 The remote Supabase instance has meaningful network latency (~1-5s per round trip from Brazil). Every unnecessary query is felt by the user. These rules are non-negotiable.
 
 **Parallel over sequential.** When multiple Supabase queries don't depend on each other's results, run them with `Promise.all`. Never chain `await` calls to independent tables. This applies in both client components and API routes.
 
-**Filter `onAuthStateChange` events.** Only act on `SIGNED_IN`, `SIGNED_OUT`, and `USER_UPDATED`. Ignore `TOKEN_REFRESHED` and `INITIAL_SESSION` — these fire frequently and don't change the user profile. The current `UserProvider` (`src/contexts/user-context.tsx`) also guards with a user ID ref to skip redundant DB fetches.
+**Route auth events through `src/lib/sync/auth.ts`.** Its `attachAuthListener` reacts only to `SIGNED_IN` (reset + re-bootstrap when the user id actually changed) and `SIGNED_OUT` (reset). It ignores `TOKEN_REFRESHED` and `INITIAL_SESSION` — these fire frequently and don't change the signed-in user. Do not add new `onAuthStateChange` subscribers in components.
 
-**Realtime handlers must patch, not reload.** When a Supabase realtime event arrives, update only the changed fields in the Zustand store directly. Never call a full data-loading function (like `loadExpense`) from a realtime handler unless the event represents a structural change (e.g., `draft → active` status transition). Each full reload issues multiple parallel queries — one per realtime event compounds quickly.
+**Realtime handlers must patch, not reload.** Chat broadcasts merge the message into the store directly. A `ledger` broadcast only schedules one `refreshGroup` for that group — never issue per-event query bursts, and never call multiple full refreshes from a single event.
 
 **Debounce API calls triggered by user input.** Any `useEffect` that fires an API call based on a value the user types must debounce it (500ms). Use a `useRef` timer + an `AbortController` to cancel in-flight requests when a new one starts. See `PixQrModal` for the established pattern.
 
-**Fetch shared data once, pass it down.** If a parent and child both need the same data (e.g., expense shares with user profiles), fetch it in the parent and pass it as a prop. Never let sibling or parent/child components independently query the same table for the same rows. `loadExpense` returns `ExpenseWithDetails` including shares and payers with resolved profiles for this reason.
+**Read shared data from the store, once.** The only code that issues reads is `src/lib/sync/` (bootstrap on sign-in, `refreshGroup` after a mutation or ledger broadcast, and the API routes' own service-role access). Components never fetch the same table independently — if data is missing from the store, extend the sync layer, not the component.
 
-**Consolidate queries at the load boundary.** When a page loads, all the data it needs should be fetched in one place (`loadExpense`, `listGroupExpenses`, `queryBalances`, etc.), not scattered across multiple `useEffect` hooks in different components. Components receive data as props or read from the Zustand store — they don't fetch independently.
+**Consolidate refreshes at the sync boundary.** When several parts of a screen need fresh data, trigger one `refreshGroup` and let the store notify subscribers — do not scatter `useEffect` fetches across components.
 
 ## Tests
 
@@ -119,7 +124,7 @@ Write tests when they reduce real risk.
 
 Tests should verify behavior, not implementation details. Prefer a few clear tests over many fragile ones. Tests must not depend on order or shared mutable state.
 
-**Migrations with semantic logic must be covered by integration tests.** Any new migration that adds or modifies an RPC, RLS policy, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, RLS denial for outsiders, and the edge cases the SQL specifically guards (locks, validation, accepted-membership checks). The coverage can extend an existing test file or live in a new one; what matters is that an integration test exercises the change. Pure structural migrations (adding an index, renaming a column with no semantic change) are exempt. The migration-replay CI job only proves the SQL applies cleanly; it does not exercise behavior.
+**Schema changes with semantic logic must be covered by integration tests.** Any change to `supabase/schemas/*.sql` that adds or modifies an RPC, realtime topic, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, denial for non-members, and the edge cases the SQL specifically guards (locks, validation, membership checks). The coverage can extend an existing file under `src/lib/ledger/` or live in a new one; what matters is that an integration test exercises the change. Pure structural changes (adding an index, renaming a column with no semantic change) are exempt. The baseline-replay CI job only proves the SQL applies cleanly and the baseline is fresh; it does not exercise behavior.
 
 ## Pull Requests
 
