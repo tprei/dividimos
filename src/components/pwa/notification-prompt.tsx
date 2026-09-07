@@ -59,7 +59,7 @@ export function NotificationPrompt() {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.3 }}
-        className="flex items-center gap-3 rounded-2xl border bg-card p-3"
+        className="mt-4 flex items-center gap-3 rounded-2xl border bg-card p-3"
       >
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Bell className="h-5 w-5" />
