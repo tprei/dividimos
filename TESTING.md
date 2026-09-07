@@ -17,24 +17,18 @@ npm run test:watch      # watch mode
 
 ## Integration Tests
 
-Test database layer against a real local Supabase instance. Verify RLS policies, RPC atomicity, and constraint enforcement.
+Test the ledger RPC layer against a real local Supabase instance. Verify membership checks, optimistic concurrency, balance recomputation, and constraint enforcement. The suites live next to the code they exercise, in `src/lib/ledger/`: `rpc-read`, `rpc-expense`, `rpc-settlement`, `rpc-group`, `rpc-guest`, `rpc-nudge`, and `transfers` (SQL↔TypeScript parity for `group_transfers`/`transfersFromBalances` over 200 random ledgers) — 131 tests in total. SQL behavior is covered entirely by these TypeScript suites.
 
 ```bash
-supabase start
+supabase db reset
 npm run test:integration
 ```
 
-**What to test here:** RLS policies, RPC functions (`save_expense_draft_graph`, `activate_saved_expense`, `confirm_settlement`), foreign key constraints, row-level access control, deterministic concurrency/mutation-guard behavior (see below).
+**What to test here:** RPC behavior (`create_expense`, `edit_expense` and its `stale_version` guard, `delete_expense`/`restore_expense`, `record_settlement`, `confirm_settlement`, `group_transfers`, `send_nudge`, `claim_guest`), `recompute_group_balances` correctness after each mutation, zero-policy RLS (tables reject direct access from `anon`/`authenticated`), realtime authorization, and constraint enforcement.
 
 **What NOT to test here:** UI rendering, browser navigation, multi-step user journeys.
 
-### Deterministic concurrency (no timing-based races)
-
-`src/test/db-race-barrier.ts`'s `forceLockContentionRace` proves two RPC calls actually contend for the same PostgreSQL lock, instead of trusting `Promise.allSettled` network/event-loop timing (issue #519). It opens an independent raw `pg` connection, acquires the row lock the racing calls are expected to contend for, fires both calls while holding it, and polls `pg_stat_activity` until both racing backends are observed simultaneously present with at least one genuinely lock-waiting — a database-native proof of contention, not a guess from wall-clock delay. Used by `concurrency.integration.test.ts`, `financial-compatibility-gate.integration.test.ts`, and others wherever a test must prove a real lock-order outcome rather than assert on whichever side happened to run first.
-
-### Testing against seeded corruption (rollback-only fixtures)
-
-Some guards (e.g. `PST07/orphan_payer_state`) only fire against persisted state that valid application code can never produce — an orphan payer with no matching share row, a corrupt graph mid-migration. To test these without leaving corrupt data in the database: open a transaction on a direct `pg` connection, call the non-granted `begin_expense_graph_direct_mutation(uuid[])` to open a mutation token, insert the corrupt row directly, exercise the guard/RPC under test, then `ROLLBACK` — the corruption never commits. See `payer-reachability-repair.integration.test.ts` for worked examples. `financial_internal.set_financial_maintenance(boolean)` is the equivalent helper for exercising the financial maintenance gate (`PST09`); tests that use it must reset it to `false` in `afterEach`/`afterAll` since the singleton is shared across the whole suite.
+Suites use `src/test/integration-helpers.ts` — `createTestUser`, `createTestUsers`, `authenticateAs`, `createGroup`, `createGroupWithMembers`, `createExpense`, plus `withPg` for direct `pg` setup (seeding balances, asserting rows) and `expectRpcError` for error-code assertions. Wrap suites in `describe.skipIf(!isIntegrationTestReady)` so they skip when env vars are absent.
 
 ## Synthetic Tests (E2E)
 
@@ -199,7 +193,6 @@ All test layers need these (set by `./scripts/dev-setup.sh` or `supabase start`)
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Integration, Synthetic |
 | `SUPABASE_SERVICE_ROLE_KEY` | Integration, Synthetic |
 | `PIX_ENCRYPTION_KEY` | Integration |
-| `SUPABASE_DB_URL` | Integration (test-runner Postgres credential for direct `pg` connections in deterministic lock/race tests; not an application environment setting) |
+| `SUPABASE_DB_URL` | Integration (test-runner Postgres credential for the direct `pg` connections used by `withPg` and by test-data cleanup; not an application environment setting) |
 | `RATE_LIMIT_DISABLED` | Integration (set to `0` in CI; the limiter wrapper's non-production Vitest-only bypass reads this, but a suite-wide `1` would make rate-limit enforcement tests false-green) |
-| `NEXT_PUBLIC_AUTH_PHONE_TEST_MODE` | Synthetic (set to `true`) |
 | `E2E_BASE_URL` | Synthetic (defaults to `http://localhost:3000`) |

@@ -34,9 +34,9 @@ CI currently runs:
 - `npm run lint` — ESLint with `--max-warnings 0` (`.github/workflows/ci.yml`).
 - `npm test` — unit tests via Vitest + happy-dom (`.github/workflows/ci.yml`).
 - `npx tsc --noEmit` — type check (`.github/workflows/ci.yml`).
-- `npm run test:integration` — integration tests against a fresh local Supabase instance, verifying RLS, RPC atomicity, and constraints (`.github/workflows/integration.yml`).
+- `npm run test:integration` — integration tests against a fresh local Supabase instance, verifying the ledger RPC layer: membership checks, balance recomputation, and constraints (`.github/workflows/integration.yml`).
 - `npm run test:synthetic` — Playwright synthetic E2E tests against local Supabase + the dev server, sharded (`.github/workflows/synthetic.yml`).
-- Migration replay on a fresh database plus a filename-immutability check, triggered when `supabase/migrations/**` changes (`.github/workflows/migrations.yml`).
+- Baseline replay on a fresh database, a baseline-freshness check (`./scripts/build-baseline.sh` must produce no diff), and a filename-immutability check, triggered when `supabase/schemas/**`, `supabase/migrations/**`, or the script changes (`.github/workflows/migrations.yml`).
 - Signed Android release AAB via Capacitor, on push to `main` (`.github/workflows/android.yml`).
 
 Do not merge failing CI because "it is probably unrelated" without a clear human decision recorded on the PR.
@@ -58,10 +58,10 @@ Avoid tests that only verify mocks, implementation details, or framework wiring 
 Choose the highest test layer needed to prove the product risk before opening a PR:
 
 - Unit tests (`*.test.ts` / `*.test.tsx`, run with `npm test`) for pure logic and component rendering — currency math, debt simplification, Pix EMV encoding, store logic.
-- Integration tests (`*.integration.test.ts`, run with `npm run test:integration` against local Supabase) for database behavior — RLS policies, RPC functions (`save_expense_draft_graph`, `activate_saved_expense`, `confirm_settlement`), foreign key constraints, row-level access control. Wrap them in `describe.skipIf(!isIntegrationTestReady)` so they skip when env vars are absent.
+- Integration tests (`src/lib/ledger/*.integration.test.ts`, run with `npm run test:integration` against local Supabase after `supabase db reset`) for database behavior — RPC functions (`create_expense`, `edit_expense`, `delete_expense`, `record_settlement`, `confirm_settlement`, `group_transfers`), balance recomputation, zero-policy RLS (tables reject direct access), and constraints. Wrap them in `describe.skipIf(!isIntegrationTestReady)` so they skip when env vars are absent.
 - Synthetic tests (`e2e/synthetic/*.spec.ts`, run with `npm run test:synthetic`) for end-to-end user journeys through the real UI, API routes, auth, and database, seeded per-test via `SeedHelper`.
 
-**Migrations with semantic logic must be covered by integration tests.** Any new migration that adds or modifies an RPC, RLS policy, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, RLS denial for outsiders, and the edge cases the SQL specifically guards. Pure structural migrations (adding an index, renaming a column with no semantic change) are exempt. The migration-replay CI job only proves the SQL applies cleanly; it does not exercise behavior.
+**Schema changes with semantic logic must be covered by integration tests.** Any change to `supabase/schemas/*.sql` that adds or modifies an RPC, realtime topic, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, denial for non-members, and the edge cases the SQL specifically guards. The baseline-replay CI job only proves the SQL applies cleanly; it does not exercise behavior.
 
 Run `npm test`, `npm run test:integration`, and `npm run test:synthetic` locally when touching the surfaces above, and call that out in the PR validation notes when local Supabase is unavailable.
 
@@ -106,10 +106,10 @@ Avoid dependencies that introduce hidden services, unnecessary global state, or 
 ## Backend Review Rules
 
 - Keep API route handlers thin. Push behavior into `src/lib` functions or Supabase RPC.
-- Every table has RLS. Data is isolated by group and user.
-- Balances are written only by `activate_saved_expense` and `confirm_settlement` RPC functions (`SECURITY DEFINER`). Never write the `balances` table directly from client code.
+- Every table has RLS enabled with zero policies and no `anon`/`authenticated` grants. All access goes through `SECURITY DEFINER` RPCs that check membership.
+- `group_balances` is a projection, never a write target: every ledger RPC recomputes it in-transaction via `recompute_group_balances`. Never write it from client code or ad-hoc SQL.
 - Keep validation and domain decisions in RPC functions or `src/lib`, not in route handlers.
-- Prefer explicit SQL migrations under `supabase/migrations/`. Use `gen_random_uuid()`, not `uuid_generate_v4()`.
+- Schema is declarative: edit `supabase/schemas/*.sql`, run `./scripts/build-baseline.sh`, and commit both. Never hand-edit `supabase/migrations/20260906000000_ledger_baseline.sql` — CI replays it on a fresh database and fails if it is stale. Use `gen_random_uuid()`, not `uuid_generate_v4()`.
 - Return clear errors without leaking internals.
 - Do not add background workers, Redis, queues, or search services until the product need is real.
 
@@ -121,10 +121,10 @@ Before requesting review:
 - The change is scoped to one coherent idea.
 - CI passes locally with `npm run lint`, `npm test`, and `npx tsc --noEmit`, or the expected CI path is documented.
 - Tests prove behavior where risk justifies them, at the highest layer needed.
-- Any migration that adds or modifies an RPC, RLS policy, trigger, or constraint includes integration-test coverage; pure structural migrations are exempt.
-- Existing migration files are not renamed or deleted (the migrations CI job rejects this). Add a new migration that reverses or supersedes instead.
+- Any schema change that adds or modifies an RPC, trigger, or constraint includes integration-test coverage; pure structural changes are exempt.
+- The generated baseline is not hand-edited: `supabase/migrations/20260906000000_ledger_baseline.sql` is regenerated with `./scripts/build-baseline.sh` from `supabase/schemas/`, and the CI freshness job fails on a stale or hand-edited baseline.
 - New dependencies are justified.
 - The PR description explains what changed and why.
-- If the PR changes a Supabase migration, it explains the RLS / RPC / balance impact.
+- If the PR changes `supabase/schemas/`, it explains the RPC / balance / realtime impact.
 - Stacked PRs include the stack section described in `agent-guidance/writing/STACKED_DIFFS.md`.
 - Any AI-generated sections were read and edited by a human or explicitly called out.

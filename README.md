@@ -68,7 +68,7 @@ flowchart LR
 - **Links de convite** &mdash; Gere um link ou QR Code pra compartilhar no WhatsApp, Telegram, etc. Deep link abre direto no app
 - **Claim links** &mdash; Adicione convidados sem conta no app. Eles recebem um link pra reivindicar sua parte e pagar via Pix
 - **Perfil público** &mdash; `dividimos.ai/u/@handle` é uma página compartilhável que permite iniciar uma conversa
-- **Sync em tempo real** &mdash; Supabase Realtime mantém todos os participantes atualizados
+- **Sync em tempo real** &mdash; Broadcasts privados do Supabase Realtime (tópicos `group:` e `chat:`) mantêm todos os participantes atualizados
 
 ### App e notificações
 
@@ -79,7 +79,7 @@ flowchart LR
 ### Segurança
 
 - **Encryption at rest** &mdash; Chaves Pix criptografadas com AES-256-GCM, decriptadas apenas no servidor
-- **Row-Level Security** &mdash; Todas as tabelas do Supabase com RLS. Dados isolados por grupo/usuário
+- **Acesso só via RPC** &mdash; RLS habilitado em todas as tabelas, sem políticas e sem grants para `anon`/`authenticated`; toda leitura e escrita passa por funções `SECURITY DEFINER` que checam membership no grupo
 - **Sem enumeração** &mdash; Descoberta de usuários apenas por @handle exato. Sem busca ou listagem
 
 ## Stack
@@ -88,8 +88,8 @@ flowchart LR
 |--------|------------|
 | Framework | Next.js 16 (App Router) |
 | UI | React 19, Tailwind CSS v4, shadcn/ui, Framer Motion |
-| Estado | Zustand |
-| Backend | Supabase (PostgreSQL + Auth + Realtime) |
+| Estado | Zustand (local-first, persistido em IndexedDB) |
+| Backend | Supabase (PostgreSQL + Auth + Realtime; acesso exclusivo via RPCs `SECURITY DEFINER`) |
 | Auth | Google OAuth (web), Google Credential Manager (Android nativo) |
 | Deploy | Vercel (frontend), Supabase (banco de dados) |
 | Mobile | Capacitor 8 (Android; iOS em breve) |
@@ -104,35 +104,40 @@ src/
 │   ├── page.tsx            # Landing page
 │   ├── demo/               # Demo pública (sem auth)
 │   ├── auth/               # Google OAuth + onboarding
-│   ├── app/                # Shell autenticado
+│   ├── app/                # Shell autenticado (pré-renderizado, servido cache-first pelo service worker)
 │   │   ├── bill/new/       # Wizard de criação de conta
 │   │   ├── bill/[id]/      # Detalhe + liquidação
 │   │   ├── groups/         # Gestão de grupos
+│   │   ├── conversations/  # Conversas 1-a-1
 │   │   └── profile/        # Configurações + chave Pix
 │   └── api/
 │       ├── pix/generate/   # Geração de QR Pix (server-side)
+│       ├── notify/         # Claim de eventos + fan-out de push
 │       └── users/lookup/   # Busca exata por @handle
 ├── components/
 │   ├── bill/               # Steps do wizard + resumo
 │   ├── settlement/         # Modal QR, grafo de dívidas
 │   └── ui/                 # Primitivos shadcn/ui
 ├── stores/
-│   └── bill-store.ts       # Zustand store
+│   ├── app-store.ts        # Estado local-first (Zustand + persist/IndexedDB)
+│   └── bill-store.ts       # Estado do wizard de despesa
 ├── lib/
 │   ├── crypto.ts           # AES-256-GCM (server-only)
 │   ├── pix.ts              # EMV BR Code + CRC16-CCITT
-│   ├── simplify.ts         # Algoritmo de simplificação de dívidas
 │   ├── currency.ts         # Formatação BRL (centavos inteiros)
+│   ├── expense-money.ts    # Dono único do cap e da fórmula de taxa
+│   ├── ledger/             # Decodificação do snapshot, saldos e minimização de transferências
+│   ├── sync/               # Toda a rede: bootstrap, mutations otimistas, refresh, realtime, auth
+│   ├── simplify.ts         # Preview de dívidas do wizard e da demo
 │   ├── capacitor/          # Bridge nativo (Android/iOS)
-│   └── supabase/           # Clientes + sync
+│   └── supabase/           # Clientes browser/server/admin
 ├── hooks/                  # React hooks
 └── types/                  # Tipos do domínio + banco
 android/                    # Projeto nativo Android (Capacitor)
+public/sw.js                # Service worker (shell /app cache-first)
 supabase/
-└── migrations/             # Schema PostgreSQL + RLS
-```
-
-## Como funciona
+├── schemas/                # Schema declarativo (fonte da verdade)
+└── migrations/             # Baseline gerado por scripts/build-baseline.sh
 
 ### Criação de conta
 
@@ -144,27 +149,14 @@ supabase/
 6. Selecione quem pagou e quanto
 7. Revise e crie
 
-### Liquidação e simplificação de dívidas
+### Liquidação e minimização de transferências
 
-O app modela as dívidas como um [grafo dirigido](https://en.wikipedia.org/wiki/Directed_graph) ponderado, onde cada aresta representa uma transferência pendente. O pipeline de simplificação reduz o número de arestas (transferências Pix) em quatro etapas.
+O banco guarda apenas os fatos financeiros e um saldo por participante &mdash; nunca transferências prontas.
 
-#### Etapa 1 &mdash; Arestas brutas
-
-`computeRawEdges` gera uma aresta para cada par (consumidor &rarr; pagador), proporcional ao consumo e à contribuição de cada pagador. Taxas de serviço percentuais são distribuídas proporcionalmente ao consumo individual; taxas fixas são divididas igualmente.
-
-#### Etapa 2 &mdash; Cancelamento de pares reversos
-
-Procura pares de arestas antiparalelas (A &rarr; B e B &rarr; A) e as compensa, substituindo as duas por uma única aresta com o saldo líquido. Não é um pagamento &mdash; é uma compensação contábil que reduz o número de transferências. Aplica-se quando duas pessoas devem uma à outra simultaneamente &mdash; por exemplo, quando ambas são pagadoras parciais e consumidoras ao mesmo tempo.
-
-#### Etapa 3 &mdash; [Redução transitiva](https://en.wikipedia.org/wiki/Transitive_reduction)
-
-Se existe uma cadeia A &rarr; B &rarr; C, o intermediário B é eliminado: A passa a dever direto pra C pelo valor mínimo da cadeia. Equivale a resolver o [problema de fluxo](https://en.wikipedia.org/wiki/Network_flow_problem) no caminho, removendo nós de passagem. O algoritmo itera até não restar nenhuma cadeia colapsável.
-
-#### Etapa 4 &mdash; Minimização por saldo líquido
-
-`netAndMinimize` descarta o grafo intermediário e recalcula do zero: soma todas as entradas e saídas de cada participante para obter o saldo líquido. Depois, pareia devedores com credores usando um [algoritmo guloso](https://en.wikipedia.org/wiki/Greedy_algorithm) ordenado por valor decrescente &mdash; o maior devedor paga o maior credor, e assim por diante. Isso produz o número mínimo de transferências.
-
-A tabela `balances` armazena sempre o grafo já minimizado: ao final de toda operação que altera saldos (ativação de conta, liquidação, reivindicação de convidado, confirmação), o SQL `minimize_group_balances` reescreve as linhas do grupo para o conjunto mínimo de transferências. As transferências mostradas no Acerto são as próprias linhas da tabela &mdash; pagar uma liquidá-a diretamente, sem deixar resíduo.
+- **Fatos** &mdash; `expense_versions` (uma linha por edição, com o `payload` completo e um `change_summary`) e `settlements` (liquidações com confirmação). Nada mais é fato financeiro.
+- **Projeção** &mdash; `group_balances` tem uma linha por `(grupo, tipo, participante)` com o `net_cents` assinado: positivo significa que o participante recebe, negativo que deve. Convidados sem conta participam com `kind = 'guest'` e podem carregar saldo até serem reclamados via claim link.
+- **Projeção nunca é escrita à mão** &mdash; todo RPC que altera o financeiro (criar, editar, excluir ou restaurar despesa, liquidação, claim de convidado) chama `recompute_group_balances(group)` dentro da mesma transação, reprocessando os fatos do zero. Tudo ou nada: ou o fato e a projeção caem juntos, ou nada cai.
+- **Transferências são calculadas na leitura** &mdash; `group_transfers(group)` em SQL e `transfersFromBalances` em TypeScript implementam o mesmo algoritmo guloso de dois ponteiros sobre os saldos (testado em paridade sobre 200 ledgers aleatórios). O conjunto mínimo de transferências Pix sai direto dos saldos, sem tabela intermediária.
 
 ---
 
@@ -180,74 +172,7 @@ Jantar de R$ 350. Carlos pagou R$ 200, Bia pagou R$ 150. Cinco pessoas consumira
 | Bia | R$ 70 | R$ 40 | &mdash; |
 | Carlos | R$ 50 | &mdash; | R$ 21 |
 
-**Após etapa 1** &mdash; arestas brutas (8 arestas):
-
-```mermaid
-graph LR
-    A[Ana] -->|R$ 46| C[Carlos]
-    A -->|R$ 34| B[Bia]
-    D[Dan] -->|R$ 51| C
-    D -->|R$ 39| B
-    E[Eva] -->|R$ 34| C
-    E -->|R$ 26| B
-    B -->|R$ 40| C
-    C -->|R$ 21| B
-```
-
-Carlos e Bia são pagadores mas também consumiram:
-
-- Carlos deve R$ 21 pra Bia (pela parte que ela pagou)
-- Bia deve R$ 40 pro Carlos (pela parte que ele pagou)
-
-Esse é um par reverso legítimo: duas arestas em direções opostas entre os mesmos nós.
-
-**Após etapa 2** &mdash; cancelamento do par reverso B &harr; C (7 arestas):
-
-- Bia &rarr; Carlos = R$ 40
-- Carlos &rarr; Bia = R$ 21
-- Saldo líquido: Bia &rarr; Carlos = R$ 19
-
-Duas arestas viram uma:
-
-```mermaid
-graph LR
-    A[Ana] -->|R$ 46| C[Carlos]
-    A -->|R$ 34| B[Bia]
-    D[Dan] -->|R$ 51| C
-    D -->|R$ 39| B
-    E[Eva] -->|R$ 34| C
-    E -->|R$ 26| B
-    B -->|R$ 19| C
-```
-
-**Após etapa 3** &mdash; colapso de cadeias (7 &rarr; 6 arestas):
-
-Três cadeias transitivas passam pela Bia:
-
-- Ana &rarr; Bia &rarr; Carlos
-- Dan &rarr; Bia &rarr; Carlos
-- Eva &rarr; Bia &rarr; Carlos
-
-O fluxo de R$ 19 que Bia deve pro Carlos é absorvido pelo que ela recebe dos outros.
-Parte do pagamento de Ana, Dan e Eva é redirecionado direto pro Carlos, eliminando Bia como intermediária:
-
-```mermaid
-graph LR
-    A[Ana] -->|R$ 52| C[Carlos]
-    A -->|R$ 28| B[Bia]
-    D[Dan] -->|R$ 58| C
-    D -->|R$ 32| B
-    E[Eva] -->|R$ 39| C
-    E -->|R$ 21| B
-```
-
-Bia agora é credora pura (só recebe).
-Carlos é credor puro (só recebe).
-Sem mais cadeias colapsáveis.
-
-**Após etapa 4** &mdash; minimização por saldo líquido (4 arestas):
-
-Saldos finais de cada participante:
+Somando as dívidas brutas de cada um (o que deve menos o que tem a receber), a projeção fica:
 
 | Pessoa | Saldo |
 |--------|-------|
@@ -257,7 +182,9 @@ Saldos finais de cada participante:
 | Bia | +81 (recebe) |
 | Carlos | +149 (recebe) |
 
-Pareamento guloso &mdash; maior devedor com maior credor:
+Carlos e Bia são pagadores mas também consumiram, então aparecem dos dois lados &mdash; o saldo líquido já absorve isso. A essa altura existe um par reverso contábil entre os dois (Bia deve R$ 40 pro Carlos, Carlos deve R$ 21 pra Bia), mas ele nunca vira linha no banco: some no `net_cents` de cada um.
+
+Na leitura, o pareamento guloso cruza o maior devedor com o maior credor:
 
 1. Dan (-90) paga R$ 90 a Carlos (+149) &rarr; Carlos fica +59
 2. Ana (-80) paga R$ 59 a Carlos (+59) &rarr; Carlos zerado. Ana fica -21
@@ -272,35 +199,35 @@ graph LR
     E[Eva] -->|R$ 60| B
 ```
 
-**Resultado: 8 arestas &rarr; 4 transferências Pix.**
+**Resultado: 8 dívidas brutas &rarr; 4 transferências Pix, calculadas na hora da leitura.**
 
-Cada passo intermediário é registrado com as arestas removidas e adicionadas, alimentando a visualização paginada no app. Cada participante gera um QR Code Pix para pagar sua parte direto.
+Cada transferência gera um QR Code Pix pra pagar a parte direto. No wizard e na demo, `src/lib/simplify.ts` roda o mesmo pareamento no cliente sobre arestas brutas para alimentar a visualização passo a passo; no banco, o resultado canônico é sempre recalculado a partir dos saldos.
 
 ---
 
 ## Quick orientation
 
-- `src/app/` — Next.js 16 App Router pages. Main flows: landing (`page.tsx`), demo (`demo/`), auth (`auth/`), app shell (`app/`)
+- `src/app/` — Next.js 16 App Router pages. Main flows: landing (`page.tsx`), demo (`demo/`), auth (`auth/`), app shell (`app/`, prerendered and served cache-first by `public/sw.js`)
 - `src/app/auth/` — Google OAuth sign-in, callback route handler, onboarding (handle + Pix key). No phone or 2FA.
 - `src/app/app/groups/` — Groups with mutual confirmation (invite/accept flow)
 - `src/app/api/pix/generate/` — Server-side Pix Copia e Cola generation (decrypts key server-side)
 - `src/app/api/users/lookup/` — Exact @handle lookup for authenticated users
-- `src/stores/bill-store.ts` — Zustand store for the expense wizard. Manages draft creation, item management, splits, payer tracking, and client-side debt preview via `computeLedger()`
-- `src/lib/supabase/expense-actions.ts` — CRUD via the expense-graph RPCs: `saveExpenseDraft` (`save_expense_draft_graph`), `loadExpense`, `deleteExpense`, `listGroupExpenses`
-- `src/lib/supabase/expense-rpc.ts` — Wraps `activate_saved_expense` and `load_expense_graph_snapshot`. Activation is CAS-guarded by `graph_revision` and atomically updates `balances`
-- `src/lib/supabase/settlement-actions.ts` — Balance queries, `recordSettlement` (pending), `confirmSettlement` (RPC), settlement history
-- `src/lib/supabase/expense-mappers.ts` — Row → TypeScript type mappers for all expense tables
+- `src/app/api/notify/` — Claims a `group_events` row once (`notified_at`) and fans out push with `describeEvent` copy and per-user category preferences
+- `src/stores/app-store.ts` — Zustand + `persist` over `src/lib/idb-storage.ts`. Holds the bootstrap snapshot, expense lists and details, activity, and conversations. Screens read the store; they never query Supabase.
+- `src/lib/sync/` — All network access. `client` (typed RPC caller), `bootstrap` (initial snapshot), `refresh` (`refreshGroup`), `realtime` (private `group:`/`chat:` topics), `auth` (session listener), `mutations`/`mutations-group` (optimistic patch, per-entry rollback, reconcile with `refreshGroup`)
+- `src/lib/ledger/` — Wire decoding (`decode.ts`), activity/chat copy (`describeEvent` in `event-copy.ts`), debt rows for the UI (`debt-rows.ts`), balance delta application (`apply.ts`), minimized transfers (`transfers.ts`: `transfersFromBalances`, `netAndMinimize`), and the `*.integration.test.ts` RPC suites
+- `src/lib/simplify.ts` — Debt simplification for the wizard/demo preview. `computeRawEdges` generates proportional edges, `simplifyDebts` reduces them with step recording for visualization. Canonical group transfers come from the database at read time (`group_transfers`).
 - `src/lib/crypto.ts` — Server-only AES-256-GCM encryption for Pix keys. Never import from client components
 - `src/lib/pix.ts` — EMV BR Code generation with CRC16-CCITT, plus key validation and masking
-- `src/lib/simplify.ts` — Debt simplification algorithm that drives the wizard/demo preview. `computeRawEdges` generates proportional edges, `simplifyDebts` reduces them with step recording for visualization. Group balances arrive already minimized from the database (`minimize_group_balances` runs at the end of every balance-writing RPC).
-- `src/lib/currency.ts` — All money is integer centavos. `formatBRL` for display, `decimalToCents` for input
-- `src/hooks/use-auth.ts` — Client-side hook for current authenticated user profile
+- `src/lib/currency.ts` — All money is integer centavos. `formatBRL` for display, `parseSafeMinorUnitCents` for input
+- `src/lib/expense-money.ts` — Sole owner of `MAX_EXPENSE_CENTS` and the service-fee formula
+- `src/hooks/use-auth.ts` — Client-side hook reading the signed-in user from the app store
 - `src/components/bill/` — Expense wizard components (type selector, item card, payer step, single amount step, summary, handle-based participant addition)
 - `src/components/settlement/` — Pix QR modal, debt graph SVG, simplification viewer and toggle
 - `src/components/shared/user-avatar.tsx` — Circular avatar with Google photo or initials fallback
-- `src/types/index.ts` — Domain types: `Expense`, `ExpenseItem`, `ExpenseShare`, `ExpensePayer`, `Balance`, `Settlement`, `DebtEdge`, `GroupBalanceSummary`. `User` has handle, email, pixKeyHint (never raw key). Legacy `Bill`/`BillItem` aliases exist for gradual migration
-- `src/types/database.ts` — Supabase database types including `user_profiles` view
-- `supabase/migrations/` — PostgreSQL schema with RLS policies. Uses `gen_random_uuid()`, not `uuid_generate_v4()`. Key migrations: `*_create_expense_tables.sql` (tables + RLS), `*_create_expense_rpc_functions.sql` (atomic RPCs)
+- `src/types/ledger.ts` — Wire/domain types from the RPCs: `Me`, `GroupSnapshot`, `BalanceRow`, `Transfer`, `ExpensePayload`, `ExpenseVersion`. `src/types/index.ts` — UI domain types: `User`, `Expense`, `GroupMember`, `DebtEdge`. `User` has handle, email, pixKeyHint (never raw key). `src/lib/sync/errors.ts` — `LedgerError` with typed codes (`stale_version`, `nudge_cooldown`)
+- `supabase/schemas/` — Declarative SQL: tables, grants, RPCs, realtime, triggers. Source of truth; `supabase/migrations/` holds only the generated baseline
+- `supabase/config.toml` — Local Supabase project config. `supabase/seed.sql` — dev seed data
 
 ## Local development setup
 
@@ -312,6 +239,8 @@ npm run dev                  # start dev server
 **With Docker** (full local Supabase): the script runs `supabase start` and writes `.env.local`.
 
 **Without Docker** (remote Supabase): set `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` env vars before running the script, or it writes placeholder values (public pages only).
+
+**Schema**: `supabase/schemas/*.sql` is the declarative source of truth; `supabase/migrations/20260906000000_ledger_baseline.sql` is its generated concatenation. After editing a schema file, run `./scripts/build-baseline.sh` and commit both — CI fails if the baseline is stale. `supabase db reset` replays the baseline on a fresh local database.
 
 **Without any env vars**: the middleware gracefully degrades — `/` and `/demo` render, protected pages redirect to `/`.
 
@@ -355,17 +284,17 @@ npm run test:integration     # Run integration tests (requires supabase start)
 npm run test:all             # Run unit + integration tests
 npm run test:synthetic       # Run Playwright synthetic E2E tests
 ./scripts/dev-setup.sh       # One-command local setup
-supabase db push --linked    # Apply migrations to remote
+./scripts/build-baseline.sh # Regenerate the SQL baseline from supabase/schemas/
+supabase db push --linked    # Apply the baseline to a linked remote database
 ```
 
 ## CI
-
 CI runs on every pull request and on push to `main` across several workflows in `.github/workflows/`:
 
 - `ci.yml` — `npm test` (unit), `npx tsc --noEmit` (type check), `npm run lint`.
 - `integration.yml` — `npm run test:integration` against a fresh local Supabase instance.
 - `synthetic.yml` — `npm run test:synthetic` (Playwright) against local Supabase + the dev server, sharded.
-- `migrations.yml` — replays every migration on a fresh database and rejects renamed or deleted migration files. Triggered when `supabase/migrations/**` changes.
+- `migrations.yml` — replays the baseline on a fresh database, fails if the baseline is stale relative to `supabase/schemas/`, and rejects renamed or deleted migration files. Triggered when `supabase/schemas/**`, `supabase/migrations/**`, or `scripts/build-baseline.sh` changes.
 - `android.yml` — signed Android release AAB via Capacitor, on push to `main`.
 
 ### Android build secrets (`.github/workflows/android.yml`)
@@ -392,50 +321,51 @@ Unit tests use Vitest with React Testing Library. Tests are colocated with sourc
 - **Configuration**: `vitest.config.mts` with happy-dom environment and tsconfig paths.
 - **Test setup**: `src/test/setup.ts` provides jest-dom matchers and a Framer Motion mock.
 
-Integration tests run against a real local Supabase instance and verify RLS policies.
+Integration tests run against a real local Supabase instance and cover the ledger RPC layer (`src/lib/ledger/*.integration.test.ts`, 131 tests).
 
 - **Configuration**: `vitest.integration.config.mts` with node environment, 30s timeout, sequential execution.
 - **Test setup**: `src/test/integration-setup.ts` — connects with service role key, cleans up test users after each run.
-- **Helpers**: `src/test/integration-helpers.ts` — `createTestUser`, `authenticateAs`, `createTestUsers`, `createTestBill`, `createTestGroup`.
+- **Helpers**: `src/test/integration-helpers.ts` — `createTestUser`, `createTestUsers`, `authenticateAs`, `createGroup`, `createGroupWithMembers`, `createExpense`, `withPg` (direct `pg` access), `expectRpcError`. `src/test/fixtures.ts` provides payload/object builders.
 - **Running locally**:
 
 ```bash
-supabase start
+supabase db reset
 npm run test:integration
 ```
 
-- **Writing integration tests**: use `.integration.test.ts` suffix, wrap in `describe.skipIf(!isIntegrationTestReady)` so they are skipped when env vars are absent.
+- **Writing integration tests**: use `.integration.test.ts` suffix, wrap in `describe.skipIf(!isIntegrationTestReady)` so they are skipped when env vars are absent. SQL behavior is covered entirely by these TypeScript suites.
 
-**Migrations with semantic logic must be covered by integration tests.** Any new migration that adds or modifies an RPC, RLS policy, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, RLS denial for outsiders, and the edge cases the SQL specifically guards (locks, validation, accepted-membership checks). The coverage can extend an existing test file or live in a new one; what matters is that an integration test exercises the change. Pure structural migrations (adding an index, renaming a column with no semantic change) are exempt. The migration-replay CI job only proves the SQL applies cleanly; it does not exercise behavior.
+**Schema changes with semantic logic must be covered by integration tests.** Any change to `supabase/schemas/*.sql` that adds or modifies an RPC, realtime topic, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, denial for non-members, and the edge cases the SQL specifically guards (locks, validation, membership checks). The coverage can extend an existing test file or live in a new one; what matters is that an integration test exercises the change. Pure structural changes (adding an index, renaming a column with no semantic change) are exempt. The baseline-replay CI job only proves the SQL applies cleanly; it does not exercise behavior.
 
 ## Key concepts
 
 **Authentication**: Google OAuth via Supabase Auth. No phone or 2FA. On first login, a trigger auto-creates a user profile with handle derived from email. Users complete onboarding by confirming handle and setting their Pix key.
 
-**Pix key security**: Keys are encrypted with AES-256-GCM (`src/lib/crypto.ts`) before storage. Raw keys never reach the client. QR codes are generated server-side via `POST /api/pix/generate`. The `pix_key_hint` column stores a masked display version. Supported key types: `cpf`, `email`, `random`.
+**Pix key security**: Keys are encrypted with AES-256-GCM (`src/lib/crypto.ts`) before storage. Raw keys never reach the client. QR codes are generated server-side via `POST /api/pix/generate`. The `pix_key_hint` column stores a masked display version. Supported key types: `cpf`, `email`, `phone`, `random`.
 
-**User discovery**: No search functionality. Users add others by exact @handle to prevent enumeration. The `user_profiles` view exposes only id, handle, name, avatar_url.
+**User discovery**: No search functionality. Users add others by exact @handle to prevent enumeration. The `lookup_user_by_handle` RPC matches the full handle exactly and exposes only id, handle, name and avatar.
 
-**Groups**: Persisted in Supabase. Invite by @handle → member must accept (mutual confirmation). Only `accepted` members appear in expense creation and can view group data (RLS enforced).
+**Groups**: Persisted in Supabase. Invite by @handle → member must accept (mutual confirmation). Only `accepted` members appear in expense creation and can view group data — enforced inside every RPC by membership checks.
+
+**Local-first client**: Screens read the Zustand store (`src/stores/app-store.ts`, persisted to IndexedDB via `src/lib/idb-storage.ts`) and never query Supabase directly. All network lives in `src/lib/sync/`: a bootstrap snapshot on sign-in, optimistic mutations that roll back per entry on failure and reconcile with `refreshGroup`, and realtime broadcasts on private `group:`/`chat:` topics. `/app/**` is a prerendered static shell served cache-first by `public/sw.js`.
 
 **Expense model (Splitwise-inspired)**: Every expense belongs to a group. Two types: `single_amount` (one total split among participants) and `itemized` (line items assigned per person). The wizard step array is computed dynamically from expense type.
 
-**Expense lifecycle: Draft → Active → Settled**:
-1. **Draft**: User builds the expense in the wizard. `saveExpenseDraft()` calls the `save_expense_draft_graph` RPC, which validates and atomically replaces the full expense graph (parent, items, shares, guest shares, payers, participant map) in one transaction. Can be edited or deleted.
-2. **Active**: `activate_saved_expense` RPC re-validates the locked persisted graph (including payer reachability — see below), atomically transitions status, and updates the `balances` table. Guarded by a `graph_revision` compare-and-swap: an expected revision that doesn't match the current one is rejected (`PST08/stale_graph_revision`) instead of silently overwriting a concurrent edit. This is the point of no return.
-3. **Settled**: All debts from this expense have been settled (balances reach zero).
+**Expense lifecycle: Active ⇄ Deleted**:
+1. **Active**: `create_expense` inserts version 1; `edit_expense` appends a new `expense_versions` row (full `payload` + `change_summary`) and bumps `current_version_no`. Mutations send `expected_version_no`; a mismatch is rejected with `stale_version` instead of silently overwriting a concurrent edit (optimistic concurrency — the client surfaces a "reload and retry" error).
+2. **Deleted**: `delete_expense` soft-deletes (`status = 'deleted'`); `restore_expense` brings it back. Every version stays in the history — nothing is destroyed.
 
-**Expense-graph mutation guards**: every write to an expense's items/shares/payers/guests — including trusted direct SQL, not only the public RPCs — goes through a `graph_revision` CAS and a transaction-scoped mutation-token registry that rejects any write outside an authorized, named context (`graph_mutation_unauthorized`). A payer must always reference an existing user share row (`expense_payers_participant_fkey`, deferrable, validated); a total-changing edit clears every payer, a share-only edit preserves them. A `financial_internal.financial_compatibility_state` singleton gates every financial RPC first, before authentication, so a declared maintenance window (used only around breaking schema cutovers) fails every financial write/read closed instead of partially applying.
+**Ledger facts and projection**: `expense_versions` (one row per edit) and `settlements` are the only financial facts. `group_balances` is a projection — one row per `(group, kind, participant)` with a signed `net_cents` (positive = the participant is owed; zero rows are never stored). Guests are participants with `kind = 'guest'` and can carry a balance until claimed. Balances are never written directly: every mutating RPC calls `recompute_group_balances(group)` inside the same transaction, and all access goes through `SECURITY DEFINER` RPCs that check membership first.
 
-**Balances (running net ledger)**: The `balances` table stores one row per (group, user_a, user_b) pair where `user_a < user_b` (canonical UUID ordering). Positive `amount_cents` means user_a owes user_b; negative means the reverse. Balances are never written directly — only via `activate_saved_expense` and `confirm_settlement` RPC functions (SECURITY DEFINER). This prevents race conditions and ensures atomicity.
+**Settlements (two-step confirmation)**: A debtor creates a pending settlement (`record_settlement`). The creditor confirms it (`confirm_settlement`), which applies the delta to the balances toward zero. A confirmed settlement can still be voided (`void_settlement`).
 
-**Settlements (two-step confirmation)**: A debtor creates a pending settlement (`recordSettlement`). The creditor confirms it (`confirmSettlement` RPC), which atomically updates the balance toward zero. This mirrors Splitwise's "record a payment" flow.
+**Minimized transfers at read time**: `group_transfers(group)` in SQL and `transfersFromBalances` in TypeScript compute the minimum set of transfers from the balances with the same greedy two-pointer algorithm — largest debtor pays largest creditor — parity-tested over 200 random ledgers. `src/lib/simplify.ts` (`computeRawEdges`, `simplifyDebts`) powers the wizard/demo preview only.
 
-**Simplification**: `computeRawEdges` generates one edge per (consumer, payer) pair. `simplifyDebts` finds chains and reverse pairs, recording each step for the paginated visualization. Used for display only — the canonical balance data lives in the `balances` table.
+**Notifications (event-driven)**: Every financial or chat action writes a `group_events` row that drives the activity feed, chat system cards and push. Clients POST the event id to `/api/notify`, which claims it once (`notified_at`) and fans out per kind with `describeEvent` copy and per-user category preferences. Nudges go through `send_nudge`, which re-checks the actual debt and enforces a 24h cooldown per target (`nudge_cooldown`).
 
 **Money**: Always integer centavos in the store, types, and database, capped at `MAX_EXPENSE_CENTS = 99_999_999` per expense. Never floating point for arithmetic; `src/lib/expense-money.ts` is the sole owner of the product cap and fee formula. `formatBRL` converts to display strings. All item/share/payer/fee equality is exact (no cent tolerance).
 
-**Fee distribution**: Service fee is stored as integer basis points (`expenses.service_fee_basis_points`, 0–10000), computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000` and distributed proportionally to item consumption. Fixed fees are cents, divided equally among all participants.
+**Fee distribution**: Service fee is stored as integer basis points (`service_fee_bps` on the expense version, 0–10000), computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000` and distributed proportionally to item consumption. Fixed fees are cents, divided equally among all participants.
 
 **Demo page**: Public at `/demo`, no auth. Pre-computed settlement showcase with interactive QR codes.
 
