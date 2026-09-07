@@ -15,8 +15,9 @@ import { ConfettiBurst } from "@/components/shared/confetti-burst";
 import {
   recordVendorCharge,
   confirmVendorCharge,
-} from "@/lib/supabase/vendor-charge-actions";
-import type { VendorCharge } from "@/types";
+} from "@/lib/sync/mutations-group";
+import { useAppStore } from "@/stores/app-store";
+import type { VendorCharge } from "@/types/ledger";
 
 interface QuickChargeModalProps {
   open: boolean;
@@ -117,13 +118,16 @@ export function QuickChargeModal({
     // on confirm. Stale resolutions (from a prior generation) never touch state.
     const insertPromise = recordVendorCharge(
       amountCents,
-      description || undefined,
+      description || null,
     ).catch(() => null);
     insertPromiseRef.current = insertPromise;
 
     const charge = await insertPromise;
     if (generationRef.current !== gen) return;
-    if (charge) setChargeId(charge.id);
+    if (charge) {
+      setChargeId(charge.id);
+      useAppStore.getState().upsertVendorCharge(charge);
+    }
   }, [amountCents, description]);
 
   useEffect(() => {
@@ -163,13 +167,15 @@ export function QuickChargeModal({
       if (!id) {
         const charge = await recordVendorCharge(
           amountCents,
-          description || undefined,
+          description || null,
         );
         id = charge.id;
         setChargeId(id);
+        useAppStore.getState().upsertVendorCharge(charge);
       }
 
-      await confirmVendorCharge(id);
+      const confirmed = await confirmVendorCharge(id);
+      useAppStore.getState().upsertVendorCharge(confirmed);
       haptics.success();
       setPhase("success");
       autoCloseRef.current = setTimeout(() => {

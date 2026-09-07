@@ -39,24 +39,21 @@ function makeRequest(body: Record<string, unknown>) {
   });
 }
 
-/** Both alice and bob are accepted members of group-1 (creator is a third user). */
+/** Both alice and bob are accepted members of group-1. */
 function setupAcceptedMembers() {
   serverMock.setUser({ id: "user-alice" });
-  serverMock.onTable("group_members", {
+  adminMock.onTable("group_members", {
     data: [{ user_id: "user-alice" }, { user_id: "user-bob" }],
   });
-  serverMock.onTable("groups", { data: { creator_id: "user-other" } });
 }
 
-/** Canonical balance row: "user-alice" < "user-bob", positive = alice owes bob. */
+/** Balance rows where alice owes bob amountCents (net negative for debtor, positive for creditor). */
 function balanceOwedByAlice(amountCents: number) {
-  serverMock.onTable("balances", {
-    data: {
-      group_id: "group-1",
-      user_a: "user-alice",
-      user_b: "user-bob",
-      amount_cents: amountCents,
-    },
+  adminMock.onTable("group_balances", {
+    data: [
+      { kind: "user", participant_id: "user-alice", net_cents: -amountCents },
+      { kind: "user", participant_id: "user-bob", net_cents: amountCents },
+    ],
   });
 }
 
@@ -129,11 +126,9 @@ describe("POST /api/pix/generate", () => {
   describe("group settlement flow", () => {
     it("returns 403 when users are not in the same group", async () => {
       serverMock.setUser({ id: "user-alice" });
-      // group_members → only alice
-      serverMock.onTable("group_members", {
+      adminMock.onTable("group_members", {
         data: [{ user_id: "user-alice" }],
       });
-      serverMock.onTable("groups", { data: { creator_id: "user-other" } });
 
       const response = await POST(
         makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
@@ -144,14 +139,8 @@ describe("POST /api/pix/generate", () => {
       expect(body.error).toBe("Acesso negado");
     });
 
-    it("allows group creator who is not a member row, across a real payable edge", async () => {
-      serverMock.setUser({ id: "user-alice" });
-      // group_members → only bob (alice is creator, not in members table)
-      serverMock.onTable("group_members", {
-        data: [{ user_id: "user-bob" }],
-      });
-      serverMock.onTable("groups", { data: { creator_id: "user-alice" } });
-      // alice (creator) genuinely owes bob
+    it("allows group member across a real payable edge", async () => {
+      setupAcceptedMembers();
       balanceOwedByAlice(5000);
       bobHasKey();
 
@@ -188,7 +177,7 @@ describe("POST /api/pix/generate", () => {
   describe("payable-edge guard", () => {
     it("denies a co-member with no balance row", async () => {
       setupAcceptedMembers();
-      serverMock.onTable("balances", { data: null });
+      adminMock.onTable("group_balances", { data: null });
 
       const response = await POST(
         makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
@@ -254,8 +243,7 @@ describe("POST /api/pix/generate", () => {
 
     it("allows self-collection (caller's own key) with no payable edge", async () => {
       serverMock.setUser({ id: "user-alice" });
-      serverMock.onTable("group_members", { data: [{ user_id: "user-alice" }] });
-      serverMock.onTable("groups", { data: { creator_id: "user-alice" } });
+      adminMock.onTable("group_members", { data: [{ user_id: "user-alice" }] });
       adminMock.onTable("users", {
         data: { pix_key_encrypted: "encrypted-key", name: "Alice" },
       });
@@ -266,23 +254,23 @@ describe("POST /api/pix/generate", () => {
 
       expect(response.status).toBe(200);
       // self-collection skips the balance read entirely
-      expect(serverMock.findCalls("balances")).toHaveLength(0);
+      expect(adminMock.findCalls("group_balances")).toHaveLength(0);
     });
 
     it("returns a byte-identical body for every pre-edge denial", async () => {
       const deniedBody = JSON.stringify({ error: "Acesso negado" });
 
       // not same group
+      // not same group
       serverMock.setUser({ id: "user-alice" });
-      serverMock.onTable("group_members", { data: [{ user_id: "user-alice" }] });
-      serverMock.onTable("groups", { data: { creator_id: "user-other" } });
+      adminMock.onTable("group_members", { data: [{ user_id: "user-alice" }] });
       const notMember = await POST(
         makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
       );
 
       // no balance
       setupAcceptedMembers();
-      serverMock.onTable("balances", { data: null });
+      adminMock.onTable("group_balances", { data: null });
       const noBalance = await POST(
         makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),
       );
@@ -324,8 +312,7 @@ describe("POST /api/pix/generate", () => {
 
     it("sets Cache-Control: private, no-store on denial", async () => {
       serverMock.setUser({ id: "user-alice" });
-      serverMock.onTable("group_members", { data: [] });
-      serverMock.onTable("groups", { data: { creator_id: "user-other" } });
+      adminMock.onTable("group_members", { data: [] });
 
       const response = await POST(
         makeRequest({ recipientUserId: "user-bob", amountCents: 5000, groupId: "group-1" }),

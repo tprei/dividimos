@@ -3,9 +3,12 @@
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Clock, Zap } from "lucide-react";
 import Link from "next/link";
+import { useEffect } from "react";
 import { formatBRL } from "@/lib/currency";
 import { staggerContainer, staggerItem } from "@/lib/animations";
-import type { VendorCharge } from "@/types";
+import { loadVendorCharges } from "@/lib/sync/refresh";
+import { useAppStore } from "@/stores/app-store";
+import type { VendorCharge } from "@/types/ledger";
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -29,7 +32,7 @@ function formatRelativeTime(dateStr: string): string {
   });
 }
 
-function todayTotal(charges: VendorCharge[]): number {
+function todayTotal(charges: readonly VendorCharge[]): number {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   return charges
@@ -42,15 +45,21 @@ function todayTotal(charges: VendorCharge[]): number {
 }
 
 interface ChargeHistoryListProps {
-  initialCharges: VendorCharge[];
+  initialCharges?: VendorCharge[];
 }
 
-export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps) {
-  const total = todayTotal(initialCharges);
-  const receivedCount = initialCharges.filter(
+export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {}) {
+  const storeCharges = useAppStore((state) => state.vendorCharges);
+  const charges = initialCharges ?? storeCharges;
+
+  useEffect(() => {
+    void loadVendorCharges();
+  }, []);
+
+  const total = todayTotal(charges);
+  const receivedCount = charges.filter(
     (c) => c.status === "received",
   ).length;
-
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
@@ -76,7 +85,7 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps) {
         </motion.div>
       )}
 
-      {initialCharges.length === 0 ? (
+      {charges.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -96,7 +105,7 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps) {
         <>
           <p className="mt-4 text-sm text-muted-foreground">
             {receivedCount} recebida{receivedCount !== 1 ? "s" : ""} de{" "}
-            {initialCharges.length} cobrança{initialCharges.length !== 1 ? "s" : ""}
+            {charges.length} cobrança{charges.length !== 1 ? "s" : ""}
           </p>
           <motion.div
             variants={staggerContainer}
@@ -104,7 +113,7 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps) {
             animate="visible"
             className="mt-3 space-y-2"
           >
-            {initialCharges.map((charge) => (
+            {charges.map((charge) => (
               <motion.div
                 key={charge.id}
                 variants={staggerItem}

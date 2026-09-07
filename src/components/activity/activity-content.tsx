@@ -1,58 +1,21 @@
 "use client";
 
-import { motion } from "framer-motion";
-import {
-  ArrowRightLeft,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  Receipt,
-  UserPlus,
-} from "lucide-react";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { Clock, Loader2, Undo2 } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import { useShallow } from "zustand/react/shallow";
+import { EmptyState } from "@/components/shared/empty-state";
 import { ActivityCardSkeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { EmptyState } from "@/components/shared/empty-state";
-import { markLatestActivity } from "@/lib/activity-badge";
-import { staggerContainer, staggerItem } from "@/lib/animations";
-import { formatBRL } from "@/lib/currency";
-import { fetchActivityFeed } from "@/lib/supabase/activity-actions";
-import type { ActivityItem, ActivityType } from "@/types";
-
-type FilterType = "all" | ActivityType;
-
-const filters: { key: FilterType; label: string }[] = [
-  { key: "all", label: "Tudo" },
-  { key: "expense_activated", label: "Despesas" },
-  { key: "settlement_recorded", label: "Pagamentos" },
-  { key: "member_joined", label: "Membros" },
-];
-
-const typeConfig: Record<
-  ActivityType,
-  { icon: typeof Receipt; color: string; bg: string }
-> = {
-  expense_activated: {
-    icon: Receipt,
-    color: "text-primary",
-    bg: "bg-primary/10",
-  },
-  settlement_recorded: {
-    icon: ArrowRightLeft,
-    color: "text-warning-foreground",
-    bg: "bg-warning/15",
-  },
-  settlement_confirmed: {
-    icon: CheckCircle2,
-    color: "text-success",
-    bg: "bg-success/15",
-  },
-  member_joined: {
-    icon: UserPlus,
-    color: "text-info",
-    bg: "bg-info/15",
-  },
-};
+import { Button } from "@/components/ui/button";
+import { markActivityViewed } from "@/lib/activity-badge";
+import { describeEvent } from "@/lib/ledger/event-copy";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { voidSettlement } from "@/lib/sync/mutations";
+import { loadActivity } from "@/lib/sync/refresh";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupEvent, GroupSnapshot } from "@/types/ledger";
 
 function formatRelativeDate(timestamp: string): string {
   const date = new Date(timestamp);
@@ -73,200 +36,254 @@ function formatRelativeDate(timestamp: string): string {
   });
 }
 
-function describeItem(item: ActivityItem, userId: string): string {
-  switch (item.type) {
-    case "expense_activated": {
-      const isActor = item.actorId === userId;
-      const who = isActor ? "Você criou" : `${item.actor.name} criou`;
-      return `${who} "${item.expenseTitle}" · ${formatBRL(item.totalAmount)}`;
-    }
-    case "settlement_recorded": {
-      const isFrom = item.actorId === userId;
-      if (isFrom) {
-        return `Você registrou pagamento de ${formatBRL(item.amountCents)} para ${item.toUser.name}`;
-      }
-      return `${item.actor.name} registrou pagamento de ${formatBRL(item.amountCents)} para ${item.toUser.name}`;
-    }
-    case "settlement_confirmed": {
-      const isConfirmer = item.actorId === userId;
-      if (isConfirmer) {
-        return `Você confirmou pagamento de ${formatBRL(item.amountCents)} de ${item.fromUser.name}`;
-      }
-      return `${item.actor.name} confirmou pagamento de ${formatBRL(item.amountCents)} de ${item.fromUser.name}`;
-    }
-    case "member_joined":
-      return `${item.actor.name} entrou no grupo`;
+function getGroupName(
+  groupId: string,
+  groups: Record<string, GroupSnapshot>,
+  meId: string | undefined,
+): string {
+  const snapshot = groups[groupId];
+  if (!snapshot) return "Grupo";
+  if (snapshot.group.kind === "dm") {
+    const counterparty = snapshot.members.find((m) => m.user.id !== meId);
+    return counterparty?.user.name ?? snapshot.group.name;
   }
+  return snapshot.group.name;
 }
 
-interface ActivityContentProps {
-  initialItems: ActivityItem[];
-  userId: string;
-}
-
-export function ActivityContent({
-  initialItems,
-  userId,
-}: ActivityContentProps) {
-  const [items, setItems] = useState(initialItems);
-  const [filter, setFilter] = useState<FilterType>("all");
-  const [isPending, startTransition] = useTransition();
-  const [hasMore, setHasMore] = useState(initialItems.length >= 30);
-
-  useEffect(() => {
-    if (items.length > 0) {
-      markLatestActivity(items[0].timestamp);
-      window.dispatchEvent(new CustomEvent("activity-updated"));
+function makeNameOf(
+  groupId: string,
+  groups: Record<string, GroupSnapshot>,
+  meId: string | undefined,
+): (userId: string) => string {
+  return (userId: string) => {
+    if (userId && userId === meId) return "você";
+    const currentGroup = groups[groupId];
+    if (currentGroup) {
+      const member = currentGroup.members.find((m) => m.user.id === userId);
+      if (member) return member.user.name;
+      const guest = currentGroup.guests.find((g) => g.id === userId);
+      if (guest) return guest.displayName;
     }
-  }, [items]);
+    for (const group of Object.values(groups)) {
+      const member = group.members.find((m) => m.user.id === userId);
+      if (member) return member.user.name;
+      const guest = group.guests.find((g) => g.id === userId);
+      if (guest) return guest.displayName;
+    }
+    return "alguém";
+  };
+}
 
-  const handleRefresh = useCallback(() => {
-    startTransition(async () => {
-      const fresh = await fetchActivityFeed({ userId, limit: 30 });
-      setItems(fresh);
-      setHasMore(fresh.length >= 30);
-    });
-  }, [userId]);
+interface ActivityRowProps {
+  event: GroupEvent;
+  items: GroupEvent[];
+  groups: Record<string, GroupSnapshot>;
+  meId: string | undefined;
+}
 
-  const handleLoadMore = useCallback(() => {
-    if (items.length === 0) return;
-    const lastTimestamp = items[items.length - 1].timestamp;
-    startTransition(async () => {
-      const older = await fetchActivityFeed({
-        userId,
-        limit: 30,
-        before: lastTimestamp,
-      });
-      if (older.length < 30) setHasMore(false);
-      setItems((prev) => [...prev, ...older]);
-    });
-  }, [userId, items]);
+function ActivityRow({ event, items, groups, meId }: ActivityRowProps) {
+  const [isUndoing, setIsUndoing] = useState(false);
 
-  const filtered =
-    filter === "all"
-      ? items
-      : filter === "settlement_recorded"
-        ? items.filter(
-            (i) =>
-              i.type === "settlement_recorded" ||
-              i.type === "settlement_confirmed",
-          )
-        : items.filter((i) => i.type === filter);
+  const nameOf = useMemo(
+    () => makeNameOf(event.groupId, groups, meId),
+    [event.groupId, groups, meId],
+  );
+
+  const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "Alguém");
+  const sentence = describeEvent(event, {
+    actorName,
+    nameOf,
+    expenseTitle: event.expenseTitle,
+    viewerId: meId ?? "",
+  });
+  const groupLabel = getGroupName(event.groupId, groups, meId);
+  const relativeTime = formatRelativeDate(event.createdAt);
+
+  const canUndo = useMemo(() => {
+    if (!event.settlementId) return false;
+    if (event.kind !== "settlement_confirmed") return false;
+
+    const fromUserId =
+      (typeof event.payload?.fromUserId === "string"
+        ? event.payload.fromUserId
+        : null) ?? event.subjectUserId;
+    const toUserId =
+      (typeof event.payload?.toUserId === "string"
+        ? event.payload.toUserId
+        : null) ?? event.actorId;
+    const isParty =
+      Boolean(meId) &&
+      (meId === fromUserId ||
+        meId === toUserId ||
+        meId === event.actorId ||
+        meId === event.subjectUserId);
+
+    if (!isParty) return false;
+
+    const latestForSettlement = items.find(
+      (i) => i.settlementId === event.settlementId,
+    );
+    return latestForSettlement?.kind === "settlement_confirmed";
+  }, [event, items, meId]);
+
+  const handleUndo = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isUndoing || !event.settlementId) return;
+    setIsUndoing(true);
+    try {
+      await voidSettlement(event.groupId, event.settlementId, true);
+      toast.success("Pagamento desfeito");
+    } catch (err) {
+      toast.error(ledgerErrorMessage(err));
+    } finally {
+      setIsUndoing(false);
+    }
+  };
+
+  const cardContent = (
+    <div className="flex items-start gap-3">
+      <UserAvatar
+        name={actorName}
+        avatarUrl={event.actor?.avatarUrl}
+        size="sm"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm leading-snug">{sentence}</p>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {groupLabel}
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {relativeTime}
+            </span>
+          </div>
+          {canUndo && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+              onClick={handleUndo}
+              disabled={isUndoing}
+            >
+              {isUndoing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <>
+                  <Undo2 className="mr-1 h-3 w-3" />
+                  Desfazer
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (event.expenseId) {
+    return (
+      <Link
+        href={`/app/bill/${event.expenseId}`}
+        className="block rounded-xl border bg-card p-3 transition-colors hover:bg-accent/40"
+      >
+        {cardContent}
+      </Link>
+    );
+  }
 
   return (
-    <div className="px-4 py-6">
-      <div className="mb-5 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Atividade</h1>
-        <button
-          onClick={handleRefresh}
-          disabled={isPending}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary disabled:opacity-50"
-        >
-          {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {isPending ? "Atualizando…" : "Atualizar"}
-        </button>
-      </div>
-
-      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-        {filters.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              filter === f.key
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={Clock}
-          title="Nenhuma atividade"
-          description="Quando houver despesas, pagamentos ou novos membros nos seus grupos, aparece aqui"
-        />
-      ) : (
-        <>
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate="visible"
-            key={filter}
-            className="space-y-2"
-          >
-            {filtered.map((item) => (
-              <ActivityCard
-                key={item.id}
-                item={item}
-                userId={userId}
-              />
-            ))}
-          </motion.div>
-
-          {hasMore && (
-            <div className="mt-4">
-              {isPending ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map((i) => (
-                    <ActivityCardSkeleton key={i} />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex justify-center">
-                  <button
-                    onClick={handleLoadMore}
-                    className="text-sm font-medium text-primary"
-                  >
-                    Carregar mais
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+    <div className="rounded-xl border bg-card p-3">
+      {cardContent}
     </div>
   );
 }
 
-function ActivityCard({
-  item,
-  userId,
-}: {
-  item: ActivityItem;
-  userId: string;
-}) {
-  const config = typeConfig[item.type];
-  const Icon = config.icon;
+export function ActivityContent() {
+  const hydrated = useAppStore((s) => s.hydrated);
+  const items = useAppStore(useShallow((s) => s.activity.items));
+  const oldestId = useAppStore((s) => s.activity.oldestId);
+  const groups = useAppStore(useShallow((s) => s.groups));
+  const me = useAppStore((s) => s.me);
 
-  return (
-    <motion.div
-      variants={staggerItem}
-      className="flex items-start gap-3 rounded-xl bg-card p-3"
-    >
-      <UserAvatar
-        name={item.actor.name}
-        avatarUrl={item.actor.avatarUrl}
-        size="sm"
-      />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm leading-snug">{describeItem(item, userId)}</p>
-        <div className="mt-1 flex items-center gap-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${config.bg} ${config.color}`}
-          >
-            <Icon className="h-3 w-3" />
-            {item.groupName}
-          </span>
-          <span className="text-[11px] text-muted-foreground">
-            {formatRelativeDate(item.timestamp)}
-          </span>
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  useEffect(() => {
+    markActivityViewed();
+    void loadActivity().catch(() => {});
+  }, []);
+
+  const handleLoadMore = useCallback(async () => {
+    if (oldestId === null || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      await loadActivity(oldestId);
+    } catch (err) {
+      toast.error(ledgerErrorMessage(err));
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [oldestId, isLoadingMore]);
+
+  if (!hydrated) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 px-4 py-4">
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <ActivityCardSkeleton key={i} />
+          ))}
         </div>
       </div>
-    </motion.div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-4">
+        <EmptyState
+          icon={Clock}
+          title="Nenhuma atividade ainda"
+          description="As atividades dos seus grupos aparecerão aqui."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-lg space-y-4 px-4 py-4">
+      <div className="space-y-2.5">
+        {items.map((event) => (
+          <ActivityRow
+            key={event.id}
+            event={event}
+            items={items}
+            groups={groups}
+            meId={me?.id}
+          />
+        ))}
+      </div>
+
+      {oldestId !== null && (
+        <div className="pt-2 text-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLoadMore}
+            disabled={isLoadingMore}
+            className="w-full"
+          >
+            {isLoadingMore ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Carregando...
+              </>
+            ) : (
+              "Carregar mais"
+            )}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
