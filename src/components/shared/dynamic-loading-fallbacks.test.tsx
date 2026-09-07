@@ -21,38 +21,9 @@ vi.mock("next/dynamic", () => ({
   },
 }));
 
-// Stub dependencies so modules can be imported without side effects
-vi.mock("@/lib/supabase/settlement-actions", () => ({
-  queryBalancesBetweenUsers: vi.fn(),
-  queryBalances: vi.fn(),
-}));
-vi.mock("@/lib/supabase/expense-actions", () => ({ loadExpense: vi.fn() }));
-vi.mock("@/lib/supabase/expense-rpc", () => ({ activateExpense: vi.fn() }));
-vi.mock("@/lib/push/push-notify", () => ({
-  notifyExpenseActivated: vi.fn().mockResolvedValue(undefined),
-  notifyPaymentNudge: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({
-    status: "authenticated",
-    userId: "u1",
-    generation: 0,
-    user: { id: "u1", name: "Test", email: "t@t.com", handle: "test" },
-  }),
-  useUser: () => ({ id: "u1", name: "Test", email: "t@t.com", handle: "test", avatarUrl: null }),
-}));
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: { success: vi.fn(), error: vi.fn() },
 }));
-vi.mock("@/hooks/use-realtime-expense", () => ({ useRealtimeExpense: vi.fn() }));
-vi.mock("@/hooks/use-realtime-balances", () => ({ useRealtimeBalances: vi.fn() }));
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    channel: () => ({ on: () => ({ subscribe: () => ({}) }) }),
-    removeChannel: vi.fn(),
-  }),
-}));
-vi.mock("@/lib/supabase/debt-actions", () => ({ fetchUserDebts: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
 }));
@@ -62,10 +33,9 @@ describe("Dynamic import loading fallbacks", () => {
     capturedOptions = [];
   });
 
-  it("conversation-pay-button passes loading to both dynamic imports", async () => {
+  it("conversation-pay-button passes loading to the PixQrModal dynamic import", async () => {
     await import("@/components/chat/conversation-pay-button");
-    // Two dynamic imports: PixQrModal and GroupSettlementSheet
-    expect(capturedOptions.length).toBeGreaterThanOrEqual(2);
+    expect(capturedOptions.length).toBeGreaterThanOrEqual(1);
     for (const opts of capturedOptions) {
       expect(opts.loading).toBeTypeOf("function");
       const { container } = render(React.createElement(opts.loading as React.FC));
@@ -93,13 +63,4 @@ describe("Dynamic import loading fallbacks", () => {
     expect(container.querySelector("[class*='animate-spin']")).toBeTruthy();
   });
 
-  it("bill detail page passes loading to PixQrModal dynamic import", async () => {
-    capturedOptions = [];
-    await import("@/app/app/bill/[id]/page");
-    expect(capturedOptions.length).toBeGreaterThanOrEqual(1);
-    const opts = capturedOptions[0];
-    expect(opts.loading).toBeTypeOf("function");
-    const { container } = render(React.createElement(opts.loading as React.FC));
-    expect(container.querySelector("[class*='animate-spin']")).toBeTruthy();
-  });
 });

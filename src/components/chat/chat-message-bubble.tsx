@@ -3,14 +3,11 @@
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { SystemMessageCard, type SystemMessageData } from "@/components/chat/system-message-card";
-import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
+import type { ChatMessage } from "@/types/ledger";
 
 interface ChatMessageBubbleProps {
-  message: ChatMessageWithSender;
+  message: ChatMessage;
   isOwn: boolean;
-  expenses: Map<string, Expense>;
-  settlements: Map<string, { settlement: Settlement; fromUser: UserProfile; toUser: UserProfile }>;
   showAvatar: boolean;
 }
 
@@ -21,53 +18,7 @@ function formatTime(dateStr: string): string {
   });
 }
 
-export function ChatMessageBubble({
-  message,
-  isOwn,
-  expenses,
-  settlements,
-  showAvatar,
-}: ChatMessageBubbleProps) {
-  // System messages are centered
-  if (message.messageType === "system_expense" && message.expenseId) {
-    const expense = expenses.get(message.expenseId);
-    if (expense) {
-      const data: SystemMessageData = {
-        type: "system_expense",
-        expense: { expense, creator: message.sender },
-      };
-      return (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="py-1"
-        >
-          <SystemMessageCard messageType={message.messageType} data={data} />
-        </motion.div>
-      );
-    }
-  }
-
-  if (message.messageType === "system_settlement" && message.settlementId) {
-    const settlementData = settlements.get(message.settlementId);
-    if (settlementData) {
-      const data: SystemMessageData = {
-        type: "system_settlement",
-        settlement: settlementData,
-      };
-      return (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="py-1"
-        >
-          <SystemMessageCard messageType={message.messageType} data={data} />
-        </motion.div>
-      );
-    }
-  }
-
-  // Text messages
+export function ChatMessageBubble({ message, isOwn, showAvatar }: ChatMessageBubbleProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}

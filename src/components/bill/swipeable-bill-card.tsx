@@ -7,7 +7,7 @@ import {
   useAnimationControls,
   type PanInfo,
 } from "framer-motion";
-import { ChevronLeft, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { haptics } from "@/hooks/use-haptics";
 
@@ -15,16 +15,13 @@ const ACTION_WIDTH = 120; // total width of the action panel
 const SNAP_THRESHOLD = 40; // how far user must drag to snap open
 
 interface SwipeableBillCardProps {
-  /** Whether this card should have swipe actions (draft + owned by user) */
   enabled: boolean;
-  onEdit: () => void;
   onDelete: () => void;
   children: React.ReactNode;
 }
 
 export function SwipeableBillCard({
   enabled,
-  onEdit,
   onDelete,
   children,
 }: SwipeableBillCardProps) {
@@ -88,21 +85,10 @@ export function SwipeableBillCard({
         <button
           onClick={() => {
             close();
-            onEdit();
-          }}
-          className="flex flex-1 flex-col items-center justify-center gap-1 bg-primary text-primary-foreground transition-colors hover:bg-primary/90"
-          aria-label="Editar rascunho"
-        >
-          <Pencil className="h-4 w-4" />
-          <span className="text-[10px] font-medium">Editar</span>
-        </button>
-        <button
-          onClick={() => {
-            close();
             onDelete();
           }}
           className="flex flex-1 flex-col items-center justify-center gap-1 bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90"
-          aria-label="Excluir rascunho"
+          aria-label="Excluir conta"
         >
           <Trash2 className="h-4 w-4" />
           <span className="text-[10px] font-medium">Excluir</span>

@@ -1,126 +1,255 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ExpenseSummary, GroupSnapshot, Me } from "@/types/ledger";
+import { useAppStore } from "@/stores/app-store";
+import { LedgerError } from "@/lib/sync/errors";
 import { BillsListContent } from "./bills-list-content";
-import type { ExpenseStatus } from "@/types";
 
-// Mock next/navigation
+const mutations = vi.hoisted(() => ({
+  deleteExpense: vi.fn(),
+}));
+vi.mock("@/lib/sync/mutations", () => mutations);
+
+const toastError = vi.fn();
+vi.mock("react-hot-toast", () => ({
+  default: {
+    error: (message: string) => toastError(message),
+  },
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn() }),
 }));
 
-// Mock useUser hook
-vi.mock("@/hooks/use-auth", () => ({
-  useUser: () => ({ id: "user-1", name: "Test User" }),
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 
-// Mock deleteExpense
-vi.mock("@/lib/supabase/expense-actions", () => ({
-  deleteExpense: vi.fn().mockResolvedValue({}),
-}));
+const me: Me = {
+  id: "user-1",
+  handle: "alice",
+  name: "Alice Souza",
+  avatarUrl: null,
+  email: "alice@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
+};
 
-function makeBill(overrides: Partial<{
-  id: string;
-  title: string;
-  date: string;
-  total: number;
-  participants: number;
-  status: ExpenseStatus;
-  creatorId: string;
-}> = {}) {
-  return {
-    id: overrides.id ?? "bill-1",
-    title: overrides.title ?? "Jantar",
-    date: overrides.date ?? "15 mar",
-    total: overrides.total ?? 10000,
-    participants: overrides.participants ?? 3,
-    status: overrides.status ?? "active",
-    creatorId: overrides.creatorId ?? "user-1",
+const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
+
+function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
+  const base: GroupSnapshot = {
+    group: {
+      id: "g1",
+      kind: "group",
+      name: "Viagem",
+      creatorId: me.id,
+      dmUserA: null,
+      dmUserB: null,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
+    members: [
+      { groupId: "g1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+      { groupId: "g1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
+    ],
+    balances: [],
+    guests: [],
+    pendingSettlements: [],
+    recentExpenses: [],
+    lastEventId: 0,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt: "2026-01-02T00:00:00Z",
   };
+  return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
+}
+
+function expense(overrides: Partial<ExpenseSummary> = {}): ExpenseSummary {
+  return {
+    id: "e1",
+    groupId: "g1",
+    creatorId: me.id,
+    status: "active",
+    occurredOn: "2026-08-20",
+    createdAt: "2026-08-20T12:00:00Z",
+    versionNo: 1,
+    title: "Conta",
+    merchantName: null,
+    expenseType: "single_amount",
+    totalCents: 9000,
+    myShareCents: 4500,
+    myPaidCents: 0,
+    participantCount: 2,
+    ...overrides,
+  };
+}
+
+const groupSnapshot = snapshot();
+const dmSnapshot = snapshot({
+  group: {
+    id: "dm1",
+    kind: "dm",
+    name: "",
+    creatorId: me.id,
+    dmUserA: me.id,
+    dmUserB: carol.id,
+    ledgerVersion: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+  },
+});
+
+function seedStore(expenses: Record<string, ExpenseSummary>) {
+  useAppStore.setState({
+    hydrated: true,
+    me,
+    groups: { [groupSnapshot.group.id]: groupSnapshot, [dmSnapshot.group.id]: dmSnapshot },
+    groupOrder: [groupSnapshot.group.id, dmSnapshot.group.id],
+    expenses,
+  });
+}
+
+const tripExpenseOld = expense({
+  id: "e-old",
+  groupId: "g1",
+  title: "Aluguel",
+  occurredOn: "2026-08-20",
+  createdAt: "2026-08-20T12:00:00Z",
+});
+
+const tripExpenseNewer = expense({
+  id: "e-newer",
+  groupId: "g1",
+  title: "Mercado",
+  merchantName: "Assaí",
+  occurredOn: "2026-08-20",
+  createdAt: "2026-08-21T12:00:00Z",
+});
+
+const dmExpense = expense({
+  id: "e-dm",
+  groupId: "dm1",
+  title: "Cinema",
+  occurredOn: "2026-09-01",
+  createdAt: "2026-09-01T20:00:00Z",
+});
+
+const seededExpenses = {
+  [tripExpenseOld.id]: tripExpenseOld,
+  [tripExpenseNewer.id]: tripExpenseNewer,
+  [dmExpense.id]: dmExpense,
+};
+
+function rowLinks(container: HTMLElement): Array<string | null> {
+  return Array.from(container.querySelectorAll("a[href^='/app/bill/']")).map((a) =>
+    a.getAttribute("href"),
+  );
 }
 
 describe("BillsListContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAppStore.getState().reset();
   });
 
-  it("renders all bills", () => {
-    const bills = [
-      makeBill({ id: "1", title: "Jantar" }),
-      makeBill({ id: "2", title: "Almoço" }),
-    ];
-    render(<BillsListContent initialBills={bills} />);
+  it("renders the skeleton before hydration", () => {
+    useAppStore.setState({ hydrated: false, me: null });
+    const { container } = render(<BillsListContent />);
 
-    expect(screen.getByText("Jantar")).toBeInTheDocument();
-    expect(screen.getByText("Almoço")).toBeInTheDocument();
-    expect(screen.getByText("2 contas no total")).toBeInTheDocument();
+    expect(screen.queryByText("Suas contas")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
+    expect(container.querySelector("a")).toBeNull();
   });
 
-  it("shows singular count for one bill", () => {
-    render(<BillsListContent initialBills={[makeBill()]} />);
-    expect(screen.getByText("1 conta no total")).toBeInTheDocument();
+  it("orders rows by occurredOn desc then createdAt desc", () => {
+    seedStore(seededExpenses);
+    const { container } = render(<BillsListContent />);
+
+    expect(rowLinks(container)).toEqual([
+      "/app/bill/e-dm",
+      "/app/bill/e-newer",
+      "/app/bill/e-old",
+    ]);
   });
 
-  it("renders status badges without partially_settled", () => {
-    const bills = [
-      makeBill({ id: "1", status: "draft", title: "Rascunho bill" }),
-      makeBill({ id: "2", status: "active", title: "Active bill" }),
-      makeBill({ id: "3", status: "settled", title: "Settled bill" }),
-    ];
-    render(<BillsListContent initialBills={bills} />);
+  it("shows the counterparty name for DM rows and the group name for groups", () => {
+    seedStore(seededExpenses);
+    render(<BillsListContent />);
 
-    expect(screen.getByText("Rascunho")).toBeInTheDocument();
-    expect(screen.getByText("Pendente")).toBeInTheDocument();
-    expect(screen.getByText("Quitada")).toBeInTheDocument();
+    const dmRow = screen.getByText("Cinema").closest("a");
+    expect(dmRow).not.toBeNull();
+    expect(within(dmRow as HTMLElement).getByText("Carol Souza")).toBeInTheDocument();
+
+    const groupRow = screen.getByText("Aluguel").closest("a");
+    expect(groupRow).not.toBeNull();
+    expect(within(groupRow as HTMLElement).getByText("Viagem")).toBeInTheDocument();
   });
 
-  it("filters by status", async () => {
-    const user = userEvent.setup();
-    const bills = [
-      makeBill({ id: "1", status: "active", title: "Active bill" }),
-      makeBill({ id: "2", status: "settled", title: "Settled bill" }),
-    ];
-    render(<BillsListContent initialBills={bills} />);
+  it("filters by title and merchant name", () => {
+    seedStore(seededExpenses);
+    render(<BillsListContent />);
+    const query = (val: string) =>
+      fireEvent.change(screen.getByPlaceholderText(/buscar/i), { target: { value: val } });
 
-    // Filter to settled only
-    await user.click(screen.getByRole("button", { name: "Quitadas" }));
+    query("mercado");
+    expect(screen.getByText("Mercado")).toBeInTheDocument();
+    expect(screen.queryByText("Aluguel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cinema")).not.toBeInTheDocument();
 
-    expect(screen.queryByText("Active bill")).not.toBeInTheDocument();
-    expect(screen.getByText("Settled bill")).toBeInTheDocument();
-  });
+    query("assa");
+    expect(screen.getByText("Mercado")).toBeInTheDocument();
+    expect(screen.queryByText("Aluguel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cinema")).not.toBeInTheDocument();
 
-  it("does not have partially_settled filter", () => {
-    render(<BillsListContent initialBills={[]} />);
-
-    // Should have: Todas, Pendentes, Liquidadas
-    expect(screen.getByRole("button", { name: "Todas" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pendentes" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Quitadas" })).toBeInTheDocument();
-
-    // Should NOT have Parciais
-    expect(screen.queryByRole("button", { name: "Parciais" })).not.toBeInTheDocument();
-  });
-
-  it("filters by search text", async () => {
-    const user = userEvent.setup();
-    const bills = [
-      makeBill({ id: "1", title: "Jantar no bar" }),
-      makeBill({ id: "2", title: "Almoço" }),
-    ];
-    render(<BillsListContent initialBills={bills} />);
-
-    await user.type(screen.getByPlaceholderText("Buscar..."), "bar");
-
-    expect(screen.getByText("Jantar no bar")).toBeInTheDocument();
-    expect(screen.queryByText("Almoço")).not.toBeInTheDocument();
-  });
-
-  it("shows empty state when no bills match", async () => {
-    const user = userEvent.setup();
-    render(<BillsListContent initialBills={[makeBill({ title: "Jantar" })]} />);
-
-    await user.type(screen.getByPlaceholderText("Buscar..."), "xyz");
-
+    query("nao_existe");
     expect(screen.getByText("Nenhuma conta por aqui")).toBeInTheDocument();
+    expect(screen.getByText('Sem resultados para "nao_existe".')).toBeInTheDocument();
+  });
+
+  it("shows a deleted chip instead of swipe actions on deleted rows", () => {
+    seedStore({
+      ...seededExpenses,
+      [dmExpense.id]: { ...dmExpense, status: "deleted" },
+    });
+    render(<BillsListContent />);
+
+    expect(screen.getByText("Excluída")).toBeInTheDocument();
+  });
+
+  it("deletes the row expense after swipe delete and confirmation", async () => {
+    mutations.deleteExpense.mockResolvedValueOnce({});
+    seedStore(seededExpenses);
+    const user = userEvent.setup();
+    render(<BillsListContent />);
+
+    await user.click(screen.getAllByRole("button", { name: "Excluir conta" })[0]);
+    expect(screen.getByText("Excluir conta?")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+    expect(mutations.deleteExpense).toHaveBeenCalledWith("e-dm");
+
+    await waitFor(() => {
+      expect(screen.queryByText("Excluir conta?")).not.toBeInTheDocument();
+    });
+  });
+
+  it("toasts and keeps the dialog open when delete fails", async () => {
+    mutations.deleteExpense.mockRejectedValueOnce(new LedgerError("network"));
+    seedStore(seededExpenses);
+    const user = userEvent.setup();
+    render(<BillsListContent />);
+
+    await user.click(screen.getAllByRole("button", { name: "Excluir conta" })[0]);
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
+    });
+    expect(screen.getByText("Excluir conta?")).toBeInTheDocument();
   });
 });

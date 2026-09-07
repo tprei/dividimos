@@ -13,7 +13,7 @@ const MOCK_PARSE_RESULT = {
 };
 
 test.describe("DM AI parse", () => {
-  test("sparkle toggle ativa modo IA visualmente", async ({
+  test("sparkle toggle visually activates AI mode", async ({
     page,
     seed,
     loginAs,
@@ -48,7 +48,7 @@ test.describe("DM AI parse", () => {
     void dm;
   });
 
-  test("submit em modo IA com parse mockado exibe draft card", async ({
+  test("submitting in AI mode with a mocked parse shows the draft card", async ({
     page,
     seed,
     loginAs,
@@ -84,7 +84,7 @@ test.describe("DM AI parse", () => {
     void dm;
   });
 
-  test("botão Editar navega para o wizard com parâmetros pré-preenchidos", async ({
+  test("the Edit button navigates to the wizard with prefilled parameters", async ({
     page,
     seed,
     loginAs,
@@ -118,7 +118,7 @@ test.describe("DM AI parse", () => {
     expect(url.searchParams.get("amount")).toBe("2500");
   });
 
-  test("botão Confirmar cria e ativa despesa via confirmChatDraft", async ({
+  test("the Confirm button creates the expense via confirmChatDraft", async ({
     page,
     seed,
     loginAs,
@@ -151,33 +151,37 @@ test.describe("DM AI parse", () => {
       timeout: 8000,
     });
 
-    // Verify expense was created and activated in DB
+    // Verify the expense was created; the header lives on the current version
     const { data: expenses } = await adminClient
       .from("expenses")
-      .select("id, title, total_amount, status")
+      .select("id, current_version_no")
       .eq("group_id", dm.id)
-      .eq("status", "active")
-      .eq("title", "Uber")
-      .eq("total_amount", 2500);
+      .eq("status", "active");
 
-    expect(expenses).not.toBeNull();
-    expect(expenses!.length).toBeGreaterThanOrEqual(1);
+    expect(expenses).toHaveLength(1);
+    const expenseId = expenses![0].id as string;
 
-    const expenseId = (expenses![0] as { id: string }).id;
+    const { data: versions } = await adminClient
+      .from("expense_versions")
+      .select("title, total_cents")
+      .eq("expense_id", expenseId)
+      .eq("version_no", expenses![0].current_version_no as number);
 
-    // A system_expense chat message should exist for the new expense
-    const { data: messages } = await adminClient
-      .from("chat_messages")
-      .select("id, message_type, expense_id")
+    expect(versions).toHaveLength(1);
+    expect(versions![0].title).toBe("Uber");
+    expect(versions![0].total_cents).toBe(2500);
+
+    const { data: events } = await adminClient
+      .from("group_events")
+      .select("id")
       .eq("group_id", dm.id)
-      .eq("message_type", "system_expense")
+      .eq("kind", "expense_created")
       .eq("expense_id", expenseId);
 
-    expect(messages).not.toBeNull();
-    expect(messages!.length).toBeGreaterThanOrEqual(1);
+    expect(events).toHaveLength(1);
   });
 
-  test("tecla Escape sai do modo IA e limpa o texto", async ({
+  test("the Escape key leaves AI mode and clears the text", async ({
     page,
     seed,
     loginAs,

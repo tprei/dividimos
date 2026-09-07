@@ -4,207 +4,115 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Check, Plus, Users, X } from "lucide-react";
 import toast from "react-hot-toast";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
+import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createClient } from "@/lib/supabase/client";
-import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
-import { useUser } from "@/hooks/use-auth";
-import { notifyGroupAccepted } from "@/lib/push/push-notify";
-import type { UserProfile } from "@/types";
+import { formatBRL } from "@/lib/currency";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+import {
+  acceptInvitation,
+  createGroup,
+  declineInvitation,
+} from "@/lib/sync/mutations-group";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot, GroupMember } from "@/types/ledger";
 
-interface GroupEntry {
-  id: string;
-  name: string;
-  creatorId: string;
-  memberCount: number;
-  members: UserProfile[];
-  activeBillCount: number;
+function isInvitedHere(snapshot: GroupSnapshot, meId: string | null): boolean {
+  if (!meId) return false;
+  return snapshot.members.some(
+    (m) => m.userId === meId && m.status === "invited",
+  );
 }
 
-interface PendingInvite {
-  groupId: string;
-  groupName: string;
-  invitedByName: string;
+function invitedByMember(
+  snapshot: GroupSnapshot,
+  meId: string | null,
+): GroupMember | null {
+  if (!meId) return null;
+  return snapshot.members.find((m) => m.userId === meId) ?? null;
 }
 
-interface GroupsListContentProps {
-  initialGroups: GroupEntry[];
-  initialInvites: PendingInvite[];
+function netInGroup(snapshot: GroupSnapshot, meId: string | null): number {
+  if (!meId) return 0;
+  const row = snapshot.balances.find(
+    (b) => b.kind === "user" && b.participantId === meId,
+  );
+  return row?.netCents ?? 0;
 }
 
-export function GroupsListContent({ initialGroups, initialInvites }: GroupsListContentProps) {
-  const user = useUser();
-  const [groups, setGroups] = useState<GroupEntry[]>(initialGroups);
-  const [invites, setInvites] = useState<PendingInvite[]>(initialInvites);
+export function GroupsListContent() {
+  const router = useRouter();
+  const { hydrated, groupOrder, groups } = useAppStore(
+    useShallow((s) => ({
+      hydrated: s.hydrated,
+      groupOrder: s.groupOrder,
+      groups: s.groups,
+    })),
+  );
+  const meId = useAppStore((s) => s.me?.id ?? null);
   const [showCreate, setShowCreate] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const refetchRef = useRef<(() => Promise<void>) | undefined>(undefined);
-
-  useEffect(() => {
-    const handleRefresh = () => refetchRef.current?.();
-    window.addEventListener("app-refresh", handleRefresh);
-    return () => window.removeEventListener("app-refresh", handleRefresh);
-  }, []);
-
-  const refetch = useCallback(async () => {
-    if (!user) return;
-    const supabase = createClient();
-
-    const [{ data: myMemberships }, { data: createdGroups }] = await Promise.all([
-      supabase.from("group_members").select("group_id, status, invited_by").eq("user_id", user.id),
-      supabase.from("groups").select("id").eq("creator_id", user.id).eq("is_dm", false),
-    ]);
-
-    const allGroupIds = new Set<string>();
-    const pendingGroupIds: string[] = [];
-
-    for (const m of myMemberships ?? []) {
-      allGroupIds.add(m.group_id);
-      if (m.status === "invited") pendingGroupIds.push(m.group_id);
+  const { joined, invites } = useMemo(() => {
+    const joinedRows: GroupSnapshot[] = [];
+    const inviteRows: GroupSnapshot[] = [];
+    for (const id of groupOrder) {
+      const snapshot = groups[id];
+      if (!snapshot || snapshot.group.kind !== "group") continue;
+      if (isInvitedHere(snapshot, meId)) inviteRows.push(snapshot);
+      else joinedRows.push(snapshot);
     }
-    for (const g of createdGroups ?? []) {
-      allGroupIds.add(g.id);
-    }
-
-    if (allGroupIds.size === 0) {
-      setGroups([]);
-      setInvites([]);
-      return;
-    }
-
-    const groupIdArray = Array.from(allGroupIds);
-    const nonPendingGroupIds = groupIdArray.filter((id) => !pendingGroupIds.includes(id));
-
-    const [{ data: groupData }, { data: allMembers }, { data: activeBillRows }] = await Promise.all([
-      supabase.from("groups").select("id, name, creator_id").in("id", groupIdArray).eq("is_dm", false),
-      supabase.from("group_members").select("group_id, user_id").in("group_id", groupIdArray).eq("status", "accepted"),
-      nonPendingGroupIds.length > 0
-        ? supabase.from("expenses").select("group_id").in("group_id", nonPendingGroupIds).neq("status", "draft")
-        : Promise.resolve({ data: [] }),
-    ]);
-
-    const membersByGroup = new Map<string, string[]>();
-    for (const m of allMembers ?? []) {
-      const list = membersByGroup.get(m.group_id) ?? [];
-      list.push(m.user_id);
-      membersByGroup.set(m.group_id, list);
-    }
-
-    const billCountByGroup = new Map<string, number>();
-    for (const b of (activeBillRows as { group_id: string }[] | null) ?? []) {
-      billCountByGroup.set(b.group_id, (billCountByGroup.get(b.group_id) ?? 0) + 1);
-    }
-
-    const pendingInviteUserIds: string[] = [];
-    const pendingInviteByGroupMap = new Map<string, string>();
-    for (const membership of myMemberships ?? []) {
-      if (pendingGroupIds.includes(membership.group_id)) {
-        const inviterRef = membership.invited_by;
-        if (inviterRef) {
-          pendingInviteByGroupMap.set(membership.group_id, inviterRef);
-          pendingInviteUserIds.push(inviterRef);
-        }
-      }
-    }
-
-    // Combine all user IDs into a single profile query
-    const allMemberIds = [...new Set([
-      ...(allMembers ?? []).map((m) => m.user_id),
-      ...pendingInviteUserIds,
-    ])];
-    const { data: profiles } = allMemberIds.length > 0
-      ? await supabase.from("user_profiles").select("id, handle, name, avatar_url").in("id", allMemberIds)
-      : { data: [] };
-
-    const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
-    const groupDataMap = new Map((groupData ?? []).map((g) => [g.id, g]));
-
-    const entries: GroupEntry[] = [];
-    for (const g of groupData ?? []) {
-      if (pendingGroupIds.includes(g.id)) continue;
-      const memberIds = membersByGroup.get(g.id) ?? [];
-      const memberProfiles: UserProfile[] = memberIds.slice(0, 5).flatMap((id) => {
-        const p = profileMap.get(id);
-        return p ? [userProfileRowToUserProfile(p)] : [];
-      });
-      entries.push({
-        id: g.id,
-        name: g.name,
-        creatorId: g.creator_id,
-        memberCount: memberIds.length + 1,
-        members: memberProfiles,
-        activeBillCount: billCountByGroup.get(g.id) ?? 0,
-      });
-    }
-
-    const pendingInvites: PendingInvite[] = pendingGroupIds.flatMap((gid) => {
-      const group = groupDataMap.get(gid);
-      if (!group) return [];
-      const inviterId = pendingInviteByGroupMap.get(gid) ?? "";
-      const inviterProfile = profileMap.get(inviterId);
-      return [{ groupId: gid, groupName: group.name, invitedByName: inviterProfile?.name ?? "" }];
-    });
-
-    setGroups(entries);
-    setInvites(pendingInvites);
-  }, [user]);
-
-  useEffect(() => {
-    refetchRef.current = refetch;
-  });
+    return { joined: joinedRows, invites: inviteRows };
+  }, [groupOrder, groups, meId]);
 
   const handleCreateGroup = async () => {
-    if (!newGroupName.trim() || !user) return;
+    const name = newGroupName.trim();
+    if (!name || creating) return;
     setCreating(true);
-    const { error } = await createClient().from("groups").insert({
-      name: newGroupName.trim(),
-      creator_id: user.id,
-    });
-    if (!error) {
-      setNewGroupName("");
-      setShowCreate(false);
-      await refetch();
+    try {
+      const ack = await createGroup(name, []);
+      router.push(`/app/groups/${ack.groupId}`);
+    } catch (e) {
+      toast.error(ledgerErrorMessage(e));
+    } finally {
+      setCreating(false);
     }
-    setCreating(false);
   };
 
   const handleAcceptInvite = async (groupId: string) => {
-    if (!user) return;
-    // group_members_accept_denied RLS policy blocks every direct UPDATE;
-    // acceptance must go through this RPC (matching decline's own RPC
-    // path below, and every other membership-transition RPC).
-    const { error } = await createClient().rpc("accept_group_invitation", {
-      p_group_id: groupId,
-    });
-    if (error) {
-      toast.error("Não foi possível aceitar o convite. Tente novamente.");
-      return;
+    try {
+      await acceptInvitation(groupId);
+    } catch (e) {
+      toast.error(ledgerErrorMessage(e));
     }
-    notifyGroupAccepted(groupId, user.id).catch(() => {});
-    await refetch();
   };
 
   const handleDeclineInvite = async (groupId: string) => {
-    if (!user) return;
-    const { error } = await createClient().rpc("decline_group_invitation", {
-      p_group_id: groupId,
-    });
-    if (error) {
-      if (error.message.includes("has_outstanding_balance")) {
-        toast.error("Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.");
-      } else {
-        toast.error("Não foi possível recusar o convite. Tente novamente.");
-      }
-      return;
+    try {
+      await declineInvitation(groupId);
+    } catch (e) {
+      toast.error(ledgerErrorMessage(e));
     }
-    setInvites((prev) => prev.filter((i) => i.groupId !== groupId));
   };
+
+  if (!hydrated) {
+    return (
+      <div className="mx-auto max-w-lg space-y-3 px-4 py-6">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="rounded-2xl border bg-card">
+            <GroupRowSkeleton />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -217,7 +125,7 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
         <div>
           <h1 className="text-2xl font-bold">Grupos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {groups.length} grupo{groups.length !== 1 ? "s" : ""}
+            {joined.length} grupo{joined.length !== 1 ? "s" : ""}
           </p>
         </div>
         <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
@@ -269,43 +177,52 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
           transition={{ delay: 0.05, duration: 0.4 }}
           className="mt-5"
         >
-          <div className="flex items-center gap-2 mb-3">
+          <div className="mb-3 flex items-center gap-2">
             <Bell className="h-4 w-4 text-primary" />
             <h2 className="text-sm font-semibold">Convites pendentes</h2>
           </div>
           <div className="space-y-2">
-            {invites.map((invite) => (
-              <div
-                key={invite.groupId}
-                className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4"
-              >
-                <div>
-                  <p className="font-medium">{invite.groupName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Convidado por {invite.invitedByName}
-                  </p>
+            {invites.map((snapshot) => {
+              const membership = invitedByMember(snapshot, meId);
+              const inviter =
+                snapshot.members.find(
+                  (m) => m.userId === membership?.invitedBy,
+                ) ?? null;
+              return (
+                <div
+                  key={snapshot.group.id}
+                  className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4"
+                >
+                  <div>
+                    <p className="font-medium">{snapshot.group.name}</p>
+                    {inviter && (
+                      <p className="text-xs text-muted-foreground">
+                        Convidado por {inviter.user.name}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-muted-foreground"
+                      onClick={() => handleDeclineInvite(snapshot.group.id)}
+                      aria-label="Recusar"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="h-8 gap-1"
+                      onClick={() => handleAcceptInvite(snapshot.group.id)}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Aceitar
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 text-muted-foreground"
-                    onClick={() => handleDeclineInvite(invite.groupId)}
-                    aria-label="Recusar"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-8 gap-1"
-                    onClick={() => handleAcceptInvite(invite.groupId)}
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Aceitar
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </motion.div>
       )}
@@ -316,44 +233,65 @@ export function GroupsListContent({ initialGroups, initialInvites }: GroupsListC
         animate="visible"
         className="mt-6 space-y-3"
       >
-        {groups.map((group) => (
-          <motion.div key={group.id} variants={staggerItem}>
-            <Link href={`/app/groups/${group.id}`}>
-              <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Users className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{group.name}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {group.memberCount} membro{group.memberCount !== 1 ? "s" : ""}
-                    {group.activeBillCount > 0
-                      ? ` · ${group.activeBillCount} conta${group.activeBillCount !== 1 ? "s" : ""} ativa${group.activeBillCount !== 1 ? "s" : ""}`
-                      : " · Nenhuma conta"}
-                  </p>
-                </div>
-                <div className="flex -space-x-2">
-                  {group.members.slice(0, 3).map((m) => (
-                    <UserAvatar
-                      key={m.id}
-                      name={m.name}
-                      avatarUrl={m.avatarUrl}
-                      size="xs"
-                      className="ring-2 ring-card"
-                    />
-                  ))}
-                  {group.memberCount > 3 && (
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[9px] font-bold ring-2 ring-card">
-                      +{group.memberCount - 3}
-                    </div>
+        {joined.map((snapshot) => {
+          const accepted = snapshot.members.filter(
+            (m) => m.status === "accepted",
+          );
+          const memberCount = snapshot.members.length;
+          const net = netInGroup(snapshot, meId);
+          return (
+            <motion.div key={snapshot.group.id} variants={staggerItem}>
+              <Link href={`/app/groups/${snapshot.group.id}`}>
+                <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Users className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{snapshot.group.name}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {memberCount} membro{memberCount !== 1 ? "s" : ""}
+                      {net > 2 && (
+                        <span className="text-success">
+                          {" "}
+                          · a receber {formatBRL(net)}
+                        </span>
+                      )}
+                      {net < -2 && (
+                        <span className="text-destructive">
+                          {" "}
+                          · a pagar {formatBRL(-net)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  {snapshot.unreadCount > 0 && (
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                      {snapshot.unreadCount}
+                    </span>
                   )}
+                  <div className="flex -space-x-2">
+                    {accepted.slice(0, 3).map((m) => (
+                      <UserAvatar
+                        key={m.userId}
+                        name={m.user.name}
+                        avatarUrl={m.user.avatarUrl}
+                        size="xs"
+                        className="ring-2 ring-card"
+                      />
+                    ))}
+                    {accepted.length > 3 && (
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[9px] font-bold ring-2 ring-card">
+                        +{accepted.length - 3}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </Link>
-          </motion.div>
-        ))}
+              </Link>
+            </motion.div>
+          );
+        })}
 
-        {groups.length === 0 && invites.length === 0 && (
+        {joined.length === 0 && invites.length === 0 && (
           <EmptyState
             icon={Users}
             title="Nenhum grupo ainda"

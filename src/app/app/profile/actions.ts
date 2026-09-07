@@ -1,9 +1,22 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getAuthUser } from "@/lib/auth";
 import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
 import type { PixKeyType } from "@/types";
+import type { Me } from "@/types/ledger";
+
+export interface UpdatePixKeySuccess {
+  pixKeyType: PixKeyType;
+  pixKeyHint: string;
+}
+
+export interface UpdatePixKeyError {
+  error: string;
+}
+
+export type UpdatePixKeyResult = UpdatePixKeySuccess | UpdatePixKeyError;
 
 /**
  * Save the caller's Pix key.
@@ -14,11 +27,11 @@ import type { PixKeyType } from "@/types";
  * validation, encryption, logging, or storage work so a mismatched call does
  * nothing at all. The row written is always the verified current user.
  */
-export async function updatePixKey(expectedUserId: string, formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export async function updatePixKey(
+  expectedUserId: string,
+  formData: FormData,
+): Promise<UpdatePixKeyResult> {
+  const user: (Me | { id: string }) | null = await getAuthUser();
 
   if (!user || user.id !== expectedUserId) {
     return { error: "Sessao expirada" };
@@ -38,7 +51,8 @@ export async function updatePixKey(expectedUserId: string, formData: FormData) {
   const encrypted = encryptPixKey(pixKey);
   const hint = maskPixKey(pixKey);
 
-  const { error } = await supabase
+  const admin = createAdminClient();
+  const { error } = await admin
     .from("users")
     .update({
       pix_key_encrypted: encrypted,
@@ -52,5 +66,5 @@ export async function updatePixKey(expectedUserId: string, formData: FormData) {
     return { error: "Erro ao salvar. Tente novamente." };
   }
 
-  return { success: true, hint };
+  return { pixKeyType, pixKeyHint: hint };
 }

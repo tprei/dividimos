@@ -817,8 +817,8 @@ DECLARE
   v_id uuid;
   v_old_payers jsonb;
   v_new_payers jsonb;
-  v_old_norm jsonb;
-  v_new_norm jsonb;
+  v_old_norm jsonb := '[]'::jsonb;
+  v_new_norm jsonb := '[]'::jsonb;
   v_old_total bigint := 0;
   v_new_total bigint := 0;
   v_participants jsonb;
@@ -915,29 +915,13 @@ BEGIN
     'participantsRemoved', COALESCE(to_jsonb(v_removed), '[]'::jsonb),
     'payersChanged', NOT (
       v_old_total = v_new_total
-      AND (
-        (v_old_norm IS NULL AND v_new_norm IS NULL)
-        OR (
-          v_old_norm IS NOT NULL AND v_new_norm IS NOT NULL
-          AND (
-            SELECT count(*) = 0
-            FROM jsonb_array_elements(v_old_norm) WITH ORDINALITY AS o(e, ord)
-            WHERE NOT EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(v_new_norm) n
-              WHERE n = o.e
-            )
-          )
-          AND (
-            SELECT count(*) = 0
-            FROM jsonb_array_elements(v_new_norm) WITH ORDINALITY AS n2(e, ord)
-            WHERE NOT EXISTS (
-              SELECT 1
-              FROM jsonb_array_elements(v_old_norm) o2
-              WHERE o2 = n2.e
-            )
-          )
-        )
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(v_old_norm) o(e)
+        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_new_norm) n(e) WHERE n.e = o.e)
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(v_new_norm) n2(e)
+        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_old_norm) o2(e) WHERE o2.e = n2.e)
       )
     )
   );
@@ -1225,6 +1209,16 @@ BEGIN
       ) ORDER BY gb.kind, gb.participant_id)
       FROM group_balances gb
       WHERE gb.group_id = g.id
+    ), '[]'::jsonb),
+    'guests', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'id', gu.id,
+        'displayName', gu.display_name,
+        'expenseId', gu.expense_id
+      ) ORDER BY gu.created_at, gu.id)
+      FROM guests gu
+      JOIN expenses e ON e.id = gu.expense_id
+      WHERE e.group_id = g.id AND e.status = 'active' AND gu.claimed_by IS NULL
     ), '[]'::jsonb),
     'pendingSettlements', COALESCE((
       SELECT jsonb_agg(ledger_settlement_json(s.id) ORDER BY s.created_at DESC, s.id)
@@ -2877,7 +2871,7 @@ BEGIN
   END IF;
 
   v_bytes := extensions.gen_random_bytes(32);
-  v_token := rtrim(translate(encode(v_bytes, 'base64'), '+/', '-_'), '=');
+  v_token := 'gst1_' || rtrim(translate(encode(v_bytes, 'base64'), '+/', '-_'), '=');
   v_digest := extensions.digest(convert_to(v_token, 'utf8'), 'sha256');
 
   INSERT INTO guest_credentials.claim_tokens AS ct (guest_id, token_digest, generation, created_at)

@@ -6,12 +6,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ContactRowSkeleton } from "@/components/shared/skeleton";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { createClient } from "@/lib/supabase/client";
-import { userProfileRowToUserProfile } from "@/lib/supabase/expense-mappers";
-import type { UserProfile } from "@/types";
-import type { Database } from "@/types/database";
-
-type UserProfileRow = Database["public"]["Views"]["user_profiles"]["Row"];
+import { lookupUserByHandle } from "@/lib/sync/mutations-group";
+import type { UserProfile } from "@/types/ledger";
 
 interface AddParticipantByHandleProps {
   onAdd: (profile: UserProfile) => void;
@@ -35,21 +31,22 @@ export function AddParticipantByHandle({
     setLoading(true);
     setResult(null);
 
-    const supabase = createClient();
-    const { data } = await supabase
-      .rpc("lookup_user_by_handle", { p_handle: trimmed })
-      .maybeSingle();
-
+    let profile: UserProfile | null = null;
+    try {
+      profile = await lookupUserByHandle(trimmed);
+    } catch {
+      setLoading(false);
+      setResult("not_found");
+      return;
+    }
     setLoading(false);
-
-    const profile = data as UserProfileRow | null;
 
     if (!profile) {
       setResult("not_found");
       return;
     }
 
-    setResult(userProfileRowToUserProfile(profile));
+    setResult(profile);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -124,7 +121,7 @@ export function AddParticipantByHandle({
           {excludeIds.includes(result.id) ? (
             <span className="text-xs text-muted-foreground">Ja adicionado</span>
           ) : (
-            <Button size="sm" onClick={() => onAdd(result as UserProfile)}>
+            <Button size="sm" onClick={() => onAdd(result)}>
               Adicionar
             </Button>
           )}

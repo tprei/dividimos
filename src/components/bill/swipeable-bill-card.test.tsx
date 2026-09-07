@@ -17,7 +17,6 @@ vi.mock("@/hooks/use-haptics", () => ({
 describe("SwipeableBillCard", () => {
   const defaultProps = {
     enabled: true,
-    onEdit: vi.fn(),
     onDelete: vi.fn(),
   };
 
@@ -31,40 +30,24 @@ describe("SwipeableBillCard", () => {
     expect(screen.getByText("Bill content")).toBeInTheDocument();
   });
 
-  it("renders edit and delete action buttons when enabled", () => {
+  it("renders the delete action button when enabled", () => {
     render(
       <SwipeableBillCard {...defaultProps}>
         <div>Bill content</div>
       </SwipeableBillCard>,
     );
 
-    expect(screen.getByRole("button", { name: /editar rascunho/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /excluir rascunho/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /excluir conta/i })).toBeInTheDocument();
   });
 
-  it("shows Editar and Excluir labels on action buttons", () => {
+  it("shows the Excluir label on the action button", () => {
     render(
       <SwipeableBillCard {...defaultProps}>
         <div>Bill content</div>
       </SwipeableBillCard>,
     );
 
-    expect(screen.getByText("Editar")).toBeInTheDocument();
     expect(screen.getByText("Excluir")).toBeInTheDocument();
-  });
-
-  it("calls onEdit when edit button is clicked", async () => {
-    const onEdit = vi.fn();
-    const user = userEvent.setup();
-
-    render(
-      <SwipeableBillCard {...defaultProps} onEdit={onEdit}>
-        <div>Bill content</div>
-      </SwipeableBillCard>,
-    );
-
-    await user.click(screen.getByRole("button", { name: /editar rascunho/i }));
-    expect(onEdit).toHaveBeenCalledOnce();
   });
 
   it("calls onDelete when delete button is clicked", async () => {
@@ -77,20 +60,19 @@ describe("SwipeableBillCard", () => {
       </SwipeableBillCard>,
     );
 
-    await user.click(screen.getByRole("button", { name: /excluir rascunho/i }));
+    await user.click(screen.getByRole("button", { name: /excluir conta/i }));
     expect(onDelete).toHaveBeenCalledOnce();
   });
 
   it("renders children directly without actions when disabled", () => {
     render(
       <SwipeableBillCard {...defaultProps} enabled={false}>
-        <div>Non-draft bill</div>
+        <div>Deleted bill</div>
       </SwipeableBillCard>,
     );
 
-    expect(screen.getByText("Non-draft bill")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /editar rascunho/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /excluir rascunho/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Deleted bill")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /excluir conta/i })).not.toBeInTheDocument();
   });
 
   it("does not wrap disabled card in swipeable container", () => {
@@ -100,7 +82,6 @@ describe("SwipeableBillCard", () => {
       </SwipeableBillCard>,
     );
 
-    // When disabled, the child should not be inside the overflow-hidden wrapper
     const child = screen.getByTestId("child");
     expect(child.closest(".overflow-hidden")).toBeNull();
   });
@@ -112,7 +93,6 @@ describe("SwipeableBillCard", () => {
       </SwipeableBillCard>,
     );
 
-    // The motion.div mock passes through non-motion props like drag
     const draggableDiv = container.querySelector("[drag='x']");
     expect(draggableDiv).not.toBeNull();
   });
@@ -124,7 +104,6 @@ describe("SwipeableBillCard", () => {
       </SwipeableBillCard>,
     );
 
-    // The chevron hint is inside a pointer-events-none div
     const hintContainer = container.querySelector(".pointer-events-none");
     expect(hintContainer).not.toBeNull();
   });

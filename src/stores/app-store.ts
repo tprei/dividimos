@@ -12,6 +12,7 @@ import type {
   GroupSnapshot,
   Me,
   Transfer,
+  VendorCharge,
 } from "@/types/ledger";
 import {
   appendPage,
@@ -53,6 +54,7 @@ interface AppStateData {
   expenseDetails: Record<string, ExpenseDetail>;
   activity: { items: GroupEvent[]; oldestId: number | null };
   conversations: Record<string, ConversationState>;
+  vendorCharges: VendorCharge[];
   lastBootstrapAt: string | null;
 }
 
@@ -72,6 +74,8 @@ export interface AppState extends AppStateData {
   upsertExpense(summary: ExpenseSummary): void;
   replaceExpenseId(oldId: string, newId: string): void;
   patch(fn: (state: AppState) => Partial<AppState>): void;
+  applyVendorCharges(list: VendorCharge[]): void;
+  upsertVendorCharge(c: VendorCharge): void;
   reset(): void;
 }
 
@@ -85,6 +89,7 @@ const initialData: AppStateData = {
   expenseDetails: {},
   activity: { items: [], oldestId: null },
   conversations: {},
+  vendorCharges: [],
   lastBootstrapAt: null,
 };
 
@@ -226,6 +231,19 @@ export const useAppStore = create<AppState>()(
             expenseDetails,
           };
         }),
+      applyVendorCharges: (list) => set({ vendorCharges: list }),
+
+      upsertVendorCharge: (c) =>
+        set((state) => {
+          const idx = state.vendorCharges.findIndex((x) => x.id === c.id);
+          if (idx === -1) {
+            return { vendorCharges: [c, ...state.vendorCharges] };
+          }
+          const next = [...state.vendorCharges];
+          next[idx] = c;
+          return { vendorCharges: next };
+        }),
+
 
       patch: (fn) => set((state) => fn(state)),
 
@@ -246,6 +264,7 @@ export const useAppStore = create<AppState>()(
         expenseDetails: state.expenseDetails,
         activity: state.activity,
         conversations: state.conversations,
+        vendorCharges: state.vendorCharges,
         lastBootstrapAt: state.lastBootstrapAt,
       }),
       onRehydrateStorage: () => () => {

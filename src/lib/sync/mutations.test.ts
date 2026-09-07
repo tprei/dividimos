@@ -111,6 +111,7 @@ function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
       { kind: "user", participantId: ME.id, netCents: 0 },
       { kind: "user", participantId: USER_2.id, netCents: 0 },
     ],
+    guests: [],
     pendingSettlements: [],
     recentExpenses: [],
     lastEventId: 10,

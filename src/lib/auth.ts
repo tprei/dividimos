@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { mapOwnerProfileRow } from "@/lib/owner-profile";
+import { decodeMe } from "@/lib/ledger/decode";
+import type { Me } from "@/types/ledger";
 
 /**
  * Load the authenticated caller's own profile.
@@ -9,19 +10,18 @@ import { mapOwnerProfileRow } from "@/lib/owner-profile";
  * to the auth server is needed before loading the profile.
  *
  * The profile row comes from the argument-free `get_my_profile` RPC, which
- * derives its row from `auth.uid()`. Reading `users` by ID would instead go
- * through `users_read_visible`, which also exposes related accounts, so a
- * request issued for one account could return that account's row after the
- * session had already changed to a related one. The returned ID is compared
- * against the verified auth ID to reject exactly that case.
+ * derives its row from `auth.uid()`. The returned ID is compared against the
+ * verified auth ID to enforce the account-isolation guarantee.
  */
-export const getAuthUser = cache(async () => {
+export const getAuthUser = cache(async (): Promise<Me | null> => {
   const supabase = await createClient();
   const { data: claims, error: claimsError } = await supabase.auth.getClaims();
   if (claimsError || !claims) return null;
   const { data, error } = await supabase.rpc("get_my_profile");
-  if (error || !Array.isArray(data) || data.length !== 1) return null;
-  const profile = mapOwnerProfileRow(data[0]);
-  if (!profile || profile.id !== claims.claims.sub) return null;
-  return profile;
+  if (error || !data) return null;
+  const decoded = decodeMe(data);
+  if (!decoded.ok) return null;
+  const me = decoded.value;
+  if (me.id !== claims.claims.sub) return null;
+  return me;
 });

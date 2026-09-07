@@ -1,44 +1,20 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Check, MessageSquare, Search, Share2, X } from "lucide-react";
-import toast from "react-hot-toast";
+import { MessageSquare, Share2 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { UserAvatar } from "@/components/shared/user-avatar";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { useMemo, useState } from "react";
 import { ConversationShareModal } from "@/components/conversations/conversation-share-modal";
 import { NewConversationButton } from "@/components/conversations/new-conversation-button";
+import { EmptyState } from "@/components/shared/empty-state";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { staggerContainer, staggerItem } from "@/lib/animations";
-import { formatBRL } from "@/lib/currency";
-import { createClient } from "@/lib/supabase/client";
-import { getUnreadCounts } from "@/lib/supabase/unread-actions";
-import { useUser } from "@/hooks/use-auth";
-import type { UserProfile } from "@/types";
-
-export type DmMemberStatus = "accepted" | "invited" | "declined";
-
-export interface ConversationEntry {
-  groupId: string;
-  counterparty: UserProfile;
-  lastMessageContent: string | null;
-  lastMessageAt: string | null;
-  netBalanceCents: number;
-  unreadCount: number;
-  callerStatus: DmMemberStatus;
-  counterpartyStatus: DmMemberStatus;
-}
-
-interface ConversationsListContentProps {
-  initialConversations: ConversationEntry[];
-}
+import { useMe } from "@/hooks/use-me";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot } from "@/types/ledger";
 
 function formatRelativeTime(isoDate: string): string {
-  const now = Date.now();
-  const then = new Date(isoDate).getTime();
-  const diffMs = now - then;
+  const diffMs = Date.now() - new Date(isoDate).getTime();
   const diffMin = Math.floor(diffMs / 60000);
 
   if (diffMin < 1) return "agora";
@@ -56,231 +32,68 @@ function formatRelativeTime(isoDate: string): string {
   });
 }
 
-export function filterConversations(
-  entries: ConversationEntry[],
-  query: string,
-): ConversationEntry[] {
-  const trimmed = query.trim().toLowerCase();
-  if (trimmed.length < 2) return entries;
-
-  return entries.filter((conv) => {
-    const name = conv.counterparty.name.toLowerCase();
-    const handle = conv.counterparty.handle.toLowerCase();
-    const message = (conv.lastMessageContent ?? "").toLowerCase();
-    return (
-      name.includes(trimmed) ||
-      handle.includes(trimmed) ||
-      message.includes(trimmed)
-    );
-  });
+interface ConversationRow {
+  groupId: string;
+  kind: "dm" | "group";
+  title: string;
+  avatarName: string;
+  avatarUrl: string | null;
+  href: string;
+  preview: string | null;
+  lastMessageAt: string | null;
+  unreadCount: number;
 }
 
-export function ConversationsListContent({
-  initialConversations,
-}: ConversationsListContentProps) {
-  const user = useUser();
-  const [conversations, setConversations] =
-    useState<ConversationEntry[]>(initialConversations);
-  const [searchQuery, setSearchQuery] = useState("");
+function toRow(snapshot: GroupSnapshot, meId: string): ConversationRow | null {
+  const isDm = snapshot.group.kind === "dm";
+  if (!isDm && !snapshot.lastMessage) return null;
+
+  if (isDm) {
+    const counterparty = snapshot.members.find((m) => m.userId !== meId);
+    if (!counterparty) return null;
+    return {
+      groupId: snapshot.group.id,
+      kind: "dm",
+      title: counterparty.user.name,
+      avatarName: counterparty.user.name,
+      avatarUrl: counterparty.user.avatarUrl,
+      href: `/app/conversations/${counterparty.userId}`,
+      preview: snapshot.lastMessage?.content ?? null,
+      lastMessageAt: snapshot.lastMessage?.createdAt ?? null,
+      unreadCount: snapshot.unreadCount,
+    };
+  }
+
+  return {
+    groupId: snapshot.group.id,
+    kind: "group",
+    title: snapshot.group.name,
+    avatarName: snapshot.group.name,
+    avatarUrl: null,
+    href: `/app/groups/${snapshot.group.id}`,
+    preview: snapshot.lastMessage?.content ?? null,
+    lastMessageAt: snapshot.lastMessage?.createdAt ?? null,
+    unreadCount: snapshot.unreadCount,
+  };
+}
+
+export function ConversationsListContent() {
+  const me = useMe();
+  const groupOrder = useAppStore((s) => s.groupOrder);
+  const groups = useAppStore((s) => s.groups);
   const [shareOpen, setShareOpen] = useState(false);
 
-  const activeConversations = useMemo(
-    () => conversations.filter((c) => c.callerStatus === "accepted" && c.counterpartyStatus === "accepted"),
-    [conversations],
-  );
-
-  const pendingIncoming = useMemo(
-    () => conversations.filter((c) => c.callerStatus === "invited"),
-    [conversations],
-  );
-
-  const pendingOutgoing = useMemo(
-    () => conversations.filter((c) => c.callerStatus === "accepted" && c.counterpartyStatus === "invited"),
-    [conversations],
-  );
-
-  const filteredActive = useMemo(
-    () => filterConversations(activeConversations, searchQuery),
-    [activeConversations, searchQuery],
-  );
-
-  const filteredOutgoing = useMemo(
-    () => filterConversations(pendingOutgoing, searchQuery),
-    [pendingOutgoing, searchQuery],
-  );
-
-  const isSearching = searchQuery.trim().length >= 2;
-
-  const refetchRef = useRef<(() => Promise<void>) | undefined>(undefined);
-
-  useEffect(() => {
-    const handleRefresh = () => refetchRef.current?.();
-    window.addEventListener("app-refresh", handleRefresh);
-    return () => window.removeEventListener("app-refresh", handleRefresh);
-  }, []);
-
-  const refetch = useCallback(async () => {
-    if (!user) return;
-    const supabase = createClient();
-
-    const { data: dmPairs } = await supabase
-      .from("dm_pairs")
-      .select("group_id, user_a, user_b")
-      .or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
-
-    if (!dmPairs || dmPairs.length === 0) {
-      setConversations([]);
-      return;
+  const rows = useMemo(() => {
+    if (!me) return [];
+    const built: ConversationRow[] = [];
+    for (const groupId of groupOrder) {
+      const snapshot = groups[groupId];
+      if (!snapshot) continue;
+      const row = toRow(snapshot, me.id);
+      if (row) built.push(row);
     }
-
-    const counterpartyIds = dmPairs.map((p) =>
-      p.user_a === user.id ? p.user_b : p.user_a,
-    );
-    const groupIds = dmPairs.map((p) => p.group_id);
-
-    const [{ data: profiles }, { data: previews }, { data: balanceRows }, { data: memberRows }, unreadMap] =
-      await Promise.all([
-        supabase
-          .from("user_profiles")
-          .select("id, handle, name, avatar_url")
-          .in("id", counterpartyIds),
-        supabase.rpc("get_dm_previews", { p_group_ids: groupIds }),
-        supabase
-          .from("balances")
-          .select("group_id, user_a, user_b, amount_cents")
-          .in("group_id", groupIds)
-          .neq("amount_cents", 0),
-        supabase
-          .from("group_members")
-          .select("group_id, user_id, status")
-          .in("group_id", groupIds),
-        getUnreadCounts(supabase, groupIds),
-      ]);
-
-    const profileMap = new Map(
-      (profiles ?? []).map((p) => [
-        p.id,
-        {
-          id: p.id,
-          handle: p.handle,
-          name: p.name,
-          avatarUrl: p.avatar_url ?? undefined,
-        } as UserProfile,
-      ]),
-    );
-
-    const lastMessageByGroup = new Map<
-      string,
-      { content: string; messageType: string; createdAt: string }
-    >();
-    for (const row of previews ?? []) {
-      lastMessageByGroup.set(row.group_id, {
-        content: row.content,
-        messageType: row.message_type,
-        createdAt: row.created_at,
-      });
-    }
-
-    const balanceByGroup = new Map<string, number>();
-    for (const b of (balanceRows as {
-      group_id: string;
-      user_a: string;
-      user_b: string;
-      amount_cents: number;
-    }[]) ?? []) {
-      const net =
-        b.user_a === user.id ? -b.amount_cents : b.amount_cents;
-      balanceByGroup.set(
-        b.group_id,
-        (balanceByGroup.get(b.group_id) ?? 0) + net,
-      );
-    }
-
-    const memberStatusByGroup = new Map<string, Map<string, string>>();
-    for (const m of (memberRows ?? []) as { group_id: string; user_id: string; status: string }[]) {
-      if (!memberStatusByGroup.has(m.group_id)) {
-        memberStatusByGroup.set(m.group_id, new Map());
-      }
-      memberStatusByGroup.get(m.group_id)!.set(m.user_id, m.status);
-    }
-
-    const entries: ConversationEntry[] = dmPairs
-      .flatMap((pair): ConversationEntry[] => {
-        const counterpartyId =
-          pair.user_a === user.id ? pair.user_b : pair.user_a;
-        const counterparty = profileMap.get(counterpartyId);
-        if (!counterparty) return [];
-
-        const groupMembers = memberStatusByGroup.get(pair.group_id);
-        const callerStatusRaw = groupMembers?.get(user.id);
-        if (!callerStatusRaw) return [];
-        const callerStatus = callerStatusRaw as DmMemberStatus;
-        const counterpartyStatus = (groupMembers?.get(counterpartyId) ?? "invited") as DmMemberStatus;
-
-        const lastMsg = lastMessageByGroup.get(pair.group_id);
-        const lastMessageContent = lastMsg
-          ? lastMsg.messageType === "text"
-            ? lastMsg.content
-            : lastMsg.messageType === "system_expense"
-              ? "Nova conta criada"
-              : "Pagamento registrado"
-          : null;
-
-        return [{
-          groupId: pair.group_id,
-          counterparty,
-          lastMessageContent,
-          lastMessageAt: lastMsg?.createdAt ?? null,
-          netBalanceCents: balanceByGroup.get(pair.group_id) ?? 0,
-          unreadCount: unreadMap.get(pair.group_id) ?? 0,
-          callerStatus,
-          counterpartyStatus,
-        }];
-      })
-      .sort((a, b) => {
-        const aTime = a.lastMessageAt ?? "";
-        const bTime = b.lastMessageAt ?? "";
-        return bTime.localeCompare(aTime);
-      });
-
-    setConversations(entries);
-  }, [user]);
-
-  useEffect(() => {
-    refetchRef.current = refetch;
-  });
-
-  const handleAccept = useCallback(async (groupId: string) => {
-    if (!user) return;
-    // group_members_accept_denied RLS policy blocks every direct UPDATE;
-    // acceptance must go through this RPC (matching handleDecline below).
-    const { error } = await createClient().rpc("accept_group_invitation", {
-      p_group_id: groupId,
-    });
-    if (error) {
-      toast.error("Não foi possível aceitar o convite. Tente novamente.");
-      return;
-    }
-    await refetch();
-  }, [user, refetch]);
-
-  const handleDecline = useCallback(async (groupId: string) => {
-    if (!user) return;
-    const { error } = await createClient().rpc("decline_group_invitation", {
-      p_group_id: groupId,
-    });
-    if (error) {
-      if (error.message.includes("has_outstanding_balance")) {
-        toast.error("Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.");
-      } else {
-        toast.error("Não foi possível recusar o convite. Tente novamente.");
-      }
-      return;
-    }
-    setConversations((prev) => prev.filter((c) => c.groupId !== groupId));
-  }, [user]);
-
-  const totalCount = conversations.length;
+    return built;
+  }, [me, groupOrder, groups]);
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -293,100 +106,22 @@ export function ConversationsListContent({
         <div>
           <h1 className="text-2xl font-bold">Conversas</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {totalCount === 0
+            {rows.length === 0
               ? "Nenhuma conversa ainda"
-              : `${totalCount} conversa${totalCount !== 1 ? "s" : ""}`}
+              : `${rows.length} conversa${rows.length !== 1 ? "s" : ""}`}
           </p>
         </div>
-        {user && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 w-8 p-0"
+        {me && (
+          <button
+            type="button"
             onClick={() => setShareOpen(true)}
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label="Compartilhar convite"
           >
             <Share2 className="h-4 w-4" />
-          </Button>
+          </button>
         )}
       </motion.div>
-
-      {pendingIncoming.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05, duration: 0.4 }}
-          className="mt-6"
-        >
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Convites pendentes
-          </p>
-          <div className="space-y-2">
-            {pendingIncoming.map((conv) => (
-              <div
-                key={conv.groupId}
-                className="flex items-center gap-3 rounded-2xl border bg-card p-4"
-              >
-                <UserAvatar
-                  name={conv.counterparty.name}
-                  avatarUrl={conv.counterparty.avatarUrl}
-                  size="md"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{conv.counterparty.name}</p>
-                  <p className="truncate text-sm text-muted-foreground">
-                    @{conv.counterparty.handle} quer conversar com você
-                  </p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleDecline(conv.groupId)}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => handleAccept(conv.groupId)}
-                  >
-                    <Check className="h-4 w-4" />
-                    Aceitar
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {activeConversations.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.4 }}
-          className="mt-4"
-        >
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nome, @handle ou mensagem..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-9"
-            />
-            {searchQuery.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </motion.div>
-      )}
 
       <motion.div
         variants={staggerContainer}
@@ -394,53 +129,48 @@ export function ConversationsListContent({
         animate="visible"
         className="mt-4 space-y-2"
       >
-        {filteredActive.map((conv) => (
-          <motion.div key={conv.groupId} variants={staggerItem}>
-            <Link href={`/app/conversations/${conv.counterparty.id}`}>
+        {rows.map((row) => (
+          <motion.div key={row.groupId} variants={staggerItem}>
+            <Link href={row.href} data-testid={`conversation-row-${row.kind}`}>
               <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                <UserAvatar
-                  name={conv.counterparty.name}
-                  avatarUrl={conv.counterparty.avatarUrl}
-                  size="md"
-                />
+                <UserAvatar name={row.avatarName} avatarUrl={row.avatarUrl} size="md" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className={`truncate font-medium ${conv.unreadCount > 0 ? "text-foreground" : ""}`}>
-                      {conv.counterparty.name}
+                    <p
+                      className={`truncate font-medium ${row.unreadCount > 0 ? "text-foreground" : ""}`}
+                    >
+                      {row.title}
                     </p>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {conv.lastMessageAt && (
-                        <span className={`text-xs ${conv.unreadCount > 0 ? "text-primary font-medium" : "text-muted-foreground"}`}>
-                          {formatRelativeTime(conv.lastMessageAt)}
-                        </span>
-                      )}
-                    </div>
+                    {row.lastMessageAt && (
+                      <span
+                        className={`shrink-0 text-xs ${
+                          row.unreadCount > 0
+                            ? "font-medium text-primary"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {formatRelativeTime(row.lastMessageAt)}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <p className={`truncate text-sm ${conv.unreadCount > 0 ? "font-medium text-foreground" : "text-muted-foreground"}`}>
-                      {conv.lastMessageContent ?? (
-                        <span className="italic">Sem mensagens</span>
-                      )}
+                    <p
+                      className={`truncate text-sm ${
+                        row.unreadCount > 0
+                          ? "font-medium text-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {row.preview ?? <span className="italic">Sem mensagens</span>}
                     </p>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {conv.netBalanceCents !== 0 && (
-                        <span
-                          className={`text-xs font-semibold ${
-                            conv.netBalanceCents > 0
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-red-600 dark:text-red-400"
-                          }`}
-                        >
-                          {conv.netBalanceCents > 0 ? "+" : ""}
-                          {formatBRL(conv.netBalanceCents)}
-                        </span>
-                      )}
-                      {conv.unreadCount > 0 && (
-                        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-                          {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
-                        </span>
-                      )}
-                    </div>
+                    {row.unreadCount > 0 && (
+                      <span
+                        className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground"
+                        data-testid="unread-badge"
+                      >
+                        {row.unreadCount > 99 ? "99+" : row.unreadCount}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -448,40 +178,7 @@ export function ConversationsListContent({
           </motion.div>
         ))}
 
-        {filteredOutgoing.map((conv) => (
-          <motion.div key={conv.groupId} variants={staggerItem}>
-            <Link href={`/app/conversations/${conv.counterparty.id}`}>
-              <div className="flex items-center gap-3 rounded-2xl border border-dashed bg-card p-4 opacity-70 transition-colors hover:border-primary/30">
-                <UserAvatar
-                  name={conv.counterparty.name}
-                  avatarUrl={conv.counterparty.avatarUrl}
-                  size="md"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate font-medium">{conv.counterparty.name}</p>
-                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      Aguardando resposta
-                    </span>
-                  </div>
-                  <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                    @{conv.counterparty.handle}
-                  </p>
-                </div>
-              </div>
-            </Link>
-          </motion.div>
-        ))}
-
-        {isSearching && filteredActive.length === 0 && filteredOutgoing.length === 0 && (
-          <EmptyState
-            icon={Search}
-            title="Nenhum resultado"
-            description={`Sem resultados para "${searchQuery.trim()}".`}
-          />
-        )}
-
-        {!isSearching && totalCount === 0 && (
+        {rows.length === 0 && (
           <EmptyState
             icon={MessageSquare}
             title="Nenhuma conversa"
@@ -492,11 +189,11 @@ export function ConversationsListContent({
 
       <NewConversationButton />
 
-      {user && (
+      {me && (
         <ConversationShareModal
           open={shareOpen}
           onClose={() => setShareOpen(false)}
-          handle={user.handle}
+          handle={me.handle}
         />
       )}
     </div>

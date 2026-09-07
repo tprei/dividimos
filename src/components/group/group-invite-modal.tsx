@@ -2,19 +2,26 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Check,
   Copy,
   ExternalLink,
+  Link2Off,
+  Loader2,
   MessageCircle,
-  Send,
+  RefreshCw,
   Users,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
+import { InviteContactsList, type InviteContact } from "@/components/group/group-invite-contacts";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { Button } from "@/components/ui/button";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+import {
+  createInviteLink,
+  deactivateInviteLink,
+} from "@/lib/sync/mutations-group";
 import {
   buildWhatsAppLink,
   isContactPickerSupported,
@@ -24,37 +31,65 @@ import {
 interface GroupInviteModalProps {
   open: boolean;
   onClose: () => void;
+  groupId: string;
   groupName: string;
-  token: string;
 }
 
-interface SelectedContact {
-  name: string;
-  phone: string;
-  sent: boolean;
-}
+type LinkState = "idle" | "creating" | "ready" | "revoked";
 
 export function GroupInviteModal({
   open,
   onClose,
+  groupId,
   groupName,
-  token,
 }: GroupInviteModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const requestedRef = useRef(false);
   const canShare = useClientOnly(
     () => typeof navigator !== "undefined" && typeof navigator.share === "function",
   );
   const hasContactPicker = useClientOnly(isContactPickerSupported);
-  const [contacts, setContacts] = useState<SelectedContact[]>([]);
+  const [contacts, setContacts] = useState<InviteContact[]>([]);
   const [picking, setPicking] = useState(false);
+  const [linkState, setLinkState] = useState<LinkState>("idle");
+  const [token, setToken] = useState<string | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
   const [prevOpen, setPrevOpen] = useState(open);
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (!open) setContacts([]);
+    if (!open) {
+      setContacts([]);
+      setToken(null);
+      setLinkState("idle");
+      requestedRef.current = false;
+    }
   }
 
+  useEffect(() => {
+    if (!open || linkState !== "idle" || requestedRef.current) return;
+    requestedRef.current = true;
+    let active = true;
+    createInviteLink(groupId, null, null)
+      .then((link) => {
+        if (!active) return;
+        setToken(link.token);
+        setLinkState("ready");
+      })
+      .catch((e: unknown) => {
+        if (!active) return;
+        toast.error(ledgerErrorMessage(e));
+        setLinkState("revoked");
+      })
+      .finally(() => {
+        active = false;
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, groupId, linkState]);
+
   const joinUrl =
-    typeof window !== "undefined"
+    token && typeof window !== "undefined"
       ? `${window.location.origin}/join/${token}`
       : "";
 
@@ -145,9 +180,27 @@ export function GroupInviteModal({
     setContacts((prev) => prev.filter((c) => c.phone !== phone));
   }, []);
 
+  const handleDeactivate = useCallback(async () => {
+    setDeactivating(true);
+    try {
+      await deactivateInviteLink(groupId);
+      setToken(null);
+      setLinkState("revoked");
+      toast.success("Link desativado");
+    } catch (e) {
+      toast.error(ledgerErrorMessage(e));
+    } finally {
+      setDeactivating(false);
+    }
+  }, [groupId]);
+
+  const handleRegenerate = useCallback(() => {
+    requestedRef.current = false;
+    setLinkState("idle");
+  }, []);
+
   if (!open) return null;
 
-  const unsentCount = contacts.filter((c) => !c.sent).length;
 
   return (
     <AnimatePresence>
@@ -189,81 +242,58 @@ export function GroupInviteModal({
             </button>
           </div>
 
-          <div className="flex justify-center rounded-2xl bg-white p-4">
-            <canvas ref={canvasRef} />
-          </div>
-
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            Escaneie ou compartilhe o link para entrar no grupo
-          </p>
-
-          {contacts.length > 0 && (
-            <div className="mt-4 max-h-48 space-y-2 overflow-y-auto">
-              {contacts.map((contact) => (
-                <div
-                  key={contact.phone}
-                  className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3"
+          {linkState === "ready" ? (
+            <>
+              <div className="flex justify-center rounded-2xl bg-white p-4">
+                <canvas ref={canvasRef} />
+              </div>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Escaneie ou compartilhe o link para entrar no grupo
+              </p>
+              <div className="mt-2 flex justify-center">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
+                  disabled={deactivating}
+                  onClick={handleDeactivate}
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Users className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {contact.name || contact.phone}
-                    </p>
-                    {contact.name && (
-                      <p className="text-xs text-muted-foreground">
-                        {contact.phone}
-                      </p>
-                    )}
-                  </div>
-                  {contact.sent ? (
-                    <span className="flex items-center gap-1 text-xs text-success">
-                      <Check className="h-3.5 w-3.5" />
-                      Enviado
-                    </span>
+                  {deactivating ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleRemoveContact(contact.phone)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="h-7 gap-1 bg-[#25D366] hover:bg-[#1da851] text-white"
-                        onClick={() => handleSendToContact(contact.phone)}
-                      >
-                        <Send className="h-3 w-3" />
-                        Enviar
-                      </Button>
-                    </div>
+                    <Link2Off className="h-3 w-3" />
                   )}
-                </div>
-              ))}
+                  Desativar link
+                </Button>
+              </div>
+            </>
+          ) : linkState === "revoked" ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed py-12">
+              <p className="text-sm text-muted-foreground">
+                Nenhum link de convite ativo.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={handleRegenerate}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Gerar novo link
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 rounded-2xl border bg-muted/30 py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">Gerando link...</p>
             </div>
           )}
 
-          {unsentCount > 1 && (
-            <Button
-              className="mt-2 w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
-              onClick={() => {
-                const unsent = contacts.filter((c) => !c.sent);
-                for (const c of unsent) {
-                  handleSendToContact(c.phone);
-                }
-                toast.success(
-                  `Abrindo WhatsApp para ${unsent.length} contatos`,
-                );
-              }}
-            >
-              <Send className="h-4 w-4" />
-              Enviar para todos ({unsentCount})
-            </Button>
-          )}
+          <InviteContactsList
+            contacts={contacts}
+            onSend={handleSendToContact}
+            onRemove={handleRemoveContact}
+          />
 
           <div className="mt-4 space-y-2">
             {hasContactPicker && (
@@ -283,6 +313,7 @@ export function GroupInviteModal({
             <Button
               className="w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
               onClick={handleWhatsAppDirect}
+              disabled={!joinUrl}
             >
               <MessageCircle className="h-4 w-4" />
               Enviar pelo WhatsApp
@@ -293,6 +324,7 @@ export function GroupInviteModal({
                 className="w-full gap-2"
                 variant="outline"
                 onClick={handleShare}
+                disabled={!joinUrl}
               >
                 <ExternalLink className="h-4 w-4" />
                 Compartilhar
@@ -303,6 +335,7 @@ export function GroupInviteModal({
               variant="outline"
               className="w-full gap-2"
               onClick={handleCopy}
+              disabled={!joinUrl}
             >
               <Copy className="h-4 w-4" />
               Copiar link

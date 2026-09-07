@@ -1,7 +1,7 @@
 import { test, expect } from "../fixtures";
 
 test.describe("DM navigation and deep links", () => {
-  test("nav inferior tem tab Conversas e não tem Contas", async ({
+  test("bottom nav has a Conversations tab and no Bills tab", async ({
     page,
     seed,
     loginAs,
@@ -10,16 +10,16 @@ test.describe("DM navigation and deep links", () => {
 
     await loginAs(alice);
 
-    const conversasLink = page.getByRole("link", { name: /Conversas/i });
-    await expect(conversasLink).toBeVisible();
-    await expect(conversasLink).toHaveAttribute("href", "/app/conversations");
+    const conversationsLink = page.getByRole("link", { name: /Conversas/i });
+    await expect(conversationsLink).toBeVisible();
+    await expect(conversationsLink).toHaveAttribute("href", "/app/conversations");
 
-    const contasLink = page.getByRole("link", { name: /^Contas$/i });
-    await expect(contasLink).not.toBeVisible();
+    const billsLink = page.getByRole("link", { name: /^Contas$/i });
+    await expect(billsLink).not.toBeVisible();
   });
 
   // Test 2: Dashboard debt card from regular group → creates DM on tap
-  test("card de dívida de grupo comum navega e cria DM com contraparte", async ({
+  test("a regular-group debt card navigates and creates a DM with the counterparty", async ({
     page,
     seed,
     loginAs,
@@ -32,17 +32,11 @@ test.describe("DM navigation and deep links", () => {
     const trip = await seed.createGroup(alice.id, [bob.id], "Trip");
 
     // Bob paid R$ 100, split equally → alice owes bob R$ 50
-    await seed.createActiveExpense(
-      trip.id,
-      bob.id,
-      [alice.id, bob.id],
-      {
-        title: "Viagem",
-        totalAmount: 10000,
-        expenseType: "single_amount",
-        payers: { [bob.id]: 10000 },
-      },
-    );
+    await seed.createExpense(trip.id, bob.id, [alice.id, bob.id], {
+      title: "Trip Expense",
+      totalCents: 10000,
+      expenseType: "single_amount",
+    });
 
     await loginAs(alice);
     await page.waitForLoadState("networkidle");
@@ -64,21 +58,21 @@ test.describe("DM navigation and deep links", () => {
       timeout: 10000,
     });
 
-    // A DM pair should now exist for alice+bob
-    const { data: dmPairs, error: dmPairsError } = await adminClient
-      .from("dm_pairs")
-      .select("group_id, user_a, user_b")
-      .or(`user_a.eq.${alice.id},user_b.eq.${alice.id}`);
+    // A DM should now exist for the canonical alice+bob pair
+    const [userA, userB] = [alice.id, bob.id].sort();
+    const { data: dmGroups, error: dmGroupsError } = await adminClient
+      .from("groups")
+      .select("id, kind")
+      .eq("dm_user_a", userA)
+      .eq("dm_user_b", userB);
 
-    expect(dmPairsError).toBeNull();
-    const matching = (dmPairs ?? []).filter(
-      (p) => p.user_a === bob.id || p.user_b === bob.id,
-    );
-    expect(matching.length).toBeGreaterThan(0);
+    expect(dmGroupsError).toBeNull();
+    expect(dmGroups).toHaveLength(1);
+    expect(dmGroups![0].kind).toBe("dm");
   });
 
   // Test 3: Debt card direct link when debt is already in a DM
-  test("card de dívida de DM existente navega direto para a conversa", async ({
+  test("an existing DM debt card navigates straight to the conversation", async ({
     page,
     seed,
     loginAs,
@@ -86,22 +80,14 @@ test.describe("DM navigation and deep links", () => {
     const alice = await seed.createUser({ name: "Alice DM Direct" });
     const bob = await seed.createUser({ name: "Bob DM Direct" });
 
-    // Both in a regular group so DM auto-accepts
-    await seed.createGroup(alice.id, [bob.id], "Shared");
     const dm = await seed.createDmGroup(alice, bob);
 
     // Create expense in DM: bob paid R$ 60, split equally → alice owes R$ 30
-    await seed.createActiveExpense(
-      dm.id,
-      bob.id,
-      [alice.id, bob.id],
-      {
-        title: "Jantar DM",
-        totalAmount: 6000,
-        expenseType: "single_amount",
-        payers: { [bob.id]: 6000 },
-      },
-    );
+    await seed.createExpense(dm.id, bob.id, [alice.id, bob.id], {
+      title: "DM Dinner",
+      totalCents: 6000,
+      expenseType: "single_amount",
+    });
 
     await loginAs(alice);
     await page.waitForLoadState("networkidle");
@@ -122,8 +108,8 @@ test.describe("DM navigation and deep links", () => {
     });
   });
 
-  // Test 4: Conversas tab navigation from a non-conversations page
-  test("clique na tab Conversas navega para a lista de conversas", async ({
+  // Test 4: Conversations tab navigation from a non-conversations page
+  test("clicking the Conversations tab navigates to the conversation list", async ({
     page,
     seed,
     loginAs,
@@ -131,9 +117,9 @@ test.describe("DM navigation and deep links", () => {
     const alice = await seed.createUser({ name: "Alice ConvTab" });
     const bob = await seed.createUser({ name: "Bob ConvTab" });
 
-    await seed.createGroup(alice.id, [bob.id], "Grupo ConvTab");
+    await seed.createGroup(alice.id, [bob.id], "ConvTab Group");
     const dm = await seed.createDmGroup(alice, bob);
-    await seed.sendChatMessage(dm.id, bob.id, "Olá Alice!");
+    await seed.sendChatMessage(dm.id, bob.id, "Hello Alice!");
 
     await loginAs(alice, { navigate: false });
     await page.goto("/app/profile");

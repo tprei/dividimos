@@ -2,13 +2,14 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QuickSplitSheet } from "./quick-split-sheet";
-import type { UserProfile } from "@/types";
+import type { UserProfile } from "@/types/ledger";
 
 const CURRENT_USER = "user-1";
 const COUNTERPARTY: UserProfile = {
   id: "user-2",
   handle: "maria",
   name: "Maria Silva",
+  avatarUrl: null,
 };
 
 function renderSheet(overrides: Partial<Parameters<typeof QuickSplitSheet>[0]> = {}) {

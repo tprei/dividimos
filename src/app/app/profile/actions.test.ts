@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn(),
+vi.mock("@/lib/auth", () => ({
+  getAuthUser: vi.fn(),
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: vi.fn(),
+}));
+
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/crypto", () => ({
   encryptPixKey: vi.fn().mockReturnValue("encrypted-payload"),
 }));
@@ -13,25 +18,37 @@ vi.mock("@/lib/pix", () => ({
   maskPixKey: vi.fn().mockReturnValue("m*****@test.com"),
 }));
 
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptPixKey } from "@/lib/crypto";
 import { validatePixKey, maskPixKey } from "@/lib/pix";
 import { updatePixKey } from "./actions";
+import type { Me } from "@/types/ledger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+function mockUser(id: string): Me {
+  return {
+    id,
+    handle: "testuser",
+    name: "Test User",
+    avatarUrl: null,
+    email: "test@example.com",
+    pixKeyType: null,
+    pixKeyHint: null,
+    onboarded: true,
+    notificationPreferences: {},
+  };
+}
 
 function mockAuth(userId: string | null) {
-  const getUser = vi.fn().mockResolvedValue({
-    data: { user: userId ? { id: userId } : null },
-  });
+  vi.mocked(getAuthUser).mockResolvedValue(userId ? mockUser(userId) : null);
   const eq = vi.fn().mockResolvedValue({ error: null });
   const update = vi.fn().mockReturnValue({ eq });
   const from = vi.fn().mockReturnValue({ update });
-  vi.mocked(createClient).mockResolvedValue({
-    auth: { getUser },
+  vi.mocked(createAdminClient).mockReturnValue({
     from,
   } as unknown as SupabaseClient<Database>);
-  return { getUser, from, update, eq };
+  return { from, update, eq };
 }
 
 function pixFormData(pixKey: string, pixKeyType: string) {
@@ -51,7 +68,7 @@ describe("updatePixKey", () => {
 
     const result = await updatePixKey("real-user", pixFormData("user@test.com", "email"));
 
-    expect(result).toEqual({ success: true, hint: "m*****@test.com" });
+    expect(result).toEqual({ pixKeyType: "email", pixKeyHint: "m*****@test.com" });
     expect(validatePixKey).toHaveBeenCalledWith("user@test.com", "email");
     expect(encryptPixKey).toHaveBeenCalledWith("user@test.com");
     expect(maskPixKey).toHaveBeenCalledWith("user@test.com");

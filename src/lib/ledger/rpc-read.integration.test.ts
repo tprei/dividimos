@@ -49,6 +49,7 @@ interface GroupSnapshot {
     user: UserProfile;
   }>;
   balances: Array<{ kind: string; participantId: string; netCents: number }>;
+  guests: Array<{ id: string; displayName: string; expenseId: string }>;
   pendingSettlements: unknown[];
   recentExpenses: ExpenseSummary[];
   lastEventId: number;
@@ -192,6 +193,7 @@ const SNAPSHOT_KEYS = [
   "group",
   "members",
   "balances",
+  "guests",
   "pendingSettlements",
   "recentExpenses",
   "lastEventId",

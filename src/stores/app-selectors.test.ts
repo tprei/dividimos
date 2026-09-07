@@ -39,6 +39,7 @@ function snapshot(groupId: string, overrides: Partial<GroupSnapshot> = {}): Grou
     },
     members: [],
     balances: [],
+    guests: [],
     pendingSettlements: [],
     recentExpenses: [],
     lastEventId: 0,

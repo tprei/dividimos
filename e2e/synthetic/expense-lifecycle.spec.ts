@@ -1,42 +1,31 @@
 import { test, expect, loginInContext } from "../fixtures";
 
 test.describe("Expense Lifecycle", () => {
-  test("draft → active → settled with two users", async ({
+  test("active expense settles once the creditor confirms", async ({
     page,
     seed,
     loginAs,
     browser,
+    adminClient,
   }) => {
     const alice = await seed.createUser({ name: "Alice Lifecycle" });
     const bob = await seed.createUser({ name: "Bob Lifecycle" });
     const group = await seed.createGroup(alice.id, [bob.id], "Lifecycle Test");
 
-    const expense = await seed.createActiveExpense(
-      group.id,
-      alice.id,
-      [alice.id, bob.id],
-      {
-        title: "Jantar Lifecycle",
-        totalAmount: 10000,
-        expenseType: "single_amount",
-      },
-    );
+    const expense = await seed.createExpense(group.id, alice.id, [alice.id, bob.id], {
+      title: "Lifecycle Dinner",
+      totalCents: 10000,
+      expenseType: "single_amount",
+    });
 
     // Alice views the active expense
     await loginAs(alice);
     await page.goto(`/app/bill/${expense.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Jantar Lifecycle")).toBeVisible();
-    await expect(page.getByText("Ativo")).toBeVisible();
-    await expect(page.getByText("R$ 100,00")).toBeVisible();
-
-    const paymentTab = page.getByRole("button", { name: /Pagamento/i });
-    await paymentTab.click();
-
-    await expect(
-      page.getByText(/te deve|Ir para acerto do grupo/i).first(),
-    ).toBeVisible();
+    await expect(page.getByText("Lifecycle Dinner")).toBeVisible();
+    await expect(page.getByText("Total da despesa")).toBeVisible();
+    await expect(page.getByText("R$ 100,00", { exact: true })).toBeVisible();
 
     // Bob views the same expense in a separate context
     const bobContext = await browser.newContext();
@@ -46,108 +35,102 @@ test.describe("Expense Lifecycle", () => {
     await bobPage.goto(`/app/bill/${expense.id}`);
     await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Jantar Lifecycle")).toBeVisible();
-    await expect(bobPage.getByText("Ativo")).toBeVisible();
+    await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
+    await expect(bobPage.getByText("Total da despesa")).toBeVisible();
 
-    const bobPaymentTab = bobPage.getByRole("button", { name: /Pagamento/i });
-    await bobPaymentTab.click();
-
-    await expect(
-      bobPage.getByText(/Você deve|Ir para acerto do grupo/i).first(),
-    ).toBeVisible();
-
-    // Bob navigates to the group settlement tab
+    // Bob sees the bill and his debt on the group page
     await bobPage.goto(`/app/groups/${group.id}`);
     await bobPage.waitForLoadState("networkidle");
 
     await expect(bobPage.getByText("Lifecycle Test")).toBeVisible();
-
-    const contasTab = bobPage.getByRole("button", { name: "Contas" });
-    await contasTab.click();
-    await expect(bobPage.getByText("Jantar Lifecycle")).toBeVisible();
-    await expect(bobPage.getByText("Pendente")).toBeVisible();
-
-    const acertoTab = bobPage.getByRole("button", { name: "Acerto" });
-    await acertoTab.click();
-
+    await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
+    await expect(bobPage.getByText("Você deve")).toBeVisible();
     await expect(bobPage.getByText("R$ 50,00").first()).toBeVisible({
       timeout: 10000,
     });
 
-    // Settle the debt via RPC
+    // Bob records the payment; it stays pending until Alice confirms
     const bobClient = await seed.authenticateAs(bob.id);
-    await bobClient.rpc("record_settlements", {
-      p_allocations: [{
-        group_id: group.id,
-        from_user_id: bob.id,
-        to_user_id: alice.id,
-        amount_cents: 5000,
-      }],
+    await bobClient.rpc("record_settlement", {
       p_operation_id: crypto.randomUUID(),
+      p_group_id: group.id,
+      p_to_user_id: alice.id,
+      p_amount_cents: 5000,
     });
 
-    // Group settlement tab reflects zero balances
+    const { data: pending } = await adminClient
+      .from("settlements")
+      .select("id")
+      .eq("group_id", group.id)
+      .eq("status", "pending");
+    expect(pending).toHaveLength(1);
+
+    const aliceClient = await seed.authenticateAs(alice.id);
+    const { error: confirmError } = await aliceClient.rpc("confirm_settlement", {
+      p_settlement_id: pending![0].id as string,
+    });
+    expect(confirmError).toBeNull();
+
+    // The group page reflects zero balances
     await page.goto(`/app/groups/${group.id}`);
     await page.waitForLoadState("networkidle");
 
-    await page.getByRole("button", { name: "Acerto" }).click();
     await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Nenhuma dívida pendente no grupo")).toBeVisible();
-
-    // Pagamentos tab shows confirmed settlement
-    await page.getByRole("button", { name: "Pagamentos" }).click();
-    await expect(
-      page.getByText(/Confirmado/i).first(),
-    ).toBeVisible({ timeout: 10000 });
 
     await bobContext.close();
   });
 
-  test("non-creator sees waiting state for draft expense", async ({
+  test("wizard holds the draft locally until submit creates one active expense", async ({
     page,
     seed,
     loginAs,
-    browser,
+    adminClient,
   }) => {
     const alice = await seed.createUser({ name: "Alice Draft" });
     const bob = await seed.createUser({ name: "Bob Draft" });
     const group = await seed.createGroup(alice.id, [bob.id]);
 
-    const draft = await seed.createExpense(
-      group.id,
-      alice.id,
-      [alice.id, bob.id],
-      { title: "Rascunho Teste", totalAmount: 8000 },
-    );
-
-    // Bob views the draft
-    const bobContext = await browser.newContext();
-    const bobPage = await bobContext.newPage();
-    await loginInContext(bobContext, bobPage, bob);
-
-    await bobPage.goto(`/app/bill/${draft.id}`);
-    await bobPage.waitForLoadState("networkidle");
-
-    await expect(bobPage.getByText("Rascunho", { exact: true })).toBeVisible();
-    await expect(
-      bobPage.getByText(/Aguardando.*finalizar/i),
-    ).toBeVisible();
-    await expect(bobPage.getByText("R$ 80,00")).toBeVisible();
-
-    // Alice sees the creator draft view
     await loginAs(alice);
-    await page.goto(`/app/bill/${draft.id}`);
+    await page.goto(`/app/bill/new?groupId=${group.id}&title=Draft Test&amount=8000`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Rascunho", { exact: true })).toBeVisible();
-    await expect(page.getByText("Rascunho Teste")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Finalizar despesa/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: /Editar rascunho/i }),
-    ).toBeVisible();
+    // participants step → nothing is persisted while the wizard is open
+    await expect(page.getByText(bob.name).first()).toBeVisible({ timeout: 5000 });
 
-    await bobContext.close();
+    const { data: beforeSubmit } = await adminClient
+      .from("expenses")
+      .select("id")
+      .eq("group_id", group.id);
+    expect(beforeSubmit ?? []).toHaveLength(0);
+
+    await page.getByRole("button", { name: /Próximo|Continuar/i }).click();
+    await page.getByRole("button", { name: /Próximo|Continuar/i }).click();
+    await page.getByRole("button", { name: alice.name }).click();
+    await page.getByRole("button", { name: /Próximo|Continuar/i }).click();
+    await page.getByRole("button", { name: /Gerar cobranças Pix/i }).click();
+
+    await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, { timeout: 15000 });
+
+    await expect
+      .poll(
+        async () => {
+          const { data } = await adminClient
+            .from("expenses")
+            .select("id")
+            .eq("group_id", group.id);
+          return data?.length ?? 0;
+        },
+        { timeout: 10000 },
+      )
+      .toBe(1);
+
+    const { data: afterSubmit } = await adminClient
+      .from("expenses")
+      .select("id, status, current_version_no")
+      .eq("group_id", group.id);
+    expect(afterSubmit).toHaveLength(1);
+    expect(afterSubmit![0].status).toBe("active");
+    expect(afterSubmit![0].current_version_no).toBe(1);
   });
 });

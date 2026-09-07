@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ConversationHeader } from "./conversation-header";
-import type { UserProfile } from "@/types";
+import type { UserProfile } from "@/types/ledger";
 
 const mockBack = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -16,7 +16,7 @@ const counterparty: UserProfile = {
   id: "user-2",
   handle: "alice",
   name: "Alice Silva",
-  avatarUrl: undefined,
+  avatarUrl: null,
 };
 
 describe("ConversationHeader", () => {

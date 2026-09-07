@@ -234,10 +234,17 @@ export interface ChatLastMessage {
   createdAt: string;
 }
 
+export interface GroupGuest {
+  id: string;
+  displayName: string;
+  expenseId: string;
+}
+
 export interface GroupSnapshot {
   group: Group;
   members: GroupMember[];
   balances: BalanceRow[];
+  guests: GroupGuest[];
   pendingSettlements: Settlement[];
   recentExpenses: ExpenseSummary[];
   lastEventId: number;
