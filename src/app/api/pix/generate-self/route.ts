@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       ? (claimsData.claims.sub as string)
       : null;
   if (!callerId) {
-    return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
   const body = await request.json();

@@ -67,7 +67,7 @@ describe("POST /api/receipt/ocr", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe("Nao autenticado");
+    expect(body.error).toBe("Não autenticado");
   });
 
   it("returns 503 when GEMINI_API_KEY is not set", async () => {

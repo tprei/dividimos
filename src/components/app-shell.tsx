@@ -18,6 +18,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { NotificationPrompt } from "@/components/pwa/notification-prompt";
+import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { Logo } from "@/components/shared/logo";
 import { DashboardSkeleton } from "@/components/shared/skeleton";
 import { UnreadBadge } from "@/components/shared/unread-badge";
@@ -329,6 +331,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             {children}
           </main>
+
+          <NotificationPrompt />
+          <OnboardingTour userId={me?.id} />
 
           <NavBar />
         </div>

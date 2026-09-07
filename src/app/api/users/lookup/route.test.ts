@@ -22,7 +22,7 @@ describe("GET /api/users/lookup", () => {
 
     expect(response.status).toBe(401);
     const body = await response.json();
-    expect(body.error).toBe("Nao autenticado");
+    expect(body.error).toBe("Não autenticado");
   });
 
   it("returns 400 when handle is missing", async () => {
@@ -45,7 +45,7 @@ describe("GET /api/users/lookup", () => {
 
     expect(response.status).toBe(404);
     const body = await response.json();
-    expect(body.error).toBe("Usuario nao encontrado");
+    expect(body.error).toBe("Usuário não encontrado");
   });
 
   it("returns profile on success", async () => {

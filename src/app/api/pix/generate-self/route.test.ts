@@ -41,7 +41,7 @@ describe("POST /api/pix/generate-self", () => {
     const response = await POST(makeRequest({ amountCents: 5000 }));
     expect(response.status).toBe(401);
     const body = await response.json();
-    expect(body.error).toBe("Nao autenticado");
+    expect(body.error).toBe("Não autenticado");
   });
 
   it("returns 400 when amountCents is missing", async () => {

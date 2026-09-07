@@ -65,7 +65,7 @@ describe("POST /api/voice/parse", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe("Nao autenticado");
+    expect(body.error).toBe("Não autenticado");
     expect(mockEnforceRateLimit).not.toHaveBeenCalled();
     expect(mockParseVoiceExpense).not.toHaveBeenCalled();
   });
