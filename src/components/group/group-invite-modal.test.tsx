@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 describe("GroupInviteModal", () => {
-  it("não renderiza nada quando open é false", () => {
+  it("renders nothing when open is false", () => {
     const { container } = render(
       <GroupInviteModal
         open={false}
@@ -58,7 +58,7 @@ describe("GroupInviteModal", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("gera link de convite e desenha QR Code ao abrir", async () => {
+  it("generates an invite link and draws the QR code on open", async () => {
     const { promise, resolve } = Promise.withResolvers<{
       groupId: string;
       token: string;
@@ -95,7 +95,7 @@ describe("GroupInviteModal", () => {
     expect(canvasArgs[1]).toBe(`${window.location.origin}/join/tok123`);
   });
 
-  it("copia link de convite para a área de transferência", async () => {
+  it("copies the invite link to the clipboard", async () => {
     vi.mocked(createInviteLink).mockResolvedValue({
       groupId,
       token: "tok123",
@@ -124,7 +124,7 @@ describe("GroupInviteModal", () => {
     expect(toast.success).toHaveBeenCalledWith("Link copiado!");
   });
 
-  it("desativa o link e permite gerar novo", async () => {
+  it("deactivates the link and allows generating a new one", async () => {
     vi.mocked(createInviteLink).mockResolvedValue({
       groupId,
       token: "tok123",
@@ -170,7 +170,7 @@ describe("GroupInviteModal", () => {
     });
   });
 
-  it("mostra mensagem de erro se a criação do link falhar", async () => {
+  it("shows an error message when link creation fails", async () => {
     vi.mocked(createInviteLink).mockRejectedValueOnce(new Error("network"));
 
     render(
@@ -188,7 +188,7 @@ describe("GroupInviteModal", () => {
     });
   });
 
-  it("abre WhatsApp com mensagem formatada", async () => {
+  it("opens WhatsApp with a formatted message", async () => {
     vi.mocked(createInviteLink).mockResolvedValue({
       groupId,
       token: "tok123",

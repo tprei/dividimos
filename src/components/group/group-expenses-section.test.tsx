@@ -74,7 +74,7 @@ beforeEach(() => {
 });
 
 describe("GroupExpensesSection", () => {
-  it("renderiza contas com valor, data e link para o detalhe", () => {
+  it("renders bills with amount, date and a link to the detail", () => {
     seed([expense("e1", "Jantar"), expense("e2", "Mercado")], true);
 
     render(<GroupExpensesSection groupId={groupId} members={[]} />);
@@ -88,7 +88,7 @@ describe("GroupExpensesSection", () => {
     );
   });
 
-  it("oculta contas excluídas", () => {
+  it("hides deleted bills", () => {
     seed(
       [
         expense("e1", "Jantar"),
@@ -103,7 +103,7 @@ describe("GroupExpensesSection", () => {
     expect(screen.queryByText("Cancelada")).not.toBeInTheDocument();
   });
 
-  it("esconde Carregar mais quando a lista está completa", () => {
+  it("hides Load more when the list is complete", () => {
     seed([expense("e1", "Jantar")], true);
 
     render(<GroupExpensesSection groupId={groupId} members={[]} />);
@@ -113,7 +113,7 @@ describe("GroupExpensesSection", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("carrega mais despesas ao clicar no botão", async () => {
+  it("loads more expenses when the button is clicked", async () => {
     vi.mocked(loadMoreExpenses).mockResolvedValue(undefined);
     seed(
       [
@@ -135,7 +135,7 @@ describe("GroupExpensesSection", () => {
     });
   });
 
-  it("mostra erro quando carregar mais falha", async () => {
+  it("shows an error when loading more fails", async () => {
     vi.mocked(loadMoreExpenses).mockRejectedValueOnce(new Error("network"));
     seed([expense("e1", "Jantar"), expense("e2", "Mercado")], false);
 
@@ -150,7 +150,7 @@ describe("GroupExpensesSection", () => {
     });
   });
 
-  it("mostra estado vazio e botão nova conta", async () => {
+  it("shows the empty state and a new bill button", async () => {
     seed([], true);
     render(<GroupExpensesSection groupId={groupId} members={[]} />);
 

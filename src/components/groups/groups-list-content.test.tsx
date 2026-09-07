@@ -124,7 +124,7 @@ beforeEach(() => {
 });
 
 describe("GroupsListContent", () => {
-  it("lista grupos com nome, contagem, saldo a receber e não lidas", () => {
+  it("lists groups with name, member count, credit balance and unread count", () => {
     seed([
       snapshot("g1", {
         group: { name: "Viagem" },
@@ -146,7 +146,7 @@ describe("GroupsListContent", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
   });
 
-  it("mostra saldo a pagar quando negativo", () => {
+  it("shows a debit balance when negative", () => {
     seed([
       snapshot("g1", {
         members: [member("user-1", "Alice", "accepted")],
@@ -159,7 +159,7 @@ describe("GroupsListContent", () => {
     expect(screen.getByText(/a pagar R\$ 25,00/)).toBeInTheDocument();
   });
 
-  it("exclui DMs da lista", () => {
+  it("excludes DMs from the list", () => {
     seed([
       snapshot("dm1", {
         group: { kind: "dm", name: "Carol" },
@@ -176,7 +176,7 @@ describe("GroupsListContent", () => {
     expect(screen.getByText("Grupo g1")).toBeInTheDocument();
   });
 
-  it("mostra convites pendentes e responde aceitar/recusar", async () => {
+  it("shows pending invites and handles accept and decline", async () => {
     seed([
       snapshot("g2", {
         group: { name: "Casa nova" },
@@ -199,7 +199,7 @@ describe("GroupsListContent", () => {
     expect(declineInvitation).toHaveBeenCalledWith("g2");
   });
 
-  it("cria grupo e navega para o detalhe", async () => {
+  it("creates a group and navigates to its detail", async () => {
     seed([
       snapshot("g1", {
         members: [member("user-1", "Alice", "accepted")],
@@ -223,7 +223,7 @@ describe("GroupsListContent", () => {
     });
   });
 
-  it("mostra erro quando a criação falha", async () => {
+  it("shows an error when creation fails", async () => {
     vi.mocked(createGroup).mockRejectedValueOnce(new Error("invalid_name"));
     seed([
       snapshot("g1", {
@@ -244,7 +244,7 @@ describe("GroupsListContent", () => {
     });
   });
 
-  it("mostra skeleton antes da hidratação", () => {
+  it("shows a skeleton before hydration", () => {
     seed([snapshot("g1", { group: { name: "Viagem" } })], false);
 
     render(<GroupsListContent />);
@@ -252,7 +252,7 @@ describe("GroupsListContent", () => {
     expect(screen.queryByText("Viagem")).not.toBeInTheDocument();
   });
 
-  it("mostra estado vazio sem grupos nem convites", () => {
+  it("shows the empty state with no groups and no invites", () => {
     seed([]);
 
     render(<GroupsListContent />);
