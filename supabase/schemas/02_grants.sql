@@ -16,5 +16,3 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO service_role;
 GRANT USAGE ON SCHEMA guest_credentials TO service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA guest_credentials TO service_role;
-
-GRANT EXECUTE ON FUNCTION public.is_member(uuid, uuid) TO authenticated;

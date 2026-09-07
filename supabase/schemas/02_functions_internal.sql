@@ -352,6 +352,11 @@ BEGIN
     IF jsonb_typeof(v_item_assignments) <> 'array' THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    -- 100 items x 50 participants is the structural maximum; without a cap the
+    -- reconciliation below runs while lock_group is held.
+    IF jsonb_array_length(v_item_assignments) > 5000 THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
     v_i := 0;
     WHILE v_i < jsonb_array_length(v_item_assignments) LOOP
       v_assignment := v_item_assignments->v_i;
@@ -386,23 +391,31 @@ BEGIN
       END IF;
       v_i := v_i + 1;
     END LOOP;
-    v_i := 0;
-    WHILE v_i < jsonb_array_length(v_items) LOOP
-      v_item_total := (v_items->v_i->>'totalPriceCents')::integer;
-      v_assignment_sum := 0;
-      v_j := 0;
-      WHILE v_j < jsonb_array_length(v_item_assignments) LOOP
-        v_assignment := v_item_assignments->v_j;
-        IF (v_assignment->>'itemIndex')::integer = v_i THEN
-          v_assignment_sum := v_assignment_sum + (v_assignment->>'amountCents')::integer;
-        END IF;
-        v_j := v_j + 1;
-      END LOOP;
-      IF v_assignment_sum <> v_item_total THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
-      END IF;
-      v_i := v_i + 1;
-    END LOOP;
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(v_item_assignments) AS a(e)
+      GROUP BY (a.e->>'itemIndex'), (a.e->>'participantIndex')
+      HAVING count(*) > 1
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    IF EXISTS (
+      WITH assigned AS (
+        SELECT (a.e->>'itemIndex')::integer AS item_index,
+               sum((a.e->>'amountCents')::integer) AS assigned_cents
+        FROM jsonb_array_elements(v_item_assignments) AS a(e)
+        GROUP BY 1
+      ), items AS (
+        SELECT (ord - 1)::integer AS item_index,
+               (x->>'totalPriceCents')::integer AS total_cents
+        FROM jsonb_array_elements(v_items) WITH ORDINALITY AS t(x, ord)
+      )
+      SELECT 1 FROM items i
+      FULL JOIN assigned a ON a.item_index = i.item_index
+      WHERE COALESCE(a.assigned_cents, 0) <> COALESCE(i.total_cents, -1)
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
   ELSE
     v_item_assignments := NULL;
   END IF;
@@ -554,6 +567,16 @@ BEGIN
     END IF;
     v_i := v_i + 1;
   END LOOP;
+
+  -- An unclaimed guest with no participant slot left is unreachable; its
+  -- claim token would otherwise still redeem into group membership.
+  DELETE FROM guests g
+  WHERE g.expense_id = p_expense_id
+    AND g.claimed_by IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM expense_participants ep
+      WHERE ep.expense_id = p_expense_id AND ep.guest_id = g.id
+    );
 
   v_out := jsonb_set(p_payload, '{participants}', v_out_participants);
   RETURN v_out;

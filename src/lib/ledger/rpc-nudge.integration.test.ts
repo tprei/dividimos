@@ -55,6 +55,7 @@ describe.skipIf(!isIntegrationTestReady)(
     let clientOutsider: SupabaseClient;
     let groupId: string;
     let nudgeAck: NudgeAck;
+    let otherGroupId: string;
 
     beforeAll(async () => {
       [alice, bob, carol, outsider] = await createTestUsers(4);
@@ -68,6 +69,16 @@ describe.skipIf(!isIntegrationTestReady)(
         title: "Almoço de Domingo",
         totalCents: 6000,
         payload: equalSplitPayload([alice.id, bob.id], 6000),
+      });
+
+      // Second group with the same debtor/creditor pair so the cooldown
+      // can be proven scoped per group rather than per pair.
+      otherGroupId = await createGroupWithMembers(alice, [bob], "Grupo Nudge 2");
+      await createExpense(alice, {
+        groupId: otherGroupId,
+        title: "Churrasco",
+        totalCents: 4000,
+        payload: equalSplitPayload([alice.id, bob.id], 4000),
       });
     });
 
@@ -153,6 +164,29 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(event.subject_user_id).toBe(bob.id);
       expect(event.payload).toEqual({ amountCents: 3000 });
       expect(event.notified_at).toBeNull();
+    });
+
+    it("scopes the cooldown per group: the same pair can be nudged in a second group", async () => {
+      await expect(
+        rpcErrorCode(clientAlice, "send_nudge", {
+          p_group_id: groupId,
+          p_user_id: bob.id,
+        }),
+      ).resolves.toBe("nudge_cooldown");
+
+      const secondGroupAck = await rpcOk<NudgeAck>(clientAlice, "send_nudge", {
+        p_group_id: otherGroupId,
+        p_user_id: bob.id,
+      });
+      expect(secondGroupAck.groupId).toBe(otherGroupId);
+      expect(typeof secondGroupAck.eventId).toBe("number");
+
+      await expect(
+        rpcErrorCode(clientAlice, "send_nudge", {
+          p_group_id: otherGroupId,
+          p_user_id: bob.id,
+        }),
+      ).resolves.toBe("nudge_cooldown");
     });
 
     it("rejects a second nudge within 24 hours with nudge_cooldown", async () => {

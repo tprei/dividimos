@@ -183,6 +183,7 @@ CREATE FUNCTION public.ledger_group_snapshot_json(p_group_id uuid, p_viewer uuid
 AS $$
 DECLARE
   v_out jsonb;
+  v_status public.member_status;
 BEGIN
   SELECT jsonb_build_object(
     'group', jsonb_build_object(
@@ -267,6 +268,34 @@ BEGIN
   ) INTO v_out
   FROM groups g
   WHERE g.id = p_group_id;
+
+  SELECT status INTO v_status
+  FROM group_members
+  WHERE group_id = p_group_id AND user_id = p_viewer;
+
+  -- An invited user has not consented yet: they see who invited them and
+  -- nothing about the group's money or conversation.
+  IF v_status = 'invited' THEN
+    v_out := v_out
+      || jsonb_build_object(
+           'members', (
+             SELECT COALESCE(jsonb_agg(m ORDER BY m ->> 'userId'), '[]'::jsonb)
+             FROM jsonb_array_elements(v_out -> 'members') AS t(m)
+             WHERE m ->> 'userId' IN (
+               p_viewer::text,
+               (SELECT invited_by::text FROM group_members
+                WHERE group_id = p_group_id AND user_id = p_viewer)
+             )
+           ),
+           'balances', '[]'::jsonb,
+           'guests', '[]'::jsonb,
+           'pendingSettlements', '[]'::jsonb,
+           'recentExpenses', '[]'::jsonb,
+           'unreadCount', 0,
+           'lastMessage', 'null'::jsonb
+         );
+  END IF;
+
   RETURN v_out;
 END;
 $$;

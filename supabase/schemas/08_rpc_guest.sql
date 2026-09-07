@@ -171,6 +171,15 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
   END IF;
 
+  -- A guest dropped by a later edit keeps its row but no participant slot;
+  -- redeeming that orphaned token would hand group membership to a stranger.
+  IF NOT EXISTS (
+    SELECT 1 FROM expense_participants
+    WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
+  END IF;
+
   IF EXISTS (
     SELECT 1 FROM expense_participants
     WHERE expense_id = v_rec.expense_id AND user_id = v_actor AND kind = 'user'

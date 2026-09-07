@@ -187,6 +187,29 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(await pendingSettlements()).toHaveLength(1);
     });
 
+    it("rejects a replayed operation id with a different payee or amount with invalid_argument", async () => {
+      await expect(
+        rpcErrorCode(clientB, "record_settlement", {
+          p_operation_id: operationId,
+          p_group_id: groupId,
+          p_to_user_id: c.id,
+          p_amount_cents: 3000,
+        }),
+      ).resolves.toBe("invalid_argument");
+      await expect(
+        rpcErrorCode(clientB, "record_settlement", {
+          p_operation_id: operationId,
+          p_group_id: groupId,
+          p_to_user_id: a.id,
+          p_amount_cents: 2999,
+        }),
+      ).resolves.toBe("invalid_argument");
+
+      // Neither mismatched replay may create a settlement of its own.
+      expect(await pendingSettlements()).toHaveLength(1);
+      expect(await readBalances()).toEqual(debtBalances());
+    });
+
     it("rejects confirmation by the debtor with not_payee", async () => {
       await expect(
         rpcErrorCode(clientB, "confirm_settlement", { p_settlement_id: settlementId }),

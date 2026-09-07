@@ -32,7 +32,8 @@ BEGIN
 
   SELECT * INTO v_existing FROM settlements WHERE operation_id = p_operation_id;
   IF FOUND THEN
-    IF v_existing.from_user_id <> v_actor OR v_existing.group_id <> p_group_id THEN
+    IF v_existing.from_user_id <> v_actor OR v_existing.group_id <> p_group_id
+       OR v_existing.to_user_id <> p_to_user_id OR v_existing.amount_cents <> p_amount_cents THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
     END IF;
 

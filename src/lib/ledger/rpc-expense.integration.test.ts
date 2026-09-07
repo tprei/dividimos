@@ -8,6 +8,7 @@ import {
   getBalances,
   expectRpcError,
   authenticateAs,
+  withPg,
   type TestUser,
 } from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
@@ -39,6 +40,11 @@ type ExpenseVersionJson = {
       guestId?: string | null;
       displayName?: string;
     }>;
+    itemAssignments: Array<{
+      itemIndex: number;
+      participantIndex: number;
+      amountCents: number;
+    }> | null;
   };
 };
 
@@ -389,6 +395,48 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(restored.expense.deletedAt).toBeNull();
   });
 
+  it("a second delete and a second restore fail idempotently with exactly one event each", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([alice.id, bruno.id], 2000),
+    });
+
+    const { error: deleteError } = await callRpc(aliceClient, "delete_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(deleteError).toBeNull();
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "delete_expense", { p_expense_id: created.expenseId }),
+      ),
+    ).toBe("expense_deleted");
+
+    const { error: restoreError } = await callRpc(aliceClient, "restore_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(restoreError).toBeNull();
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "restore_expense", { p_expense_id: created.expenseId }),
+      ),
+    ).toBe("expense_not_deleted");
+
+    const { rows } = await withPg((client) =>
+      client.query<{ kind: string; count: number }>(
+        "select kind, count(*)::int as count from public.group_events " +
+          "where group_id = $1 and expense_id = $2 " +
+          "and kind in ('expense_deleted','expense_restored') group by kind",
+        [groupId, created.expenseId],
+      ),
+    );
+    expect(rows.sort((x, y) => x.kind.localeCompare(y.kind))).toEqual([
+      { kind: "expense_deleted", count: 1 },
+      { kind: "expense_restored", count: 1 },
+    ]);
+  });
+
   it("a non-member cannot create, edit, delete or read a group expense", async () => {
     const groupId = await createGroupWithMembers(alice, [bruno]);
     const created = await createExpense(alice, {
@@ -531,6 +579,55 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     ).toBe("duplicate_participant");
   });
 
+  it("accepts an itemized expense whose assignments reconcile per item and persists them", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    // subtotal 5000, fee 10% = 500, total 5500; assignments cover both items.
+    const payload = {
+      items: [
+        {
+          description: "Pão de queijo",
+          quantityMilliunits: 1000,
+          unitPriceCents: 3000,
+          totalPriceCents: 3000,
+        },
+        {
+          description: "Café",
+          quantityMilliunits: 2000,
+          unitPriceCents: 1000,
+          totalPriceCents: 2000,
+        },
+      ],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user", userId: bruno.id },
+      ],
+      shares: [2750, 2750],
+      payers: [{ participantIndex: 0, amountCents: 5500 }],
+      itemAssignments: [
+        { itemIndex: 0, participantIndex: 0, amountCents: 3000 },
+        { itemIndex: 1, participantIndex: 1, amountCents: 2000 },
+      ],
+    };
+    const ack = (await createExpense(alice, {
+      groupId,
+      totalCents: 5500,
+      expenseType: "itemized",
+      serviceFeeBps: 1000,
+      payload,
+    })) as unknown as ExpenseAck;
+    expect(ack.versionNo).toBe(1);
+
+    const balances = await getBalances(groupId);
+    expect(balances.find((row) => row.participant_id === alice.id)?.net_cents).toBe(2750);
+    expect(balances.find((row) => row.participant_id === bruno.id)?.net_cents).toBe(-2750);
+
+    const detail = await getExpense(ack.expenseId);
+    expect(detail.current.payload.itemAssignments).toEqual([
+      { itemIndex: 0, participantIndex: 0, amountCents: 3000 },
+      { itemIndex: 1, participantIndex: 1, amountCents: 2000 },
+    ]);
+  });
+
   it("more than 50 participants fails with too_many_participants", async () => {
     // Membership is validated after payload validation, so synthetic uuids
     // still reach (and trip) the participant-count rule.
@@ -559,6 +656,100 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(
       await expectRpcError(
         callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 1000, payload)),
+      ),
+    ).toBe("invalid_payload");
+  });
+
+  it("more than 5000 itemAssignments fails with invalid_payload", async () => {
+    const payload = {
+      items: [
+        {
+          description: "Item único",
+          quantityMilliunits: 1000,
+          unitPriceCents: 1,
+          totalPriceCents: 1,
+        },
+      ],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user", userId: bruno.id },
+      ],
+      shares: [1, 0],
+      payers: [{ participantIndex: 0, amountCents: 1 }],
+      itemAssignments: Array.from({ length: 5001 }, () => ({
+        itemIndex: 0,
+        participantIndex: 0,
+        amountCents: 0,
+      })),
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 1, payload, {
+          expenseType: "itemized",
+        })),
+      ),
+    ).toBe("invalid_payload");
+  });
+
+  it("duplicate (itemIndex, participantIndex) assignments fail with invalid_payload", async () => {
+    const payload = {
+      items: [
+        {
+          description: "Jantar",
+          quantityMilliunits: 1000,
+          unitPriceCents: 2000,
+          totalPriceCents: 2000,
+        },
+      ],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user", userId: bruno.id },
+      ],
+      shares: [2000, 0],
+      payers: [{ participantIndex: 0, amountCents: 2000 }],
+      itemAssignments: [
+        { itemIndex: 0, participantIndex: 0, amountCents: 1200 },
+        { itemIndex: 0, participantIndex: 0, amountCents: 800 },
+      ],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 2000, payload, {
+          expenseType: "itemized",
+        })),
+      ),
+    ).toBe("invalid_payload");
+  });
+
+  it("an item with no assignments fails with invalid_payload", async () => {
+    const payload = {
+      items: [
+        {
+          description: "Pão",
+          quantityMilliunits: 1000,
+          unitPriceCents: 1000,
+          totalPriceCents: 1000,
+        },
+        {
+          description: "Café",
+          quantityMilliunits: 2000,
+          unitPriceCents: 1000,
+          totalPriceCents: 2000,
+        },
+      ],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user", userId: bruno.id },
+      ],
+      shares: [3000, 0],
+      payers: [{ participantIndex: 0, amountCents: 3000 }],
+      itemAssignments: [{ itemIndex: 0, participantIndex: 0, amountCents: 1000 }],
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 3000, payload, {
+          expenseType: "itemized",
+        })),
       ),
     ).toBe("invalid_payload");
   });
