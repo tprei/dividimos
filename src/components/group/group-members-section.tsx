@@ -1,11 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Check, Clock, Crown, LogOut, Trash2 } from "lucide-react";
+import { Check, Clock, Crown, LogOut, QrCode, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { GuestClaimShareModal } from "@/components/bill/guest-claim-share-modal";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +19,7 @@ import {
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import {
   deleteGroup,
+  issueGuestClaimToken,
   leaveGroup,
   removeMember,
 } from "@/lib/sync/mutations-group";
@@ -42,6 +44,14 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
   const [removing, setRemoving] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [shareGuest, setShareGuest] = useState<{
+    guestId: string;
+    guestName: string;
+    token: string;
+    expenseTitle: string;
+  } | null>(null);
+  const [shareGeneration, setShareGeneration] = useState(0);
+  const [issuingGuestId, setIssuingGuestId] = useState<string | null>(null);
 
   const creatorId = snapshot.group.creatorId;
   const isCreator = meId === creatorId;
@@ -75,6 +85,30 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
       setConfirmLeave(false);
     } finally {
       setLeaving(false);
+    }
+  };
+
+  const handleShareGuest = async (guest: {
+    id: string;
+    displayName: string;
+    expenseId: string;
+  }) => {
+    setIssuingGuestId(guest.id);
+    try {
+      const token = await issueGuestClaimToken(guest.id);
+      const expense = snapshot.recentExpenses.find((e) => e.id === guest.expenseId);
+      const expenseTitle = expense?.title ?? snapshot.group.name;
+      setShareGuest({
+        guestId: guest.id,
+        guestName: guest.displayName,
+        token,
+        expenseTitle,
+      });
+      setShareGeneration((g) => g + 1);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setIssuingGuestId(null);
     }
   };
 
@@ -160,17 +194,30 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
               {snapshot.guests.map((guest) => (
                 <div
                   key={guest.id}
-                  className="flex items-center justify-between rounded-xl border border-dashed bg-card p-3"
+                  className="rounded-xl border border-dashed bg-card p-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold">
-                      {guest.displayName.charAt(0)}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold">
+                        {guest.displayName.charAt(0)}
+                      </span>
+                      <p className="text-sm font-medium">{guest.displayName}</p>
+                    </div>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      Convidado
                     </span>
-                    <p className="text-sm font-medium">{guest.displayName}</p>
                   </div>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    Convidado
-                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 w-full gap-1.5 text-xs"
+                    disabled={issuingGuestId === guest.id}
+                    onClick={() => handleShareGuest(guest)}
+                    aria-label={`Compartilhar convite de ${guest.displayName}`}
+                  >
+                    <QrCode className="h-3.5 w-3.5" />
+                    Compartilhar convite
+                  </Button>
                 </div>
               ))}
             </div>
@@ -293,6 +340,34 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <GuestClaimShareModal
+        key={shareGeneration}
+        open={shareGuest !== null}
+        onClose={() => setShareGuest(null)}
+        guestName={shareGuest?.guestName ?? ""}
+        token={shareGuest?.token ?? null}
+        expenseTitle={shareGuest?.expenseTitle ?? ""}
+        footer={
+          shareGuest !== null ? (
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              disabled={issuingGuestId === shareGuest.guestId}
+              onClick={() =>
+                handleShareGuest({
+                  id: shareGuest.guestId,
+                  displayName: shareGuest.guestName,
+                  expenseId:
+                    snapshot.guests.find((g) => g.id === shareGuest.guestId)?.expenseId ?? "",
+                })
+              }
+            >
+              Gerar novo link
+            </Button>
+          ) : null
+        }
+      />
     </section>
   );
 }

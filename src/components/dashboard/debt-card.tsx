@@ -1,5 +1,6 @@
 "use client";
 
+import { Bell } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -10,9 +11,10 @@ import type { DebtRow } from "@/lib/ledger/debt-rows";
 interface DebtCardProps {
   debt: DebtRow;
   onPay: (debt: DebtRow) => void;
+  onNudge?: () => void;
 }
 
-export function DebtCard({ debt, onPay }: DebtCardProps) {
+export function DebtCard({ debt, onPay, onNudge }: DebtCardProps) {
   const isOwes = debt.direction === "owes";
   const isGuest = debt.counterpartyKind === "guest";
 
@@ -67,6 +69,12 @@ export function DebtCard({ debt, onPay }: DebtCardProps) {
       {isOwes && !isGuest && (
         <Button className="w-full" size="sm" onClick={() => onPay(debt)}>
           Pagar via Pix
+        </Button>
+      )}
+      {!isOwes && !isGuest && onNudge && (
+        <Button className="w-full" size="sm" variant="outline" onClick={onNudge}>
+          <Bell className="mr-1.5 h-3.5 w-3.5" />
+          Lembrar
         </Button>
       )}
     </motion.div>
