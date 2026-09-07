@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMockSupabase } from "@/test/mock-supabase";
 
 const serverMock = createMockSupabase();
@@ -13,7 +14,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: vi.fn(() => adminMock.client),
+  createAdminClient: vi.fn(() => scopedAdminClient()),
 }));
 
 vi.mock("@/lib/push/notify-user", () => ({
@@ -21,6 +22,94 @@ vi.mock("@/lib/push/notify-user", () => ({
 }));
 
 import { POST } from "./route";
+
+interface MockQueryResult {
+  data: unknown;
+  error: unknown;
+}
+
+const MEMBER_NAMES: Record<string, string> = {
+  ana: "Ana",
+  bruno: "Bruno",
+  carol: "Carol",
+  david: "David",
+  eva: "Eva",
+  mallory: "Mallory",
+};
+
+function memberRow(
+  userId: string,
+  status: "accepted" | "invited" = "accepted",
+  preferences: Record<string, boolean> = {},
+) {
+  return {
+    group_id: "group-1",
+    user_id: userId,
+    status,
+    users: { name: MEMBER_NAMES[userId], notification_preferences: preferences },
+  };
+}
+
+// The shared mock resolves queued rows verbatim, but /api/notify scopes its
+// group_members read with .eq("group_id", …). Mirror PostgREST here so the
+// seeded rows are narrowed by the query the way they are in production.
+function filteringChain(
+  chain: object,
+  filters: Array<[string, unknown]>,
+): unknown {
+  return new Proxy(chain, {
+    get(target, key) {
+      if (key === "then") {
+        // The mock's chain proxies are thenable but statically opaque; they
+        // always resolve to the queued MockQueryResult.
+        const thenable = target as PromiseLike<MockQueryResult>;
+        return (
+          onFulfilled?: (value: MockQueryResult) => unknown,
+          onRejected?: (reason: unknown) => unknown,
+        ) =>
+          Promise.resolve(thenable).then((result) => {
+            const data = Array.isArray(result.data)
+              ? result.data.filter(
+                  (row) =>
+                    isMemberRow(row) &&
+                    filters.every(([column, value]) => row[column] === value),
+                )
+              : result.data;
+            const narrowed: MockQueryResult = { ...result, data };
+            return onFulfilled ? onFulfilled(narrowed) : narrowed;
+          }, onRejected);
+      }
+      if (key === "eq") {
+        return (column: string, value: unknown) => {
+          filters.push([column, value]);
+          const recordEq = Reflect.get(target, key, target);
+          return filteringChain(recordEq(column, value), filters);
+        };
+      }
+      const value = Reflect.get(target, key, target);
+      if (typeof value !== "function") return value;
+      return (...args: unknown[]) =>
+        filteringChain(Reflect.apply(value, target, args), filters);
+    },
+  });
+}
+
+function isMemberRow(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function scopedAdminClient(): SupabaseClient {
+  const client: SupabaseClient = adminMock.client;
+  return new Proxy(client, {
+    get(target, key) {
+      if (key !== "from") return Reflect.get(target, key, target);
+      return (table: string) => {
+        const chain = target.from(table);
+        return table === "group_members" ? filteringChain(chain, []) : chain;
+      };
+    },
+  }) as unknown as SupabaseClient;
+}
 
 function makeRequest(body?: unknown): Request {
   if (body === undefined) {
@@ -117,23 +206,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("group_events", { data: eventRow });
     adminMock.onTable("groups", { data: groupRow });
     adminMock.onTable("group_members", {
-      data: [
-        {
-          user_id: "ana",
-          status: "accepted",
-          users: { name: "Ana", notification_preferences: {} },
-        },
-        {
-          user_id: "bruno",
-          status: "accepted",
-          users: { name: "Bruno", notification_preferences: {} },
-        },
-        {
-          user_id: "carol",
-          status: "accepted",
-          users: { name: "Carol", notification_preferences: {} },
-        },
-      ],
+      data: [memberRow("ana"), memberRow("bruno"), memberRow("carol")],
     });
     adminMock.onTable("expenses", { data: { current_version_no: 1 } });
     adminMock.onTable("expense_versions", {
@@ -165,6 +238,83 @@ describe("POST /api/notify", () => {
     );
   });
 
+  it("notifies only the event group's members, once each", async () => {
+    serverMock.setUser({ id: "ana" });
+
+    const eventRow = {
+      id: 107,
+      group_id: "group-1",
+      actor_id: "ana",
+      kind: "expense_created" as const,
+      expense_id: null,
+      settlement_id: null,
+      subject_user_id: null,
+      payload: {},
+      created_at: "2026-09-06T12:00:00Z",
+      notified_at: null,
+    };
+
+    adminMock.onTable("group_events", { data: eventRow });
+    adminMock.onTable("groups", {
+      data: { id: "group-1", kind: "regular", name: "Viagem" },
+    });
+    // Two disjoint groups: the event lives in group-1, carol also has a row
+    // in group-2, and mallory is an accepted member of group-2 only.
+    adminMock.onTable("group_members", {
+      data: [
+        memberRow("bruno"),
+        memberRow("carol"),
+        { ...memberRow("carol"), group_id: "group-2" },
+        { ...memberRow("mallory"), group_id: "group-2" },
+      ],
+    });
+
+    const res = await POST(makeRequest({ eventId: 107 }));
+    expect(res.status).toBe(200);
+
+    // The member read is scoped to the event's group…
+    expect(adminMock.findCalls("group_members", "eq")).toContainEqual(
+      expect.objectContaining({ args: ["group_id", "group-1"] }),
+    );
+
+    // …so only group-1's accepted members are pushed, once each: never the
+    // group-2 outsider, and carol is not pushed twice for her second row.
+    const targets = mockNotifyUser.mock.calls.map((call) => call[0]);
+    expect(targets).toEqual(["bruno", "carol"]);
+  });
+
+  it("pushes to a recipient at most once per event", async () => {
+    serverMock.setUser({ id: "ana" });
+
+    const eventRow = {
+      id: 108,
+      group_id: "group-1",
+      actor_id: "ana",
+      kind: "expense_created" as const,
+      expense_id: null,
+      settlement_id: null,
+      subject_user_id: null,
+      payload: {},
+      created_at: "2026-09-06T12:00:00Z",
+      notified_at: null,
+    };
+
+    adminMock.onTable("group_events", { data: eventRow });
+    adminMock.onTable("groups", {
+      data: { id: "group-1", kind: "regular", name: "Viagem" },
+    });
+    // Duplicated membership rows for carol: the fan-out collapses them.
+    adminMock.onTable("group_members", {
+      data: [memberRow("bruno"), memberRow("carol"), memberRow("carol")],
+    });
+
+    const res = await POST(makeRequest({ eventId: 108 }));
+    expect(res.status).toBe(200);
+
+    const targets = mockNotifyUser.mock.calls.map((call) => call[0]);
+    expect(targets).toEqual(["bruno", "carol"]);
+  });
+
   it("filters expense_created recipients by preferences", async () => {
     serverMock.setUser({ id: "ana" });
 
@@ -191,24 +341,9 @@ describe("POST /api/notify", () => {
     adminMock.onTable("groups", { data: groupRow });
     adminMock.onTable("group_members", {
       data: [
-        {
-          user_id: "ana",
-          status: "accepted",
-          users: { name: "Ana", notification_preferences: {} },
-        },
-        {
-          user_id: "bruno",
-          status: "accepted",
-          users: {
-            name: "Bruno",
-            notification_preferences: { expenses: false },
-          },
-        },
-        {
-          user_id: "carol",
-          status: "accepted",
-          users: { name: "Carol", notification_preferences: {} },
-        },
+        memberRow("ana"),
+        memberRow("bruno", "accepted", { expenses: false }),
+        memberRow("carol"),
       ],
     });
     adminMock.onTable("expenses", { data: { current_version_no: 1 } });
@@ -253,18 +388,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("group_events", { data: eventRow });
     adminMock.onTable("groups", { data: groupRow });
     adminMock.onTable("group_members", {
-      data: [
-        {
-          user_id: "ana",
-          status: "accepted",
-          users: { name: "Ana", notification_preferences: {} },
-        },
-        {
-          user_id: "bruno",
-          status: "accepted",
-          users: { name: "Bruno", notification_preferences: {} },
-        },
-      ],
+      data: [memberRow("ana"), memberRow("bruno")],
     });
 
     const res = await POST(makeRequest({ eventId: 102 }));
@@ -303,21 +427,9 @@ describe("POST /api/notify", () => {
     adminMock.onTable("groups", { data: groupRow });
     adminMock.onTable("group_members", {
       data: [
-        {
-          user_id: "ana",
-          status: "accepted",
-          users: { name: "Ana", notification_preferences: {} },
-        },
-        {
-          user_id: "david",
-          status: "invited",
-          users: { name: "David", notification_preferences: {} },
-        },
-        {
-          user_id: "eva",
-          status: "invited",
-          users: { name: "Eva", notification_preferences: {} },
-        },
+        memberRow("ana"),
+        memberRow("david", "invited"),
+        memberRow("eva", "invited"),
       ],
     });
 
@@ -360,23 +472,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("group_events", { data: eventRow });
     adminMock.onTable("groups", { data: groupRow });
     adminMock.onTable("group_members", {
-      data: [
-        {
-          user_id: "ana",
-          status: "accepted",
-          users: { name: "Ana", notification_preferences: {} },
-        },
-        {
-          user_id: "bruno",
-          status: "accepted",
-          users: { name: "Bruno", notification_preferences: {} },
-        },
-        {
-          user_id: "carol",
-          status: "accepted",
-          users: { name: "Carol", notification_preferences: {} },
-        },
-      ],
+      data: [memberRow("ana"), memberRow("bruno"), memberRow("carol")],
     });
     adminMock.onTable("expenses", { data: { current_version_no: 1 } });
     adminMock.onTable("expense_versions", {
@@ -446,18 +542,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("group_events", { data: eventRow });
     adminMock.onTable("groups", { data: groupRow });
     adminMock.onTable("group_members", {
-      data: [
-        {
-          user_id: "ana",
-          status: "accepted",
-          users: { name: "Ana", notification_preferences: {} },
-        },
-        {
-          user_id: "bruno",
-          status: "accepted",
-          users: { name: "Bruno", notification_preferences: {} },
-        },
-      ],
+      data: [memberRow("ana"), memberRow("bruno")],
     });
     adminMock.onTable("expenses", { data: { current_version_no: 1 } });
     adminMock.onTable("expense_versions", {

@@ -29,7 +29,6 @@ export default async function JoinPage({
   const isAuthenticated = Boolean(claimsData?.claims?.sub);
 
   const creatorName = preview.creatorName ?? "Alguém";
-  const isInvalid = !preview.valid;
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
@@ -63,13 +62,8 @@ export default async function JoinPage({
           </p>
         </div>
       </div>
-
       <div className="mt-5">
-        <JoinActions
-          token={token}
-          isAuthenticated={isAuthenticated}
-          isInvalid={isInvalid}
-        />
+        <JoinActions token={token} isAuthenticated={isAuthenticated} />
       </div>
     </div>
   );

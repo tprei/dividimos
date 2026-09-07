@@ -82,6 +82,7 @@ export async function POST(request: Request): Promise<Response> {
     const { data: memberRows } = await admin
       .from("group_members")
       .select("user_id, status, users!group_members_user_id_fkey ( name, notification_preferences )")
+      .eq("group_id", event.group_id);
 
     const members: EventNotificationMember[] = (memberRows ?? []).map((row) => ({
       userId: row.user_id,
@@ -115,11 +116,15 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const category = categoryFor(event.kind);
-    const recipientIds = new Set(recipientsFor(event, members));
-    const targets = members.filter(
-      (member) =>
-        recipientIds.has(member.userId) &&
-        member.notificationPreferences[category] !== false,
+    const memberById = new Map(members.map((member) => [member.userId, member]));
+    const targets = [...new Set(recipientsFor(event, members))].flatMap(
+      (userId) => {
+        const member = memberById.get(userId);
+        if (!member || member.notificationPreferences[category] === false) {
+          return [];
+        }
+        return [member];
+      },
     );
 
     const shares = new Map<string, number>();

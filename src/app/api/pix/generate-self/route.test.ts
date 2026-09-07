@@ -110,4 +110,26 @@ describe("POST /api/pix/generate-self", () => {
     expect(body).toHaveProperty("copiaECola");
     expect(body.copiaECola).toBe("00020126580014br.gov.bcb.pix...self");
   });
+
+  it("sets Cache-Control private, no-store on the success response", async () => {
+    serverMock.setUser({ id: "user-alice" });
+    adminMock.onTable("users", {
+      data: { pix_key_encrypted: "valid-encrypted", name: "Alice Santos" },
+    });
+
+    const response = await POST(makeRequest({ amountCents: 4500 }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("sets Cache-Control private, no-store on error responses", async () => {
+    serverMock.setUser({ id: "user-alice" });
+    adminMock.onTable("users", {
+      data: { pix_key_encrypted: null, name: "Alice" },
+    });
+
+    const response = await POST(makeRequest({ amountCents: 5000 }));
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
 });

@@ -2,8 +2,7 @@ import { applyExpenseDelta, applySettlementDelta } from "@/lib/ledger/apply";
 import { decodeChatMessage, decodeMutationAck } from "@/lib/ledger/decode";
 import { rpc, rpcVoid } from "@/lib/sync/client";
 import { LedgerError } from "@/lib/sync/errors";
-import { refreshExpense, refreshGroup } from "@/lib/sync/refresh";
-import type { ConversationState, ExpenseListState } from "@/stores/app-store";
+import { loadConversation, refreshExpense, refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type {
   ChatMessage,
@@ -16,33 +15,70 @@ import type {
   Settlement,
 } from "@/types/ledger";
 
-interface PriorState {
-  expenses: Record<string, ExpenseSummary>;
-  expenseDetails: Record<string, ExpenseDetail>;
-  expenseLists: Record<string, ExpenseListState>;
-  groups: Record<string, GroupSnapshot>;
-  conversations: Record<string, ConversationState>;
-}
+type RollbackStep = () => void;
 
-function capturePriorState(): PriorState {
-  const s = useAppStore.getState();
-  return {
-    expenses: s.expenses,
-    expenseDetails: s.expenseDetails,
-    expenseLists: s.expenseLists,
-    groups: s.groups,
-    conversations: s.conversations,
+/** Restores `prior` only while the store still holds the entry this mutation wrote — a concurrent server refresh replaces it and wins. */
+function revertGroup(groupId: string, patched: GroupSnapshot, prior: GroupSnapshot): RollbackStep {
+  return () => {
+    if (useAppStore.getState().groups[groupId] !== patched) return;
+    useAppStore.getState().patch((s) => ({ groups: { ...s.groups, [groupId]: prior } }));
   };
 }
 
-function restorePriorState(p: PriorState): void {
-  useAppStore.getState().patch(() => ({
-    expenses: p.expenses,
-    expenseDetails: p.expenseDetails,
-    expenseLists: p.expenseLists,
-    groups: p.groups,
-    conversations: p.conversations,
-  }));
+function revertExpenseSummary(expenseId: string, patched: ExpenseSummary, prior: ExpenseSummary): RollbackStep {
+  return () => {
+    if (useAppStore.getState().expenses[expenseId] !== patched) return;
+    useAppStore.getState().patch((s) => ({ expenses: { ...s.expenses, [expenseId]: prior } }));
+  };
+}
+
+function revertExpenseDetail(expenseId: string, patched: ExpenseDetail, prior: ExpenseDetail): RollbackStep {
+  return () => {
+    if (useAppStore.getState().expenseDetails[expenseId] !== patched) return;
+    useAppStore.getState().patch((s) => ({ expenseDetails: { ...s.expenseDetails, [expenseId]: prior } }));
+  };
+}
+
+function removeOptimisticExpense(clientId: string, groupId: string): RollbackStep {
+  return () => {
+    useAppStore.getState().patch((s) => {
+      if (s.expenses[clientId]?.groupId !== groupId) return {};
+      const expenses = { ...s.expenses };
+      delete expenses[clientId];
+      const list = s.expenseLists[groupId];
+      return {
+        expenses,
+        expenseLists: list
+          ? { ...s.expenseLists, [groupId]: { ...list, ids: list.ids.filter((id) => id !== clientId) } }
+          : s.expenseLists,
+      };
+    });
+  };
+}
+
+function removeOptimisticMessage(groupId: string, clientId: string): RollbackStep {
+  return () => {
+    useAppStore.getState().patch((s) => {
+      const conversation = s.conversations[groupId];
+      if (!conversation) return {};
+      const messages = conversation.messages.filter((m) => m.clientId !== clientId);
+      if (messages.length === conversation.messages.length) return {};
+      return {
+        conversations: { ...s.conversations, [groupId]: { ...conversation, messages } },
+      };
+    });
+  };
+}
+
+function rollbackAndReconcile(
+  rollback: RollbackStep[],
+  groupId: string | undefined,
+  error: unknown,
+  reconcile: (groupId: string) => Promise<void>,
+): never {
+  for (const step of rollback) step();
+  if (groupId) void reconcile(groupId);
+  throw error;
 }
 
 function computeMyShareAndPaid(
@@ -96,9 +132,9 @@ export async function createExpense(input: {
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
-  const prior = capturePriorState();
   const clientId = crypto.randomUUID();
   const { myShareCents, myPaidCents } = computeMyShareAndPaid(payload, me.id);
+  const rollback: RollbackStep[] = [removeOptimisticExpense(clientId, groupId)];
 
   store.upsertExpense({
     id: clientId,
@@ -117,12 +153,16 @@ export async function createExpense(input: {
     participantCount: payload.participants.length,
   });
 
-  const group = store.groups[groupId];
-  if (group) {
-    const balances = applyExpenseDelta(group.balances, payload, 1);
+  const priorGroup = store.groups[groupId];
+  if (priorGroup) {
+    const patchedGroup: GroupSnapshot = {
+      ...priorGroup,
+      balances: applyExpenseDelta(priorGroup.balances, payload, 1),
+    };
     store.patch((s) => ({
-      groups: s.groups[groupId] ? { ...s.groups, [groupId]: { ...s.groups[groupId], balances } } : s.groups,
+      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
     }));
+    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
   }
 
   try {
@@ -147,8 +187,7 @@ export async function createExpense(input: {
     notify(ack.eventId);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }
 
@@ -163,7 +202,6 @@ export async function editExpense(input: {
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
-  const prior = capturePriorState();
   const detail = store.expenseDetails[expenseId];
   const summary = store.expenses[expenseId];
   const groupId = detail?.expense.groupId ?? summary?.groupId;
@@ -176,30 +214,30 @@ export async function editExpense(input: {
   }
 
   const { myShareCents, myPaidCents } = computeMyShareAndPaid(payload, me.id);
+
+  const patchedSummary: ExpenseSummary | null = summary
+    ? {
+        ...summary,
+        occurredOn: header.occurredOn,
+        versionNo: expectedVersionNo + 1,
+        title: header.title,
+        merchantName: header.merchantName,
+        expenseType: header.expenseType,
+        totalCents: header.totalCents,
+        myShareCents,
+        myPaidCents,
+        participantCount: payload.participants.length,
+      }
+    : null;
+  const patchedGroup = groupId && group && balances ? { ...group, balances } : null;
+
+  const rollback: RollbackStep[] = [];
   store.patch((s) => ({
-    ...(summary
-      ? {
-          expenses: {
-            ...s.expenses,
-            [expenseId]: {
-              ...summary,
-              occurredOn: header.occurredOn,
-              versionNo: expectedVersionNo + 1,
-              title: header.title,
-              merchantName: header.merchantName,
-              expenseType: header.expenseType,
-              totalCents: header.totalCents,
-              myShareCents,
-              myPaidCents,
-              participantCount: payload.participants.length,
-            },
-          },
-        }
-      : {}),
-    ...(groupId && group && balances
-      ? { groups: { ...s.groups, [groupId]: { ...s.groups[groupId], balances } } }
-      : {}),
+    ...(patchedSummary ? { expenses: { ...s.expenses, [expenseId]: patchedSummary } } : {}),
+    ...(patchedGroup && groupId ? { groups: { ...s.groups, [groupId]: patchedGroup } } : {}),
   }));
+  if (patchedSummary && summary) rollback.push(revertExpenseSummary(expenseId, patchedSummary, summary));
+  if (patchedGroup && group && groupId) rollback.push(revertGroup(groupId, patchedGroup, group));
 
   try {
     const ack = await rpc(
@@ -223,14 +261,12 @@ export async function editExpense(input: {
     notify(ack.eventId);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }
 
 export async function deleteExpense(expenseId: string): Promise<MutationAck> {
   const store = useAppStore.getState();
-  const prior = capturePriorState();
   const summary = store.expenses[expenseId];
   const detail = store.expenseDetails[expenseId];
   const groupId = summary?.groupId ?? detail?.expense.groupId;
@@ -241,15 +277,21 @@ export async function deleteExpense(expenseId: string): Promise<MutationAck> {
     balances = applyExpenseDelta(group.balances, detail.current.payload, -1);
   }
 
+  const patchedSummary: ExpenseSummary | null = summary ? { ...summary, status: "deleted" } : null;
+  const patchedDetail: ExpenseDetail | null = detail
+    ? { ...detail, expense: { ...detail.expense, status: "deleted" } }
+    : null;
+  const patchedGroup = groupId && group && balances ? { ...group, balances } : null;
+
+  const rollback: RollbackStep[] = [];
   store.patch((s) => ({
-    ...(summary ? { expenses: { ...s.expenses, [expenseId]: { ...summary, status: "deleted" } } } : {}),
-    ...(detail
-      ? { expenseDetails: { ...s.expenseDetails, [expenseId]: { ...detail, expense: { ...detail.expense, status: "deleted" } } } }
-      : {}),
-    ...(groupId && group && balances
-      ? { groups: { ...s.groups, [groupId]: { ...s.groups[groupId], balances } } }
-      : {}),
+    ...(patchedSummary ? { expenses: { ...s.expenses, [expenseId]: patchedSummary } } : {}),
+    ...(patchedDetail ? { expenseDetails: { ...s.expenseDetails, [expenseId]: patchedDetail } } : {}),
+    ...(patchedGroup && groupId ? { groups: { ...s.groups, [groupId]: patchedGroup } } : {}),
   }));
+  if (patchedSummary && summary) rollback.push(revertExpenseSummary(expenseId, patchedSummary, summary));
+  if (patchedDetail && detail) rollback.push(revertExpenseDetail(expenseId, patchedDetail, detail));
+  if (patchedGroup && group && groupId) rollback.push(revertGroup(groupId, patchedGroup, group));
 
   try {
     const ack = await rpc("delete_expense", { p_expense_id: expenseId }, decodeMutationAck);
@@ -258,14 +300,12 @@ export async function deleteExpense(expenseId: string): Promise<MutationAck> {
     notify(ack.eventId);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }
 
 export async function restoreExpense(expenseId: string): Promise<MutationAck> {
   const store = useAppStore.getState();
-  const prior = capturePriorState();
   const summary = store.expenses[expenseId];
   const detail = store.expenseDetails[expenseId];
   const groupId = summary?.groupId ?? detail?.expense.groupId;
@@ -276,15 +316,21 @@ export async function restoreExpense(expenseId: string): Promise<MutationAck> {
     balances = applyExpenseDelta(group.balances, detail.current.payload, 1);
   }
 
+  const patchedSummary: ExpenseSummary | null = summary ? { ...summary, status: "active" } : null;
+  const patchedDetail: ExpenseDetail | null = detail
+    ? { ...detail, expense: { ...detail.expense, status: "active" } }
+    : null;
+  const patchedGroup = groupId && group && balances ? { ...group, balances } : null;
+
+  const rollback: RollbackStep[] = [];
   store.patch((s) => ({
-    ...(summary ? { expenses: { ...s.expenses, [expenseId]: { ...summary, status: "active" } } } : {}),
-    ...(detail
-      ? { expenseDetails: { ...s.expenseDetails, [expenseId]: { ...detail, expense: { ...detail.expense, status: "active" } } } }
-      : {}),
-    ...(groupId && group && balances
-      ? { groups: { ...s.groups, [groupId]: { ...s.groups[groupId], balances } } }
-      : {}),
+    ...(patchedSummary ? { expenses: { ...s.expenses, [expenseId]: patchedSummary } } : {}),
+    ...(patchedDetail ? { expenseDetails: { ...s.expenseDetails, [expenseId]: patchedDetail } } : {}),
+    ...(patchedGroup && groupId ? { groups: { ...s.groups, [groupId]: patchedGroup } } : {}),
   }));
+  if (patchedSummary && summary) rollback.push(revertExpenseSummary(expenseId, patchedSummary, summary));
+  if (patchedDetail && detail) rollback.push(revertExpenseDetail(expenseId, patchedDetail, detail));
+  if (patchedGroup && group && groupId) rollback.push(revertGroup(groupId, patchedGroup, group));
 
   try {
     const ack = await rpc("restore_expense", { p_expense_id: expenseId }, decodeMutationAck);
@@ -293,8 +339,7 @@ export async function restoreExpense(expenseId: string): Promise<MutationAck> {
     notify(ack.eventId);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }
 
@@ -308,9 +353,7 @@ export async function recordSettlement(input: {
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
-  const prior = capturePriorState();
   const operationId = crypto.randomUUID();
-
   const optimistic: Settlement = {
     id: operationId,
     operationId,
@@ -326,13 +369,18 @@ export async function recordSettlement(input: {
     voidedBy: null,
   };
 
-  store.patch((s) => {
-    const group = s.groups[groupId];
-    if (!group) return {};
-    return {
-      groups: { ...s.groups, [groupId]: { ...group, pendingSettlements: [...group.pendingSettlements, optimistic] } },
+  const rollback: RollbackStep[] = [];
+  const priorGroup = store.groups[groupId];
+  if (priorGroup) {
+    const patchedGroup: GroupSnapshot = {
+      ...priorGroup,
+      pendingSettlements: [...priorGroup.pendingSettlements, optimistic],
     };
-  });
+    store.patch((s) => ({
+      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
+    }));
+    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
+  }
 
   try {
     const ack = await rpc(
@@ -367,25 +415,26 @@ export async function recordSettlement(input: {
     notify(ack.eventId);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }
 
 export async function confirmSettlement(groupId: string, settlementId: string): Promise<MutationAck> {
   const store = useAppStore.getState();
-  const prior = capturePriorState();
-  const group = store.groups[groupId];
-  const settlement = group?.pendingSettlements.find((s) => s.id === settlementId);
+  const priorGroup = store.groups[groupId];
+  const settlement = priorGroup?.pendingSettlements.find((s) => s.id === settlementId);
 
-  if (group && settlement) {
-    const pendingSettlements = group.pendingSettlements.filter((s) => s.id !== settlementId);
-    const balances = applySettlementDelta(group.balances, settlement, 1);
+  const rollback: RollbackStep[] = [];
+  if (priorGroup && settlement) {
+    const patchedGroup: GroupSnapshot = {
+      ...priorGroup,
+      pendingSettlements: priorGroup.pendingSettlements.filter((s) => s.id !== settlementId),
+      balances: applySettlementDelta(priorGroup.balances, settlement, 1),
+    };
     store.patch((s) => ({
-      groups: s.groups[groupId]
-        ? { ...s.groups, [groupId]: { ...s.groups[groupId], pendingSettlements, balances } }
-        : s.groups,
+      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
     }));
+    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
   }
 
   try {
@@ -394,8 +443,7 @@ export async function confirmSettlement(groupId: string, settlementId: string): 
     notify(ack.eventId);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }
 
@@ -405,21 +453,24 @@ export async function voidSettlement(
   wasConfirmed: boolean,
 ): Promise<MutationAck> {
   const store = useAppStore.getState();
-  const prior = capturePriorState();
-  const group = store.groups[groupId];
+  const priorGroup = store.groups[groupId];
 
-  if (group) {
-    const pendingSettlements = group.pendingSettlements.filter((s) => s.id !== settlementId);
-    let balances = group.balances;
+  const rollback: RollbackStep[] = [];
+  if (priorGroup) {
+    let balances = priorGroup.balances;
     if (wasConfirmed) {
       const parts = findSettlementInEvents(groupId, settlementId);
-      if (parts) balances = applySettlementDelta(group.balances, parts, -1);
+      if (parts) balances = applySettlementDelta(balances, parts, -1);
     }
+    const patchedGroup: GroupSnapshot = {
+      ...priorGroup,
+      pendingSettlements: priorGroup.pendingSettlements.filter((s) => s.id !== settlementId),
+      balances,
+    };
     store.patch((s) => ({
-      groups: s.groups[groupId]
-        ? { ...s.groups, [groupId]: { ...s.groups[groupId], pendingSettlements, balances } }
-        : s.groups,
+      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
     }));
+    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
   }
 
   try {
@@ -428,8 +479,7 @@ export async function voidSettlement(
     notify(ack.eventId);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }
 
@@ -438,7 +488,6 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
-  const prior = capturePriorState();
   const clientId = crypto.randomUUID();
 
   store.applyConversation(
@@ -469,25 +518,26 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
     useAppStore.getState().applyConversation(groupId, { messages: [ack], events: [] }, false);
     return ack;
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile([removeOptimisticMessage(groupId, clientId)], groupId, error, loadConversation);
   }
 }
 
 export async function markRead(groupId: string): Promise<void> {
   const store = useAppStore.getState();
-  const prior = capturePriorState();
 
-  store.patch((s) => {
-    const group = s.groups[groupId];
-    if (!group) return {};
-    return { groups: { ...s.groups, [groupId]: { ...group, unreadCount: 0 } } };
-  });
+  const rollback: RollbackStep[] = [];
+  const priorGroup = store.groups[groupId];
+  if (priorGroup) {
+    const patchedGroup: GroupSnapshot = { ...priorGroup, unreadCount: 0 };
+    store.patch((s) => ({
+      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
+    }));
+    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
+  }
 
   try {
     await rpcVoid("mark_read", { p_group_id: groupId });
   } catch (error) {
-    restorePriorState(prior);
-    throw error;
+    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
 }

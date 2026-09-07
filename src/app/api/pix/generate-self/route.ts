@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { decryptPixKey } from "@/lib/crypto";
 import { generatePixCopiaECola } from "@/lib/pix";
+import { jsonResponse } from "../response";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       ? (claimsData.claims.sub as string)
       : null;
   if (!callerId) {
-    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    return jsonResponse({ error: "Não autenticado" }, 401);
   }
 
   const body = await request.json();
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     !Number.isInteger(amountCents) ||
     amountCents > 100_000_00
   ) {
-    return NextResponse.json({ error: "Valor invalido" }, { status: 400 });
+    return jsonResponse({ error: "Valor invalido" }, 400);
   }
 
   const admin = createAdminClient();
@@ -36,20 +36,14 @@ export async function POST(request: Request) {
     .single();
 
   if (!userData?.pix_key_encrypted) {
-    return NextResponse.json(
-      { error: "Voce nao tem chave Pix configurada" },
-      { status: 404 },
-    );
+    return jsonResponse({ error: "Voce nao tem chave Pix configurada" }, 404);
   }
 
   let pixKey: string;
   try {
     pixKey = decryptPixKey(userData.pix_key_encrypted);
   } catch {
-    return NextResponse.json(
-      { error: "Erro ao processar sua chave Pix" },
-      { status: 500 },
-    );
+    return jsonResponse({ error: "Erro ao processar sua chave Pix" }, 500);
   }
 
   const copiaECola = generatePixCopiaECola({
@@ -59,5 +53,5 @@ export async function POST(request: Request) {
     amountCents,
   });
 
-  return NextResponse.json({ copiaECola });
+  return jsonResponse({ copiaECola }, 200);
 }
