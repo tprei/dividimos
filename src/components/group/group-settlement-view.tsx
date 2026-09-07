@@ -117,6 +117,8 @@ export function GroupSettlementView({ groupId, rows }: GroupSettlementViewProps)
           onClose={() => setPixTarget(null)}
           recipientName={pixTarget.recipientName}
           amountCents={pixTarget.amountCents}
+          recipientUserId={pixTarget.counterpartyId}
+          groupId={groupId}
           mode="pay"
           onMarkPaid={(amountCents: number) =>
             recordSettlement({
