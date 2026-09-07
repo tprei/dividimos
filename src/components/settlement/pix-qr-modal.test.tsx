@@ -107,6 +107,7 @@ describe("PixQrModal", () => {
     });
     expect(screen.queryByText(/Não temos a chave Pix/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Copiar código Pix/i })).toBeDisabled();
+
   });
 
   it("records the full payment when Já paguei is pressed", async () => {

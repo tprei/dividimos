@@ -167,36 +167,18 @@ export function describeEvent(event: GroupEvent, ctx: EventCopyContext): string 
         "";
 
       if (toUserId && toUserId === ctx.viewerId) {
-        return `${actor} marcou um pagamento de ${amount} pra você`;
+        return `${actor} pagou ${amount} pra você`;
       }
-      return `${actor} marcou um pagamento de ${amount} para ${resolveName(ctx.nameOf, toUserId)}`;
-    }
-
-    case "settlement_confirmed": {
-      const amountCents =
-        typeof event.payload?.amountCents === "number"
-          ? event.payload.amountCents
-          : 0;
-      const amount = formatBRL(amountCents);
-      const fromUserId =
-        (typeof event.payload?.fromUserId === "string"
-          ? event.payload.fromUserId
-          : null) ??
-        event.subjectUserId ??
-        "";
-      return `${actor} confirmou o pagamento de ${amount} de ${resolveName(ctx.nameOf, fromUserId)}`;
+      return `${actor} pagou ${amount} para ${resolveName(ctx.nameOf, toUserId)}`;
     }
 
     case "settlement_voided": {
-      const wasConfirmed = Boolean(event.payload?.wasConfirmed);
       const amountCents =
         typeof event.payload?.amountCents === "number"
           ? event.payload.amountCents
           : 0;
       const amount = formatBRL(amountCents);
-      return wasConfirmed
-        ? `${actor} desfez um pagamento de ${amount}`
-        : `${actor} cancelou um pagamento de ${amount}`;
+      return `${actor} desfez um pagamento de ${amount}`;
     }
 
     case "member_invited": {

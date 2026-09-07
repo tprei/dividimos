@@ -33,7 +33,7 @@ const baseSnapshot: GroupSnapshot = {
   members: [],
   balances: [],
   guests: [],
-  pendingSettlements: [],
+  settlements: [],
   recentExpenses: [],
   lastEventId: 20,
   unreadCount: 0,

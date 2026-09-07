@@ -216,9 +216,7 @@ describe("eventNotification", () => {
       }),
       ctx("bruno"),
     );
-    expect(payload.body).toBe(
-      "Ana marcou um pagamento de R$\u00A030,00 pra você",
-    );
+    expect(payload.body).toBe("Ana pagou R$\u00A030,00 pra você");
     expect(payload.url).toBe("/app");
     expect(payload.category).toBe("settlements");
   });

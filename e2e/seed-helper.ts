@@ -485,7 +485,7 @@ export class SeedHelper {
     };
   }
 
-  async createExpenseWithConfirmedSettlements(
+  async createExpenseWithSettlements(
     groupId: string,
     creatorId: string,
     participantIds: string[],
@@ -505,7 +505,7 @@ export class SeedHelper {
 
     if (balanceError) {
       throw new Error(
-        `SeedHelper.createExpenseWithConfirmedSettlements: balance query failed: ${balanceError.message}`,
+        `SeedHelper.createExpenseWithSettlements: balance query failed: ${balanceError.message}`,
       );
     }
 
@@ -520,8 +520,8 @@ export class SeedHelper {
     for (const transfer of transfersFromBalances(balances)) {
       if (transfer.fromKind !== "user") {
         throw new Error(
-          `SeedHelper.createExpenseWithConfirmedSettlements: guest ${transfer.fromId} cannot settle; ` +
-            `use a user-only fixture for confirmed settlements`,
+          `SeedHelper.createExpenseWithSettlements: guest ${transfer.fromId} cannot settle; ` +
+            `use a user-only fixture for settlements`,
         );
       }
 
@@ -531,6 +531,7 @@ export class SeedHelper {
         {
           p_operation_id: crypto.randomUUID(),
           p_group_id: groupId,
+          p_from_user_id: transfer.fromId,
           p_to_user_id: transfer.toId,
           p_amount_cents: transfer.amountCents,
         },
@@ -538,29 +539,18 @@ export class SeedHelper {
 
       if (recordError) {
         throw new Error(
-          `SeedHelper.createExpenseWithConfirmedSettlements: record_settlement failed: ${recordError.message}`,
+          `SeedHelper.createExpenseWithSettlements: record_settlement failed: ${recordError.message}`,
         );
       }
 
       const recordAck = unwrap(
         decodeMutationAck(recordData),
-        "SeedHelper.createExpenseWithConfirmedSettlements: malformed record_settlement acknowledgment",
+        "SeedHelper.createExpenseWithSettlements: malformed record_settlement acknowledgment",
       );
 
       if (!recordAck.settlementId) {
         throw new Error(
-          "SeedHelper.createExpenseWithConfirmedSettlements: record_settlement returned no settlementId",
-        );
-      }
-
-      const creditorClient = await this.authenticateAs(transfer.toId);
-      const { error: confirmError } = await creditorClient.rpc("confirm_settlement", {
-        p_settlement_id: recordAck.settlementId,
-      });
-
-      if (confirmError) {
-        throw new Error(
-          `SeedHelper.createExpenseWithConfirmedSettlements: confirm_settlement failed: ${confirmError.message}`,
+          "SeedHelper.createExpenseWithSettlements: record_settlement returned no settlementId",
         );
       }
 

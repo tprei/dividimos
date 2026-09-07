@@ -1,5 +1,5 @@
 import { transfersFromBalances, transfersInvolving } from "@/lib/ledger/transfers";
-import type { BalanceRow, GroupSnapshot, Settlement, Transfer } from "@/types/ledger";
+import type { BalanceRow, GroupSnapshot, Transfer } from "@/types/ledger";
 import type { AppState, MyDebts } from "./app-store";
 
 export function selectGroup(state: AppState, id: string): GroupSnapshot | null {
@@ -79,38 +79,6 @@ export function selectExpenseList(state: AppState, groupId: string) {
   return summaries;
 }
 
-interface PendingSettlementsCache {
-  groups: Record<string, GroupSnapshot>;
-  meId: string | null;
-  pending: Array<{ groupId: string; settlement: Settlement }>;
-}
-
-let pendingSettlementsCache: PendingSettlementsCache | null = null;
-
-export function selectPendingSettlementsForMe(
-  state: AppState,
-): Array<{ groupId: string; settlement: Settlement }> {
-  const meId = state.me?.id ?? null;
-  if (
-    pendingSettlementsCache &&
-    pendingSettlementsCache.groups === state.groups &&
-    pendingSettlementsCache.meId === meId
-  ) {
-    return pendingSettlementsCache.pending;
-  }
-  const pending: Array<{ groupId: string; settlement: Settlement }> = [];
-  if (meId !== null) {
-    for (const groupId of state.groupOrder) {
-      const snapshot = state.groups[groupId];
-      if (!snapshot) continue;
-      for (const settlement of snapshot.pendingSettlements) {
-        if (settlement.toUserId === meId) pending.push({ groupId, settlement });
-      }
-    }
-  }
-  pendingSettlementsCache = { groups: state.groups, meId, pending };
-  return pending;
-}
 
 export function findDmGroup(
   state: AppState,

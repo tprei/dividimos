@@ -10,8 +10,7 @@ import { Button } from "@/components/ui/button";
 import type { ChatMessage, EventKind, GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
 
 const STATUS_BY_EVENT_KIND: Partial<Record<EventKind, SettlementStatus>> = {
-  settlement_recorded: "pending",
-  settlement_confirmed: "confirmed",
+  settlement_recorded: "confirmed",
   settlement_voided: "voided",
 };
 

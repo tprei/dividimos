@@ -74,10 +74,10 @@ async function rpcErrorCode(
 }
 
 describe.skipIf(!isIntegrationTestReady)(
-  "settlement RPCs — record / confirm / void lifecycle",
+  "settlement RPCs — record / void lifecycle",
   () => {
     // A paid 6000 split equally with B, so B owes A 3000. C is a member of
-    // the group but not a party to the settlement; outsider never joins.
+    // the group but not a party to the settlements; outsider never joins.
     let a: TestUser;
     let b: TestUser;
     let c: TestUser;
@@ -87,10 +87,9 @@ describe.skipIf(!isIntegrationTestReady)(
     let clientC: SupabaseClient;
     let clientOutsider: SupabaseClient;
     let groupId: string;
-    let operationId: string;
-    let settlementId: string;
-    let recordAck: SettlementAck;
-    let cancelSettlementId: string;
+    let debtorOperationId: string;
+    let debtorPaymentId: string;
+    let creditorRecordedId: string;
 
     beforeAll(async () => {
       [a, b, c, outsider] = await createTestUsers(4);
@@ -105,21 +104,12 @@ describe.skipIf(!isIntegrationTestReady)(
         totalCents: 6000,
         payload: equalSplitPayload([a.id, b.id], 6000),
       });
-
-      operationId = crypto.randomUUID();
-      recordAck = await rpcOk<SettlementAck>(clientB, "record_settlement", {
-        p_operation_id: operationId,
-        p_group_id: groupId,
-        p_to_user_id: a.id,
-        p_amount_cents: 3000,
-      });
-      settlementId = recordAck.settlementId;
     });
 
-    function debtBalances() {
+    function owed(expected: number) {
       return [
-        { kind: "user", participant_id: a.id, net_cents: 3000 },
-        { kind: "user", participant_id: b.id, net_cents: -3000 },
+        { kind: "user", participant_id: a.id, net_cents: expected },
+        { kind: "user", participant_id: b.id, net_cents: -expected },
       ].sort((x, y) => x.participant_id.localeCompare(y.participant_id));
     }
 
@@ -128,195 +118,205 @@ describe.skipIf(!isIntegrationTestReady)(
       return rows.sort((x, y) => x.participant_id.localeCompare(y.participant_id));
     }
 
-    async function pendingSettlements(): Promise<Settlement[]> {
-      const snapshot = await rpcOk<{ pendingSettlements: Settlement[] }>(
+    async function activeSettlements(): Promise<Settlement[]> {
+      const snapshot = await rpcOk<{ settlements: Settlement[] }>(
         clientB,
         "get_group",
         { p_group_id: groupId },
       );
-      return snapshot.pendingSettlements;
+      return snapshot.settlements;
     }
 
-    it("acks a recorded settlement with the mutation keys", () => {
-      expect(Object.keys(recordAck).sort()).toEqual([
+    function recordArgs(
+      operationId: string,
+      fromUserId: string,
+      toUserId: string,
+      amountCents: number,
+    ) {
+      return {
+        p_operation_id: operationId,
+        p_group_id: groupId,
+        p_from_user_id: fromUserId,
+        p_to_user_id: toUserId,
+        p_amount_cents: amountCents,
+      };
+    }
+
+    it("applies the debtor's payment to the balances in the same call", async () => {
+      debtorOperationId = crypto.randomUUID();
+      const ack = await rpcOk<SettlementAck>(
+        clientB,
+        "record_settlement",
+        recordArgs(debtorOperationId, b.id, a.id, 1000),
+      );
+      debtorPaymentId = ack.settlementId;
+      expect(Object.keys(ack).sort()).toEqual([
         "eventId",
         "groupId",
         "ledgerVersion",
         "settlementId",
       ]);
-      expect(recordAck.settlementId).toEqual(expect.any(String));
-      expect(recordAck.eventId).toEqual(expect.any(Number));
-      expect(typeof recordAck.ledgerVersion).toBe("number");
-      expect(recordAck.groupId).toBe(groupId);
+      expect(ack.eventId).toEqual(expect.any(Number));
+      expect(ack.groupId).toBe(groupId);
+      expect(await readBalances()).toEqual(owed(2000));
     });
 
-    it("leaves balances untouched while the settlement is only pending", async () => {
-      expect(await readBalances()).toEqual(debtBalances());
-    });
-
-    it("lists the settlement in get_group pending with the exact Settlement keys", async () => {
-      const pending = await pendingSettlements();
-      expect(pending).toHaveLength(1);
-      const settlement = pending[0];
+    it("lists the recorded settlement in get_group as confirmed", async () => {
+      const settlements = await activeSettlements();
+      expect(settlements).toHaveLength(1);
+      const settlement = settlements[0];
       expect(Object.keys(settlement).sort()).toEqual(SETTLEMENT_KEYS);
       expect(settlement).toMatchObject({
-        id: settlementId,
-        operationId,
+        id: debtorPaymentId,
         groupId,
         fromUserId: b.id,
         toUserId: a.id,
-        amountCents: 3000,
-        status: "pending",
+        amountCents: 1000,
+        status: "confirmed",
         createdBy: b.id,
-        confirmedAt: null,
         voidedAt: null,
         voidedBy: null,
       });
-      expect(typeof settlement.createdAt).toBe("string");
+      expect(settlement.confirmedAt).toEqual(expect.any(String));
     });
 
-    it("replaying the same operation id returns the same settlement and no new event", async () => {
-      const ack = await rpcOk<SettlementAck>(clientB, "record_settlement", {
-        p_operation_id: operationId,
-        p_group_id: groupId,
-        p_to_user_id: a.id,
-        p_amount_cents: 3000,
-      });
-      expect(ack.settlementId).toBe(settlementId);
+    it("applies a creditor-recorded payment identically", async () => {
+      const ack = await rpcOk<SettlementAck>(
+        clientA,
+        "record_settlement",
+        recordArgs(crypto.randomUUID(), b.id, a.id, 500),
+      );
+      creditorRecordedId = ack.settlementId;
+      expect(ack.eventId).toEqual(expect.any(Number));
+      expect(await readBalances()).toEqual(owed(1500));
+    });
+
+    it("replaying the same operation id returns the same settlement without reapplying", async () => {
+      const ack = await rpcOk<SettlementAck>(
+        clientA,
+        "record_settlement",
+        recordArgs(debtorOperationId, b.id, a.id, 1000),
+      );
+      expect(ack.settlementId).toBe(debtorPaymentId);
       expect(ack.eventId).toBeNull();
-      expect(await pendingSettlements()).toHaveLength(1);
+      expect(await readBalances()).toEqual(owed(1500));
+      expect(await activeSettlements()).toHaveLength(2);
+      const { rows } = await withPg((client) =>
+        client.query<{ count: number }>(
+          "select count(*)::int as count from public.group_events " +
+            "where settlement_id = $1 and kind = 'settlement_recorded'",
+          [debtorPaymentId],
+        ),
+      );
+      expect(rows[0].count).toBe(1);
     });
 
-    it("rejects a replayed operation id with a different payee or amount with invalid_argument", async () => {
+    it("rejects a replayed operation id with different fields and invalid_argument", async () => {
       await expect(
-        rpcErrorCode(clientB, "record_settlement", {
-          p_operation_id: operationId,
-          p_group_id: groupId,
-          p_to_user_id: c.id,
-          p_amount_cents: 3000,
-        }),
+        rpcErrorCode(
+          clientB,
+          "record_settlement",
+          recordArgs(debtorOperationId, a.id, b.id, 1000),
+        ),
       ).resolves.toBe("invalid_argument");
       await expect(
-        rpcErrorCode(clientB, "record_settlement", {
-          p_operation_id: operationId,
-          p_group_id: groupId,
-          p_to_user_id: a.id,
-          p_amount_cents: 2999,
-        }),
+        rpcErrorCode(
+          clientB,
+          "record_settlement",
+          recordArgs(debtorOperationId, b.id, a.id, 999),
+        ),
       ).resolves.toBe("invalid_argument");
-
-      // Neither mismatched replay may create a settlement of its own.
-      expect(await pendingSettlements()).toHaveLength(1);
-      expect(await readBalances()).toEqual(debtBalances());
-    });
-
-    it("rejects confirmation by the debtor with not_payee", async () => {
       await expect(
-        rpcErrorCode(clientB, "confirm_settlement", { p_settlement_id: settlementId }),
-      ).resolves.toBe("not_payee");
+        rpcErrorCode(
+          clientB,
+          "record_settlement",
+          recordArgs(debtorOperationId, b.id, c.id, 1000),
+        ),
+      ).resolves.toBe("invalid_argument");
+      expect(await readBalances()).toEqual(owed(1500));
+      expect(await activeSettlements()).toHaveLength(2);
     });
 
-    it("confirmation nets both sides to zero: balance rows disappear and nothing stays pending", async () => {
-      const ack = await rpcOk<SettlementAck>(clientA, "confirm_settlement", {
-        p_settlement_id: settlementId,
-      });
-      expect(ack.settlementId).toBe(settlementId);
-      expect(ack.eventId).toEqual(expect.any(Number));
-      expect(await getBalances(groupId)).toEqual([]);
-      expect(await pendingSettlements()).toEqual([]);
-    });
-
-    it("rejects a second confirmation with settlement_not_pending", async () => {
+    it("rejects paying yourself with invalid_argument", async () => {
       await expect(
-        rpcErrorCode(clientA, "confirm_settlement", { p_settlement_id: settlementId }),
-      ).resolves.toBe("settlement_not_pending");
+        rpcErrorCode(
+          clientB,
+          "record_settlement",
+          recordArgs(crypto.randomUUID(), b.id, b.id, 1000),
+        ),
+      ).resolves.toBe("invalid_argument");
     });
 
-    it("voiding the confirmed settlement restores the debt on both sides", async () => {
-      const ack = await rpcOk<SettlementAck>(clientB, "void_settlement", {
-        p_settlement_id: settlementId,
+    it("rejects a third party recording between two members with not_party", async () => {
+      await expect(
+        rpcErrorCode(
+          clientOutsider,
+          "record_settlement",
+          recordArgs(crypto.randomUUID(), b.id, a.id, 100),
+        ),
+      ).resolves.toBe("not_party");
+      await expect(
+        rpcErrorCode(
+          clientC,
+          "record_settlement",
+          recordArgs(crypto.randomUUID(), b.id, a.id, 100),
+        ),
+      ).resolves.toBe("not_party");
+    });
+
+    it("rejects a non-member counterparty with counterparty_not_member", async () => {
+      await expect(
+        rpcErrorCode(
+          clientB,
+          "record_settlement",
+          recordArgs(crypto.randomUUID(), b.id, outsider.id, 100),
+        ),
+      ).resolves.toBe("counterparty_not_member");
+      await expect(
+        rpcErrorCode(
+          clientA,
+          "record_settlement",
+          recordArgs(crypto.randomUUID(), outsider.id, a.id, 100),
+        ),
+      ).resolves.toBe("counterparty_not_member");
+    });
+
+    it("rejects amount 0 with invalid_argument", async () => {
+      await expect(
+        rpcErrorCode(
+          clientB,
+          "record_settlement",
+          recordArgs(crypto.randomUUID(), b.id, a.id, 0),
+        ),
+      ).resolves.toBe("invalid_argument");
+    });
+
+    it("lets the creditor void and restore the balances exactly", async () => {
+      const ack = await rpcOk<SettlementAck>(clientA, "void_settlement", {
+        p_settlement_id: creditorRecordedId,
       });
       expect(ack.eventId).toEqual(expect.any(Number));
-      expect(await readBalances()).toEqual(debtBalances());
-      expect(await pendingSettlements()).toEqual([]);
+      expect(await readBalances()).toEqual(owed(2000));
     });
 
     it("rejects a second void with settlement_voided", async () => {
       await expect(
-        rpcErrorCode(clientB, "void_settlement", { p_settlement_id: settlementId }),
+        rpcErrorCode(clientA, "void_settlement", {
+          p_settlement_id: creditorRecordedId,
+        }),
       ).resolves.toBe("settlement_voided");
     });
 
-    it("records a second settlement without disturbing the restored balances", async () => {
-      const cancelOperationId = crypto.randomUUID();
-      const ack = await rpcOk<SettlementAck>(clientB, "record_settlement", {
-        p_operation_id: cancelOperationId,
-        p_group_id: groupId,
-        p_to_user_id: a.id,
-        p_amount_cents: 3000,
+    it("lets the debtor void their own payment and restore the original debt", async () => {
+      const ack = await rpcOk<SettlementAck>(clientB, "void_settlement", {
+        p_settlement_id: debtorPaymentId,
       });
-      cancelSettlementId = ack.settlementId;
       expect(ack.eventId).toEqual(expect.any(Number));
-      expect(await readBalances()).toEqual(debtBalances());
-      expect(await pendingSettlements()).toHaveLength(1);
+      expect(await readBalances()).toEqual(owed(3000));
+      expect(await activeSettlements()).toEqual([]);
     });
 
-    it("rejects a void by a member outside the settlement with not_party", async () => {
-      await expect(
-        rpcErrorCode(clientC, "void_settlement", { p_settlement_id: cancelSettlementId }),
-      ).resolves.toBe("not_party");
-    });
-
-    it("cancelling a pending settlement keeps balances unchanged throughout", async () => {
-      await rpcOk<SettlementAck>(clientB, "void_settlement", {
-        p_settlement_id: cancelSettlementId,
-      });
-      expect(await readBalances()).toEqual(debtBalances());
-      expect(await pendingSettlements()).toEqual([]);
-    });
-
-    it("rejects a settlement to a non-member with counterparty_not_member", async () => {
-      await expect(
-        rpcErrorCode(clientB, "record_settlement", {
-          p_operation_id: crypto.randomUUID(),
-          p_group_id: groupId,
-          p_to_user_id: outsider.id,
-          p_amount_cents: 100,
-        }),
-      ).resolves.toBe("counterparty_not_member");
-    });
-
-    it("rejects amount 0 and paying yourself with invalid_argument", async () => {
-      await expect(
-        rpcErrorCode(clientB, "record_settlement", {
-          p_operation_id: crypto.randomUUID(),
-          p_group_id: groupId,
-          p_to_user_id: a.id,
-          p_amount_cents: 0,
-        }),
-      ).resolves.toBe("invalid_argument");
-      await expect(
-        rpcErrorCode(clientB, "record_settlement", {
-          p_operation_id: crypto.randomUUID(),
-          p_group_id: groupId,
-          p_to_user_id: b.id,
-          p_amount_cents: 3000,
-        }),
-      ).resolves.toBe("invalid_argument");
-    });
-
-    it("rejects a record attempt by a non-member with not_a_member", async () => {
-      await expect(
-        rpcErrorCode(clientOutsider, "record_settlement", {
-          p_operation_id: crypto.randomUUID(),
-          p_group_id: groupId,
-          p_to_user_id: a.id,
-          p_amount_cents: 3000,
-        }),
-      ).resolves.toBe("not_a_member");
-    });
-
-    it("journals the lifecycle in group_events with wasConfirmed on voids", async () => {
+    it("journals one recorded event per record with the counterparty as subject", async () => {
       const { rows } = await withPg((client) =>
         client.query<{
           kind: string;
@@ -327,31 +327,43 @@ describe.skipIf(!isIntegrationTestReady)(
         }>(
           "select kind, settlement_id, actor_id, subject_user_id, payload " +
             "from public.group_events where group_id = $1 " +
-            "and kind in ('settlement_recorded','settlement_confirmed','settlement_voided') " +
+            "and kind in ('settlement_recorded','settlement_voided') " +
             "order by id",
           [groupId],
         ),
       );
       expect(rows.map((row) => row.kind)).toEqual([
         "settlement_recorded",
-        "settlement_confirmed",
-        "settlement_voided",
         "settlement_recorded",
         "settlement_voided",
+        "settlement_voided",
       ]);
-      const undo = rows.find(
-        (row) => row.kind === "settlement_voided" && row.settlement_id === settlementId,
+      expect(rows.map((row) => row.settlement_id)).toEqual([
+        debtorPaymentId,
+        creditorRecordedId,
+        creditorRecordedId,
+        debtorPaymentId,
+      ]);
+      expect(rows.map((row) => [row.actor_id, row.subject_user_id])).toEqual([
+        [b.id, a.id],
+        [a.id, b.id],
+        [a.id, b.id],
+        [b.id, a.id],
+      ]);
+      for (const row of rows) {
+        expect(Object.keys(row.payload).sort()).toEqual([
+          "amountCents",
+          "fromUserId",
+          "toUserId",
+        ]);
+      }
+
+      const { rows: kinds } = await withPg((client) =>
+        client.query<{ kind: string }>(
+          "select unnest(enum_range(null::public.event_kind))::text as kind",
+        ),
       );
-      expect(undo).toBeDefined();
-      expect(undo?.payload.wasConfirmed).toBe(true);
-      expect(undo?.actor_id).toBe(b.id);
-      expect(undo?.subject_user_id).toBe(a.id);
-      const cancel = rows.find(
-        (row) =>
-          row.kind === "settlement_voided" && row.settlement_id === cancelSettlementId,
-      );
-      expect(cancel).toBeDefined();
-      expect(cancel?.payload.wasConfirmed).toBe(false);
+      expect(kinds.map((row) => row.kind)).not.toContain("settlement_confirmed");
     });
   },
 );

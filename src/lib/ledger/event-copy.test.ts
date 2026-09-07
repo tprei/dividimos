@@ -159,7 +159,7 @@ describe("describeEvent", () => {
         payload: { amountCents: 3000, toUserId: "u2" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
-        "Alice marcou um pagamento de R$\u00A030,00 para Bruno",
+        "Alice pagou R$\u00A030,00 para Bruno",
       );
     });
 
@@ -169,41 +169,19 @@ describe("describeEvent", () => {
         payload: { amountCents: 3000, toUserId: "viewer-id" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
-        "Alice marcou um pagamento de R$\u00A030,00 pra você",
-      );
-    });
-  });
-
-  describe("settlement_confirmed", () => {
-    it("describes settlement confirmation", () => {
-      const event = makeEvent({
-        kind: "settlement_confirmed",
-        payload: { amountCents: 4500, fromUserId: "u2" },
-      });
-      expect(describeEvent(event, baseCtx)).toBe(
-        "Alice confirmou o pagamento de R$\u00A045,00 de Bruno",
+        "Alice pagou R$\u00A030,00 pra você",
       );
     });
   });
 
   describe("settlement_voided", () => {
-    it("describes voided settlement that was confirmed", () => {
+    it("describes a voided settlement", () => {
       const event = makeEvent({
         kind: "settlement_voided",
-        payload: { amountCents: 2500, wasConfirmed: true },
+        payload: { amountCents: 2500 },
       });
       expect(describeEvent(event, baseCtx)).toBe(
         "Alice desfez um pagamento de R$\u00A025,00",
-      );
-    });
-
-    it("describes voided settlement that was pending (not confirmed)", () => {
-      const event = makeEvent({
-        kind: "settlement_voided",
-        payload: { amountCents: 2500, wasConfirmed: false },
-      });
-      expect(describeEvent(event, baseCtx)).toBe(
-        "Alice cancelou um pagamento de R$\u00A025,00",
       );
     });
   });
@@ -293,7 +271,7 @@ describe("describeEvent", () => {
         payload: { amountCents: 2000, toUserId: "unknown-user-id" },
       });
       expect(describeEvent(event, baseCtx)).toBe(
-        "Alice marcou um pagamento de R$\u00A020,00 para alguém",
+        "Alice pagou R$\u00A020,00 para alguém",
       );
     });
   });

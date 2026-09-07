@@ -239,11 +239,6 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
   END IF;
 
-  DELETE FROM settlements
-  WHERE group_id = p_group_id
-    AND status = 'pending'
-    AND (from_user_id = v_actor OR to_user_id = v_actor);
-
   DELETE FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor;
 
@@ -303,11 +298,6 @@ BEGIN
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
   END IF;
-
-  DELETE FROM settlements
-  WHERE group_id = p_group_id
-    AND status = 'pending'
-    AND (from_user_id = p_user_id OR to_user_id = p_user_id);
 
   DELETE FROM group_members
   WHERE group_id = p_group_id AND user_id = p_user_id;

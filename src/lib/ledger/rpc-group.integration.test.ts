@@ -51,7 +51,7 @@ interface GroupSnapshot {
   group: GroupInfo;
   members: GroupMember[];
   balances: Array<{ kind: string; participantId: string; netCents: number }>;
-  pendingSettlements: unknown[];
+  settlements: unknown[];
   recentExpenses: unknown[];
   lastEventId: number;
   unreadCount: number;
@@ -288,7 +288,7 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(err).toBe("not_creator");
       });
 
-      it("blocks leave_group by outstanding_balance until confirmed settlement, then excludes group from bootstrap", async () => {
+      it("blocks leave_group by outstanding_balance until the payment is recorded, then excludes group from bootstrap", async () => {
         const groupId = await createGroupWithMembers(u1, [u2], "Leave Group");
 
         await createExpense(u1, {
@@ -312,19 +312,11 @@ describe.skipIf(!isIntegrationTestReady)(
         const recordData = await rpc<SettlementAck>(c2, "record_settlement", {
           p_operation_id: opId,
           p_group_id: groupId,
+          p_from_user_id: u2.id,
           p_to_user_id: u1.id,
           p_amount_cents: 500,
         });
         expect(recordData.settlementId).toBeDefined();
-
-        const confirmData = await rpc<SettlementAck>(
-          c1,
-          "confirm_settlement",
-          {
-            p_settlement_id: recordData.settlementId,
-          },
-        );
-        expect(confirmData.settlementId).toBe(recordData.settlementId);
 
         const balancesAfter = await getBalances(groupId);
         expect(balancesAfter).toHaveLength(0);
@@ -359,13 +351,11 @@ describe.skipIf(!isIntegrationTestReady)(
         const settlement = await rpc<SettlementAck>(c2, "record_settlement", {
           p_operation_id: opId,
           p_group_id: groupId,
+          p_from_user_id: u2.id,
           p_to_user_id: u1.id,
           p_amount_cents: 300,
         });
-
-        await rpc<SettlementAck>(c1, "confirm_settlement", {
-          p_settlement_id: settlement.settlementId,
-        });
+        expect(settlement.settlementId).toBeDefined();
 
         const deleteAck = await rpc<{ groupId: string }>(c1, "delete_group", {
           p_group_id: groupId,

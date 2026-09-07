@@ -16,11 +16,11 @@ CREATE TYPE public.member_status AS ENUM ('invited', 'accepted');
 CREATE TYPE public.expense_type AS ENUM ('itemized', 'single_amount');
 CREATE TYPE public.expense_status AS ENUM ('active', 'deleted');
 CREATE TYPE public.participant_kind AS ENUM ('user', 'guest');
-CREATE TYPE public.settlement_status AS ENUM ('pending', 'confirmed', 'voided');
+CREATE TYPE public.settlement_status AS ENUM ('confirmed', 'voided');
 CREATE TYPE public.pix_key_type AS ENUM ('cpf', 'email', 'phone', 'random');
 CREATE TYPE public.event_kind AS ENUM (
   'expense_created', 'expense_edited', 'expense_deleted', 'expense_restored',
-  'settlement_recorded', 'settlement_confirmed', 'settlement_voided',
+  'settlement_recorded', 'settlement_voided',
   'member_invited', 'member_joined', 'member_left', 'member_removed',
   'guest_claimed', 'nudge'
 );
@@ -146,7 +146,7 @@ CREATE TABLE public.settlements (
   from_user_id uuid NOT NULL REFERENCES public.users(id),
   to_user_id uuid NOT NULL REFERENCES public.users(id),
   amount_cents integer NOT NULL CHECK (amount_cents BETWEEN 1 AND 99999999),
-  status public.settlement_status NOT NULL DEFAULT 'pending',
+  status public.settlement_status NOT NULL DEFAULT 'confirmed',
   created_by uuid NOT NULL REFERENCES public.users(id),
   created_at timestamptz NOT NULL DEFAULT now(),
   confirmed_at timestamptz,
@@ -1231,10 +1231,10 @@ BEGIN
       JOIN expenses e ON e.id = gu.expense_id
       WHERE e.group_id = g.id AND e.status = 'active' AND gu.claimed_by IS NULL
     ), '[]'::jsonb),
-    'pendingSettlements', COALESCE((
+    'settlements', COALESCE((
       SELECT jsonb_agg(ledger_settlement_json(s.id) ORDER BY s.created_at DESC, s.id)
       FROM settlements s
-      WHERE s.group_id = g.id AND s.status = 'pending'
+      WHERE s.group_id = g.id AND s.status = 'confirmed'
     ), '[]'::jsonb),
     'recentExpenses', COALESCE((
       SELECT jsonb_agg(ledger_expense_summary_json(e.id, p_viewer) ORDER BY e.created_at DESC, e.id DESC)
@@ -1293,7 +1293,7 @@ BEGIN
            ),
            'balances', '[]'::jsonb,
            'guests', '[]'::jsonb,
-           'pendingSettlements', '[]'::jsonb,
+           'settlements', '[]'::jsonb,
            'recentExpenses', '[]'::jsonb,
            'unreadCount', 0,
            'lastMessage', 'null'::jsonb
@@ -1854,6 +1854,7 @@ GRANT EXECUTE ON FUNCTION public.restore_expense(uuid) TO authenticated;
 CREATE FUNCTION public.record_settlement(
   p_operation_id uuid,
   p_group_id uuid,
+  p_from_user_id uuid,
   p_to_user_id uuid,
   p_amount_cents integer
 ) RETURNS jsonb
@@ -1865,15 +1866,21 @@ DECLARE
   v_settlement_id uuid;
   v_ledger_version bigint;
   v_event_id bigint;
+  v_subject_user_id uuid;
 BEGIN
   v_actor := current_user_id();
 
-  IF p_operation_id IS NULL OR p_group_id IS NULL OR p_to_user_id IS NULL THEN
+  IF p_operation_id IS NULL OR p_group_id IS NULL
+     OR p_from_user_id IS NULL OR p_to_user_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
-  IF p_to_user_id = v_actor THEN
+  IF p_from_user_id = p_to_user_id THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  IF v_actor <> p_from_user_id AND v_actor <> p_to_user_id THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_party';
   END IF;
 
   IF p_amount_cents IS NULL OR p_amount_cents < 1 OR p_amount_cents > 99999999 THEN
@@ -1885,7 +1892,7 @@ BEGIN
 
   SELECT * INTO v_existing FROM settlements WHERE operation_id = p_operation_id;
   IF FOUND THEN
-    IF v_existing.from_user_id <> v_actor OR v_existing.group_id <> p_group_id
+    IF v_existing.from_user_id <> p_from_user_id OR v_existing.group_id <> p_group_id
        OR v_existing.to_user_id <> p_to_user_id OR v_existing.amount_cents <> p_amount_cents THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
     END IF;
@@ -1899,23 +1906,25 @@ BEGIN
     );
   END IF;
 
-  IF NOT is_member(p_group_id, p_to_user_id) THEN
+  IF NOT is_member(p_group_id, CASE WHEN v_actor = p_from_user_id THEN p_to_user_id ELSE p_from_user_id END) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'counterparty_not_member';
   END IF;
 
-  INSERT INTO settlements (operation_id, group_id, from_user_id, to_user_id, amount_cents, status, created_by)
-  VALUES (p_operation_id, p_group_id, v_actor, p_to_user_id, p_amount_cents, 'pending', v_actor)
+  INSERT INTO settlements (operation_id, group_id, from_user_id, to_user_id, amount_cents, status, confirmed_at, created_by)
+  VALUES (p_operation_id, p_group_id, p_from_user_id, p_to_user_id, p_amount_cents, 'confirmed', now(), v_actor)
   RETURNING id INTO v_settlement_id;
 
-  SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = p_group_id;
+  v_ledger_version := recompute_group_balances(p_group_id);
+
+  v_subject_user_id := CASE WHEN v_actor = p_from_user_id THEN p_to_user_id ELSE p_from_user_id END;
 
   v_event_id := emit_event(
     p_group_id,
     'settlement_recorded',
     v_actor,
     p_settlement_id => v_settlement_id,
-    p_subject_user_id => p_to_user_id,
-    p_payload => jsonb_build_object('amountCents', p_amount_cents, 'fromUserId', v_actor, 'toUserId', p_to_user_id)
+    p_subject_user_id => v_subject_user_id,
+    p_payload => jsonb_build_object('amountCents', p_amount_cents, 'fromUserId', p_from_user_id, 'toUserId', p_to_user_id)
   );
 
   PERFORM broadcast_group(p_group_id, v_ledger_version, v_event_id);
@@ -1929,71 +1938,12 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.confirm_settlement(p_settlement_id uuid) RETURNS jsonb
-  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
-AS $$
-DECLARE
-  v_actor uuid;
-  v_s RECORD;
-  v_ledger_version bigint;
-  v_event_id bigint;
-BEGIN
-  v_actor := current_user_id();
-
-  IF p_settlement_id IS NULL THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_not_found';
-  END IF;
-
-  SELECT * INTO v_s FROM settlements WHERE id = p_settlement_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_not_found';
-  END IF;
-
-  PERFORM lock_group(v_s.group_id);
-
-  SELECT * INTO v_s FROM settlements WHERE id = p_settlement_id FOR UPDATE;
-
-  IF v_actor <> v_s.to_user_id THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_payee';
-  END IF;
-
-  IF v_s.status <> 'pending' THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_not_pending';
-  END IF;
-
-  UPDATE settlements
-  SET status = 'confirmed', confirmed_at = now()
-  WHERE id = p_settlement_id;
-
-  v_ledger_version := recompute_group_balances(v_s.group_id);
-
-  v_event_id := emit_event(
-    v_s.group_id,
-    'settlement_confirmed',
-    v_actor,
-    p_settlement_id => p_settlement_id,
-    p_subject_user_id => v_s.from_user_id,
-    p_payload => jsonb_build_object('amountCents', v_s.amount_cents, 'fromUserId', v_s.from_user_id, 'toUserId', v_s.to_user_id)
-  );
-
-  PERFORM broadcast_group(v_s.group_id, v_ledger_version, v_event_id);
-
-  RETURN jsonb_build_object(
-    'settlementId', p_settlement_id,
-    'groupId', v_s.group_id,
-    'ledgerVersion', v_ledger_version,
-    'eventId', v_event_id
-  );
-END;
-$$;
-
 CREATE FUNCTION public.void_settlement(p_settlement_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_actor uuid;
   v_s RECORD;
-  v_was_confirmed boolean;
   v_ledger_version bigint;
   v_event_id bigint;
   v_other_party uuid;
@@ -2021,17 +1971,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_voided';
   END IF;
 
-  v_was_confirmed := (v_s.status = 'confirmed');
-
   UPDATE settlements
   SET status = 'voided', voided_at = now(), voided_by = v_actor
   WHERE id = p_settlement_id;
 
-  IF v_was_confirmed THEN
-    v_ledger_version := recompute_group_balances(v_s.group_id);
-  ELSE
-    SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = v_s.group_id;
-  END IF;
+  v_ledger_version := recompute_group_balances(v_s.group_id);
 
   v_other_party := CASE WHEN v_actor = v_s.from_user_id THEN v_s.to_user_id ELSE v_s.from_user_id END;
 
@@ -2044,8 +1988,7 @@ BEGIN
     p_payload => jsonb_build_object(
       'amountCents', v_s.amount_cents,
       'fromUserId', v_s.from_user_id,
-      'toUserId', v_s.to_user_id,
-      'wasConfirmed', v_was_confirmed
+      'toUserId', v_s.to_user_id
     )
   );
 
@@ -2060,11 +2003,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.record_settlement(uuid, uuid, uuid, integer) FROM public;
-GRANT EXECUTE ON FUNCTION public.record_settlement(uuid, uuid, uuid, integer) TO authenticated;
-
-REVOKE ALL ON FUNCTION public.confirm_settlement(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.confirm_settlement(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.record_settlement(uuid, uuid, uuid, uuid, integer) FROM public;
+GRANT EXECUTE ON FUNCTION public.record_settlement(uuid, uuid, uuid, uuid, integer) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.void_settlement(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.void_settlement(uuid) TO authenticated;
@@ -2311,11 +2251,6 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
   END IF;
 
-  DELETE FROM settlements
-  WHERE group_id = p_group_id
-    AND status = 'pending'
-    AND (from_user_id = v_actor OR to_user_id = v_actor);
-
   DELETE FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor;
 
@@ -2375,11 +2310,6 @@ BEGIN
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
   END IF;
-
-  DELETE FROM settlements
-  WHERE group_id = p_group_id
-    AND status = 'pending'
-    AND (from_user_id = p_user_id OR to_user_id = p_user_id);
 
   DELETE FROM group_members
   WHERE group_id = p_group_id AND user_id = p_user_id;

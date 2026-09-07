@@ -48,7 +48,7 @@ flowchart LR
 
 - **QR Code Pix** &mdash; Geração de BR Code EMV com Copia e Cola para liquidação instantânea
 - **Simplificação de dívidas** &mdash; Minimiza o número de transferências com visualização passo a passo
-- **Liquidação com confirmação** &mdash; Devedor registra pagamento, credor confirma. Saldo atualiza atomicamente
+- **Liquidação direta** &mdash; Devedor ou credor registra o pagamento e o saldo atualiza na hora, com opção de desfazer
 - **Cobrar Rápido** &mdash; Gere uma cobrança Pix avulsa (sem grupo) e acompanhe o status no histórico
 
 ### Chat e cobrança
@@ -153,7 +153,7 @@ supabase/
 
 O banco guarda apenas os fatos financeiros e um saldo por participante &mdash; nunca transferências prontas.
 
-- **Fatos** &mdash; `expense_versions` (uma linha por edição, com o `payload` completo e um `change_summary`) e `settlements` (liquidações com confirmação). Nada mais é fato financeiro.
+- **Fatos** &mdash; `expense_versions` (uma linha por edição, com o `payload` completo e um `change_summary`) e `settlements` (liquidações). Nada mais é fato financeiro.
 - **Projeção** &mdash; `group_balances` tem uma linha por `(grupo, tipo, participante)` com o `net_cents` assinado: positivo significa que o participante recebe, negativo que deve. Convidados sem conta participam com `kind = 'guest'` e podem carregar saldo até serem reclamados via claim link.
 - **Projeção nunca é escrita à mão** &mdash; todo RPC que altera o financeiro (criar, editar, excluir ou restaurar despesa, liquidação, claim de convidado) chama `recompute_group_balances(group)` dentro da mesma transação, reprocessando os fatos do zero. Tudo ou nada: ou o fato e a projeção caem juntos, ou nada cai.
 - **Transferências são calculadas na leitura** &mdash; `group_transfers(group)` em SQL e `transfersFromBalances` em TypeScript implementam o mesmo algoritmo guloso de dois ponteiros sobre os saldos (testado em paridade sobre 200 ledgers aleatórios). O conjunto mínimo de transferências Pix sai direto dos saldos, sem tabela intermediária.
@@ -357,7 +357,7 @@ npm run test:integration
 
 **Ledger facts and projection**: `expense_versions` (one row per edit) and `settlements` are the only financial facts. `group_balances` is a projection — one row per `(group, kind, participant)` with a signed `net_cents` (positive = the participant is owed; zero rows are never stored). Guests are participants with `kind = 'guest'` and can carry a balance until claimed. Balances are never written directly: every mutating RPC calls `recompute_group_balances(group)` inside the same transaction, and all access goes through `SECURITY DEFINER` RPCs that check membership first.
 
-**Settlements (two-step confirmation)**: A debtor creates a pending settlement (`record_settlement`). The creditor confirms it (`confirm_settlement`), which applies the delta to the balances toward zero. A confirmed settlement can still be voided (`void_settlement`).
+**Settlements**: Either party records a payment (`record_settlement`), which applies the delta to the balances toward zero immediately. Either party can void it (`void_settlement`), restoring the balances.
 
 **Minimized transfers at read time**: `group_transfers(group)` in SQL and `transfersFromBalances` in TypeScript compute the minimum set of transfers from the balances with the same greedy two-pointer algorithm — largest debtor pays largest creditor — parity-tested over 200 random ledgers. `src/lib/simplify.ts` (`computeRawEdges`, `simplifyDebts`) powers the wizard/demo preview only.
 

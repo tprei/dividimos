@@ -109,6 +109,7 @@ describe("GroupSettlementView", () => {
       await onMarkPaid(3000);
       expect(recordSettlement).toHaveBeenCalledWith({
         groupId,
+        fromUserId: meId,
         toUserId: "user-2",
         amountCents: 3000,
       });

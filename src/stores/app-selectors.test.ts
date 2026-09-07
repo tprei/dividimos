@@ -4,7 +4,6 @@ import { useAppStore } from "./app-store";
 import {
   selectExpenseList,
   selectMyDebts,
-  selectPendingSettlementsForMe,
   selectTransfers,
   selectUnreadTotal,
 } from "./app-selectors";
@@ -40,7 +39,7 @@ function snapshot(groupId: string, overrides: Partial<GroupSnapshot> = {}): Grou
     members: [],
     balances: [],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: 0,
     unreadCount: 0,
@@ -167,30 +166,3 @@ describe("selectExpenseList", () => {
   });
 });
 
-describe("selectPendingSettlementsForMe", () => {
-  it("collects pending settlements where I am the creditor, in groupOrder order", () => {
-    const settlement = {
-      id: "s1",
-      operationId: "op-1",
-      groupId: "g1",
-      fromUserId: "user-2",
-      toUserId: "user-1",
-      amountCents: 500,
-      status: "pending" as const,
-      createdBy: "user-2",
-      createdAt: "2026-01-02T00:00:00Z",
-      confirmedAt: null,
-      voidedAt: null,
-      voidedBy: null,
-    };
-    useAppStore.setState({
-      me,
-      groups: { g1: snapshot("g1", { pendingSettlements: [settlement] }) },
-      groupOrder: ["g1"],
-    });
-
-    expect(selectPendingSettlementsForMe(useAppStore.getState())).toEqual([
-      { groupId: "g1", settlement },
-    ]);
-  });
-});

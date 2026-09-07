@@ -63,8 +63,7 @@ test.describe("Settlement Flow", () => {
 
     // Settle all remaining debts. With the normalized ledger the payable
     // edges are derived from the group's net balances, so the debtor could
-    // be anyone. Each edge is recorded by its debtor, then confirmed by its
-    // creditor.
+    // be anyone. Recording each edge applies it to the balances immediately.
     const aliceClient = await seed.authenticateAs(alice.id);
     const bobClient = await seed.authenticateAs(bob.id);
     const carolClient = await seed.authenticateAs(carol.id);
@@ -90,24 +89,23 @@ test.describe("Settlement Flow", () => {
 
     for (const transfer of transfers) {
       const operationId = crypto.randomUUID();
-      await clientFor[transfer.fromId].rpc("record_settlement", {
-        p_operation_id: operationId,
-        p_group_id: group.id,
-        p_to_user_id: transfer.toId,
-        p_amount_cents: transfer.amountCents,
-      });
+      const { error: recordError } = await clientFor[transfer.fromId].rpc(
+        "record_settlement",
+        {
+          p_operation_id: operationId,
+          p_group_id: group.id,
+          p_from_user_id: transfer.fromId,
+          p_to_user_id: transfer.toId,
+          p_amount_cents: transfer.amountCents,
+        },
+      );
+      expect(recordError).toBeNull();
 
       const { data: recorded } = await adminClient
         .from("settlements")
         .select("id")
         .eq("operation_id", operationId);
       expect(recorded).toHaveLength(1);
-
-      const { error: confirmError } = await clientFor[transfer.toId].rpc(
-        "confirm_settlement",
-        { p_settlement_id: recorded![0].id as string },
-      );
-      expect(confirmError).toBeNull();
     }
 
     const { data: afterSettlement } = await adminClient

@@ -73,7 +73,7 @@ function snapshot(
     members: [],
     balances: [],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: recent,
     lastEventId: 0,
     unreadCount: 0,

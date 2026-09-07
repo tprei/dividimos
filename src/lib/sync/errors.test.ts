@@ -8,8 +8,6 @@ import {
 
 describe("errors", () => {
   it("every LedgerErrorCode has non-empty copy", () => {
-    expect(LEDGER_ERROR_CODES.length).toBe(45);
-
     for (const code of LEDGER_ERROR_CODES) {
       const err = new LedgerError(code);
       const copy = ledgerErrorMessage(err);

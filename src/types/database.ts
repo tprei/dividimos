@@ -828,7 +828,6 @@ export type Database = {
       }
       claim_guest: { Args: { p_token: string }; Returns: Json }
       cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
-      confirm_settlement: { Args: { p_settlement_id: string }; Returns: Json }
       confirm_vendor_charge: { Args: { p_charge_id: string }; Returns: Json }
       create_expense: {
         Args: {
@@ -973,6 +972,7 @@ export type Database = {
       record_settlement: {
         Args: {
           p_amount_cents: number
+          p_from_user_id: string
           p_group_id: string
           p_operation_id: string
           p_to_user_id: string
@@ -1024,7 +1024,6 @@ export type Database = {
         | "expense_deleted"
         | "expense_restored"
         | "settlement_recorded"
-        | "settlement_confirmed"
         | "settlement_voided"
         | "member_invited"
         | "member_joined"
@@ -1038,7 +1037,7 @@ export type Database = {
       member_status: "invited" | "accepted"
       participant_kind: "user" | "guest"
       pix_key_type: "cpf" | "email" | "phone" | "random"
-      settlement_status: "pending" | "confirmed" | "voided"
+      settlement_status: "confirmed" | "voided"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1175,7 +1174,6 @@ export const Constants = {
         "expense_deleted",
         "expense_restored",
         "settlement_recorded",
-        "settlement_confirmed",
         "settlement_voided",
         "member_invited",
         "member_joined",
@@ -1190,7 +1188,7 @@ export const Constants = {
       member_status: ["invited", "accepted"],
       participant_kind: ["user", "guest"],
       pix_key_type: ["cpf", "email", "phone", "random"],
-      settlement_status: ["pending", "confirmed", "voided"],
+      settlement_status: ["confirmed", "voided"],
     },
   },
 } as const

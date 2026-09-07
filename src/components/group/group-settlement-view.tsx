@@ -27,7 +27,7 @@ interface PixTarget {
   amountCents: number;
 }
 
-export function GroupSettlementView({ groupId, rows }: GroupSettlementViewProps) {
+export function GroupSettlementView({ groupId, rows, meId }: GroupSettlementViewProps) {
   const [pixTarget, setPixTarget] = useState<PixTarget | null>(null);
 
   if (rows.length === 0) {
@@ -123,6 +123,7 @@ export function GroupSettlementView({ groupId, rows }: GroupSettlementViewProps)
           onMarkPaid={(amountCents: number) =>
             recordSettlement({
               groupId,
+              fromUserId: meId,
               toUserId: pixTarget.counterpartyId,
               amountCents,
             }).then(() => undefined)
