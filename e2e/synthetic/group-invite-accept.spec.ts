@@ -34,7 +34,7 @@ test.describe("Group Invite & Accept", () => {
     // Alice sees Bob as "Pendente" in the members tab
     await expect(page.getByText("Membros")).toBeVisible();
     await expect(page.getByText("Bob Invite")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Pendente")).toBeVisible();
+    await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
 
     // Bob opens the groups list and sees the pending invite
     const bobCtx = await browser.newContext();
@@ -62,7 +62,7 @@ test.describe("Group Invite & Accept", () => {
     await expect(bobPage.getByText("Bob Invite")).toBeVisible();
     await expect(bobPage.getByText("Você")).toBeVisible();
     await expect(bobPage.getByText("Criador")).toBeVisible();
-    await expect(bobPage.getByText("Pendente")).not.toBeVisible();
+    await expect(bobPage.getByText("Pendente", { exact: true })).not.toBeVisible();
 
     await bobCtx.close();
   });
@@ -108,7 +108,7 @@ test.describe("Group Invite & Accept", () => {
     await bobCtx.close();
   });
 
-  test("invited member shows as 'Pendente' in group detail members tab", async ({
+  test("invited member shows as pending in the group members section", async ({
     page,
     seed,
     loginAs,
@@ -133,7 +133,7 @@ test.describe("Group Invite & Accept", () => {
 
     await expect(page.getByText("Alice Pending")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Bob Pending")).toBeVisible();
-    await expect(page.getByText("Pendente")).toBeVisible();
+    await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
     await expect(page.getByText("Criador")).toBeVisible();
   });
 });

@@ -19,7 +19,7 @@ test.describe("Fixed-amount split slider", () => {
 
     await loginAs(alice, { navigate: false });
     await page.goto(
-      `/app/bill/new?groupId=${group.id}&title=Jantar%20Sintetico&amount=15000`,
+      `/app/bill/new?groupId=${group.id}&title=Synthetic%20Dinner&amount=15000`,
     );
     await page.waitForLoadState("networkidle");
 
@@ -122,19 +122,27 @@ test.describe("Fixed-amount split slider", () => {
 
     const expenseId = expenses![0].id as string;
 
-    const { data: shares } = await adminClient
-      .from("expense_shares")
-      .select("user_id, share_amount_cents")
+    const { data: participants } = await adminClient
+      .from("expense_participants")
+      .select("user_id, share_cents")
       .eq("expense_id", expenseId);
 
     const shareByUser = Object.fromEntries(
-      (shares ?? []).map((s) => [
-        s.user_id as string,
-        s.share_amount_cents as number,
+      (participants ?? []).map((p) => [
+        p.user_id as string,
+        p.share_cents as number,
       ]),
     );
     expect(shareByUser[alice.id]).toBe(5000);
     expect(shareByUser[bob.id]).toBe(5000);
     expect(shareByUser[carol.id]).toBe(5000);
+
+    const { data: version } = await adminClient
+      .from("expense_versions")
+      .select("total_cents")
+      .eq("expense_id", expenseId)
+      .eq("version_no", 1);
+    expect(version).toHaveLength(1);
+    expect(version![0].total_cents).toBe(15000);
   });
 });
