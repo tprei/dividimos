@@ -1,11 +1,12 @@
 "use client";
 
+import { MessageCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { MessageCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { getOrCreateDmGroup } from "@/lib/supabase/dm-actions";
 import toast from "react-hot-toast";
+import { Button } from "@/components/ui/button";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { getOrCreateDm } from "@/lib/sync/mutations-group";
 
 interface SendMessageButtonProps {
   targetUserId: string;
@@ -21,15 +22,13 @@ export function SendMessageButton({
 
   const handleSendMessage = async () => {
     setLoading(true);
-    const result = await getOrCreateDmGroup(targetUserId);
-
-    if ("error" in result) {
-      toast.error(result.error);
+    try {
+      await getOrCreateDm(targetUserId);
+      router.push(`/app/conversations/${targetUserId}`);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
       setLoading(false);
-      return;
     }
-
-    router.push(`/app/conversations/${targetUserId}`);
   };
 
   return (

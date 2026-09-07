@@ -5,19 +5,25 @@ import {
   Bell,
   BellOff,
   Banknote,
+  LogOut,
   MessageSquare,
   Receipt,
   Users,
   BellRing,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
-import { useAuth } from "@/hooks/use-auth";
+import { useMe } from "@/hooks/use-me";
+import { useAppStore } from "@/stores/app-store";
+import { updateProfile } from "@/lib/sync/mutations-group";
+import { getSupabase } from "@/lib/sync/client";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { updateNotificationPreferences } from "./actions";
-import type { NotificationCategory, NotificationPreferences, User } from "@/types";
+import { Skeleton } from "@/components/shared/skeleton";
+import type { NotificationCategory, NotificationPreferences } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
 interface CategoryConfig {
@@ -61,8 +67,25 @@ const CATEGORIES: CategoryConfig[] = [
 ];
 
 export default function SettingsPage() {
+  const me = useMe();
+  const router = useRouter();
   const { permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
-  const auth = useAuth();
+
+  const handleSignOut = async () => {
+    await getSupabase().auth.signOut();
+    useAppStore.getState().reset();
+    router.replace("/auth");
+  };
+
+  if (!me) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6 space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32 rounded-2xl" />
+        <Skeleton className="h-48 rounded-2xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
@@ -88,7 +111,13 @@ export default function SettingsPage() {
 
           <div className="rounded-2xl border bg-card p-4">
             <div className="flex items-center gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isSubscribed ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                  isSubscribed
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
                 {isSubscribed ? (
                   <Bell className="h-5 w-5" />
                 ) : (
@@ -97,7 +126,9 @@ export default function SettingsPage() {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium">
-                  {isSubscribed ? "Notificações ativadas" : "Notificações desativadas"}
+                  {isSubscribed
+                    ? "Notificações ativadas"
+                    : "Notificações desativadas"}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {permission === "denied"
@@ -135,7 +166,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {isSubscribed && auth.status === "authenticated" && (
+          {isSubscribed && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -145,70 +176,59 @@ export default function SettingsPage() {
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Categorias
               </h2>
-              <NotificationPreferencesSection
-                key={`${auth.generation}:${auth.userId}`}
-                user={auth.user}
-                userId={auth.userId}
-              />
+              <NotificationPreferencesSection key={me.id} />
             </motion.div>
           )}
         </motion.div>
       )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.4 }}
+        className="mt-8"
+      >
+        <Button
+          variant="outline"
+          className="w-full gap-2 text-destructive"
+          onClick={handleSignOut}
+        >
+          <LogOut className="h-4 w-4" />
+          Sair
+        </Button>
+      </motion.div>
     </div>
   );
 }
 
-function NotificationPreferencesSection({
-  user,
-  userId,
-}: {
-  user: User;
-  userId: string;
-}) {
-  // Seeded once, from the user this section was mounted with. The parent keys
-  // us by generation:userId, so every identity boundary discards this state
-  // and a previous account's draft toggles never carry into the new one.
-  const [prefs, setPrefs] = useState<NotificationPreferences>(
-    () => user.notificationPreferences ?? {},
-  );
-  const saveTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+function NotificationPreferencesSection() {
+  const me = useMe();
+  const prefs = me?.notificationPreferences ?? {};
 
-  const persistPrefs = useCallback(
-    (next: NotificationPreferences) => {
-      clearTimeout(saveTimerRef.current);
-      // Capture the caller's identity at schedule time. The keying above is the
-      // primary defense; this captured id is the second line so a timer that
-      // releases late still names the user who started the edit, and the
-      // server compares it against fresh auth before doing anything.
-      const expectedUserId = userId;
-      saveTimerRef.current = setTimeout(() => {
-        updateNotificationPreferences(expectedUserId, next).catch(() => {});
-      }, 500);
-    },
-    [userId],
-  );
+  const toggleCategory = async (category: NotificationCategory) => {
+    const currentMe = useAppStore.getState().me;
+    if (!currentMe) return;
 
-  const toggleCategory = useCallback(
-    (category: NotificationCategory) => {
-      setPrefs((prev) => {
-        const current = prev[category] !== false;
-        const next = { ...prev, [category]: !current };
-        persistPrefs(next);
-        return next;
-      });
-    },
-    [persistPrefs],
-  );
-
-  // Cancel any pending debounced save when the section unmounts. The parent's
-  // key makes an identity change an unmount, so a timer captured under the old
-  // account can never fire against the new one.
-  useEffect(() => {
-    return () => {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = undefined;
+    const currentPrefs = currentMe.notificationPreferences ?? {};
+    const currentVal = currentPrefs[category] !== false;
+    const nextPrefs: NotificationPreferences = {
+      ...currentPrefs,
+      [category]: !currentVal,
     };
-  }, []);
+
+    useAppStore.getState().patch((s) => ({
+      me: s.me ? { ...s.me, notificationPreferences: nextPrefs } : null,
+    }));
+
+    try {
+      await updateProfile({ notificationPreferences: nextPrefs });
+    } catch (err) {
+      useAppStore.getState().patch((s) => ({
+        me: s.me ? { ...s.me, notificationPreferences: currentPrefs } : null,
+      }));
+      toast.error(ledgerErrorMessage(err));
+    }
+  };
 
   return (
     <div className="rounded-2xl border bg-card">

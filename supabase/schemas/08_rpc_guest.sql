@@ -32,7 +32,7 @@ BEGIN
   END IF;
 
   v_bytes := extensions.gen_random_bytes(32);
-  v_token := rtrim(translate(encode(v_bytes, 'base64'), '+/', '-_'), '=');
+  v_token := 'gst1_' || rtrim(translate(encode(v_bytes, 'base64'), '+/', '-_'), '=');
   v_digest := extensions.digest(convert_to(v_token, 'utf8'), 'sha256');
 
   INSERT INTO guest_credentials.claim_tokens AS ct (guest_id, token_digest, generation, created_at)

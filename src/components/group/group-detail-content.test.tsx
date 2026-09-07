@@ -1,434 +1,277 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import toast from "react-hot-toast";
+import { GroupDetailContent } from "./group-detail-content";
+import { LedgerError } from "@/lib/sync/errors";
+import { refreshGroup } from "@/lib/sync/refresh";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot, Me } from "@/types/ledger";
 
-const mockPush = vi.fn();
+const routerMock = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  prefetch: vi.fn(),
+  back: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush, prefetch: vi.fn() }),
-}));
-
-function chainable(resolveValue: unknown) {
-  const chain: Record<string, unknown> = {};
-  const methods = ["from", "select", "eq", "neq", "in", "is", "or", "order", "limit", "single", "maybeSingle", "insert", "delete", "update", "rpc"];
-  for (const m of methods) {
-    chain[m] = vi.fn(() => chain);
-  }
-  chain.then = (resolve: (v: unknown) => void) => resolve(resolveValue);
-  return chain;
-}
-
-const mockSupabaseData: Record<string, unknown> = {};
-let mockRpcResult: { data: unknown; error: unknown } = { data: null, error: null };
-const mockRpcFn = vi.fn(() => chainable(mockRpcResult));
-
-function createMockSupabase() {
-  const fromMock = vi.fn((table: string) => {
-    const data = mockSupabaseData[table] ?? [];
-    return chainable({ data, error: null });
-  });
-
-  return {
-    from: fromMock,
-    rpc: mockRpcFn,
-  };
-}
-
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => createMockSupabase(),
-}));
-
-vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({
-    status: "authenticated",
-    userId: "user-1",
-    generation: 0,
-    user: {
-      id: "user-1",
-      name: "Alice Test",
-      email: "alice@test.com",
-      handle: "alice",
-    },
-  }),
-}));
-
-vi.mock("@/components/group/group-settlement-view", () => ({
-  GroupSettlementView: ({ groupId }: { groupId: string }) => (
-    <div data-testid="settlement-view">Settlement for {groupId}</div>
-  ),
+  useRouter: () => routerMock,
 }));
 
 vi.mock("react-hot-toast", () => ({
-  default: {
-    success: vi.fn(),
-    error: vi.fn(),
+  default: { success: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock("@/lib/sync/refresh", () => ({
+  refreshGroup: vi.fn(),
+  loadMoreExpenses: vi.fn(),
+}));
+
+vi.mock("@/lib/sync/mutations-group", () => ({
+  createInviteLink: vi.fn(),
+  deactivateInviteLink: vi.fn(),
+  inviteMember: vi.fn(),
+  lookupUserByHandle: vi.fn(),
+  removeMember: vi.fn(),
+  leaveGroup: vi.fn(),
+  deleteGroup: vi.fn(),
+}));
+
+const settlementProps: Array<{
+  groupId: string;
+  meId: string;
+  rows: Array<{ counterpartyName: string; amountCents: number; direction: string }>;
+}> = [];
+
+vi.mock("./group-settlement-view", () => ({
+  GroupSettlementView: (props: {
+    groupId: string;
+    meId: string;
+    rows: Array<{
+      counterpartyName: string;
+      amountCents: number;
+      direction: string;
+    }>;
+  }) => {
+    settlementProps.push(props);
+    return <div data-testid="settlement-stub" />;
   },
 }));
 
-const mockUseGroupFinances = vi.hoisted(() => ({
-  state: {
-    phase: "ready" as const,
-    snapshot: {
-      balances: [] as Array<{ groupId: string; userA: string; userB: string; amountCents: number; updatedAt: string }>,
-      settlements: [] as Array<{ id: string; groupId: string; fromUserId: string; toUserId: string; amountCents: number; status: string; createdAt: string; confirmedAt?: string }>,
-      participants: [] as Array<{ id: string; name: string }>,
-    },
+const inviteModalProps: Array<{ open: boolean; groupId: string; groupName: string }> = [];
+
+vi.mock("./group-invite-modal", () => ({
+  GroupInviteModal: (props: { open: boolean; groupId: string; groupName: string }) => {
+    inviteModalProps.push(props);
+    return props.open ? <div data-testid="invite-modal-stub" /> : null;
   },
-  refresh: vi.fn(),
-  applyRealtimeBalance: vi.fn(),
-}));
-vi.mock("@/hooks/use-group-finances", () => ({
-  useGroupFinances: () => mockUseGroupFinances,
 }));
 
-vi.mock("@/hooks/use-realtime-balances", () => ({
-  useRealtimeBalances: vi.fn(),
-}));
+const me: Me = {
+  id: "user-1",
+  handle: "alice",
+  name: "Alice",
+  avatarUrl: null,
+  email: "alice@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
+};
 
-import { GroupDetailContent, type GroupDetailData, type UnclaimedGuest } from "./group-detail-content";
-import type { ExpenseStatus } from "@/types";
+const groupId = "g1";
 
-function buildDefaultData(overrides: Partial<GroupDetailData> = {}): GroupDetailData {
+function snapshot(): GroupSnapshot {
   return {
-    groupId: "group-1",
-    groupName: "Test Group",
-    creatorId: "user-1",
+    group: {
+      id: groupId,
+      kind: "group",
+      name: "Viagem",
+      creatorId: "user-1",
+      dmUserA: null,
+      dmUserB: null,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+    },
     members: [
       {
+        groupId,
         userId: "user-1",
         status: "accepted",
-        profile: { id: "user-1", handle: "alice", name: "Alice Test", avatarUrl: undefined },
-        invitedBy: "user-1",
+        invitedBy: null,
+        acceptedAt: null,
+        user: { id: "user-1", handle: "alice", name: "Alice", avatarUrl: null },
       },
       {
+        groupId,
         userId: "user-2",
         status: "accepted",
-        profile: { id: "user-2", handle: "bob", name: "Bob Test", avatarUrl: undefined },
-        invitedBy: "user-1",
+        invitedBy: null,
+        acceptedAt: null,
+        user: { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null },
       },
-    ],
-    expenses: [
       {
-        id: "exp-1",
-        title: "Almoço",
-        totalAmount: 5000,
-        status: "active",
-        createdAt: "2026-03-28T12:00:00Z",
+        groupId,
+        userId: "user-3",
+        status: "invited",
+        invitedBy: "user-1",
+        acceptedAt: null,
+        user: { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null },
       },
     ],
-    unclaimedGuests: [],
-    inviteLinkToken: "invite-token-123",
-    ...overrides,
+    balances: [
+      { kind: "user", participantId: "user-1", netCents: -5000 },
+      { kind: "user", participantId: "user-2", netCents: 5000 },
+    ],
+    guests: [{ id: "guest-1", displayName: "Bruno", expenseId: "e1" }],
+    pendingSettlements: [],
+    recentExpenses: [
+      {
+        id: "e1",
+        groupId,
+        creatorId: "user-1",
+        status: "active",
+        occurredOn: "2026-09-01",
+        createdAt: "2026-09-01T12:00:00Z",
+        versionNo: 1,
+        title: "Jantar",
+        merchantName: null,
+        expenseType: "single_amount",
+        totalCents: 12000,
+        myShareCents: 4000,
+        myPaidCents: 0,
+        participantCount: 3,
+      },
+    ],
+    lastEventId: 1,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt: "2026-01-02T00:00:00Z",
   };
 }
 
+function seedLoaded() {
+  const snap = snapshot();
+  useAppStore.setState({
+    hydrated: true,
+    me,
+    groups: { [groupId]: snap },
+    groupOrder: [groupId],
+    expenseLists: {
+      [groupId]: { ids: ["e1"], oldestCursor: null, complete: true },
+    },
+    expenses: Object.fromEntries(
+      snap.recentExpenses.map((e) => [e.id, e]),
+    ),
+  });
+}
+
+beforeEach(() => {
+  useAppStore.getState().reset();
+  settlementProps.length = 0;
+  inviteModalProps.length = 0;
+  vi.clearAllMocks();
+  vi.mocked(refreshGroup).mockResolvedValue(undefined);
+});
+
 describe("GroupDetailContent", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockRpcResult = { data: null, error: null };
-    mockSupabaseData.groups = { name: "Test Group", creator_id: "user-1" };
-    mockSupabaseData.group_members = [
-      { user_id: "user-1", status: "accepted", invited_by: "user-1" },
-      { user_id: "user-2", status: "accepted", invited_by: "user-1" },
-    ];
-    mockSupabaseData.user_profiles = [
-      { id: "user-1", handle: "alice", name: "Alice Test", avatar_url: null },
-      { id: "user-2", handle: "bob", name: "Bob Test", avatar_url: null },
-    ];
-    mockSupabaseData.expenses = [];
-    mockSupabaseData.expense_guests = [];
-    mockSupabaseData.group_invite_links = [];
-    mockUseGroupFinances.state = {
-      phase: "ready",
-      snapshot: {
-        balances: [],
-        settlements: [
-          {
-            id: "stl-1",
-            groupId: "group-1",
-            fromUserId: "user-2",
-            toUserId: "user-1",
-            amountCents: 2500,
-            status: "confirmed",
-            createdAt: "2026-03-28T13:00:00Z",
-            confirmedAt: "2026-03-28T14:00:00Z",
-          },
-        ],
-        participants: [],
-      },
-    };
+  it("mostra skeleton antes da hidratação e não busca", () => {
+    useAppStore.setState({ hydrated: false, me: null, groups: {}, groupOrder: [] });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.queryByText("Viagem")).not.toBeInTheDocument();
+    expect(refreshGroup).not.toHaveBeenCalled();
   });
 
-  it("renders group name immediately (no loading state)", () => {
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-    expect(screen.getByText("Test Group")).toBeTruthy();
-  });
+  it("busca o grupo quando hidratado sem snapshot", async () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
 
-  it("shows members tab by default with member list", () => {
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-    expect(screen.getByText("Alice Test")).toBeTruthy();
-    expect(screen.getByText("Bob Test")).toBeTruthy();
-  });
+    render(<GroupDetailContent groupId={groupId} />);
 
-  it("switches to contas tab and shows expenses", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-
-    await user.click(screen.getByText("Contas"));
-
-    expect(screen.getByText("Almoço")).toBeTruthy();
-    expect(screen.getByText("Pendente")).toBeTruthy();
-  });
-
-  it("switches to pagamentos tab and shows settlement history", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-
-    await user.click(screen.getByText("Pagamentos"));
-
+    expect(screen.queryByText("Viagem")).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("Confirmado")).toBeTruthy();
+      expect(refreshGroup).toHaveBeenCalledWith(groupId);
     });
   });
 
-  it("switches to acerto tab and shows settlement view", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
+  it("mostra estado vazio quando o grupo não está mais disponível", async () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+    vi.mocked(refreshGroup).mockRejectedValueOnce(
+      new LedgerError("group_not_found"),
+    );
 
-    await user.click(screen.getByText("Acerto"));
+    render(<GroupDetailContent groupId={groupId} />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId("settlement-view")).toBeTruthy();
-    });
-  });
-
-  it("shows invite button for group creator", () => {
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-    expect(screen.getByText("Convidar")).toBeTruthy();
-  });
-
-  it("shows invite link button for group creator", () => {
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-    expect(screen.getByLabelText("Compartilhar convite")).toBeTruthy();
-  });
-
-  it("shows empty state with CTA when no expenses", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData({ expenses: [] })} />);
-
-    await user.click(screen.getByText("Contas"));
-
-    expect(screen.getByText("Nenhuma conta ainda")).toBeTruthy();
     expect(
-      screen.getByText(
-        "Adiciona uma conta pra dividir com o grupo. Pode ser um jantar, mercado, ou qualquer gasto compartilhado.",
-      ),
-    ).toBeTruthy();
+      await screen.findByText("Esse grupo não está mais disponível"),
+    ).toBeInTheDocument();
   });
 
-  it("shows empty state when no settlements", async () => {
-    const user = userEvent.setup();
-    mockUseGroupFinances.state = {
-      phase: "ready",
-      snapshot: { balances: [], settlements: [], participants: [] },
-    };
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
+  it("mostra toast de erro para falhas não relacionadas à associação", async () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+    vi.mocked(refreshGroup).mockRejectedValueOnce(new Error("network"));
 
-    await user.click(screen.getByText("Pagamentos"));
+    render(<GroupDetailContent groupId={groupId} />);
 
     await waitFor(() => {
-      expect(screen.getByText("Nenhum pagamento ainda")).toBeTruthy();
-    });
-    expect(
-      screen.getByText(
-        "Quando alguém pagar uma dívida do grupo, o registro aparece aqui.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("shows new expense button in contas tab", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-
-    await user.click(screen.getByText("Contas"));
-
-    expect(screen.getByText("Nova conta")).toBeTruthy();
-  });
-
-  it("shows confirmation dialog when clicking remove member", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-
-    const removeButtons = screen.getAllByRole("button").filter(
-      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
-    );
-    expect(removeButtons.length).toBeGreaterThan(0);
-
-    await user.click(removeButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Remover membro")).toBeTruthy();
-    });
-    expect(screen.getByText("Cancelar")).toBeTruthy();
-    expect(screen.getByText("Remover")).toBeTruthy();
-    expect(mockRpcFn).not.toHaveBeenCalled();
-  });
-
-  it("calls remove_group_member RPC after confirming removal", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-
-    const removeButtons = screen.getAllByRole("button").filter(
-      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
-    );
-    await user.click(removeButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Remover membro")).toBeTruthy();
-    });
-
-    await user.click(screen.getByText("Remover"));
-
-    await waitFor(() => {
-      expect(mockRpcFn).toHaveBeenCalledWith("remove_group_member", {
-        p_group_id: "group-1",
-        p_user_id: "user-2",
-      });
+      expect(toast.error).toHaveBeenCalled();
     });
   });
 
-  it("does not call RPC when cancelling removal", async () => {
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
+  it("renderiza header, saldos, contas e membros a partir do snapshot", () => {
+    seedLoaded();
 
-    const removeButtons = screen.getAllByRole("button").filter(
-      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
-    );
-    await user.click(removeButtons[0]);
+    render(<GroupDetailContent groupId={groupId} />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Remover membro")).toBeTruthy();
-    });
+    expect(screen.getAllByText("Viagem").length).toBeGreaterThan(0);
+    expect(screen.getByText(/2 membros/)).toBeInTheDocument();
+    expect(screen.getByText("Saldos")).toBeInTheDocument();
+    expect(screen.getByTestId("settlement-stub")).toBeInTheDocument();
 
-    await user.click(screen.getByText("Cancelar"));
+    const props = settlementProps.at(-1)!;
+    expect(props.groupId).toBe(groupId);
+    expect(props.meId).toBe(me.id);
+    expect(props.rows).toEqual([
+      expect.objectContaining({
+        counterpartyName: "Carol Souza",
+        amountCents: 5000,
+        direction: "owes",
+      }),
+    ]);
 
-    expect(mockRpcFn).not.toHaveBeenCalled();
+    expect(screen.getByText("Contas")).toBeInTheDocument();
+    expect(screen.getByText("Jantar")).toBeInTheDocument();
+    expect(screen.getByText("Membros")).toBeInTheDocument();
+    expect(screen.getByText("Pendente")).toBeInTheDocument();
+    expect(screen.getByText("Convidado")).toBeInTheDocument();
   });
 
-  it("shows per-member balance in members tab", () => {
-    const [userA, userB] = ["user-1", "user-2"].sort();
-    const sign = userA === "user-2" ? 1 : -1;
-    mockUseGroupFinances.state = {
-      phase: "ready",
-      snapshot: {
-        balances: [{ groupId: "group-1", userA, userB, amountCents: sign * 1500, updatedAt: "" }],
-        settlements: [],
-        participants: [],
-      },
-    };
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
+  it("abre o modal de convite pelo link a partir do header", async () => {
+    seedLoaded();
 
-    expect(screen.getByText("te deve")).toBeTruthy();
-    expect(screen.getByText(/15,00/)).toBeTruthy();
-  });
+    render(<GroupDetailContent groupId={groupId} />);
 
-  it("shows toast error when removing member with outstanding balance", async () => {
-    const toast = await import("react-hot-toast");
-    mockRpcResult = {
-      data: null,
-      error: { message: "has_outstanding_balance: member has unsettled debts" },
-    };
+    expect(screen.queryByTestId("invite-modal-stub")).not.toBeInTheDocument();
 
-    const user = userEvent.setup();
-    render(<GroupDetailContent initialData={buildDefaultData()} />);
-
-    const removeButtons = screen.getAllByRole("button").filter(
-      (btn) => btn.querySelector("svg.lucide-trash-2") !== null,
+    await userEvent.click(
+      screen.getByRole("button", { name: "Compartilhar convite" }),
     );
 
-    await user.click(removeButtons[0]);
-    await waitFor(() => {
-      expect(screen.getByText("Remover membro")).toBeTruthy();
-    });
-    await user.click(screen.getByText("Remover"));
-
-    await waitFor(() => {
-      expect(toast.default.error).toHaveBeenCalledWith(
-        "Não é possível remover: este membro possui débitos pendentes no grupo.",
-      );
-    });
+    expect(screen.getByTestId("invite-modal-stub")).toBeInTheDocument();
+    const props = inviteModalProps.at(-1)!;
+    expect(props.groupId).toBe(groupId);
+    expect(props.groupName).toBe("Viagem");
   });
 
-  it("renders without invite buttons when user is not creator or accepted member", () => {
-    const data = buildDefaultData({
-      creatorId: "someone-else",
-      members: [
-        {
-          userId: "someone-else",
-          status: "accepted",
-          profile: { id: "someone-else", handle: "creator", name: "Creator", avatarUrl: undefined },
-          invitedBy: "someone-else",
-        },
-        {
-          userId: "user-1",
-          status: "invited",
-          profile: { id: "user-1", handle: "alice", name: "Alice Test", avatarUrl: undefined },
-          invitedBy: "someone-else",
-        },
-      ],
-    });
-    render(<GroupDetailContent initialData={data} />);
+  it("abre o painel de convite por handle a partir do header", async () => {
+    seedLoaded();
 
-    expect(screen.queryByText("Convidar")).toBeNull();
-  });
-  describe("guest delivery control", () => {
-    const pendingGuest = (overrides: {
-      id?: string;
-      creatorId?: string;
-      status?: ExpenseStatus;
-    } = {}): UnclaimedGuest => ({
-      id: "g1",
-      expenseId: "exp-1",
-      displayName: "Maria",
-      creatorId: "user-1",
-      status: "active",
-      expenseTitle: "Almoço",
-      ...overrides,
-    });
+    render(<GroupDetailContent groupId={groupId} />);
 
-    // Default data has no unclaimed guests, so the only "Convidar" is the
-    // member-invite button (asserted elsewhere). With a creator+active guest,
-    // the per-expense delivery control adds a second one.
-    it("shows the delivery control for the expense creator on an active expense", () => {
-      render(
-        <GroupDetailContent
-          initialData={buildDefaultData({ unclaimedGuests: [pendingGuest()] })}
-        />,
-      );
-      expect(screen.getAllByText("Convidar").length).toBe(2);
-    });
+    await userEvent.click(screen.getByRole("button", { name: /Convidar/ }));
 
-    it("hides the delivery control when the guest's expense is not active", () => {
-      render(
-        <GroupDetailContent
-          initialData={buildDefaultData({
-            unclaimedGuests: [pendingGuest({ status: "settled" })],
-          })}
-        />,
-      );
-      expect(screen.getAllByText("Convidar").length).toBe(1);
-    });
-
-    it("hides the delivery control when the current user did not create the expense", () => {
-      // user-1 is the group creator (so the member-invite button still shows)
-      // but did not create this expense, so no guest delivery control.
-      render(
-        <GroupDetailContent
-          initialData={buildDefaultData({
-            unclaimedGuests: [pendingGuest({ creatorId: "user-2" })],
-          })}
-        />,
-      );
-      expect(screen.getAllByText("Convidar").length).toBe(1);
-    });
+    expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
   });
 });

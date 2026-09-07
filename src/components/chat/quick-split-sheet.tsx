@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
 import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
-import type { SplitType, UserProfile } from "@/types";
+import type { SplitType } from "@/types";
+import type { UserProfile } from "@/types/ledger";
 
 export type QuickSplitStatus = "idle" | "confirming" | "confirmed" | "error";
 

@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { userAlice, userBob, userCarlos } from "@/test/fixtures";
+import {
+  makeExpenseVersion as makeVersion,
+  makeGuestParticipant,
+  makeGroupMember as makeMember,
+  makeUserParticipant,
+  userAlice,
+  userBob,
+  userCarlos,
+} from "@/test/fixtures";
 import { useBillStore, _testGetCacheState, selectPreviewDebts } from "./bill-store";
+import type { ExpenseDetail } from "@/types/ledger";
 
 function setup() {
   const s = useBillStore.getState();
@@ -1032,35 +1041,6 @@ describe("participant and guest removal flows", () => {
     expect(splits.find((s) => s.userId === "user-carlos")).toBeUndefined();
   });
 
-  it("does not remove a protected claimant and leaves the rest of state untouched (#495 item 24)", () => {
-    setup().createExpense("Test", "single_amount");
-    useBillStore.getState().updateExpense({ totalAmountInput: 10000 });
-    useBillStore.getState().addParticipant(userBob);
-    useBillStore.getState().splitBillEqually(["user-alice", "user-bob"]);
-    useBillStore.getState().setPayerFull("user-bob");
-    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
-    const before = useBillStore.getState();
-
-    useBillStore.getState().removeParticipant("user-bob");
-
-    const after = useBillStore.getState();
-    expect(after.participants).toEqual(before.participants);
-    expect(after.billSplits).toEqual(before.billSplits);
-    expect(after.payers).toEqual(before.payers);
-    expect(after.participants.map((p) => p.id)).toContain("user-bob");
-  });
-
-  it("removes an ordinary participant normally even when a different user is protected", () => {
-    setup().createExpense("Test", "itemized");
-    useBillStore.getState().addParticipant(userBob);
-    useBillStore.getState().addParticipant(userCarlos);
-    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
-
-    useBillStore.getState().removeParticipant("user-carlos");
-
-    const { participants } = useBillStore.getState();
-    expect(participants.map((p) => p.id)).toEqual(["user-alice", "user-bob"]);
-  });
 
   it("guest removal then re-add produces clean state with no stale references", () => {
     setup().createExpense("Test", "single_amount");
@@ -1143,80 +1123,6 @@ describe("createExpenseFromDm", () => {
   });
 });
 
-describe("hydrateFromServer draftClaimProtectedUserIds (#495 item 24)", () => {
-  it("populates draftClaimProtectedUserIds from the server snapshot", () => {
-    setup();
-    useBillStore.getState().hydrateFromServer({
-      expense: {
-        id: "exp-1",
-        groupId: "group-1",
-        creatorId: "user-alice",
-        expenseType: "single_amount",
-        title: "Jantar",
-        totalAmount: 10000,
-        serviceFeePercent: 0,
-        serviceFeeBasisPoints: 0,
-        fixedFees: 0,
-        status: "draft",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-      items: [],
-      participants: [userAlice, userBob],
-      guests: [],
-      payers: [],
-      billSplits: [],
-      draftClaimProtectedUserIds: ["user-bob"],
-    });
-
-    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual(["user-bob"]);
-  });
-
-  it("defaults to an empty array when the field is omitted", () => {
-    setup();
-    useBillStore.getState().hydrateFromServer({
-      expense: {
-        id: "exp-1",
-        groupId: "group-1",
-        creatorId: "user-alice",
-        expenseType: "single_amount",
-        title: "Jantar",
-        totalAmount: 10000,
-        serviceFeePercent: 0,
-        serviceFeeBasisPoints: 0,
-        fixedFees: 0,
-        status: "draft",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      },
-      items: [],
-      participants: [userAlice],
-      guests: [],
-      payers: [],
-      billSplits: [],
-    });
-
-    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
-  });
-
-  it("reset() clears draftClaimProtectedUserIds", () => {
-    setup();
-    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
-
-    useBillStore.getState().reset();
-
-    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
-  });
-
-  it("createExpense() clears a stale draftClaimProtectedUserIds from a prior session", () => {
-    setup();
-    useBillStore.setState({ draftClaimProtectedUserIds: ["user-bob"] });
-
-    useBillStore.getState().createExpense("New", "single_amount");
-
-    expect(useBillStore.getState().draftClaimProtectedUserIds).toEqual([]);
-  });
-});
 
 describe("hydrateFromChatDraft", () => {
   it("creates a single_amount expense with parsed data", () => {
@@ -1516,5 +1422,254 @@ describe("consumption memoization", () => {
 
     expect(s.wouldProduceNoEdges()).toBe(true);
     expect(_testGetCacheState().hasCachedResult).toBe(true);
+  });
+});
+
+describe("hydrateFromDetail", () => {
+  it("hydrates an itemized detail with participants, guest, items, payers and occurredOn", () => {
+    setup();
+    const current = makeVersion({
+      merchantName: "Cantina do Zé",
+      payload: {
+        items: [
+          { description: "Pizza", quantityMilliunits: 1000, unitPriceCents: 10000, totalPriceCents: 10000 },
+        ],
+        participants: [
+          { kind: "user", userId: "user-alice" },
+          { kind: "guest", guestId: "guest-uuid-1", displayName: "Maria" },
+        ],
+        shares: [5500, 5500],
+        payers: [{ participantIndex: 0, amountCents: 11000 }],
+        itemAssignments: [
+          { itemIndex: 0, participantIndex: 0, amountCents: 5000 },
+          { itemIndex: 0, participantIndex: 1, amountCents: 5000 },
+        ],
+      },
+    });
+    const detail: ExpenseDetail = {
+      expense: {
+        id: "exp-detail-1",
+        groupId: "group-1",
+        creatorId: "user-alice",
+        status: "active",
+        currentVersionNo: 2,
+        occurredOn: "2026-08-30",
+        createdAt: "2026-08-30T10:00:00Z",
+        deletedAt: null,
+        deletedBy: null,
+      },
+      current,
+      versions: [current],
+      participants: [
+        makeUserParticipant(0, 5500, 11000),
+        makeGuestParticipant(1, 5500),
+      ],
+      group: { id: "group-1", name: "Amigos", kind: "group" },
+    };
+
+    useBillStore.getState().hydrateFromDetail(detail, [makeMember("user-alice", "Alice Silva")]);
+
+    const state = useBillStore.getState();
+    expect(state.expense).toMatchObject({
+      id: "exp-detail-1",
+      groupId: "group-1",
+      title: "Jantar",
+      merchantName: "Cantina do Zé",
+      totalAmount: 11000,
+      serviceFeePercent: 10,
+      serviceFeeBasisPoints: 1000,
+      status: "active",
+    });
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]).toMatchObject({ description: "Pizza", quantity: 1000, totalPriceCents: 10000 });
+    expect(state.items[0].id).toMatch(/^local_/);
+    expect(state.participants.map((p) => p.id)).toEqual(["user-alice"]);
+    expect(state.guests).toEqual([{ id: "guest-uuid-1", name: "Maria", remoteId: "guest-uuid-1" }]);
+    expect(state.payers).toEqual([{ expenseId: "exp-detail-1", userId: "user-alice", amountCents: 11000 }]);
+    expect(state.splits).toHaveLength(2);
+    expect(state.splits.map((s) => [s.userId, s.computedAmountCents])).toEqual([
+      ["user-alice", 5000],
+      ["guest-uuid-1", 5000],
+    ]);
+    expect(state.billSplits).toEqual([]);
+    expect(state.totalAmountInput).toBe(0);
+    expect(state.occurredOn).toBe("2026-08-30");
+    expect(state.getParticipantTotal("guest-uuid-1")).toBe(5500);
+  });
+
+  it("hydrates a single_amount detail into billSplits and totalAmountInput", () => {
+    setup();
+    const current = makeVersion({
+      occurredOn: "2026-09-02",
+      title: "Aluguel",
+      merchantName: null,
+      expenseType: "single_amount",
+      totalCents: 10000,
+      serviceFeeBasisPoints: 0,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: "user-alice" },
+          { kind: "user", userId: "user-bob" },
+        ],
+        shares: [4000, 6000],
+        payers: [{ participantIndex: 0, amountCents: 10000 }],
+        itemAssignments: null,
+      },
+    });
+    const detail: ExpenseDetail = {
+      expense: {
+        id: "exp-detail-2",
+        groupId: "group-2",
+        creatorId: "user-alice",
+        status: "active",
+        currentVersionNo: 1,
+        occurredOn: "2026-09-02",
+        createdAt: "2026-09-02T10:00:00Z",
+        deletedAt: null,
+        deletedBy: null,
+      },
+      current,
+      versions: [current],
+      participants: [
+        makeUserParticipant(0, 4000, 10000),
+        makeUserParticipant(1, 6000, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null }),
+      ],
+      group: { id: "group-2", name: "Casa", kind: "group" },
+    };
+
+    useBillStore.getState().hydrateFromDetail(detail, []);
+
+    const state = useBillStore.getState();
+    expect(state.totalAmountInput).toBe(10000);
+    expect(state.splits).toEqual([]);
+    expect(state.billSplits.map((b) => [b.userId, b.computedAmountCents])).toEqual([
+      ["user-alice", 4000],
+      ["user-bob", 6000],
+    ]);
+    expect(state.occurredOn).toBe("2026-09-02");
+    expect(state.getParticipantTotal("user-bob")).toBe(6000);
+  });
+
+  it("distributes items equally when an itemized detail has no itemAssignments", () => {
+    setup();
+    const current = makeVersion({
+      totalCents: 5000,
+      serviceFeeBasisPoints: 0,
+      payload: {
+        items: [
+          { description: "Petisco", quantityMilliunits: 1000, unitPriceCents: 5000, totalPriceCents: 5000 },
+        ],
+        participants: [
+          { kind: "user", userId: "user-alice" },
+          { kind: "user", userId: "user-bob" },
+        ],
+        shares: [2500, 2500],
+        payers: [{ participantIndex: 0, amountCents: 5000 }],
+        itemAssignments: null,
+      },
+    });
+    const detail: ExpenseDetail = {
+      expense: {
+        id: "exp-detail-3",
+        groupId: "group-1",
+        creatorId: "user-alice",
+        status: "active",
+        currentVersionNo: 1,
+        occurredOn: "2026-08-30",
+        createdAt: "2026-08-30T10:00:00Z",
+        deletedAt: null,
+        deletedBy: null,
+      },
+      current,
+      versions: [current],
+      participants: [
+        makeUserParticipant(0, 2500, 5000),
+        makeUserParticipant(1, 2500, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null }),
+      ],
+      group: { id: "group-1", name: "Amigos", kind: "group" },
+    };
+
+    useBillStore.getState().hydrateFromDetail(detail, []);
+
+    const state = useBillStore.getState();
+    expect(state.splits.map((s) => [s.userId, s.computedAmountCents])).toEqual([
+      ["user-alice", 2500],
+      ["user-bob", 2500],
+    ]);
+    expect(state.getParticipantTotal("user-alice")).toBe(2500);
+  });
+
+  it("backfills a participant profile from the group members when the detail snapshot has none", () => {
+    setup();
+    const current = makeVersion({
+      totalCents: 1000,
+      payload: {
+        items: [],
+        participants: [{ kind: "user", userId: "user-bob" }],
+        shares: [1000],
+        payers: [{ participantIndex: 0, amountCents: 1000 }],
+        itemAssignments: null,
+      },
+    });
+    const detail: ExpenseDetail = {
+      expense: {
+        id: "exp-detail-4",
+        groupId: "group-1",
+        creatorId: "user-bob",
+        status: "active",
+        currentVersionNo: 1,
+        occurredOn: "2026-08-30",
+        createdAt: "2026-08-30T10:00:00Z",
+        deletedAt: null,
+        deletedBy: null,
+      },
+      current,
+      versions: [current],
+      participants: [{ participantIndex: 0, kind: "user", shareCents: 1000, paidCents: 1000, user: null, guest: null }],
+      group: { id: "group-1", name: "Amigos", kind: "group" },
+    };
+
+    useBillStore.getState().hydrateFromDetail(detail, [makeMember("user-bob", "Bob Santos")]);
+
+    expect(useBillStore.getState().participants[0]).toMatchObject({ id: "user-bob", name: "Bob Santos", handle: "bob" });
+  });
+});
+
+describe("occurredOn and draft persistence", () => {
+  it("setOccurredOn stores the wizard date and reset clears it", () => {
+    setup();
+    useBillStore.getState().setOccurredOn("2026-09-06");
+    expect(useBillStore.getState().occurredOn).toBe("2026-09-06");
+
+    useBillStore.getState().reset();
+    expect(useBillStore.getState().occurredOn).toBeNull();
+  });
+
+  it("createExpense starts a new draft with a null occurredOn", () => {
+    setup();
+    useBillStore.getState().setOccurredOn("2026-09-06");
+
+    useBillStore.getState().createExpense("Nova", "single_amount");
+
+    expect(useBillStore.getState().occurredOn).toBeNull();
+  });
+
+  it("persists the wizard draft to localStorage under dividimos-draft and clears it on reset", () => {
+    setup();
+    useBillStore.getState().createExpense("Rascunho", "single_amount");
+    useBillStore.getState().updateExpense({ totalAmountInput: 4200 });
+    useBillStore.getState().setOccurredOn("2026-09-06");
+
+    const persisted = JSON.parse(localStorage.getItem("dividimos-draft") ?? "{}");
+    expect(persisted.version).toBe(1);
+    expect(persisted.state.occurredOn).toBe("2026-09-06");
+    expect(persisted.state.totalAmountInput).toBe(4200);
+    expect(persisted.state.currentUser).toBeUndefined();
+
+    useBillStore.getState().reset();
+    const cleared = JSON.parse(localStorage.getItem("dividimos-draft") ?? "{}");
+    expect(cleared.state.expense).toBeNull();
+    expect(cleared.state.occurredOn).toBeNull();
   });
 });

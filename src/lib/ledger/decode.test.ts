@@ -67,6 +67,7 @@ describe("decodeBootstrap", () => {
             netCents: 1500,
           },
         ],
+        guests: [{ id: "guest-1", displayName: "Zé", expenseId: "exp-1" }],
         pendingSettlements: [
           {
             id: "settle-1",

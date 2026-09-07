@@ -7,6 +7,7 @@ import type {
   Conversation,
   EventKind,
   Group,
+  GroupGuest,
   GroupEvent,
   GroupKind,
   GroupMember,
@@ -488,10 +489,29 @@ export function decodeChatLastMessage(
   return ok({ content: content.value, senderId: sid.value, createdAt: ca.value });
 }
 
+const GROUP_GUEST_KEYS = ["id", "displayName", "expenseId"] as const;
+
+export function decodeGroupGuest(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<GroupGuest, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, GROUP_GUEST_KEYS, path);
+  if (!k.ok) return k;
+  const id = str(raw.id, [...path, "id"]);
+  if (!id.ok) return id;
+  const displayName = str(raw.displayName, [...path, "displayName"]);
+  if (!displayName.ok) return displayName;
+  const expenseId = str(raw.expenseId, [...path, "expenseId"]);
+  if (!expenseId.ok) return expenseId;
+  return ok({ id: id.value, displayName: displayName.value, expenseId: expenseId.value });
+}
+
 const GROUP_SNAPSHOT_KEYS = [
   "group",
   "members",
   "balances",
+  "guests",
   "pendingSettlements",
   "recentExpenses",
   "lastEventId",
@@ -515,6 +535,8 @@ export function decodeGroupSnapshot(
   if (!members.ok) return members;
   const balances = arrayOf(raw.balances, [...path, "balances"], decodeBalanceRow);
   if (!balances.ok) return balances;
+  const guests = arrayOf(raw.guests, [...path, "guests"], decodeGroupGuest);
+  if (!guests.ok) return guests;
   const pendingSettlements = arrayOf(
     raw.pendingSettlements,
     [...path, "pendingSettlements"],
@@ -546,6 +568,7 @@ export function decodeGroupSnapshot(
     group: group.value,
     members: members.value,
     balances: balances.value,
+    guests: guests.value,
     pendingSettlements: pendingSettlements.value,
     recentExpenses: recentExpenses.value,
     lastEventId: lastEventId.value,

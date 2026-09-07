@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import toast from "react-hot-toast";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SendMessageButton } from "./profile-actions";
 
@@ -7,9 +8,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-const getOrCreateDmGroupMock = vi.fn();
-vi.mock("@/lib/supabase/dm-actions", () => ({
-  getOrCreateDmGroup: (...args: unknown[]) => getOrCreateDmGroupMock(...args),
+const getOrCreateDmMock = vi.fn();
+vi.mock("@/lib/sync/mutations-group", () => ({
+  getOrCreateDm: (...args: unknown[]) => getOrCreateDmMock(...args),
 }));
 
 vi.mock("react-hot-toast", () => ({
@@ -31,7 +32,7 @@ describe("SendMessageButton", () => {
   });
 
   it("creates a DM group and navigates on click", async () => {
-    getOrCreateDmGroupMock.mockResolvedValue({ groupId: "group-abc" });
+    getOrCreateDmMock.mockResolvedValue({ groupId: "group-abc", created: true });
 
     render(
       <SendMessageButton targetUserId="user-123" targetName="João" />,
@@ -40,7 +41,7 @@ describe("SendMessageButton", () => {
     fireEvent.click(screen.getByRole("button"));
 
     await waitFor(() => {
-      expect(getOrCreateDmGroupMock).toHaveBeenCalledWith("user-123");
+      expect(getOrCreateDmMock).toHaveBeenCalledWith("user-123");
     });
 
     await waitFor(() => {
@@ -49,12 +50,7 @@ describe("SendMessageButton", () => {
   });
 
   it("shows error toast on failure", async () => {
-    getOrCreateDmGroupMock.mockResolvedValue({
-      error: "Não autenticado",
-      code: "not_authenticated",
-    });
-
-    const toast = await import("react-hot-toast");
+    getOrCreateDmMock.mockRejectedValue(new Error("unauthenticated"));
 
     render(
       <SendMessageButton targetUserId="user-123" targetName="João" />,
@@ -63,17 +59,13 @@ describe("SendMessageButton", () => {
     fireEvent.click(screen.getByRole("button"));
 
     await waitFor(() => {
-      expect(toast.default.error).toHaveBeenCalledWith("Não autenticado");
+      expect(toast.error).toHaveBeenCalled();
     });
   });
 
   it("disables the button while loading", async () => {
-    let resolve: (v: unknown) => void;
-    getOrCreateDmGroupMock.mockReturnValue(
-      new Promise((r) => {
-        resolve = r;
-      }),
-    );
+    const { promise, resolve } = Promise.withResolvers<unknown>();
+    getOrCreateDmMock.mockReturnValue(promise);
 
     render(
       <SendMessageButton targetUserId="user-123" targetName="João" />,
@@ -86,6 +78,6 @@ describe("SendMessageButton", () => {
       expect(screen.getByText("Abrindo conversa...")).toBeInTheDocument();
     });
 
-    resolve!({ groupId: "group-abc" });
+    resolve({ groupId: "group-abc", created: true });
   });
 });

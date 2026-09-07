@@ -2,40 +2,50 @@ import { describe, it, expect, vi } from "vitest";
 import { SeedHelper, createSeedHelper } from "../../e2e/seed-helper";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-function mockQuery(data: unknown = null, error: unknown = null) {
-  const chain: Record<string, unknown> = {};
-  const methods = ["select", "insert", "update", "delete", "eq", "in", "neq", "single", "maybeSingle"];
-  for (const m of methods) {
-    chain[m] = vi.fn().mockReturnValue(chain);
-  }
-  chain.select = vi.fn().mockReturnValue({ ...chain, single: vi.fn().mockResolvedValue({ data, error }) });
-  chain.insert = vi.fn().mockReturnValue({ ...chain, select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data, error }) }) });
-  chain.delete = vi.fn().mockReturnValue({ ...chain, in: vi.fn().mockResolvedValue({ data, error }) });
-  chain.update = vi.fn().mockReturnValue({ ...chain, eq: vi.fn().mockResolvedValue({ data, error }) });
-  return chain;
-}
+type QueryResult = { data?: unknown; error?: unknown };
 
-function createMockAdmin(): SupabaseClient {
-  const fromResults: Record<string, ReturnType<typeof mockQuery>> = {};
+function createMockAdmin(
+  spec: {
+    selects?: Record<string, QueryResult>;
+    deletes?: Record<string, QueryResult>;
+  } = {},
+) {
+  const deletedTables: string[] = [];
 
-  return {
-    from: vi.fn((table: string) => {
-      if (!fromResults[table]) {
-        fromResults[table] = mockQuery();
-      }
-      return fromResults[table];
-    }),
+  const admin = {
+    from: vi.fn((table: string) => ({
+      select: () => ({
+        in: async () => spec.selects?.[table] ?? { data: [], error: null },
+      }),
+      delete: () => ({
+        in: async () => {
+          deletedTables.push(table);
+          return spec.deletes?.[table] ?? { data: null, error: null };
+        },
+      }),
+      update: () => ({ eq: async () => ({ data: null, error: null }) }),
+    })),
     auth: {
       admin: {
-        createUser: vi.fn(),
-        updateUserById: vi.fn(),
-        deleteUser: vi.fn(),
-        getUserById: vi.fn(),
-        generateLink: vi.fn(),
+        createUser: vi.fn().mockResolvedValue({
+          data: { user: { id: "user-1" } },
+          error: null,
+        }),
+        updateUserById: vi.fn().mockResolvedValue({ data: null, error: null }),
+        deleteUser: vi.fn().mockResolvedValue({ data: null, error: null }),
       },
     },
     rpc: vi.fn(),
   } as unknown as SupabaseClient;
+
+  return { admin, deletedTables };
+}
+
+function setEnv(): void {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
+  process.env.SUPABASE_JWT_SECRET =
+    "super-secret-jwt-token-with-at-least-32-characters-long";
 }
 
 describe("SeedHelper", () => {
@@ -47,130 +57,66 @@ describe("SeedHelper", () => {
       delete process.env.NEXT_PUBLIC_SUPABASE_URL;
       delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-      expect(() => new SeedHelper(createMockAdmin())).toThrow(
+      expect(() => new SeedHelper(createMockAdmin().admin)).toThrow(
         "NEXT_PUBLIC_SUPABASE_URL",
       );
 
       process.env.NEXT_PUBLIC_SUPABASE_URL = origUrl;
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = origKey;
     });
-
-    it("creates instance when env vars are set", () => {
-      process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
-
-      const helper = new SeedHelper(createMockAdmin());
-      expect(helper).toBeInstanceOf(SeedHelper);
-    });
   });
 
-  describe("equalSplit", () => {
-    it("splits evenly when divisible", () => {
-      process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
-
-      const admin = createMockAdmin();
-      const helper = new SeedHelper(admin);
-      const h = helper as unknown as {
-        equalSplit(participantIds: string[], totalAmount: number): Record<string, number>;
-      };
-
-      const shares = h.equalSplit(["user-a", "user-b"], 10000);
-
-      expect(Object.values(shares)).toHaveLength(2);
-      expect(shares["user-a"]).toBe(5000);
-      expect(shares["user-b"]).toBe(5000);
-    });
-
-    it("handles remainder cents correctly", () => {
-      process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
-
-      const admin = createMockAdmin();
-      const helper = new SeedHelper(admin);
-      const h = helper as unknown as {
-        equalSplit(participantIds: string[], totalAmount: number): Record<string, number>;
-      };
-
-      const shares = h.equalSplit(["user-a", "user-b", "user-c"], 10001);
-
-      const amounts = Object.values(shares);
-      expect(amounts).toHaveLength(3);
-      expect(amounts.slice().sort()).toEqual([3333, 3334, 3334]);
-      expect(amounts.reduce((a, b) => a + b, 0)).toBe(10001);
-    });
-  });
-
-  describe("cleanup order", () => {
-    it("calls delete in correct dependency order", async () => {
-      process.env.NEXT_PUBLIC_SUPABASE_URL = "http://localhost:54321";
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon-key";
-
-      const admin = createMockAdmin();
-      const deleteCalls: string[] = [];
-
-      (admin.from as ReturnType<typeof vi.fn>).mockImplementation((table: string) => ({
-        delete: vi.fn().mockImplementation(() => {
-          deleteCalls.push(table);
-          return {
-            in: vi.fn().mockResolvedValue({ data: null, error: null }),
-          };
-        }),
-        insert: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: { id: "test-id", name: "test" },
-              error: null,
-            }),
-          }),
-        }),
-        update: vi.fn().mockReturnValue({
-          eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-        }),
-      }));
-
-      (admin.auth.admin.createUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-        data: { user: { id: "user-1" } },
-        error: null,
-      });
-      (admin.auth.admin.updateUserById as ReturnType<typeof vi.fn>).mockResolvedValue({
-        data: { user: { id: "user-1" } },
-        error: null,
-      });
-      (admin.auth.admin.deleteUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-        data: null,
-        error: null,
+  describe("cleanup", () => {
+    it("deletes the groups discovered for its own users before the users", async () => {
+      setEnv();
+      const { admin, deletedTables } = createMockAdmin({
+        selects: {
+          group_members: { data: [{ group_id: "group-1" }], error: null },
+          groups: { data: [{ id: "group-2" }], error: null },
+        },
       });
 
       const helper = new SeedHelper(admin);
-
-      const h = helper as unknown as {
-        userIds: string[];
-        groupIds: string[];
-        expenseIds: string[];
-        settlementIds: string[];
-      };
-      h.userIds = ["user-1"];
-      h.groupIds = ["group-1"];
-      h.expenseIds = ["exp-1"];
-      h.settlementIds = ["settle-1"];
-
+      await helper.createUser();
       await helper.cleanup();
 
-      expect(deleteCalls).toEqual([
-        "settlement_operations",
-        "settlements",
-        "expense_payers",
-        "expense_shares",
-        "expense_items",
-        "balances",
-        "expenses",
-        "group_members",
-        "groups",
-        "users",
-      ]);
-
+      expect(deletedTables).toEqual(["groups", "users"]);
       expect(admin.auth.admin.deleteUser).toHaveBeenCalledWith("user-1");
+    });
+
+    it("throws with operation context instead of swallowing a delete failure", async () => {
+      setEnv();
+      const { admin } = createMockAdmin({
+        selects: {
+          group_members: { data: [{ group_id: "group-1" }], error: null },
+        },
+        deletes: {
+          groups: { data: null, error: { message: "fk violation" } },
+        },
+      });
+
+      const helper = new SeedHelper(admin);
+      await helper.createUser();
+
+      await expect(helper.cleanup()).rejects.toThrow(
+        /group delete failed: fk violation/,
+      );
+    });
+
+    it("throws when the membership lookup fails", async () => {
+      setEnv();
+      const { admin } = createMockAdmin({
+        selects: {
+          group_members: { data: null, error: { message: "timeout" } },
+        },
+      });
+
+      const helper = new SeedHelper(admin);
+      await helper.createUser();
+
+      await expect(helper.cleanup()).rejects.toThrow(
+        /group membership query failed: timeout/,
+      );
     });
   });
 

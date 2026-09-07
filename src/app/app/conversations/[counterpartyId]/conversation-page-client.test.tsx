@@ -1,215 +1,114 @@
-import React from "react";
-import toast from "react-hot-toast";
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import {
-  ConversationPageClient,
-  type ConversationInitialData,
-} from "./conversation-page-client";
-import { buildChatExpenseConfirmationRequest } from "@/lib/supabase/chat-confirm";
-import type { ChatMessageType, UserProfile } from "@/types";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConversationPageClient } from "./conversation-page-client";
+import { useAppStore } from "@/stores/app-store";
+import type { ChatMessage, GroupEvent, GroupSnapshot, Me } from "@/types/ledger";
+
+const mutations = vi.hoisted(() => ({
+  sendMessage: vi.fn().mockResolvedValue({ id: "msg-ack" }),
+  markRead: vi.fn().mockResolvedValue(undefined),
+  createExpense: vi.fn().mockResolvedValue({ expenseId: "exp-ack" }),
+}));
+vi.mock("@/lib/sync/mutations", () => mutations);
+
+const mutationsGroup = vi.hoisted(() => ({
+  getOrCreateDm: vi.fn().mockResolvedValue({ groupId: "dm-1", created: false }),
+  acceptInvitation: vi.fn().mockResolvedValue({ eventId: 1 }),
+  declineInvitation: vi.fn().mockResolvedValue({ eventId: 2 }),
+}));
+vi.mock("@/lib/sync/mutations-group", () => mutationsGroup);
+
+const refresh = vi.hoisted(() => ({
+  loadConversation: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/sync/refresh", () => refresh);
+
+const realtime = vi.hoisted(() => ({
+  subscribeChat: vi.fn(() => vi.fn()),
+}));
+vi.mock("@/lib/sync/realtime", () => realtime);
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }));
 
-vi.mock("@/hooks/use-realtime-chat", () => ({
-  useRealtimeChat: vi.fn(),
-}));
-
-vi.mock("@/lib/supabase/chat-actions", () => ({
-  loadConversationMessages: vi.fn(() =>
-    Promise.resolve({ messages: [], expenses: new Map(), settlements: new Map(), profiles: new Map() }),
-  ),
-  sendChatMessage: vi.fn(() => Promise.resolve({ error: "not implemented" })),
-}));
-
-vi.mock("@/lib/supabase/chat-confirm", () => ({
-  buildChatExpenseConfirmationRequest: vi.fn(() => ({ error: "not implemented" })),
-}));
-
-vi.mock("@/lib/chat-confirmation-intent", () => ({
-  confirmChatExpenseWithIntent: vi.fn(() =>
-    Promise.resolve({ status: "error", error: "not implemented", code: "unknown" }),
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
   ),
 }));
 
-vi.mock("@/lib/push/push-notify", () => ({
-  notifyDmTextMessage: vi.fn(() => Promise.resolve()),
-  notifyExpenseActivated: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock("@/lib/supabase/unread-actions", () => ({
-  markConversationRead: vi.fn(() => Promise.resolve()),
-}));
-
-const chainEq = () => {
-  const obj: Record<string, unknown> = {};
-  obj.eq = () => obj;
-  obj.in = () => obj;
-  obj.then = (resolve: (v: { error: null }) => void) => { resolve({ error: null }); return obj; };
-  return obj;
-};
-
-const mockRpcFn = vi.fn(() =>
-  Promise.resolve<{ data: null; error: { message: string } | null }>({
-    data: null,
-    error: null,
-  }),
-);
-
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    from: () => ({
-      update: () => chainEq(),
-      delete: () => chainEq(),
-      select: () => ({
-        eq: () => ({
-          single: () => Promise.resolve({ data: null }),
-          in: () => Promise.resolve({ data: [] }),
-        }),
-        in: () => Promise.resolve({ data: [] }),
-      }),
-    }),
-    rpc: mockRpcFn,
-    auth: {
-      getUser: () => Promise.resolve({ data: { user: { id: "user-1" } } }),
-    },
-  }),
-}));
-
-vi.mock("react-hot-toast", () => ({
-  default: { success: vi.fn(), error: vi.fn() },
-}));
-
-vi.mock("@/lib/supabase/expense-mappers", () => ({
-  expenseRowToExpense: vi.fn(),
-  settlementRowToSettlement: vi.fn(),
-}));
-
-vi.mock("@/components/chat/conversation-header", () => ({
-  ConversationHeader: ({ counterparty, actions }: { counterparty: UserProfile; actions?: React.ReactNode }) => (
-    <div data-testid="conversation-header">{counterparty.name}{actions}</div>
-  ),
-}));
-
-vi.mock("@/components/chat/conversation-pay-button", () => ({
-  ConversationPayButton: () => <button data-testid="pay-button">Pagar</button>,
-}));
-
-vi.mock("@/components/chat/conversation-quick-actions", () => ({
-  ConversationQuickActions: ({ onCharge }: { onCharge: () => void }) => (
-    <div data-testid="quick-actions">
-      <button data-testid="open-quick-charge" onClick={onCharge}>
-        Cobrar
-      </button>
-    </div>
-  ),
-}));
-
-vi.mock("@/components/chat/quick-charge-sheet", () => ({
-  QuickChargeSheet: ({
-    onConfirm,
-  }: {
-    onConfirm: (result: {
-      title: string;
-      amountCents: number;
-      expenseType: "single_amount";
-      splitType: "equal";
-      items: [];
-      participants: { spokenName: string; matchedHandle: string; confidence: "high" }[];
-      payerHandle: string;
-      merchantName: null;
-      confidence: "high";
-    }) => void;
-  }) => (
-    <div data-testid="quick-charge-sheet">
-      <button
-        data-testid="quick-charge-self-paid"
-        onClick={() =>
-          onConfirm({
-            title: "Cobrança",
-            amountCents: 1001,
-            expenseType: "single_amount",
-            splitType: "equal",
-            items: [],
-            participants: [{ spokenName: "bob", matchedHandle: "bob", confidence: "high" }],
-            payerHandle: "SELF",
-            merchantName: null,
-            confidence: "high",
-          })
-        }
-      >
-        Self paid
-      </button>
-      <button
-        data-testid="quick-charge-counterparty-paid"
-        onClick={() =>
-          onConfirm({
-            title: "Cobrança",
-            amountCents: 1,
-            expenseType: "single_amount",
-            splitType: "equal",
-            items: [],
-            participants: [{ spokenName: "bob", matchedHandle: "bob", confidence: "high" }],
-            payerHandle: "bob",
-            merchantName: null,
-            confidence: "high",
-          })
-        }
-      >
-        Counterparty paid
-      </button>
-    </div>
-  ),
-}));
-
-vi.mock("@/components/chat/quick-split-sheet", () => ({
-  QuickSplitSheet: () => <div data-testid="quick-split-sheet" />,
-}));
-
-vi.mock("@/components/chat/chat-thread", () => ({
-  ChatThread: ({ messages }: { messages: unknown[] }) => (
-    <div data-testid="chat-thread">Messages: {messages.length}</div>
-  ),
-}));
-
-vi.mock("@/components/chat/chat-ai-input", () => ({
-  ChatAiInput: () => <div data-testid="chat-ai-input" />,
-}));
-
-const currentUser: UserProfile = {
-  id: "user-1",
+const me: Me = {
+  id: "user-me",
   handle: "alice",
-  name: "Alice",
-  avatarUrl: undefined,
+  name: "Alice Souza",
+  avatarUrl: null,
+  email: "alice@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
 };
 
-const counterparty: UserProfile = {
-  id: "user-2",
+const counterparty = {
+  id: "user-other",
   handle: "bob",
-  name: "Bob",
-  avatarUrl: undefined,
+  name: "Bob Silva",
+  avatarUrl: null,
 };
 
-function makeInitialData(overrides: Partial<ConversationInitialData> = {}): ConversationInitialData {
+function makeDmSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   return {
-    counterpartyId: "user-2",
-    currentUser,
-    groupId: "group-1",
-    counterparty,
-    thread: {
-      messages: [],
-      expenses: [],
-      settlements: [],
-      profiles: [["user-2", counterparty]],
+    group: {
+      id: "dm-1",
+      kind: "dm",
+      name: "Bob Silva",
+      creatorId: me.id,
+      dmUserA: me.id,
+      dmUserB: counterparty.id,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00Z",
     },
-    hasMore: false,
-    callerStatus: "accepted",
-    counterpartyStatus: "accepted",
-    error: null,
+    members: [
+      { groupId: "dm-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+      {
+        groupId: "dm-1",
+        userId: counterparty.id,
+        status: "accepted",
+        invitedBy: null,
+        acceptedAt: null,
+        user: counterparty,
+      },
+    ],
+    balances: [],
+    guests: [],
+    pendingSettlements: [],
+    recentExpenses: [],
+    lastEventId: 1,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
+}
+
+function seedDm(
+  snapshot: GroupSnapshot,
+  conversation: { messages: ChatMessage[]; events: GroupEvent[] },
+) {
+  useAppStore.setState({
+    hydrated: true,
+    me,
+    groups: { [snapshot.group.id]: snapshot },
+    groupOrder: [snapshot.group.id],
+    conversations: {
+      [snapshot.group.id]: {
+        messages: conversation.messages,
+        events: conversation.events,
+        oldestCursor: "2026-01-01T00:00:00Z",
+      },
+    },
+  });
 }
 
 describe("ConversationPageClient", () => {
@@ -217,240 +116,78 @@ describe("ConversationPageClient", () => {
     vi.clearAllMocks();
   });
 
-  it("renders chat thread with initial data", () => {
-    render(<ConversationPageClient initialData={makeInitialData()} />);
-
-    expect(screen.getByTestId("conversation-header")).toHaveTextContent("Bob");
-    expect(screen.getByTestId("chat-thread")).toHaveTextContent("Messages: 0");
-    expect(screen.getByTestId("chat-ai-input")).toBeInTheDocument();
-    expect(screen.getByTestId("quick-actions")).toBeInTheDocument();
-  });
-
-  it("renders error state with retry button", () => {
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ error: "Usuário não encontrado" })}
-      />,
-    );
-
-    expect(screen.getByText("Usuário não encontrado")).toBeInTheDocument();
-    expect(screen.getByText("Tentar novamente")).toBeInTheDocument();
-  });
-
-  it("renders invite acceptance UI when caller is invited", () => {
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ callerStatus: "invited" })}
-      />,
-    );
-
-    expect(screen.getByText("Aceitar convite")).toBeInTheDocument();
-    expect(screen.getByText("Recusar")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Esta conversa está pendente/),
-    ).toBeInTheDocument();
-  });
-
-  it("shows declined state after a successful decline click", async () => {
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ callerStatus: "invited" })}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Recusar"));
-
-    expect(mockRpcFn).toHaveBeenCalledWith("decline_group_invitation", {
-      p_group_id: "group-1",
-    });
-    await waitFor(() => {
-      expect(screen.getByText("Você recusou este convite.")).toBeInTheDocument();
-    });
-  });
-
-  it("keeps the invite pending and shows retryable feedback when decline is guard-rejected", async () => {
-    mockRpcFn.mockResolvedValueOnce({
-      data: null,
-      error: { message: "has_outstanding_balance: you have an unsettled balance in this group" },
-    });
-
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ callerStatus: "invited" })}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Recusar"));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.",
-      );
-    });
-    // The invite acceptance UI stays visible — never flipped to declined.
-    expect(screen.getByText("Aceitar convite")).toBeInTheDocument();
-  });
-
-  it("shows accepted state after a successful accept click", async () => {
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ callerStatus: "invited" })}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Aceitar convite"));
-
-    await waitFor(() => {
-      expect(mockRpcFn).toHaveBeenCalledWith("accept_group_invitation", {
-        p_group_id: "group-1",
-      });
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("chat-thread")).toBeInTheDocument();
-    });
-  });
-
-  it("keeps the invite pending and shows retryable feedback when accept fails", async () => {
-    mockRpcFn.mockResolvedValueOnce({
-      data: null,
-      error: { message: "not_invited: only a pending invitation can be accepted" },
-    });
-
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ callerStatus: "invited" })}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Aceitar convite"));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "Não foi possível aceitar o convite. Tente novamente.",
-      );
-    });
-    // The RLS-denied direct-update path used to flip to "accepted" UI
-    // even though the DB write silently failed. The RPC path surfaces
-    // failure and keeps the pending-invite UI visible for retry.
-    expect(screen.getByText("Aceitar convite")).toBeInTheDocument();
-  });
-
-  it("renders declined state", () => {
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ callerStatus: "declined" })}
-      />,
-    );
-
-    expect(screen.getByText("Você recusou este convite.")).toBeInTheDocument();
-  });
-
-  it("shows pending banner when counterparty has not accepted", () => {
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ counterpartyStatus: "invited" })}
-      />,
-    );
-
-    expect(
-      screen.getByText(/Aguardando @bob aceitar o convite/),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("pay-button")).not.toBeInTheDocument();
-  });
-
-  it("shows pay button when both parties accepted", () => {
-    render(<ConversationPageClient initialData={makeInitialData()} />);
-
-    expect(screen.getByTestId("pay-button")).toBeInTheDocument();
-  });
-
-  it("renders messages from SSR data", () => {
-    const message = {
-      id: "msg-1",
-      groupId: "group-1",
-      senderId: "user-1",
-      messageType: "text" as ChatMessageType,
-      content: "Hello!",
-      createdAt: "2026-01-01T00:00:00Z",
-      sender: currentUser,
+  it("timeline merges messages and events by createdAt", () => {
+    const message1: ChatMessage = {
+      id: "m-1",
+      clientId: "c-1",
+      groupId: "dm-1",
+      senderId: counterparty.id,
+      content: "Primeira mensagem",
+      createdAt: "2026-01-01T10:00:00Z",
+      sender: counterparty,
+    };
+    const event1: GroupEvent = {
+      id: 1,
+      groupId: "dm-1",
+      actorId: me.id,
+      kind: "expense_created",
+      expenseId: "e-1",
+      settlementId: null,
+      subjectUserId: null,
+      payload: { totalCents: 2000, title: "Café" },
+      createdAt: "2026-01-01T11:00:00Z",
+      actor: me,
+      expenseTitle: "Café",
+    };
+    const message2: ChatMessage = {
+      id: "m-2",
+      clientId: "c-2",
+      groupId: "dm-1",
+      senderId: me.id,
+      content: "Segunda mensagem",
+      createdAt: "2026-01-01T12:00:00Z",
+      sender: me,
     };
 
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({
-          thread: {
-            messages: [message],
-            expenses: [],
-            settlements: [],
-            profiles: [["user-1", currentUser], ["user-2", counterparty]],
-          },
-        })}
-      />,
-    );
-
-    expect(screen.getByTestId("chat-thread")).toHaveTextContent("Messages: 1");
-  });
-
-  it("does not render chat input when counterparty is pending", () => {
-    render(
-      <ConversationPageClient
-        initialData={makeInitialData({ counterpartyStatus: "invited" })}
-      />,
-    );
-
-    expect(screen.queryByTestId("chat-ai-input")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("quick-actions")).not.toBeInTheDocument();
-  });
-
-  it("returns null when counterparty or thread is missing", () => {
-    const { container } = render(
-      <ConversationPageClient
-        initialData={makeInitialData({ counterparty: null, thread: null, error: null })}
-      />,
-    );
-
-    expect(container.innerHTML).toBe("");
-  });
-
-  // -------------------------------------------------------------------------
-  // #474: Quick Charge must build exact 0/N shares, never an equal split.
-  // -------------------------------------------------------------------------
-
-  it("Quick Charge (self paid): builds exact shares actor=0, counterparty=N", async () => {
-    vi.mocked(buildChatExpenseConfirmationRequest).mockReturnValue({ error: "stop here" });
-
-    render(<ConversationPageClient initialData={makeInitialData()} />);
-
-    fireEvent.click(screen.getByTestId("open-quick-charge"));
-    fireEvent.click(screen.getByTestId("quick-charge-self-paid"));
-
-    await waitFor(() => {
-      expect(buildChatExpenseConfirmationRequest).toHaveBeenCalled();
+    seedDm(makeDmSnapshot(), {
+      messages: [message2, message1],
+      events: [event1],
     });
 
-    const call = vi.mocked(buildChatExpenseConfirmationRequest).mock.calls[0][0];
-    expect(call.precomputedShares).toEqual([
-      { userId: "user-1", shareAmountCents: 0 },
-      { userId: "user-2", shareAmountCents: 1001 },
-    ]);
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    expect(screen.getByText("Primeira mensagem")).toBeDefined();
+    expect(screen.getByText("Café")).toBeDefined();
+    expect(screen.getByText("Segunda mensagem")).toBeDefined();
+
+    const text1 = screen.getByText("Primeira mensagem");
+    const text2 = screen.getByText("Segunda mensagem");
+    expect(text1.compareDocumentPosition(text2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("Quick Charge (counterparty paid): builds exact shares actor=N, counterparty=0, preserving a one-cent liability", async () => {
-    vi.mocked(buildChatExpenseConfirmationRequest).mockReturnValue({ error: "stop here" });
+  it("sending a message calls sendMessage", async () => {
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
 
-    render(<ConversationPageClient initialData={makeInitialData()} />);
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
 
-    fireEvent.click(screen.getByTestId("open-quick-charge"));
-    fireEvent.click(screen.getByTestId("quick-charge-counterparty-paid"));
+    const input = screen.getByTestId("chat-input");
+    fireEvent.change(input, { target: { value: "Olá Bob!" } });
+
+    const sendBtn = screen.getByTestId("send-button");
+    fireEvent.click(sendBtn);
 
     await waitFor(() => {
-      expect(buildChatExpenseConfirmationRequest).toHaveBeenCalled();
+      expect(mutations.sendMessage).toHaveBeenCalledWith("dm-1", "Olá Bob!");
     });
+  });
 
-    const call = vi.mocked(buildChatExpenseConfirmationRequest).mock.calls[0][0];
-    expect(call.precomputedShares).toEqual([
-      { userId: "user-1", shareAmountCents: 1 },
-      { userId: "user-2", shareAmountCents: 0 },
-    ]);
+  it("opening with unread calls markRead", async () => {
+    seedDm(makeDmSnapshot({ unreadCount: 3 }), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    await waitFor(() => {
+      expect(mutations.markRead).toHaveBeenCalledWith("dm-1");
+    });
   });
 });

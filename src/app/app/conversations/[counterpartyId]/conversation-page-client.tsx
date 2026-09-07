@@ -1,494 +1,279 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { ChatAiInput } from "@/components/chat/chat-ai-input";
+import { ChatThread } from "@/components/chat/chat-thread";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ConversationQuickActions } from "@/components/chat/conversation-quick-actions";
-import { QuickChargeSheet, type QuickChargeStatus } from "@/components/chat/quick-charge-sheet";
-import { QuickSplitSheet, type QuickSplitStatus, type QuickSplitResult } from "@/components/chat/quick-split-sheet";
-import { ChatThread } from "@/components/chat/chat-thread";
-import { ChatAiInput } from "@/components/chat/chat-ai-input";
-import { UserAvatar } from "@/components/shared/user-avatar";
-import { Button } from "@/components/ui/button";
-import { useRealtimeChat } from "@/hooks/use-realtime-chat";
 import {
-  loadConversationMessages,
-  sendChatMessage,
-  type ConversationThread,
-} from "@/lib/supabase/chat-actions";
+  QuickChargeSheet,
+  type QuickChargeStatus,
+} from "@/components/chat/quick-charge-sheet";
 import {
-  buildChatExpenseConfirmationRequest,
-  type PrecomputedShare,
-} from "@/lib/supabase/chat-confirm";
-import {
-  confirmChatExpenseWithIntent,
-  type ChatExpenseConfirmationSource,
-} from "@/lib/chat-confirmation-intent";
-import { notifyDmTextMessage, notifyExpenseActivated } from "@/lib/push/push-notify";
-import { markConversationRead } from "@/lib/supabase/unread-actions";
-import { createClient } from "@/lib/supabase/client";
-import {
-  expenseRowToExpense,
-  settlementRowToSettlement,
-} from "@/lib/supabase/expense-mappers";
+  QuickSplitSheet,
+  type QuickSplitResult,
+  type QuickSplitStatus,
+} from "@/components/chat/quick-split-sheet";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
-import type { MemberContext } from "@/hooks/use-ai-expense-parse";
-import type { ChatMessageWithSender, Expense, Settlement, UserProfile } from "@/types";
-import type { Database } from "@/types/database";
-
-type DmMemberStatus = "accepted" | "invited" | "declined";
-
-export interface SerializableThread {
-  messages: ChatMessageWithSender[];
-  expenses: [string, Expense][];
-  settlements: [string, Settlement][];
-  profiles: [string, UserProfile][];
-}
-
-export interface ConversationInitialData {
+import { formatBRL } from "@/lib/currency";
+import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { createExpense, markRead, sendMessage } from "@/lib/sync/mutations";
+import {
+  acceptInvitation,
+  declineInvitation,
+  getOrCreateDm,
+} from "@/lib/sync/mutations-group";
+import { subscribeChat } from "@/lib/sync/realtime";
+import { loadConversation } from "@/lib/sync/refresh";
+import { findDmGroup } from "@/stores/app-selectors";
+import { useAppStore } from "@/stores/app-store";
+import type { ExpenseHeader, ExpensePayload, MutationAck, UserProfile } from "@/types/ledger";
+import {
+  dmExpenseHeader,
+  dmExpensePayload,
+  resolveDraftExpense,
+  wizardUrl,
+} from "./conversation-expense-builder";
+import { ConversationInviteScreen } from "./conversation-invite-screen";
+interface ConversationPageClientProps {
   counterpartyId: string;
-  currentUser: UserProfile;
-  groupId: string | null;
-  counterparty: UserProfile | null;
-  thread: SerializableThread | null;
-  hasMore: boolean;
-  callerStatus: DmMemberStatus;
-  counterpartyStatus: DmMemberStatus;
-  error: string | null;
 }
 
-function hydrateThread(serialized: SerializableThread): ConversationThread {
-  return {
-    messages: serialized.messages,
-    expenses: new Map(serialized.expenses),
-    settlements: new Map(serialized.settlements),
-    profiles: new Map(serialized.profiles),
-  };
-}
-
-const PAGE_SIZE = 50;
-
-export function ConversationPageClient({
-  initialData,
-}: {
-  initialData: ConversationInitialData;
-}) {
+export function ConversationPageClient({ counterpartyId }: ConversationPageClientProps) {
   const router = useRouter();
+  const me = useAppStore((s) => s.me);
+  const dm = useAppStore((s) => (me ? findDmGroup(s, me.id, counterpartyId) : null));
+  const conversation = useAppStore((s) => (dm ? s.conversations[dm.group.id] : undefined));
 
-  const [counterparty] = useState<UserProfile | null>(initialData.counterparty);
-  const [groupId] = useState<string | null>(initialData.groupId);
-  const [thread, setThread] = useState<ConversationThread | null>(
-    initialData.thread ? hydrateThread(initialData.thread) : null,
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const resolving = !dm && !resolveError;
+  const [chargeSheetOpen, setChargeSheetOpen] = useState(false);
+  const [chargeStatus, setChargeStatus] = useState<QuickChargeStatus>("idle");
+  const [chargeError, setChargeError] = useState<string | undefined>();
+  const [splitSheetOpen, setSplitSheetOpen] = useState(false);
+  const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
+  const [splitError, setSplitError] = useState<string | undefined>();
+  const [historyComplete, setHistoryComplete] = useState(false);
+  const chargeResetTimer = useRef<number | undefined>(undefined);
+  const splitResetTimer = useRef<number | undefined>(undefined);
+  const requestedRef = useRef(false);
+  const loadedRef = useRef<Set<string>>(new Set());
+
+  const groupId = dm?.group.id ?? null;
+  const counterpartyMember = dm?.members.find((m) => m.userId === counterpartyId);
+  const counterparty: UserProfile | null = counterpartyMember?.user ?? null;
+  const myStatus = dm?.members.find((m) => m.userId === me?.id)?.status ?? "invited";
+  const isCounterpartyPending = counterpartyMember?.status === "invited";
+
+  const debtRows = useMemo(
+    () => (dm && me ? debtRowsForGroup(dm, me.id) : []),
+    [dm, me],
   );
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(initialData.hasMore);
-  const [error, setError] = useState<string | null>(initialData.error);
-  const [callerStatus, setCallerStatus] = useState<DmMemberStatus>(initialData.callerStatus);
-  const [counterpartyStatus, setCounterpartyStatus] = useState<DmMemberStatus>(initialData.counterpartyStatus);
+  const netCents = debtRows.reduce(
+    (sum, row) => sum + (row.direction === "owed" ? row.amountCents : -row.amountCents),
+    0,
+  );
 
-  const user = initialData.currentUser;
-  const counterpartyId = initialData.counterpartyId;
-
-  const refetch = useCallback(async () => {
-    if (!groupId) return;
-
-    setLoading(true);
-    setError(null);
-
-    const supabase = createClient();
-
-    const [messagesResult, membersResult] = await Promise.all([
-      loadConversationMessages(groupId, { limit: PAGE_SIZE }),
-      supabase
-        .from("group_members")
-        .select("user_id, status")
-        .eq("group_id", groupId)
-        .in("user_id", [user.id, counterpartyId]),
-    ]);
-
-    if ("error" in messagesResult) {
-      setError(messagesResult.error);
-      setLoading(false);
-      return;
-    }
-
-    const memberRows = (membersResult.data ?? []) as { user_id: string; status: string }[];
-    const callerRow = memberRows.find((m) => m.user_id === user.id);
-    const counterpartyRow = memberRows.find((m) => m.user_id === counterpartyId);
-    setCallerStatus((callerRow?.status ?? "accepted") as DmMemberStatus);
-    setCounterpartyStatus((counterpartyRow?.status ?? "invited") as DmMemberStatus);
-
-    setThread(messagesResult);
-    setHasMore(messagesResult.messages.length >= PAGE_SIZE);
-
-    markConversationRead(createClient(), user.id, groupId).catch(() => {});
-
-    setLoading(false);
-  }, [groupId, user.id, counterpartyId]);
+  const nameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of dm?.members ?? []) map.set(member.userId, member.user.name);
+    return map;
+  }, [dm]);
+  const nameOf = useCallback(
+    (userId: string) => nameById.get(userId) ?? "Alguém",
+    [nameById],
+  );
 
   useEffect(() => {
-    const handleRefresh = () => refetch();
-    window.addEventListener("app-refresh", handleRefresh);
-    return () => window.removeEventListener("app-refresh", handleRefresh);
-  }, [refetch]);
-
-  const handleRealtimeMessage = useCallback(async (newMessage: ChatMessageWithSender) => {
-    const supabase = createClient();
-
-    let expense: Expense | undefined;
-    let settlement: Settlement | undefined;
-
-    if (newMessage.expenseId) {
-      const { data } = await supabase
-        .from("expenses")
-        .select("*")
-        .eq("id", newMessage.expenseId)
-        .single();
-      if (data) {
-        expense = expenseRowToExpense(data as Database["public"]["Tables"]["expenses"]["Row"]);
-      }
-    }
-
-    if (newMessage.settlementId) {
-      const { data } = await supabase
-        .from("settlements")
-        .select("*")
-        .eq("id", newMessage.settlementId)
-        .single();
-      if (data) {
-        settlement = settlementRowToSettlement(
-          data as Database["public"]["Tables"]["settlements"]["Row"],
-        );
-      }
-    }
-
-    setThread((prev) => {
-      if (!prev) return null;
-      if (prev.messages.some((m) => m.id === newMessage.id)) return prev;
-      const nextExpenses = expense
-        ? new Map([...prev.expenses, [expense.id, expense]])
-        : prev.expenses;
-      const nextSettlements = settlement
-        ? new Map([...prev.settlements, [settlement.id, settlement]])
-        : prev.settlements;
-      return {
-        ...prev,
-        messages: [...prev.messages, newMessage],
-        expenses: nextExpenses,
-        settlements: nextSettlements,
-      };
+    if (!me || dm || requestedRef.current) return;
+    requestedRef.current = true;
+    getOrCreateDm(counterpartyId).catch((error) => {
+      requestedRef.current = false;
+      setResolveError(ledgerErrorMessage(error));
     });
+  }, [me, dm, counterpartyId]);
 
-    if (groupId) {
-      const supabaseForReceipt = createClient();
-      await markConversationRead(supabaseForReceipt, user.id, groupId);
-      window.dispatchEvent(new CustomEvent("conversations-read"));
-    }
-  }, [user.id, groupId]);
+  useEffect(() => {
+    return () => {
+      clearTimeout(chargeResetTimer.current);
+      clearTimeout(splitResetTimer.current);
+    };
+  }, []);
 
-  useRealtimeChat(groupId ?? undefined, handleRealtimeMessage);
+  useEffect(() => {
+    if (!groupId) return;
+    return subscribeChat(groupId);
+  }, [groupId]);
 
-  const handleLoadMore = useCallback(async () => {
-    if (!groupId || !thread || loadingMore || !hasMore) return;
+  useEffect(() => {
+    if (!groupId || loadedRef.current.has(groupId)) return;
+    loadedRef.current.add(groupId);
+    loadConversation(groupId).catch((error) => toast.error(ledgerErrorMessage(error)));
+  }, [groupId]);
 
-    const oldestMessage = thread.messages[0];
-    if (!oldestMessage) return;
+  useEffect(() => {
+    if (!groupId || !dm || dm.unreadCount === 0) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    markRead(groupId).catch(() => {});
+  }, [groupId, dm]);
 
-    setLoadingMore(true);
 
-    const result = await loadConversationMessages(groupId, {
-      limit: PAGE_SIZE,
-      before: oldestMessage.createdAt,
-    });
+  const handleRetryResolve = useCallback(() => {
+    setResolveError(null);
+    requestedRef.current = false;
+  }, []);
 
-    if ("error" in result) {
-      setLoadingMore(false);
-      return;
-    }
-
-    setThread((prev) => {
-      if (!prev) return result;
-
-      return {
-        messages: [...result.messages, ...prev.messages],
-        profiles: new Map([...prev.profiles, ...result.profiles]),
-        expenses: new Map<string, Expense>([...prev.expenses, ...result.expenses]),
-        settlements: new Map<string, Settlement>([...prev.settlements, ...result.settlements]),
-      };
-    });
-
-    setHasMore(result.messages.length >= PAGE_SIZE);
-    setLoadingMore(false);
-  }, [groupId, thread, loadingMore, hasMore]);
+  const handleLoadMore = useCallback(() => {
+    if (!groupId) return;
+    const conv = useAppStore.getState().conversations[groupId];
+    if (!conv?.oldestCursor) return;
+    const cursor = conv.oldestCursor;
+    loadConversation(groupId, cursor)
+      .then(() => {
+        const next = useAppStore.getState().conversations[groupId];
+        if (next?.oldestCursor === cursor) setHistoryComplete(true);
+      })
+      .catch((error) => toast.error(ledgerErrorMessage(error)));
+  }, [groupId]);
 
   const handleSend = useCallback(
     async (content: string) => {
       if (!groupId) return;
-
-      const result = await sendChatMessage(groupId, content);
-      if ("error" in result) return;
-
-      notifyDmTextMessage(groupId).catch(() => {});
-
-      const senderProfile: UserProfile = {
-        id: user.id,
-        handle: user.handle,
-        name: user.name,
-        avatarUrl: user.avatarUrl,
-      };
-
-      const messageWithSender: ChatMessageWithSender = {
-        ...result,
-        sender: senderProfile,
-      };
-
-      setThread((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          messages: [...prev.messages, messageWithSender],
-        };
-      });
+      try {
+        await sendMessage(groupId, content);
+      } catch (error) {
+        toast.error(ledgerErrorMessage(error));
+      }
     },
-    [groupId, user],
+    [groupId],
   );
 
-  const confirmChatExpenseCore = useCallback(
-    async (
-      result: ChatExpenseResult,
-      source: ChatExpenseConfirmationSource,
-      precomputedShares?: PrecomputedShare[],
-    ): Promise<{ expenseId: string } | { error: string }> => {
-      if (!groupId || !counterparty) {
-        return { error: "Conversa não disponível." };
-      }
+  const handleAccept = useCallback(async () => {
+    if (!groupId) return;
+    try {
+      await acceptInvitation(groupId);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    }
+  }, [groupId]);
 
-      const members: UserProfile[] = [
-        { id: user.id, handle: user.handle, name: user.name, avatarUrl: user.avatarUrl },
-        counterparty,
-      ];
+  const handleDecline = useCallback(async () => {
+    if (!groupId) return;
+    try {
+      await declineInvitation(groupId);
+      router.replace("/app/conversations");
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    }
+  }, [groupId, router]);
 
-      const built = buildChatExpenseConfirmationRequest({
-        result,
-        groupId,
-        currentUserId: user.id,
-        members,
-        precomputedShares,
-      });
-
-      if ("error" in built) {
-        toast.error(built.error);
-        return { error: built.error };
-      }
-
-      const outcome = await confirmChatExpenseWithIntent({
-        userId: user.id,
-        groupId,
-        request: built,
-        source,
-      });
-
-      if (outcome.status === "error") {
-        toast.error(outcome.error);
-        return { error: outcome.error };
-      }
-
-      if (outcome.created) {
-        notifyExpenseActivated(outcome.expenseId).catch(() => {});
-      }
-
-      return { expenseId: outcome.expenseId };
+  const createDmExpense = useCallback(
+    async (header: ExpenseHeader, payload: ExpensePayload): Promise<MutationAck> => {
+      if (!groupId) throw new Error("no_group");
+      return await createExpense({ groupId, header, payload });
     },
-    [groupId, user, counterparty],
+    [groupId],
   );
 
-  const handleConfirmDraft = useCallback(
-    (result: ChatExpenseResult) => confirmChatExpenseCore(result, "ai"),
-    [confirmChatExpenseCore],
+  const handleQuickChargeConfirm = useCallback(
+    async (result: ChatExpenseResult) => {
+      if (!me || !counterparty) return;
+      setChargeStatus("confirming");
+      setChargeError(undefined);
+      const payerIsSelf = !result.payerHandle || result.payerHandle === "SELF";
+      const header = dmExpenseHeader(result.title || "Cobrança", result.amountCents, null);
+      const payload = dmExpensePayload(
+        me,
+        counterparty.id,
+        payerIsSelf ? [0, result.amountCents] : [result.amountCents, 0],
+        payerIsSelf ? 0 : 1,
+        result.amountCents,
+      );
+      try {
+        await createDmExpense(header, payload);
+        setChargeStatus("confirmed");
+        chargeResetTimer.current = window.setTimeout(() => {
+          setChargeSheetOpen(false);
+          setChargeStatus("idle");
+        }, 1200);
+      } catch (error) {
+        setChargeStatus("error");
+        setChargeError(ledgerErrorMessage(error));
+      }
+    },
+    [me, counterparty, createDmExpense],
+  );
+
+  const handleQuickSplitConfirm = useCallback(
+    async (result: QuickSplitResult) => {
+      if (!me || !counterparty) return;
+      setSplitStatus("confirming");
+      setSplitError(undefined);
+      const myShare =
+        result.shares.find((s) => s.userId === me.id)?.shareAmountCents ?? 0;
+      const otherShare =
+        result.shares.find((s) => s.userId === counterparty.id)?.shareAmountCents ?? 0;
+      const header = dmExpenseHeader(result.title, result.amountCents, null);
+      const payload = dmExpensePayload(
+        me,
+        counterparty.id,
+        [myShare, otherShare],
+        result.payerId === me.id ? 0 : 1,
+        result.amountCents,
+      );
+      try {
+        await createDmExpense(header, payload);
+        setSplitStatus("confirmed");
+        splitResetTimer.current = window.setTimeout(() => {
+          setSplitSheetOpen(false);
+          setSplitStatus("idle");
+        }, 1200);
+      } catch (error) {
+        setSplitStatus("error");
+        setSplitError(ledgerErrorMessage(error));
+      }
+    },
+    [me, counterparty, createDmExpense],
   );
 
   const handleEditDraft = useCallback(
     (result: ChatExpenseResult) => {
       if (!groupId) return;
-      const params = new URLSearchParams({
-        groupId,
-        title: result.title,
-        amount: String(result.amountCents),
-      });
-      router.push(`/app/bill/new?${params.toString()}`);
+      router.push(wizardUrl(groupId, result));
     },
     [groupId, router],
   );
 
-  const aiMembers = useMemo<MemberContext[]>(() => {
-    if (!counterparty) return [];
-    return [
-      { handle: user.handle, name: user.name },
-      { handle: counterparty.handle, name: counterparty.name },
-    ];
-  }, [counterparty, user]);
-
-  // --- Quick-action sheet state ---
-  const [chargeSheetOpen, setChargeSheetOpen] = useState(false);
-  const [splitSheetOpen, setSplitSheetOpen] = useState(false);
-  const [chargeStatus, setChargeStatus] = useState<QuickChargeStatus>("idle");
-  const [chargeError, setChargeError] = useState<string | undefined>();
-  const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
-  const [splitError, setSplitError] = useState<string | undefined>();
-  const chargeResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const splitResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleOpenCharge = useCallback(() => {
-    setSplitSheetOpen(false);
-    setChargeStatus("idle");
-    setChargeError(undefined);
-    setChargeSheetOpen((prev) => !prev);
-  }, []);
-
-  const handleOpenSplit = useCallback(() => {
-    setChargeSheetOpen(false);
-    setSplitStatus("idle");
-    setSplitError(undefined);
-    setSplitSheetOpen((prev) => !prev);
-  }, []);
-
-  const handleDismissCharge = useCallback(() => {
-    setChargeSheetOpen(false);
-  }, []);
-
-  const handleDismissSplit = useCallback(() => {
-    setSplitSheetOpen(false);
-  }, []);
-
-  const handleQuickChargeConfirm = useCallback(
-    async (result: ChatExpenseResult) => {
-      if (!counterparty) return;
-      setChargeStatus("confirming");
-      setChargeError(undefined);
-      // #474: Quick Charge is a two-party transfer, not an equal split.
-      // The entered amount is the counterparty's whole liability (or the
-      // current user's, for the counterparty-paid direction) — never
-      // divided. Build the exact 0/N share pair instead of letting the
-      // generic equal-split fallback halve it.
-      const payerIsSelf = !result.payerHandle || result.payerHandle === "SELF";
-      const precomputedShares: PrecomputedShare[] = [
-        { userId: user.id, shareAmountCents: payerIsSelf ? 0 : result.amountCents },
-        { userId: counterparty.id, shareAmountCents: payerIsSelf ? result.amountCents : 0 },
-      ];
-      const outcome = await confirmChatExpenseCore(result, "quick_charge", precomputedShares);
-      if ("error" in outcome) {
-        setChargeStatus("error");
-        setChargeError(outcome.error);
-        return;
+  const handleConfirmDraft = useCallback(
+    async (
+      result: ChatExpenseResult,
+    ): Promise<{ expenseId: string } | { error: string }> => {
+      if (!groupId || !me || !counterparty) return { error: "Conversa não disponível." };
+      const resolution = resolveDraftExpense(groupId, me, counterparty, result);
+      if (resolution.kind === "wizard") {
+        router.push(resolution.url);
+        return { expenseId: "" };
       }
-      setChargeStatus("confirmed");
-      window.dispatchEvent(new CustomEvent("app-refresh"));
-      chargeResetTimer.current = setTimeout(() => {
-        setChargeSheetOpen(false);
-        setChargeStatus("idle");
-      }, 1200);
+      if (resolution.kind === "error") {
+        return { error: resolution.message };
+      }
+      try {
+        const ack = await createDmExpense(resolution.header, resolution.payload);
+        return { expenseId: ack.expenseId ?? "" };
+      } catch (error) {
+        return { error: ledgerErrorMessage(error) };
+      }
     },
-    [confirmChatExpenseCore, counterparty, user.id],
+    [groupId, me, counterparty, createDmExpense, router],
   );
 
-  const handleQuickChargeEdit = useCallback(
-    (result: ChatExpenseResult) => {
-      setChargeSheetOpen(false);
-      handleEditDraft(result);
-    },
-    [handleEditDraft],
-  );
-
-  const handleQuickSplitConfirm = useCallback(
-    async (result: QuickSplitResult) => {
-      if (!counterparty) return;
-      setSplitStatus("confirming");
-      setSplitError(undefined);
-
-      const chatResult: ChatExpenseResult = {
-        title: result.title,
-        amountCents: result.amountCents,
-        expenseType: "single_amount",
-        splitType: result.splitType === "equal" ? "equal" : "custom",
-        allocations: [],
-        items: [],
-        participants: [
-          {
-            spokenName: counterparty.handle,
-            matchedHandle: counterparty.handle,
-            confidence: "high",
-          },
-        ],
-        payerHandle: result.payerId === user.id ? "SELF" : counterparty.handle,
-        merchantName: null,
-        confidence: "high",
-      };
-
-      const outcome = await confirmChatExpenseCore(chatResult, "quick_split", result.shares);
-
-      if ("error" in outcome) {
-        setSplitStatus("error");
-        setSplitError(outcome.error);
-        return;
-      }
-
-      setSplitStatus("confirmed");
-      window.dispatchEvent(new CustomEvent("app-refresh"));
-      splitResetTimer.current = setTimeout(() => {
-        setSplitSheetOpen(false);
-        setSplitStatus("idle");
-      }, 1200);
-    },
-    [confirmChatExpenseCore, counterparty, user.id],
-  );
-
-  // Clean up timers on unmount
-  useEffect(() => {
-    return () => {
-      if (chargeResetTimer.current) clearTimeout(chargeResetTimer.current);
-      if (splitResetTimer.current) clearTimeout(splitResetTimer.current);
-    };
-  }, []);
-
-  const handleAccept = useCallback(async () => {
-    if (!groupId) return;
-    // group_members_accept_denied RLS policy blocks every direct UPDATE;
-    // acceptance must go through this RPC (matching handleDecline below).
-    // Setting callerStatus optimistically before the write succeeded would
-    // show an "accepted" UI while the DB row still says 'invited'.
-    const { error } = await createClient().rpc("accept_group_invitation", {
-      p_group_id: groupId,
-    });
-    if (error) {
-      toast.error("Não foi possível aceitar o convite. Tente novamente.");
-      return;
-    }
-    setCallerStatus("accepted");
-  }, [groupId]);
-
-  const handleDecline = useCallback(async () => {
-    if (!groupId) return;
-    const { error: declineError } = await createClient().rpc(
-      "decline_group_invitation",
-      { p_group_id: groupId },
-    );
-    if (declineError) {
-      if (declineError.message.includes("has_outstanding_balance")) {
-        toast.error("Você possui um saldo pendente neste grupo. Peça para quitarem antes de recusar.");
-        return;
-      }
-      toast.error("Não foi possível recusar o convite. Tente novamente.");
-      return;
-    }
-    setCallerStatus("declined");
-  }, [groupId]);
-
-  if (loading) {
+  if (!me || (resolving && !dm)) {
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-3 border-b border-border/50 px-3 py-2.5">
@@ -505,58 +290,28 @@ export function ConversationPageClient({
     );
   }
 
-  if (error) {
+  if (resolveError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-destructive">{error}</p>
-        <button
-          onClick={refetch}
-          className="text-sm text-primary underline"
-        >
+        <p className="text-sm text-destructive">{resolveError}</p>
+        <button onClick={handleRetryResolve} className="text-sm text-primary underline">
           Tentar novamente
         </button>
       </div>
     );
   }
 
-  if (!counterparty || !thread) return null;
+  if (!dm || !counterparty) return null;
 
-  if (callerStatus === "declined") {
+  if (myStatus === "invited") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-muted-foreground">Você recusou este convite.</p>
-      </div>
+      <ConversationInviteScreen
+        counterparty={counterparty}
+        onAccept={() => void handleAccept()}
+        onDecline={() => void handleDecline()}
+      />
     );
   }
-
-  if (callerStatus === "invited") {
-    return (
-      <div className="flex h-full flex-col">
-        <ConversationHeader counterparty={counterparty} />
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
-          <UserAvatar name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="lg" />
-          <div className="space-y-1">
-            <p className="font-semibold">{counterparty.name}</p>
-            <p className="text-sm text-muted-foreground">
-              Esta conversa está pendente. @{counterparty.handle} convidou você a conversar.
-            </p>
-          </div>
-          <div className="flex w-full max-w-xs flex-col gap-3">
-            <Button onClick={handleAccept} className="w-full gap-2">
-              <Check className="h-4 w-4" />
-              Aceitar convite
-            </Button>
-            <Button variant="outline" onClick={handleDecline} className="w-full gap-2">
-              <X className="h-4 w-4" />
-              Recusar
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isCounterpartyPending = counterpartyStatus === "invited";
 
   return (
     <div className="flex h-full flex-col">
@@ -565,9 +320,11 @@ export function ConversationPageClient({
         actions={
           !isCounterpartyPending ? (
             <ConversationPayButton
-              currentUserId={user.id}
+              groupId={dm.group.id}
+              meId={me.id}
               counterpartyId={counterpartyId}
               counterpartyName={counterparty.name}
+              rows={debtRows}
             />
           ) : undefined
         }
@@ -579,14 +336,29 @@ export function ConversationPageClient({
           </p>
         </div>
       )}
+      {netCents !== 0 && (
+        <div className="border-b bg-muted/30 px-4 py-1.5 text-center">
+          <p
+            className={`text-xs font-medium ${
+              netCents > 0
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-red-600 dark:text-red-400"
+            }`}
+          >
+            {netCents > 0
+              ? `${counterparty.name.split(" ")[0]} te deve ${formatBRL(netCents)}`
+              : `Você deve ${formatBRL(-netCents)}`}
+          </p>
+        </div>
+      )}
       <ChatThread
-        messages={thread.messages}
-        expenses={thread.expenses}
-        settlements={thread.settlements}
-        profiles={thread.profiles}
-        currentUserId={user.id}
-        loading={loadingMore}
-        hasMore={hasMore}
+        groupId={dm.group.id}
+        meId={me.id}
+        messages={conversation?.messages ?? []}
+        events={conversation?.events ?? []}
+        settlements={dm.pendingSettlements}
+        nameOf={nameOf}
+        hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
         onLoadMore={handleLoadMore}
       />
       {!isCounterpartyPending && groupId && (
@@ -597,10 +369,10 @@ export function ConversationPageClient({
                 <QuickChargeSheet
                   counterpartyName={counterparty.name}
                   counterpartyHandle={counterparty.handle}
-                  currentUserHandle={user.handle}
+                  currentUserHandle={me.handle}
                   onConfirm={handleQuickChargeConfirm}
-                  onEdit={handleQuickChargeEdit}
-                  onDismiss={handleDismissCharge}
+                  onEdit={handleEditDraft}
+                  onDismiss={() => setChargeSheetOpen(false)}
                   status={chargeStatus}
                   errorMessage={chargeError}
                 />
@@ -609,20 +381,33 @@ export function ConversationPageClient({
           </AnimatePresence>
           <QuickSplitSheet
             open={splitSheetOpen}
-            onClose={handleDismissSplit}
-            currentUserId={user.id}
+            onClose={() => setSplitSheetOpen(false)}
+            currentUserId={me.id}
             counterparty={counterparty}
             onConfirm={handleQuickSplitConfirm}
             status={splitStatus}
             errorMessage={splitError}
           />
           <ConversationQuickActions
-            onCharge={handleOpenCharge}
-            onSplit={handleOpenSplit}
+            onCharge={() => {
+              setSplitSheetOpen(false);
+              setChargeStatus("idle");
+              setChargeError(undefined);
+              setChargeSheetOpen((prev) => !prev);
+            }}
+            onSplit={() => {
+              setChargeSheetOpen(false);
+              setSplitStatus("idle");
+              setSplitError(undefined);
+              setSplitSheetOpen((prev) => !prev);
+            }}
           />
           <ChatAiInput
-            groupId={groupId}
-            members={aiMembers}
+            groupId={dm.group.id}
+            members={[
+              { handle: me.handle, name: me.name },
+              { handle: counterparty.handle, name: counterparty.name },
+            ]}
             onSend={handleSend}
             onConfirmDraft={handleConfirmDraft}
             onEditDraft={handleEditDraft}

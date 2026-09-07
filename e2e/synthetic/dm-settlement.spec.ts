@@ -1,7 +1,7 @@
 import { test, expect } from "../fixtures";
 
 test.describe("DM settlements", () => {
-  test("botão Pagar visível quando usuário deve dinheiro", async ({
+  test("shows the Pay button when the user owes money", async ({
     page,
     seed,
     loginAs,
@@ -10,18 +10,12 @@ test.describe("DM settlements", () => {
     const bob = await seed.createUser({ name: "Bob DM Pagar" });
     const dm = await seed.createDmGroup(alice, bob);
 
-    // bob paga R$ 50, dividido igualmente → alice deve R$ 25 a bob
-    await seed.createActiveExpense(
-      dm.id,
-      bob.id,
-      [alice.id, bob.id],
-      {
-        title: "Almoço",
-        totalAmount: 5000,
-        expenseType: "single_amount",
-        payers: { [bob.id]: 5000 },
-      },
-    );
+    // bob pays R$ 50 split equally, so alice owes bob R$ 25
+    await seed.createExpense(dm.id, bob.id, [alice.id, bob.id], {
+      title: "Lunch",
+      totalCents: 5000,
+      expenseType: "single_amount",
+    });
 
     await loginAs(alice);
     await page.goto(`/app/conversations/${bob.id}`);
@@ -36,99 +30,101 @@ test.describe("DM settlements", () => {
     ).not.toBeVisible();
   });
 
-  test("batch settlement RPC updates the balance and inserts a system message", async ({
+  test("recording leaves balances untouched until the creditor confirms", async ({
     seed,
     adminClient,
-    page,
-    loginAs,
   }) => {
     const alice = await seed.createUser({ name: "Alice DM RPC" });
     const bob = await seed.createUser({ name: "Bob DM RPC" });
     const dm = await seed.createDmGroup(alice, bob);
 
-    // bob paga R$ 50, split igualitário → alice deve R$ 25 a bob
-    await seed.createActiveExpense(
-      dm.id,
-      bob.id,
-      [alice.id, bob.id],
-      {
-        title: "Almoço RPC",
-        totalAmount: 5000,
-        expenseType: "single_amount",
-        payers: { [bob.id]: 5000 },
-      },
-    );
+    // bob pays R$ 50 split equally, so alice owes bob R$ 25
+    await seed.createExpense(dm.id, bob.id, [alice.id, bob.id], {
+      title: "Lunch RPC",
+      totalCents: 5000,
+      expenseType: "single_amount",
+    });
+
+    const netFor = async (userId: string): Promise<number> => {
+      const { data } = await adminClient
+        .from("group_balances")
+        .select("net_cents")
+        .eq("group_id", dm.id)
+        .eq("participant_id", userId);
+      return data && data.length > 0 ? Number(data[0].net_cents) : 0;
+    };
+
+    expect(await netFor(alice.id)).toBe(-2500);
+    expect(await netFor(bob.id)).toBe(2500);
 
     const aliceClient = await seed.authenticateAs(alice.id);
-    const { error: rpcError } = await aliceClient.rpc("record_settlements", {
-      p_allocations: [{
-        group_id: dm.id,
-        from_user_id: alice.id,
-        to_user_id: bob.id,
-        amount_cents: 2500,
-      }],
+    const { error: recordError } = await aliceClient.rpc("record_settlement", {
       p_operation_id: crypto.randomUUID(),
+      p_group_id: dm.id,
+      p_to_user_id: bob.id,
+      p_amount_cents: 2500,
     });
-    expect(rpcError).toBeNull();
+    expect(recordError).toBeNull();
 
-    const { data: settlements } = await adminClient
+    const { data: pending } = await adminClient
       .from("settlements")
-      .select("*")
+      .select("id, status")
       .eq("group_id", dm.id)
       .eq("amount_cents", 2500);
-    expect(settlements).toHaveLength(1);
-    expect(settlements![0].status).toBe("confirmed");
+    expect(pending).toHaveLength(1);
+    expect(pending![0].status).toBe("pending");
 
-    const { data: balances } = await adminClient
-      .from("balances")
-      .select("*")
-      .eq("group_id", dm.id);
-    const totalNet = (balances ?? []).reduce(
-      (sum: number, b: { amount_cents: number }) => sum + b.amount_cents,
-      0,
-    );
-    expect(totalNet).toBe(0);
+    expect(await netFor(alice.id)).toBe(-2500);
+    expect(await netFor(bob.id)).toBe(2500);
 
-    const { data: messages } = await adminClient
-      .from("chat_messages")
-      .select("*")
+    const settlementId = pending![0].id as string;
+    const bobClient = await seed.authenticateAs(bob.id);
+    const { error: confirmError } = await bobClient.rpc("confirm_settlement", {
+      p_settlement_id: settlementId,
+    });
+    expect(confirmError).toBeNull();
+
+    expect(await netFor(alice.id)).toBe(0);
+    expect(await netFor(bob.id)).toBe(0);
+
+    const { error: voidError } = await bobClient.rpc("void_settlement", {
+      p_settlement_id: settlementId,
+    });
+    expect(voidError).toBeNull();
+
+    expect(await netFor(alice.id)).toBe(-2500);
+    expect(await netFor(bob.id)).toBe(2500);
+
+    const { data: events } = await adminClient
+      .from("group_events")
+      .select("kind")
       .eq("group_id", dm.id)
-      .eq("message_type", "system_settlement");
-    expect((messages ?? []).length).toBeGreaterThanOrEqual(1);
-
-    await loginAs(alice);
-    await page.goto(`/app/conversations/${bob.id}`);
-    await page.waitForLoadState("networkidle");
-
-    await expect(
-      page.getByText(/R\$\s*25,00/).first(),
-    ).toBeVisible({ timeout: 10000 });
+      .in("kind", ["settlement_recorded", "settlement_confirmed", "settlement_voided"]);
+    expect((events ?? []).map((e) => e.kind).sort()).toEqual([
+      "settlement_confirmed",
+      "settlement_recorded",
+      "settlement_voided",
+    ]);
   });
 
-  test("reconciles a committed payment after the first batch response is lost", async ({
+  test("reconciles a committed payment after the first response is lost", async ({
     page,
     seed,
     adminClient,
     loginAs,
   }) => {
-    const alice = await seed.createUser({ name: "Alice DM Response Loss" });
-    const bob = await seed.createUser({ name: "Bob DM Response Loss" });
+    const alice = await seed.createUser({ name: "Alice Response Loss" });
+    const bob = await seed.createUser({ name: "Bob Response Loss" });
     const dm = await seed.createDmGroup(alice, bob);
 
-    await seed.createActiveExpense(
-      dm.id,
-      bob.id,
-      [alice.id, bob.id],
-      {
-        title: "Resposta perdida",
-        totalAmount: 5000,
-        expenseType: "single_amount",
-        payers: { [bob.id]: 5000 },
-      },
-    );
+    await seed.createExpense(dm.id, bob.id, [alice.id, bob.id], {
+      title: "Lost response",
+      totalCents: 5000,
+      expenseType: "single_amount",
+    });
 
     let lostResponse = false;
-    await page.route("**/rest/v1/rpc/record_settlements", async (route) => {
+    await page.route("**/rest/v1/rpc/record_settlement", async (route) => {
       if (lostResponse) {
         await route.continue();
         return;
@@ -152,35 +148,43 @@ test.describe("DM settlements", () => {
     await page.getByRole("button", { name: /^Pagar R\$\s*25,00$/i }).last().click();
     await page.getByRole("button", { name: /Já paguei/i }).click();
 
-    await expect(
-      page.getByRole("button", { name: "Verificar pagamento" }),
-    ).toBeVisible({ timeout: 10000 });
-
-    await page.getByRole("button", { name: "Verificar pagamento" }).click();
-    await expect(page.getByText("Pagamento registrado!")).toBeVisible({
-      timeout: 10000,
-    });
+    // The response is lost after the write commits, so the optimistic entry
+    // rolls back and the client reconciles from the server. The committed
+    // settlement must survive exactly once.
+    await expect
+      .poll(
+        async () => {
+          const { data } = await adminClient
+            .from("settlements")
+            .select("id")
+            .eq("group_id", dm.id);
+          return data?.length ?? 0;
+        },
+        { timeout: 10000 },
+      )
+      .toBe(1);
 
     const { data: settlements, error: settlementsError } = await adminClient
       .from("settlements")
-      .select("id")
+      .select("id, status")
       .eq("group_id", dm.id)
       .eq("from_user_id", alice.id)
       .eq("to_user_id", bob.id)
       .eq("amount_cents", 2500);
     expect(settlementsError).toBeNull();
     expect(settlements).toHaveLength(1);
+    expect(settlements![0].status).toBe("pending");
 
-    const { data: messages, error: messagesError } = await adminClient
-      .from("chat_messages")
+    const { data: events, error: eventsError } = await adminClient
+      .from("group_events")
       .select("id")
       .eq("group_id", dm.id)
-      .eq("message_type", "system_settlement");
-    expect(messagesError).toBeNull();
-    expect(messages).toHaveLength(1);
+      .eq("kind", "settlement_recorded");
+    expect(eventsError).toBeNull();
+    expect(events).toHaveLength(1);
   });
 
-  test("botão Cobrar visível quando contraparte deve dinheiro", async ({
+  test("shows the Charge button when the counterparty owes money", async ({
     page,
     seed,
     loginAs,
@@ -189,18 +193,12 @@ test.describe("DM settlements", () => {
     const bob = await seed.createUser({ name: "Bob DM Cobrar" });
     const dm = await seed.createDmGroup(alice, bob);
 
-    // alice paga R$ 30, dividido igualmente → bob deve R$ 15 a alice
-    await seed.createActiveExpense(
-      dm.id,
-      alice.id,
-      [alice.id, bob.id],
-      {
-        title: "Taxi",
-        totalAmount: 3000,
-        expenseType: "single_amount",
-        payers: { [alice.id]: 3000 },
-      },
-    );
+    // alice pays R$ 30 split equally, so bob owes alice R$ 15
+    await seed.createExpense(dm.id, alice.id, [alice.id, bob.id], {
+      title: "Taxi",
+      totalCents: 3000,
+      expenseType: "single_amount",
+    });
 
     await loginAs(alice);
     await page.goto(`/app/conversations/${bob.id}`);
@@ -215,7 +213,7 @@ test.describe("DM settlements", () => {
     ).not.toBeVisible();
   });
 
-  test("botão de pagamento desaparece após quitação total", async ({
+  test("hides the payment button once the debt is fully settled", async ({
     page,
     seed,
     loginAs,
@@ -224,29 +222,13 @@ test.describe("DM settlements", () => {
     const bob = await seed.createUser({ name: "Bob DM Zero" });
     const dm = await seed.createDmGroup(alice, bob);
 
-    // bob paga R$ 100, dividido igualmente → alice deve R$ 50 a bob
-    await seed.createActiveExpense(
+    // bob pays R$ 100, alice settles her R$ 50 and bob confirms, so the balance is zero
+    await seed.createExpenseWithConfirmedSettlements(
       dm.id,
       bob.id,
       [alice.id, bob.id],
-      {
-        title: "Despesa Zero",
-        totalAmount: 10000,
-        expenseType: "single_amount",
-        payers: { [bob.id]: 10000 },
-      },
+      { title: "Zero Expense", totalCents: 10000, expenseType: "single_amount" },
     );
-
-    const aliceClient = await seed.authenticateAs(alice.id);
-    await aliceClient.rpc("record_settlements", {
-      p_allocations: [{
-        group_id: dm.id,
-        from_user_id: alice.id,
-        to_user_id: bob.id,
-        amount_cents: 5000,
-      }],
-      p_operation_id: crypto.randomUUID(),
-    });
 
     await loginAs(alice);
     await page.goto(`/app/conversations/${bob.id}`);

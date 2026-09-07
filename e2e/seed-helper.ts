@@ -1,5 +1,20 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SignJWT } from "jose";
+import type { ValidationResult } from "../src/lib/expense-money";
+import { allocateEvenly } from "../src/lib/expense-money";
+import { decodeChatMessage, decodeMutationAck } from "../src/lib/ledger/decode";
+import { transfersFromBalances } from "../src/lib/ledger/transfers";
+import type {
+  BalanceRow,
+  ExpenseItemAssignmentPayload,
+  ExpenseItemPayload,
+  ExpensePayerPayload,
+  ExpensePayload,
+  ExpenseStatus,
+  ExpenseType,
+  ParticipantRef,
+  SettlementStatus,
+} from "../src/types/ledger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,8 +44,9 @@ export interface SeededExpense {
   groupId: string;
   creatorId: string;
   title: string;
-  totalAmount: number;
-  status: "draft" | "active" | "settled";
+  totalCents: number;
+  versionNo: number;
+  status: ExpenseStatus;
 }
 
 export interface SeededSettlement {
@@ -39,7 +55,7 @@ export interface SeededSettlement {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
-  status: "pending" | "confirmed";
+  status: SettlementStatus;
 }
 
 export interface CreateUserOptions {
@@ -51,12 +67,17 @@ export interface CreateUserOptions {
 
 export interface CreateExpenseOptions {
   title?: string;
-  expenseType?: "single_amount" | "itemized";
-  totalAmount?: number;
-  serviceFeePercent?: number;
-  fixedFees?: number;
-  shares?: Record<string, number>;
-  payers?: Record<string, number>;
+  merchantName?: string | null;
+  occurredOn?: string;
+  expenseType?: ExpenseType;
+  totalCents?: number;
+  serviceFeeBps?: number;
+  fixedFeeCents?: number;
+  participants?: ParticipantRef[];
+  shares?: number[];
+  payers?: ExpensePayerPayload[];
+  items?: ExpenseItemPayload[];
+  itemAssignments?: ExpenseItemAssignmentPayload[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +87,14 @@ export interface CreateExpenseOptions {
 function generateTestId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 }
+
+function unwrap<T, E>(result: ValidationResult<T, E>, context: string): T {
+  if (!result.ok) {
+    throw new Error(`${context}: ${JSON.stringify(result.issue)}`);
+  }
+  return result.value;
+}
+
 
 // ---------------------------------------------------------------------------
 // SeedHelper
@@ -79,8 +108,6 @@ export class SeedHelper {
 
   private userIds: string[] = [];
   private groupIds: string[] = [];
-  private expenseIds: string[] = [];
-  private settlementIds: string[] = [];
   private sessionCache = new Map<string, string>();
 
   constructor(admin: SupabaseClient) {
@@ -151,7 +178,10 @@ export class SeedHelper {
     const userId = authData.user.id;
     this.userIds.push(userId);
 
-    const pixKeyHint = pixKeyType === "email" ? `synth_${testId.slice(0, 4)}***@test.dividimos.local` : `***@hint`;
+    const pixKeyHint =
+      pixKeyType === "email"
+        ? `synth_${testId.slice(0, 4)}***@test.dividimos.local`
+        : `***@hint`;
 
     const { error: profileError } = await this.admin
       .from("users")
@@ -237,113 +267,79 @@ export class SeedHelper {
     groupName?: string,
   ): Promise<SeededGroup> {
     const testId = generateTestId();
+    const name = groupName ?? `Synth Group ${testId.slice(0, 8)}`;
 
-    const { data: groupData, error: groupError } = await this.admin
-      .from("groups")
-      .insert({
-        name: groupName ?? `Synth Group ${testId.slice(0, 8)}`,
-        creator_id: creatorId,
-      })
-      .select()
-      .single();
-
-    if (groupError || !groupData) {
-      throw new Error(
-        `SeedHelper.createGroup: insert failed: ${groupError?.message}`,
-      );
-    }
-
-    const groupId = groupData.id as string;
-    this.groupIds.push(groupId);
-
-    await this.admin.from("group_members").insert({
-      group_id: groupId,
-      user_id: creatorId,
-      status: "accepted",
-      invited_by: creatorId,
+    const creatorClient = await this.authenticateAs(creatorId);
+    const { data, error } = await creatorClient.rpc("create_group", {
+      p_name: name,
+      p_member_ids: memberIds,
     });
 
-    if (memberIds.length > 0) {
-      await this.admin.from("group_members").insert(
-        memberIds.map((userId) => ({
-          group_id: groupId,
-          user_id: userId,
-          status: "accepted" as const,
-          invited_by: creatorId,
-        })),
-      );
+    if (error) {
+      throw new Error(`SeedHelper.createGroup: create_group failed: ${error.message}`);
+    }
+
+    const ack = unwrap(
+      decodeMutationAck(data),
+      "SeedHelper.createGroup: malformed create_group acknowledgment",
+    );
+
+    this.groupIds.push(ack.groupId);
+
+    for (const memberId of memberIds) {
+      const memberClient = await this.authenticateAs(memberId);
+      const { error: acceptError } = await memberClient.rpc("accept_invitation", {
+        p_group_id: ack.groupId,
+      });
+      if (acceptError) {
+        throw new Error(
+          `SeedHelper.createGroup: accept_invitation failed for ${memberId}: ${acceptError.message}`,
+        );
+      }
     }
 
     return {
-      id: groupId,
-      name: groupData.name as string,
+      id: ack.groupId,
+      name,
       creatorId,
       memberIds: [creatorId, ...memberIds],
     };
   }
 
   // -----------------------------------------------------------------------
-  // DM group creation
+  // DM creation
   // -----------------------------------------------------------------------
 
-  async createDmGroup(
-    userA: SeededUser,
-    userB: SeededUser,
-    options: { autoAcceptCounterparty?: boolean } = {},
-  ): Promise<SeededGroup> {
-    const { autoAcceptCounterparty = true } = options;
-
+  async createDmGroup(userA: SeededUser, userB: SeededUser): Promise<SeededGroup> {
     const client = await this.authenticateAs(userA.id);
 
-    const { data, error } = await client.rpc("get_or_create_dm_group", {
-      p_other_user_id: userB.id,
+    const { data, error } = await client.rpc("get_or_create_dm", {
+      p_user_id: userB.id,
     });
 
-    if (error || !data) {
-      throw new Error(
-        `SeedHelper.createDmGroup: RPC failed: ${error?.message}`,
-      );
+    if (error) {
+      throw new Error(`SeedHelper.createDmGroup: get_or_create_dm failed: ${error.message}`);
     }
 
-    const groupId = data as string;
-    this.groupIds.push(groupId);
+    const ack = unwrap(
+      decodeMutationAck(data),
+      "SeedHelper.createDmGroup: malformed get_or_create_dm acknowledgment",
+    );
 
-    const { data: groupRow, error: groupError } = await this.admin
-      .from("groups")
-      .select("name")
-      .eq("id", groupId)
-      .single();
-
-    if (groupError || !groupRow) {
-      throw new Error(
-        `SeedHelper.createDmGroup: group fetch failed: ${groupError?.message}`,
-      );
-    }
-
-    if (autoAcceptCounterparty) {
-      const { error: acceptError } = await this.admin
-        .from("group_members")
-        .update({ status: "accepted", accepted_at: new Date().toISOString() })
-        .eq("group_id", groupId)
-        .neq("status", "accepted");
-
-      if (acceptError) {
-        throw new Error(
-          `SeedHelper.createDmGroup: auto-accept failed: ${acceptError.message}`,
-        );
-      }
+    if (!this.groupIds.includes(ack.groupId)) {
+      this.groupIds.push(ack.groupId);
     }
 
     return {
-      id: groupId,
-      name: groupRow.name as string,
+      id: ack.groupId,
+      name: "",
       creatorId: userA.id,
       memberIds: [userA.id, userB.id],
     };
   }
 
   // -----------------------------------------------------------------------
-  // Chat message creation
+  // Chat
   // -----------------------------------------------------------------------
 
   async sendChatMessage(
@@ -353,28 +349,26 @@ export class SeedHelper {
   ): Promise<string> {
     const client = await this.authenticateAs(senderId);
 
-    const { data, error } = await client
-      .from("chat_messages")
-      .insert({
-        group_id: groupId,
-        sender_id: senderId,
-        content,
-        message_type: "text",
-      })
-      .select("id")
-      .single();
+    const { data, error } = await client.rpc("send_message", {
+      p_client_id: crypto.randomUUID(),
+      p_group_id: groupId,
+      p_content: content,
+    });
 
-    if (error || !data) {
-      throw new Error(
-        `SeedHelper.sendChatMessage: insert failed: ${error?.message}`,
-      );
+    if (error) {
+      throw new Error(`SeedHelper.sendChatMessage: send_message failed: ${error.message}`);
     }
 
-    return (data as { id: string }).id;
+    const message = unwrap(
+      decodeChatMessage(data),
+      "SeedHelper.sendChatMessage: malformed send_message response",
+    );
+
+    return message.id;
   }
 
   // -----------------------------------------------------------------------
-  // Expense creation
+  // Expenses
   // -----------------------------------------------------------------------
 
   async createExpense(
@@ -384,81 +378,119 @@ export class SeedHelper {
     options: CreateExpenseOptions = {},
   ): Promise<SeededExpense> {
     const testId = generateTestId();
-    const totalAmount = options.totalAmount ?? 10000;
     const title = options.title ?? `Synth Expense ${testId.slice(0, 8)}`;
+    const totalCents = options.totalCents ?? 10000;
+    const expenseType = options.expenseType ?? "single_amount";
+    const serviceFeeBps = options.serviceFeeBps ?? 0;
+    const fixedFeeCents = options.fixedFeeCents ?? 0;
 
-    const shares = options.shares ?? this.equalSplit(participantIds, totalAmount);
-    const payers = options.payers ?? { [creatorId]: totalAmount };
+    const participants: ParticipantRef[] =
+      options.participants ??
+      participantIds.map((userId) => ({ kind: "user" as const, userId }));
 
-    // #477's expense-graph mutation-token guard rejects direct
-    // .from("expenses"/"expense_shares"/"expense_payers").insert(...) —
-    // every write must go through the named RPC. Payers must also be
-    // reachable participants: preserve payer-only fixtures as explicit
-    // zero-share registered users rather than creating an unreachable
-    // payer that save_expense_draft_graph would reject.
-    const reachableShares = new Map(Object.entries(shares));
-    for (const userId of Object.keys(payers)) {
-      if (!reachableShares.has(userId)) {
-        reachableShares.set(userId, 0);
-      }
+    if (participants.length === 0) {
+      throw new Error("SeedHelper.createExpense: at least one participant is required");
     }
 
-    const creatorClient = await this.authenticateAs(creatorId);
-
-    const { data: saveResult, error: saveError } = await creatorClient.rpc(
-      "save_expense_draft_graph",
-      {
-        p_expense: {
-          group_id: groupId,
-          title,
-          merchant_name: null,
-          expense_type: options.expenseType ?? "single_amount",
-          total_amount: totalAmount,
-          service_fee_basis_points: Math.round((options.serviceFeePercent ?? 0) * 100),
-          fixed_fees: options.fixedFees ?? 0,
-        },
-        p_items: [],
-        p_shares: [...reachableShares].map(([userId, amount]) => ({
-          user_id: userId,
-          share_amount_cents: amount,
-        })),
-        p_payers: Object.entries(payers).map(([userId, amount]) => ({
-          user_id: userId,
-          amount_cents: amount,
-        })),
-        p_guests: [],
-        p_guest_shares: [],
-        p_participant_order: [],
-        p_expected_graph_revision: 0,
-        p_save_operation_id: crypto.randomUUID(),
-      },
-    );
-
-    if (saveError || !saveResult) {
+    const items = options.items ?? [];
+    if (expenseType === "itemized" && items.length === 0) {
       throw new Error(
-        `SeedHelper.createExpense: save_expense_draft_graph failed: ${saveError?.message}`,
+        "SeedHelper.createExpense: an itemized expense requires at least one item",
       );
     }
 
-    const expenseId = (saveResult as { id: string }).id;
-    this.expenseIds.push(expenseId);
+    const shares =
+      options.shares ??
+      unwrap(
+        allocateEvenly(totalCents, participants.length),
+        "SeedHelper.createExpense: even share allocation failed",
+      ).map((cents) => cents as number);
+
+    if (shares.length !== participants.length) {
+      throw new Error(
+        `SeedHelper.createExpense: ${shares.length} shares for ${participants.length} participants`,
+      );
+    }
+    const shareTotal = shares.reduce((acc, cents) => acc + cents, 0);
+    if (shareTotal !== totalCents) {
+      throw new Error(
+        `SeedHelper.createExpense: shares sum to ${shareTotal}, expected ${totalCents}`,
+      );
+    }
+
+    let payers = options.payers;
+    if (!payers) {
+      const creatorIndex = participants.findIndex(
+        (p) => p.kind === "user" && p.userId === creatorId,
+      );
+      if (creatorIndex < 0) {
+        throw new Error(
+          `SeedHelper.createExpense: creator ${creatorId} is not among the participants`,
+        );
+      }
+      payers = [{ participantIndex: creatorIndex, amountCents: totalCents }];
+    }
+    const payerTotal = payers.reduce((acc, payer) => acc + payer.amountCents, 0);
+    if (payerTotal !== totalCents) {
+      throw new Error(
+        `SeedHelper.createExpense: payers sum to ${payerTotal}, expected ${totalCents}`,
+      );
+    }
+
+    const payload: ExpensePayload = {
+      items,
+      participants,
+      shares,
+      payers,
+      itemAssignments: options.itemAssignments ?? null,
+    };
+
+    const creatorClient = await this.authenticateAs(creatorId);
+    const { data, error } = await creatorClient.rpc("create_expense", {
+      p_client_id: crypto.randomUUID(),
+      p_group_id: groupId,
+      p_occurred_on: options.occurredOn ?? new Date().toISOString().slice(0, 10),
+      p_title: title,
+      p_merchant_name: options.merchantName ?? null,
+      p_expense_type: expenseType,
+      p_total_cents: totalCents,
+      p_service_fee_bps: serviceFeeBps,
+      p_fixed_fee_cents: fixedFeeCents,
+      p_payload: payload,
+    });
+
+    if (error) {
+      throw new Error(`SeedHelper.createExpense: create_expense failed: ${error.message}`);
+    }
+
+    const ack = unwrap(
+      decodeMutationAck(data),
+      "SeedHelper.createExpense: malformed create_expense acknowledgment",
+    );
+
+    if (!ack.expenseId || ack.versionNo === undefined) {
+      throw new Error(
+        "SeedHelper.createExpense: create_expense returned no expenseId or versionNo",
+      );
+    }
 
     return {
-      id: expenseId,
+      id: ack.expenseId,
       groupId,
       creatorId,
       title,
-      totalAmount,
-      status: "draft",
+      totalCents,
+      versionNo: ack.versionNo,
+      status: "active",
     };
   }
 
-  async createActiveExpense(
+  async createExpenseWithConfirmedSettlements(
     groupId: string,
     creatorId: string,
     participantIds: string[],
     options: CreateExpenseOptions = {},
-  ): Promise<SeededExpense> {
+  ): Promise<{ expense: SeededExpense; settlements: SeededSettlement[] }> {
     const expense = await this.createExpense(
       groupId,
       creatorId,
@@ -466,108 +498,83 @@ export class SeedHelper {
       options,
     );
 
-    const creatorClient = await this.authenticateAs(creatorId);
-    const { data: expenseRow, error: fetchError } = await this.admin
-      .from("expenses")
-      .select("graph_revision")
-      .eq("id", expense.id)
-      .single();
+    const { data: balanceRows, error: balanceError } = await this.admin
+      .from("group_balances")
+      .select("kind, participant_id, net_cents")
+      .eq("group_id", groupId);
 
-    if (fetchError || !expenseRow) {
+    if (balanceError) {
       throw new Error(
-        `SeedHelper.createActiveExpense: fetch graph_revision failed: ${fetchError?.message}`,
+        `SeedHelper.createExpenseWithConfirmedSettlements: balance query failed: ${balanceError.message}`,
       );
     }
 
-    const { error: rpcError } = await creatorClient.rpc("activate_saved_expense", {
-      p_expense_id: expense.id,
-      p_expected_graph_revision: expenseRow.graph_revision as number,
-    });
-
-    if (rpcError) {
-      throw new Error(
-        `SeedHelper.createActiveExpense: RPC failed: ${rpcError.message}`,
-      );
-    }
-
-    return { ...expense, status: "active" };
-  }
-
-  async createSettledExpense(
-    groupId: string,
-    creatorId: string,
-    participantIds: string[],
-    options: CreateExpenseOptions = {},
-  ): Promise<{ expense: SeededExpense; settlements: SeededSettlement[] }> {
-    const expense = await this.createActiveExpense(
-      groupId,
-      creatorId,
-      participantIds,
-      options,
-    );
-
-    const { data: balances, error: balError } = await this.admin
-      .from("balances")
-      .select("*")
-      .eq("group_id", groupId)
-      .neq("amount_cents", 0);
-
-    if (balError) {
-      throw new Error(
-        `SeedHelper.createSettledExpense: balance query failed: ${balError.message}`,
-      );
-    }
+    const balances: BalanceRow[] = (balanceRows ?? []).map((row) => ({
+      kind: row.kind as BalanceRow["kind"],
+      participantId: row.participant_id as string,
+      netCents: Number(row.net_cents),
+    }));
 
     const settlements: SeededSettlement[] = [];
 
-    for (const bal of balances ?? []) {
-      const amountCents = bal.amount_cents as number;
-      if (amountCents === 0) continue;
+    for (const transfer of transfersFromBalances(balances)) {
+      if (transfer.fromKind !== "user") {
+        throw new Error(
+          `SeedHelper.createExpenseWithConfirmedSettlements: guest ${transfer.fromId} cannot settle; ` +
+            `use a user-only fixture for confirmed settlements`,
+        );
+      }
 
-      const fromUserId = amountCents > 0
-        ? (bal.user_a as string)
-        : (bal.user_b as string);
-      const toUserId = amountCents > 0
-        ? (bal.user_b as string)
-        : (bal.user_a as string);
-      const absAmount = Math.abs(amountCents);
-
-      const debtorClient = await this.authenticateAs(fromUserId);
-      const { data, error: settleError } =
-        await debtorClient.rpc("record_settlements", {
-          p_allocations: [{
-            group_id: groupId,
-            from_user_id: fromUserId,
-            to_user_id: toUserId,
-            amount_cents: absAmount,
-          }],
+      const debtorClient = await this.authenticateAs(transfer.fromId);
+      const { data: recordData, error: recordError } = await debtorClient.rpc(
+        "record_settlement",
+        {
           p_operation_id: crypto.randomUUID(),
-        });
+          p_group_id: groupId,
+          p_to_user_id: transfer.toId,
+          p_amount_cents: transfer.amountCents,
+        },
+      );
 
-      if (settleError) {
+      if (recordError) {
         throw new Error(
-          `SeedHelper.createSettledExpense: settlement RPC failed: ${settleError.message}`,
+          `SeedHelper.createExpenseWithConfirmedSettlements: record_settlement failed: ${recordError.message}`,
         );
       }
 
-      if (!data || data.length !== 1 || typeof data[0].settlement_id !== "string") {
+      const recordAck = unwrap(
+        decodeMutationAck(recordData),
+        "SeedHelper.createExpenseWithConfirmedSettlements: malformed record_settlement acknowledgment",
+      );
+
+      if (!recordAck.settlementId) {
         throw new Error(
-          "SeedHelper.createSettledExpense: batch settlement did not return one settlement.",
+          "SeedHelper.createExpenseWithConfirmedSettlements: record_settlement returned no settlementId",
         );
       }
-      const settlement: SeededSettlement = {
-        id: data[0].settlement_id,
+
+      const creditorClient = await this.authenticateAs(transfer.toId);
+      const { error: confirmError } = await creditorClient.rpc("confirm_settlement", {
+        p_settlement_id: recordAck.settlementId,
+      });
+
+      if (confirmError) {
+        throw new Error(
+          `SeedHelper.createExpenseWithConfirmedSettlements: confirm_settlement failed: ${confirmError.message}`,
+        );
+      }
+
+      settlements.push({
+        id: recordAck.settlementId,
         groupId,
-        fromUserId,
-        toUserId,
-        amountCents: absAmount,
+        fromUserId: transfer.fromId,
+        toUserId: transfer.toId,
+        amountCents: transfer.amountCents,
         status: "confirmed",
-      };
-      this.settlementIds.push(settlement.id);
-      settlements.push(settlement);
+      });
     }
 
-    return { expense: { ...expense, status: "settled" }, settlements };
+    return { expense, settlements };
   }
 
   // -----------------------------------------------------------------------
@@ -598,99 +605,59 @@ export class SeedHelper {
   // -----------------------------------------------------------------------
 
   async cleanup(): Promise<void> {
+    const groupIds = new Set(this.groupIds);
+
     if (this.userIds.length > 0) {
-      const { error } = await this.admin
-        .from("settlement_operations")
-        .delete()
-        .in("initiated_by", this.userIds);
-      if (error) {
+      const [memberships, created] = await Promise.all([
+        this.admin.from("group_members").select("group_id").in("user_id", this.userIds),
+        this.admin.from("groups").select("id").in("creator_id", this.userIds),
+      ]);
+
+      if (memberships.error) {
         throw new Error(
-          `SeedHelper.cleanup: operation cleanup failed: ${error.message}`,
+          `SeedHelper.cleanup: group membership query failed: ${memberships.error.message}`,
         );
       }
-    }
-    if (this.settlementIds.length > 0) {
-      await this.admin
-        .from("settlements")
-        .delete()
-        .in("id", this.settlementIds);
-    }
-
-    if (this.expenseIds.length > 0) {
-      await this.admin
-        .from("expense_payers")
-        .delete()
-        .in("expense_id", this.expenseIds);
-      await this.admin
-        .from("expense_shares")
-        .delete()
-        .in("expense_id", this.expenseIds);
-      await this.admin
-        .from("expense_items")
-        .delete()
-        .in("expense_id", this.expenseIds);
-
-      if (this.groupIds.length > 0) {
-        await this.admin
-          .from("balances")
-          .delete()
-          .in("group_id", this.groupIds);
+      if (created.error) {
+        throw new Error(
+          `SeedHelper.cleanup: created-group query failed: ${created.error.message}`,
+        );
       }
 
-      await this.admin
-        .from("expenses")
-        .delete()
-        .in("id", this.expenseIds);
+      for (const row of memberships.data ?? []) groupIds.add(row.group_id as string);
+      for (const row of created.data ?? []) groupIds.add(row.id as string);
     }
 
-    if (this.groupIds.length > 0) {
-      await this.admin
-        .from("group_members")
-        .delete()
-        .in("group_id", this.groupIds);
-      await this.admin
+    if (groupIds.size > 0) {
+      const { error } = await this.admin
         .from("groups")
         .delete()
-        .in("id", this.groupIds);
+        .in("id", [...groupIds]);
+      if (error) {
+        throw new Error(`SeedHelper.cleanup: group delete failed: ${error.message}`);
+      }
     }
 
     if (this.userIds.length > 0) {
-      await this.admin
-        .from("users")
-        .delete()
-        .in("id", this.userIds);
+      const { error } = await this.admin.from("users").delete().in("id", this.userIds);
+      if (error) {
+        throw new Error(`SeedHelper.cleanup: user delete failed: ${error.message}`);
+      }
 
       for (const userId of this.userIds) {
-        await this.admin.auth.admin.deleteUser(userId);
+        const { error: authError } = await this.admin.auth.admin.deleteUser(userId);
+        if (authError) {
+          throw new Error(
+            `SeedHelper.cleanup: auth user delete failed for ${userId}: ${authError.message}`,
+          );
+        }
       }
     }
 
-    this.settlementIds = [];
-    this.expenseIds = [];
     this.groupIds = [];
     this.userIds = [];
     this.sessionCache.clear();
   }
-
-  // -----------------------------------------------------------------------
-  // Private helpers
-  // -----------------------------------------------------------------------
-
-  private equalSplit(
-    participantIds: string[],
-    totalAmount: number,
-  ): Record<string, number> {
-    const count = participantIds.length;
-    const baseShare = Math.floor(totalAmount / count);
-    const remainder = totalAmount - baseShare * count;
-
-    const shares: Record<string, number> = {};
-    for (let i = 0; i < count; i++) {
-      shares[participantIds[i]] = baseShare + (i < remainder ? 1 : 0);
-    }
-    return shares;
-  }
-
 }
 
 // ---------------------------------------------------------------------------

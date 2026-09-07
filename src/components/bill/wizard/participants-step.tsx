@@ -3,56 +3,58 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Plus, UserPlus, Users, Users2, X } from "lucide-react";
 import { useState } from "react";
-import { GroupSelector } from "@/components/bill/group-selector";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
-import { RecentContacts } from "@/components/bill/recent-contacts";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { User, UserProfile } from "@/types";
+import type { User } from "@/types";
+import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 
 export interface ParticipantsStepProps {
-  authUser: User | null;
+  me: Me;
   participants: User[];
   guests: { id: string; name: string }[];
-  /** User ids protected from removal because their share came from a
-   *  claimed guest (#495) -- populated only when editing an existing draft
-   *  that has one. Their remove control is hidden and clicking their row
-   *  is a no-op. */
-  protectedUserIds?: readonly string[];
   selectedGroupId: string | null;
-  selectedGroupName: string | null;
-  groupMembers: UserProfile[];
-  hasContactPicker: boolean;
-  onSelectGroup: (groupId: string, groupName: string, members: UserProfile[]) => void;
-  onDeselectGroup: () => void;
-  onAddParticipant: (user: User) => void;
+  groups: GroupSnapshot[];
+  createGroup: { enabled: boolean; name: string };
+  onToggleCreateGroup: (enabled: boolean) => void;
+  onCreateGroupName: (name: string) => void;
+  onSelectGroup: (groupId: string | null) => void;
+  onAddParticipant: (user: UserProfile) => void;
   onRemoveParticipant: (id: string) => void;
   onAddGuest: (name: string, phone?: string) => void;
   onRemoveGuest: (id: string) => void;
+  hasContactPicker: boolean;
   onPickContacts: () => Promise<void>;
 }
 
 export function ParticipantsStep({
-  authUser,
+  me,
   participants,
   guests,
-  protectedUserIds = [],
   selectedGroupId,
-  selectedGroupName,
-  groupMembers,
-  hasContactPicker,
+  groups,
+  createGroup,
+  onToggleCreateGroup,
+  onCreateGroupName,
   onSelectGroup,
-  onDeselectGroup,
   onAddParticipant,
   onRemoveParticipant,
   onAddGuest,
   onRemoveGuest,
   onPickContacts,
+  hasContactPicker,
 }: ParticipantsStepProps) {
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [showAddGuest, setShowAddGuest] = useState(false);
   const [guestNameInput, setGuestNameInput] = useState("");
+
+  const selectedGroup = groups.find((g) => g.group.id === selectedGroupId) ?? null;
+  const memberRows = selectedGroup
+    ? selectedGroup.members.filter((m) => m.userId !== me.id)
+    : [];
+  const othersCount = participants.filter((p) => p.id !== me.id).length;
+  const isSingleUserNoGuests = othersCount === 1 && guests.length === 0;
 
   return (
     <div className="space-y-4">
@@ -62,79 +64,91 @@ export function ParticipantsStep({
           : "Adiciona a galera pelo @handle ou escolhe um grupo."}
       </p>
 
-      <GroupSelector
-        currentUserId={authUser?.id ?? ""}
-        excludeIds={[]}
-        selectedGroupId={selectedGroupId}
-        selectedGroupName={selectedGroupName}
-        onSelectGroup={onSelectGroup}
-        onDeselectGroup={onDeselectGroup}
-      />
+      {selectedGroup ? (
+        <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
+          <div className="rounded-xl bg-primary/10 p-2 text-primary">
+            <Users2 className="h-4 w-4" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">{selectedGroup.group.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedGroup.members.length}{" "}
+              {selectedGroup.members.length === 1 ? "pessoa" : "pessoas"}
+            </p>
+          </div>
+          <button
+            onClick={() => onSelectGroup(null)}
+            aria-label="Remover grupo selecionado"
+            className="rounded-lg p-1 text-muted-foreground hover:text-destructive"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ) : (
+        groups.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">Escolher um grupo existente</p>
+            {groups.map((g) => (
+              <button
+                key={g.group.id}
+                type="button"
+                onClick={() => onSelectGroup(g.group.id)}
+                className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/30"
+              >
+                <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                  <Users2 className="h-4 w-4" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{g.group.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {g.members.length} {g.members.length === 1 ? "pessoa" : "pessoas"}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )
+      )}
 
       <div className="space-y-2">
-        {selectedGroupId && groupMembers.length > 0 ? (
+        {selectedGroup ? (
           <>
             <p className="text-xs text-muted-foreground">Quem participou desta conta?</p>
             <div
-              key={authUser?.id}
+              key={me.id}
               className="flex items-center gap-3 rounded-xl border bg-card p-3"
             >
               <input type="checkbox" checked disabled className="h-4 w-4 accent-primary" />
-              <UserAvatar name={authUser?.name ?? ""} avatarUrl={authUser?.avatarUrl} size="sm" />
+              <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="sm" />
               <div className="flex-1">
-                <p className="text-sm font-medium">{authUser?.name}</p>
-                <p className="text-xs text-muted-foreground">@{authUser?.handle}</p>
+                <p className="text-sm font-medium">{me.name}</p>
+                <p className="text-xs text-muted-foreground">@{me.handle}</p>
               </div>
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
             </div>
-            {groupMembers.map((m) => {
-              const isChecked = participants.some((p) => p.id === m.id);
-              const isProtected = protectedUserIds.includes(m.id);
-              if (isProtected) {
-                return (
-                  <div
-                    key={m.id}
-                    className="flex items-center gap-3 rounded-xl border bg-card p-3"
-                  >
-                    <input type="checkbox" checked disabled className="h-4 w-4 accent-primary" />
-                    <UserAvatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{m.name}</p>
-                      <p className="text-xs text-muted-foreground">@{m.handle}</p>
-                    </div>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Protegido</span>
-                  </div>
-                );
-              }
+            {memberRows.map((m) => {
+              const isChecked = participants.some((p) => p.id === m.userId);
+              const isInvited = m.status === "invited";
               return (
                 <button
-                  key={m.id}
+                  key={m.userId}
                   type="button"
-                  onClick={() => {
-                    if (isChecked) {
-                      onRemoveParticipant(m.id);
-                    } else {
-                      onAddParticipant({
-                        id: m.id,
-                        email: "",
-                        handle: m.handle,
-                        name: m.name,
-                        pixKeyType: "email",
-                        pixKeyHint: "",
-                        avatarUrl: m.avatarUrl,
-                        onboarded: true,
-                        createdAt: new Date().toISOString(),
-                      });
-                    }
-                  }}
+                  onClick={() =>
+                    isChecked ? onRemoveParticipant(m.userId) : onAddParticipant(m.user)
+                  }
                   className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/30"
                 >
                   <input type="checkbox" checked={isChecked} readOnly className="h-4 w-4 accent-primary pointer-events-none" />
-                  <UserAvatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
+                  <UserAvatar name={m.user.name} avatarUrl={m.user.avatarUrl} size="sm" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium">{m.name}</p>
-                    <p className="text-xs text-muted-foreground">@{m.handle}</p>
+                    <p className="text-sm font-medium">{m.user.name}</p>
+                    <p className="text-xs text-muted-foreground">@{m.user.handle}</p>
                   </div>
+                  {isInvited && (
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      convite pendente
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -147,10 +161,8 @@ export function ParticipantsStep({
                 <p className="text-sm font-medium">{p.name}</p>
                 <p className="text-xs text-muted-foreground">@{p.handle}</p>
               </div>
-              {p.id === authUser?.id ? (
+              {p.id === me.id ? (
                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
-              ) : protectedUserIds.includes(p.id) ? (
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">Protegido</span>
               ) : (
                 <button onClick={() => onRemoveParticipant(p.id)} aria-label={`Remover ${p.name}`} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                   <X className="h-4 w-4" />
@@ -224,72 +236,27 @@ export function ParticipantsStep({
         )}
       </AnimatePresence>
 
-      {!selectedGroupId && (
-        <>
-          <RecentContacts
-            onSelect={(profile) => {
-              onAddParticipant({
-                id: profile.id,
-                email: "",
-                handle: profile.handle,
-                name: profile.name,
-                pixKeyType: "email",
-                pixKeyHint: "",
-                avatarUrl: profile.avatarUrl,
-                onboarded: true,
-                createdAt: new Date().toISOString(),
-              });
+      <AnimatePresence>
+        {showAddParticipant && (
+          <AddParticipantByHandle
+            onAdd={(profile: UserProfile) => {
+              onAddParticipant(profile);
+              setShowAddParticipant(false);
             }}
+            onCancel={() => setShowAddParticipant(false)}
             excludeIds={participants.map((p) => p.id)}
-            currentUserId={authUser?.id ?? ""}
           />
-          <AnimatePresence>
-            {showAddParticipant && (
-              <AddParticipantByHandle
-                onAdd={(profile: UserProfile) => {
-                  onAddParticipant({
-                    id: profile.id,
-                    email: "",
-                    handle: profile.handle,
-                    name: profile.name,
-                    pixKeyType: "email",
-                    pixKeyHint: "",
-                    avatarUrl: profile.avatarUrl,
-                    onboarded: true,
-                    createdAt: new Date().toISOString(),
-                  });
-                  setShowAddParticipant(false);
-                }}
-                onCancel={() => setShowAddParticipant(false)}
-                excludeIds={participants.map((p) => p.id)}
-              />
-            )}
-          </AnimatePresence>
-          {!showAddParticipant && !showAddGuest && (
-            <div className="flex flex-col gap-2">
-              <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
-                <UserPlus className="h-4 w-4" />
-                Por @handle
-              </Button>
-              {hasContactPicker && (
-                <Button variant="outline" className="w-full gap-2" onClick={onPickContacts}>
-                  <Users2 className="h-4 w-4" />
-                  Dos contatos do celular
-                </Button>
-              )}
-              <Button variant="outline" className="w-full gap-2 border-dashed" onClick={() => setShowAddGuest(true)}>
-                <Users className="h-4 w-4" />
-                Adicionar convidado
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+        )}
+      </AnimatePresence>
 
-      {selectedGroupId && !showAddGuest && (
+      {!showAddParticipant && !showAddGuest && (
         <div className="flex flex-col gap-2">
+          <Button variant="outline" className="w-full gap-2" onClick={() => setShowAddParticipant(true)}>
+            <UserPlus className="h-4 w-4" />
+            Por @handle
+          </Button>
           {hasContactPicker && (
-            <Button variant="outline" className="w-full gap-2" onClick={onPickContacts}>
+            <Button variant="outline" className="w-full gap-2" onClick={() => void onPickContacts()}>
               <Users2 className="h-4 w-4" />
               Dos contatos do celular
             </Button>
@@ -298,6 +265,33 @@ export function ParticipantsStep({
             <Users className="h-4 w-4" />
             Adicionar convidado
           </Button>
+        </div>
+      )}
+
+      {!selectedGroupId && !isSingleUserNoGuests && (
+        <div className="rounded-2xl border bg-card p-4">
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={createGroup.enabled}
+              onChange={(e) => onToggleCreateGroup(e.target.checked)}
+              className="h-4 w-4 accent-primary"
+            />
+            <span className="text-sm font-medium">Criar grupo com essas pessoas</span>
+          </label>
+          {createGroup.enabled && (
+            <div className="mt-3">
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                Nome do grupo
+              </label>
+              <Input
+                type="text"
+                placeholder="Nome do grupo"
+                value={createGroup.name}
+                onChange={(e) => onCreateGroupName(e.target.value)}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 import { test, expect, loginInContext } from "../fixtures";
 
 test.describe("DM first expense", () => {
-  test("wizard creates expense and system message appears in thread", async ({
+  test("wizard creates expense and its event appears in thread", async ({
     page,
     seed,
     loginAs,
@@ -10,7 +10,6 @@ test.describe("DM first expense", () => {
     const alice = await seed.createUser({ name: "Alice DM Expense" });
     const bob = await seed.createUser({ name: "Bob DM Expense" });
 
-    await seed.createGroup(alice.id, [bob.id], "Prior Shared");
     const dm = await seed.createDmGroup(alice, bob);
 
     await loginAs(alice, { navigate: false });
@@ -45,20 +44,20 @@ test.describe("DM first expense", () => {
       .getByRole("button", { name: /Próximo|Continuar/i })
       .click();
 
-    // summary step → finalize ("Gerar cobranças Pix" saves the draft and
-    // calls activate_expense; on success the page navigates to /app/bill/{id})
+    // summary step → finalize ("Gerar cobranças Pix" calls create_expense; on
+    // success the page navigates to /app/bill/{id})
     await page
       .getByRole("button", { name: /Gerar cobranças Pix/i })
       .click();
 
     // Wait for navigation away from /new — the page only leaves /app/bill/new
-    // after saveExpenseDraft + activate_expense complete.
+    // after create_expense completes.
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, {
       timeout: 15000,
     });
 
-    // Poll the DB for the active expense — saveExpenseDraft + activate_expense
-    // are async and may lag slightly behind the navigation.
+    // Poll the DB for the expense — create_expense is async and may lag
+    // slightly behind the navigation.
     await expect
       .poll(
         async () => {
@@ -81,23 +80,24 @@ test.describe("DM first expense", () => {
 
     const expense = expenses![0];
 
-    const { data: chatMessages } = await adminClient
-      .from("chat_messages")
-      .select("id, message_type, expense_id")
+    const { data: events } = await adminClient
+      .from("group_events")
+      .select("id, kind, expense_id")
       .eq("group_id", dm.id)
-      .eq("message_type", "system_expense");
+      .eq("kind", "expense_created");
 
-    expect(chatMessages).not.toBeNull();
-    expect(chatMessages!.length).toBeGreaterThan(0);
-    expect(chatMessages![0].expense_id).toBe(expense.id);
+    expect(events).toHaveLength(1);
+    expect(events![0].expense_id).toBe(expense.id);
 
     await page.goto(`/app/conversations/${bob.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Uber")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("link", { name: /Uber/ })).toBeVisible({
+      timeout: 5000,
+    });
   });
 
-  test("both users see system message via fresh page load", async ({
+  test("both users see the expense event via fresh page load", async ({
     page,
     seed,
     loginAs,
@@ -107,12 +107,11 @@ test.describe("DM first expense", () => {
     const alice = await seed.createUser({ name: "Alice DM Both" });
     const bob = await seed.createUser({ name: "Bob DM Both" });
 
-    await seed.createGroup(alice.id, [bob.id], "Prior Both Shared");
     const dm = await seed.createDmGroup(alice, bob);
 
-    await seed.createActiveExpense(dm.id, alice.id, [alice.id, bob.id], {
-      title: "Almoço",
-      totalAmount: 5000,
+    await seed.createExpense(dm.id, alice.id, [alice.id, bob.id], {
+      title: "Lunch",
+      totalCents: 5000,
       expenseType: "single_amount",
     });
 
@@ -120,7 +119,9 @@ test.describe("DM first expense", () => {
     await page.goto(`/app/conversations/${bob.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Almoço")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("link", { name: /Lunch/ })).toBeVisible({
+      timeout: 5000,
+    });
 
     const bobContext = await browser.newContext();
     const bobPage = await bobContext.newPage();
@@ -129,21 +130,22 @@ test.describe("DM first expense", () => {
     await bobPage.goto(`/app/conversations/${alice.id}`);
     await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Almoço")).toBeVisible({ timeout: 5000 });
+    await expect(bobPage.getByRole("link", { name: /Lunch/ })).toBeVisible({
+      timeout: 5000,
+    });
 
-    const { data: messages } = await adminClient
-      .from("chat_messages")
-      .select("id, message_type, expense_id")
+    const { data: events } = await adminClient
+      .from("group_events")
+      .select("id, expense_id")
       .eq("group_id", dm.id)
-      .eq("message_type", "system_expense");
+      .eq("kind", "expense_created");
 
-    expect(messages).not.toBeNull();
-    expect(messages!.length).toBeGreaterThan(0);
+    expect(events).toHaveLength(1);
 
     await bobContext.close();
   });
 
-  test("seeded active expense in DM inserts system message", async ({
+  test("seeded expense in DM emits an expense-created event", async ({
     page,
     seed,
     loginAs,
@@ -152,28 +154,28 @@ test.describe("DM first expense", () => {
     const alice = await seed.createUser({ name: "Alice DM Seed" });
     const bob = await seed.createUser({ name: "Bob DM Seed" });
 
-    await seed.createGroup(alice.id, [bob.id], "Prior Seed Shared");
     const dm = await seed.createDmGroup(alice, bob);
 
-    await seed.createActiveExpense(dm.id, alice.id, [alice.id, bob.id], {
-      title: "Teste Seed",
-      totalAmount: 2500,
+    await seed.createExpense(dm.id, alice.id, [alice.id, bob.id], {
+      title: "Seed Test",
+      totalCents: 2500,
       expenseType: "single_amount",
     });
 
-    const { data: messages } = await adminClient
-      .from("chat_messages")
-      .select("id, message_type, expense_id")
+    const { data: events } = await adminClient
+      .from("group_events")
+      .select("id, expense_id")
       .eq("group_id", dm.id)
-      .eq("message_type", "system_expense");
+      .eq("kind", "expense_created");
 
-    expect(messages).not.toBeNull();
-    expect(messages!.length).toBeGreaterThan(0);
+    expect(events).toHaveLength(1);
 
     await loginAs(alice, { navigate: false });
     await page.goto(`/app/conversations/${bob.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText("Teste Seed")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("link", { name: /Seed Test/ })).toBeVisible({
+      timeout: 5000,
+    });
   });
 });

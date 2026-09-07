@@ -239,6 +239,30 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(detail.versions[0]?.versionNo).toBe(2);
   });
 
+  it("edit swapping only the payer reports payersChanged without a total change", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([alice.id, bruno.id], 2000, 0),
+    });
+
+    const { error } = await callRpc(
+      aliceClient,
+      "edit_expense",
+      editArgs(created.expenseId, 1, 2000, equalSplitPayload([alice.id, bruno.id], 2000, 1)),
+    );
+    expect(error).toBeNull();
+
+    const balances = await getBalances(groupId);
+    expect(balances.find((row) => row.participant_id === alice.id)?.net_cents).toBe(-1000);
+    expect(balances.find((row) => row.participant_id === bruno.id)?.net_cents).toBe(1000);
+
+    const detail = await getExpense(created.expenseId);
+    expect(detail.current.changeSummary?.payersChanged).toBe(true);
+    expect(detail.current.changeSummary?.totalCents).toBeNull();
+  });
+
   it("edit adding a participant reports them in participantsAdded and balances", async () => {
     const groupId = await createGroupWithMembers(alice, [bruno, carla]);
     const created = await createExpense(alice, {

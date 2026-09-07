@@ -46,16 +46,6 @@ jobs:
           echo "service_role_key=${SERVICE_ROLE_KEY}" >> $GITHUB_OUTPUT
           echo "db_url=${DB_URL}" >> $GITHUB_OUTPUT
 
-      - name: Apply the staged ledger schema
-        run: |
-          if [ -f supabase/ledger-fixture.sql ]; then
-            psql "${{ steps.supabase.outputs.db_url }}" -v ON_ERROR_STOP=1 -q \
-              -f supabase/ledger-fixture.sql
-            echo "applied supabase/ledger-fixture.sql over the legacy migrations"
-          else
-            echo "no staged schema; supabase/migrations already provides the ledger"
-          fi
-
       - name: Run integration tests
         run: npm run test:integration
         env:
