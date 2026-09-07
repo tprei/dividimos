@@ -61,7 +61,10 @@ export function DashboardContent() {
   const debtRows = useAppStore(selectDebtRows);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [activeTab, setActiveTab] = useState<"owes" | "owed">("owes");
-  const [payingDebt, setPayingDebt] = useState<DebtRow | null>(null);
+  const [pixTarget, setPixTarget] = useState<{
+    debt: DebtRow;
+    mode: "pay" | "collect";
+  } | null>(null);
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
 
   if (!hydrated || !me) {
@@ -82,12 +85,12 @@ export function DashboardContent() {
   const isPositive = netBalance >= 0;
   const filteredDebts = debtRows.filter((row) => row.direction === activeTab);
   const handleMarkPaid = async (amountCents: number) => {
-    const debt = payingDebt;
-    if (!me || !debt) throw new LedgerError("unauthenticated");
+    if (!me || !pixTarget) throw new LedgerError("unauthenticated");
+    const { debt, mode } = pixTarget;
     await recordSettlement({
       groupId: debt.groupId,
-      fromUserId: me.id,
-      toUserId: debt.counterpartyId,
+      fromUserId: mode === "pay" ? me.id : debt.counterpartyId,
+      toUserId: mode === "pay" ? debt.counterpartyId : me.id,
       amountCents,
     });
   };
@@ -302,7 +305,12 @@ export function DashboardContent() {
             >
               <DebtCard
                 debt={debt}
-                onPay={setPayingDebt}
+                onPay={(row) => setPixTarget({ debt: row, mode: "pay" })}
+                onCharge={
+                  debt.direction === "owed" && debt.counterpartyKind === "user"
+                    ? () => setPixTarget({ debt, mode: "collect" })
+                    : undefined
+                }
                 onNudge={
                   debt.direction === "owed" && debt.counterpartyKind === "user"
                     ? () => handleNudge(debt.groupId, debt.counterpartyId)
@@ -321,15 +329,17 @@ export function DashboardContent() {
         />
       )}
 
-      {payingDebt && (
+      {pixTarget && (
         <PixQrModal
           open
-          onClose={() => setPayingDebt(null)}
-          recipientName={payingDebt.counterpartyName}
-          amountCents={payingDebt.amountCents}
-          recipientUserId={payingDebt.counterpartyId}
-          groupId={payingDebt.groupId}
-          mode="pay"
+          onClose={() => setPixTarget(null)}
+          recipientName={pixTarget.debt.counterpartyName}
+          amountCents={pixTarget.debt.amountCents}
+          recipientUserId={
+            pixTarget.mode === "pay" ? pixTarget.debt.counterpartyId : me.id
+          }
+          groupId={pixTarget.debt.groupId}
+          mode={pixTarget.mode}
           onMarkPaid={handleMarkPaid}
         />
       )}
