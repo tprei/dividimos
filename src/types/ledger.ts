@@ -6,7 +6,7 @@ export type GroupKind = "group" | "dm";
 export type MemberStatus = "invited" | "accepted";
 export type ExpenseType = "itemized" | "single_amount";
 export type ExpenseStatus = "active" | "deleted";
-export type SettlementStatus = "pending" | "confirmed" | "voided";
+export type SettlementStatus = "confirmed" | "voided";
 export type ParticipantKind = "user" | "guest";
 export type EventKind =
   | "expense_created"
@@ -14,7 +14,6 @@ export type EventKind =
   | "expense_deleted"
   | "expense_restored"
   | "settlement_recorded"
-  | "settlement_confirmed"
   | "settlement_voided"
   | "member_invited"
   | "member_joined"
@@ -245,7 +244,7 @@ export interface GroupSnapshot {
   members: GroupMember[];
   balances: BalanceRow[];
   guests: GroupGuest[];
-  pendingSettlements: Settlement[];
+  settlements: Settlement[];
   recentExpenses: ExpenseSummary[];
   lastEventId: number;
   unreadCount: number;

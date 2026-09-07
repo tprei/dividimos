@@ -90,7 +90,7 @@ describe("ConversationPayButton", () => {
     expect(screen.getByText(/Cobrar R\$\s*30,00/)).toBeDefined();
   });
 
-  it("opens modal and marks payment on confirm", async () => {
+  it("opens the pay modal and records the settlement as payer", async () => {
     render(
       <ConversationPayButton
         groupId="g-1"
@@ -112,8 +112,36 @@ describe("ConversationPayButton", () => {
 
     expect(mutations.recordSettlement).toHaveBeenCalledWith({
       groupId: "g-1",
+      fromUserId: "user-me",
       toUserId: "user-bob",
       amountCents: 5000,
+    });
+  });
+
+  it("records the collect settlement with the debtor as fromUserId and me as toUserId", async () => {
+    render(
+      <ConversationPayButton
+        groupId="g-1"
+        meId="user-me"
+        counterpartyId="user-bob"
+        counterpartyName="Bob Silva"
+        rows={[makeDebtRow("owed", 3000)]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button"));
+
+    const modal = await screen.findByTestId("pix-modal");
+    expect(modal).toBeDefined();
+    expect(pixModalProps.current?.mode).toBe("collect");
+
+    fireEvent.click(screen.getByTestId("pix-confirm"));
+
+    expect(mutations.recordSettlement).toHaveBeenCalledWith({
+      groupId: "g-1",
+      fromUserId: "user-bob",
+      toUserId: "user-me",
+      amountCents: 3000,
     });
   });
 });

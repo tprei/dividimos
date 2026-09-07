@@ -12,7 +12,6 @@ import { useAppStore } from "@/stores/app-store";
 import { rpc, rpcVoid } from "./client";
 import { loadConversation, refreshExpense, refreshGroup } from "./refresh";
 import {
-  confirmSettlement,
   createExpense,
   deleteExpense,
   editExpense,
@@ -112,7 +111,7 @@ function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
       { kind: "user", participantId: USER_2.id, netCents: 0 },
     ],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: 10,
     unreadCount: 3,
@@ -332,67 +331,6 @@ describe("mutations", () => {
       ).rejects.toThrow("network");
 
       expect(useAppStore.getState().groups.g1).toBe(refreshed);
-      expect(refreshGroup).toHaveBeenCalledWith("g1");
-    });
-  });
-
-  describe("confirmSettlement", () => {
-    it("applies the settlement delta optimistically and rolls back on failure", async () => {
-      const pending: Settlement = {
-        id: "settle-1",
-        operationId: "op-1",
-        groupId: "g1",
-        fromUserId: USER_2.id,
-        toUserId: ME.id,
-        amountCents: 1500,
-        status: "pending",
-        createdBy: USER_2.id,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        confirmedAt: null,
-        voidedAt: null,
-        voidedBy: null,
-      };
-
-      const g1 = makeGroupSnapshot("g1");
-      g1.pendingSettlements = [pending];
-      g1.balances = [
-        { kind: "user", participantId: ME.id, netCents: 1500 },
-        { kind: "user", participantId: USER_2.id, netCents: -1500 },
-      ];
-
-      useAppStore.setState({
-        hydrated: true,
-        me: ME,
-        groups: { g1 },
-        groupOrder: ["g1"],
-        expenseLists: {},
-        expenses: {},
-        expenseDetails: {},
-        activity: { items: [], oldestId: null },
-        conversations: {},
-        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
-      });
-
-      const prevBalances = useAppStore.getState().groups.g1?.balances;
-      const prevPending = useAppStore.getState().groups.g1?.pendingSettlements;
-
-      vi.mocked(rpc).mockRejectedValueOnce(new Error("settlement_not_pending"));
-
-      await expect(confirmSettlement("g1", "settle-1")).rejects.toThrow("settlement_not_pending");
-
-      const stateAfterFail = useAppStore.getState();
-      expect(stateAfterFail.groups.g1?.pendingSettlements).toBe(prevPending);
-      expect(stateAfterFail.groups.g1?.balances).toBe(prevBalances);
-
-      const ack: MutationAck = { groupId: "g1", settlementId: "settle-1", ledgerVersion: 3, eventId: 50 };
-      vi.mocked(rpc).mockResolvedValueOnce(ack);
-
-      const successAck = await confirmSettlement("g1", "settle-1");
-      expect(successAck).toEqual(ack);
-
-      const stateAfterSuccess = useAppStore.getState();
-      expect(stateAfterSuccess.groups.g1?.pendingSettlements).toHaveLength(0);
-      expect(stateAfterSuccess.groups.g1?.balances).toEqual([]);
       expect(refreshGroup).toHaveBeenCalledWith("g1");
     });
   });
@@ -693,7 +631,7 @@ describe("mutations", () => {
   });
 
   describe("recordSettlement and voidSettlement", () => {
-    it("records a pending settlement and replaces its id after ack", async () => {
+    it("sends both party ids, applies a confirmed settlement and moves balances", async () => {
       useAppStore.setState({
         hydrated: true,
         me: ME,
@@ -714,32 +652,86 @@ describe("mutations", () => {
         eventId: 70,
       });
 
-      const ack = await recordSettlement({ groupId: "g1", toUserId: USER_2.id, amountCents: 2000 });
+      const ack = await recordSettlement({
+        groupId: "g1",
+        fromUserId: ME.id,
+        toUserId: USER_2.id,
+        amountCents: 2000,
+      });
       expect(ack.settlementId).toBe("settle-server-1");
 
-      const pending = useAppStore.getState().groups.g1?.pendingSettlements;
-      expect(pending).toHaveLength(1);
-      expect(pending?.[0]?.id).toBe("settle-server-1");
-      expect(pending?.[0]?.amountCents).toBe(2000);
+      expect(rpc).toHaveBeenCalledWith(
+        "record_settlement",
+        {
+          p_operation_id: expect.any(String),
+          p_group_id: "g1",
+          p_from_user_id: ME.id,
+          p_to_user_id: USER_2.id,
+          p_amount_cents: 2000,
+        },
+        expect.any(Function),
+      );
+
+      const group = useAppStore.getState().groups.g1;
+      expect(group?.settlements).toHaveLength(1);
+      const settlement = group?.settlements[0];
+      expect(settlement?.id).toBe("settle-server-1");
+      expect(settlement?.operationId).toEqual(expect.any(String));
+      expect(settlement?.status).toBe("confirmed");
+      expect(settlement?.confirmedAt).not.toBeNull();
+      expect(settlement?.fromUserId).toBe(ME.id);
+      expect(settlement?.toUserId).toBe(USER_2.id);
+      const meBalance = group?.balances.find((b) => b.participantId === ME.id);
+      const otherBalance = group?.balances.find((b) => b.participantId === USER_2.id);
+      expect(meBalance?.netCents).toBe(2000);
+      expect(otherBalance?.netCents).toBe(-2000);
     });
 
-    it("voids a pending settlement and confirmed settlement", async () => {
+    it("rolls back the settlement and balances when the record fails", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+        expenseLists: {},
+        expenses: {},
+        expenseDetails: {},
+        activity: { items: [], oldestId: null },
+        conversations: {},
+        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const prevGroup = useAppStore.getState().groups.g1;
+      vi.mocked(rpc).mockRejectedValueOnce(new Error("not_party"));
+
+      await expect(
+        recordSettlement({ groupId: "g1", fromUserId: ME.id, toUserId: USER_2.id, amountCents: 2000 }),
+      ).rejects.toThrow("not_party");
+
+      expect(useAppStore.getState().groups.g1).toBe(prevGroup);
+      expect(useAppStore.getState().groups.g1?.settlements).toHaveLength(0);
+    });
+
+    it("voids an applied settlement, removes it and restores balances", async () => {
+      const applied: Settlement = {
+        id: "s-applied",
+        operationId: "op-applied",
+        groupId: "g1",
+        fromUserId: ME.id,
+        toUserId: USER_2.id,
+        amountCents: 1000,
+        status: "confirmed",
+        createdBy: ME.id,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        confirmedAt: "2026-01-01T00:00:00.000Z",
+        voidedAt: null,
+        voidedBy: null,
+      };
       const g1 = makeGroupSnapshot("g1");
-      g1.pendingSettlements = [
-        {
-          id: "s-pending",
-          operationId: "op-pending",
-          groupId: "g1",
-          fromUserId: ME.id,
-          toUserId: USER_2.id,
-          amountCents: 1000,
-          status: "pending",
-          createdBy: ME.id,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          confirmedAt: null,
-          voidedAt: null,
-          voidedBy: null,
-        },
+      g1.settlements = [applied];
+      g1.balances = [
+        { kind: "user", participantId: ME.id, netCents: -1000 },
+        { kind: "user", participantId: USER_2.id, netCents: 1000 },
       ];
 
       useAppStore.setState({
@@ -750,20 +742,43 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: {
+          items: [
+            {
+              id: 90,
+              groupId: "g1",
+              actorId: ME.id,
+              kind: "settlement_recorded",
+              expenseId: null,
+              settlementId: "s-applied",
+              subjectUserId: USER_2.id,
+              payload: { fromUserId: ME.id, toUserId: USER_2.id, amountCents: 1000 },
+              createdAt: "2026-01-01T00:00:00.000Z",
+              actor: null,
+              expenseTitle: null,
+            },
+          ],
+          oldestId: 90,
+        },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
 
       vi.mocked(rpc).mockResolvedValueOnce({
         groupId: "g1",
-        settlementId: "s-pending",
+        settlementId: "s-applied",
         ledgerVersion: 1,
         eventId: 80,
       });
 
-      await voidSettlement("g1", "s-pending", false);
-      expect(useAppStore.getState().groups.g1?.pendingSettlements).toHaveLength(0);
+      await voidSettlement("g1", "s-applied");
+
+      const group = useAppStore.getState().groups.g1;
+      expect(group?.settlements).toHaveLength(0);
+      const meBalance = group?.balances.find((b) => b.participantId === ME.id);
+      const otherBalance = group?.balances.find((b) => b.participantId === USER_2.id);
+      expect(meBalance?.netCents).toBe(-2000);
+      expect(otherBalance?.netCents).toBe(2000);
     });
   });
 

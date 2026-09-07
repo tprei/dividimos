@@ -50,7 +50,7 @@ function seedStoreWithContacts() {
     ],
     balances: [],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: 0,
     unreadCount: 0,

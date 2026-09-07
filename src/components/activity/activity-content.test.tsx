@@ -5,7 +5,7 @@ import { markActivityViewed } from "@/lib/activity-badge";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { loadActivity } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
-import type { GroupEvent, GroupSnapshot, Me, UserProfile } from "@/types/ledger";
+import type { GroupEvent, GroupSnapshot, Me, Settlement, UserProfile } from "@/types/ledger";
 
 vi.mock("@/lib/sync/refresh", () => ({
   loadActivity: vi.fn().mockResolvedValue(undefined),
@@ -100,7 +100,7 @@ const groupNormal: GroupSnapshot = {
   ],
   balances: [],
   guests: [],
-  pendingSettlements: [],
+  settlements: [],
   recentExpenses: [],
   lastEventId: 10,
   unreadCount: 0,
@@ -139,7 +139,7 @@ const groupDm: GroupSnapshot = {
   ],
   balances: [],
   guests: [],
-  pendingSettlements: [],
+  settlements: [],
   recentExpenses: [],
   lastEventId: 11,
   unreadCount: 0,
@@ -175,11 +175,11 @@ const dmEvent: GroupEvent = {
   expenseTitle: "Café",
 };
 
-const confirmedSettlementEvent: GroupEvent = {
+const recordedSettlementEvent: GroupEvent = {
   id: 103,
   groupId: "group-dm",
   actorId: "me-id",
-  kind: "settlement_confirmed",
+  kind: "settlement_recorded",
   expenseId: null,
   settlementId: "sett-789",
   subjectUserId: "user-bob",
@@ -193,6 +193,21 @@ const confirmedSettlementEvent: GroupEvent = {
   expenseTitle: null,
 };
 
+const activeSettlement: Settlement = {
+  id: "sett-789",
+  operationId: "op-789",
+  groupId: "group-dm",
+  fromUserId: bob.id,
+  toUserId: me.id,
+  amountCents: 3500,
+  status: "confirmed",
+  createdBy: me.id,
+  createdAt: "2026-09-06T13:00:00Z",
+  confirmedAt: "2026-09-06T13:00:00Z",
+  voidedAt: null,
+  voidedBy: null,
+};
+
 describe("ActivityContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -204,7 +219,7 @@ describe("ActivityContent", () => {
         "group-dm": groupDm,
       },
       activity: {
-        items: [confirmedSettlementEvent, dmEvent, expenseCreatedEvent],
+        items: [recordedSettlementEvent, dmEvent, expenseCreatedEvent],
         oldestId: 101,
       },
     });
@@ -219,9 +234,7 @@ describe("ActivityContent", () => {
     expect(
       screen.getByText(/Bob adicionou Café.*20,00/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Eu Mesmo confirmou o pagamento de.*35,00 de Bob/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/35,00/)).toBeInTheDocument();
 
     expect(screen.getByText("Amigos da Praia")).toBeInTheDocument();
     expect(screen.getAllByText("Bob").length).toBeGreaterThanOrEqual(1);
@@ -258,7 +271,13 @@ describe("ActivityContent", () => {
     });
   });
 
-  it("shows 'Desfazer' on confirmed settlement and calls voidSettlement(groupId, settlementId, true)", async () => {
+  it("shows 'Desfazer' on an active settlement and voids it", async () => {
+    useAppStore.setState({
+      groups: {
+        "group-1": groupNormal,
+        "group-dm": { ...groupDm, settlements: [activeSettlement] },
+      },
+    });
     render(<ActivityContent />);
     const undoButton = screen.getByRole("button", { name: /Desfazer/i });
     expect(undoButton).toBeInTheDocument();
@@ -266,11 +285,11 @@ describe("ActivityContent", () => {
     fireEvent.click(undoButton);
 
     await waitFor(() => {
-      expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789", true);
+      expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789");
     });
   });
 
-  it("does not show 'Desfazer' if the latest event for that settlement is settlement_voided", () => {
+  it("does not show 'Desfazer' once the settlement is voided and gone from the snapshot", () => {
     const voidedEvent: GroupEvent = {
       id: 104,
       groupId: "group-dm",
@@ -279,7 +298,7 @@ describe("ActivityContent", () => {
       expenseId: null,
       settlementId: "sett-789",
       subjectUserId: "user-bob",
-      payload: { amountCents: 3500, wasConfirmed: true },
+      payload: { amountCents: 3500 },
       createdAt: "2026-09-06T14:00:00Z",
       actor: me,
       expenseTitle: null,
@@ -287,7 +306,7 @@ describe("ActivityContent", () => {
 
     useAppStore.setState({
       activity: {
-        items: [voidedEvent, confirmedSettlementEvent],
+        items: [recordedSettlementEvent, voidedEvent],
         oldestId: 101,
       },
     });

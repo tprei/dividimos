@@ -4,7 +4,6 @@ import { EventCard } from "./event-card";
 import type { GroupEvent, Settlement } from "@/types/ledger";
 
 const mutations = vi.hoisted(() => ({
-  confirmSettlement: vi.fn().mockResolvedValue({ eventId: 1 }),
   voidSettlement: vi.fn().mockResolvedValue({ eventId: 2 }),
 }));
 vi.mock("@/lib/sync/mutations", () => mutations);
@@ -28,7 +27,7 @@ function makeSettlement(overrides: Partial<Settlement> = {}): Settlement {
     fromUserId: otherId,
     toUserId: meId,
     amountCents: 5000,
-    status: "pending",
+    status: "confirmed",
     createdBy: otherId,
     createdAt: "2026-01-01T10:00:00Z",
     confirmedAt: null,
@@ -62,8 +61,9 @@ describe("EventCard", () => {
     vi.clearAllMocks();
   });
 
-  it("shows Confirmar and Recusar for pending settlement when viewer is payee and calls mutations", async () => {
-    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId, status: "pending" });
+
+  it("shows Confirmado with Desfazer for a settlement still present", async () => {
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
     const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
 
     render(
@@ -77,20 +77,50 @@ describe("EventCard", () => {
       />,
     );
 
-    const confirmBtn = screen.getByTestId("event-confirm-settlement");
-    const rejectBtn = screen.getByTestId("event-reject-settlement");
-    expect(confirmBtn).toBeDefined();
-    expect(rejectBtn).toBeDefined();
+    expect(screen.getByText("Confirmado")).toBeDefined();
+    expect(screen.queryByTestId("event-confirm-settlement")).toBeNull();
+    expect(screen.queryByTestId("event-reject-settlement")).toBeNull();
 
-    fireEvent.click(confirmBtn);
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
     await waitFor(() => {
-      expect(mutations.confirmSettlement).toHaveBeenCalledWith("g1", "set-1");
+      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
     });
+  });
 
-    fireEvent.click(rejectBtn);
-    await waitFor(() => {
-      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1", false);
-    });
+  it("offers Desfazer to the payer as well", () => {
+    const settlement = makeSettlement({ toUserId: otherId, fromUserId: meId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    expect(screen.getByTestId("event-undo-settlement")).toBeDefined();
+  });
+
+  it("shows Desfeito without actions once the settlement is gone", () => {
+    const event = makeEvent({ kind: "settlement_recorded" });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={null}
+        latestStatus="voided"
+        nameOf={nameOf}
+      />,
+    );
+
+    expect(screen.getByText("Desfeito")).toBeDefined();
+    expect(screen.queryByTestId("event-undo-settlement")).toBeNull();
   });
 
   it("links expense cards to the expense", () => {

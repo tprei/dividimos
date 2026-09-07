@@ -49,7 +49,7 @@ function makeGroup(id: string, name: string, members: Array<{ id: string; name: 
     })),
     balances: [],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: 0,
     unreadCount: 0,

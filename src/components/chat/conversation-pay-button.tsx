@@ -85,6 +85,7 @@ export function ConversationPayButton({
           onMarkPaid={async (amountCents: number) => {
             await recordSettlement({
               groupId,
+              fromUserId: mode === "pay" ? meId : counterpartyId,
               toUserId: mode === "pay" ? counterpartyId : meId,
               amountCents,
             });

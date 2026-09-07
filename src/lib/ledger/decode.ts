@@ -79,7 +79,6 @@ const GROUP_KINDS: readonly GroupKind[] = ["group", "dm"];
 const MEMBER_STATUSES: readonly MemberStatus[] = ["invited", "accepted"];
 const PARTICIPANT_KINDS: readonly ParticipantKind[] = ["user", "guest"];
 const SETTLEMENT_STATUSES: readonly SettlementStatus[] = [
-  "pending",
   "confirmed",
   "voided",
 ];
@@ -89,7 +88,6 @@ const EVENT_KINDS: readonly EventKind[] = [
   "expense_deleted",
   "expense_restored",
   "settlement_recorded",
-  "settlement_confirmed",
   "settlement_voided",
   "member_invited",
   "member_joined",
@@ -512,7 +510,7 @@ const GROUP_SNAPSHOT_KEYS = [
   "members",
   "balances",
   "guests",
-  "pendingSettlements",
+  "settlements",
   "recentExpenses",
   "lastEventId",
   "unreadCount",
@@ -537,12 +535,12 @@ export function decodeGroupSnapshot(
   if (!balances.ok) return balances;
   const guests = arrayOf(raw.guests, [...path, "guests"], decodeGroupGuest);
   if (!guests.ok) return guests;
-  const pendingSettlements = arrayOf(
-    raw.pendingSettlements,
-    [...path, "pendingSettlements"],
+  const settlements = arrayOf(
+    raw.settlements,
+    [...path, "settlements"],
     decodeSettlement,
   );
-  if (!pendingSettlements.ok) return pendingSettlements;
+  if (!settlements.ok) return settlements;
   const recentExpenses = arrayOf(
     raw.recentExpenses,
     [...path, "recentExpenses"],
@@ -569,7 +567,7 @@ export function decodeGroupSnapshot(
     members: members.value,
     balances: balances.value,
     guests: guests.value,
-    pendingSettlements: pendingSettlements.value,
+    settlements: settlements.value,
     recentExpenses: recentExpenses.value,
     lastEventId: lastEventId.value,
     unreadCount: unreadCount.value,

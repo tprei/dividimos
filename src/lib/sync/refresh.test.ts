@@ -33,7 +33,7 @@ function snapshot(groupId: string, ledgerVersion: number): GroupSnapshot {
     members: [],
     balances: [],
     guests: [],
-    pendingSettlements: [],
+    settlements: [],
     recentExpenses: [],
     lastEventId: ledgerVersion,
     unreadCount: 0,

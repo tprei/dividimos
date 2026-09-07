@@ -52,7 +52,7 @@ interface GroupSnapshot {
   }>;
   balances: Array<{ kind: string; participantId: string; netCents: number }>;
   guests: Array<{ id: string; displayName: string; expenseId: string }>;
-  pendingSettlements: unknown[];
+  settlements: unknown[];
   recentExpenses: ExpenseSummary[];
   lastEventId: number;
   unreadCount: number;
@@ -196,7 +196,7 @@ const SNAPSHOT_KEYS = [
   "members",
   "balances",
   "guests",
-  "pendingSettlements",
+  "settlements",
   "recentExpenses",
   "lastEventId",
   "unreadCount",
@@ -568,6 +568,7 @@ describe.skipIf(!isIntegrationTestReady)(
       await rpcOk<{ settlementId: string }>(authenticateAs(member), "record_settlement", {
         p_operation_id: crypto.randomUUID(),
         p_group_id: groupId,
+        p_from_user_id: member.id,
         p_to_user_id: inviter.id,
         p_amount_cents: 100,
       });
@@ -584,7 +585,7 @@ describe.skipIf(!isIntegrationTestReady)(
       });
       expect(snap.balances).toEqual([]);
       expect(snap.guests).toEqual([]);
-      expect(snap.pendingSettlements).toEqual([]);
+      expect(snap.settlements).toEqual([]);
       expect(snap.recentExpenses).toEqual([]);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();
@@ -605,7 +606,7 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       expect(snap.balances).toHaveLength(3);
       expect(snap.guests).toHaveLength(1);
-      expect(snap.pendingSettlements).toHaveLength(1);
+      expect(snap.settlements).toHaveLength(1);
       expect(snap.recentExpenses).toHaveLength(1);
       expect(snap.unreadCount).toBe(1);
       expect(snap.lastMessage?.content).toBe(MESSAGE);
@@ -617,7 +618,7 @@ describe.skipIf(!isIntegrationTestReady)(
       if (!snap) throw new Error("invited group missing from bootstrap");
       expect(snap.balances).toEqual([]);
       expect(snap.guests).toEqual([]);
-      expect(snap.pendingSettlements).toEqual([]);
+      expect(snap.settlements).toEqual([]);
       expect(snap.recentExpenses).toEqual([]);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();

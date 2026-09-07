@@ -1,7 +1,7 @@
 import { test, expect, loginInContext } from "../fixtures";
 
 test.describe("Expense Lifecycle", () => {
-  test("active expense settles once the creditor confirms", async ({
+  test("active expense settles once the debtor records the payment", async ({
     page,
     seed,
     loginAs,
@@ -53,27 +53,23 @@ test.describe("Expense Lifecycle", () => {
       timeout: 10000,
     });
 
-    // Bob records the payment; it stays pending until Alice confirms
+    // Bob records the payment
     const bobClient = await seed.authenticateAs(bob.id);
-    await bobClient.rpc("record_settlement", {
+    const { error: recordError } = await bobClient.rpc("record_settlement", {
       p_operation_id: crypto.randomUUID(),
       p_group_id: group.id,
+      p_from_user_id: bob.id,
       p_to_user_id: alice.id,
       p_amount_cents: 5000,
     });
+    expect(recordError).toBeNull();
 
-    const { data: pending } = await adminClient
+    const { data: settlements } = await adminClient
       .from("settlements")
-      .select("id")
-      .eq("group_id", group.id)
-      .eq("status", "pending");
-    expect(pending).toHaveLength(1);
-
-    const aliceClient = await seed.authenticateAs(alice.id);
-    const { error: confirmError } = await aliceClient.rpc("confirm_settlement", {
-      p_settlement_id: pending![0].id as string,
-    });
-    expect(confirmError).toBeNull();
+      .select("status")
+      .eq("group_id", group.id);
+    expect(settlements).toHaveLength(1);
+    expect(settlements![0].status).toBe("confirmed");
 
     // The group page reflects zero balances
     await page.goto(`/app/groups/${group.id}`);
