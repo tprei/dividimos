@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockSupabase } from "@/test/mock-supabase";
+import { AppError } from "@/lib/errors";
 
 const serverMock = createMockSupabase();
 vi.mock("@/lib/supabase/server", () => ({
@@ -9,6 +10,11 @@ vi.mock("@/lib/supabase/server", () => ({
 const adminMock = createMockSupabase();
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => adminMock.client),
+}));
+
+const mockEnforceRateLimit = vi.fn();
+vi.mock("@/lib/rate-limit", () => ({
+  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
 }));
 
 vi.mock("@/lib/crypto", () => ({
@@ -26,6 +32,8 @@ beforeEach(() => {
   serverMock.reset();
   adminMock.reset();
   vi.mocked(decryptPixKey).mockClear();
+  mockEnforceRateLimit.mockReset();
+  mockEnforceRateLimit.mockResolvedValue(undefined);
 });
 
 function makeRequest(body: Record<string, unknown>) {
@@ -131,5 +139,34 @@ describe("POST /api/pix/generate-self", () => {
     const response = await POST(makeRequest({ amountCents: 5000 }));
     expect(response.status).toBe(404);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("spends the pix.generate-self bucket for the authenticated caller", async () => {
+    serverMock.setUser({ id: "user-alice" });
+    adminMock.onTable("users", {
+      data: { pix_key_encrypted: "valid-encrypted", name: "Alice Santos" },
+    });
+
+    const response = await POST(makeRequest({ amountCents: 4500 }));
+
+    expect(response.status).toBe(200);
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith("pix.generate-self", "user-alice");
+  });
+
+  it("returns 429 without reading the user row or decrypting the key when the bucket is saturated", async () => {
+    serverMock.setUser({ id: "user-alice" });
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
+        statusCode: 429,
+      }),
+    );
+
+    const response = await POST(makeRequest({ amountCents: 4500 }));
+
+    expect(response.status).toBe(429);
+    const body = await response.json();
+    expect(body.error).toBe("Muitas requisições. Tente novamente em alguns segundos.");
+    expect(adminMock.findCalls("users")).toHaveLength(0);
+    expect(decryptPixKey).not.toHaveBeenCalled();
   });
 });

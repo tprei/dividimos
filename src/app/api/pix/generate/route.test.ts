@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createMockSupabase } from "@/test/mock-supabase";
+import { AppError } from "@/lib/errors";
 
 // Mock Supabase server client (auth + queries)
 const serverMock = createMockSupabase();
@@ -11,6 +12,11 @@ vi.mock("@/lib/supabase/server", () => ({
 const adminMock = createMockSupabase();
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => adminMock.client),
+}));
+
+const mockEnforceRateLimit = vi.fn();
+vi.mock("@/lib/rate-limit", () => ({
+  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
 }));
 
 // Mock crypto + pix generation
@@ -29,6 +35,8 @@ beforeEach(() => {
   serverMock.reset();
   adminMock.reset();
   vi.mocked(decryptPixKey).mockClear();
+  mockEnforceRateLimit.mockReset();
+  mockEnforceRateLimit.mockResolvedValue(undefined);
 });
 
 function makeRequest(body: Record<string, unknown>) {
@@ -327,5 +335,39 @@ describe("POST /api/pix/generate", () => {
       const response = await POST(makeRequest({}));
       expect(response.headers.get("cache-control")).toBe("private, no-store");
     });
+  });
+
+  it("spends the pix.generate bucket for the authenticated caller", async () => {
+    setupAcceptedMembers();
+    balanceOwedByAlice(5000);
+    bobHasKey();
+
+    const response = await POST(
+      makeRequest({ recipientUserId: "user-bob", amountCents: 3000, groupId: "group-1" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith("pix.generate", "user-alice");
+  });
+
+  it("returns 429 without authorization reads or key decryption when the bucket is saturated", async () => {
+    setupAcceptedMembers();
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
+        statusCode: 429,
+      }),
+    );
+
+    const response = await POST(
+      makeRequest({ recipientUserId: "user-bob", amountCents: 3000, groupId: "group-1" }),
+    );
+
+    expect(response.status).toBe(429);
+    const body = await response.json();
+    expect(body.error).toBe("Muitas requisições. Tente novamente em alguns segundos.");
+    expect(adminMock.findCalls("group_members")).toHaveLength(0);
+    expect(adminMock.findCalls("group_balances")).toHaveLength(0);
+    expect(adminMock.findCalls("users")).toHaveLength(0);
+    expect(decryptPixKey).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,10 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Playwright transform cache
     ".home/**",
+    // Generated Playwright output (gitignored): the HTML report bundles
+    // minified vendor JS, and traces are not project source.
+    "playwright-report/**",
+    "test-results/**",
     // Claude Code agent worktrees
     ".claude/worktrees/**",
     // Generated Capacitor native build output (gitignored); the only JS here

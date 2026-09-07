@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { AppError } from "@/lib/errors";
 import { decryptPixKey } from "@/lib/crypto";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { jsonResponse } from "../response";
@@ -26,6 +28,21 @@ export async function POST(request: Request) {
     amountCents > 100_000_00
   ) {
     return jsonResponse({ error: "Valor invalido" }, 400);
+  }
+
+  try {
+    await enforceRateLimit("pix.generate-self", callerId);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return jsonResponse(
+        { error: "Muitas requisições. Tente novamente em alguns segundos." },
+        429,
+      );
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[pix/generate-self] unexpected rate-limit failure:", error);
+    }
+    return jsonResponse({ error: "Serviço temporariamente indisponível" }, 503);
   }
 
   const admin = createAdminClient();

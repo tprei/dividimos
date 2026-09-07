@@ -81,7 +81,7 @@ interface SettlementAck {
 interface DmAck {
   groupId: string;
   ledgerVersion: number;
-  eventId: null;
+  eventId: number | null;
   created: boolean;
 }
 
@@ -402,6 +402,185 @@ describe.skipIf(!isIntegrationTestReady)(
           c1.rpc("leave_group", { p_group_id: dm1.groupId }),
         );
         expect(leaveErr).toBe("cannot_leave_dm");
+      });
+    });
+
+    describe("DM consent flow", () => {
+      it("creates a pending DM: actor accepted, counterparty invited with invited_by and null accepted_at", async () => {
+        const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
+          p_user_id: u3.id,
+        });
+        expect(dm.created).toBe(true);
+        expect(dm.eventId).not.toBeNull();
+
+        const snap = await rpc<GroupSnapshot>(c2, "get_group", {
+          p_group_id: dm.groupId,
+        });
+        const initiator = snap.members.find((m) => m.userId === u2.id);
+        const counterparty = snap.members.find((m) => m.userId === u3.id);
+        expect(initiator?.status).toBe("accepted");
+        expect(typeof initiator?.acceptedAt).toBe("string");
+        expect(counterparty?.status).toBe("invited");
+        expect(counterparty?.acceptedAt).toBeNull();
+        expect(counterparty?.invitedBy).toBe(u2.id);
+      });
+
+      it("blocks create_expense naming the invited counterparty with not_a_member", async () => {
+        const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
+          p_user_id: u3.id,
+        });
+        const err = await expectError(
+          c2.rpc("create_expense", {
+            p_client_id: crypto.randomUUID(),
+            p_group_id: dm.groupId,
+            p_occurred_on: new Date().toISOString().slice(0, 10),
+            p_title: "Almoço",
+            p_merchant_name: null,
+            p_expense_type: "single_amount",
+            p_total_cents: 1000,
+            p_service_fee_bps: 0,
+            p_fixed_fee_cents: 0,
+            p_payload: equalSplitPayload([u2.id, u3.id], 1000, 0),
+          }),
+        );
+        expect(err).toBe("not_a_member");
+      });
+
+      it("blocks record_settlement toward the invited counterparty with counterparty_not_member", async () => {
+        const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
+          p_user_id: u3.id,
+        });
+        const err = await expectError(
+          c2.rpc("record_settlement", {
+            p_operation_id: crypto.randomUUID(),
+            p_group_id: dm.groupId,
+            p_from_user_id: u2.id,
+            p_to_user_id: u3.id,
+            p_amount_cents: 100,
+          }),
+        );
+        expect(err).toBe("counterparty_not_member");
+      });
+
+      it("lets the initiator chat but rejects messages from the invited counterparty", async () => {
+        const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
+          p_user_id: u3.id,
+        });
+
+        const message = await rpc<{ id: string; content: string }>(
+          c2,
+          "send_message",
+          {
+            p_client_id: crypto.randomUUID(),
+            p_group_id: dm.groupId,
+            p_content: "Oi! Vamos dividir o almoço?",
+          },
+        );
+        expect(message.content).toBe("Oi! Vamos dividir o almoço?");
+
+        const invitedErr = await expectError(
+          c3.rpc("send_message", {
+            p_client_id: crypto.randomUUID(),
+            p_group_id: dm.groupId,
+            p_content: "Ainda não aceitei",
+          }),
+        );
+        expect(invitedErr).toBe("not_a_member");
+      });
+
+      it("prunes the invited viewer's snapshot to self plus inviter with no money, expenses, or last message", async () => {
+        const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
+          p_user_id: u3.id,
+        });
+
+        const snap = await rpc<GroupSnapshot>(c3, "get_group", {
+          p_group_id: dm.groupId,
+        });
+        expect(snap.members).toHaveLength(2);
+        expect(
+          snap.members.find((m) => m.userId === u3.id)?.invitedBy,
+        ).toBe(u2.id);
+        expect(snap.balances).toEqual([]);
+        expect(snap.settlements).toEqual([]);
+        expect(snap.recentExpenses).toEqual([]);
+        expect(snap.lastMessage).toBeNull();
+      });
+
+      it("unlocks shared expenses after accept_invitation and moves balances", async () => {
+        const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
+          p_user_id: u3.id,
+        });
+
+        const acceptAck = await rpc<MutationAck>(c3, "accept_invitation", {
+          p_group_id: dm.groupId,
+        });
+        expect(acceptAck.groupId).toBe(dm.groupId);
+
+        const expense = await createExpense(u2, {
+          groupId: dm.groupId,
+          totalCents: 1000,
+          payload: equalSplitPayload([u2.id, u3.id], 1000, 0),
+        });
+        expect(expense.expenseId).toBeDefined();
+
+        const balances = await getBalances(dm.groupId);
+        const payerBalance = balances.find((b) => b.participant_id === u2.id);
+        const counterpartyBalance = balances.find(
+          (b) => b.participant_id === u3.id,
+        );
+        expect(payerBalance?.net_cents).toBe(500);
+        expect(counterpartyBalance?.net_cents).toBe(-500);
+      });
+
+      it("removes the whole DM group when the invitation is declined, allowing a fresh DM", async () => {
+        const dm = await rpc<DmAck>(c5, "get_or_create_dm", {
+          p_user_id: u6.id,
+        });
+        expect(dm.created).toBe(true);
+
+        const declineAck = await rpc<MutationAck>(c6, "decline_invitation", {
+          p_group_id: dm.groupId,
+        });
+        expect(declineAck.groupId).toBe(dm.groupId);
+
+        const goneErr = await expectError(
+          c5.rpc("get_group", { p_group_id: dm.groupId }),
+        );
+        expect(goneErr).toBe("not_a_member");
+
+        const fresh = await rpc<DmAck>(c5, "get_or_create_dm", {
+          p_user_id: u6.id,
+        });
+        expect(fresh.created).toBe(true);
+        expect(fresh.groupId).not.toBe(dm.groupId);
+      });
+
+      it("returns the same pending DM for repeated opens without flipping the counterparty to accepted", async () => {
+        const dm1 = await rpc<DmAck>(c1, "get_or_create_dm", {
+          p_user_id: u7.id,
+        });
+        expect(dm1.created).toBe(true);
+
+        const dm2 = await rpc<DmAck>(c1, "get_or_create_dm", {
+          p_user_id: u7.id,
+        });
+        expect(dm2.groupId).toBe(dm1.groupId);
+        expect(dm2.created).toBe(false);
+        expect(dm2.eventId).toBeNull();
+
+        const dm3 = await rpc<DmAck>(c7, "get_or_create_dm", {
+          p_user_id: u1.id,
+        });
+        expect(dm3.groupId).toBe(dm1.groupId);
+        expect(dm3.created).toBe(false);
+        expect(dm3.eventId).toBeNull();
+
+        const snap = await rpc<GroupSnapshot>(c1, "get_group", {
+          p_group_id: dm1.groupId,
+        });
+        const counterparty = snap.members.find((m) => m.userId === u7.id);
+        expect(counterparty?.status).toBe("invited");
+        expect(counterparty?.acceptedAt).toBeNull();
       });
     });
 

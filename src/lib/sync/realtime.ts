@@ -3,6 +3,7 @@ import { decodeChatMessage } from "@/lib/ledger/decode";
 import { useAppStore } from "@/stores/app-store";
 import type { AppState, ConversationState } from "@/stores/app-store";
 import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
+import { runBootstrap } from "./bootstrap";
 import { getSupabase } from "./client";
 import { refreshGroup } from "./refresh";
 
@@ -28,6 +29,20 @@ function parseLedgerPayload(raw: unknown): LedgerBroadcastPayload | null {
     return null;
   }
   return { group_id, ledger_version, event_id };
+}
+
+interface MembershipBroadcastPayload {
+  group_id: string;
+}
+
+export function parseMembershipPayload(
+  raw: unknown,
+): MembershipBroadcastPayload | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  if (!("group_id" in raw)) return null;
+  const { group_id } = raw;
+  if (typeof group_id !== "string") return null;
+  return { group_id };
 }
 
 export function shouldRefreshGroup(
@@ -116,8 +131,45 @@ function handleChatBroadcast(groupId: string, payload: unknown): void {
     .patch((state) => mergeChatBroadcast(state, groupId, decoded.value));
 }
 
+let membershipInFlight: Promise<void> | null = null;
+let membershipPending: Promise<void> | null = null;
+
+function runMembershipRefresh(): Promise<void> {
+  const task = runBootstrap().finally(() => {
+    membershipInFlight = null;
+    const followUp = membershipPending;
+    if (followUp) {
+      membershipPending = null;
+      membershipInFlight = followUp;
+    }
+  });
+  membershipInFlight = task;
+  return task;
+}
+
+function refreshMemberships(): Promise<void> {
+  const current = membershipInFlight;
+  if (!current) return runMembershipRefresh();
+
+  const scheduled = membershipPending;
+  if (scheduled) return scheduled;
+
+  const followUp = current
+    .catch(() => undefined)
+    .then(() => runMembershipRefresh());
+  membershipPending = followUp;
+  return followUp;
+}
+
+function handleMembershipBroadcast(payload: unknown): void {
+  if (!parseMembershipPayload(payload)) return;
+  void refreshMemberships().catch(() => {});
+}
+
 export function startRealtime(): () => void {
   const channels = new Map<string, RealtimeChannel>();
+  let userChannel: RealtimeChannel | null = null;
+  let userChannelUserId: string | null = null;
 
   function syncChannels(): void {
     const desiredIds = new Set(useAppStore.getState().groupOrder);
@@ -140,13 +192,33 @@ export function startRealtime(): () => void {
         channels.set(id, ch);
       }
     }
+
+    const meId = useAppStore.getState().me?.id ?? null;
+    if (meId !== userChannelUserId) {
+      if (userChannel) {
+        void getSupabase().removeChannel(userChannel);
+        userChannel = null;
+      }
+      userChannelUserId = meId;
+      if (meId) {
+        userChannel = getSupabase()
+          .channel(`user:${meId}`, { config: { private: true } })
+          .on("broadcast", { event: "membership" }, ({ payload }) => {
+            handleMembershipBroadcast(payload);
+          })
+          .subscribe();
+      }
+    }
   }
 
   let lastOrder = useAppStore.getState().groupOrder;
+  let lastMeId = useAppStore.getState().me?.id ?? null;
 
   const unsubscribe = useAppStore.subscribe((state) => {
-    if (state.groupOrder !== lastOrder) {
+    const nextMeId = state.me?.id ?? null;
+    if (state.groupOrder !== lastOrder || nextMeId !== lastMeId) {
       lastOrder = state.groupOrder;
+      lastMeId = nextMeId;
       syncChannels();
     }
   });
@@ -155,6 +227,11 @@ export function startRealtime(): () => void {
 
   return () => {
     unsubscribe();
+    if (userChannel) {
+      void getSupabase().removeChannel(userChannel);
+    }
+    userChannel = null;
+    userChannelUserId = null;
     for (const ch of channels.values()) {
       void getSupabase().removeChannel(ch);
     }

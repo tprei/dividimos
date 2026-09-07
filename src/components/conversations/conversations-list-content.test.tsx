@@ -130,6 +130,70 @@ describe("ConversationsListContent", () => {
     expect(rowLink.getAttribute("href")).toBe(`/app/conversations/${carol.id}`);
   });
 
+  it("renders an invitation row for a DM where I am the invitee", () => {
+    const dm = makeDmSnapshot({
+      group: {
+        id: "dm-1",
+        kind: "dm",
+        name: "Carol Souza",
+        creatorId: carol.id,
+        dmUserA: carol.id,
+        dmUserB: me.id,
+        ledgerVersion: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+      members: [
+        { groupId: "dm-1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+        { groupId: "dm-1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: carol },
+      ],
+      unreadCount: 0,
+      lastMessage: null,
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [dm.group.id]: dm },
+      groupOrder: [dm.group.id],
+    });
+
+    render(<ConversationsListContent />);
+
+    expect(screen.getByText("Carol Souza")).toBeDefined();
+    expect(screen.getByText("Convite para conversar")).toBeDefined();
+    expect(screen.queryByText("Sem mensagens")).toBeNull();
+    expect(screen.queryByTestId("unread-badge")).toBeNull();
+
+    const rowLink = screen.getByTestId("conversation-row-dm");
+    expect(rowLink.getAttribute("href")).toBe(`/app/conversations/${carol.id}`);
+  });
+
+  it("renders an awaiting label for a DM whose counterparty has not accepted", () => {
+    const dm = makeDmSnapshot({
+      members: [
+        { groupId: "dm-1", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: "2026-01-01T00:00:00Z", user: me },
+        { groupId: "dm-1", userId: carol.id, status: "invited", invitedBy: me.id, acceptedAt: null, user: carol },
+      ],
+      unreadCount: 0,
+      lastMessage: null,
+    });
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [dm.group.id]: dm },
+      groupOrder: [dm.group.id],
+    });
+
+    render(<ConversationsListContent />);
+
+    expect(screen.getByText("Carol Souza")).toBeDefined();
+    expect(screen.getByText("Aguardando aceitar o convite")).toBeDefined();
+    expect(screen.queryByText("Sem mensagens")).toBeNull();
+    expect(screen.queryByTestId("unread-badge")).toBeNull();
+
+    const rowLink = screen.getByTestId("conversation-row-dm");
+    expect(rowLink.getAttribute("href")).toBe(`/app/conversations/${carol.id}`);
+  });
+
   it("renders group rows when they have messages, and ignores groups without messages", () => {
     const groupWithMsg = makeGroupSnapshot({
       group: {

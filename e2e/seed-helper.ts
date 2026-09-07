@@ -65,6 +65,10 @@ export interface CreateUserOptions {
   onboarded?: boolean;
 }
 
+export interface CreateDmGroupOptions {
+  autoAcceptCounterparty?: boolean;
+}
+
 export interface CreateExpenseOptions {
   title?: string;
   merchantName?: string | null;
@@ -310,7 +314,11 @@ export class SeedHelper {
   // DM creation
   // -----------------------------------------------------------------------
 
-  async createDmGroup(userA: SeededUser, userB: SeededUser): Promise<SeededGroup> {
+  async createDmGroup(
+    userA: SeededUser,
+    userB: SeededUser,
+    options: CreateDmGroupOptions = {},
+  ): Promise<SeededGroup> {
     const client = await this.authenticateAs(userA.id);
 
     const { data, error } = await client.rpc("get_or_create_dm", {
@@ -328,6 +336,34 @@ export class SeedHelper {
 
     if (!this.groupIds.includes(ack.groupId)) {
       this.groupIds.push(ack.groupId);
+    }
+
+    if (options.autoAcceptCounterparty ?? true) {
+      const { data: membership, error: statusError } = await this.admin
+        .from("group_members")
+        .select("status")
+        .eq("group_id", ack.groupId)
+        .eq("user_id", userB.id)
+        .maybeSingle();
+
+      if (statusError) {
+        throw new Error(
+          `SeedHelper.createDmGroup: membership status query failed: ${statusError.message}`,
+        );
+      }
+
+      if (membership?.status === "invited") {
+        const counterpartyClient = await this.authenticateAs(userB.id);
+        const { error: acceptError } = await counterpartyClient.rpc("accept_invitation", {
+          p_group_id: ack.groupId,
+        });
+
+        if (acceptError) {
+          throw new Error(
+            `SeedHelper.createDmGroup: accept_invitation failed for ${userB.id}: ${acceptError.message}`,
+          );
+        }
+      }
     }
 
     return {
