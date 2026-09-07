@@ -113,6 +113,10 @@ export function createMockSupabase() {
     },
     auth: {
       getUser: async () => ({ data: { user: _user }, error: null }),
+      getClaims: async () =>
+        _user
+          ? { data: { claims: { ..._user, sub: _user.id } }, error: null }
+          : { data: null, error: null },
     },
   } as unknown as SupabaseClient;
 

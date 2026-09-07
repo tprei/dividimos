@@ -6,7 +6,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
-import { FinancialCompatibilityGate } from "@/components/financial-compatibility-gate";
 import { Logo } from "@/components/shared/logo";
 import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
 import { cn } from "@/lib/utils";
@@ -209,71 +208,69 @@ export function AppShell({
   const { pulling, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(handleRefresh);
 
   return (
-    <FinancialCompatibilityGate>
     <UserProvider initialUser={initialUser}>
       <SettlementSubmissionProvider>
-      <div className="flex h-dvh flex-col overflow-hidden bg-background">
-        <header className="sticky top-0 z-40 glass border-b border-border/50">
-          <div className="flex h-14 items-center justify-between px-4">
-            <Logo size="sm" />
-            <div className="flex items-center gap-1">
-              <InstallPrompt />
-              <Link
-                href="/app/search"
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Search className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/app/activity"
-                className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label="Atividade"
-              >
-                <Bell className="h-4 w-4" />
-                {unread && (
-                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
-                )}
-              </Link>
-              <Link
-                href="/app/settings"
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Settings className="h-4 w-4" />
-              </Link>
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-              >
-                {refreshing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-              </button>
+        <div className="flex h-dvh flex-col overflow-hidden bg-background">
+          <header className="sticky top-0 z-40 glass border-b border-border/50">
+            <div className="flex h-14 items-center justify-between px-4">
+              <Logo size="sm" />
+              <div className="flex items-center gap-1">
+                <InstallPrompt />
+                <Link
+                  href="/app/search"
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Search className="h-4 w-4" />
+                </Link>
+                <Link
+                  href="/app/activity"
+                  className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Atividade"
+                >
+                  <Bell className="h-4 w-4" />
+                  {unread && (
+                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
+                  )}
+                </Link>
+                <Link
+                  href="/app/settings"
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Settings className="h-4 w-4" />
+                </Link>
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                >
+                  {refreshing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
 
-        {(pulling || pullDistance > 0) && (
-          <div className="flex justify-center py-2">
-            <Loader2 className={`h-5 w-5 text-muted-foreground ${pulling ? "animate-spin" : ""}`} style={{ opacity: pulling ? 1 : pullDistance / 80 }} />
-          </div>
-        )}
+          {(pulling || pullDistance > 0) && (
+            <div className="flex justify-center py-2">
+              <Loader2 className={`h-5 w-5 text-muted-foreground ${pulling ? "animate-spin" : ""}`} style={{ opacity: pulling ? 1 : pullDistance / 80 }} />
+            </div>
+          )}
 
-        <main
-          className={cn("flex-1 overflow-y-auto", !keyboardOpen && "pb-20")}
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-        >
-          {children}
-        </main>
+          <main
+            className={cn("flex-1 overflow-y-auto", !keyboardOpen && "pb-20")}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
+            {children}
+          </main>
 
-        <NavBar />
-      </div>
+          <NavBar />
+        </div>
       </SettlementSubmissionProvider>
     </UserProvider>
-    </FinancialCompatibilityGate>
   );
 }

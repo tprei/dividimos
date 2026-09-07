@@ -99,6 +99,7 @@ export default function NewBillPage() {
 function NewBillPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const dmCounterpartyId = searchParams.get("dm");
   const store = useBillStore(
     useShallow((s) => ({
       expense: s.expense,
@@ -1045,8 +1046,10 @@ function NewBillPageContent() {
   const goBack = () => {
     if (stepIndex === 0) {
       if (isDmMode && selectedGroupId) {
-        router.push(`/app/chat/${selectedGroupId}`);
-        return;
+        if (dmCounterpartyId) {
+          router.push(`/app/conversations/${dmCounterpartyId}`);
+          return;
+        }
       }
       if (isEditing && editDraftId) {
         router.push(`/app/bill/${editDraftId}`);
@@ -1100,10 +1103,12 @@ function NewBillPageContent() {
         const prevPrev = steps[stepIndex - 2];
         if (prevPrev) {
           setStep(prevPrev.key);
-        } else {
-          router.push(`/app/chat/${selectedGroupId}`);
+          return;
         }
-        return;
+        if (dmCounterpartyId) {
+          router.push(`/app/conversations/${dmCounterpartyId}`);
+          return;
+        }
       }
     }
     const prev = steps[stepIndex - 1];

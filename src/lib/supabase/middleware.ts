@@ -7,7 +7,7 @@ import {
   evaluateServerFinancialGate,
 } from "@/lib/financial-compatibility";
 
-const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u", "/api/runtime/financial-compatibility", "/manutencao"];
+const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u", "/manutencao"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -60,9 +60,8 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getClaims();
+  const user = error || !data ? null : { id: data.claims.sub };
 
   if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone();
