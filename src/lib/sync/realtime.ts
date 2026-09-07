@@ -1,0 +1,176 @@
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { decodeChatMessage } from "@/lib/ledger/decode";
+import { useAppStore } from "@/stores/app-store";
+import type { AppState, ConversationState } from "@/stores/app-store";
+import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
+import { getSupabase } from "./client";
+import { refreshGroup } from "./refresh";
+
+interface LedgerBroadcastPayload {
+  group_id: string;
+  ledger_version: number;
+  event_id: number;
+}
+
+function parseLedgerPayload(raw: unknown): LedgerBroadcastPayload | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  if (!("group_id" in raw && "ledger_version" in raw && "event_id" in raw)) {
+    return null;
+  }
+  const { group_id, ledger_version, event_id } = raw;
+  if (
+    typeof group_id !== "string" ||
+    typeof ledger_version !== "number" ||
+    typeof event_id !== "number" ||
+    !Number.isFinite(ledger_version) ||
+    !Number.isFinite(event_id)
+  ) {
+    return null;
+  }
+  return { group_id, ledger_version, event_id };
+}
+
+export function shouldRefreshGroup(
+  snapshot: GroupSnapshot | undefined,
+  payload: unknown,
+): boolean {
+  const parsed = parseLedgerPayload(payload);
+  if (!parsed) return false;
+  if (!snapshot) return true;
+  return (
+    parsed.ledger_version > snapshot.group.ledgerVersion ||
+    parsed.event_id > snapshot.lastEventId
+  );
+}
+
+function compareCreatedAtAsc(a: ChatMessage, b: ChatMessage): number {
+  if (a.createdAt < b.createdAt) return -1;
+  if (a.createdAt > b.createdAt) return 1;
+  return 0;
+}
+
+export function mergeChatBroadcast(
+  state: AppState,
+  groupId: string,
+  message: ChatMessage,
+): Partial<AppState> {
+  const existingConv = state.conversations[groupId];
+  const isDuplicate =
+    existingConv?.messages.some(
+      (m) => m.id === message.id || m.clientId === message.clientId,
+    ) ?? false;
+
+  const patch: Partial<AppState> = {};
+
+  if (!isDuplicate) {
+    const prevMessages = existingConv?.messages ?? [];
+    const prevEvents = existingConv?.events ?? [];
+    const newConv: ConversationState = {
+      messages: [...prevMessages, message].sort(compareCreatedAtAsc),
+      events: prevEvents,
+      oldestCursor: existingConv?.oldestCursor ?? null,
+    };
+    patch.conversations = {
+      ...state.conversations,
+      [groupId]: newConv,
+    };
+  }
+
+  const existingGroup = state.groups[groupId];
+  if (existingGroup) {
+    const updatedGroup: GroupSnapshot = {
+      ...existingGroup,
+      lastMessage: {
+        content: message.content,
+        senderId: message.senderId,
+        createdAt: message.createdAt,
+      },
+      unreadCount:
+        !isDuplicate && message.senderId !== state.me?.id
+          ? existingGroup.unreadCount + 1
+          : existingGroup.unreadCount,
+    };
+
+    patch.groups = {
+      ...state.groups,
+      [groupId]: updatedGroup,
+    };
+  }
+
+  return patch;
+}
+
+function handleLedgerBroadcast(groupId: string, payload: unknown): void {
+  const snapshot = useAppStore.getState().groups[groupId];
+  if (shouldRefreshGroup(snapshot, payload)) {
+    void refreshGroup(groupId).catch(() => {});
+  }
+}
+
+function handleChatBroadcast(groupId: string, payload: unknown): void {
+  const decoded = decodeChatMessage(payload);
+  if (!decoded.ok) return;
+
+  useAppStore
+    .getState()
+    .patch((state) => mergeChatBroadcast(state, groupId, decoded.value));
+}
+
+export function startRealtime(): () => void {
+  const channels = new Map<string, RealtimeChannel>();
+
+  function syncChannels(): void {
+    const desiredIds = new Set(useAppStore.getState().groupOrder);
+
+    for (const [id, ch] of channels) {
+      if (!desiredIds.has(id)) {
+        void getSupabase().removeChannel(ch);
+        channels.delete(id);
+      }
+    }
+
+    for (const id of desiredIds) {
+      if (!channels.has(id)) {
+        const ch = getSupabase()
+          .channel(`group:${id}`, { config: { private: true } })
+          .on("broadcast", { event: "ledger" }, ({ payload }) => {
+            handleLedgerBroadcast(id, payload);
+          })
+          .subscribe();
+        channels.set(id, ch);
+      }
+    }
+  }
+
+  let lastOrder = useAppStore.getState().groupOrder;
+
+  const unsubscribe = useAppStore.subscribe((state) => {
+    if (state.groupOrder !== lastOrder) {
+      lastOrder = state.groupOrder;
+      syncChannels();
+    }
+  });
+
+  syncChannels();
+
+  return () => {
+    unsubscribe();
+    for (const ch of channels.values()) {
+      void getSupabase().removeChannel(ch);
+    }
+    channels.clear();
+  };
+}
+
+export function subscribeChat(groupId: string): () => void {
+  const channel = getSupabase()
+    .channel(`chat:${groupId}`, { config: { private: true } })
+    .on("broadcast", { event: "message" }, ({ payload }) => {
+      handleChatBroadcast(groupId, payload);
+    })
+    .subscribe();
+
+  return () => {
+    void getSupabase().removeChannel(channel);
+  };
+}
