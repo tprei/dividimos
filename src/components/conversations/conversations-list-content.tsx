@@ -11,7 +11,7 @@ import { UserAvatar } from "@/components/shared/user-avatar";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { useMe } from "@/hooks/use-me";
 import { useAppStore } from "@/stores/app-store";
-import type { GroupSnapshot } from "@/types/ledger";
+import type { GroupSnapshot, MemberStatus } from "@/types/ledger";
 
 function formatRelativeTime(isoDate: string): string {
   const diffMs = Date.now() - new Date(isoDate).getTime();
@@ -42,6 +42,16 @@ interface ConversationRow {
   preview: string | null;
   lastMessageAt: string | null;
   unreadCount: number;
+  statusLine: string | null;
+}
+
+function dmInviteStatusLine(
+  myStatus: MemberStatus | undefined,
+  counterpartyStatus: MemberStatus,
+): string | null {
+  if (myStatus === "invited") return "Convite para conversar";
+  if (counterpartyStatus === "invited") return "Aguardando aceitar o convite";
+  return null;
 }
 
 function toRow(snapshot: GroupSnapshot, meId: string): ConversationRow | null {
@@ -51,6 +61,9 @@ function toRow(snapshot: GroupSnapshot, meId: string): ConversationRow | null {
   if (isDm) {
     const counterparty = snapshot.members.find((m) => m.userId !== meId);
     if (!counterparty) return null;
+    const myStatus = snapshot.members.find((m) => m.userId === meId)?.status;
+    const statusLine = dmInviteStatusLine(myStatus, counterparty.status);
+    const lastMessage = statusLine ? null : snapshot.lastMessage;
     return {
       groupId: snapshot.group.id,
       kind: "dm",
@@ -58,12 +71,12 @@ function toRow(snapshot: GroupSnapshot, meId: string): ConversationRow | null {
       avatarName: counterparty.user.name,
       avatarUrl: counterparty.user.avatarUrl,
       href: `/app/conversations/${counterparty.userId}`,
-      preview: snapshot.lastMessage?.content ?? null,
-      lastMessageAt: snapshot.lastMessage?.createdAt ?? null,
-      unreadCount: snapshot.unreadCount,
+      preview: lastMessage?.content ?? null,
+      lastMessageAt: lastMessage?.createdAt ?? null,
+      unreadCount: statusLine ? 0 : snapshot.unreadCount,
+      statusLine,
     };
   }
-
   return {
     groupId: snapshot.group.id,
     kind: "group",
@@ -74,6 +87,7 @@ function toRow(snapshot: GroupSnapshot, meId: string): ConversationRow | null {
     preview: snapshot.lastMessage?.content ?? null,
     lastMessageAt: snapshot.lastMessage?.createdAt ?? null,
     unreadCount: snapshot.unreadCount,
+    statusLine: null,
   };
 }
 
@@ -161,7 +175,9 @@ export function ConversationsListContent() {
                           : "text-muted-foreground"
                       }`}
                     >
-                      {row.preview ?? <span className="italic">Sem mensagens</span>}
+                      {row.statusLine ?? row.preview ?? (
+                        <span className="italic">Sem mensagens</span>
+                      )}
                     </p>
                     {row.unreadCount > 0 && (
                       <span

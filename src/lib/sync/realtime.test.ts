@@ -1,7 +1,20 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { useAppStore } from "@/stores/app-store";
+import type { Database } from "@/types/database";
 import type { ChatMessage, GroupSnapshot, Me } from "@/types/ledger";
-import { mergeChatBroadcast, shouldRefreshGroup } from "./realtime";
+import { runBootstrap } from "./bootstrap";
+import { getSupabase } from "./client";
+import {
+  mergeChatBroadcast,
+  parseMembershipPayload,
+  shouldRefreshGroup,
+  startRealtime,
+} from "./realtime";
+
+vi.mock("./client", () => ({ getSupabase: vi.fn() }));
+vi.mock("./bootstrap", () => ({ runBootstrap: vi.fn() }));
+vi.mock("./refresh", () => ({ refreshGroup: vi.fn() }));
 
 const meUser: Me = {
   id: "user-1",
@@ -239,5 +252,207 @@ describe("mergeChatBroadcast", () => {
 
     expect(patch.conversations).toBeUndefined();
     expect(patch.groups?.["group-1"]?.unreadCount).toBe(2);
+  });
+});
+
+type BroadcastListener = (message: { payload: unknown }) => void;
+
+class FakeChannel {
+  readonly topic: string;
+  readonly config: unknown;
+  readonly listeners = new Map<string, BroadcastListener[]>();
+  subscribed = false;
+
+  constructor(topic: string, config: unknown) {
+    this.topic = topic;
+    this.config = config;
+  }
+
+  on(
+    _kind: "broadcast",
+    filter: { event: string },
+    listener: BroadcastListener,
+  ): this {
+    const existing = this.listeners.get(filter.event) ?? [];
+    existing.push(listener);
+    this.listeners.set(filter.event, existing);
+    return this;
+  }
+
+  subscribe(): this {
+    this.subscribed = true;
+    return this;
+  }
+
+  emit(event: string, payload: unknown): void {
+    for (const listener of this.listeners.get(event) ?? []) {
+      listener({ payload });
+    }
+  }
+}
+
+let createdChannels: FakeChannel[] = [];
+let removedChannels: FakeChannel[] = [];
+const bootstrapResolvers: Array<(value: void) => void> = [];
+const bootstrapPromises: Promise<void>[] = [];
+
+describe("parseMembershipPayload", () => {
+  it("accepts a payload with a string group_id", () => {
+    expect(parseMembershipPayload({ group_id: "group-9" })).toEqual({
+      group_id: "group-9",
+    });
+  });
+
+  it("rejects malformed payloads", () => {
+    expect(parseMembershipPayload(null)).toBeNull();
+    expect(parseMembershipPayload("group-9")).toBeNull();
+    expect(parseMembershipPayload(42)).toBeNull();
+    expect(parseMembershipPayload({ group_id: null })).toBeNull();
+    expect(parseMembershipPayload({ groupId: "group-9" })).toBeNull();
+  });
+});
+
+describe("startRealtime", () => {
+  let stop: (() => void) | null = null;
+
+  afterEach(() => {
+    stop?.();
+    stop = null;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createdChannels = [];
+    removedChannels = [];
+    bootstrapResolvers.length = 0;
+    bootstrapPromises.length = 0;
+    useAppStore.getState().reset();
+
+    const fakeSupabase = {
+      channel: (topic: string, config?: unknown) => {
+        const channel = new FakeChannel(topic, config);
+        createdChannels.push(channel);
+        return channel;
+      },
+      removeChannel: (channel: FakeChannel) => {
+        removedChannels.push(channel);
+      },
+    };
+    vi.mocked(getSupabase).mockImplementation(
+      () => fakeSupabase as unknown as SupabaseClient<Database>,
+    );
+    vi.mocked(runBootstrap).mockImplementation(() => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      bootstrapResolvers.push(resolve);
+      bootstrapPromises.push(promise);
+      return promise;
+    });
+  });
+
+  function userChannel(userId: string): FakeChannel {
+    const channel = createdChannels.find((c) => c.topic === `user:${userId}`);
+    if (!channel) throw new Error(`user channel for ${userId} not opened`);
+    return channel;
+  }
+
+  async function settleRefreshes(): Promise<void> {
+    await Promise.allSettled(bootstrapPromises);
+  }
+
+  it("opens the user channel with the membership event once me exists", () => {
+    useAppStore.setState({ me: meUser });
+    stop = startRealtime();
+
+    const channel = userChannel(meUser.id);
+    expect(channel.config).toEqual({ config: { private: true } });
+    expect(channel.subscribed).toBe(true);
+    expect(channel.listeners.has("membership")).toBe(true);
+  });
+
+  it("opens no user channel before sign-in and opens it when me appears", () => {
+    stop = startRealtime();
+    expect(createdChannels).toStrictEqual([]);
+
+    useAppStore.setState({ me: meUser });
+    expect(createdChannels.map((c) => c.topic)).toStrictEqual([
+      `user:${meUser.id}`,
+    ]);
+  });
+
+  it("still opens group channels alongside the user channel", () => {
+    useAppStore.setState({ me: meUser, groupOrder: ["group-1"] });
+    stop = startRealtime();
+
+    expect(createdChannels.map((c) => c.topic)).toStrictEqual([
+      "group:group-1",
+      `user:${meUser.id}`,
+    ]);
+  });
+
+  it("replaces the user channel when me changes identity", () => {
+    useAppStore.setState({ me: meUser });
+    stop = startRealtime();
+    const first = userChannel(meUser.id);
+
+    const otherUser: Me = { ...meUser, id: "user-2", handle: "user2" };
+    useAppStore.setState({ me: otherUser });
+
+    const second = userChannel(otherUser.id);
+    expect(second).not.toBe(first);
+    expect(removedChannels).toStrictEqual([first]);
+  });
+
+  it("refreshes bootstrap exactly once for a valid membership broadcast", async () => {
+    useAppStore.setState({ me: meUser });
+    stop = startRealtime();
+    const channel = userChannel(meUser.id);
+
+    channel.emit("membership", { group_id: "group-9" });
+    expect(runBootstrap).toHaveBeenCalledTimes(1);
+
+    bootstrapResolvers[0]?.();
+    await settleRefreshes();
+    expect(runBootstrap).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores malformed membership broadcasts", async () => {
+    useAppStore.setState({ me: meUser });
+    stop = startRealtime();
+    const channel = userChannel(meUser.id);
+
+    channel.emit("membership", { ledger_version: 3 });
+    channel.emit("membership", "group-9");
+    channel.emit("membership", null);
+
+    await settleRefreshes();
+    expect(runBootstrap).not.toHaveBeenCalled();
+  });
+
+  it("coalesces overlapping membership broadcasts into one in-flight refresh", async () => {
+    useAppStore.setState({ me: meUser });
+    stop = startRealtime();
+    const channel = userChannel(meUser.id);
+
+    channel.emit("membership", { group_id: "group-9" });
+    channel.emit("membership", { group_id: "group-10" });
+    channel.emit("membership", { group_id: "group-11" });
+    expect(runBootstrap).toHaveBeenCalledTimes(1);
+
+    bootstrapResolvers[0]?.();
+    await vi.waitFor(() => expect(runBootstrap).toHaveBeenCalledTimes(2));
+
+    bootstrapResolvers[1]?.();
+    await settleRefreshes();
+    expect(runBootstrap).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes the user channel on cleanup", () => {
+    useAppStore.setState({ me: meUser });
+    stop = startRealtime();
+    const channel = userChannel(meUser.id);
+
+    stop();
+
+    expect(removedChannels).toStrictEqual([channel]);
   });
 });

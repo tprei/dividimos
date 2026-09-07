@@ -1,7 +1,7 @@
 import { test, expect } from "../fixtures";
 
 test.describe("DM auto-creation", () => {
-  test("opening a conversation creates one accepted DM with a canonical user pair", async ({
+  test("opening a conversation creates one DM with a canonical user pair", async ({
     page,
     seed,
     loginAs,
@@ -14,7 +14,7 @@ test.describe("DM auto-creation", () => {
     await page.goto(`/app/conversations/${bob.id}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.getByText(bob.name)).toBeVisible();
+    await expect(page.getByText(bob.name, { exact: true })).toBeVisible();
 
     const [userA, userB] = [alice.id, bob.id].sort();
 
@@ -33,9 +33,9 @@ test.describe("DM auto-creation", () => {
       .eq("group_id", groups![0].id);
 
     expect(members).toHaveLength(2);
-    for (const member of members ?? []) {
-      expect(member.status).toBe("accepted");
-    }
+
+    expect(members?.find((m) => m.user_id === alice.id)?.status).toBe("accepted");
+    expect(members?.find((m) => m.user_id === bob.id)?.status).toBe("invited");
   });
 
   test("idempotent — repeated opens return the same DM group", async ({

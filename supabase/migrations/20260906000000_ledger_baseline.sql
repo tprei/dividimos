@@ -348,6 +348,17 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.broadcast_user(p_user_id uuid, p_group_id uuid) RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  PERFORM realtime.send(
+    jsonb_build_object('group_id', p_group_id),
+    'membership', 'user:' || p_user_id::text, true
+  );
+END;
+$$;
+
 CREATE FUNCTION public.validate_expense_payload(p jsonb, p_expense_type expense_type, p_total integer, p_fee_bps integer, p_fixed_fee integer)
 RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -2093,6 +2104,7 @@ BEGIN
       p_payload => jsonb_build_object('userIds', to_jsonb(v_clean_member_ids))
     );
     PERFORM broadcast_group(v_group_id, v_ledger_version, v_event_id);
+    PERFORM broadcast_user(u, v_group_id) FROM unnest(v_clean_member_ids) AS u;
   ELSE
     v_event_id := NULL;
   END IF;
@@ -2155,6 +2167,7 @@ BEGIN
   );
 
   PERFORM broadcast_group(p_group_id, v_ledger_version, v_event_id);
+  PERFORM broadcast_user(p_user_id, p_group_id);
 
   RETURN jsonb_build_object(
     'groupId', p_group_id,
@@ -2172,6 +2185,7 @@ DECLARE
   v_status member_status;
   v_ledger_version bigint;
   v_event_id bigint;
+  v_invited_by uuid;
 BEGIN
   v_actor := current_user_id();
 
@@ -2181,7 +2195,7 @@ BEGIN
 
   PERFORM lock_group(p_group_id);
 
-  SELECT status INTO v_status FROM group_members
+  SELECT status, invited_by INTO v_status, v_invited_by FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor
   FOR UPDATE;
 
@@ -2204,6 +2218,9 @@ BEGIN
   );
 
   PERFORM broadcast_group(p_group_id, v_ledger_version, v_event_id);
+  IF v_invited_by IS NOT NULL THEN
+    PERFORM broadcast_user(v_invited_by, p_group_id);
+  END IF;
 
   RETURN jsonb_build_object(
     'groupId', p_group_id,
@@ -2220,6 +2237,8 @@ DECLARE
   v_actor uuid;
   v_status member_status;
   v_ledger_version bigint;
+  v_invited_by uuid;
+  v_kind group_kind;
 BEGIN
   v_actor := current_user_id();
 
@@ -2229,7 +2248,7 @@ BEGIN
 
   PERFORM lock_group(p_group_id);
 
-  SELECT status INTO v_status FROM group_members
+  SELECT status, invited_by INTO v_status, v_invited_by FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor
   FOR UPDATE;
 
@@ -2237,10 +2256,21 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_invited';
   END IF;
 
-  DELETE FROM group_members
-  WHERE group_id = p_group_id AND user_id = v_actor;
+  SELECT kind, ledger_version INTO v_kind, v_ledger_version FROM groups WHERE id = p_group_id;
 
-  SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = p_group_id;
+  IF v_kind = 'dm' THEN
+    IF v_invited_by IS NOT NULL THEN
+      PERFORM broadcast_user(v_invited_by, p_group_id);
+    END IF;
+    DELETE FROM groups WHERE id = p_group_id;
+  ELSE
+    DELETE FROM group_members
+    WHERE group_id = p_group_id AND user_id = v_actor;
+    IF v_invited_by IS NOT NULL THEN
+      PERFORM broadcast_user(v_invited_by, p_group_id);
+    END IF;
+  END IF;
+
 
   RETURN jsonb_build_object(
     'groupId', p_group_id,
@@ -2401,6 +2431,7 @@ DECLARE
   v_group_id uuid;
   v_ledger_version bigint;
   v_created boolean;
+  v_event_id bigint;
 BEGIN
   v_actor := current_user_id();
 
@@ -2423,9 +2454,20 @@ BEGIN
   IF v_group_id IS NOT NULL THEN
     v_created := true;
     INSERT INTO group_members (group_id, user_id, status, accepted_at)
-    VALUES
-      (v_group_id, v_actor, 'accepted', now()),
-      (v_group_id, p_user_id, 'accepted', now());
+    VALUES (v_group_id, v_actor, 'accepted', now());
+
+    INSERT INTO group_members (group_id, user_id, status, invited_by)
+    VALUES (v_group_id, p_user_id, 'invited', v_actor);
+
+    v_event_id := emit_event(
+      v_group_id,
+      'member_invited',
+      v_actor,
+      p_subject_user_id => p_user_id,
+      p_payload => jsonb_build_object('userIds', jsonb_build_array(p_user_id))
+    );
+
+    PERFORM broadcast_user(p_user_id, v_group_id);
   ELSE
     v_created := false;
     SELECT id, ledger_version INTO v_group_id, v_ledger_version
@@ -2436,7 +2478,7 @@ BEGIN
   RETURN jsonb_build_object(
     'groupId', v_group_id,
     'ledgerVersion', v_ledger_version,
-    'eventId', NULL,
+    'eventId', v_event_id,
     'created', v_created
   );
 END;
@@ -3131,9 +3173,14 @@ GRANT EXECUTE ON FUNCTION public.current_user_is_member(uuid) TO authenticated;
 DROP POLICY IF EXISTS group_broadcast_authz ON realtime.messages;
 CREATE POLICY group_broadcast_authz ON realtime.messages FOR SELECT TO authenticated
 USING (
-  public.current_user_is_member(
-    substring(realtime.topic() FROM '^(?:group|chat):([0-9a-fA-F-]{36})$')::uuid
-  )
+  CASE
+    WHEN realtime.topic() LIKE 'user:%' THEN
+      substring(realtime.topic() FROM '^user:([0-9a-fA-F-]{36})$')::uuid = auth.uid()
+    ELSE
+      public.current_user_is_member(
+        substring(realtime.topic() FROM '^(?:group|chat):([0-9a-fA-F-]{36})$')::uuid
+      )
+  END
 );
 
 -- ---- 11_vendor_charges.sql ----

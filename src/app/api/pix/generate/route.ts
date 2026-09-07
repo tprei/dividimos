@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { AppError } from "@/lib/errors";
 import { decryptPixKey } from "@/lib/crypto";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { transfersFromBalances } from "@/lib/ledger/transfers";
@@ -46,6 +48,21 @@ export async function POST(request: Request) {
     !groupId
   ) {
     return jsonResponse({ error: "Dados inválidos" }, 400);
+  }
+
+  try {
+    await enforceRateLimit("pix.generate", callerId);
+  } catch (error) {
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return jsonResponse(
+        { error: "Muitas requisições. Tente novamente em alguns segundos." },
+        429,
+      );
+    }
+    if (!(error instanceof AppError && error.code === "RATE_LIMIT_UNAVAILABLE")) {
+      console.error("[pix/generate] unexpected rate-limit failure:", error);
+    }
+    return jsonResponse({ error: "Serviço temporariamente indisponível" }, 503);
   }
 
   // Authorization first. The encrypted key is never read before this resolves.

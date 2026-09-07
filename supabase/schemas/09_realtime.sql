@@ -15,7 +15,12 @@ GRANT EXECUTE ON FUNCTION public.current_user_is_member(uuid) TO authenticated;
 DROP POLICY IF EXISTS group_broadcast_authz ON realtime.messages;
 CREATE POLICY group_broadcast_authz ON realtime.messages FOR SELECT TO authenticated
 USING (
-  public.current_user_is_member(
-    substring(realtime.topic() FROM '^(?:group|chat):([0-9a-fA-F-]{36})$')::uuid
-  )
+  CASE
+    WHEN realtime.topic() LIKE 'user:%' THEN
+      substring(realtime.topic() FROM '^user:([0-9a-fA-F-]{36})$')::uuid = auth.uid()
+    ELSE
+      public.current_user_is_member(
+        substring(realtime.topic() FROM '^(?:group|chat):([0-9a-fA-F-]{36})$')::uuid
+      )
+  END
 );

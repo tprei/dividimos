@@ -116,6 +116,17 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.broadcast_user(p_user_id uuid, p_group_id uuid) RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  PERFORM realtime.send(
+    jsonb_build_object('group_id', p_group_id),
+    'membership', 'user:' || p_user_id::text, true
+  );
+END;
+$$;
+
 CREATE FUNCTION public.validate_expense_payload(p jsonb, p_expense_type expense_type, p_total integer, p_fee_bps integer, p_fixed_fee integer)
 RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public

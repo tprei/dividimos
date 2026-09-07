@@ -91,7 +91,12 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   );
 
   useEffect(() => {
-    if (!me || dm || requestedRef.current) return;
+    if (!me) return;
+    if (dm) {
+      requestedRef.current = true;
+      return;
+    }
+    if (requestedRef.current) return;
     requestedRef.current = true;
     getOrCreateDm(counterpartyId).catch((error) => {
       requestedRef.current = false;
