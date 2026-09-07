@@ -234,4 +234,18 @@ describe("PixQrModal", () => {
 
     expect(document.activeElement).toBe(triggerButton);
   });
+
+  it("resolves BR Code payload via fetchPayload when pixKey is absent", async () => {
+    const fetchPayload = vi.fn().mockResolvedValue("brcode-from-route");
+    render(
+      <PixQrModal
+        {...defaultProps}
+        fetchPayload={fetchPayload}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(fetchPayload).toHaveBeenCalled();
+    });
+  });
 });

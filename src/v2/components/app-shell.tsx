@@ -21,7 +21,6 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { DashboardSkeleton } from "@/components/shared/skeleton";
 import { UnreadBadge } from "@/components/shared/unread-badge";
-import { SettlementSubmissionProvider } from "@/contexts/settlement-submission-context";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
 import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
@@ -262,7 +261,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     usePullToRefresh(handleRefresh);
 
   return (
-    <SettlementSubmissionProvider>
+    <>
       {!hydrated ? (
         <div className="px-4 py-6">
           <DashboardSkeleton />
@@ -334,6 +333,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <NavBar />
         </div>
       )}
-    </SettlementSubmissionProvider>
+    </>
   );
 }
