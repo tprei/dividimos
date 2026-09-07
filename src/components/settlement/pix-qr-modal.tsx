@@ -25,17 +25,29 @@ import {
 } from "@/lib/slider-snap";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 
-interface PixQrModalProps {
+type PixQrModalSource =
+  | { pixKey: string; recipientUserId?: never; groupId?: never }
+  | { pixKey?: never; recipientUserId: string; groupId: string };
+
+type TimerId = number | NodeJS.Timeout;
+
+interface FetchedPayload {
+  amountCents: number;
+  recipientUserId: string;
+  payload: string;
+}
+
+interface PixQrModalBaseProps {
   open: boolean;
   onClose: () => void;
   recipientName: string;
   amountCents: number;
-  pixKey?: string;
-  fetchPayload?: () => Promise<string>;
   mode?: "pay" | "collect";
   onMarkPaid: (amountCents: number) => Promise<void>;
   onSettlementComplete?: () => void;
 }
+
+export type PixQrModalProps = PixQrModalBaseProps & PixQrModalSource;
 
 export function PixQrModal({
   open,
@@ -43,20 +55,22 @@ export function PixQrModal({
   recipientName,
   amountCents,
   pixKey,
-  fetchPayload,
+  recipientUserId,
+  groupId,
   mode = "pay",
   onMarkPaid,
   onSettlementComplete,
 }: PixQrModalProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const autoCloseRef = useRef<number | null>(null);
+  const timerRef = useRef<TimerId | undefined>(undefined);
+  const autoCloseRef = useRef<TimerId | undefined>(undefined);
   const lastSnapRef = useRef<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [settledAmountCents, setSettledAmountCents] = useState(0);
   const [paymentCents, setPaymentCents] = useState(amountCents);
-  const [fetchedPayload, setFetchedPayload] = useState("");
+  const [fetched, setFetched] = useState<FetchedPayload | null>(null);
+  const [payloadError, setPayloadError] = useState(false);
   const [payloadLoading, setPayloadLoading] = useState(false);
 
   const isFullPayment = paymentCents >= amountCents;
@@ -103,34 +117,59 @@ export function PixQrModal({
       setPaymentCents(amountCents);
       setShowSuccess(false);
       setSettledAmountCents(0);
-      setFetchedPayload("");
     }
   }, [amountCents, isSettling, open]);
 
   useEffect(() => {
-    if (!open || pixKey || !fetchPayload) return;
-    let cancelled = false;
-    setPayloadLoading(true);
-    fetchPayload()
-      .then((code) => {
-        if (!cancelled) setFetchedPayload(code);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setPayloadLoading(false);
-      });
     return () => {
-      cancelled = true;
-    };
-  }, [open, pixKey, fetchPayload]);
-
-  useEffect(() => {
-    return () => {
-      if (autoCloseRef.current) window.clearTimeout(autoCloseRef.current);
+      clearTimeout(timerRef.current);
+      clearTimeout(autoCloseRef.current);
     };
   }, []);
 
   const qrAmountCents = isValidAmount ? paymentCents : amountCents;
+
+  useEffect(() => {
+    if (!open || pixKey || !recipientUserId || !groupId) return;
+    if (qrAmountCents <= 0) return;
+
+    let controller: AbortController | undefined;
+
+    setPayloadLoading(true);
+    timerRef.current = setTimeout(async () => {
+      controller = new AbortController();
+      try {
+        const res = await fetch("/api/pix/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            recipientUserId,
+            amountCents: qrAmountCents,
+            groupId,
+          }),
+          signal: controller.signal,
+        });
+        const data = (await res.json()) as { copiaECola?: string };
+        if (data.copiaECola) {
+          setFetched({ amountCents: qrAmountCents, recipientUserId, payload: data.copiaECola });
+          setPayloadError(false);
+        } else {
+          setPayloadError(res.status >= 500);
+        }
+      } catch {
+        if (controller.signal.aborted) return;
+        setPayloadError(true);
+      } finally {
+        if (!controller.signal.aborted) setPayloadLoading(false);
+      }
+    }, 500);
+
+    return () => {
+      clearTimeout(timerRef.current);
+      controller?.abort();
+    };
+  }, [open, pixKey, recipientUserId, groupId, qrAmountCents]);
+
   const copiaECola = pixKey
     ? generatePixCopiaECola({
         pixKey,
@@ -138,16 +177,23 @@ export function PixQrModal({
         merchantCity: "SAO PAULO",
         amountCents: qrAmountCents,
       })
-    : fetchedPayload;
+    : fetched &&
+        fetched.amountCents === qrAmountCents &&
+        fetched.recipientUserId === recipientUserId
+      ? fetched.payload
+      : "";
 
-  useEffect(() => {
-    if (!copiaECola || !canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, copiaECola, {
-      width: 240,
-      margin: 2,
-      color: { dark: "#1a1d2e", light: "#ffffff" },
-    });
-  }, [copiaECola]);
+  const paintQr = useCallback(
+    (node: HTMLCanvasElement | null) => {
+      if (!node || !copiaECola) return;
+      QRCode.toCanvas(node, copiaECola, {
+        width: 240,
+        margin: 2,
+        color: { dark: "#1a1d2e", light: "#ffffff" },
+      });
+    },
+    [copiaECola],
+  );
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(copiaECola);
@@ -156,11 +202,9 @@ export function PixQrModal({
     toast.success("Código Pix copiado!");
     setTimeout(() => setCopied(false), 2000);
   };
-
   const handleSuccessClose = () => {
     if (autoCloseRef.current) {
-      window.clearTimeout(autoCloseRef.current);
-      autoCloseRef.current = null;
+      clearTimeout(autoCloseRef.current);
     }
     setShowSuccess(false);
     setIsSettling(false);
@@ -361,12 +405,14 @@ export function PixQrModal({
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                   </div>
                 ) : copiaECola ? (
-                  <canvas ref={canvasRef} />
+                  <canvas ref={paintQr} />
                 ) : (
                   <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
                     <QrCode className="h-12 w-12 text-muted-foreground/30" />
                     <p className="text-sm text-muted-foreground">
-                      Não temos a chave Pix de {recipientName.split(" ")[0]}.
+                      {payloadError
+                        ? "Não deu pra gerar o QR agora. Tenta de novo."
+                        : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
                     </p>
                   </div>
                 )}

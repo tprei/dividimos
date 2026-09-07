@@ -480,6 +480,8 @@ export function DashboardContent() {
           onClose={() => setPayingDebt(null)}
           recipientName={payingDebt.counterpartyName}
           amountCents={payingDebt.amountCents}
+          recipientUserId={payingDebt.counterpartyId}
+          groupId={payingDebt.groupId}
           mode="pay"
           onMarkPaid={handleMarkPaid}
         />

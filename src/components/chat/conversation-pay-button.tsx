@@ -50,18 +50,6 @@ export function ConversationPayButton({
   const absAmount = Math.abs(netCents);
   const recipientUserId = mode === "pay" ? counterpartyId : meId;
 
-  const fetchPayload = async (): Promise<string> => {
-    const response = await fetch("/api/pix/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ groupId, recipientUserId, amountCents: absAmount }),
-    });
-    const body = (await response.json()) as { copiaECola?: string };
-    if (!response.ok || !body.copiaECola) {
-      throw new Error("pix_payload_unavailable");
-    }
-    return body.copiaECola;
-  };
 
   return (
     <>
@@ -91,9 +79,10 @@ export function ConversationPayButton({
           onClose={() => setShowPix(false)}
           recipientName={counterpartyName}
           amountCents={absAmount}
+          recipientUserId={recipientUserId}
+          groupId={groupId}
           mode={mode}
-          fetchPayload={fetchPayload}
-          onMarkPaid={async (amountCents) => {
+          onMarkPaid={async (amountCents: number) => {
             await recordSettlement({
               groupId,
               toUserId: mode === "pay" ? counterpartyId : meId,
