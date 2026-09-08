@@ -13,6 +13,7 @@ DECLARE
   v_expense_id uuid;
   v_existing_id uuid;
   v_existing_group_id uuid;
+  v_existing_status public.expense_status;
   v_existing_version_no integer;
   v_existing_ledger_version bigint;
   v_ledger_version bigint;
@@ -23,9 +24,13 @@ BEGIN
   PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, v_actor);
 
-  SELECT id, group_id, current_version_no INTO v_existing_id, v_existing_group_id, v_existing_version_no
+  SELECT id, group_id, status, current_version_no
+    INTO v_existing_id, v_existing_group_id, v_existing_status, v_existing_version_no
   FROM expenses WHERE client_id = p_client_id;
   IF v_existing_id IS NOT NULL THEN
+    IF v_existing_status = 'deleted' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
+    END IF;
     IF v_existing_group_id <> p_group_id THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
     END IF;
@@ -65,9 +70,16 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'creator_not_participant';
   END IF;
 
-  INSERT INTO expenses (client_id, group_id, creator_id, occurred_on)
-  VALUES (p_client_id, p_group_id, v_actor, p_occurred_on)
-  RETURNING id INTO v_expense_id;
+  BEGIN
+    INSERT INTO expenses (client_id, group_id, creator_id, occurred_on)
+    VALUES (p_client_id, p_group_id, v_actor, p_occurred_on)
+    RETURNING id INTO v_expense_id;
+  EXCEPTION
+    WHEN unique_violation THEN
+      -- A concurrent create in another group won the global client_id race;
+      -- surface the same domain error as the sequential wrong-group path.
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END;
 
   v_payload := materialize_participants(v_expense_id, v_actor, v_payload);
 
@@ -107,6 +119,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_group_id uuid;
+  v_creator_id uuid;
   v_status public.expense_status;
   v_current_version_no integer;
   v_new_version_no integer;
@@ -128,8 +141,16 @@ BEGIN
 
   -- Re-read under the lock: an unlocked read lets two racing edits both pass
   -- the version check and collide on expense_versions_pkey.
-  SELECT status, current_version_no INTO v_status, v_current_version_no
+  SELECT status, current_version_no, creator_id
+    INTO v_status, v_current_version_no, v_creator_id
   FROM expenses WHERE id = p_expense_id;
+
+  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
+    SELECT 1 FROM expense_participants
+    WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
+  END IF;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -195,6 +216,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_group_id uuid;
+  v_creator_id uuid;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -212,8 +234,16 @@ BEGIN
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no INTO v_status, v_version_no
+  SELECT status, current_version_no, creator_id
+    INTO v_status, v_version_no, v_creator_id
   FROM expenses WHERE id = p_expense_id;
+
+  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
+    SELECT 1 FROM expense_participants
+    WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
+  END IF;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -250,6 +280,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_group_id uuid;
+  v_creator_id uuid;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -269,8 +300,24 @@ BEGIN
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no INTO v_status, v_version_no
+  SELECT status, current_version_no, creator_id
+    INTO v_status, v_version_no, v_creator_id
   FROM expenses WHERE id = p_expense_id;
+
+  SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
+  FROM expense_versions
+  WHERE expense_id = p_expense_id AND version_no = v_version_no;
+
+  -- delete_expense empties expense_participants, so authorization for restore
+  -- must come from the stored version payload, not the live rows.
+  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(COALESCE(v_payload->'participants', '[]'::jsonb)) AS pp(p)
+    WHERE pp.p->>'kind' = 'user' AND pp.p ? 'userId'
+      AND pp.p->>'userId' = v_actor::text
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
+  END IF;
 
   IF v_status = 'active' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
@@ -278,10 +325,6 @@ BEGIN
 
   UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
   WHERE id = p_expense_id;
-
-  SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
-  FROM expense_versions
-  WHERE expense_id = p_expense_id AND version_no = v_version_no;
 
   v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
   IF v_materialized IS DISTINCT FROM v_payload THEN

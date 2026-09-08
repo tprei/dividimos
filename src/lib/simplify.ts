@@ -1,11 +1,11 @@
 import { formatBRL } from "./currency";
-import { allocateByWeights, allocateEvenly } from "./expense-money";
+import { allocateByWeights, allocateEvenly, computeServiceFeeCents } from "./expense-money";
 import { netAndMinimize } from "./ledger/transfers";
 import type { User } from "@/types";
 
 interface ExpenseInput {
   expenseType: "itemized" | "single_amount";
-  serviceFeePercent: number;
+  serviceFeeBasisPoints: number;
   fixedFees: number;
   creatorId: string;
   payers: { userId: string; amountCents: number }[];
@@ -96,8 +96,10 @@ export function computeRawEdges(
     for (const split of itemSplits) {
       consumption.set(split.userId, (consumption.get(split.userId) || 0) + split.computedAmountCents);
     }
-    if (expense.serviceFeePercent > 0 && itemsTotal > 0) {
-      const totalFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
+    if (expense.serviceFeeBasisPoints > 0 && itemsTotal > 0) {
+      const feeResult = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
+      if (!feeResult.ok) return [];
+      const totalFee = feeResult.value;
       const weights = participants.map((p) => consumption.get(p.id) || 0);
       const feesRes = allocateByWeights(totalFee, weights);
       if (!feesRes.ok) return [];

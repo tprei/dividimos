@@ -137,9 +137,6 @@ BEGIN
   PERFORM assert_member(v_s.group_id, v_actor);
 
   v_other_party := CASE WHEN v_actor = v_s.from_user_id THEN v_s.to_user_id ELSE v_s.from_user_id END;
-  IF NOT is_member(v_s.group_id, v_other_party) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'counterparty_not_member';
-  END IF;
 
   IF v_s.status = 'voided' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_voided';

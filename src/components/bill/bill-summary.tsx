@@ -3,14 +3,19 @@
 import { motion } from "framer-motion";
 import { Calculator, Receipt } from "lucide-react";
 import { formatBRL } from "@/lib/currency";
-import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
+import {
+  allocateByWeights,
+  allocateEvenly,
+  computeServiceFeeCents,
+  formatServiceFeeBasisPoints,
+} from "@/lib/expense-money";
 import type { ExpenseType, UserProfile } from "@/types";
 
 /** Fields the summary reads from the expense config. */
 interface ExpenseConfig {
   expenseType: ExpenseType;
   totalAmount: number;
-  serviceFeePercent: number;
+  serviceFeeBasisPoints: number;
   fixedFees: number;
 }
 
@@ -52,7 +57,8 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
   const isSingleAmount = expense.expenseType === "single_amount";
 
   const itemsTotal = items.reduce((sum, i) => sum + i.totalPriceCents, 0);
-  const serviceFee = Math.round((itemsTotal * expense.serviceFeePercent) / 100);
+  const serviceFeeRes = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
+  const serviceFee = serviceFeeRes.ok ? serviceFeeRes.value : 0;
   const grandTotal = isSingleAmount
     ? expense.totalAmount
     : itemsTotal + serviceFee + expense.fixedFees;
@@ -120,10 +126,10 @@ export function BillSummary({ expense, items, itemSplits = [], shares = [], part
                 <span className="text-muted-foreground">Subtotal dos itens</span>
                 <span className="tabular-nums">{formatBRL(itemsTotal)}</span>
               </div>
-              {expense.serviceFeePercent > 0 && (
+              {expense.serviceFeeBasisPoints > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
-                    Garçom ({expense.serviceFeePercent}%)
+                    Garçom ({formatServiceFeeBasisPoints(expense.serviceFeeBasisPoints)})
                   </span>
                   <span className="tabular-nums">{formatBRL(serviceFee)}</span>
                 </div>

@@ -407,7 +407,9 @@ export function parseAllocationPercentText(
  * Format basis points as a percent string using integer quotient/remainder.
  * `1_055 -> "10,55%"`, `1_000 -> "10%"`, `1 -> "0,01%"`.
  */
-export function formatServiceFeeBasisPoints(rate: ServiceFeeBasisPoints): string {
+export function formatServiceFeeBasisPoints(
+  rate: ServiceFeeBasisPoints | number,
+): string {
   const rateNum = rate as number;
   const wholePercent = Math.floor(rateNum / 100);
   const remainderBps = rateNum - wholePercent * 100;
@@ -449,15 +451,25 @@ export function sumExpenseCents(
 /**
  * Half-up service fee: `floor((subtotal * bps + 5_000) / 10_000)` in `bigint`.
  * All operands are nonnegative, so this is documented round-half-up and equals
- * PostgreSQL's positive half-away result. Rejects a derived fee above the cap.
+ * PostgreSQL's positive half-away result. Rejects a non-integer, negative,
+ * NaN, Infinity, or above-cap subtotal or rate before any arithmetic, and a
+ * derived fee above the cap.
  */
 export function computeServiceFeeCents(
   subtotal: ExpenseCents | number,
   rate: ServiceFeeBasisPoints | number,
 ): ValidationResult<ExpenseCents> {
-  const subtotalBig = BigInt(subtotal as number);
-  const rateBig = BigInt(rate as number);
-  const fee = (subtotalBig * rateBig + HALF_UP_BIAS) / BASIS_POINTS_DIVISOR;
+  const subtotalResult = parseExpenseCents(subtotal, "allow");
+  if (!subtotalResult.ok) {
+    return subtotalResult;
+  }
+  const rateResult = parseServiceFeeBasisPoints(rate);
+  if (!rateResult.ok) {
+    return rateResult;
+  }
+  const fee =
+    (BigInt(subtotalResult.value) * BigInt(rateResult.value) + HALF_UP_BIAS) /
+    BASIS_POINTS_DIVISOR;
   if (fee > MAX_EXPENSE_CENTS_BIG) {
     return {
       ok: false,
@@ -484,8 +496,10 @@ function err<T>(issue: ExpenseMoneyIssue): ValidationResult<T> {
  * `base_i = floor(total * weight_i / sumWeights)` in `bigint`; remaining cents
  * are assigned one each by descending exact remainder, ties broken by ascending
  * index (participant order). Rejects zero entities, zero total weight for a
- * nonzero total, and any derived value above the cap. Total zero returns an
- * explicit zero vector for existing consumer identities.
+ * nonzero total, any non-integer, negative, NaN, Infinity, or above-cap total
+ * or weight (`invalid_cents`/`amount_out_of_range`), and any derived value
+ * above the cap. Total zero returns an explicit zero vector for existing
+ * consumer identities.
  */
 export function allocateByWeights(
   total: ExpenseCents | number,
@@ -495,10 +509,24 @@ export function allocateByWeights(
   if (entityCount === 0) {
     return err({ code: "invalid_allocation_weights", reason: "no_entities" });
   }
+  const totalResult = parseExpenseCents(total, "allow");
+  if (!totalResult.ok) {
+    return totalResult;
+  }
+  for (let i = 0; i < weights.length; i++) {
+    const weightResult = parseExpenseCents(weights[i], "allow");
+    if (!weightResult.ok) {
+      return err(
+        weightResult.issue.code === "amount_out_of_range"
+          ? { code: "amount_out_of_range", path: ["weights", i] }
+          : { code: "invalid_cents", path: ["weights", i] },
+      );
+    }
+  }
   const zeroVector = Object.freeze(
     weights.map(() => ZERO_EXPENSE_CENTS),
   ) as readonly ExpenseCents[];
-  if ((total as number) === 0) {
+  if (totalResult.value === 0) {
     return { ok: true, value: zeroVector };
   }
   let weightSum = BigInt(0);
@@ -508,7 +536,7 @@ export function allocateByWeights(
   if (weightSum === BigInt(0)) {
     return err({ code: "invalid_allocation_weights", reason: "zero_weight" });
   }
-  const totalBig = BigInt(total as number);
+  const totalBig = BigInt(totalResult.value);
   const bases: bigint[] = [];
   const remainders: bigint[] = [];
   let baseSum = BigInt(0);
@@ -548,6 +576,8 @@ export function allocateByWeights(
 /**
  * Distribute `total` evenly across `count` entities using quotient/remainder
  * in participant order. Equivalent to `allocateByWeights` with equal weights.
+ * Rejects a non-integer, negative, NaN, Infinity, or above-cap total, so a
+ * truncated negative remainder can never silently drop the exact-sum contract.
  */
 export function allocateEvenly(
   total: ExpenseCents | number,
@@ -562,7 +592,11 @@ export function allocateEvenly(
     }
     return err({ code: "invalid_allocation_weights", reason: "no_entities" });
   }
-  const totalBig = BigInt(total as number);
+  const totalResult = parseExpenseCents(total, "allow");
+  if (!totalResult.ok) {
+    return totalResult;
+  }
+  const totalBig = BigInt(totalResult.value);
   const base = totalBig / BigInt(count);
   const remainder = Number(totalBig - base * BigInt(count));
   const result: ExpenseCents[] = [];

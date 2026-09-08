@@ -45,6 +45,8 @@ const SPLIT_METHODS: { key: SplitType; icon: React.ElementType; label: string }[
   { key: "fixed", icon: Hash, label: "Fixo" },
 ];
 
+const WHOLE_PERCENT_RE = /^\d+$/;
+
 export function QuickSplitSheet({
   open,
   onClose,
@@ -72,6 +74,13 @@ export function QuickSplitSheet({
   const isConfirmed = status === "confirmed";
   const isDisabled = isConfirming || isConfirmed;
 
+  const percentageParse = useMemo((): number | null => {
+    if (splitMethod !== "percentage") return null;
+    if (myPercentage !== "" && !WHOLE_PERCENT_RE.test(myPercentage)) return null;
+    const percent = Number(myPercentage);
+    return percent > 100 ? null : percent;
+  }, [splitMethod, myPercentage]);
+
   const computeShares = useCallback((): Array<{ userId: string; shareAmountCents: number }> | null => {
     if (totalCents <= 0) return null;
 
@@ -86,10 +95,11 @@ export function QuickSplitSheet({
     }
 
     if (splitMethod === "percentage") {
-      const myPct = parseFloat(myPercentage.replace(",", ".")) || 0;
-      const otherPct = 100 - myPct;
-      if (myPct < 0 || myPct > 100) return null;
-      const amountsRes = allocateByWeights(totalCents, [myPct, otherPct]);
+      if (percentageParse === null) return null;
+      const amountsRes = allocateByWeights(totalCents, [
+        percentageParse,
+        100 - percentageParse,
+      ]);
       if (!amountsRes.ok) return null;
       const amounts = amountsRes.value;
       return [
@@ -108,7 +118,7 @@ export function QuickSplitSheet({
     }
 
     return null;
-  }, [totalCents, splitMethod, participants, myPercentage, myFixedCents, currentUserId, counterparty.id]);
+  }, [totalCents, splitMethod, participants, percentageParse, myFixedCents, currentUserId, counterparty.id]);
 
   const shares = computeShares();
 
@@ -119,11 +129,12 @@ export function QuickSplitSheet({
   }, [title, totalCents, shares]);
 
   const percentageWarning = useMemo(() => {
-    if (splitMethod !== "percentage") return null;
-    const pct = parseFloat(myPercentage.replace(",", ".")) || 0;
-    if (pct < 0 || pct > 100) return "Porcentagem deve estar entre 0% e 100%";
-    return null;
-  }, [splitMethod, myPercentage]);
+    if (splitMethod !== "percentage" || percentageParse !== null) return null;
+    if (!WHOLE_PERCENT_RE.test(myPercentage)) {
+      return "Porcentagem deve ser um número inteiro de 0% a 100%";
+    }
+    return "Porcentagem deve estar entre 0% e 100%";
+  }, [splitMethod, percentageParse, myPercentage]);
 
   const fixedWarning = useMemo(() => {
     if (splitMethod !== "fixed" || totalCents <= 0) return null;
@@ -296,7 +307,7 @@ export function QuickSplitSheet({
                     <div className="flex items-center gap-3">
                       <span className="text-sm flex-1">{participants[1].name}</span>
                       <span className="text-sm tabular-nums w-20 text-right">
-                        {(100 - (parseFloat(myPercentage.replace(",", ".")) || 0)).toFixed(0)}%
+                        {percentageParse === null ? "—" : `${100 - percentageParse}%`}
                       </span>
                       {shares && (
                         <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">

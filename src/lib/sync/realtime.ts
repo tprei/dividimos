@@ -166,6 +166,19 @@ function handleMembershipBroadcast(payload: unknown): void {
   void refreshMemberships().catch(() => {});
 }
 
+function onRecovery(onRecovered: () => void): (status: string) => void {
+  let lost = false;
+  return (status) => {
+    if (status !== "SUBSCRIBED") {
+      lost = true;
+      return;
+    }
+    if (!lost) return;
+    lost = false;
+    onRecovered();
+  };
+}
+
 export function startRealtime(): () => void {
   const channels = new Map<string, RealtimeChannel>();
   let userChannel: RealtimeChannel | null = null;
@@ -188,7 +201,11 @@ export function startRealtime(): () => void {
           .on("broadcast", { event: "ledger" }, ({ payload }) => {
             handleLedgerBroadcast(id, payload);
           })
-          .subscribe();
+          .subscribe(
+            onRecovery(() => {
+              void refreshGroup(id).catch(() => {});
+            }),
+          );
         channels.set(id, ch);
       }
     }
@@ -206,7 +223,11 @@ export function startRealtime(): () => void {
           .on("broadcast", { event: "membership" }, ({ payload }) => {
             handleMembershipBroadcast(payload);
           })
-          .subscribe();
+          .subscribe(
+            onRecovery(() => {
+              void refreshMemberships().catch(() => {});
+            }),
+          );
       }
     }
   }

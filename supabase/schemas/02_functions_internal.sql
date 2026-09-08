@@ -147,7 +147,7 @@ DECLARE
   v_share_sum bigint := 0;
   v_payer_sum bigint := 0;
   v_item_sum bigint := 0;
-  v_fee integer;
+  v_fee bigint;
   v_payer_indexes integer[];
   v_seen_user_ids uuid[];
   v_seen_guest_ids uuid[];
@@ -156,6 +156,7 @@ DECLARE
   v_item_index integer;
   v_participant_index integer;
   v_amount integer;
+  v_num numeric;
   v_item_total integer;
   v_assignment_sum bigint;
   v_j integer;
@@ -199,6 +200,7 @@ BEGIN
     IF jsonb_typeof(v_item->'quantityMilliunits') <> 'number'
        OR (v_item->>'quantityMilliunits')::numeric <> floor((v_item->>'quantityMilliunits')::numeric)
        OR (v_item->>'quantityMilliunits')::numeric < 1
+       OR (v_item->>'quantityMilliunits')::numeric > 999999999
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
@@ -215,6 +217,11 @@ BEGIN
        OR (v_item->>'totalPriceCents')::numeric > 99999999
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    v_num := floor(((v_item->>'quantityMilliunits')::numeric
+                    * (v_item->>'unitPriceCents')::numeric + 500) / 1000);
+    IF v_num <> (v_item->>'totalPriceCents')::numeric THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'line_total_mismatch';
     END IF;
     IF v_item->'description' IS NOT NULL AND jsonb_typeof(v_item->'description') NOT IN ('string', 'null') THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
@@ -290,10 +297,11 @@ BEGIN
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
-    v_share := (v_shares->>v_i)::integer;
-    IF v_share < 0 OR v_share > 99999999 THEN
+    v_num := (v_shares->>v_i)::numeric;
+    IF v_num < 0 OR v_num > 99999999 THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    v_share := v_num::integer;
     v_share_sum := v_share_sum + v_share;
     v_i := v_i + 1;
   END LOOP;
@@ -319,10 +327,11 @@ BEGIN
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
-    v_participant_index := (v_payer->>'participantIndex')::integer;
-    IF v_participant_index < 0 OR v_participant_index >= jsonb_array_length(v_participants) THEN
+    v_num := (v_payer->>'participantIndex')::numeric;
+    IF v_num < 0 OR v_num >= jsonb_array_length(v_participants) THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    v_participant_index := v_num::integer;
     IF v_participant_index = ANY (v_payer_indexes) THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
@@ -335,10 +344,11 @@ BEGIN
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
-    v_amount := (v_payer->>'amountCents')::integer;
-    IF v_amount < 1 OR v_amount > 99999999 THEN
+    v_num := (v_payer->>'amountCents')::numeric;
+    IF v_num < 1 OR v_num > 99999999 THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    v_amount := v_num::integer;
     v_payer_sum := v_payer_sum + v_amount;
     v_i := v_i + 1;
   END LOOP;
@@ -384,22 +394,26 @@ BEGIN
       THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
-      v_item_index := (v_assignment->>'itemIndex')::integer;
-      v_participant_index := (v_assignment->>'participantIndex')::integer;
-      IF v_item_index < 0 OR v_item_index >= jsonb_array_length(v_items)
-         OR v_participant_index < 0 OR v_participant_index >= jsonb_array_length(v_participants)
-      THEN
+      v_num := (v_assignment->>'itemIndex')::numeric;
+      IF v_num < 0 OR v_num >= jsonb_array_length(v_items) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
+      v_item_index := v_num::integer;
+      v_num := (v_assignment->>'participantIndex')::numeric;
+      IF v_num < 0 OR v_num >= jsonb_array_length(v_participants) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+      END IF;
+      v_participant_index := v_num::integer;
       IF jsonb_typeof(v_assignment->'amountCents') <> 'number'
          OR (v_assignment->>'amountCents')::text <> floor((v_assignment->>'amountCents')::numeric)::text
       THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
-      v_amount := (v_assignment->>'amountCents')::integer;
-      IF v_amount < 0 OR v_amount > 99999999 THEN
+      v_num := (v_assignment->>'amountCents')::numeric;
+      IF v_num < 0 OR v_num > 99999999 THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
+      v_amount := v_num::integer;
       v_i := v_i + 1;
     END LOOP;
     IF EXISTS (
@@ -426,6 +440,44 @@ BEGIN
       WHERE COALESCE(a.assigned_cents, 0) <> COALESCE(i.total_cents, -1)
     ) THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    IF EXISTS (
+      WITH assigned AS (
+        SELECT (a.e->>'participantIndex')::integer AS p_idx,
+               sum((a.e->>'amountCents')::numeric) AS subtotal
+        FROM jsonb_array_elements(v_item_assignments) AS a(e)
+        GROUP BY 1
+      ), parts AS (
+        SELECT (ord - 1)::integer AS p_idx,
+               (s->>0)::numeric AS share_cents,
+               COALESCE(asg.subtotal, 0) AS item_subtotal
+        FROM jsonb_array_elements(v_shares) WITH ORDINALITY AS t(s, ord)
+        LEFT JOIN assigned asg ON asg.p_idx = (ord - 1)::integer
+      ), fee_parts AS (
+        SELECT p_idx, share_cents, item_subtotal,
+               CASE WHEN v_item_sum = 0 THEN 0
+                    ELSE floor((v_fee * item_subtotal) / v_item_sum) END AS fee_base,
+               CASE WHEN v_item_sum = 0 THEN 0
+                    ELSE (v_fee * item_subtotal) % v_item_sum END AS fee_rem
+        FROM parts
+      ), ranked AS (
+        SELECT p_idx, share_cents, item_subtotal, fee_base,
+               SUM(fee_base) OVER () AS fee_total,
+               row_number() OVER (ORDER BY fee_rem DESC, p_idx ASC) AS rn
+        FROM fee_parts
+      )
+      SELECT 1 FROM ranked
+      WHERE item_subtotal
+              + fee_base
+              + CASE WHEN rn <= CASE WHEN v_item_sum = 0 THEN 0
+                                ELSE v_fee - fee_total END
+                THEN 1 ELSE 0 END
+              + (p_fixed_fee / jsonb_array_length(v_shares))
+              + CASE WHEN p_idx < (p_fixed_fee % jsonb_array_length(v_shares))
+                THEN 1 ELSE 0 END
+            <> share_cents
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'item_assignment_share_mismatch';
     END IF;
   ELSE
     v_item_assignments := NULL;
@@ -495,11 +547,20 @@ DECLARE
   v_out_participants jsonb := '[]'::jsonb;
   v_out jsonb;
   v_seen_users uuid[] := '{}';
+  v_current_version integer;
+  v_prev_payload jsonb;
+  v_existing_user_ids uuid[] := '{}';
 BEGIN
-  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
+  SELECT e.group_id, e.current_version_no INTO v_group_id, v_current_version
+  FROM expenses e WHERE e.id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
+  SELECT payload INTO v_prev_payload FROM expense_versions
+  WHERE expense_id = p_expense_id AND version_no = v_current_version;
+  SELECT COALESCE(array_agg((pa.el->>'userId')::uuid), '{}') INTO v_existing_user_ids
+  FROM jsonb_array_elements(COALESCE(v_prev_payload->'participants', '[]'::jsonb)) AS pa(el)
+  WHERE pa.el->>'kind' = 'user' AND pa.el ? 'userId';
 
   v_participants := p_payload->'participants';
   v_n := jsonb_array_length(v_participants);
@@ -517,7 +578,8 @@ BEGIN
     v_display_name := NULL;
     IF v_participant->>'kind' = 'user' THEN
       v_user_id := (v_participant->>'userId')::uuid;
-      IF NOT is_member(v_group_id, v_user_id) THEN
+      IF NOT is_member(v_group_id, v_user_id)
+         AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
       END IF;
     ELSIF v_participant->>'kind' = 'guest' THEN
@@ -536,7 +598,8 @@ BEGIN
       IF v_claimed_by IS NOT NULL THEN
         v_guest_id := NULL;
         v_user_id := v_claimed_by;
-        IF NOT is_member(v_group_id, v_user_id) THEN
+        IF NOT is_member(v_group_id, v_user_id)
+           AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
           RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
         END IF;
       ELSE

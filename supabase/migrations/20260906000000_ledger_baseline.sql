@@ -379,7 +379,7 @@ DECLARE
   v_share_sum bigint := 0;
   v_payer_sum bigint := 0;
   v_item_sum bigint := 0;
-  v_fee integer;
+  v_fee bigint;
   v_payer_indexes integer[];
   v_seen_user_ids uuid[];
   v_seen_guest_ids uuid[];
@@ -388,6 +388,7 @@ DECLARE
   v_item_index integer;
   v_participant_index integer;
   v_amount integer;
+  v_num numeric;
   v_item_total integer;
   v_assignment_sum bigint;
   v_j integer;
@@ -431,6 +432,7 @@ BEGIN
     IF jsonb_typeof(v_item->'quantityMilliunits') <> 'number'
        OR (v_item->>'quantityMilliunits')::numeric <> floor((v_item->>'quantityMilliunits')::numeric)
        OR (v_item->>'quantityMilliunits')::numeric < 1
+       OR (v_item->>'quantityMilliunits')::numeric > 999999999
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
@@ -447,6 +449,11 @@ BEGIN
        OR (v_item->>'totalPriceCents')::numeric > 99999999
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    v_num := floor(((v_item->>'quantityMilliunits')::numeric
+                    * (v_item->>'unitPriceCents')::numeric + 500) / 1000);
+    IF v_num <> (v_item->>'totalPriceCents')::numeric THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'line_total_mismatch';
     END IF;
     IF v_item->'description' IS NOT NULL AND jsonb_typeof(v_item->'description') NOT IN ('string', 'null') THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
@@ -522,10 +529,11 @@ BEGIN
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
-    v_share := (v_shares->>v_i)::integer;
-    IF v_share < 0 OR v_share > 99999999 THEN
+    v_num := (v_shares->>v_i)::numeric;
+    IF v_num < 0 OR v_num > 99999999 THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    v_share := v_num::integer;
     v_share_sum := v_share_sum + v_share;
     v_i := v_i + 1;
   END LOOP;
@@ -551,10 +559,11 @@ BEGIN
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
-    v_participant_index := (v_payer->>'participantIndex')::integer;
-    IF v_participant_index < 0 OR v_participant_index >= jsonb_array_length(v_participants) THEN
+    v_num := (v_payer->>'participantIndex')::numeric;
+    IF v_num < 0 OR v_num >= jsonb_array_length(v_participants) THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    v_participant_index := v_num::integer;
     IF v_participant_index = ANY (v_payer_indexes) THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
@@ -567,10 +576,11 @@ BEGIN
     THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
-    v_amount := (v_payer->>'amountCents')::integer;
-    IF v_amount < 1 OR v_amount > 99999999 THEN
+    v_num := (v_payer->>'amountCents')::numeric;
+    IF v_num < 1 OR v_num > 99999999 THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    v_amount := v_num::integer;
     v_payer_sum := v_payer_sum + v_amount;
     v_i := v_i + 1;
   END LOOP;
@@ -616,22 +626,26 @@ BEGIN
       THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
-      v_item_index := (v_assignment->>'itemIndex')::integer;
-      v_participant_index := (v_assignment->>'participantIndex')::integer;
-      IF v_item_index < 0 OR v_item_index >= jsonb_array_length(v_items)
-         OR v_participant_index < 0 OR v_participant_index >= jsonb_array_length(v_participants)
-      THEN
+      v_num := (v_assignment->>'itemIndex')::numeric;
+      IF v_num < 0 OR v_num >= jsonb_array_length(v_items) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
+      v_item_index := v_num::integer;
+      v_num := (v_assignment->>'participantIndex')::numeric;
+      IF v_num < 0 OR v_num >= jsonb_array_length(v_participants) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+      END IF;
+      v_participant_index := v_num::integer;
       IF jsonb_typeof(v_assignment->'amountCents') <> 'number'
          OR (v_assignment->>'amountCents')::text <> floor((v_assignment->>'amountCents')::numeric)::text
       THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
-      v_amount := (v_assignment->>'amountCents')::integer;
-      IF v_amount < 0 OR v_amount > 99999999 THEN
+      v_num := (v_assignment->>'amountCents')::numeric;
+      IF v_num < 0 OR v_num > 99999999 THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
       END IF;
+      v_amount := v_num::integer;
       v_i := v_i + 1;
     END LOOP;
     IF EXISTS (
@@ -658,6 +672,44 @@ BEGIN
       WHERE COALESCE(a.assigned_cents, 0) <> COALESCE(i.total_cents, -1)
     ) THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    IF EXISTS (
+      WITH assigned AS (
+        SELECT (a.e->>'participantIndex')::integer AS p_idx,
+               sum((a.e->>'amountCents')::numeric) AS subtotal
+        FROM jsonb_array_elements(v_item_assignments) AS a(e)
+        GROUP BY 1
+      ), parts AS (
+        SELECT (ord - 1)::integer AS p_idx,
+               (s->>0)::numeric AS share_cents,
+               COALESCE(asg.subtotal, 0) AS item_subtotal
+        FROM jsonb_array_elements(v_shares) WITH ORDINALITY AS t(s, ord)
+        LEFT JOIN assigned asg ON asg.p_idx = (ord - 1)::integer
+      ), fee_parts AS (
+        SELECT p_idx, share_cents, item_subtotal,
+               CASE WHEN v_item_sum = 0 THEN 0
+                    ELSE floor((v_fee * item_subtotal) / v_item_sum) END AS fee_base,
+               CASE WHEN v_item_sum = 0 THEN 0
+                    ELSE (v_fee * item_subtotal) % v_item_sum END AS fee_rem
+        FROM parts
+      ), ranked AS (
+        SELECT p_idx, share_cents, item_subtotal, fee_base,
+               SUM(fee_base) OVER () AS fee_total,
+               row_number() OVER (ORDER BY fee_rem DESC, p_idx ASC) AS rn
+        FROM fee_parts
+      )
+      SELECT 1 FROM ranked
+      WHERE item_subtotal
+              + fee_base
+              + CASE WHEN rn <= CASE WHEN v_item_sum = 0 THEN 0
+                                ELSE v_fee - fee_total END
+                THEN 1 ELSE 0 END
+              + (p_fixed_fee / jsonb_array_length(v_shares))
+              + CASE WHEN p_idx < (p_fixed_fee % jsonb_array_length(v_shares))
+                THEN 1 ELSE 0 END
+            <> share_cents
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'item_assignment_share_mismatch';
     END IF;
   ELSE
     v_item_assignments := NULL;
@@ -727,11 +779,20 @@ DECLARE
   v_out_participants jsonb := '[]'::jsonb;
   v_out jsonb;
   v_seen_users uuid[] := '{}';
+  v_current_version integer;
+  v_prev_payload jsonb;
+  v_existing_user_ids uuid[] := '{}';
 BEGIN
-  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
+  SELECT e.group_id, e.current_version_no INTO v_group_id, v_current_version
+  FROM expenses e WHERE e.id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
+  SELECT payload INTO v_prev_payload FROM expense_versions
+  WHERE expense_id = p_expense_id AND version_no = v_current_version;
+  SELECT COALESCE(array_agg((pa.el->>'userId')::uuid), '{}') INTO v_existing_user_ids
+  FROM jsonb_array_elements(COALESCE(v_prev_payload->'participants', '[]'::jsonb)) AS pa(el)
+  WHERE pa.el->>'kind' = 'user' AND pa.el ? 'userId';
 
   v_participants := p_payload->'participants';
   v_n := jsonb_array_length(v_participants);
@@ -749,7 +810,8 @@ BEGIN
     v_display_name := NULL;
     IF v_participant->>'kind' = 'user' THEN
       v_user_id := (v_participant->>'userId')::uuid;
-      IF NOT is_member(v_group_id, v_user_id) THEN
+      IF NOT is_member(v_group_id, v_user_id)
+         AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
       END IF;
     ELSIF v_participant->>'kind' = 'guest' THEN
@@ -768,7 +830,8 @@ BEGIN
       IF v_claimed_by IS NOT NULL THEN
         v_guest_id := NULL;
         v_user_id := v_claimed_by;
-        IF NOT is_member(v_group_id, v_user_id) THEN
+        IF NOT is_member(v_group_id, v_user_id)
+           AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
           RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
         END IF;
       ELSE
@@ -1563,6 +1626,7 @@ DECLARE
   v_expense_id uuid;
   v_existing_id uuid;
   v_existing_group_id uuid;
+  v_existing_status public.expense_status;
   v_existing_version_no integer;
   v_existing_ledger_version bigint;
   v_ledger_version bigint;
@@ -1573,9 +1637,13 @@ BEGIN
   PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, v_actor);
 
-  SELECT id, group_id, current_version_no INTO v_existing_id, v_existing_group_id, v_existing_version_no
+  SELECT id, group_id, status, current_version_no
+    INTO v_existing_id, v_existing_group_id, v_existing_status, v_existing_version_no
   FROM expenses WHERE client_id = p_client_id;
   IF v_existing_id IS NOT NULL THEN
+    IF v_existing_status = 'deleted' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
+    END IF;
     IF v_existing_group_id <> p_group_id THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
     END IF;
@@ -1615,9 +1683,16 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'creator_not_participant';
   END IF;
 
-  INSERT INTO expenses (client_id, group_id, creator_id, occurred_on)
-  VALUES (p_client_id, p_group_id, v_actor, p_occurred_on)
-  RETURNING id INTO v_expense_id;
+  BEGIN
+    INSERT INTO expenses (client_id, group_id, creator_id, occurred_on)
+    VALUES (p_client_id, p_group_id, v_actor, p_occurred_on)
+    RETURNING id INTO v_expense_id;
+  EXCEPTION
+    WHEN unique_violation THEN
+      -- A concurrent create in another group won the global client_id race;
+      -- surface the same domain error as the sequential wrong-group path.
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END;
 
   v_payload := materialize_participants(v_expense_id, v_actor, v_payload);
 
@@ -1657,6 +1732,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_group_id uuid;
+  v_creator_id uuid;
   v_status public.expense_status;
   v_current_version_no integer;
   v_new_version_no integer;
@@ -1678,8 +1754,16 @@ BEGIN
 
   -- Re-read under the lock: an unlocked read lets two racing edits both pass
   -- the version check and collide on expense_versions_pkey.
-  SELECT status, current_version_no INTO v_status, v_current_version_no
+  SELECT status, current_version_no, creator_id
+    INTO v_status, v_current_version_no, v_creator_id
   FROM expenses WHERE id = p_expense_id;
+
+  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
+    SELECT 1 FROM expense_participants
+    WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
+  END IF;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -1745,6 +1829,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_group_id uuid;
+  v_creator_id uuid;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -1762,8 +1847,16 @@ BEGIN
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no INTO v_status, v_version_no
+  SELECT status, current_version_no, creator_id
+    INTO v_status, v_version_no, v_creator_id
   FROM expenses WHERE id = p_expense_id;
+
+  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
+    SELECT 1 FROM expense_participants
+    WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
+  END IF;
 
   IF v_status = 'deleted' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
@@ -1800,6 +1893,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_group_id uuid;
+  v_creator_id uuid;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -1819,8 +1913,24 @@ BEGIN
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no INTO v_status, v_version_no
+  SELECT status, current_version_no, creator_id
+    INTO v_status, v_version_no, v_creator_id
   FROM expenses WHERE id = p_expense_id;
+
+  SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
+  FROM expense_versions
+  WHERE expense_id = p_expense_id AND version_no = v_version_no;
+
+  -- delete_expense empties expense_participants, so authorization for restore
+  -- must come from the stored version payload, not the live rows.
+  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(COALESCE(v_payload->'participants', '[]'::jsonb)) AS pp(p)
+    WHERE pp.p->>'kind' = 'user' AND pp.p ? 'userId'
+      AND pp.p->>'userId' = v_actor::text
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
+  END IF;
 
   IF v_status = 'active' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
@@ -1828,10 +1938,6 @@ BEGIN
 
   UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
   WHERE id = p_expense_id;
-
-  SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
-  FROM expense_versions
-  WHERE expense_id = p_expense_id AND version_no = v_version_no;
 
   v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
   IF v_materialized IS DISTINCT FROM v_payload THEN
@@ -2005,9 +2111,6 @@ BEGIN
   PERFORM assert_member(v_s.group_id, v_actor);
 
   v_other_party := CASE WHEN v_actor = v_s.from_user_id THEN v_s.to_user_id ELSE v_s.from_user_id END;
-  IF NOT is_member(v_s.group_id, v_other_party) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'counterparty_not_member';
-  END IF;
 
   IF v_s.status = 'voided' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'settlement_voided';
@@ -2337,6 +2440,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_creator_id uuid;
+  v_kind group_kind;
   v_ledger_version bigint;
   v_event_id bigint;
 BEGIN
@@ -2348,7 +2452,7 @@ BEGIN
 
   PERFORM lock_group(p_group_id);
 
-  SELECT creator_id, ledger_version INTO v_creator_id, v_ledger_version FROM groups WHERE id = p_group_id;
+  SELECT creator_id, kind, ledger_version INTO v_creator_id, v_kind, v_ledger_version FROM groups WHERE id = p_group_id;
   IF v_creator_id <> v_actor THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_creator';
   END IF;
@@ -2361,6 +2465,10 @@ BEGIN
     SELECT 1 FROM group_members WHERE group_id = p_group_id AND user_id = p_user_id
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
+  END IF;
+
+  IF v_kind = 'dm' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'cannot_leave_dm';
   END IF;
 
   IF EXISTS (
@@ -2413,6 +2521,12 @@ BEGIN
 
   IF EXISTS (SELECT 1 FROM group_balances WHERE group_id = p_group_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
+  END IF;
+
+  IF (SELECT count(*) FROM group_members WHERE group_id = p_group_id) > 1
+     AND (EXISTS (SELECT 1 FROM expenses WHERE group_id = p_group_id)
+          OR EXISTS (SELECT 1 FROM settlements WHERE group_id = p_group_id)) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'group_has_history';
   END IF;
 
   DELETE FROM groups WHERE id = p_group_id;

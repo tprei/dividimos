@@ -10,6 +10,8 @@ import {
   createExpense,
   equalSplitPayload,
   expectRpcError,
+  withPg,
+  getBalances,
   type TestUser,
 } from "@/test/integration-helpers";
 
@@ -625,6 +627,497 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.members.map((m) => m.userId).sort()).toEqual(
         [invited.id, inviter.id].sort(),
       );
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "expense payload integrity — server-side arithmetic",
+  () => {
+    it("refuses an item whose stated total contradicts quantity x unit price", async () => {
+      const [alice, bob] = await createTestUsers(2);
+      const groupId = await createGroupWithMembers(alice, [bob]);
+      const code = await expectRpcError(
+        authenticateAs(alice).rpc("create_expense", {
+          p_client_id: crypto.randomUUID(),
+          p_group_id: groupId,
+          p_occurred_on: "2026-01-10",
+          p_title: "Café",
+          p_merchant_name: "",
+          p_expense_type: "itemized",
+          p_total_cents: 9000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items: [
+              {
+                description: "cappuccino",
+                quantityMilliunits: 1000,
+                unitPriceCents: 100,
+                totalPriceCents: 9000,
+              },
+            ],
+            participants: [
+              { kind: "user", userId: alice.id },
+              { kind: "user", userId: bob.id },
+            ],
+            shares: [4500, 4500],
+            payers: [{ participantIndex: 0, amountCents: 9000 }],
+            itemAssignments: [
+              { itemIndex: 0, participantIndex: 0, amountCents: 9000 },
+            ],
+          },
+        }),
+      );
+      expect(code).toBe("line_total_mismatch");
+    });
+
+    it("refuses item assignments that contradict the declared shares", async () => {
+      const [alice, bob] = await createTestUsers(2);
+      const groupId = await createGroupWithMembers(alice, [bob]);
+      const code = await expectRpcError(
+        authenticateAs(alice).rpc("create_expense", {
+          p_client_id: crypto.randomUUID(),
+          p_group_id: groupId,
+          p_occurred_on: "2026-01-10",
+          p_title: "Mercado",
+          p_merchant_name: "",
+          p_expense_type: "itemized",
+          p_total_cents: 10000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items: [
+              {
+                description: "arroz",
+                quantityMilliunits: 1000,
+                unitPriceCents: 5000,
+                totalPriceCents: 5000,
+              },
+              {
+                description: "feijão",
+                quantityMilliunits: 1000,
+                unitPriceCents: 5000,
+                totalPriceCents: 5000,
+              },
+            ],
+            participants: [
+              { kind: "user", userId: alice.id },
+              { kind: "user", userId: bob.id },
+            ],
+            shares: [6000, 4000],
+            payers: [{ participantIndex: 0, amountCents: 10000 }],
+            itemAssignments: [
+              { itemIndex: 0, participantIndex: 0, amountCents: 3000 },
+              { itemIndex: 0, participantIndex: 1, amountCents: 2000 },
+              { itemIndex: 1, participantIndex: 0, amountCents: 2000 },
+              { itemIndex: 1, participantIndex: 1, amountCents: 3000 },
+            ],
+          },
+        }),
+      );
+      expect(code).toBe("item_assignment_share_mismatch");
+    });
+
+    it("accepts a legitimate itemized expense with fractional quantities and a service fee", async () => {
+      const [alice, bob] = await createTestUsers(2);
+      const groupId = await createGroupWithMembers(alice, [bob]);
+      const created = await createExpense(alice, {
+        groupId,
+        title: "Hortifrúti",
+        occurredOn: "2026-01-10",
+        expenseType: "itemized",
+        totalCents: 11000,
+        serviceFeeBps: 1000,
+        payload: {
+          items: [
+            {
+              description: "tomate",
+              quantityMilliunits: 1500,
+              unitPriceCents: 4000,
+              totalPriceCents: 6000,
+            },
+            {
+              description: "cebola",
+              quantityMilliunits: 3333,
+              unitPriceCents: 1200,
+              totalPriceCents: 4000,
+            },
+          ],
+          participants: [
+            { kind: "user", userId: alice.id },
+            { kind: "user", userId: bob.id },
+          ],
+          shares: [6600, 4400],
+          payers: [{ participantIndex: 0, amountCents: 11000 }],
+          itemAssignments: [
+            { itemIndex: 0, participantIndex: 0, amountCents: 2500 },
+            { itemIndex: 0, participantIndex: 1, amountCents: 3500 },
+            { itemIndex: 1, participantIndex: 0, amountCents: 3500 },
+            { itemIndex: 1, participantIndex: 1, amountCents: 500 },
+          ],
+        },
+      });
+      expect(created.versionNo).toBe(1);
+    });
+
+    it("raises invalid_payload, never raw 22003, for overflowing numeric fields", async () => {
+      const [alice, bob] = await createTestUsers(2);
+      const groupId = await createGroupWithMembers(alice, [bob]);
+      const aliceClient = authenticateAs(alice);
+      const participants = [
+        { kind: "user", userId: alice.id },
+        { kind: "user", userId: bob.id },
+      ];
+      const cases = [
+        {
+          name: "share above int4 range",
+          expenseType: "single_amount" as const,
+          payload: {
+            items: [],
+            participants,
+            shares: [3000000000, 100],
+            payers: [{ participantIndex: 0, amountCents: 100 }],
+            itemAssignments: null,
+          },
+        },
+        {
+          name: "payer amount above int4 range",
+          expenseType: "single_amount" as const,
+          payload: {
+            items: [],
+            participants,
+            shares: [100, 0],
+            payers: [{ participantIndex: 0, amountCents: 3000000000 }],
+            itemAssignments: null,
+          },
+        },
+        {
+          name: "payer participantIndex above int4 range",
+          expenseType: "single_amount" as const,
+          payload: {
+            items: [],
+            participants,
+            shares: [100, 0],
+            payers: [{ participantIndex: 3000000000, amountCents: 100 }],
+            itemAssignments: null,
+          },
+        },
+        {
+          name: "item assignment amount above int4 range",
+          expenseType: "itemized" as const,
+          payload: {
+            items: [
+              {
+                description: "x",
+                quantityMilliunits: 1000,
+                unitPriceCents: 100,
+                totalPriceCents: 100,
+              },
+            ],
+            participants,
+            shares: [100, 0],
+            payers: [{ participantIndex: 0, amountCents: 100 }],
+            itemAssignments: [
+              { itemIndex: 0, participantIndex: 0, amountCents: 3000000000 },
+            ],
+          },
+        },
+        {
+          name: "quantity above the milliunit cap",
+          expenseType: "itemized" as const,
+          payload: {
+            items: [
+              {
+                description: "x",
+                quantityMilliunits: 1e30,
+                unitPriceCents: 0,
+                totalPriceCents: 0,
+              },
+            ],
+            participants,
+            shares: [100, 0],
+            payers: [{ participantIndex: 0, amountCents: 100 }],
+            itemAssignments: [
+              { itemIndex: 0, participantIndex: 0, amountCents: 100 },
+            ],
+          },
+        },
+      ];
+      for (const testCase of cases) {
+        const code = await expectRpcError(
+          aliceClient.rpc("create_expense", {
+            p_client_id: crypto.randomUUID(),
+            p_group_id: groupId,
+            p_occurred_on: "2026-01-10",
+            p_title: "Overflow",
+            p_merchant_name: "",
+            p_expense_type: testCase.expenseType,
+            p_total_cents: 100,
+            p_service_fee_bps: 0,
+            p_fixed_fee_cents: 0,
+            p_payload: testCase.payload,
+          }),
+        );
+        expect(code, testCase.name).toBe("invalid_payload");
+      }
+    });
+
+    it("raises itemized_total_mismatch, never raw 22003, when the derived fee overflows int4", async () => {
+      const [alice, bob] = await createTestUsers(2);
+      const groupId = await createGroupWithMembers(alice, [bob]);
+      const items = Array.from({ length: 100 }, (_, index) => ({
+        description: `item ${index}`,
+        quantityMilliunits: 1000,
+        unitPriceCents: 99999999,
+        totalPriceCents: 99999999,
+      }));
+      const code = await expectRpcError(
+        authenticateAs(alice).rpc("create_expense", {
+          p_client_id: crypto.randomUUID(),
+          p_group_id: groupId,
+          p_occurred_on: "2026-01-10",
+          p_title: "Fee overflow",
+          p_merchant_name: "",
+          p_expense_type: "itemized",
+          p_total_cents: 1,
+          p_service_fee_bps: 10000,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items,
+            participants: [
+              { kind: "user", userId: alice.id },
+              { kind: "user", userId: bob.id },
+            ],
+            shares: [1, 0],
+            payers: [{ participantIndex: 0, amountCents: 1 }],
+            itemAssignments: null,
+          },
+        }),
+      );
+      expect(code).toBe("itemized_total_mismatch");
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "historical re-materialisation after a legitimate departure",
+  () => {
+    it("keeps edit, delete and repair of E2 possible after A leaves with zero net (F4)", async () => {
+      const [ay, bee, cee] = await createTestUsers(3);
+      const groupId = await createGroupWithMembers(ay, [bee, cee], "F4");
+
+      const balanceMap = async () => {
+        const rows = await getBalances(groupId);
+        return new Map(rows.map((r) => [r.participant_id, r.net_cents]));
+      };
+
+      await createExpense(ay, {
+        groupId,
+        title: "E1 — bee paid",
+        occurredOn: "2026-01-10",
+        totalCents: 10000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: ay.id },
+            { kind: "user", userId: bee.id },
+          ],
+          shares: [5000, 5000],
+          payers: [{ participantIndex: 1, amountCents: 10000 }],
+          itemAssignments: null,
+        },
+      });
+      const e2Payload = {
+        items: [],
+        participants: [
+          { kind: "user", userId: ay.id },
+          { kind: "user", userId: cee.id },
+        ],
+        shares: [5000, 5000],
+        payers: [{ participantIndex: 0, amountCents: 10000 }],
+        itemAssignments: null,
+      };
+      const e2 = await createExpense(ay, {
+        groupId,
+        title: "E2 — ay paid",
+        occurredOn: "2026-01-10",
+        totalCents: 10000,
+        payload: e2Payload,
+      });
+
+      let balances = await balanceMap();
+      expect(balances.get(bee.id)).toBe(5000);
+      expect(balances.get(cee.id)).toBe(-5000);
+      expect(balances.has(ay.id)).toBe(false);
+
+      await rpcOk(authenticateAs(ay), "leave_group", { p_group_id: groupId });
+      const stillMember = await withPg((pg) =>
+        pg
+          .query(
+            "select 1 from group_members where group_id = $1 and user_id = $2 and status = 'accepted'",
+            [groupId, ay.id],
+          )
+          .then((r) => r.rowCount),
+      );
+      expect(stillMember).toBe(0);
+
+      await rpcOk(authenticateAs(cee), "edit_expense", {
+        p_expense_id: e2.expenseId,
+        p_expected_version_no: 1,
+        p_occurred_on: "2026-01-10",
+        p_title: "E2 — ay paid (editada)",
+        p_merchant_name: "",
+        p_expense_type: "single_amount",
+        p_total_cents: 10000,
+        p_service_fee_bps: 0,
+        p_fixed_fee_cents: 0,
+        p_payload: e2Payload,
+      });
+      const versionAfterEdit = await withPg((pg) =>
+        pg
+          .query<{ current_version_no: number }>(
+            "select current_version_no from expenses where id = $1",
+            [e2.expenseId],
+          )
+          .then((r) => r.rows[0]?.current_version_no),
+      );
+      expect(versionAfterEdit).toBe(2);
+      expect(
+        await withPg((pg) =>
+          pg
+            .query<{ user_id: string }>(
+              "select user_id from expense_participants " +
+                "where expense_id = $1 order by participant_index",
+              [e2.expenseId],
+            )
+            .then((r) => r.rows.map((row) => row.user_id)),
+        ),
+      ).toEqual([ay.id, cee.id]);
+      balances = await balanceMap();
+      expect(balances.get(bee.id)).toBe(5000);
+      expect(balances.get(cee.id)).toBe(-5000);
+      expect(balances.has(ay.id)).toBe(false);
+
+      await rpcOk(authenticateAs(cee), "delete_expense", {
+        p_expense_id: e2.expenseId,
+      });
+      const liveRowsAfterDelete = await withPg((pg) =>
+        pg
+          .query<{ n: number }>(
+            "select count(*)::int as n from expense_participants where expense_id = $1",
+            [e2.expenseId],
+          )
+          .then((r) => r.rows[0].n),
+      );
+      expect(liveRowsAfterDelete).toBe(0);
+      balances = await balanceMap();
+      expect(balances.get(ay.id)).toBe(-5000);
+      expect(balances.get(bee.id)).toBe(5000);
+
+      await rpcOk(authenticateAs(cee), "restore_expense", {
+        p_expense_id: e2.expenseId,
+      });
+      expect(
+        await withPg((pg) =>
+          pg
+            .query<{ user_id: string }>(
+              "select user_id from expense_participants " +
+                "where expense_id = $1 order by participant_index",
+              [e2.expenseId],
+            )
+            .then((r) => r.rows.map((row) => row.user_id)),
+        ),
+      ).toEqual([ay.id, cee.id]);
+      const memberStatusAfterRestore = await withPg((pg) =>
+        pg
+          .query(
+            "select 1 from group_members where group_id = $1 and user_id = $2",
+            [groupId, ay.id],
+          )
+          .then((r) => r.rowCount),
+      );
+      expect(memberStatusAfterRestore).toBe(0);
+      balances = await balanceMap();
+      expect(balances.get(bee.id)).toBe(5000);
+      expect(balances.get(cee.id)).toBe(-5000);
+      expect(balances.has(ay.id)).toBe(false);
+    });
+
+    it("still requires accepted membership for participants newly added on create or edit", async () => {
+      const [carol, alicia, draco, eve] = await createTestUsers(4);
+      const groupId = await createGroupWithMembers(carol, [alicia]);
+      await rpcOk(authenticateAs(carol), "invite_member", {
+        p_group_id: groupId,
+        p_user_id: draco.id,
+      });
+      await rpcOk(authenticateAs(alicia), "leave_group", { p_group_id: groupId });
+
+      const carolClient = authenticateAs(carol);
+      const e3 = await createExpense(carol, {
+        groupId,
+        title: "E3 — só carol",
+        occurredOn: "2026-01-10",
+        totalCents: 1000,
+        payload: {
+          items: [],
+          participants: [{ kind: "user", userId: carol.id }],
+          shares: [1000],
+          payers: [{ participantIndex: 0, amountCents: 1000 }],
+          itemAssignments: null,
+        },
+      });
+
+      const editAdding = (userId: string) =>
+        carolClient.rpc("edit_expense", {
+          p_expense_id: e3.expenseId,
+          p_expected_version_no: 1,
+          p_occurred_on: "2026-01-10",
+          p_title: "E3 — só carol",
+          p_merchant_name: "",
+          p_expense_type: "single_amount",
+          p_total_cents: 1000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items: [],
+            participants: [
+              { kind: "user", userId: carol.id },
+              { kind: "user", userId },
+            ],
+            shares: [500, 500],
+            payers: [{ participantIndex: 0, amountCents: 1000 }],
+            itemAssignments: null,
+          },
+        });
+
+      expect(await expectRpcError(editAdding(alicia.id))).toBe("not_a_member");
+      expect(await expectRpcError(editAdding(draco.id))).toBe("not_a_member");
+      expect(
+        await expectRpcError(
+          carolClient.rpc("create_expense", {
+            p_client_id: crypto.randomUUID(),
+            p_group_id: groupId,
+            p_occurred_on: "2026-01-10",
+            p_title: "Eve nunca viu",
+            p_merchant_name: "",
+            p_expense_type: "single_amount",
+            p_total_cents: 1000,
+            p_service_fee_bps: 0,
+            p_fixed_fee_cents: 0,
+            p_payload: {
+              items: [],
+              participants: [
+                { kind: "user", userId: carol.id },
+                { kind: "user", userId: eve.id },
+              ],
+              shares: [500, 500],
+              payers: [{ participantIndex: 0, amountCents: 1000 }],
+              itemAssignments: null,
+            },
+          }),
+        ),
+      ).toBe("not_a_member");
     });
   },
 );

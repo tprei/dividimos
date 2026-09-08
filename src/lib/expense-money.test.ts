@@ -229,6 +229,44 @@ describe("computeServiceFeeCents", () => {
     expect(computeServiceFeeCents(c(100), bp(0))).toEqual({ ok: true, value: 0 });
     expect(computeServiceFeeCents(c(0), bp(1000))).toEqual({ ok: true, value: 0 });
   });
+
+  it("matches the persisted SQL formula where the legacy float formula under-reports", () => {
+    // The legacy UI formula Math.round((subtotal * (bps / 100)) / 100) loses
+    // one centavo whenever the exact half-up result rounds up and the float
+    // path rounds down.
+    const legacyFloatFee = (subtotal: number, bps: number): number =>
+      Math.round((subtotal * (bps / 100)) / 100);
+    expect(legacyFloatFee(5000, 57)).toBe(28);
+    expect(computeServiceFeeCents(c(5000), bp(57))).toEqual({ ok: true, value: 29 });
+    expect(legacyFloatFee(5000, 69)).toBe(34);
+    expect(computeServiceFeeCents(c(5000), bp(69))).toEqual({ ok: true, value: 35 });
+    expect(legacyFloatFee(375, 920)).toBe(34);
+    expect(computeServiceFeeCents(c(375), bp(920))).toEqual({ ok: true, value: 35 });
+    expect(legacyFloatFee(250, 6460)).toBe(161);
+    expect(computeServiceFeeCents(c(250), bp(6460))).toEqual({ ok: true, value: 162 });
+  });
+
+  it("rejects invalid subtotal and rate instead of throwing", () => {
+    expect(computeServiceFeeCents(1.5, 1000)).toEqual({
+      ok: false,
+      issue: { code: "invalid_cents", path: [] },
+    });
+    expect(computeServiceFeeCents(-1, 1000).ok).toBe(false);
+    expect(computeServiceFeeCents(Number.NaN, 1000).ok).toBe(false);
+    expect(computeServiceFeeCents(Number.POSITIVE_INFINITY, 1000).ok).toBe(false);
+    expect(computeServiceFeeCents(MAX_EXPENSE_CENTS + 1, 1000)).toEqual({
+      ok: false,
+      issue: { code: "amount_out_of_range", path: [] },
+    });
+    expect(computeServiceFeeCents(c(100), 10.5)).toEqual({
+      ok: false,
+      issue: { code: "invalid_service_fee", path: [] },
+    });
+    expect(computeServiceFeeCents(c(100), -1).ok).toBe(false);
+    expect(computeServiceFeeCents(c(100), Number.NaN).ok).toBe(false);
+    expect(computeServiceFeeCents(c(100), Number.POSITIVE_INFINITY).ok).toBe(false);
+    expect(computeServiceFeeCents(c(100), 10_001).ok).toBe(false);
+  });
 });
 
 describe("allocateByWeights", () => {
@@ -262,6 +300,40 @@ describe("allocateByWeights", () => {
     expect(allocateByWeights(c(100), []).ok).toBe(false);
     expect(allocateByWeights(c(100), [c(0), c(0)]).ok).toBe(false);
   });
+
+  it("rejects invalid totals instead of throwing", () => {
+    expect(allocateByWeights(1.5, [c(1), c(1)])).toEqual({
+      ok: false,
+      issue: { code: "invalid_cents", path: [] },
+    });
+    expect(allocateByWeights(-5, [c(1), c(1)]).ok).toBe(false);
+    expect(allocateByWeights(Number.NaN, [c(1), c(1)]).ok).toBe(false);
+    expect(allocateByWeights(Number.POSITIVE_INFINITY, [c(1), c(1)]).ok).toBe(false);
+    expect(allocateByWeights(MAX_EXPENSE_CENTS + 1, [c(1), c(1)])).toEqual({
+      ok: false,
+      issue: { code: "amount_out_of_range", path: [] },
+    });
+  });
+
+  it("rejects invalid weights with the offending index in the issue path", () => {
+    expect(allocateByWeights(c(100), [c(50), 2.5])).toEqual({
+      ok: false,
+      issue: { code: "invalid_cents", path: ["weights", 1] },
+    });
+    expect(allocateByWeights(c(100), [c(50), -1])).toEqual({
+      ok: false,
+      issue: { code: "invalid_cents", path: ["weights", 1] },
+    });
+    expect(allocateByWeights(c(100), [Number.NaN, c(50)])).toEqual({
+      ok: false,
+      issue: { code: "invalid_cents", path: ["weights", 0] },
+    });
+    expect(allocateByWeights(c(100), [Number.POSITIVE_INFINITY, c(50)]).ok).toBe(false);
+    expect(allocateByWeights(c(100), [MAX_EXPENSE_CENTS + 1, c(50)])).toEqual({
+      ok: false,
+      issue: { code: "amount_out_of_range", path: ["weights", 0] },
+    });
+  });
 });
 
 describe("allocateEvenly", () => {
@@ -278,6 +350,51 @@ describe("allocateEvenly", () => {
     const zero = allocateEvenly(c(0), 3);
     expect(exact.ok && (exact.value as readonly number[])).toEqual([33, 33, 33]);
     expect(zero.ok && (zero.value as readonly number[])).toEqual([0, 0, 0]);
+  });
+
+  it("keeps the exact-sum contract on remainders and a single entity", () => {
+    const oneAcrossThree = allocateEvenly(c(1), 3);
+    expect(oneAcrossThree.ok && (oneAcrossThree.value as readonly number[])).toEqual([1, 0, 0]);
+    const single = allocateEvenly(c(MAX_EXPENSE_CENTS), 1);
+    expect(single.ok && (single.value as readonly number[])).toEqual([MAX_EXPENSE_CENTS]);
+  });
+
+  it("rejects negative, fractional, NaN, Infinity, and above-cap totals", () => {
+    expect(allocateEvenly(-5, 2)).toEqual({
+      ok: false,
+      issue: { code: "invalid_cents", path: [] },
+    });
+    expect(allocateEvenly(-1, 3).ok).toBe(false);
+    expect(allocateEvenly(1.5, 2).ok).toBe(false);
+    expect(allocateEvenly(Number.NaN, 2).ok).toBe(false);
+    expect(allocateEvenly(Number.POSITIVE_INFINITY, 2).ok).toBe(false);
+    expect(allocateEvenly(MAX_EXPENSE_CENTS + 1, 1)).toEqual({
+      ok: false,
+      issue: { code: "amount_out_of_range", path: [] },
+    });
+  });
+
+  it("preserves the exact-sum invariant for every accepted input", () => {
+    for (const total of [0, 1, 2, 3, 7, 100, 999, 1001, 12345, 99_999_999]) {
+      for (const count of [1, 2, 3, 5, 7]) {
+        const result = allocateEvenly(total, count);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const sum = result.value.reduce((a, b) => a + (b as number), 0);
+          expect(sum).toBe(total);
+          expect(result.value).toHaveLength(count);
+        }
+      }
+    }
+  });
+
+  it("matches allocateByWeights with equal weights", () => {
+    const even = allocateEvenly(c(101), 4);
+    const weighted = allocateByWeights(c(101), [c(1), c(1), c(1), c(1)]);
+    expect(even.ok && weighted.ok).toBe(true);
+    if (even.ok && weighted.ok) {
+      expect(even.value as readonly number[]).toEqual(weighted.value as readonly number[]);
+    }
   });
 });
 

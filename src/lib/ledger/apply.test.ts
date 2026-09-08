@@ -13,8 +13,8 @@ describe("applyExpenseDelta", () => {
     participants: [
       { kind: "user", userId: "alice" },
       { kind: "user", userId: "bob" },
-      { kind: "guest", guestId: null, displayName: "Guest Without Id" },
-      { kind: "guest", guestId: "guest-persisted-1", displayName: "Guest With Id" },
+      { kind: "guest", guestId: "guest-persisted-1", displayName: "Guest One" },
+      { kind: "guest", guestId: "guest-persisted-2", displayName: "Guest Two" },
     ],
     shares: [2000, 3000, 1000, 1000],
     payers: [{ participantIndex: 0, amountCents: 7000 }],
@@ -24,12 +24,13 @@ describe("applyExpenseDelta", () => {
   it("applies forward expense delta correctly", () => {
     // alice paid 7000, share 2000 => delta +5000; net was -500 => +4500
     // bob paid 0, share 3000 => delta -3000; net was +500 => -2500
-    // guest null skipped
     // guest-persisted-1 paid 0, share 1000 => delta -1000; new row -1000
+    // guest-persisted-2 paid 0, share 1000 => delta -1000; new row -1000
     // sorted by (kind, participantId): guest rows first, then user rows
     const result = applyExpenseDelta(baseBalances, samplePayload, 1);
     expect(result).toEqual([
       { kind: "guest", participantId: "guest-persisted-1", netCents: -1000 },
+      { kind: "guest", participantId: "guest-persisted-2", netCents: -1000 },
       { kind: "user", participantId: "alice", netCents: 4500 },
       { kind: "user", participantId: "bob", netCents: -2500 },
     ]);
@@ -39,6 +40,29 @@ describe("applyExpenseDelta", () => {
     const afterExpense = applyExpenseDelta(baseBalances, samplePayload, 1);
     const afterReversal = applyExpenseDelta(afterExpense, samplePayload, -1);
     expect(afterReversal).toEqual(baseBalances);
+  });
+
+  it("skips the whole patch while a guest id is unassigned, keeping the set zero-sum", () => {
+    // materialize_participants assigns the guest UUID server-side; until the
+    // next snapshot lands the guest cannot be represented, and applying only
+    // the resolved participants would show balances that cannot be real.
+    const pendingGuestPayload: ExpensePayload = {
+      items: [],
+      participants: [
+        { kind: "user", userId: "alice" },
+        { kind: "guest", guestId: null, displayName: "Convidado" },
+      ],
+      shares: [3000, 7000],
+      payers: [{ participantIndex: 0, amountCents: 10000 }],
+      itemAssignments: null,
+    };
+
+    const forward = applyExpenseDelta(baseBalances, pendingGuestPayload, 1);
+    expect(forward).toEqual(baseBalances);
+    expect(forward.reduce((sum, row) => sum + row.netCents, 0)).toBe(0);
+
+    const reversed = applyExpenseDelta(baseBalances, pendingGuestPayload, -1);
+    expect(reversed).toEqual(baseBalances);
   });
 
   it("drops zero-net rows after delta application", () => {
