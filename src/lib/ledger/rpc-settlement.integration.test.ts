@@ -525,17 +525,16 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(await readBalances()).toEqual([]);
     });
 
-    it("rejects the remaining member voiding after the payer left, without resurrecting balances", async () => {
+    it("lets the creditor void a fabricated payment after the debtor left, restoring the debt", async () => {
       await rpcOk<{ groupId: string }>(clientDebtor, "leave_group", {
         p_group_id: groupId,
       });
-      await expect(
-        rpcErrorCode(clientCreditor, "void_settlement", {
-          p_settlement_id: finalPaymentId,
-        }),
-      ).resolves.toBe("counterparty_not_member");
-      expect(await readBalances()).toEqual([]);
-      expect(await confirmedSettlementCount()).toBe(2);
+      const ack = await rpcOk<SettlementAck>(clientCreditor, "void_settlement", {
+        p_settlement_id: finalPaymentId,
+      });
+      expect(ack.eventId).toEqual(expect.any(Number));
+      expect(await readBalances()).toEqual(owed(1000));
+      expect(await confirmedSettlementCount()).toBe(1);
     });
 
     it("rejects a departed party at assert_member with not_a_member", async () => {
@@ -551,7 +550,144 @@ describe.skipIf(!isIntegrationTestReady)(
           recordArgs(crypto.randomUUID(), debtor.id, creditor.id, 1000),
         ),
       ).resolves.toBe("not_a_member");
-      expect(await readBalances()).toEqual([]);
+      expect(await readBalances()).toEqual(owed(1000));
+    });
+
+    it("still rejects a second void with settlement_voided after the counterparty left", async () => {
+      await expect(
+        rpcErrorCode(clientCreditor, "void_settlement", {
+          p_settlement_id: finalPaymentId,
+        }),
+      ).resolves.toBe("settlement_voided");
+      expect(await readBalances()).toEqual(owed(1000));
+    });
+
+    it("rejects a member who is not a party voiding with not_party", async () => {
+      await expect(
+        rpcErrorCode(clientBystander, "void_settlement", {
+          p_settlement_id: finalPaymentId,
+        }),
+      ).resolves.toBe("not_party");
+      expect(await readBalances()).toEqual(owed(1000));
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "settlement RPCs — group lifecycle guards",
+  () => {
+    let dmCreator: TestUser;
+    let dmCounterparty: TestUser;
+    let groupCreator: TestUser;
+    let member: TestUser;
+    let clientDmCreator: SupabaseClient;
+    let clientGroupCreator: SupabaseClient;
+    let clientMember: SupabaseClient;
+    let dmGroupId: string;
+
+    beforeAll(async () => {
+      [dmCreator, dmCounterparty, groupCreator, member] = await createTestUsers(4);
+      clientDmCreator = authenticateAs(dmCreator);
+      clientGroupCreator = authenticateAs(groupCreator);
+      clientMember = authenticateAs(member);
+      dmGroupId = (
+        await rpcOk<{ groupId: string }>(clientDmCreator, "get_or_create_dm", {
+          p_user_id: dmCounterparty.id,
+        })
+      ).groupId;
+    });
+
+    it("rejects evicting the DM counterparty from a dm with cannot_leave_dm", async () => {
+      await expect(
+        rpcErrorCode(clientDmCreator, "remove_member", {
+          p_group_id: dmGroupId,
+          p_user_id: dmCounterparty.id,
+        }),
+      ).resolves.toBe("cannot_leave_dm");
+    });
+
+    it("refuses to delete a group that has an expense with group_has_history", async () => {
+      const expenseGroupId = await createGroupWithMembers(
+        groupCreator,
+        [member],
+        "Com historico",
+      );
+      await createExpense(groupCreator, {
+        groupId: expenseGroupId,
+        title: "Almoco",
+        totalCents: 6000,
+        payload: equalSplitPayload([groupCreator.id, member.id], 6000),
+      });
+      await expect(
+        rpcErrorCode(clientGroupCreator, "delete_group", {
+          p_group_id: expenseGroupId,
+        }),
+      ).resolves.toBe("outstanding_balance");
+
+      await rpcOk<SettlementAck>(clientMember, "record_settlement", {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: expenseGroupId,
+        p_from_user_id: member.id,
+        p_to_user_id: groupCreator.id,
+        p_amount_cents: 3000,
+      });
+      await expect(
+        rpcErrorCode(clientGroupCreator, "delete_group", {
+          p_group_id: expenseGroupId,
+        }),
+      ).resolves.toBe("group_has_history");
+    });
+
+    it("refuses to delete a group that has only a settlement with group_has_history", async () => {
+      const settledGroupId = await createGroupWithMembers(
+        groupCreator,
+        [member],
+        "So pagamento",
+      );
+      await createExpense(groupCreator, {
+        groupId: settledGroupId,
+        title: "Jantar",
+        totalCents: 6000,
+        payload: equalSplitPayload([groupCreator.id, member.id], 6000),
+      });
+      await rpcOk<SettlementAck>(clientMember, "record_settlement", {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: settledGroupId,
+        p_from_user_id: member.id,
+        p_to_user_id: groupCreator.id,
+        p_amount_cents: 3000,
+      });
+      await withPg((client) =>
+        client.query("delete from public.expenses where group_id = $1", [
+          settledGroupId,
+        ]),
+      );
+      await expect(
+        rpcErrorCode(clientGroupCreator, "delete_group", {
+          p_group_id: settledGroupId,
+        }),
+      ).resolves.toBe("group_has_history");
+    });
+
+    it("deletes a group that never held money", async () => {
+      const emptyGroupId = await createGroupWithMembers(
+        groupCreator,
+        [member],
+        "Vazio",
+      );
+      const ack = await rpcOk<{ groupId: string }>(
+        clientGroupCreator,
+        "delete_group",
+        { p_group_id: emptyGroupId },
+      );
+      expect(ack.groupId).toBe(emptyGroupId);
+      const { rows } = await withPg((client) =>
+        client.query<{ count: number }>(
+          "select count(*)::int as count from public.groups where id = $1",
+          [emptyGroupId],
+        ),
+      );
+      expect(rows[0].count).toBe(0);
     });
   },
 );

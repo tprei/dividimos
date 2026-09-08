@@ -201,4 +201,28 @@ describe("QuickSplitSheet", () => {
 
     expect(screen.getByText("Valor excede o total")).toBeInTheDocument();
   });
+ 
+  it("rejects a fractional percentage with a warning instead of throwing", async () => {
+    const { user } = renderSheet();
+    fillForm("X", "50,00");
+    await user.click(screen.getByTestId("split-method-percentage"));
+    setInput("quick-split-my-percentage", "50,5");
+
+    expect(
+      screen.getByText("Porcentagem deve ser um número inteiro de 0% a 100%"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("quick-split-confirm")).toBeDisabled();
+  });
+
+  it("splits whole percentages with an exact-sum result", async () => {
+    const { user, onConfirm } = renderSheet();
+    fillForm("X", "10,01");
+    await user.click(screen.getByTestId("split-method-percentage"));
+    setInput("quick-split-my-percentage", "33");
+    await user.click(screen.getByTestId("quick-split-confirm"));
+
+    const result = onConfirm.mock.calls[0][0];
+    expect(result.splitType).toBe("percentage");
+    expect(result.shares[0].shareAmountCents + result.shares[1].shareAmountCents).toBe(1001);
+  });
 });

@@ -285,6 +285,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_creator_id uuid;
+  v_kind group_kind;
   v_ledger_version bigint;
   v_event_id bigint;
 BEGIN
@@ -296,7 +297,7 @@ BEGIN
 
   PERFORM lock_group(p_group_id);
 
-  SELECT creator_id, ledger_version INTO v_creator_id, v_ledger_version FROM groups WHERE id = p_group_id;
+  SELECT creator_id, kind, ledger_version INTO v_creator_id, v_kind, v_ledger_version FROM groups WHERE id = p_group_id;
   IF v_creator_id <> v_actor THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_creator';
   END IF;
@@ -309,6 +310,10 @@ BEGIN
     SELECT 1 FROM group_members WHERE group_id = p_group_id AND user_id = p_user_id
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
+  END IF;
+
+  IF v_kind = 'dm' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'cannot_leave_dm';
   END IF;
 
   IF EXISTS (
@@ -361,6 +366,12 @@ BEGIN
 
   IF EXISTS (SELECT 1 FROM group_balances WHERE group_id = p_group_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
+  END IF;
+
+  IF (SELECT count(*) FROM group_members WHERE group_id = p_group_id) > 1
+     AND (EXISTS (SELECT 1 FROM expenses WHERE group_id = p_group_id)
+          OR EXISTS (SELECT 1 FROM settlements WHERE group_id = p_group_id)) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'group_has_history';
   END IF;
 
   DELETE FROM groups WHERE id = p_group_id;

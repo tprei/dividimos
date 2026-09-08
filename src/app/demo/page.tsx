@@ -19,6 +19,7 @@ import { SimplificationViewer } from "@/components/settlement/simplification-vie
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { formatBRL } from "@/lib/currency";
+import { computeServiceFeeCents } from "@/lib/expense-money";
 import { formatExpenseQuantity, type ExpenseQuantity } from "@/lib/expense-quantity";
 import { DEMO_ITEMS, DEMO_PIX_KEYS, DEMO_USERS } from "@/lib/demo-data";
 import { springs } from "@/lib/animations";
@@ -57,13 +58,14 @@ interface DemoDebt {
 
 interface DemoExpenseInput {
   expenseType: "itemized" | "single_amount";
-  serviceFeePercent: number;
+  serviceFeeBasisPoints: number;
   fixedFees: number;
   creatorId: string;
   payers: { userId: string; amountCents: number }[];
 }
 
 const EXPENSE_ID = "demo_expense";
+const SERVICE_FEE_BASIS_POINTS = 1000;
 
 function buildDemoData() {
   const now = new Date().toISOString();
@@ -109,12 +111,14 @@ function buildDemoData() {
   }
 
   const itemsTotal = items.reduce((s, i) => s + i.totalPriceCents, 0);
-  const serviceFee = Math.round((itemsTotal * 10) / 100);
+  const serviceFeeResult = computeServiceFeeCents(itemsTotal, SERVICE_FEE_BASIS_POINTS);
+  if (!serviceFeeResult.ok) throw new Error("demo fixture: invalid service fee");
+  const serviceFee = serviceFeeResult.value;
   const grandTotal = itemsTotal + serviceFee;
 
   const expense: DemoExpenseInput = {
     expenseType: "itemized",
-    serviceFeePercent: 10,
+    serviceFeeBasisPoints: SERVICE_FEE_BASIS_POINTS,
     fixedFees: 0,
     creatorId: "user_self",
     payers: [
@@ -362,7 +366,7 @@ export default function DemoPage() {
                 expense={{
                   expenseType: expense.expenseType,
                   totalAmount: items.reduce((s, i) => s + i.totalPriceCents, 0),
-                  serviceFeePercent: expense.serviceFeePercent,
+                  serviceFeeBasisPoints: expense.serviceFeeBasisPoints,
                   fixedFees: expense.fixedFees,
                 }}
                 items={items}

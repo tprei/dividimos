@@ -333,7 +333,7 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(foundGroup).toBeUndefined();
       });
 
-      it("blocks delete_group with outstanding_balance then succeeds and removes group from creator bootstrap", async () => {
+      it("never lets the creator destroy a shared group's financial history", async () => {
         const groupId = await createGroupWithMembers(u1, [u2], "Delete Group");
 
         await createExpense(u1, {
@@ -347,9 +347,8 @@ describe.skipIf(!isIntegrationTestReady)(
         );
         expect(deleteErr).toBe("outstanding_balance");
 
-        const opId = crypto.randomUUID();
         const settlement = await rpc<SettlementAck>(c2, "record_settlement", {
-          p_operation_id: opId,
+          p_operation_id: crypto.randomUUID(),
           p_group_id: groupId,
           p_from_user_id: u2.id,
           p_to_user_id: u1.id,
@@ -357,14 +356,35 @@ describe.skipIf(!isIntegrationTestReady)(
         });
         expect(settlement.settlementId).toBeDefined();
 
+        const settledErr = await expectError(
+          c1.rpc("delete_group", { p_group_id: groupId }),
+        );
+        expect(settledErr).toBe("group_has_history");
+
+        const bootMember = await rpc<BootstrapPayload>(c2, "bootstrap");
+        expect(
+          bootMember.groups.find((g) => g.group.id === groupId),
+        ).toBeDefined();
+      });
+
+      it("deletes a solo group the creator never shared", async () => {
+        const groupId = await createGroupWithMembers(u1, [], "Solo Group");
+
+        await createExpense(u1, {
+          groupId,
+          totalCents: 600,
+          payload: equalSplitPayload([u1.id], 600, 0),
+        });
+
         const deleteAck = await rpc<{ groupId: string }>(c1, "delete_group", {
           p_group_id: groupId,
         });
         expect(deleteAck.groupId).toBe(groupId);
 
         const bootCreator = await rpc<BootstrapPayload>(c1, "bootstrap");
-        const found = bootCreator.groups.find((g) => g.group.id === groupId);
-        expect(found).toBeUndefined();
+        expect(
+          bootCreator.groups.find((g) => g.group.id === groupId),
+        ).toBeUndefined();
       });
     });
 

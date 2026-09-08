@@ -46,7 +46,7 @@ export function SummaryStep({
         expense={{
           expenseType: expense.expenseType,
           totalAmount: grandTotal,
-          serviceFeePercent: expense.serviceFeePercent,
+          serviceFeeBasisPoints: expense.serviceFeeBasisPoints,
           fixedFees: expense.fixedFees,
         }}
         items={items}

@@ -335,6 +335,71 @@ describe("mutations", () => {
     });
   });
 
+  describe("rollback reconcile retry", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function seedGroup(): void {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenses: {},
+        expenseDetails: {},
+        activity: { items: [], oldestId: null },
+        conversations: {},
+        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
+      });
+    }
+
+    it("retries the reconcile after failed refreshes and stops once one succeeds", async () => {
+      seedGroup();
+      vi.mocked(rpc).mockRejectedValueOnce(new Error("invalid_wire"));
+      vi.mocked(refreshGroup)
+        .mockRejectedValueOnce(new Error("flap"))
+        .mockRejectedValueOnce(new Error("flap"))
+        .mockResolvedValueOnce(undefined);
+
+      await expect(
+        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+      ).rejects.toThrow("invalid_wire");
+      expect(refreshGroup).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(refreshGroup).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(refreshGroup).toHaveBeenCalledTimes(3);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(refreshGroup).toHaveBeenCalledTimes(3);
+    });
+
+    it("stops after the attempt cap when every refresh fails", async () => {
+      seedGroup();
+      vi.mocked(rpc).mockRejectedValueOnce(new Error("invalid_wire"));
+      vi.mocked(refreshGroup)
+        .mockRejectedValueOnce(new Error("down"))
+        .mockRejectedValueOnce(new Error("down"))
+        .mockRejectedValueOnce(new Error("down"))
+        .mockRejectedValueOnce(new Error("down"));
+
+      await expect(
+        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+      ).rejects.toThrow("invalid_wire");
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(refreshGroup).toHaveBeenCalledTimes(4);
+    });
+  });
+
   describe("sendMessage", () => {
     it("replaces the optimistic message by clientId", async () => {
       useAppStore.setState({
@@ -534,6 +599,114 @@ describe("mutations", () => {
       expect(refreshGroup).toHaveBeenCalledWith("g1");
       const meBalance = useAppStore.getState().groups.g1?.balances.find((b) => b.participantId === ME.id);
       expect(meBalance?.netCents).toBe(4000);
+    });
+
+    it("skips the optimistic balance patch while the stored payload has an unresolved guest", async () => {
+      const g1 = makeGroupSnapshot("g1");
+      g1.balances = [
+        { kind: "user", participantId: ME.id, netCents: 2500 },
+        { kind: "user", participantId: USER_2.id, netCents: -2500 },
+      ];
+
+      const initialSummary = {
+        id: "exp-1",
+        groupId: "g1",
+        creatorId: ME.id,
+        status: "active" as const,
+        occurredOn: "2026-01-02",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        versionNo: 1,
+        title: "Almoço",
+        merchantName: null,
+        expenseType: "single_amount" as const,
+        totalCents: 5000,
+        myShareCents: 2500,
+        myPaidCents: 5000,
+        participantCount: 2,
+      };
+
+      const unresolvedPayload: ExpensePayload = {
+        items: [],
+        participants: [
+          { kind: "user", userId: ME.id },
+          { kind: "guest", guestId: null, displayName: "Convidado" },
+        ],
+        shares: [2500, 2500],
+        payers: [{ participantIndex: 0, amountCents: 5000 }],
+        itemAssignments: null,
+      };
+
+      const detail = {
+        expense: {
+          id: "exp-1",
+          groupId: "g1",
+          creatorId: ME.id,
+          status: "active" as const,
+          currentVersionNo: 1,
+          occurredOn: "2026-01-02",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          deletedAt: null,
+          deletedBy: null,
+        },
+        current: {
+          expenseId: "exp-1",
+          versionNo: 1,
+          authorId: ME.id,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          ...HEADER,
+          payload: unresolvedPayload,
+          changeSummary: null,
+        },
+        versions: [],
+        participants: [],
+        group: { id: "g1", name: "Viagem", kind: "group" as const },
+      };
+
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1 },
+        groupOrder: ["g1"],
+        expenseLists: { g1: { ids: ["exp-1"], oldestCursor: null, complete: true } },
+        expenses: { "exp-1": initialSummary },
+        expenseDetails: { "exp-1": detail },
+        activity: { items: [], oldestId: null },
+        conversations: {},
+        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      const resolvedPayload: ExpensePayload = {
+        items: [],
+        participants: [
+          { kind: "user", userId: ME.id },
+          { kind: "guest", guestId: "guest-1", displayName: "Convidado" },
+        ],
+        shares: [4000, 1000],
+        payers: [{ participantIndex: 0, amountCents: 5000 }],
+        itemAssignments: null,
+      };
+
+      vi.mocked(rpc).mockResolvedValueOnce({
+        groupId: "g1",
+        expenseId: "exp-1",
+        versionNo: 2,
+        ledgerVersion: 3,
+        eventId: 56,
+      });
+
+      const ack = await editExpense({
+        expenseId: "exp-1",
+        expectedVersionNo: 1,
+        header: HEADER,
+        payload: resolvedPayload,
+      });
+
+      expect(ack.versionNo).toBe(2);
+      expect(useAppStore.getState().groups.g1?.balances).toEqual([
+        { kind: "user", participantId: ME.id, netCents: 2500 },
+        { kind: "user", participantId: USER_2.id, netCents: -2500 },
+      ]);
+      expect(useAppStore.getState().expenses["exp-1"]?.versionNo).toBe(2);
     });
   });
 

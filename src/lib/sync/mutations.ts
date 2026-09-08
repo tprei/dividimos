@@ -1,4 +1,4 @@
-import { applyExpenseDelta, applySettlementDelta } from "@/lib/ledger/apply";
+import { applyExpenseDelta, applySettlementDelta, hasUnresolvedParticipants } from "@/lib/ledger/apply";
 import { decodeChatMessage, decodeMutationAck } from "@/lib/ledger/decode";
 import { rpc, rpcVoid } from "@/lib/sync/client";
 import { LedgerError } from "@/lib/sync/errors";
@@ -14,6 +14,27 @@ import type {
   MutationAck,
   Settlement,
 } from "@/types/ledger";
+
+const RECONCILE_MAX_ATTEMPTS = 4;
+const RECONCILE_BACKOFF_MS = 500;
+
+/** The refresh that should converge the store usually lands in the same network flap that failed the mutation, so without retries a wrong balance can stay on screen until the next broadcast or reload. */
+async function reconcileWithRetry(
+  reconcile: (groupId: string) => Promise<void>,
+  groupId: string,
+): Promise<void> {
+  for (let attempt = 1; attempt <= RECONCILE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await reconcile(groupId);
+      return;
+    } catch {
+      if (attempt === RECONCILE_MAX_ATTEMPTS) return;
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, RECONCILE_BACKOFF_MS * 2 ** (attempt - 1));
+      await promise;
+    }
+  }
+}
 
 type RollbackStep = () => void;
 
@@ -77,7 +98,7 @@ function rollbackAndReconcile(
   reconcile: (groupId: string) => Promise<void>,
 ): never {
   for (const step of rollback) step();
-  if (groupId) void reconcile(groupId);
+  if (groupId) void reconcileWithRetry(reconcile, groupId);
   throw error;
 }
 
@@ -191,7 +212,12 @@ export async function editExpense(input: {
   const group = groupId ? store.groups[groupId] : undefined;
 
   let balances = group?.balances;
-  if (group && detail?.current.payload) {
+  if (
+    group &&
+    detail?.current.payload &&
+    !hasUnresolvedParticipants(detail.current.payload) &&
+    !hasUnresolvedParticipants(payload)
+  ) {
     balances = applyExpenseDelta(group.balances, detail.current.payload, -1);
     balances = applyExpenseDelta(balances, payload, 1);
   }

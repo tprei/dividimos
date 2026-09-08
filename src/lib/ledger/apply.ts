@@ -42,11 +42,18 @@ function mergeDeltas(balances: readonly BalanceRow[], deltas: readonly PendingDe
     .sort(compareRows);
 }
 
+export function hasUnresolvedParticipants(payload: ExpensePayload): boolean {
+  return payload.participants.some(
+    (participant) => (participant.kind === "user" ? participant.userId : participant.guestId) === null,
+  );
+}
+
 export function applyExpenseDelta(
   balances: readonly BalanceRow[],
   payload: ExpensePayload,
   sign: 1 | -1,
 ): BalanceRow[] {
+  if (hasUnresolvedParticipants(payload)) return [...balances];
   const paid = new Array<number>(payload.participants.length).fill(0);
   for (const payer of payload.payers) {
     if (payer.participantIndex >= 0 && payer.participantIndex < paid.length) {

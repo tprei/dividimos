@@ -76,6 +76,8 @@ let bruno: TestUser;
 let carla: TestUser;
 let outsider: TestUser;
 let aliceClient: SupabaseClient;
+let brunoClient: SupabaseClient;
+let carlaClient: SupabaseClient;
 let outsiderClient: SupabaseClient;
 // Shared fixture for the pure-validation tests: every payload-rule error is
 // raised before any row is written, so the group is never mutated by them.
@@ -147,6 +149,8 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
   beforeAll(async () => {
     [alice, bruno, carla, outsider] = await createTestUsers(4);
     aliceClient = authenticateAs(alice);
+    brunoClient = authenticateAs(bruno);
+    carlaClient = authenticateAs(carla);
     outsiderClient = authenticateAs(outsider);
     validationGroupId = await createGroupWithMembers(alice, [bruno, carla]);
   });
@@ -200,6 +204,41 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     const detail = await getExpense(first.expenseId);
     expect(detail.expense.currentVersionNo).toBe(1);
     expect(detail.versions).toHaveLength(1);
+  });
+
+  it("replaying a deleted p_client_id raises expense_deleted while an active one stays idempotent", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const clientId = crypto.randomUUID();
+    const payload = equalSplitPayload([alice.id, bruno.id], 2000);
+    const first = (await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload,
+      clientId,
+    })) as unknown as ExpenseAck;
+    const replay = (await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload,
+      clientId,
+    })) as unknown as ExpenseAck;
+    expect(replay.expenseId).toBe(first.expenseId);
+    expect(replay.eventId).toBeNull();
+
+    const { error: deleteError } = await callRpc(aliceClient, "delete_expense", {
+      p_expense_id: first.expenseId,
+    });
+    expect(deleteError).toBeNull();
+
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(groupId, 2000, payload, { clientId })),
+      ),
+    ).toBe("expense_deleted");
+
+    const afterReplay = await getExpense(first.expenseId);
+    expect(afterReplay.expense.status).toBe("deleted");
+    expect(afterReplay.versions).toHaveLength(1);
   });
 
   it("create rejects a payload whose participants exclude the creator", async () => {
@@ -468,6 +507,100 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     ).toBe("not_a_member");
   });
 
+  it("a member who is neither author nor participant is refused with not_expense_party on edit, delete and restore", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno, carla]);
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([alice.id, bruno.id], 2000),
+    });
+    const payload = equalSplitPayload([alice.id, bruno.id], 2000);
+
+    expect(
+      await expectRpcError(
+        callRpc(carlaClient, "edit_expense", editArgs(created.expenseId, 1, 2000, payload)),
+      ),
+    ).toBe("not_expense_party");
+    expect(
+      await expectRpcError(
+        callRpc(carlaClient, "delete_expense", { p_expense_id: created.expenseId }),
+      ),
+    ).toBe("not_expense_party");
+
+    const untouched = await getExpense(created.expenseId);
+    expect(untouched.expense.status).toBe("active");
+    expect(untouched.expense.currentVersionNo).toBe(1);
+    expect(untouched.versions).toHaveLength(1);
+
+    const { error: deleteError } = await callRpc(aliceClient, "delete_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(deleteError).toBeNull();
+
+    expect(
+      await expectRpcError(
+        callRpc(carlaClient, "restore_expense", { p_expense_id: created.expenseId }),
+      ),
+    ).toBe("not_expense_party");
+
+    const { error: restoreError } = await callRpc(aliceClient, "restore_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(restoreError).toBeNull();
+    expect((await getExpense(created.expenseId)).expense.status).toBe("active");
+  });
+
+  it("a historical participant who is not the creator may restore a deleted expense; an unrelated member may not", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno, carla]);
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([alice.id, bruno.id], 2000),
+    });
+
+    const { error: brunoEdit } = await callRpc(
+      brunoClient,
+      "edit_expense",
+      editArgs(created.expenseId, 1, 3000, equalSplitPayload([alice.id, bruno.id], 3000)),
+    );
+    expect(brunoEdit).toBeNull();
+
+    const { error: brunoDelete } = await callRpc(brunoClient, "delete_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(brunoDelete).toBeNull();
+
+    const { error: brunoRestore } = await callRpc(brunoClient, "restore_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(brunoRestore).toBeNull();
+
+    const restored = await getExpense(created.expenseId);
+    expect(restored.expense.status).toBe("active");
+    expect(restored.expense.currentVersionNo).toBe(2);
+    expect(restored.versions).toHaveLength(2);
+    const balances = await getBalances(groupId);
+    expect(balances.find((row) => row.participant_id === alice.id)?.net_cents).toBe(1500);
+    expect(balances.find((row) => row.participant_id === bruno.id)?.net_cents).toBe(-1500);
+
+    const { error: secondDelete } = await callRpc(brunoClient, "delete_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(secondDelete).toBeNull();
+
+    expect(
+      await expectRpcError(
+        callRpc(carlaClient, "restore_expense", { p_expense_id: created.expenseId }),
+      ),
+    ).toBe("not_expense_party");
+
+    const { error: creatorRestore } = await callRpc(aliceClient, "restore_expense", {
+      p_expense_id: created.expenseId,
+    });
+    expect(creatorRestore).toBeNull();
+    expect((await getExpense(created.expenseId)).expense.status).toBe("active");
+  });
+
   it("shares that do not sum to the total fail with share_total_mismatch", async () => {
     const payload = {
       items: [],
@@ -582,6 +715,8 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
   it("accepts an itemized expense whose assignments reconcile per item and persists them", async () => {
     const groupId = await createGroupWithMembers(alice, [bruno]);
     // subtotal 5000, fee 10% = 500, total 5500; assignments cover both items.
+    // Fee follows item share: alice 3000 -> +300, bruno 2000 -> +200, so
+    // shares must reconcile as items + allocated fee: [3300, 2200].
     const payload = {
       items: [
         {
@@ -601,7 +736,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
         { kind: "user", userId: alice.id },
         { kind: "user", userId: bruno.id },
       ],
-      shares: [2750, 2750],
+      shares: [3300, 2200],
       payers: [{ participantIndex: 0, amountCents: 5500 }],
       itemAssignments: [
         { itemIndex: 0, participantIndex: 0, amountCents: 3000 },
@@ -618,8 +753,8 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(ack.versionNo).toBe(1);
 
     const balances = await getBalances(groupId);
-    expect(balances.find((row) => row.participant_id === alice.id)?.net_cents).toBe(2750);
-    expect(balances.find((row) => row.participant_id === bruno.id)?.net_cents).toBe(-2750);
+    expect(balances.find((row) => row.participant_id === alice.id)?.net_cents).toBe(2200);
+    expect(balances.find((row) => row.participant_id === bruno.id)?.net_cents).toBe(-2200);
 
     const detail = await getExpense(ack.expenseId);
     expect(detail.current.payload.itemAssignments).toEqual([

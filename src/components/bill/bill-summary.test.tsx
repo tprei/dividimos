@@ -14,7 +14,7 @@ describe("BillSummary", () => {
   it("renders summary heading and total", () => {
     render(
       <BillSummary
-        expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeePercent: 0, fixedFees: 0 }}
+        expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
         items={[]}
         shares={[
           { userId: "alice", shareAmountCents: 5000 },
@@ -34,7 +34,7 @@ describe("BillSummary", () => {
   it("renders per-person breakdown for single amount", () => {
     render(
       <BillSummary
-        expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeePercent: 0, fixedFees: 0 }}
+        expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
         items={[]}
         shares={[
           { userId: "alice", shareAmountCents: 5000, splitLabel: "igual" },
@@ -58,7 +58,7 @@ describe("BillSummary", () => {
 
     render(
       <BillSummary
-        expense={{ expenseType: "itemized", totalAmount: 5000, serviceFeePercent: 10, fixedFees: 500 }}
+        expense={{ expenseType: "itemized", totalAmount: 5000, serviceFeeBasisPoints: 1000, fixedFees: 500 }}
         items={items}
         itemSplits={itemSplits}
         participants={[alice, bob]}
@@ -70,12 +70,45 @@ describe("BillSummary", () => {
     expect(screen.getAllByText(/Couvert/).length).toBeGreaterThanOrEqual(1);
   });
 
+  it("computes the canonical persisted service fee, not the float approximation", () => {
+    const items = [{ totalPriceCents: 5000 }];
+    const itemSplits = [
+      { userId: "alice", computedAmountCents: 2500 },
+      { userId: "bob", computedAmountCents: 2500 },
+    ];
+
+    render(
+      <BillSummary
+        expense={{ expenseType: "itemized", totalAmount: 5000, serviceFeeBasisPoints: 57, fixedFees: 0 }}
+        items={items}
+        itemSplits={itemSplits}
+        participants={[alice, bob]}
+      />,
+    );
+
+    // Canonical: floor((5000 * 57 + 5000) / 10000) = 29; the legacy float
+    // formula would show 28 and per-person totals of 2514/2514.
+    expect(screen.getByText("Garçom (0,57%)")).toBeInTheDocument();
+    expect(screen.getByText((_, el) =>
+      el?.textContent === "R$\u00a00,29" && el.tagName === "SPAN",
+    )).toBeInTheDocument();
+    expect(screen.getByText((_, el) =>
+      el?.textContent === "R$\u00a025,15" && el.tagName === "SPAN",
+    )).toBeInTheDocument();
+    expect(screen.getByText((_, el) =>
+      el?.textContent === "R$\u00a025,14" && el.tagName === "SPAN",
+    )).toBeInTheDocument();
+    expect(screen.getByText((_, el) =>
+      el?.textContent === "R$\u00a050,29" && el.tagName === "SPAN",
+    )).toBeInTheDocument();
+  });
+
   it("shows unassigned amount warning", () => {
     const items = [{ totalPriceCents: 5000 }];
 
     render(
       <BillSummary
-        expense={{ expenseType: "itemized", totalAmount: 5000, serviceFeePercent: 0, fixedFees: 0 }}
+        expense={{ expenseType: "itemized", totalAmount: 5000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
         items={items}
         itemSplits={[]}
         participants={[alice, bob]}
@@ -88,7 +121,7 @@ describe("BillSummary", () => {
   it("shows split label for percentage splits", () => {
     render(
       <BillSummary
-        expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeePercent: 0, fixedFees: 0 }}
+        expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
         items={[]}
         shares={[
           { userId: "alice", shareAmountCents: 6000, splitLabel: "60.0%" },
@@ -110,7 +143,7 @@ describe("BillSummary", () => {
     it("renders guest in per-person breakdown for single amount", () => {
       render(
         <BillSummary
-          expense={{ expenseType: "single_amount", totalAmount: 15000, serviceFeePercent: 0, fixedFees: 0 }}
+          expense={{ expenseType: "single_amount", totalAmount: 15000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
           items={[]}
           shares={[
             { userId: "alice", shareAmountCents: 5000 },
@@ -138,7 +171,7 @@ describe("BillSummary", () => {
 
       render(
         <BillSummary
-          expense={{ expenseType: "itemized", totalAmount: 6000, serviceFeePercent: 10, fixedFees: 300 }}
+          expense={{ expenseType: "itemized", totalAmount: 6000, serviceFeeBasisPoints: 1000, fixedFees: 300 }}
           items={items}
           itemSplits={itemSplits}
           participants={[alice, bob]}
@@ -153,7 +186,7 @@ describe("BillSummary", () => {
     it("works with no guests (backward compatible)", () => {
       render(
         <BillSummary
-          expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeePercent: 0, fixedFees: 0 }}
+          expense={{ expenseType: "single_amount", totalAmount: 10000, serviceFeeBasisPoints: 0, fixedFees: 0 }}
           items={[]}
           shares={[
             { userId: "alice", shareAmountCents: 5000 },
