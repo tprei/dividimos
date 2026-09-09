@@ -28,6 +28,7 @@ vi.mock("@/lib/sync/mutations-group", () => ({
     createdAt: "2026-09-06T12:00:00Z",
     confirmedAt: null,
   })),
+  cancelVendorCharge: vi.fn(async () => {}),
   confirmVendorCharge: vi.fn(async (chargeId: string) => ({
     id: chargeId,
     userId: "user-me",
@@ -40,8 +41,9 @@ vi.mock("@/lib/sync/mutations-group", () => ({
 }));
 
 import {
-  recordVendorCharge,
+  cancelVendorCharge,
   confirmVendorCharge,
+  recordVendorCharge,
 } from "@/lib/sync/mutations-group";
 
 describe("QuickChargeModal", () => {
@@ -120,5 +122,203 @@ describe("QuickChargeModal", () => {
 
     const storeCharges = useAppStore.getState().vendorCharges;
     expect(storeCharges[0].status).toBe("received");
+  });
+  it("does not insert when the modal closes before Pix generation resolves", async () => {
+    const { promise: jsonPromise, resolve: resolveJson } =
+      Promise.withResolvers<{ copiaECola: string }>();
+    global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
+
+    const view = render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    view.rerender(<QuickChargeModal open={false} onClose={vi.fn()} />);
+    resolveJson({ copiaECola: "00020126580014br.gov.bcb.pix" });
+
+    await waitFor(() => expect(recordVendorCharge).not.toHaveBeenCalled());
+  });
+  it("does not insert when the component unmounts before Pix generation resolves", async () => {
+    const { promise: jsonPromise, resolve: resolveJson } =
+      Promise.withResolvers<{ copiaECola: string }>();
+    global.fetch = vi.fn().mockResolvedValueOnce({ json: () => jsonPromise });
+
+    const view = render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    resolveJson({ copiaECola: "00020126580014br.gov.bcb.pix" });
+
+    await waitFor(() => expect(recordVendorCharge).not.toHaveBeenCalled());
+  });
+
+  it("cancels an insert that resolves after modal close", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+    const insert = Promise.withResolvers<{
+      id: string;
+      userId: string;
+      amountCents: number;
+      description: string | null;
+      status: "pending";
+      createdAt: string;
+      confirmedAt: null;
+    }>();
+    vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
+
+    const view = render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+    await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
+
+    view.rerender(<QuickChargeModal open={false} onClose={vi.fn()} />);
+    insert.resolve({
+      id: "charge-late",
+      userId: "user-me",
+      amountCents: 2000,
+      description: null,
+      status: "pending",
+      createdAt: "2026-09-06T12:00:00Z",
+      confirmedAt: null,
+    });
+
+    await waitFor(() =>
+      expect(cancelVendorCharge).toHaveBeenCalledWith("charge-late"),
+    );
+  });
+
+  it("cancels a deferred insert when the user changes the amount", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+    const insert = Promise.withResolvers<{
+      id: string;
+      userId: string;
+      amountCents: number;
+      description: string | null;
+      status: "pending";
+      createdAt: string;
+      confirmedAt: null;
+    }>();
+    vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
+
+    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+    await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Alterar valor" }));
+    insert.resolve({
+      id: "charge-changed",
+      userId: "user-me",
+      amountCents: 2000,
+      description: null,
+      status: "pending",
+      createdAt: "2026-09-06T12:00:00Z",
+      confirmedAt: null,
+    });
+
+    await waitFor(() =>
+      expect(cancelVendorCharge).toHaveBeenCalledWith("charge-changed"),
+    );
+  });
+
+  it("shows a visible error when deferred cancellation fails", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+    const insert = Promise.withResolvers<{
+      id: string;
+      userId: string;
+      amountCents: number;
+      description: string | null;
+      status: "pending";
+      createdAt: string;
+      confirmedAt: null;
+    }>();
+    vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
+    vi.mocked(cancelVendorCharge).mockRejectedValueOnce(new Error("falha"));
+
+    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+    await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Alterar valor" }));
+    insert.resolve({
+      id: "charge-failed-cancel",
+      userId: "user-me",
+      amountCents: 2000,
+      description: null,
+      status: "pending",
+      createdAt: "2026-09-06T12:00:00Z",
+      confirmedAt: null,
+    });
+
+    expect(
+      await screen.findByText("Não foi possível cancelar a cobrança. Tente novamente."),
+    ).toBeInTheDocument();
+  });
+
+  it("waits for the exact insert before confirming and does not duplicate it", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+    const insert = Promise.withResolvers<{
+      id: string;
+      userId: string;
+      amountCents: number;
+      description: string | null;
+      status: "pending";
+      createdAt: string;
+      confirmedAt: null;
+    }>();
+    vi.mocked(recordVendorCharge).mockImplementationOnce(() => insert.promise);
+
+    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+    await waitFor(() => expect(recordVendorCharge).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByText(/Já recebi/i));
+    expect(confirmVendorCharge).not.toHaveBeenCalled();
+
+    insert.resolve({
+      id: "charge-confirm",
+      userId: "user-me",
+      amountCents: 2000,
+      description: null,
+      status: "pending",
+      createdAt: "2026-09-06T12:00:00Z",
+      confirmedAt: null,
+    });
+
+    await waitFor(() => expect(confirmVendorCharge).toHaveBeenCalledWith("charge-confirm"));
+    expect(recordVendorCharge).toHaveBeenCalledTimes(1);
+  });
+  it("allows retrying confirmation after a failed request", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+    vi.mocked(confirmVendorCharge).mockRejectedValueOnce(new Error("offline"));
+
+    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+    await waitFor(() => expect(screen.getByText(/Já recebi/i)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText(/Já recebi/i));
+    await waitFor(() =>
+      expect(confirmVendorCharge).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() => expect(screen.getByText(/Já recebi/i)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText(/Já recebi/i));
+    await waitFor(() =>
+      expect(confirmVendorCharge).toHaveBeenCalledTimes(2),
+    );
+    expect(await screen.findByText("Pagamento recebido!")).toBeInTheDocument();
   });
 });

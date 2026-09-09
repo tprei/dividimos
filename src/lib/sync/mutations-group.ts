@@ -8,7 +8,7 @@ import {
   decodeVendorCharges,
 } from "@/lib/ledger/decode";
 import { CLAIM_TOKEN_RE } from "@/lib/claim-qr";
-import { rpc } from "@/lib/sync/client";
+import { rpc, rpcVoid } from "@/lib/sync/client";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type {
@@ -30,6 +30,7 @@ export interface GuestClaimToken {
 function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val);
 }
+const pendingVendorChargeCancellations = new Set<string>();
 
 function decodeGroupId(raw: unknown): ValidationResult<{ groupId: string }, WireIssue> {
   if (isObject(raw) && typeof raw.groupId === "string") {
@@ -197,6 +198,26 @@ export async function recordVendorCharge(
 
 export async function confirmVendorCharge(chargeId: string): Promise<VendorCharge> {
   return await rpc("confirm_vendor_charge", { p_charge_id: chargeId }, decodeVendorCharge);
+}
+export async function cancelVendorCharge(chargeId: string): Promise<void> {
+  pendingVendorChargeCancellations.add(chargeId);
+  await rpcVoid("cancel_vendor_charge", { p_charge_id: chargeId });
+  pendingVendorChargeCancellations.delete(chargeId);
+}
+
+export async function retryPendingVendorChargeCancellations(): Promise<void> {
+  for (const chargeId of pendingVendorChargeCancellations) {
+    try {
+      await rpcVoid("cancel_vendor_charge", { p_charge_id: chargeId });
+      pendingVendorChargeCancellations.delete(chargeId);
+    } catch {
+      // Keep the work queued until a later explicit retry or session change.
+    }
+  }
+}
+
+export function clearPendingVendorChargeCancellations(): void {
+  pendingVendorChargeCancellations.clear();
 }
 
 export async function getVendorCharges(limit = 50): Promise<VendorCharge[]> {
