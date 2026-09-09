@@ -71,7 +71,12 @@ export function useWizardSubmit({
           router.push(`/app/bill/${editExpenseId}`);
           return true;
         }
-        const ack = await createExpense({ groupId: groupId ?? "", header, payload });
+        const ack = await createExpense({
+          groupId: groupId ?? "",
+          header,
+          payload,
+          clientId: state.creationClientId ?? undefined,
+        });
         useBillStore.getState().reset();
         router.push(`/app/bill/${ack.expenseId ?? ""}`);
         return true;
