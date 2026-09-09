@@ -39,6 +39,8 @@ function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
   return new File(["fake-image-data"], name, { type });
 }
 
+const RECEIPT_ACCESS_KEY = "35240199999999999999550010000001231234567890";
+
 describe("processReceiptScan", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -137,6 +139,22 @@ describe("processReceiptScan", () => {
     fetchSpy.mockRestore();
   });
 
+  it("passes the caller's abort signal to the OCR API fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(mockOcrResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const controller = new AbortController();
+    await processReceiptScan(createMockFile(), controller.signal);
+
+    expect(fetchSpy.mock.calls[0][1]?.signal).toBe(controller.signal);
+
+    fetchSpy.mockRestore();
+  });
+
   it("rejects an OCR result with zero items and a positive total (#477 637k: never inferred as single_amount)", async () => {
     const emptyItemsResult: ReceiptOcrResult = {
       merchant: "Bar do Zeca",
@@ -185,7 +203,7 @@ describe("fetchSefazReceipt", () => {
     vi.clearAllMocks();
   });
 
-  it("sends URL to SEFAZ API and returns parsed result", async () => {
+  it("sends URL and expected access key to SEFAZ API and returns parsed result", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(mockOcrResult), {
         status: 200,
@@ -194,7 +212,7 @@ describe("fetchSefazReceipt", () => {
     );
 
     const sefazUrl = "https://nfce.sefaz.sp.gov.br/consulta?chNFe=12345678901234567890123456789012345678901234";
-    const result = await fetchSefazReceipt(sefazUrl);
+    const result = await fetchSefazReceipt(sefazUrl, RECEIPT_ACCESS_KEY);
 
     expect(result).toEqual(mockOcrResult);
     expect(fetchSpy).toHaveBeenCalledOnce();
@@ -204,6 +222,24 @@ describe("fetchSefazReceipt", () => {
     expect(init?.method).toBe("POST");
     const body = JSON.parse(init?.body as string);
     expect(body.url).toBe(sefazUrl);
+    expect(body.receiptAccessKey).toBe(RECEIPT_ACCESS_KEY);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("passes the caller's abort signal to the SEFAZ API fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(mockOcrResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const controller = new AbortController();
+    const sefazUrl = "https://nfce.sefaz.sp.gov.br/consulta?chNFe=12345678901234567890123456789012345678901234";
+    await fetchSefazReceipt(sefazUrl, RECEIPT_ACCESS_KEY, controller.signal);
+
+    expect(fetchSpy.mock.calls[0][1]?.signal).toBe(controller.signal);
 
     fetchSpy.mockRestore();
   });
@@ -217,7 +253,7 @@ describe("fetchSefazReceipt", () => {
       );
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(makeResponse());
 
-    const err = await fetchSefazReceipt(sefazUrl).catch((e: unknown) => e);
+    const err = await fetchSefazReceipt(sefazUrl, RECEIPT_ACCESS_KEY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(SefazFallbackError);
     expect((err as SefazFallbackError).message).toBe("CAPTCHA detectado");
 
@@ -232,7 +268,7 @@ describe("fetchSefazReceipt", () => {
       ),
     );
 
-    await expect(fetchSefazReceipt("https://example.com")).rejects.toThrow(
+    await expect(fetchSefazReceipt("https://example.com", RECEIPT_ACCESS_KEY)).rejects.toThrow(
       "Falha ao consultar SEFAZ",
     );
 
@@ -247,9 +283,9 @@ describe("fetchSefazReceipt", () => {
       ),
     );
 
-    const promise = fetchSefazReceipt("https://example.com");
+    const promise = fetchSefazReceipt("https://example.com", RECEIPT_ACCESS_KEY);
     await expect(promise).rejects.toThrow("Não autenticado");
-    await expect(fetchSefazReceipt("https://example.com")).rejects.not.toThrow(SefazFallbackError);
+    await expect(fetchSefazReceipt("https://example.com", RECEIPT_ACCESS_KEY)).rejects.not.toThrow(SefazFallbackError);
 
     fetchSpy.mockRestore();
   });
@@ -259,7 +295,7 @@ describe("fetchSefazReceipt", () => {
       new Response("Gateway Timeout", { status: 504 }),
     );
 
-    await expect(fetchSefazReceipt("https://example.com")).rejects.toThrow("Erro 504");
+    await expect(fetchSefazReceipt("https://example.com", RECEIPT_ACCESS_KEY)).rejects.toThrow("Erro 504");
 
     fetchSpy.mockRestore();
   });
@@ -286,7 +322,7 @@ describe("fetchSefazReceipt", () => {
       }),
     );
 
-    await expect(fetchSefazReceipt("https://example.com")).rejects.toBeInstanceOf(
+    await expect(fetchSefazReceipt("https://example.com", RECEIPT_ACCESS_KEY)).rejects.toBeInstanceOf(
       ReceiptInvalidError,
     );
 
