@@ -33,10 +33,11 @@ import { subscribeChat } from "@/lib/sync/realtime";
 import { loadConversation } from "@/lib/sync/refresh";
 import { findDmGroup } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
-import type { ExpenseHeader, ExpensePayload, MutationAck, UserProfile } from "@/types/ledger";
+import type { ExpenseHeader, ExpensePayload, Me, MutationAck, UserProfile } from "@/types/ledger";
 import {
   dmExpenseHeader,
   dmExpensePayload,
+  resolveDraftActors,
   resolveDraftExpense,
   wizardUrl,
 } from "./conversation-expense-builder";
@@ -44,6 +45,50 @@ import { ConversationInviteScreen } from "./conversation-invite-screen";
 interface ConversationPageClientProps {
   counterpartyId: string;
 }
+function resolveQuickSplitActors(
+  result: QuickSplitResult,
+  me: Me,
+  counterparty: UserProfile,
+): {
+  kind: "resolved";
+  myShare: number;
+  otherShare: number;
+  payerIndex: 0 | 1;
+} | { kind: "error"; message: string } {
+  if (result.payerId !== me.id && result.payerId !== counterparty.id) {
+    return { kind: "error", message: "Não consegui identificar quem pagou." };
+  }
+  if (result.shares.length !== 2) {
+    return { kind: "error", message: "Não consegui resolver as partes da despesa." };
+  }
+  const seen = new Set<string>();
+  for (const share of result.shares) {
+    if (share.userId !== me.id && share.userId !== counterparty.id) {
+      return { kind: "error", message: "A divisão tem uma pessoa que não está na conversa." };
+    }
+    if (seen.has(share.userId)) {
+      return { kind: "error", message: "A mesma pessoa apareceu mais de uma vez." };
+    }
+    seen.add(share.userId);
+  }
+  const myShare = result.shares.find((share) => share.userId === me.id)?.shareAmountCents;
+  const otherShare = result.shares.find(
+    (share) => share.userId === counterparty.id,
+  )?.shareAmountCents;
+  if (myShare === undefined || otherShare === undefined) {
+    return { kind: "error", message: "A divisão precisa incluir as duas pessoas da conversa." };
+  }
+  if (myShare + otherShare !== result.amountCents) {
+    return { kind: "error", message: "As partes não fecham com o valor total." };
+  }
+  return {
+    kind: "resolved",
+    myShare,
+    otherShare,
+    payerIndex: result.payerId === me.id ? 0 : 1,
+  };
+}
+
 
 export function ConversationPageClient({ counterpartyId }: ConversationPageClientProps) {
   const router = useRouter();
@@ -193,13 +238,25 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     },
     [groupId],
   );
-
   const handleQuickChargeConfirm = useCallback(
     async (result: ChatExpenseResult) => {
       if (!me || !counterparty) return;
+      const actorResult = resolveDraftActors(
+        {
+          ...result,
+          splitType: "equal",
+        },
+        me,
+        counterparty,
+      );
+      if (actorResult.kind === "error") {
+        setChargeStatus("error");
+        setChargeError(actorResult.message);
+        return;
+      }
       setChargeStatus("confirming");
       setChargeError(undefined);
-      const payerIsSelf = !result.payerHandle || result.payerHandle === "SELF";
+      const payerIsSelf = actorResult.actors.payerId === me.id;
       const header = dmExpenseHeader(result.title || "Cobrança", result.amountCents, null);
       const payload = dmExpensePayload(
         me,
@@ -209,6 +266,19 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         result.amountCents,
       );
       try {
+        const latestActors = resolveDraftActors(
+          {
+            ...result,
+            splitType: "equal",
+          },
+          me,
+          counterparty,
+        );
+        if (latestActors.kind === "error") {
+          setChargeStatus("error");
+          setChargeError(latestActors.message);
+          return;
+        }
         await createDmExpense(chargeKey.current, header, payload);
         setChargeStatus("confirmed");
         chargeKey.current = crypto.randomUUID();
@@ -227,21 +297,29 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const handleQuickSplitConfirm = useCallback(
     async (result: QuickSplitResult) => {
       if (!me || !counterparty) return;
+      const actorResult = resolveQuickSplitActors(result, me, counterparty);
+      if (actorResult.kind === "error") {
+        setSplitStatus("error");
+        setSplitError(actorResult.message);
+        return;
+      }
       setSplitStatus("confirming");
       setSplitError(undefined);
-      const myShare =
-        result.shares.find((s) => s.userId === me.id)?.shareAmountCents ?? 0;
-      const otherShare =
-        result.shares.find((s) => s.userId === counterparty.id)?.shareAmountCents ?? 0;
       const header = dmExpenseHeader(result.title, result.amountCents, null);
       const payload = dmExpensePayload(
         me,
         counterparty.id,
-        [myShare, otherShare],
-        result.payerId === me.id ? 0 : 1,
+        [actorResult.myShare, actorResult.otherShare],
+        actorResult.payerIndex,
         result.amountCents,
       );
       try {
+        const latestActors = resolveQuickSplitActors(result, me, counterparty);
+        if (latestActors.kind === "error") {
+          setSplitStatus("error");
+          setSplitError(latestActors.message);
+          return;
+        }
         await createDmExpense(splitKey.current, header, payload);
         setSplitStatus("confirmed");
         splitKey.current = crypto.randomUUID();
@@ -259,10 +337,15 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
 
   const handleEditDraft = useCallback(
     (result: ChatExpenseResult) => {
-      if (!groupId) return;
-      router.push(wizardUrl(groupId, result));
+      if (!groupId || !me || !counterparty) return;
+      const actorResult = resolveDraftActors(result, me, counterparty);
+      if (actorResult.kind === "error") {
+        toast.error(actorResult.message);
+        return;
+      }
+      router.push(wizardUrl(groupId, result, actorResult.actors));
     },
-    [groupId, router],
+    [groupId, me, counterparty, router],
   );
 
   const handleConfirmDraft = useCallback(
@@ -270,15 +353,22 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
       result: ChatExpenseResult,
     ): Promise<{ expenseId: string } | { error: string }> => {
       if (!groupId || !me || !counterparty) return { error: "Conversa não disponível." };
+      const actorResult = resolveDraftActors(result, me, counterparty);
+      if (actorResult.kind === "error") return { error: actorResult.message };
+
       const resolution = resolveDraftExpense(groupId, me, counterparty, result);
       if (resolution.kind === "wizard") {
-        router.push(resolution.url);
+        const latestActors = resolveDraftActors(result, me, counterparty);
+        if (latestActors.kind === "error") return { error: latestActors.message };
+        router.push(wizardUrl(groupId, result, latestActors.actors));
         return { expenseId: "" };
       }
       if (resolution.kind === "error") {
         return { error: resolution.message };
       }
       try {
+        const latestActors = resolveDraftActors(result, me, counterparty);
+        if (latestActors.kind === "error") return { error: latestActors.message };
         const ack = await createDmExpense(draftKey.current, resolution.header, resolution.payload);
         draftKey.current = crypto.randomUUID();
         return { expenseId: ack.expenseId ?? "" };
