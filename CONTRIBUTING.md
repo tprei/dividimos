@@ -36,7 +36,7 @@ CI currently runs:
 - `npx tsc --noEmit` — type check (`.github/workflows/ci.yml`).
 - `npm run test:integration` — integration tests against a fresh local Supabase instance, verifying the ledger RPC layer: membership checks, balance recomputation, and constraints (`.github/workflows/integration.yml`).
 - `npm run test:synthetic` — Playwright synthetic E2E tests against local Supabase + the dev server, sharded (`.github/workflows/synthetic.yml`).
-- Baseline replay on a fresh database, a baseline-freshness check (`./scripts/build-baseline.sh` must produce no diff), and a filename-immutability check, triggered when `supabase/schemas/**`, `supabase/migrations/**`, or the script changes (`.github/workflows/migrations.yml`).
+- Declaration and migration checks on a fresh database: replay committed migrations, verify that `./scripts/build-baseline.sh` produces no diff in `supabase/schema.sql`, compare declarations with forward migrations, and enforce migration filename immutability. These checks run when `supabase/schemas/**`, `supabase/schema.sql`, `supabase/migrations/**`, or the script changes (`.github/workflows/migrations.yml`).
 - Signed Android release AAB via Capacitor, on push to `main` (`.github/workflows/android.yml`).
 
 Do not merge failing CI because "it is probably unrelated" without a clear human decision recorded on the PR.
@@ -109,7 +109,7 @@ Avoid dependencies that introduce hidden services, unnecessary global state, or 
 - Every table has RLS enabled with zero policies and no `anon`/`authenticated` grants. All access goes through `SECURITY DEFINER` RPCs that check membership.
 - `group_balances` is a projection, never a write target: every ledger RPC recomputes it in-transaction via `recompute_group_balances`. Never write it from client code or ad-hoc SQL.
 - Keep validation and domain decisions in RPC functions or `src/lib`, not in route handlers.
-- Schema is declarative: edit `supabase/schemas/*.sql`, run `./scripts/build-baseline.sh`, and commit both. Never hand-edit `supabase/migrations/20260906000000_ledger_baseline.sql` — CI replays it on a fresh database and fails if it is stale. Use `gen_random_uuid()`, not `uuid_generate_v4()`.
+- Schema is declarative: edit `supabase/schemas/*.sql`, run `./scripts/build-baseline.sh` to regenerate `supabase/schema.sql`, generate and review a forward migration with `supabase db diff` while the local stack is stopped, and commit both. Never hand-edit the frozen `supabase/migrations/20260906000000_ledger_baseline.sql`. Use `gen_random_uuid()`, not `uuid_generate_v4()`.
 - Return clear errors without leaking internals.
 - Do not add background workers, Redis, queues, or search services until the product need is real.
 
@@ -122,7 +122,7 @@ Before requesting review:
 - CI passes locally with `npm run lint`, `npm test`, and `npx tsc --noEmit`, or the expected CI path is documented.
 - Tests prove behavior where risk justifies them, at the highest layer needed.
 - Any schema change that adds or modifies an RPC, trigger, or constraint includes integration-test coverage; pure structural changes are exempt.
-- The generated baseline is not hand-edited: `supabase/migrations/20260906000000_ledger_baseline.sql` is regenerated with `./scripts/build-baseline.sh` from `supabase/schemas/`, and the CI freshness job fails on a stale or hand-edited baseline.
+- The applied baseline migration is immutable and is never regenerated. The current schema snapshot is generated with `./scripts/build-baseline.sh` from `supabase/schemas/`, and the migration workflow fails if the snapshot is stale or declarations do not match the committed forward migrations.
 - New dependencies are justified.
 - The PR description explains what changed and why.
 - If the PR changes `supabase/schemas/`, it explains the RPC / balance / realtime impact.
