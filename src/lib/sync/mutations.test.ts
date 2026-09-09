@@ -25,6 +25,8 @@ import {
 import {
   acceptInvitation,
   claimGuest,
+  cancelVendorCharge,
+  clearPendingVendorChargeCancellations,
   confirmVendorCharge,
   createGroup,
   createInviteLink,
@@ -38,6 +40,7 @@ import {
   joinViaLink,
   leaveGroup,
   lookupUserByHandle,
+  retryPendingVendorChargeCancellations,
   recordVendorCharge,
   removeMember,
   updateProfile,
@@ -1166,6 +1169,26 @@ describe("mutations", () => {
 
       vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 106 });
       await removeMember("g1", USER_2.id);
+    });
+    it("cancels a vendor charge through the void RPC", async () => {
+      vi.mocked(rpcVoid).mockResolvedValueOnce(undefined);
+      await cancelVendorCharge("vc-cancel");
+      expect(rpcVoid).toHaveBeenCalledWith(
+        "cancel_vendor_charge",
+        { p_charge_id: "vc-cancel" },
+      );
+    });
+    it("retains failed cancellation work for an explicit retry", async () => {
+      clearPendingVendorChargeCancellations();
+      vi.mocked(rpcVoid).mockRejectedValueOnce(new Error("offline"));
+
+      await expect(cancelVendorCharge("vc-retry")).rejects.toThrow("offline");
+
+      vi.mocked(rpcVoid).mockResolvedValueOnce(undefined);
+      await retryPendingVendorChargeCancellations();
+
+      expect(rpcVoid).toHaveBeenCalledTimes(2);
+      clearPendingVendorChargeCancellations();
     });
   });
 });

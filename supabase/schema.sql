@@ -3548,7 +3548,7 @@ CREATE TABLE public.vendor_charges (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   amount_cents integer NOT NULL CHECK (amount_cents BETWEEN 1 AND 99999999),
   description text CHECK (description IS NULL OR length(description) <= 160),
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'received')),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'received', 'cancelled')),
   created_at timestamptz NOT NULL DEFAULT now(),
   confirmed_at timestamptz
 );
@@ -3618,6 +3618,10 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_owner';
   END IF;
 
+  IF v_row.status = 'cancelled' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_cancelled';
+  END IF;
+
   IF v_row.status = 'received' THEN
     RETURN jsonb_build_object(
       'id', v_row.id,
@@ -3632,7 +3636,7 @@ BEGIN
 
   UPDATE vendor_charges
   SET status = 'received', confirmed_at = now()
-  WHERE id = p_charge_id
+  WHERE id = p_charge_id AND status = 'pending'
   RETURNING * INTO v_row;
 
   RETURN jsonb_build_object(
@@ -3644,6 +3648,44 @@ BEGIN
     'createdAt', to_jsonb(v_row.created_at),
     'confirmedAt', to_jsonb(v_row.confirmed_at)
   );
+END;
+$$;
+CREATE FUNCTION public.cancel_vendor_charge(p_charge_id uuid)
+RETURNS void
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_actor uuid;
+  v_status text;
+  v_owner uuid;
+BEGIN
+  v_actor := current_user_id();
+
+  IF p_charge_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_not_found';
+  END IF;
+
+  SELECT status, user_id
+  INTO v_status, v_owner
+  FROM vendor_charges
+  WHERE id = p_charge_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_owner <> v_actor THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_not_found';
+  END IF;
+
+  IF v_status = 'cancelled' THEN
+    RETURN;
+  END IF;
+
+  IF v_status = 'received' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_already_received';
+  END IF;
+
+  UPDATE vendor_charges
+  SET status = 'cancelled'
+  WHERE id = p_charge_id AND user_id = v_actor AND status = 'pending';
 END;
 $$;
 
@@ -3676,7 +3718,7 @@ BEGIN
   FROM (
     SELECT *
     FROM vendor_charges
-    WHERE user_id = v_actor
+    WHERE user_id = v_actor AND status <> 'cancelled'
     ORDER BY created_at DESC, id DESC
     LIMIT p_limit
   ) vc;
@@ -3692,6 +3734,8 @@ GRANT EXECUTE ON FUNCTION public.record_vendor_charge(integer, text) TO authenti
 
 REVOKE ALL ON FUNCTION public.confirm_vendor_charge(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.confirm_vendor_charge(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.cancel_vendor_charge(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.cancel_vendor_charge(uuid) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.get_vendor_charges(integer) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_vendor_charges(integer) TO authenticated;
