@@ -18,6 +18,7 @@ import { join } from "node:path";
 
 const LEGACY_PIN_SHA = "31340be329a1c4ad5b76f72ac63f766e8d1efb05";
 const BASELINE_PATH = "supabase/migrations/20260906000000_ledger_baseline.sql";
+const SNAPSHOT_PATH = "supabase/schema.sql";
 const CUTOVER_SCRIPT_PATH = "scripts/migrate-ledger.ts";
 const MIGRATIONS_DIR = "supabase/migrations";
 
@@ -55,9 +56,9 @@ function pathExists(sha, path) {
   }
 }
 
-// Regenerates the baseline from the head's own declarative schemas using the
-// head's own generator, so the checker never encodes a second copy of the
-// baseline format.
+// Regenerates the current declarative schema snapshot from the head's own
+// schemas and generator. The applied baseline is frozen and is no longer the
+// generator's output.
 function generatedBaseline(sha) {
   const work = mkdtempSync(join(tmpdir(), "migration-history-"));
   try {
@@ -67,7 +68,7 @@ function generatedBaseline(sha) {
     execFileSync("bash", [join(work, "scripts", "build-baseline.sh")], {
       stdio: "pipe",
     });
-    return readFileSync(join(work, BASELINE_PATH));
+    return readFileSync(join(work, SNAPSHOT_PATH));
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
@@ -109,12 +110,12 @@ function resetTransitionFailures(baseSha, headSha) {
     try {
       generated = generatedBaseline(headSha);
     } catch (error) {
-      failures.push(`could not regenerate the baseline from the head: ${error.message}`);
+      failures.push(`could not regenerate the schema snapshot from the head: ${error.message}`);
       return failures;
     }
     if (!committed.equals(generated)) {
       failures.push(
-        `${BASELINE_PATH} is not byte-identical to the generator's output from the head's supabase/schemas`,
+        `${BASELINE_PATH} is not byte-identical to the current schema snapshot generated from the head's supabase/schemas`,
       );
     }
   }

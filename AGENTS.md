@@ -72,7 +72,7 @@ Keep domain rules separate from delivery mechanisms:
 - Next.js API routes and Supabase RPC functions translate requests, enforce atomicity, and persist data.
 - Pure domain math — currency conversion, debt simplification, Pix EMV encoding — lives in `src/lib` functions with no I/O.
 - Zustand stores and React components present state and collect intent; they do not own business rules.
-- Declarative SQL schemas (`supabase/schemas/`, regenerated baseline) persist and query data; access is RPC-only.
+- Declarative SQL schemas (`supabase/schemas/`) persist and query data; `supabase/schema.sql` is their generated current snapshot, while `supabase/migrations/` contains the frozen applied baseline and forward migrations. Access is RPC-only.
 
 Do not create generic `manager`, `processor`, `util`, or `service` packages when a domain name would be clearer.
 
@@ -100,7 +100,7 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 - Expense lifecycle is `active` ⇄ `deleted` (soft delete + version history). There is no draft state. Optimistic concurrency: mutations send `expected_version_no` and the RPC rejects a mismatch with `stale_version`.
 - The client is local-first: screens read the Zustand store (`src/stores/app-store.ts`, persisted to IndexedDB via `src/lib/idb-storage.ts`) and never query Supabase. All network lives in `src/lib/sync/`. Mutations patch the store optimistically, roll back per entry on failure, and reconcile with `refreshGroup`.
 - Realtime is broadcast-only: RPCs `realtime.send` to private `group:<id>` / `chat:<id>` topics authorized by a policy on `realtime.messages`. No tables in the publication.
-- The schema is declarative: edit `supabase/schemas/*.sql`, run `./scripts/build-baseline.sh`, and commit both. Never hand-edit `supabase/migrations/20260906000000_ledger_baseline.sql`; CI fails if it is stale.
+- The schema is declarative: edit `supabase/schemas/*.sql`, run `./scripts/build-baseline.sh` to regenerate `supabase/schema.sql`, generate and review a forward migration with `supabase db diff` while the local stack is stopped, and commit both. Never hand-edit or regenerate `supabase/migrations/20260906000000_ledger_baseline.sql`; CI checks snapshot freshness, declaration parity, and migration history.
 - The per-expense cap is `MAX_EXPENSE_CENTS = 99_999_999` cents (`src/lib/expense-money.ts` is the sole owner of this cap and the fee formula). Service fee is integer basis points, computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000`, identically in TypeScript and SQL. Persisted item/share/payer/fee equality is exact — never a tolerance, a client-side re-derivation the RPC then overwrites, or a second rounding convention.
 - Schema changes with semantic logic must be covered by integration tests (see Tests).
 
