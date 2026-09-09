@@ -1,3 +1,4 @@
+import { AuthSessionMissingError } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Me } from "@/types/ledger";
 
@@ -69,6 +70,35 @@ describe("completeOnboarding", () => {
     expect(mocks.encryptPixKey).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  it("rejects a profile identity mismatch before reading FormData", async () => {
+    mocks.resolveAuthProfile.mockResolvedValue({ kind: "ok", me: profile({ id: "user-b" }) });
+    const formData = form();
+    const get = vi.spyOn(formData, "get");
+
+    await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
+      error: "Sessão expirada",
+    });
+
+    expect(get).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("maps a typed missing session error before reading FormData", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    const formData = form();
+    const get = vi.spyOn(formData, "get");
+
+    await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
+      error: "Sessão expirada",
+    });
+
+    expect(get).not.toHaveBeenCalled();
+    expect(mocks.resolveAuthProfile).not.toHaveBeenCalled();
+  });
+
 
   it("redirects an already completed profile without reading stale form values", async () => {
     mocks.resolveAuthProfile.mockResolvedValue({ kind: "ok", me: profile({ onboarded: true }) });
@@ -105,5 +135,19 @@ describe("completeOnboarding", () => {
 
     expect(mocks.encryptPixKey).toHaveBeenCalledWith("ana@example.com");
     expect(mocks.maskPixKey).toHaveBeenCalledWith("ana@example.com");
+  });
+  it("encrypts the validated key and redirects after a successful RPC", async () => {
+    await expect(completeOnboarding("user-a", "/app/groups", form())).rejects.toThrow(
+      "REDIRECT:/app/groups",
+    );
+
+    expect(mocks.validatePixKey).toHaveBeenCalledWith("ana@example.com", "email");
+    expect(mocks.rpc).toHaveBeenCalledWith("complete_onboarding", {
+      p_handle: "ana_costa",
+      p_name: "Ana Costa",
+      p_pix_key_encrypted: "encrypted",
+      p_pix_key_hint: "hint",
+      p_pix_key_type: "email",
+    });
   });
 });
