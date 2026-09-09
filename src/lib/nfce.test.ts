@@ -4,7 +4,22 @@ import {
   parseBrlToCents,
   isAllowedSefazUrl,
   fetchSefazPage,
+  normalizeAccessKey,
+  extractSefazAccessKeys,
 } from "./nfce";
+const ACCESS_KEY = "35240199999999999999550010000001231234567890";
+const OTHER_ACCESS_KEY = "91234567890123456789012345678901234567890123";
+
+function bindReceiptIdentity(html: string, accessKey = ACCESS_KEY): string {
+  const field = `<div id="chaveAcesso">${accessKey}</div>`;
+  return /<body\b[^>]*>/i.test(html)
+    ? html.replace(/<body\b[^>]*>/i, (match) => `${match}${field}`)
+    : `<body>${field}${html}</body>`;
+}
+
+function parseBoundPage(html: string): ReturnType<typeof parseSefazPage> {
+  return parseSefazPage(bindReceiptIdentity(html), ACCESS_KEY);
+}
 
 describe("parseBrlToCents", () => {
   it("parses Brazilian format with comma decimal", () => {
@@ -50,12 +65,12 @@ describe("parseBrlToCents", () => {
 
 describe("parseSefazPage", () => {
   it("returns null for empty HTML", () => {
-    expect(parseSefazPage("")).toBeNull();
+    expect(parseSefazPage("", ACCESS_KEY)).toBeNull();
   });
 
   it("returns null for HTML with no items", () => {
     const html = "<html><body><h1>Nota Fiscal</h1></body></html>";
-    expect(parseSefazPage(html)).toBeNull();
+    expect(parseBoundPage(html)).toBeNull();
   });
 
   it("extracts items from SP-style table layout", () => {
@@ -83,7 +98,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.merchant).toBe("RESTAURANTE TESTE LTDA");
     expect(result!.items).toHaveLength(2);
@@ -124,7 +139,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.merchant).toBe("BAR DO ZE");
     expect(result!.items).toHaveLength(2);
@@ -148,7 +163,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.items).toHaveLength(2);
     expect(result!.items[0].description).toBe("Arroz Tio Joao 5kg");
@@ -178,7 +193,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    expect(parseSefazPage(html)).toBeNull();
+    expect(parseBoundPage(html)).toBeNull();
   });
 
   it("handles Razão Social merchant extraction", () => {
@@ -197,7 +212,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.merchant).toBe("PADARIA SANTA CLARA EIRELI");
   });
@@ -217,7 +232,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.items[0].description).toBe("Coca Cola 2L");
   });
@@ -237,7 +252,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.serviceFeeBasisPoints).toBe(0);
   });
@@ -258,7 +273,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.serviceFeeBasisPoints).toBe(1000);
   });
@@ -279,7 +294,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     expect(result!.serviceFeeBasisPoints).toBe(1200);
   });
@@ -307,7 +322,7 @@ describe("parseSefazPage", () => {
       </body></html>
     `;
 
-    const result = parseSefazPage(html);
+    const result = parseBoundPage(html);
     expect(result).not.toBeNull();
     // No explicit "10%" text on the page - only a monetary fee value and a
     // subtotal. The old code derived 5,00/50,00 = 10%; that ratio is never
@@ -439,5 +454,142 @@ describe("fetchSefazPage SSRF guards", () => {
 
     expect(result.ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("normalizeAccessKey", () => {
+  it("returns the bare digits for an already plain key", () => {
+    expect(normalizeAccessKey(ACCESS_KEY)).toBe(ACCESS_KEY);
+  });
+
+  it("normalizes space-separated group formatting", () => {
+    const formatted =
+      "3524 0199 9999 9999 9999 5500 1000 0001 2312 3456 7890";
+    expect(normalizeAccessKey(formatted)).toBe(ACCESS_KEY);
+  });
+
+  it("normalizes dot- and hyphen-separated formatting", () => {
+    expect(
+      normalizeAccessKey("3524.0199.9999.9999.9999.5500.1000.0001.2312.3456.7890"),
+    ).toBe(ACCESS_KEY);
+    expect(
+      normalizeAccessKey("3524-0199-9999-9999-9999-5500-1000-0001-2312-3456-7890"),
+    ).toBe(ACCESS_KEY);
+  });
+
+  it("rejects values that are not exactly one 44-digit identity", () => {
+    expect(normalizeAccessKey("")).toBeNull();
+    expect(normalizeAccessKey("1234")).toBeNull();
+    expect(normalizeAccessKey("chave de acesso")).toBeNull();
+    expect(normalizeAccessKey(`${ACCESS_KEY}9`)).toBeNull();
+    expect(normalizeAccessKey(ACCESS_KEY.slice(1))).toBeNull();
+  });
+});
+
+describe("extractSefazAccessKeys", () => {
+  it("extracts a key from a dedicated label/span field", () => {
+    const html = `<html><body><div><span>Chave de acesso:</span><span>${ACCESS_KEY}</span></div></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("normalizes formatted keys inside the dedicated field", () => {
+    const formatted =
+      "3524 0199 9999 9999 9999 5500 1000 0001 2312 3456 7890";
+    const html = `<html><body><div><span>Chave de acesso:</span><span>${formatted}</span></div></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("extracts a key from a th/td label row", () => {
+    const html = `<html><body><table><tr><th>Chave de acesso</th><td>${ACCESS_KEY}</td></tr></table></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("extracts a key from an English dt/dd Access key pair", () => {
+    const html = `<html><body><dl><dt>Access key</dt><dd>${ACCESS_KEY}</dd></dl></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("extracts a key from a label followed by its value block", () => {
+    const html = `<html><body><div class="form-group"><label for="chave">Chave de acesso</label><div class="valor">${ACCESS_KEY}</div></div></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("extracts an inline label/value on one element", () => {
+    const html = `<html><body><div>Chave de acesso: ${ACCESS_KEY}</div></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("extracts a key from an attribute-keyed field (id/class)", () => {
+    const html = `<html><body><div id="chaveAcesso">${ACCESS_KEY}</div><span class="nfce-chave">${ACCESS_KEY}</span></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("de-duplicates the same key repeated across dedicated fields", () => {
+    const html = `<html><body><div id="chaveAcesso">${ACCESS_KEY}</div><table><tr><th>Chave de acesso</th><td>${ACCESS_KEY}</td></tr></table></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("returns every distinct dedicated key (ambiguous pages fail identity)", () => {
+    const html = `<html><body><div id="chaveAcesso">${ACCESS_KEY}</div><div id="chaveAcesso2">${OTHER_ACCESS_KEY}</div></body></html>`;
+    expect(extractSefazAccessKeys(html).sort()).toEqual(
+      [ACCESS_KEY, OTHER_ACCESS_KEY].sort(),
+    );
+  });
+
+  it("returns [] when no dedicated access-key field exists", () => {
+    const html = `<html><body><table class="toggable"><tr><td>Item</td><td>1,000</td><td>10,00</td><td>10,00</td></tr></table><div>VALOR TOTAL R$ 10,00</div></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([]);
+  });
+
+  it("rejects a key that appears only in free body text, links, or scripts", () => {
+    const html = `<html><body>
+      <p>A chave de acesso desta nota e ${ACCESS_KEY} e pode ser consultada no portal.</p>
+      <a href="https://nfce.sefaz.sp.gov.br/consulta?chNFe=${ACCESS_KEY}">Consultar nota</a>
+      <script>const chave = "${ACCESS_KEY}";</script>
+      <table class="toggable"><tr><td>Item</td><td>1,000</td><td>10,00</td><td>10,00</td></tr></table>
+      <div>VALOR TOTAL R$ 10,00</div>
+    </body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([]);
+  });
+
+  it("ignores the expected key living only in the consultation URL text", () => {
+    const html = `<html><body><p>Consulta: https://nfce.sefaz.sp.gov.br/consulta?chNFe=${ACCESS_KEY}</p></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([]);
+  });
+  it("rejects generic or hidden attributes that are not fiscal identity fields", () => {
+    const html = `<html><body>
+      <input type="hidden" name="chave" value="${ACCESS_KEY}">
+      <div class="chave-seguranca">${ACCESS_KEY}</div>
+    </body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([]);
+  });
+
+  it("rejects keys nested in scripts or links inside a labeled row", () => {
+    const html = `<html><body>
+      <div class="row">
+        <span>Chave de acesso</span>
+        <a href="/consulta"> ${ACCESS_KEY} </a>
+        <script>document.write("${ACCESS_KEY}")</script>
+      </div>
+    </body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([]);
+  });
+
+  it("reads a textarea fiscal access-key field", () => {
+    const html = `<html><body><textarea id="chaveAcesso">${ACCESS_KEY}</textarea></body></html>`;
+    expect(extractSefazAccessKeys(html)).toEqual([ACCESS_KEY]);
+  });
+
+  it("requires the expected identity before parsing receipt data", () => {
+    const html = bindReceiptIdentity(`
+      <table class="toggable">
+        <tr><td>Item Teste</td><td>1,000</td><td>10,00</td><td>10,00</td></tr>
+      </table>
+      <div>VALOR TOTAL R$ 10,00</div>
+    `);
+    expect(parseSefazPage(html, ACCESS_KEY)).not.toBeNull();
+    expect(parseSefazPage(html, OTHER_ACCESS_KEY)).toBeNull();
+    expect(parseSefazPage(html, "")).toBeNull();
   });
 });

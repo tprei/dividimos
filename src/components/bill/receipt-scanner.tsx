@@ -20,6 +20,9 @@ export interface ReceiptScannerProps {
   processing?: boolean;
   /** Called when a valid NFC-e QR code is detected */
   onQrDetected?: (result: NfceQrResult) => void;
+  /** Called when the user switches between the photo and QR tabs so parents
+   *  can synchronously invalidate pending work from the other source. */
+  onSourceChange?: (source: Tab) => void;
   /** Which tab to show initially (defaults to "photo") */
   defaultTab?: Tab;
 }
@@ -29,6 +32,7 @@ export function ReceiptScanner({
   onBack,
   processing = false,
   onQrDetected,
+  onSourceChange,
   defaultTab = "photo",
 }: ReceiptScannerProps) {
   const [tab, setTab] = useState<Tab>(defaultTab);
@@ -126,7 +130,10 @@ export function ReceiptScanner({
       <div className="flex gap-1 rounded-xl bg-muted p-1">
         <button
           type="button"
-          onClick={() => setTab("photo")}
+          onClick={() => {
+            setTab("photo");
+            onSourceChange?.("photo");
+          }}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             tab === "photo"
               ? "bg-background text-foreground shadow-sm"
@@ -138,7 +145,11 @@ export function ReceiptScanner({
         </button>
         <button
           type="button"
-          onClick={() => { setTab("qr"); setQrPaused(false); }}
+          onClick={() => {
+            setTab("qr");
+            setQrPaused(false);
+            onSourceChange?.("qr");
+          }}
           className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             tab === "qr"
               ? "bg-background text-foreground shadow-sm"

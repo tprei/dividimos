@@ -55,6 +55,163 @@ export function isAllowedSefazUrl(url: string): boolean {
   return SEFAZ_DOMAIN_PATTERN.test(parsed.hostname);
 }
 
+/** Label text used by SEFAZ portals to identify the fiscal access-key field. */
+const ACCESS_KEY_LABEL_PATTERN = /chave\s*de\s*acesso|access\s*key/i;
+
+/** Attribute text that names a fiscal access-key field. */
+const ACCESS_KEY_ATTRIBUTE_PATTERN =
+  /chave(?:de)?acesso|accesskey|nfcechave|chavenfe/i;
+
+/**
+ * Normalize a chave de acesso to its bare 44-digit form.
+ * SEFAZ portals print the key formatted with spaces, dots, or hyphens
+ * between groups of four digits; only the digits are meaningful.
+ *
+ * @returns The 44-digit identity, or `null` when the text is not exactly one.
+ */
+export function normalizeAccessKey(raw: string): string | null {
+  const scrubbed = raw.replace(/[\s.\-]/g, "");
+  return /^\d{44}$/.test(scrubbed) ? scrubbed : null;
+}
+
+/**
+ * Collect distinct 44-digit candidates inside a dedicated field region.
+ * The region text is scrubbed of the formatting separators SEFAZ portals use;
+ * a run of more than 44 digits means the region mixes in unrelated numbers,
+ * so it is skipped instead of yielding a truncated candidate.
+ */
+function accessKeyCandidatesInText(text: string): string[] {
+  const scrubbed = text.replace(/[\s.\-]/g, "");
+  const candidates = new Set<string>();
+  for (const run of scrubbed.match(/\d{44,}/g) ?? []) {
+    if (run.length === 44) candidates.add(run);
+  }
+  return [...candidates];
+}
+
+/** User-visible content of a field node (inputs expose their `value`). */
+function readFieldText(
+  $: cheerio.CheerioAPI,
+  node: Parameters<cheerio.CheerioAPI>[0],
+): string {
+  const $node = $(node);
+  const tagName = String($node.prop("tagName") ?? "").toLowerCase();
+  if (tagName === "input") {
+    return $node.attr("value") ?? "";
+  }
+  if (tagName === "textarea") {
+    const clone = $node.clone();
+    clone.find("script, style, a, noscript").remove();
+    return clone.text();
+  }
+  const clone = $node.clone();
+  clone.find("script, style, a, noscript").remove();
+  return clone.text();
+}
+
+/**
+ * Extract the distinct 44-digit fiscal access keys (chave de acesso) that a
+ * SEFAZ consultation page declares in *dedicated* access-key fields.
+ *
+ * Only two layouts are accepted:
+ * 1. An element whose id/class/name/aria-label names it as the access-key
+ *    field and whose own content is the key value.
+ * 2. A label/heading ("Chave de acesso"/"Access key") paired with an adjacent
+ *    value (`th`/`td`, `dt`/`dd`, label/span, span/span, …) or an inline
+ *    "Chave de acesso: <key>" value, or held by the label's bounded row/field
+ *    container.
+ *
+ * A key that appears only in free body text, an anchor/link, a script, or the
+ * request URL is never reported — identity must come from a field the portal
+ * dedicates to it. Values are normalized (spaces/dots/hyphens removed) and
+ * de-duplicated.
+ *
+ * @param html - Full SEFAZ page HTML
+ * @returns Distinct normalized access keys found in dedicated fields
+ */
+export function extractSefazAccessKeys(html: string): string[] {
+  const $ = cheerio.load(html);
+  const found = new Set<string>();
+
+  const addCandidateText = (text: string | undefined | null) => {
+    if (!text) return;
+    for (const key of accessKeyCandidatesInText(text)) found.add(key);
+  };
+
+  $("[id], [class], [name], [aria-label]").each((_, el) => {
+    const tagName = (el.tagName ?? "").toLowerCase();
+    const $el = $(el);
+    if (tagName === "script" || tagName === "style" || tagName === "a" || tagName === "noscript") return;
+    if ($el.closest("script, style, a, noscript").length > 0) return;
+    if (
+      $el.attr("hidden") !== undefined ||
+      $el.attr("aria-hidden") === "true" ||
+      (tagName === "input" && ($el.attr("type") ?? "").toLowerCase() === "hidden")
+    ) {
+      return;
+    }
+    const identity = ["id", "class", "name", "aria-label"]
+      .map((attr) => $el.attr(attr) ?? "")
+      .join(" ");
+    if (!ACCESS_KEY_ATTRIBUTE_PATTERN.test(identity.replace(/[\s_-]+/g, ""))) return;
+    const text = readFieldText($, el);
+    if (!text || text.length > 400) return;
+    addCandidateText(text);
+  });
+
+  $("label, th, dt, td, span, b, strong, p, div").each((_, el) => {
+    const $el = $(el);
+    if ($el.closest("script, style, a, noscript").length > 0) return;
+    const directText = $el.clone().children().remove().end().text().trim();
+    if (!directText || directText.length > 80) return;
+    if (!ACCESS_KEY_LABEL_PATTERN.test(directText)) return;
+
+    const fieldText = $el
+      .clone()
+      .find("script, style, a, noscript")
+      .remove()
+      .end()
+      .text()
+      .trim();
+    const inline = fieldText.match(
+      /^\s*(?:chave\s*de\s*acesso|access\s*key)\s*[:\-]?\s*(.*)$/i,
+    );
+    if (inline && /^[\d\s.\-]*$/.test(inline[1])) {
+      addCandidateText(inline[1]);
+    }
+
+    const valueEl = $el
+      .nextAll("td, dd, span, div, p, b, strong, input, textarea")
+      .first();
+    const valueNode = valueEl.get(0);
+    const valueTagName = (valueNode?.tagName ?? "").toLowerCase();
+    const valueIsHidden =
+      valueEl.attr("hidden") !== undefined ||
+      valueEl.attr("aria-hidden") === "true" ||
+      (valueTagName === "input" &&
+        (valueEl.attr("type") ?? "").toLowerCase() === "hidden");
+    if (
+      valueNode &&
+      !valueIsHidden &&
+      !ACCESS_KEY_LABEL_PATTERN.test(valueEl.text().trim().slice(0, 80))
+    ) {
+      addCandidateText(readFieldText($, valueNode));
+    }
+
+    const container = $el.closest(
+      "tr, dl, li, fieldset, .form-group, .form-field, .row, .campo",
+    );
+    if (container.length > 0) {
+      const containerClone = container.clone();
+      containerClone.find("script, style, a, noscript").remove();
+      const containerText = containerClone.text();
+      if (containerText.length <= 400) addCandidateText(containerText);
+    }
+  });
+
+  return [...found];
+}
+
 /**
  * Parse a Brazilian currency string into integer centavos.
  * Handles formats like "12,50", "1.234,56", "12.50" (dot as decimal).
@@ -483,9 +640,23 @@ function cleanDescription(raw: string): string {
  * 3. Regex-based text extraction (fallback)
  *
  * @param html - The full HTML content of a SEFAZ NFC-e consultation page
- * @returns Parsed receipt data, or null if no items could be extracted
+ * @param expectedReceiptAccessKey - The access key from the scanned QR code.
+ * @returns Parsed receipt data only when the page identity matches, or null otherwise
  */
-export function parseSefazPage(html: string): ReceiptOcrResult | null {
+export function parseSefazPage(
+  html: string,
+  expectedReceiptAccessKey: string,
+): ReceiptOcrResult | null {
+  const normalizedExpected = normalizeAccessKey(expectedReceiptAccessKey);
+  const pageAccessKeys = extractSefazAccessKeys(html);
+  if (
+    !normalizedExpected ||
+    pageAccessKeys.length !== 1 ||
+    pageAccessKeys[0] !== normalizedExpected
+  ) {
+    return null;
+  }
+
   const $ = cheerio.load(html);
 
   // Try extraction strategies in order of reliability
