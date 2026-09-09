@@ -117,6 +117,7 @@ function createArgs(
     feeBps: number;
     fixedFee: number;
     clientId: string;
+    receiptAccessKey: string | null;
   }> = {},
 ): Record<string, unknown> {
   return {
@@ -130,6 +131,7 @@ function createArgs(
     p_service_fee_bps: overrides.feeBps ?? 0,
     p_fixed_fee_cents: overrides.fixedFee ?? 0,
     p_payload: payload,
+    p_chave_acesso: overrides.receiptAccessKey ?? null,
   };
 }
 
@@ -213,6 +215,173 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(detail.expense.currentVersionNo).toBe(1);
     expect(detail.versions).toHaveLength(1);
   });
+  it("persists a valid receipt key and scopes duplicate detection to the creator", async () => {
+    const aliceGroupId = await createGroupWithMembers(alice, [bruno]);
+    const receiptKey = "12345678901234567890123456789012345678901234";
+    const clientId = crypto.randomUUID();
+    const aliceExpense = (await createExpense(alice, {
+      groupId: aliceGroupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([alice.id, bruno.id], 2000),
+      clientId,
+      receiptAccessKey: receiptKey,
+    })) as unknown as ExpenseAck;
+
+    const persisted = await withPg((client) =>
+      client.query<{ chave_acesso: string | null }>(
+        "select chave_acesso from public.expenses where id = $1",
+        [aliceExpense.expenseId],
+      ),
+    );
+    expect(persisted.rows[0]?.chave_acesso).toBe(receiptKey);
+    const malformedReplay = await callRpc(
+      aliceClient,
+      "create_expense",
+      createArgs(aliceGroupId, 2000, equalSplitPayload([alice.id, bruno.id], 2000), {
+        clientId,
+        receiptAccessKey: "123",
+      }),
+    );
+    expect(malformedReplay.error).toBeNull();
+    expect((malformedReplay.data as ExpenseAck).expenseId).toBe(aliceExpense.expenseId);
+
+
+    const secondAliceGroupId = await createGroupWithMembers(alice, [bruno]);
+    expect(
+      await expectRpcError(
+        callRpc(
+          aliceClient,
+          "create_expense",
+          createArgs(secondAliceGroupId, 2000, equalSplitPayload([alice.id, bruno.id], 2000), {
+            receiptAccessKey: receiptKey,
+          }),
+        ),
+      ),
+    ).toBe("duplicate_receipt");
+
+    const brunoGroupId = await createGroupWithMembers(bruno, [carla]);
+    const brunoExpense = await createExpense(bruno, {
+      groupId: brunoGroupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([bruno.id, carla.id], 2000),
+      receiptAccessKey: receiptKey,
+    });
+    expect(brunoExpense.expenseId).not.toBe(aliceExpense.expenseId);
+  });
+  it("serializes the same receipt key across groups for one creator", async () => {
+    const [groupA, groupB] = await Promise.all([
+      createGroupWithMembers(alice, [bruno]),
+      createGroupWithMembers(alice, [bruno]),
+    ]);
+    const receiptKey = "11223344556677889900112233445566778899001122";
+    const payload = equalSplitPayload([alice.id, bruno.id], 2000);
+    const clientIdA = crypto.randomUUID();
+    const clientIdB = crypto.randomUUID();
+    const results = await Promise.all([
+      callRpc(
+        aliceClient,
+        "create_expense",
+        createArgs(groupA, 2000, payload, { clientId: clientIdA, receiptAccessKey: receiptKey }),
+      ),
+      callRpc(
+        aliceClient,
+        "create_expense",
+        createArgs(groupB, 2000, payload, { clientId: clientIdB, receiptAccessKey: receiptKey }),
+      ),
+    ]);
+
+    const successful = results.filter((result) => result.error === null);
+    const rejected = results.filter((result) => result.error !== null);
+    expect(successful).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.error?.message).toBe("duplicate_receipt");
+
+    const activeRows = await withPg((client) =>
+      client.query<{ count: number }>(
+        "select count(*)::int as count from public.expenses " +
+          "where creator_id = $1 and chave_acesso = $2 and status = 'active'",
+        [alice.id, receiptKey],
+      ),
+    );
+    expect(activeRows.rows[0]?.count).toBe(1);
+
+    const winningResult = successful[0]?.data as ExpenseAck;
+    const winningClientId = winningResult.groupId === groupA ? clientIdA : clientIdB;
+    const replay = await callRpc(
+      aliceClient,
+      "create_expense",
+      createArgs(winningResult.groupId, 2000, payload, {
+        clientId: winningClientId,
+        receiptAccessKey: receiptKey,
+      }),
+    );
+    expect(replay.error).toBeNull();
+    expect((replay.data as ExpenseAck).expenseId).toBe(winningResult.expenseId);
+  });
+
+
+  it("rejects malformed receipt keys and preserves member authorization before key validation", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const payload = equalSplitPayload([alice.id, bruno.id], 2000);
+
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(groupId, 2000, payload, {
+          receiptAccessKey: "123",
+        })),
+      ),
+    ).toBe("invalid_argument");
+
+    expect(
+      await expectRpcError(
+        callRpc(
+          outsiderClient,
+          "create_expense",
+          createArgs(groupId, 2000, payload, {
+            receiptAccessKey: "not-a-receipt-key",
+          }),
+        ),
+      ),
+    ).toBe("not_a_member");
+  });
+
+  it("allows an active key after deletion and rejects restoring the older duplicate", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const receiptKey = "98765432109876543210987654321098765432109876";
+    const payload = equalSplitPayload([alice.id, bruno.id], 2000);
+    const first = (await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload,
+      receiptAccessKey: receiptKey,
+    })) as unknown as ExpenseAck;
+
+    expect(
+      (await callRpc(aliceClient, "delete_expense", { p_expense_id: first.expenseId })).error,
+    ).toBeNull();
+
+    const second = (await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      payload,
+      receiptAccessKey: receiptKey,
+    })) as unknown as ExpenseAck;
+    expect(second.expenseId).not.toBe(first.expenseId);
+
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "restore_expense", { p_expense_id: first.expenseId }),
+      ),
+    ).toBe("duplicate_receipt");
+
+    expect(
+      (await callRpc(aliceClient, "delete_expense", { p_expense_id: second.expenseId })).error,
+    ).toBeNull();
+    expect(
+      (await callRpc(aliceClient, "restore_expense", { p_expense_id: first.expenseId })).error,
+    ).toBeNull();
+  });
+
 
   it("replaying a deleted p_client_id raises expense_deleted while an active one stays idempotent", async () => {
     const groupId = await createGroupWithMembers(alice, [bruno]);

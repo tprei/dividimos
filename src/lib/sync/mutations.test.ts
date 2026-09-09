@@ -190,6 +190,7 @@ describe("mutations", () => {
       expect(rpc).toHaveBeenCalledWith(
         "create_expense",
         expect.objectContaining({
+          p_client_id: CLIENT_ID,
           p_group_id: "g1",
           p_occurred_on: HEADER.occurredOn,
           p_title: HEADER.title,
@@ -199,6 +200,7 @@ describe("mutations", () => {
           p_service_fee_bps: HEADER.serviceFeeBasisPoints,
           p_fixed_fee_cents: HEADER.fixedFeeCents,
           p_payload: PAYLOAD,
+          p_chave_acesso: null,
         }),
         expect.any(Function),
       );
@@ -272,6 +274,44 @@ describe("mutations", () => {
       expect(state.groups.g1).toBe(prevGroup);
       expect(refreshGroup).toHaveBeenCalledWith("g1");
     });
+    it("does not roll back a newer optimistic retry reusing the draft client id", async () => {
+      const g1 = makeGroupSnapshot("g1");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1 },
+        groupOrder: ["g1"],
+        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenses: {},
+        expenseDetails: {},
+        activity: { items: [], oldestId: null },
+        conversations: {},
+        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      let rejectFirst!: (error: Error) => void;
+      const firstRpc = new Promise<never>((_, reject) => {
+        rejectFirst = reject;
+      });
+      const ack: MutationAck = {
+        groupId: "g1",
+        expenseId: "exp-retry-2",
+        versionNo: 1,
+        ledgerVersion: 2,
+        eventId: 43,
+      };
+      vi.mocked(rpc).mockImplementationOnce(() => firstRpc).mockResolvedValueOnce(ack);
+
+      const clientId = "stable-draft-id";
+      const first = createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD, clientId });
+      const second = createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD, clientId });
+      rejectFirst(new Error("network"));
+
+      await expect(first).rejects.toThrow("network");
+      await expect(second).resolves.toEqual(ack);
+      expect(useAppStore.getState().expenses["exp-retry-2"]?.title).toBe(HEADER.title);
+    });
+
 
     it("on rejection keeps an unrelated group refreshed mid-flight", async () => {
       const g1 = makeGroupSnapshot("g1");
