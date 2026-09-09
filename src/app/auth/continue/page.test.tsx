@@ -1,3 +1,4 @@
+import { AuthSessionMissingError } from "@supabase/supabase-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -30,6 +31,16 @@ describe("auth continuation", () => {
     await expect(
       ContinuePage({ searchParams: Promise.resolve({ next: "/invite?token=abc" }) }),
     ).rejects.toThrow("REDIRECT:/auth/onboard?next=%2Finvite%3Ftoken%3Dabc");
+  });
+  it("sends an unauthenticated session to auth", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+
+    await expect(
+      ContinuePage({ searchParams: Promise.resolve({ next: "/groups" }) }),
+    ).rejects.toThrow("REDIRECT:/auth?next=%2Fgroups");
   });
 
   it("sends complete profiles to the requested destination", async () => {

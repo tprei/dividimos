@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   createClient: vi.fn(),
   resolveAuthProfile: vi.fn(),
+  completeOnboarding: vi.fn().mockResolvedValue(undefined),
   redirect: vi.fn((destination: string): never => {
     throw new Error(`REDIRECT:${destination}`);
   }),
@@ -13,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 vi.mock("@/lib/auth", () => ({ resolveAuthProfile: mocks.resolveAuthProfile }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
-vi.mock("./actions", () => ({ completeOnboarding: vi.fn() }));
+vi.mock("./actions", () => ({ completeOnboarding: mocks.completeOnboarding }));
 
 import OnboardPage from "./page";
 
@@ -39,7 +40,16 @@ beforeEach(() => {
   mocks.resolveAuthProfile.mockResolvedValue({ kind: "ok", me: profile() });
 });
 
+
 describe("server onboarding boundary", () => {
+  it("passes verified identity and destination through the server action closure", async () => {
+    const result = await OnboardPage({ searchParams: Promise.resolve({ next: "/groups" }) });
+    const formData = new FormData();
+
+    await result.props.action(formData);
+
+    expect(mocks.completeOnboarding).toHaveBeenCalledWith("user-a", "/groups", formData);
+  });
   it("does not render the form when the profile is already onboarded", async () => {
     mocks.resolveAuthProfile.mockResolvedValue({ kind: "ok", me: profile({ onboarded: true }) });
 
