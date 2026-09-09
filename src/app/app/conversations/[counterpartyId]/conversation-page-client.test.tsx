@@ -2,8 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConversationPageClient } from "./conversation-page-client";
 import { useAppStore } from "@/stores/app-store";
+import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import type { ChatMessage, GroupEvent, GroupSnapshot, Me } from "@/types/ledger";
-
 const mutations = vi.hoisted(() => ({
   sendMessage: vi.fn().mockResolvedValue({ id: "msg-ack" }),
   markRead: vi.fn().mockResolvedValue(undefined),
@@ -27,6 +27,21 @@ const realtime = vi.hoisted(() => ({
   subscribeChat: vi.fn(() => vi.fn()),
 }));
 vi.mock("@/lib/sync/realtime", () => realtime);
+
+const aiParse = vi.hoisted(() => ({
+  result: null as ChatExpenseResult | null,
+  parse: vi.fn(),
+  reset: vi.fn(),
+}));
+vi.mock("@/hooks/use-ai-expense-parse", () => ({
+  useAiExpenseParse: () => ({
+    result: aiParse.result,
+    parse: aiParse.parse,
+    reset: aiParse.reset,
+    isParsing: false,
+    error: null,
+  }),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
@@ -112,10 +127,27 @@ function seedDm(
     },
   });
 }
+function aiDraft(overrides: Partial<ChatExpenseResult> = {}): ChatExpenseResult {
+  return {
+    title: "Jantar",
+    amountCents: 10000,
+    expenseType: "single_amount",
+    splitType: "equal",
+    allocations: [],
+    items: [],
+    participants: [],
+    payerHandle: null,
+    merchantName: null,
+    confidence: "high",
+    ...overrides,
+  };
+}
+
 
 describe("ConversationPageClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    aiParse.result = null;
   });
 
   it("timeline merges messages and events by createdAt", () => {
@@ -191,5 +223,70 @@ describe("ConversationPageClient", () => {
     await waitFor(() => {
       expect(mutations.markRead).toHaveBeenCalledWith("dm-1");
     });
+  });
+  it("rejects an unresolved chat actor before the confirmation write", async () => {
+    aiParse.result = aiDraft({
+      participants: [{ spokenName: "Carol", matchedHandle: null, confidence: "low" }],
+      payerHandle: "carol",
+    });
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+    fireEvent.click(screen.getByTestId("draft-confirm-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("draft-error")).toHaveTextContent("identificar");
+    });
+    expect(mutations.createExpense).not.toHaveBeenCalled();
+  });
+
+  it("writes a valid chat actor set through the direct confirmation handler", async () => {
+    aiParse.result = aiDraft({ payerHandle: "SELF" });
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+    fireEvent.click(screen.getByTestId("draft-confirm-button"));
+
+    await waitFor(() => {
+      expect(mutations.createExpense).toHaveBeenCalledWith(
+        expect.objectContaining({
+          groupId: "dm-1",
+          payload: expect.objectContaining({
+            participants: [
+              { kind: "user", userId: me.id },
+              { kind: "user", userId: counterparty.id },
+            ],
+            payers: [{ participantIndex: 0, amountCents: 10000 }],
+          }),
+        }),
+      );
+    });
+  });
+  it("rejects a quick-charge payer when the displayed handles conflict", async () => {
+    const conflictingCounterparty = { ...counterparty, handle: me.handle };
+    seedDm(
+      makeDmSnapshot({
+        members: [
+          makeDmSnapshot().members[0],
+          {
+            ...makeDmSnapshot().members[1],
+            user: conflictingCounterparty,
+          },
+        ],
+      }),
+      { messages: [], events: [] },
+    );
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+    fireEvent.click(screen.getByText("Nova cobrança"));
+    fireEvent.change(screen.getByTestId("quick-charge-amount"), {
+      target: { value: "100,00" },
+    });
+    fireEvent.click(screen.getByTestId("quick-charge-confirm"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-charge-error")).toHaveTextContent("handles");
+    });
+    expect(mutations.createExpense).not.toHaveBeenCalled();
   });
 });
