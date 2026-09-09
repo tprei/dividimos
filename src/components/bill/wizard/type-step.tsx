@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { BillTypeSelector } from "@/components/bill/bill-type-selector";
 import { ReceiptScanner } from "@/components/bill/receipt-scanner";
@@ -21,6 +21,8 @@ export interface TypeStepProps {
   groupMembers: UserProfile[];
   participants: ItemDivisionParticipant[];
   occurredOn: string;
+  /** Id of the signed-in account; a change invalidates any pending scan attempt. */
+  accountId: string | null;
   onTypeSelect: (type: ExpenseType) => void;
   onScanConfirm: (
     result: ReceiptOcrResult,
@@ -33,10 +35,18 @@ export interface TypeStepProps {
   onManageParticipants: () => void;
 }
 
+interface ScanAttempt {
+  accountId: string | null;
+  accountEpoch: number;
+  controller: AbortController;
+}
+
+
 export function TypeStep({
   groupMembers,
   occurredOn,
   participants,
+  accountId,
   onTypeSelect,
   onScanConfirm,
   onVoiceConfirm,
@@ -54,6 +64,59 @@ export function TypeStep({
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
+  const attemptRef = useRef<ScanAttempt | null>(null);
+  const accountRef = useRef(accountId);
+  const accountEpochRef = useRef(0);
+  const accountChanged = accountRef.current !== accountId;
+  if (accountChanged) {
+    accountRef.current = accountId;
+    accountEpochRef.current += 1;
+    const attempt = attemptRef.current;
+    attemptRef.current = null;
+    attempt?.controller.abort();
+  }
+
+  const isCurrentAttempt = useCallback((attempt: ScanAttempt): boolean => {
+    return (
+      attemptRef.current === attempt &&
+      attempt.accountId === accountRef.current &&
+      attempt.accountEpoch === accountEpochRef.current &&
+      !attempt.controller.signal.aborted
+    );
+  }, []);
+
+
+  const invalidateAttempt = useCallback(() => {
+    const attempt = attemptRef.current;
+    attemptRef.current = null;
+    attempt?.controller.abort();
+  }, []);
+
+  const resetScanState = useCallback(() => {
+    invalidateAttempt();
+    setScanResult(null);
+    setScanProcessing(false);
+    setScanProcessingPhoto(false);
+    setScanError(null);
+  }, [invalidateAttempt]);
+
+  // Unmount cleanup aborts any in-flight attempt without touching React state.
+  useEffect(() => {
+    return () => {
+      const attempt = attemptRef.current;
+      attemptRef.current = null;
+      attempt?.controller.abort();
+    };
+  }, []);
+  // Account changes invalidate synchronously during render so an old
+  // continuation cannot win the interval before effects run.
+  useLayoutEffect(() => {
+    if (!accountChanged) return;
+    resetScanState();
+    setShowScanner(false);
+  }, [accountChanged, resetScanState]);
+
+
   const scanParamRef = useRef(false);
   useEffect(() => {
     if (scanParamRef.current) return;
@@ -63,6 +126,10 @@ export function TypeStep({
     }
   }, [searchParams, showScanner, scanResult]);
 
+  const openScanner = useCallback(() => {
+    setShowScanner(true);
+  }, []);
+
   const reviewing = scanResult !== null;
   useEffect(() => {
     onReviewingChange(reviewing);
@@ -70,20 +137,34 @@ export function TypeStep({
   }, [reviewing, onReviewingChange]);
 
   const handleScanProcess = useCallback(async (file: File) => {
+    const previous = attemptRef.current;
+    previous?.controller.abort();
+    const attempt: ScanAttempt = {
+      accountId: accountRef.current,
+      accountEpoch: accountEpochRef.current,
+      controller: new AbortController(),
+    };
+    attemptRef.current = attempt;
     setScanProcessing(true);
     setScanProcessingPhoto(true);
     setScanError(null);
     try {
-      const result: ReceiptOcrResult = await processReceiptScan(file);
+      const result = await processReceiptScan(file, attempt.controller.signal);
+      if (!isCurrentAttempt(attempt)) return;
       setScanResult(result);
       setShowScanner(false);
     } catch (err) {
-      setScanError(err instanceof Error ? err.message : "Erro ao processar imagem");
+      if (!isCurrentAttempt(attempt)) return;
+      const message = err instanceof Error ? err.message : "Erro ao processar imagem";
+      resetScanState();
+      setScanError(message);
     } finally {
-      setScanProcessing(false);
-      setScanProcessingPhoto(false);
+      if (isCurrentAttempt(attempt)) {
+        setScanProcessing(false);
+        setScanProcessingPhoto(false);
+      }
     }
-  }, []);
+  }, [isCurrentAttempt, resetScanState]);
 
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
@@ -132,8 +213,8 @@ export function TypeStep({
         <ReceiptScanner
           onProcess={handleScanProcess}
           onBack={() => {
+            resetScanState();
             setShowScanner(false);
-            setScanError(null);
           }}
           processing={scanProcessing}
         />
@@ -192,7 +273,7 @@ export function TypeStep({
   return (
     <BillTypeSelector
       onSelect={onTypeSelect}
-      onScanReceipt={() => setShowScanner(true)}
+      onScanReceipt={openScanner}
       onVoiceExpense={() => setShowVoiceInput(true)}
     />
   );

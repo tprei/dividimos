@@ -14,12 +14,14 @@ export interface ReceiptScannerProps {
   onBack: () => void;
   /** Whether processing is in progress (disables button, shows spinner) */
   processing?: boolean;
+
 }
 
 export function ReceiptScanner({
   onProcess,
   onBack,
   processing = false,
+
 }: ReceiptScannerProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -97,6 +99,7 @@ export function ReceiptScanner({
           </p>
         </div>
       </div>
+
       {/* Hidden file inputs */}
       <input
         ref={cameraRef}
