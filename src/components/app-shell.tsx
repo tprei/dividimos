@@ -46,8 +46,19 @@ const navItems = [
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
 
-function NavBar() {
-  const pathname = usePathname();
+function navigationHref(href: string): string {
+  return href;
+}
+
+export function NavBar({
+  pathname: pathnameOverride,
+  resolveHref = navigationHref,
+}: {
+  pathname?: string;
+  resolveHref?: (href: string) => string;
+} = {}) {
+  const routePathname = usePathname();
+  const pathname = pathnameOverride ?? routePathname;
   const keyboardOpen = useKeyboardVisible();
   const unreadTotal = useAppStore(selectUnreadTotal);
 
@@ -67,7 +78,7 @@ function NavBar() {
 
           if (item.primary) {
             return (
-              <Link key={item.href} href={item.href} onClick={() => haptics.tap()}>
+              <Link key={item.href} href={resolveHref(item.href)} aria-label={item.label} onClick={() => haptics.tap()}>
                 <motion.div
                   whileTap={{ scale: 0.92 }}
                   className="gradient-primary -mt-5 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
@@ -83,7 +94,8 @@ function NavBar() {
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={resolveHref(item.href)}
+              aria-current={isActive ? "page" : undefined}
               onClick={() => haptics.tap()}
               className="flex flex-col items-center gap-0.5"
             >

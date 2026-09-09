@@ -244,7 +244,7 @@ export function PixQrModal({
     >
       <DialogContent
         showCloseButton={false}
-        className="w-full max-w-md rounded-3xl bg-card p-6 pb-24 sm:pb-6"
+        className="w-[calc(100%-2rem)] max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl bg-card p-6"
       >
         <AnimatePresence mode="wait">
           {showSuccess ? (
