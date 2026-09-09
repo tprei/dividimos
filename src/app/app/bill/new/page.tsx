@@ -198,7 +198,7 @@ function NewBillPageContent() {
 
   const handleScanConfirm = useCallback((
     result: ReceiptOcrResult,
-    _chaveAcesso: string | null,
+    receiptAccessKey: string | null,
     divisions: Record<number, ItemDivisionValue>,
     occurredOn: string,
   ) => {
@@ -213,6 +213,9 @@ function NewBillPageContent() {
         result.merchant || undefined,
         scanGroup?.group.id,
       );
+      // The scanned document's identity travels with the draft so the create
+      // RPC can reject a second expense for the same receipt.
+      billStore.setReceiptAccessKey(receiptAccessKey);
       billStore.updateExpense({
         serviceFeePercent: result.serviceFeeBasisPoints / 100,
         serviceFeeBasisPoints: result.serviceFeeBasisPoints,

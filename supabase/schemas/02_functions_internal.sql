@@ -67,6 +67,19 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.lock_receipt_key(p_creator_id uuid, p_chave_acesso text) RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  IF p_chave_acesso IS NULL THEN
+    RETURN;
+  END IF;
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_creator_id::text || ':' || p_chave_acesso, 0)
+  );
+END;
+$$;
+
 CREATE FUNCTION public.recompute_group_balances(p_group_id uuid) RETURNS bigint
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
