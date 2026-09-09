@@ -16,9 +16,9 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { useMe } from "@/hooks/use-me";
+import { useSignOut } from "@/hooks/use-sign-out";
 import { useAppStore } from "@/stores/app-store";
 import { updateProfile } from "@/lib/sync/mutations-group";
-import { getSupabase } from "@/lib/sync/client";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -71,11 +71,11 @@ export default function SettingsPage() {
   const me = useMe();
   const router = useRouter();
   const { permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
+  const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
 
   const handleSignOut = async () => {
-    await getSupabase().auth.signOut();
-    useAppStore.getState().reset();
-    router.replace("/auth");
+    const result = await signOut();
+    if (result.ok) router.replace("/auth");
   };
 
   if (!me) {
@@ -184,13 +184,27 @@ export default function SettingsPage() {
         transition={{ delay: 0.2, duration: 0.4 }}
         className="mt-8"
       >
+        {signOutError && (
+          <div role="alert" className="mb-3 flex items-center justify-between gap-3 text-sm text-destructive">
+            <span>{signOutError}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleSignOut()}
+            >
+              Tentar novamente
+            </Button>
+          </div>
+        )}
         <Button
           variant="outline"
           className="w-full gap-2 text-destructive"
-          onClick={handleSignOut}
+          onClick={() => void handleSignOut()}
+          disabled={signOutPending}
         >
           <LogOut className="h-4 w-4" />
-          Sair
+          {signOutPending ? "Saindo..." : "Sair"}
         </Button>
       </motion.div>
     </div>
