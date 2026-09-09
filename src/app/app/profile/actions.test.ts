@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/auth", () => ({
-  getAuthUser: vi.fn(),
+  resolveAuthProfile: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -18,7 +18,8 @@ vi.mock("@/lib/pix", () => ({
   maskPixKey: vi.fn().mockReturnValue("m*****@test.com"),
 }));
 
-import { getAuthUser } from "@/lib/auth";
+import { resolveAuthProfile } from "@/lib/auth";
+import type { AuthProfileResult } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptPixKey } from "@/lib/crypto";
 import { validatePixKey, maskPixKey } from "@/lib/pix";
@@ -40,8 +41,16 @@ function mockUser(id: string): Me {
   };
 }
 
-function mockAuth(userId: string | null) {
-  vi.mocked(getAuthUser).mockResolvedValue(userId ? mockUser(userId) : null);
+function mockProfile(profile: AuthProfileResult) {
+  vi.mocked(resolveAuthProfile).mockResolvedValue(profile);
+}
+
+function mockAuthOk(userId: string) {
+  mockProfile({ kind: "ok", me: mockUser(userId) });
+  return mockAdminClient();
+}
+
+function mockAdminClient() {
   const eq = vi.fn().mockResolvedValue({ error: null });
   const update = vi.fn().mockReturnValue({ eq });
   const from = vi.fn().mockReturnValue({ update });
@@ -57,14 +66,13 @@ function pixFormData(pixKey: string, pixKeyType: string) {
   formData.set("pixKeyType", pixKeyType);
   return formData;
 }
-
 describe("updatePixKey", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("validates, encrypts, and updates the verified user when the expected id matches fresh auth", async () => {
-    const { from, update, eq } = mockAuth("real-user");
+    const { from, update, eq } = mockAuthOk("real-user");
 
     const result = await updatePixKey("real-user", pixFormData("user@test.com", "email"));
 
@@ -83,7 +91,7 @@ describe("updatePixKey", () => {
   });
 
   it("returns the session error and does zero work when the expected id differs from fresh auth", async () => {
-    const { from, update, eq } = mockAuth("real-user");
+    const { from, update, eq } = mockAuthOk("real-user");
 
     const result = await updatePixKey("stale-or-other-user", pixFormData("user@test.com", "email"));
 
@@ -97,7 +105,8 @@ describe("updatePixKey", () => {
   });
 
   it("returns the session error and does zero work when there is no session at all", async () => {
-    const { from, update, eq } = mockAuth(null);
+    mockProfile({ kind: "unauthenticated" });
+    const { from, update, eq } = mockAdminClient();
 
     const result = await updatePixKey("real-user", pixFormData("user@test.com", "email"));
 
@@ -110,10 +119,38 @@ describe("updatePixKey", () => {
     expect(eq).not.toHaveBeenCalled();
   });
 
+  it("returns a retryable error for a missing profile and does zero work", async () => {
+    mockProfile({ kind: "profile_missing" });
+    const { from, update, eq } = mockAdminClient();
+
+    const result = await updatePixKey("real-user", pixFormData("user@test.com", "email"));
+
+    expect(result).toEqual({ error: "Nao foi possivel carregar sua conta. Tente novamente." });
+    expect(validatePixKey).not.toHaveBeenCalled();
+    expect(encryptPixKey).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(eq).not.toHaveBeenCalled();
+  });
+
+  it("returns a retryable error when the profile read fails and does zero work", async () => {
+    mockProfile({ kind: "read_failed" });
+    const { from, update, eq } = mockAdminClient();
+
+    const result = await updatePixKey("real-user", pixFormData("user@test.com", "email"));
+
+    expect(result).toEqual({ error: "Nao foi possivel carregar sua conta. Tente novamente." });
+    expect(validatePixKey).not.toHaveBeenCalled();
+    expect(encryptPixKey).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(eq).not.toHaveBeenCalled();
+  });
+
   it("rejects instead of writing either row when auth succeeds but the caller supplied a different user id", async () => {
     // Fresh auth verifies real-user, but the caller claimed other-user. The
     // call is rejected outright: neither row is touched and no key work runs.
-    const { from, update, eq } = mockAuth("real-user");
+    const { from, update, eq } = mockAuthOk("real-user");
 
     const result = await updatePixKey("other-user", pixFormData("user@test.com", "email"));
 
@@ -123,5 +160,26 @@ describe("updatePixKey", () => {
     expect(from).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
     expect(eq).not.toHaveBeenCalled();
+  });
+
+  it("rejects incomplete form data", async () => {
+    mockAuthOk("real-user");
+
+    const formData = new FormData();
+    formData.set("pixKeyType", "email");
+
+    const result = await updatePixKey("real-user", formData);
+
+    expect(result).toEqual({ error: "Dados incompletos" });
+  });
+
+  it("rejects a Pix key invalid for the selected type", async () => {
+    mockAuthOk("real-user");
+    vi.mocked(validatePixKey).mockReturnValue(false);
+
+    const result = await updatePixKey("real-user", pixFormData("nao-e-email", "email"));
+
+    expect(result).toEqual({ error: "Chave Pix invalida para o tipo selecionado" });
+    expect(encryptPixKey).not.toHaveBeenCalled();
   });
 });
