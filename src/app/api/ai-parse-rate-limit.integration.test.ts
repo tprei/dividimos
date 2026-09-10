@@ -17,7 +17,7 @@ import { isIntegrationTestReady, adminClient } from "@/test/integration-setup";
 // server-only unconditionally throws outside a Next.js server bundle. This
 // mocks the guard package itself (not business logic), matching the same
 // pattern used by every other test that imports a "server-only" module
-// (e.g. src/lib/rate-limit.test.ts, src/app/app/settings/actions.test.ts).
+// (e.g. src/lib/rate-limit.test.ts).
 vi.mock("server-only", () => ({}));
 
 vi.stubEnv("RATE_LIMIT_DISABLED", "0");

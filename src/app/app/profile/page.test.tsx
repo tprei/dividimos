@@ -97,6 +97,18 @@ const userB: Me = {
   notificationPreferences: {},
 };
 
+const userWithoutPix: Me = {
+  id: "u3",
+  name: "Carla Dias",
+  handle: "carladias",
+  email: "carla@test.com",
+  avatarUrl: null,
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: true,
+  notificationPreferences: {},
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
   useAppStore.getState().reset();
@@ -195,46 +207,63 @@ describe("ProfilePage name and handle editing", () => {
   });
 });
 
-describe("ProfilePage phone Pix key editing", () => {
-  it("offers phone as a Pix key option", async () => {
+describe("ProfilePage Pix key card", () => {
+  it("shows the masked hint, type badge, and no copy affordance", () => {
+    render(<ProfilePage />);
+
+    expect(screen.getByText("a**@test.com")).toBeInTheDocument();
+    expect(screen.getByText("E-mail")).toBeInTheDocument();
+    expect(screen.getByText("a**@test.com").closest("button")).toBeNull();
+    expect(screen.queryByText("Colar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Copiar")).not.toBeInTheDocument();
+  });
+
+  it("shows Nenhuma chave cadastrada and Cadastrar chave when no key exists", () => {
+    useAppStore.setState({ hydrated: true, me: userWithoutPix });
+    render(<ProfilePage />);
+
+    expect(screen.getByText("Nenhuma chave cadastrada")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cadastrar chave" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("E-mail")).not.toBeInTheDocument();
+  });
+
+  it("opens the centered dialog with a seeded type and empty key", async () => {
     const user = userEvent.setup();
     render(<ProfilePage />);
 
-    await user.click(screen.getByText("E-mail"));
+    await user.click(screen.getByRole("button", { name: "Alterar chave" }));
 
-    expect(
-      screen.getByRole("button", { name: "Telefone" }),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Tipo")).toHaveValue("email");
+    expect(screen.getByLabelText("Chave")).toHaveValue("");
   });
 
   it("formats digits as a Brazilian phone mask when phone is selected", async () => {
     const user = userEvent.setup();
     render(<ProfilePage />);
 
-    await user.click(screen.getByText("E-mail"));
-    await user.click(screen.getByRole("button", { name: "Telefone" }));
-
+    await user.click(screen.getByRole("button", { name: "Alterar chave" }));
+    await user.selectOptions(screen.getByLabelText("Tipo"), "phone");
     await user.type(screen.getByPlaceholderText("(11) 99999-9999"), "11999998888");
 
-    expect(await screen.findByDisplayValue("(11) 99999-8888")).toBeInTheDocument();
+    expect(
+      await screen.findByDisplayValue("(11) 99999-8888"),
+    ).toBeInTheDocument();
   });
 
-  it("submits the phone Pix key with a +55 prefix and patches store with returned key info", async () => {
+  it("submits the phone key with a +55 prefix and patches the store from the response", async () => {
     const user = userEvent.setup();
     updatePixKeyMock.mockResolvedValueOnce({
       pixKeyType: "phone",
       pixKeyHint: "(11) 99999-8888",
     });
-
     render(<ProfilePage />);
 
-    await user.click(screen.getByText("E-mail"));
-    await user.click(screen.getByRole("button", { name: "Telefone" }));
-
-    const input = screen.getByPlaceholderText("(11) 99999-9999");
-    await user.type(input, "11999998888");
-
-    await user.click(screen.getByRole("button", { name: /salvar/i }));
+    await user.click(screen.getByRole("button", { name: "Alterar chave" }));
+    await user.selectOptions(screen.getByLabelText("Tipo"), "phone");
+    await user.type(screen.getByPlaceholderText("(11) 99999-9999"), "11999998888");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(updatePixKeyMock).toHaveBeenCalledTimes(1);
     expect(updatePixKeyMock.mock.calls[0][0]).toBe("u1");
@@ -245,8 +274,29 @@ describe("ProfilePage phone Pix key editing", () => {
     await waitFor(() => {
       expect(useAppStore.getState().me?.pixKeyType).toBe("phone");
       expect(useAppStore.getState().me?.pixKeyHint).toBe("(11) 99999-8888");
-      expect(toastSuccessMock).toHaveBeenCalledWith("Chave Pix salva");
+      expect(toastSuccessMock).toHaveBeenCalledWith("Chave Pix atualizada");
     });
+    expect(screen.queryByLabelText("Tipo")).not.toBeInTheDocument();
+  });
+
+  it("keeps the dialog open with the typed value when the save fails", async () => {
+    const user = userEvent.setup();
+    updatePixKeyMock.mockResolvedValueOnce({
+      error: "Chave Pix invalida para o tipo selecionado",
+    });
+    render(<ProfilePage />);
+
+    await user.click(screen.getByRole("button", { name: "Alterar chave" }));
+    await user.selectOptions(screen.getByLabelText("Tipo"), "cpf");
+    await user.type(screen.getByLabelText("Chave"), "123");
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Chave Pix invalida para o tipo selecionado");
+    expect(screen.getByLabelText("Chave")).toHaveValue("123");
+    expect(useAppStore.getState().me?.pixKeyType).toBe("email");
+    expect(toastSuccessMock).not.toHaveBeenCalled();
   });
 });
 
@@ -256,8 +306,8 @@ describe("ProfilePage identity-keyed state", () => {
     useAppStore.setState({ hydrated: true, me: userA });
     const { rerender } = render(<ProfilePage />);
 
-    await user.click(screen.getByText("E-mail"));
-    await user.click(screen.getByRole("button", { name: "Telefone" }));
+    await user.click(screen.getByRole("button", { name: "Alterar chave" }));
+    await user.selectOptions(screen.getByLabelText("Tipo"), "phone");
     await user.type(
       screen.getByPlaceholderText("(11) 99999-9999"),
       "11999998888",
@@ -281,13 +331,13 @@ describe("ProfilePage identity-keyed state", () => {
     useAppStore.setState({ hydrated: true, me: userA });
     const { rerender } = render(<ProfilePage />);
 
-    await user.click(screen.getByText("E-mail"));
-    await user.click(screen.getByRole("button", { name: "Telefone" }));
+    await user.click(screen.getByRole("button", { name: "Alterar chave" }));
+    await user.selectOptions(screen.getByLabelText("Tipo"), "phone");
     await user.type(
       screen.getByPlaceholderText("(11) 99999-9999"),
       "11999998888",
     );
-    await user.click(screen.getByRole("button", { name: /salvar/i }));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(updatePixKeyMock).toHaveBeenCalledTimes(1);
 

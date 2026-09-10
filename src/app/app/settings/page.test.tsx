@@ -4,6 +4,16 @@ import type { NotificationPreferences } from "@/types";
 import type { Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 const mockPushState = {
   permission: "granted" as const,
   isSubscribed: true,
@@ -80,6 +90,21 @@ function makeMe(id: string, prefs?: NotificationPreferences): Me {
   };
 }
 
+function makeServerMerge() {
+  return async (input: { notificationPreferences?: NotificationPreferences }) => {
+    const current = useAppStore.getState().me;
+    const response: Me = {
+      ...(current ?? makeMe("user-a")),
+      notificationPreferences: {
+        ...(current?.notificationPreferences ?? {}),
+        ...(input.notificationPreferences ?? {}),
+      },
+    };
+    useAppStore.setState({ me: response });
+    return response;
+  };
+}
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -106,33 +131,106 @@ describe("SettingsPage", () => {
     expect(sws[0]).toHaveAttribute("aria-checked", "true");
     expect(sws[1]).toHaveAttribute("aria-checked", "false");
   });
+});
 
-  it("optimistically toggles a preference and calls updateProfile", async () => {
-    const user = makeMe("user-a", { expenses: true, settlements: false });
-    useAppStore.setState({ hydrated: true, me: user });
+describe("SettingsPage notification deltas", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.getState().reset();
+    updateProfileMock.mockImplementation(makeServerMerge());
+  });
+
+  it("sends a single-key delta, never the whole preference object", async () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: makeMe("user-a", { expenses: true, settlements: false }),
+    });
     render(<SettingsPage />);
 
     const sws = screen.getAllByRole("switch");
     fireEvent.click(sws[0]);
 
     await waitFor(() => {
-      expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "false");
+      expect(updateProfileMock).toHaveBeenCalledTimes(1);
+    });
+    expect(updateProfileMock).toHaveBeenCalledWith({
+      notificationPreferences: { expenses: false },
     });
     expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(false);
-    expect(updateProfileMock).toHaveBeenCalledTimes(1);
-    expect(updateProfileMock).toHaveBeenCalledWith({
-      notificationPreferences: {
-        expenses: false,
-        settlements: false,
-      },
+    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("sends two single-key deltas for different categories and neither clobbers the other", async () => {
+    const firstDeferred = deferred<Me>();
+    updateProfileMock.mockImplementationOnce(() => firstDeferred.promise);
+    updateProfileMock.mockImplementation(makeServerMerge());
+
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    const sws = screen.getAllByRole("switch");
+    fireEvent.click(sws[4]);
+    fireEvent.click(screen.getAllByRole("switch")[2]);
+
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(2);
+    });
+    expect(updateProfileMock.mock.calls[0][0]).toEqual({
+      notificationPreferences: { messages: false },
+    });
+    expect(updateProfileMock.mock.calls[1][0]).toEqual({
+      notificationPreferences: { nudges: false },
+    });
+    expect(useAppStore.getState().me?.notificationPreferences).toMatchObject({
+      messages: false,
+      nudges: false,
+    });
+
+    firstDeferred.resolve(makeMe("user-a", { messages: false }));
+    await waitFor(() => {
+      expect(useAppStore.getState().me?.notificationPreferences).toMatchObject({
+        messages: false,
+        nudges: false,
+      });
     });
   });
 
-  it("rolls back store state and shows toast on updateProfile failure", async () => {
+  it("sends a repeated toggle only after the in-flight request settles", async () => {
+    const firstDeferred = deferred<Me>();
+    updateProfileMock.mockImplementationOnce(() => firstDeferred.promise);
+    updateProfileMock.mockImplementation(makeServerMerge());
+
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    const sws = screen.getAllByRole("switch");
+    fireEvent.click(sws[0]);
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
+
+    firstDeferred.resolve(makeMe("user-a", { expenses: false }));
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(2);
+    });
+    expect(updateProfileMock.mock.calls[1][0]).toEqual({
+      notificationPreferences: { expenses: true },
+    });
+    await waitFor(() => {
+      expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
+    });
+  });
+
+  it("restores only the toggled key and shows a toast when the save fails", async () => {
     updateProfileMock.mockRejectedValueOnce(new Error("Network error"));
 
-    const user = makeMe("user-a", { expenses: true, settlements: false });
-    useAppStore.setState({ hydrated: true, me: user });
+    useAppStore.setState({
+      hydrated: true,
+      me: makeMe("user-a", { expenses: true, settlements: false }),
+    });
     render(<SettingsPage />);
 
     const sws = screen.getAllByRole("switch");
@@ -143,12 +241,72 @@ describe("SettingsPage", () => {
     });
 
     expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
+    expect(useAppStore.getState().me?.notificationPreferences?.settlements).toBe(false);
     expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
   });
 
+  it("keeps a newer optimistic value when a superseded request fails", async () => {
+    const firstDeferred = deferred<Me>();
+    updateProfileMock.mockImplementationOnce(() => firstDeferred.promise);
+
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    const sws = screen.getAllByRole("switch");
+    fireEvent.click(sws[0]);
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+
+    firstDeferred.reject(new Error("Network error"));
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(2);
+    });
+    expect(mockToastError).not.toHaveBeenCalled();
+    expect(updateProfileMock.mock.calls[1][0]).toEqual({
+      notificationPreferences: { expenses: true },
+    });
+    await waitFor(() => {
+      expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
+    });
+  });
+
+  it("keeps the rollback when the latest of several rapid toggles fails", async () => {
+    const firstDeferred = deferred<Me>();
+    updateProfileMock.mockImplementationOnce(() => firstDeferred.promise);
+    updateProfileMock.mockRejectedValueOnce(new Error("Network error"));
+
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(false);
+
+    firstDeferred.resolve(makeMe("user-a", { expenses: false }));
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalled();
+    });
+    expect(updateProfileMock).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
+    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
+  });
+});
+
+describe("SettingsPage account", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.getState().reset();
+  });
+
   it("handles sign out by signing out, resetting store, and redirecting", async () => {
-    const user = makeMe("user-a");
-    useAppStore.setState({ hydrated: true, me: user });
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
 
     const signOutButton = screen.getByRole("button", { name: /sair/i });

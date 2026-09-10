@@ -763,6 +763,58 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(myProfile.handle).toBe(newHandle);
         expect(myProfile.onboarded).toBe(true);
 
+        const invalidPrefKeyErr = await expectError(
+          c3.rpc("update_profile", {
+            p_name: null,
+            p_handle: null,
+            p_notification_preferences: { promotions: false },
+          }),
+        );
+        expect(invalidPrefKeyErr).toBe("invalid_notification_preferences");
+
+        const invalidPrefValueErr = await expectError(
+          c3.rpc("update_profile", {
+            p_name: null,
+            p_handle: null,
+            p_notification_preferences: { nudges: "yes" },
+          }),
+        );
+        expect(invalidPrefValueErr).toBe("invalid_notification_preferences");
+
+        const nonObjectErr = await expectError(
+          c3.rpc("update_profile", {
+            p_name: null,
+            p_handle: null,
+            p_notification_preferences: [false],
+          }),
+        );
+        expect(nonObjectErr).toBe("invalid_notification_preferences");
+
+        await rpc<MeProfile>(c3, "update_profile", {
+          p_name: null,
+          p_handle: null,
+          p_notification_preferences: { messages: false },
+        });
+        const afterNudges = await rpc<MeProfile>(c3, "update_profile", {
+          p_name: null,
+          p_handle: null,
+          p_notification_preferences: { nudges: false },
+        });
+        expect(afterNudges.notificationPreferences).toMatchObject({
+          messages: false,
+          nudges: false,
+        });
+
+        const afterReEnable = await rpc<MeProfile>(c3, "update_profile", {
+          p_name: null,
+          p_handle: null,
+          p_notification_preferences: { messages: true },
+        });
+        expect(afterReEnable.notificationPreferences).toMatchObject({
+          messages: true,
+          nudges: false,
+        });
+
         const foundUser = await rpc<UserProfile | null>(
           c1,
           "lookup_user_by_handle",
