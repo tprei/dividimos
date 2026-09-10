@@ -421,6 +421,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
 
     const { error } = await rpc(authenticateAs(userA), "mark_read", {
       p_group_id: g1,
+      p_last_read_message_id: msgB.id,
     });
     expect(error).toBeNull();
 
@@ -569,6 +570,127 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
       expect(error?.code).toBe("42501");
     }
   });
+  it("validates incoming read watermarks and preserves tuple order", async () => {
+    expect(
+      await expectRpcError(
+        authenticateAs(userX).rpc("mark_read", {
+          p_group_id: g1,
+          p_last_read_message_id: msgB.id,
+        }),
+      ),
+    ).toBe("not_a_member");
+
+    expect(
+      await expectRpcError(
+        authenticateAs(userA).rpc("mark_read", {
+          p_group_id: g2,
+          p_last_read_message_id: msgB.id,
+        }),
+      ),
+    ).toBe("invalid_argument");
+
+    expect(
+      await expectRpcError(
+        authenticateAs(userA).rpc("mark_read", {
+          p_group_id: g1,
+          p_last_read_message_id: msgA.id,
+        }),
+      ),
+    ).toBe("invalid_argument");
+
+    const older = await rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
+      p_client_id: crypto.randomUUID(),
+      p_group_id: g1,
+      p_content: "watermark older",
+    });
+    const newer = await rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
+      p_client_id: crypto.randomUUID(),
+      p_group_id: g1,
+      p_content: "watermark newer",
+    });
+
+    const mark = async (messageId: string) => {
+      const { error } = await rpc(authenticateAs(userA), "mark_read", {
+        p_group_id: g1,
+        p_last_read_message_id: messageId,
+      });
+      expect(error).toBeNull();
+    };
+
+    await mark(newer.id);
+    await mark(older.id);
+    const receiptAfterOlder = await withPg(async (pg) => {
+      const result = await pg.query<{ last_read_message_id: string }>(
+        "select last_read_message_id from conversation_reads where user_id = $1 and group_id = $2",
+        [userA.id, g1],
+      );
+      return result.rows[0]?.last_read_message_id;
+    });
+    expect(receiptAfterOlder).toBe(newer.id);
+
+    const equalOne = await rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
+      p_client_id: crypto.randomUUID(),
+      p_group_id: g1,
+      p_content: "same timestamp one",
+    });
+    const equalTwo = await rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
+      p_client_id: crypto.randomUUID(),
+      p_group_id: g1,
+      p_content: "same timestamp two",
+    });
+    // The pair must share a timestamp strictly ahead of the existing receipt
+    // watermark: only then does the first mark advance and the second one
+    // exercise the equal-timestamp UUID tie-break instead of being rejected
+    // as a regression.
+    const sharedTimestamp = await withPg(async (pg) => {
+      const result = await pg.query<{ shared: string }>(
+        "select (now() + interval '1 hour')::text as shared",
+      );
+      return result.rows[0]!.shared;
+    });
+    await withPg((pg) =>
+      pg.query(
+        "update chat_messages set created_at = $1 where id = any($2::uuid[])",
+        [sharedTimestamp, [equalOne.id, equalTwo.id]],
+      ),
+    );
+
+    const [highId, lowId] =
+      equalOne.id > equalTwo.id ? [equalOne.id, equalTwo.id] : [equalTwo.id, equalOne.id];
+    await mark(highId);
+    await mark(lowId);
+    const receiptAfterEqualTimestamp = await withPg(async (pg) => {
+      const result = await pg.query<{ last_read_message_id: string }>(
+        "select last_read_message_id from conversation_reads where user_id = $1 and group_id = $2",
+        [userA.id, g1],
+      );
+      return result.rows[0]?.last_read_message_id;
+    });
+    expect(receiptAfterEqualTimestamp).toBe(highId);
+
+    const concurrent = await Promise.all([
+      rpcOk<ChatMessage>(authenticateAs(userA), "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: g1,
+        p_content: "concurrent A",
+      }),
+      rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: g1,
+        p_content: "concurrent B",
+      }),
+    ]);
+    const storedConcurrent = await withPg(async (pg) => {
+      const result = await pg.query<{ id: string; created_at: string }>(
+        "select id, created_at::text from chat_messages where id = any($1::uuid[]) order by created_at, id",
+        [concurrent.map((message) => message.id)],
+      );
+      return result.rows;
+    });
+    expect(storedConcurrent).toHaveLength(2);
+    expect(storedConcurrent[0]?.created_at).not.toBe(storedConcurrent[1]?.created_at);
+  });
+
 });
 
 describe.skipIf(!isIntegrationTestReady)(
