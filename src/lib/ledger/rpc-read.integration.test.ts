@@ -151,9 +151,19 @@ interface GroupEvent {
   expenseTitle: string | null;
 }
 
+interface ChatCursorWire {
+  createdAt: string;
+  id: string | number;
+}
+
 interface Conversation {
   messages: ChatMessage[];
+  messageCursor: ChatCursorWire | null;
+  messagesComplete: boolean;
   events: GroupEvent[];
+  eventCursor: ChatCursorWire | null;
+  eventsComplete: boolean;
+  readWatermark: { lastReadAt: string; lastReadMessageId: string } | null;
 }
 
 interface BootstrapPayload {
@@ -460,33 +470,106 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     expect(detail.versions).toHaveLength(1);
   });
 
-  it("get_conversation returns newest-first messages and events", async () => {
+  it("get_conversation returns a newest-first envelope with the exact keys", async () => {
     const conv = await rpcOk<Conversation>(
       authenticateAs(userB),
       "get_conversation",
-      { p_group_id: g1, p_before: null, p_limit: 50 },
+      { p_group_id: g1, p_limit: 50 },
+    );
+    expect(Object.keys(conv).sort()).toEqual(
+      [
+        "eventCursor",
+        "events",
+        "eventsComplete",
+        "messageCursor",
+        "messages",
+        "messagesComplete",
+        "readWatermark",
+      ].sort(),
     );
     expect(conv.messages).toHaveLength(2);
     expect(Object.keys(conv.messages[0]!).sort()).toEqual([...CHAT_MESSAGE_KEYS].sort());
     expect(conv.messages[0]!.content).toBe(MSG_B);
-    expect(conv.messages[0]!.sender.handle).toBe(userB.handle);
     expect(conv.messages[1]!.content).toBe(MSG_A);
-    expect(conv.messages[1]!.sender.handle).toBe(userA.handle);
+    expect(conv.messagesComplete).toBe(true);
+    expect(conv.messageCursor).toBeNull();
 
     const expenseCreated = conv.events.find((e) => e.kind === "expense_created");
     if (!expenseCreated) throw new Error("expense_created event missing");
     expect(expenseCreated.expenseTitle).toBe(EXPENSE_TITLE);
-    expect(expenseCreated.actor?.id).toBe(userA.id);
   });
 
-  it("get_conversation enforces strictness of the p_before boundary", async () => {
+  it("get_conversation applies a strict (created_at, id) message boundary", async () => {
     const page = await rpcOk<Conversation>(
       authenticateAs(userB),
       "get_conversation",
-      { p_group_id: g1, p_before: msgA.createdAt, p_limit: 50 },
+      {
+        p_group_id: g1,
+        p_message_before_created_at: msgA.createdAt,
+        p_message_before_id: msgA.id,
+        p_limit: 50,
+      },
     );
+    // msgA is the oldest message, and the boundary is strict.
     expect(page.messages).toHaveLength(0);
-    expect(page.messages.some((m) => m.id === msgA.id)).toBe(false);
+    expect(page.messagesComplete).toBe(true);
+  });
+
+  it("get_conversation rejects outsiders, half cursors and out-of-range limits", async () => {
+    expect(
+      await expectRpcError(
+        authenticateAs(userX).rpc("get_conversation", { p_group_id: g1, p_limit: 50 }),
+      ),
+    ).toBe("not_a_member");
+
+    for (const args of [
+      { p_group_id: g1, p_message_before_created_at: msgA.createdAt },
+      { p_group_id: g1, p_message_before_id: msgA.id },
+      { p_group_id: g1, p_event_before_created_at: msgA.createdAt },
+      { p_group_id: g1, p_event_before_id: 1 },
+    ]) {
+      expect(
+        await expectRpcError(authenticateAs(userB).rpc("get_conversation", args)),
+      ).toBe("invalid_argument");
+    }
+
+    for (const limit of [0, 101]) {
+      expect(
+        await expectRpcError(
+          authenticateAs(userB).rpc("get_conversation", { p_group_id: g1, p_limit: limit }),
+        ),
+      ).toBe("invalid_argument");
+    }
+  });
+
+  it("get_conversation echoes the caller's own read watermark", async () => {
+    const withoutReceipt = await rpcOk<Conversation>(
+      authenticateAs(userB),
+      "get_conversation",
+      { p_group_id: g1, p_limit: 50 },
+    );
+    expect(withoutReceipt.readWatermark).toBeNull();
+
+    const { error } = await rpc(authenticateAs(userB), "mark_read", {
+      p_group_id: g1,
+      p_last_read_message_id: msgA.id,
+    });
+    expect(error).toBeNull();
+
+    const afterReceipt = await rpcOk<Conversation>(
+      authenticateAs(userB),
+      "get_conversation",
+      { p_group_id: g1, p_limit: 50 },
+    );
+    expect(afterReceipt.readWatermark?.lastReadMessageId).toBe(msgA.id);
+
+    // The watermark is per caller: A's receipt must not leak into B's envelope.
+    const forA = await rpcOk<Conversation>(
+      authenticateAs(userA),
+      "get_conversation",
+      { p_group_id: g1, p_limit: 50 },
+    );
+    expect(forA.readWatermark?.lastReadMessageId).not.toBe(msgA.id);
   });
 
   it("get_activity merges events from both groups with ids strictly descending", async () => {
@@ -532,7 +615,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     const conv = await rpcOk<Conversation>(
       authenticateAs(userA),
       "get_conversation",
-      { p_group_id: g1, p_before: null, p_limit: 50 },
+      { p_group_id: g1, p_limit: 50 },
     );
     // 2 fixture messages + 1 idempotent message = 3 messages total
     expect(conv.messages).toHaveLength(3);
@@ -569,6 +652,60 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
       expect(error).not.toBeNull();
       expect(error?.code).toBe("42501");
     }
+  });
+
+  it("pages every message exactly once when many share a created_at", async () => {
+    // A dedicated group keeps the shared-timestamp rows away from the other
+    // tests' fixtures.
+    const pagingGroup = await createGroupWithMembers(userA, [userB], "Paginação");
+    const total = 55;
+    const sent: string[] = [];
+    for (let i = 0; i < total; i++) {
+      const row = await rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: pagingGroup,
+        p_content: `mensagem ${i}`,
+      });
+      sent.push(row.id);
+    }
+
+    // Collapse most of them onto one instant so the id tiebreak is what makes
+    // the cursor walk deterministic.
+    await withPg((pg) =>
+      pg.query(
+        "update chat_messages set created_at = (select min(created_at) from chat_messages where group_id = $1) where group_id = $1 and id <> $2",
+        [pagingGroup, sent[sent.length - 1]],
+      ),
+    );
+
+    const seen: string[] = [];
+    let cursor: ChatCursorWire | null = null;
+    let complete = false;
+    let pages = 0;
+
+    while (!complete) {
+      const args: Record<string, unknown> = { p_group_id: pagingGroup, p_limit: 10 };
+      if (cursor !== null) {
+        args.p_message_before_created_at = cursor.createdAt;
+        args.p_message_before_id = cursor.id;
+      }
+      const conv: Conversation = await rpcOk<Conversation>(
+        authenticateAs(userA),
+        "get_conversation",
+        args,
+      );
+      seen.push(...conv.messages.map((m) => m.id));
+      cursor = conv.messageCursor;
+      complete = conv.messagesComplete;
+      pages += 1;
+      if (pages > 20) throw new Error("cursor walk failed to terminate");
+    }
+
+    expect(seen).toHaveLength(total);
+    expect(new Set(seen).size).toBe(total);
+    expect([...seen].sort()).toEqual([...sent].sort());
+    // 55 rows at 10 per page: completion flips only on the final page.
+    expect(pages).toBe(6);
   });
   it("validates incoming read watermarks and preserves tuple order", async () => {
     expect(

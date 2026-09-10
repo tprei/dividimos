@@ -216,7 +216,12 @@ describe("mergeChatBroadcast", () => {
             },
           ],
           events: [],
-          oldestCursor: null,
+          messageCursor: null,
+          messagesComplete: true,
+          eventCursor: null,
+          eventsComplete: true,
+          readWatermark: null,
+          reconcile: { status: "ready", readableThroughMessageId: null },
         },
       },
     });
@@ -242,7 +247,12 @@ describe("mergeChatBroadcast", () => {
         "group-1": {
           messages: [incomingMessage],
           events: [],
-          oldestCursor: null,
+          messageCursor: null,
+          messagesComplete: true,
+          eventCursor: null,
+          eventsComplete: true,
+          readWatermark: null,
+          reconcile: { status: "ready", readableThroughMessageId: null },
         },
       },
     });

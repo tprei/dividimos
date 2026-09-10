@@ -34,7 +34,6 @@ import { loadConversation } from "@/lib/sync/refresh";
 import { findDmGroup } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
 import type {
-  ChatMessage,
   ExpenseHeader,
   ExpensePayload,
   Me,
@@ -111,23 +110,11 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const [splitSheetOpen, setSplitSheetOpen] = useState(false);
   const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
   const [splitError, setSplitError] = useState<string | undefined>();
-  const lastIncomingMessageId = useMemo(() => {
-    if (!me || !conversation) return null;
-    let latest: ChatMessage | null = null;
-    for (const message of conversation.messages) {
-      if (message.senderId === me.id) continue;
-      if (
-        !latest ||
-        message.createdAt > latest.createdAt ||
-        (message.createdAt === latest.createdAt && message.id > latest.id)
-      ) {
-        latest = message;
-      }
-    }
-    return latest?.id ?? null;
-  }, [conversation, me]);
+  // The store's boundary is what the server can prove is contiguous; the
+  // thread confirms it actually rendered that far before we acknowledge it.
+  const readableThroughId = conversation?.reconcile.readableThroughMessageId ?? null;
+  const [renderedThroughId, setRenderedThroughId] = useState<string | null>(null);
 
-  const [historyComplete, setHistoryComplete] = useState(false);
   const chargeResetTimer = useRef<number | undefined>(undefined);
   const splitResetTimer = useRef<number | undefined>(undefined);
   const requestedRef = useRef(false);
@@ -191,11 +178,14 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   }, [groupId]);
 
   useEffect(() => {
-    if (!groupId || !dm || dm.unreadCount === 0 || !lastIncomingMessageId) return;
+    if (!groupId || !dm || dm.unreadCount === 0) return;
+    // Acknowledge no farther than the contiguous prefix the thread has
+    // actually rendered: a boundary beyond it would mark unseen messages read.
+    const boundary = renderedThroughId;
+    if (boundary === null) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-    markRead(groupId, lastIncomingMessageId).catch(() => {});
-  }, [dm, groupId, lastIncomingMessageId]);
-
+    markRead(groupId, boundary).catch(() => {});
+  }, [dm, groupId, renderedThroughId]);
 
   const handleRetryResolve = useCallback(() => {
     setResolveError(null);
@@ -205,14 +195,12 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const handleLoadMore = useCallback(() => {
     if (!groupId) return;
     const conv = useAppStore.getState().conversations[groupId];
-    if (!conv?.oldestCursor) return;
-    const cursor = conv.oldestCursor;
-    loadConversation(groupId, cursor)
-      .then(() => {
-        const next = useAppStore.getState().conversations[groupId];
-        if (next?.oldestCursor === cursor) setHistoryComplete(true);
-      })
-      .catch((error) => toast.error(ledgerErrorMessage(error)));
+    if (conv === undefined) return;
+    if (conv.messageCursor === null && conv.eventCursor === null) return;
+    loadConversation(groupId, {
+      messageBefore: conv.messageCursor,
+      eventBefore: conv.eventCursor,
+    }).catch((error) => toast.error(ledgerErrorMessage(error)));
   }, [groupId]);
 
   const handleSend = useCallback(
@@ -481,7 +469,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           events={conversation?.events ?? []}
           settlements={dm.settlements}
           nameOf={nameOf}
-          hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
+          hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
+          acknowledgeThroughId={readableThroughId}
+          onRenderedThrough={setRenderedThroughId}
           onLoadMore={handleLoadMore}
         />
       </div>
