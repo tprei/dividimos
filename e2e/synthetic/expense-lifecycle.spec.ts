@@ -48,10 +48,9 @@ test.describe("Expense Lifecycle", () => {
     await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
 
     await bobPage.getByRole("tab", { name: "Saldos" }).click();
-    await expect(bobPage.getByText("Você deve")).toBeVisible();
-    await expect(bobPage.getByText("R$ 50,00").first()).toBeVisible({
-      timeout: 10000,
-    });
+    const payRow = bobPage.getByRole("button", { name: /Você paga/i });
+    await expect(payRow).toBeVisible({ timeout: 10000 });
+    await expect(payRow).toContainText("R$ 50,00");
 
     // Bob records the payment
     const bobClient = await seed.authenticateAs(bob.id);
