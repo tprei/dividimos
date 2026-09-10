@@ -416,7 +416,7 @@ BEGIN
         'paidCents', ep.paid_cents,
         'user', COALESCE(ledger_user_profile_json(ep.user_id), 'null'::jsonb),
         'guest', COALESCE((
-          SELECT jsonb_build_object('id', gst.id, 'displayName', gst.display_name, 'claimedBy', gst.claimed_by)
+          SELECT jsonb_build_object('id', gst.id, 'displayName', gst.display_name, 'claimedBy', gst.claimed_by, 'claimLinkGeneration', COALESCE((SELECT ct.generation FROM guest_credentials.claim_tokens ct WHERE ct.guest_id = gst.id), 0))
           FROM guests gst
           WHERE gst.id = ep.guest_id
         ), 'null'::jsonb)

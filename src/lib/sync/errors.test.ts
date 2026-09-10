@@ -24,6 +24,12 @@ describe("errors", () => {
     expect(codeFromMessage("outstanding_balance")).toBe("outstanding_balance");
     expect(codeFromMessage("no_debt")).toBe("no_debt");
     expect(codeFromMessage("nudge_cooldown")).toBe("nudge_cooldown");
+    expect(codeFromMessage("guest_link_replacement_limit")).toBe(
+      "guest_link_replacement_limit",
+    );
+    expect(
+      ledgerErrorMessage(new LedgerError("guest_link_replacement_limit")),
+    ).toBe("Este link já foi substituído uma vez.");
   });
 
   it("codeFromMessage falls back to unknown for arbitrary text", () => {

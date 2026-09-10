@@ -79,7 +79,7 @@ describe("Edit Expense Flow", () => {
       }),
       participants: [
         makeUserParticipant(0, 5500, 11000),
-        makeGuestParticipant(1, 5500, { id: "guest-maria", displayName: "Maria", claimedBy: null }),
+        makeGuestParticipant(1, 5500, { id: "guest-maria", displayName: "Maria", claimedBy: null, claimLinkGeneration: 0 }),
       ],
     });
 

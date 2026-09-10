@@ -1600,7 +1600,7 @@ BEGIN
         'paidCents', ep.paid_cents,
         'user', COALESCE(ledger_user_profile_json(ep.user_id), 'null'::jsonb),
         'guest', COALESCE((
-          SELECT jsonb_build_object('id', gst.id, 'displayName', gst.display_name, 'claimedBy', gst.claimed_by)
+          SELECT jsonb_build_object('id', gst.id, 'displayName', gst.display_name, 'claimedBy', gst.claimed_by, 'claimLinkGeneration', COALESCE((SELECT ct.generation FROM guest_credentials.claim_tokens ct WHERE ct.guest_id = gst.id), 0))
           FROM guests gst
           WHERE gst.id = ep.guest_id
         ), 'null'::jsonb)
@@ -3150,6 +3150,7 @@ DECLARE
   v_bytes bytea;
   v_token text;
   v_digest bytea;
+  v_generation integer;
 BEGIN
   v_actor := current_user_id();
 
@@ -3171,6 +3172,13 @@ BEGIN
 
   IF v_guest.claimed_by IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_already_claimed';
+  END IF;
+  SELECT generation INTO v_generation
+  FROM guest_credentials.claim_tokens
+  WHERE guest_id = p_guest_id;
+
+  IF v_generation >= 2 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_link_replacement_limit';
   END IF;
 
   v_bytes := extensions.gen_random_bytes(32);

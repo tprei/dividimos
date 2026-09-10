@@ -51,7 +51,12 @@ interface ExpenseDetail {
     shareCents: number;
     paidCents: number;
     user: { id: string } | null;
-    guest: { id: string; displayName: string; claimedBy: string | null } | null;
+    guest: {
+      id: string;
+      displayName: string;
+      claimedBy: string | null;
+      claimLinkGeneration: number;
+    } | null;
   }>;
 }
 
@@ -170,6 +175,9 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(token.length).toBeGreaterThanOrEqual(40); // 32 random bytes, base64url
       expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
       initialToken = token;
+
+      const issued = await getExpenseDetail(payerClient, expenseId);
+      expect(issued.participants[2]?.guest?.claimLinkGeneration).toBe(1);
     });
 
     it("refuses token issuance by a non-member with not_a_member", async () => {
@@ -205,7 +213,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(resolved.groupName).toBe("Grupo hóspedes");
     });
 
-    it("rotates the token on re-issue: old resolves not_found, new resolves ready", async () => {
+    it("rotates the token on the first replacement: old resolves not_found, new resolves ready", async () => {
       rotatedToken = await rpc<string>(
         payerClient,
         "issue_guest_claim_token",
@@ -228,6 +236,26 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       expect(newResolved.status).toBe("ready");
       expect(newResolved.guestId).toBe(guestId);
+
+      const rotated = await getExpenseDetail(payerClient, expenseId);
+      expect(rotated.participants[2]?.guest?.claimLinkGeneration).toBe(2);
+    });
+
+    it("caps replacement at one: a third issue raises guest_link_replacement_limit", async () => {
+      const code = await expectRpcError(
+        Promise.resolve(
+          payerClient.rpc("issue_guest_claim_token", { p_guest_id: guestId }),
+        ),
+      );
+      expect(code).toBe("guest_link_replacement_limit");
+
+      const stillCurrent = await rpc<GuestClaimResolve>(
+        anonClient,
+        "resolve_guest_claim_token",
+        { p_token: rotatedToken },
+      );
+      expect(stillCurrent.status).toBe("ready");
+      expect(stillCurrent.guestId).toBe(guestId);
     });
 
     it("claims the guest as a new member and returns the mutation ack", async () => {

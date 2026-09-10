@@ -8,6 +8,7 @@ DECLARE
   v_bytes bytea;
   v_token text;
   v_digest bytea;
+  v_generation integer;
 BEGIN
   v_actor := current_user_id();
 
@@ -29,6 +30,13 @@ BEGIN
 
   IF v_guest.claimed_by IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_already_claimed';
+  END IF;
+  SELECT generation INTO v_generation
+  FROM guest_credentials.claim_tokens
+  WHERE guest_id = p_guest_id;
+
+  IF v_generation >= 2 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_link_replacement_limit';
   END IF;
 
   v_bytes := extensions.gen_random_bytes(32);

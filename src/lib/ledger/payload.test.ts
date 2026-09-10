@@ -202,7 +202,7 @@ describe("buildExpensePayload", () => {
         }),
         participants: [
           makeUserParticipant(0, 5000, 10000),
-          makeGuestParticipant(1, 5000, { id: "uuid-guest-helena", displayName: "Helena", claimedBy: null }),
+          makeGuestParticipant(1, 5000, { id: "uuid-guest-helena", displayName: "Helena", claimedBy: null, claimLinkGeneration: 0 }),
         ],
       }),
       [],
