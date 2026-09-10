@@ -3,6 +3,7 @@
 import type { ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 
 const SECTION_TABS: { key: ItemizedSectionKey; label: string }[] = [
+  { key: "account", label: "Conta" },
   { key: "items", label: "Itens" },
   { key: "split", label: "Divisão" },
   { key: "payment", label: "Pagamento" },

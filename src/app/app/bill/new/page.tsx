@@ -51,7 +51,7 @@ function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "split" || step === "participants") return "split";
   if (step === "payer") return "payment";
   if (step === "summary") return "review";
-  return "items";
+  return "account";
 }
 
 function NewBillPageContent() {

@@ -1,5 +1,7 @@
 "use client";
 
+import type { RefObject } from "react";
+import type { AccountSectionProps } from "@/components/bill/itemized/account-section";
 import type { ParticipantsStepProps } from "@/components/bill/wizard/participants-step";
 import { ParticipantsSheet } from "@/components/bill/itemized/participants-sheet";
 import { SectionContent, type SectionContentProps } from "@/components/bill/itemized/section-content";
@@ -18,6 +20,9 @@ export interface ItemizedWorkspaceProps {
     | "guests"
     | "splits"
     | "payers"
+    | "updateExpense"
+    | "occurredOn"
+    | "setOccurredOn"
     | "updateItem"
     | "removeItem"
     | "addItem"
@@ -28,6 +33,11 @@ export interface ItemizedWorkspaceProps {
     | "removePayerEntry"
   >;
   expense: Expense | null;
+  occurredOn: string;
+  groupValue: string | null;
+  dmEligible: boolean;
+  accountReady: boolean;
+  titleRef: RefObject<HTMLInputElement | null>;
   section: ItemizedSectionKey;
   onSectionChange: (section: ItemizedSectionKey) => void;
   amountInputs: Record<string, string>;
@@ -57,6 +67,11 @@ export function ItemizedWorkspace({
   store,
   expense,
   section,
+  occurredOn,
+  groupValue,
+  dmEligible,
+  accountReady,
+  titleRef,
   onSectionChange,
   amountInputs,
   invalidAmountIds,
@@ -80,11 +95,31 @@ export function ItemizedWorkspace({
   isEditing,
   submitting,
 }: ItemizedWorkspaceProps) {
+  const participantCount = participants.participants.length + participants.guests.length;
+  const account: AccountSectionProps = {
+    title: expense?.title ?? "",
+    occurredOn,
+    groupValue,
+    groups: participants.groups,
+    createGroupName: participants.createGroup.name,
+    createGroupEnabled: participants.createGroup.enabled,
+    dmEligible,
+    participantCount,
+    participantsOpen,
+    titleRef,
+    onTitleChange: (title) => store.updateExpense({ title }),
+    onOccurredOnChange: store.setOccurredOn,
+    onGroupSelect: participants.onSelectGroup,
+    onCreateGroupName: participants.onCreateGroupName,
+    onToggleCreateGroup: participants.onToggleCreateGroup,
+    onOpenParticipants: () => onParticipantsOpenChange(true),
+  };
   return (
     <>
       <SectionTabs section={section} onChange={onSectionChange} />
       <SectionContent
         section={section}
+        account={account}
         items={store.items}
         amountTexts={amountInputs}
         invalidAmountIds={invalidAmountIds}
@@ -102,7 +137,6 @@ export function ItemizedWorkspace({
         remainingCents={remainingCents}
         issues={issues}
         expandedId={expandedId}
-        participantsOpen={participantsOpen}
         onDescriptionChange={(itemId, description) => store.updateItem(itemId, { description })}
         onAmountChange={onAmountChange}
         onServiceFeeChange={onServiceFeeChange}
@@ -111,7 +145,6 @@ export function ItemizedWorkspace({
         onToggleItem={onToggleItem}
         onSaveDivision={onSaveDivision}
         onCancelDivision={onCancelDivision}
-        onOpenParticipants={() => onParticipantsOpenChange(true)}
         onSetPayerFull={store.setPayerFull}
         onSplitPaymentEqually={store.splitPaymentEqually}
         onSetPayerAmount={store.setPayerAmount}
@@ -124,7 +157,7 @@ export function ItemizedWorkspace({
       />
       <SectionFooter
         label={section === "review" ? (isEditing ? "Salvar" : "Criar conta") : "Continuar"}
-        disabled={submitting || (section === "review" && issues.length > 0)}
+        disabled={submitting || (section === "review" && issues.length > 0) || (section === "account" && !accountReady)}
         onClick={onFooter}
       />
     </>

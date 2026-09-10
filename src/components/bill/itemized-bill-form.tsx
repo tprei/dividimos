@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import { ScreenHeader } from "@/components/shared/screen-header";
-import { GroupSelect } from "@/components/bill/group-select";
 import type { ReviewParticipantTotal } from "@/components/bill/itemized/review-section";
 import { ItemizedWorkspace } from "@/components/bill/itemized/itemized-workspace";
 import { useItemizedIssues } from "@/components/bill/itemized/use-itemized-issues";
-import { Input } from "@/components/ui/input";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import { computeServiceFeeCents, parseExpenseCentsText, parseServiceFeeBasisPointsText } from "@/lib/expense-money";
 import { unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
@@ -16,7 +15,7 @@ import type { User } from "@/types";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
 
-export type ItemizedSectionKey = "items" | "split" | "payment" | "review";
+export type ItemizedSectionKey = "account" | "items" | "split" | "payment" | "review";
 
 export interface ItemizedBillFormProps {
   me: Me;
@@ -40,7 +39,7 @@ export interface ItemizedBillFormProps {
   initialSection?: ItemizedSectionKey;
 }
 
-const SECTION_ORDER: ItemizedSectionKey[] = ["items", "split", "payment", "review"];
+const SECTION_ORDER: ItemizedSectionKey[] = ["account", "items", "split", "payment", "review"];
 
 function serviceFeeText(basisPoints: number): string {
   return String(basisPoints / 100).replace(".", ",");
@@ -88,11 +87,12 @@ export function ItemizedBillForm({
   onBack,
   isEditing = false,
   submitting = false,
-  initialSection = "items",
+  initialSection = "account",
 }: ItemizedBillFormProps) {
   const store = useBillStore(
     useShallow((state) => ({
       expense: state.expense,
+      occurredOn: state.occurredOn,
       participants: state.participants,
       guests: state.guests,
       items: state.items,
@@ -100,6 +100,7 @@ export function ItemizedBillForm({
       payers: state.payers,
       updateExpense: state.updateExpense,
       updateItem: state.updateItem,
+      setOccurredOn: state.setOccurredOn,
       removeItem: state.removeItem,
       addItem: state.addItem,
       setItemDivision: state.setItemDivision,
@@ -119,6 +120,14 @@ export function ItemizedBillForm({
   );
   const [amountInputs, setAmountInputs] = useState<Record<string, string>>({});
   const titleRef = useRef<HTMLInputElement>(null);
+  const focusTitlePending = useRef(false);
+
+  useEffect(() => {
+    if (section === "account" && focusTitlePending.current) {
+      focusTitlePending.current = false;
+      titleRef.current?.focus();
+    }
+  }, [section]);
 
   useBackHandler(expandedId !== null && !participantsOpen, () => setExpandedId(null));
 
@@ -137,8 +146,13 @@ export function ItemizedBillForm({
   const totals = participantTotals(store.participants, store.guests, store.getParticipantTotal);
   const paidTotal = store.payers.reduce((sum, payer) => sum + payer.amountCents, 0);
   const dmEligible = store.participants.filter((participant) => participant.id !== me.id).length === 1 && store.guests.length === 0;
+  const accountReady = Boolean(expense?.title.trim()) && store.participants.length + store.guests.length >= 2;
+  const occurredOn = store.occurredOn ?? todayIsoDate();
 
-  const resolveTitle = useCallback(() => titleRef.current?.focus(), []);
+  const resolveTitle = useCallback(() => {
+    focusTitlePending.current = true;
+    setSection("account");
+  }, []);
   const issues = useItemizedIssues({
     title: expense?.title,
     itemCount: store.items.length,
@@ -214,29 +228,14 @@ export function ItemizedBillForm({
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col pb-20">
       <ScreenHeader back onBack={onBack} eyebrow="Nova conta" title="Conta detalhada" />
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,9rem)] gap-2 px-4">
-        <Input
-          ref={titleRef}
-          value={expense?.title ?? ""}
-          onChange={(event) => store.updateExpense({ title: event.target.value })}
-          placeholder="Nome da conta"
-          aria-label="Nome da conta"
-          className="h-11 min-w-0 rounded-xl"
-        />
-        <GroupSelect
-          value={selectedGroupId ?? groupSelection}
-          groups={groups}
-          onSelect={handleGroupSelect}
-          createValue={createGroupName}
-          onCreateValueChange={onCreateGroupName}
-          createGroupEnabled={createGroupEnabled}
-          onToggleCreateGroup={onToggleCreateGroup}
-          dmEligible={dmEligible}
-        />
-      </div>
       <ItemizedWorkspace
         store={store}
         expense={expense}
+        occurredOn={occurredOn}
+        groupValue={selectedGroupId ?? groupSelection}
+        dmEligible={dmEligible}
+        accountReady={accountReady}
+        titleRef={titleRef}
         section={section}
         onSectionChange={setSection}
         amountInputs={amountInputs}

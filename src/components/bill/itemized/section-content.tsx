@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountSection, type AccountSectionProps } from "@/components/bill/itemized/account-section";
 import { ItemsSection, type ItemsSectionProps } from "@/components/bill/itemized/items-section";
 import { PaymentSection, type PaymentSectionProps } from "@/components/bill/itemized/payment-section";
 import { ReviewSection, type ReviewSectionProps } from "@/components/bill/itemized/review-section";
@@ -27,7 +28,7 @@ export interface SectionContentProps {
   remainingCents: number;
   issues: ReviewSectionProps["issues"];
   expandedId: SplitSectionProps["expandedId"];
-  participantsOpen: SplitSectionProps["participantsOpen"];
+  account: AccountSectionProps;
   onDescriptionChange: ItemsSectionProps["onDescriptionChange"];
   onAmountChange: ItemsSectionProps["onAmountChange"];
   onServiceFeeChange: ItemsSectionProps["onServiceFeeChange"];
@@ -36,7 +37,6 @@ export interface SectionContentProps {
   onToggleItem: SplitSectionProps["onToggleItem"];
   onSaveDivision: SplitSectionProps["onSaveDivision"];
   onCancelDivision: SplitSectionProps["onCancelDivision"];
-  onOpenParticipants: SplitSectionProps["onOpenParticipants"];
   onSetPayerFull: PaymentSectionProps["onSetPayerFull"];
   onSplitPaymentEqually: PaymentSectionProps["onSplitPaymentEqually"];
   onSetPayerAmount: PaymentSectionProps["onSetPayerAmount"];
@@ -62,7 +62,7 @@ export function SectionContent({
   remainingCents,
   issues,
   expandedId,
-  participantsOpen,
+  account,
   onDescriptionChange,
   onAmountChange,
   onServiceFeeChange,
@@ -71,12 +71,14 @@ export function SectionContent({
   onToggleItem,
   onSaveDivision,
   onCancelDivision,
-  onOpenParticipants,
   onSetPayerFull,
   onSplitPaymentEqually,
   onSetPayerAmount,
   onRemovePayerEntry,
 }: SectionContentProps) {
+  if (section === "account") {
+    return <AccountSection {...account} />;
+  }
   if (section === "items") {
     return (
       <ItemsSection
@@ -105,11 +107,9 @@ export function SectionContent({
         fixedFees={fixedFees}
         grandTotal={grandTotal}
         expandedId={expandedId}
-        participantsOpen={participantsOpen}
         onToggleItem={onToggleItem}
         onSaveDivision={onSaveDivision}
         onCancelDivision={onCancelDivision}
-        onOpenParticipants={onOpenParticipants}
       />
     );
   }

@@ -1,11 +1,9 @@
 "use client";
 
 import { Fragment } from "react";
-import { ChevronDown, Users } from "lucide-react";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { ItemDivisionEditor } from "@/components/bill/item-division-editor";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { divisionForItem, type ItemDivisionValue } from "@/lib/item-division";
@@ -20,11 +18,9 @@ export interface SplitSectionProps {
   fixedFees: number;
   grandTotal: number;
   expandedId: string | null;
-  participantsOpen: boolean;
   onToggleItem: (itemId: string) => void;
   onSaveDivision: (itemId: string, value: ItemDivisionValue) => void;
   onCancelDivision: () => void;
-  onOpenParticipants: () => void;
 }
 
 function participantEntries(participants: User[], guests: Guest[]): ItemDivisionParticipant[] {
@@ -56,35 +52,6 @@ function assigneePeople(
     .filter((person): person is ItemDivisionParticipant => person !== undefined);
 }
 
-function ParticipantDisclosure({
-  count,
-  open,
-  onOpen,
-}: {
-  count: number;
-  open: boolean;
-  onOpen: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      aria-expanded={open}
-      onClick={onOpen}
-      className="flex min-h-11 w-full items-center justify-between rounded-xl px-4"
-    >
-      <span className="flex items-center gap-2">
-        <Users className="size-4" />
-        Participantes
-      </span>
-      <span className="flex items-center gap-2">
-        <Badge variant="secondary">{count}</Badge>
-        <ChevronDown className="size-4 text-muted-foreground" />
-      </span>
-    </Button>
-  );
-}
-
 export function SplitSection({
   items,
   participants,
@@ -94,17 +61,14 @@ export function SplitSection({
   fixedFees,
   grandTotal,
   expandedId,
-  participantsOpen,
   onToggleItem,
   onSaveDivision,
   onCancelDivision,
-  onOpenParticipants,
 }: SplitSectionProps) {
   const people = participantEntries(participants, guests);
 
   return (
     <div className="space-y-3 px-4 py-3">
-      <ParticipantDisclosure count={people.length} open={participantsOpen} onOpen={onOpenParticipants} />
       <div className="divide-y divide-border rounded-2xl border bg-card">
         {items.map((item) => {
           const expanded = expandedId === item.id;
@@ -131,17 +95,15 @@ export function SplitSection({
                 )}
               </button>
               {expanded && (
-                <div className="px-4 pb-4 pt-1">
-                  <ItemDivisionEditor
-                    itemId={item.id}
-                    itemName={item.description || "Item sem nome"}
-                    itemCents={item.totalPriceCents}
-                    participants={people}
-                    value={division}
-                    onSave={(value) => onSaveDivision(item.id, value)}
-                    onCancel={onCancelDivision}
-                  />
-                </div>
+                <ItemDivisionEditor
+                  itemId={item.id}
+                  itemName={item.description || "Item sem nome"}
+                  itemCents={item.totalPriceCents}
+                  participants={people}
+                  value={division}
+                  onSave={(value) => onSaveDivision(item.id, value)}
+                  onCancel={onCancelDivision}
+                />
               )}
             </Fragment>
           );
