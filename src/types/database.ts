@@ -997,6 +997,10 @@ export type Database = {
         }
         Returns: Json
       }
+      cancel_vendor_charge: {
+        Args: { p_charge_id: string }
+        Returns: undefined
+      }
       record_vendor_charge: {
         Args: { p_amount_cents: number; p_description?: string }
         Returns: Json
