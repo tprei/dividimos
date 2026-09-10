@@ -7,6 +7,7 @@ import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 function simulateScanConfirm(
   result: ReceiptOcrResult,
+  receiptAccessKey: string | null = null,
   divisions: Record<number, ItemDivisionValue> = {},
   occurredOn = "2026-09-10",
 ) {
@@ -17,6 +18,7 @@ function simulateScanConfirm(
     "itemized",
     result.merchant || undefined,
   );
+  store.setReceiptAccessKey(receiptAccessKey);
   store.updateExpense({
     serviceFeePercent: result.serviceFeeBasisPoints / 100,
     serviceFeeBasisPoints: result.serviceFeeBasisPoints,
@@ -85,6 +87,11 @@ describe("scan confirm → bill store integration", () => {
     simulateScanConfirm(sampleResult);
     const { expense } = useBillStore.getState();
     expect(expense!.serviceFeePercent).toBe(10);
+  });
+  it("keeps the scanned receipt key with the draft", () => {
+    const receiptAccessKey = "12345678901234567890123456789012345678901234";
+    simulateScanConfirm(sampleResult, receiptAccessKey);
+    expect(useBillStore.getState().receiptAccessKey).toBe(receiptAccessKey);
   });
 
   it("populates all scanned items in the store", () => {
@@ -166,7 +173,7 @@ describe("scan confirm → bill store integration", () => {
       },
     };
 
-    simulateScanConfirm(sampleResult, divisions, "2026-09-09");
+    simulateScanConfirm(sampleResult, null, divisions, "2026-09-09");
 
     const store = useBillStore.getState();
     expect(store.occurredOn).toBe("2026-09-09");

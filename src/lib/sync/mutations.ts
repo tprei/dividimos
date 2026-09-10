@@ -60,10 +60,14 @@ function revertExpenseDetail(expenseId: string, patched: ExpenseDetail, prior: E
   };
 }
 
-function removeOptimisticExpense(clientId: string, groupId: string): RollbackStep {
+function removeOptimisticExpense(
+  clientId: string,
+  groupId: string,
+  patched: ExpenseSummary,
+): RollbackStep {
   return () => {
     useAppStore.getState().patch((s) => {
-      if (s.expenses[clientId]?.groupId !== groupId) return {};
+      if (s.expenses[clientId] !== patched || patched.groupId !== groupId) return {};
       const expenses = { ...s.expenses };
       delete expenses[clientId];
       const list = s.expenseLists[groupId];
@@ -130,18 +134,17 @@ export async function createExpense(input: {
   groupId: string;
   header: ExpenseHeader;
   payload: ExpensePayload;
+  clientId?: string;
 }): Promise<MutationAck> {
   const { groupId, header, payload } = input;
+  const creationClientId = input.clientId ?? crypto.randomUUID();
   const store = useAppStore.getState();
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
-  const clientId = crypto.randomUUID();
   const { myShareCents, myPaidCents } = computeMyShareAndPaid(payload, me.id);
-  const rollback: RollbackStep[] = [removeOptimisticExpense(clientId, groupId)];
-
-  store.upsertExpense({
-    id: clientId,
+  const optimisticExpense: ExpenseSummary = {
+    id: creationClientId,
     groupId,
     creatorId: me.id,
     status: "active",
@@ -155,8 +158,12 @@ export async function createExpense(input: {
     myShareCents,
     myPaidCents,
     participantCount: payload.participants.length,
-  });
+  };
+  const rollback: RollbackStep[] = [
+    removeOptimisticExpense(creationClientId, groupId, optimisticExpense),
+  ];
 
+  store.upsertExpense(optimisticExpense);
   const priorGroup = store.groups[groupId];
   if (priorGroup) {
     const patchedGroup: GroupSnapshot = {
@@ -173,7 +180,7 @@ export async function createExpense(input: {
     const ack = await rpc(
       "create_expense",
       {
-        p_client_id: clientId,
+        p_client_id: creationClientId,
         p_group_id: groupId,
         p_occurred_on: header.occurredOn,
         p_title: header.title,
@@ -183,10 +190,13 @@ export async function createExpense(input: {
         p_service_fee_bps: header.serviceFeeBasisPoints,
         p_fixed_fee_cents: header.fixedFeeCents,
         p_payload: payload,
+        p_chave_acesso: header.receiptAccessKey ?? null,
       },
       decodeMutationAck,
     );
-    if (ack.expenseId) useAppStore.getState().replaceExpenseId(clientId, ack.expenseId);
+    if (ack.expenseId) {
+      useAppStore.getState().replaceExpenseId(creationClientId, ack.expenseId);
+    }
     void refreshGroup(groupId);
     notify(ack.eventId);
     return ack;

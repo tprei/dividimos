@@ -1768,9 +1768,10 @@ describe("occurredOn and draft persistence", () => {
     useBillStore.getState().setOccurredOn("2026-09-06");
 
     const persisted = JSON.parse(localStorage.getItem("dividimos-draft") ?? "{}");
-    expect(persisted.version).toBe(1);
+    expect(persisted.version).toBe(2);
     expect(persisted.state.occurredOn).toBe("2026-09-06");
     expect(persisted.state.totalAmountInput).toBe(4200);
+    expect(persisted.state.creationClientId).toBe(useBillStore.getState().creationClientId);
     expect(persisted.state.currentUser).toBeUndefined();
 
     useBillStore.getState().reset();
