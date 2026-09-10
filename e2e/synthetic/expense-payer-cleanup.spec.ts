@@ -44,7 +44,7 @@ test.describe("Expense payer cleanup (browser)", () => {
     await page.getByRole("button", { name: "Continuar" }).click();
 
     // payer: Alice pays the full reviewed (Bob-excluded) total.
-    await expect(page.getByText(/quem pagou/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("heading", { name: "Quem pagou" })).toBeVisible({ timeout: 5000 });
     await page.getByRole("button", { name: /Alice/ }).click();
     await page.getByRole("button", { name: "Criar conta" }).click();
 
@@ -244,7 +244,7 @@ test.describe("Expense payer cleanup (browser)", () => {
     await page.getByRole("button", { name: "Continuar" }).click();
 
     // Bob (a real registered user, unaffected by the guest removal) pays.
-    await expect(page.getByText(/quem pagou/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole("heading", { name: "Quem pagou" })).toBeVisible({ timeout: 5000 });
     await page.getByRole("button", { name: /Bob/ }).click();
     await page.getByRole("button", { name: "Criar conta" }).click();
 
