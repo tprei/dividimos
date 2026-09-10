@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, ExternalLink, RefreshCw } from "lucide-react";
+import { Copy, MessageCircle, RefreshCw, Share2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { clearClaimToken, readClaimToken, writeClaimToken } from "@/lib/claim-to
 import { formatBRL } from "@/lib/currency";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { issueGuestClaimToken } from "@/lib/sync/mutations-group";
+import { cn } from "@/lib/utils";
 import { refreshExpense } from "@/lib/sync/refresh";
 import type { GuestParticipant } from "@/types/ledger";
 
@@ -84,14 +85,15 @@ export function GuestInviteDialog({
   const claimUrl = token ? buildClaimUrl(token) : null;
   const canReplace = guest.claimLinkGeneration === 1;
 
+  const shareText = `Participe da conta "${expenseTitle}" no Dividimos! Sua parte: ${formatBRL(shareCents)}`;
+  const whatsappUrl = claimUrl
+    ? `https://wa.me/?text=${encodeURIComponent(`${shareText}\n${claimUrl}`)}`
+    : null;
+
   async function handleShare() {
     if (!claimUrl) return;
     try {
-      await navigator.share({
-        title: "Dividimos",
-        text: `Participe da conta "${expenseTitle}" no Dividimos! Sua parte: ${formatBRL(shareCents)}`,
-        url: claimUrl,
-      });
+      await navigator.share({ title: "Dividimos", text: shareText, url: claimUrl });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       toast.error("Não foi possível compartilhar");
@@ -123,18 +125,29 @@ export function GuestInviteDialog({
               {claimUrl}
             </p>
           )}
-          {canShare && (
+          <div className="grid grid-cols-2 gap-2">
+            {canShare && (
+              <Button
+                type="button"
+                className="h-11 w-full"
+                disabled={!claimUrl}
+                onClick={() => void handleShare()}
+              >
+                <Share2 className="size-4" />
+                Compartilhar
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
-              className="h-11 w-full"
-              disabled={!claimUrl}
-              onClick={() => void handleShare()}
+              className={cn("h-11 w-full", !canShare && "col-span-2")}
+              disabled={!whatsappUrl}
+              render={<a href={whatsappUrl ?? undefined} target="_blank" rel="noopener noreferrer" aria-label="Enviar pelo WhatsApp" />}
             >
-              <ExternalLink className="size-4" />
-              Compartilhar
+              <MessageCircle className="size-4" />
+              WhatsApp
             </Button>
-          )}
+          </div>
           <Button
             type="button"
             variant="outline"
