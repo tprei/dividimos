@@ -181,6 +181,77 @@ describe("applyBootstrap", () => {
     expect(state.lastBootstrapAt).not.toBeNull();
   });
 
+  it("retains every slice of a group whose incoming snapshot is older", () => {
+    const localExpense = summary("e-local", "g1", "2026-01-05T00:00:00Z");
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", [localExpense], { group: { ...snapshot("g1", []).group, ledgerVersion: 9 } }) },
+      groupOrder: ["g1"],
+      expenseLists: { g1: { ids: ["e-local"], oldestCursor: null, complete: true } },
+      conversations: { g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T00:00:00Z")] }) },
+      expenses: { "e-local": localExpense },
+    });
+
+    const stale = snapshot("g1", [summary("e-stale", "g1", "2026-01-01T00:00:00Z")], {
+      group: { ...snapshot("g1", []).group, ledgerVersion: 4 },
+    });
+    useAppStore.getState().applyBootstrap({ me, serverTime: "2026-01-06T00:00:00Z", groups: [stale] }, ["g1"]);
+
+    const state = useAppStore.getState();
+    expect(state.groups.g1?.group.ledgerVersion).toBe(9);
+    expect(state.expenseLists.g1?.ids).toEqual(["e-local"]);
+    expect(state.conversations.g1?.messages).toHaveLength(1);
+    // A rejected group must not have seeded its expenses either.
+    expect(state.expenses["e-stale"]).toBeUndefined();
+  });
+
+  it("keeps a group created after the request started and does not resurrect a removed one", () => {
+    useAppStore.setState({
+      me,
+      groups: { "g-new": snapshot("g-new", []) },
+      groupOrder: ["g-new"],
+    });
+
+    // The request left when only g-old existed: g-new is newer than this
+    // response, and g-old was removed after it started.
+    useAppStore.getState().applyBootstrap(
+      { me, serverTime: "2026-01-06T00:00:00Z", groups: [snapshot("g-old", [])] },
+      ["g-old"],
+    );
+
+    const state = useAppStore.getState();
+    expect(Object.keys(state.groups)).toEqual(["g-new"]);
+  });
+
+  it("records the bootstrapped account and clears the error", () => {
+    useAppStore.setState({ bootstrapStatus: "error", bootstrapErrorCode: "network" });
+
+    useAppStore.getState().applyBootstrap({ me, serverTime: "2026-01-06T00:00:00Z", groups: [] });
+
+    const state = useAppStore.getState();
+    expect(state.bootstrapStatus).toBe("ready");
+    expect(state.bootstrapErrorCode).toBeNull();
+    expect(state.lastBootstrappedAccountId).toBe(me.id);
+  });
+
+  it("keeps projections when a read fails", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+      groupOrder: ["g1"],
+      lastBootstrappedAccountId: me.id,
+      bootstrapStatus: "ready",
+    });
+
+    useAppStore.getState().setBootstrapError("network");
+
+    const state = useAppStore.getState();
+    expect(state.bootstrapStatus).toBe("error");
+    expect(state.bootstrapErrorCode).toBe("network");
+    expect(Object.keys(state.groups)).toEqual(["g1"]);
+    expect(state.lastBootstrappedAccountId).toBe(me.id);
+  });
+
   it("seeds complete=false when the snapshot has 20 recent expenses", () => {
     useAppStore.getState().applyBootstrap({
       me,
