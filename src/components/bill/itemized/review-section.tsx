@@ -2,9 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { BillSummary } from "@/components/bill/bill-summary";
-import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
-import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { formatBRL } from "@/lib/currency";
@@ -17,14 +15,6 @@ export interface ReviewIssue {
   onResolve: () => void;
 }
 
-export interface ReviewParticipantTotal {
-  id: string;
-  name: string;
-  avatarUrl: string | null;
-  isGuest: boolean;
-  cents: number;
-}
-
 export interface ReviewSectionProps {
   expense: Expense | null;
   items: ExpenseItem[];
@@ -32,7 +22,6 @@ export interface ReviewSectionProps {
   participants: User[];
   guests: Guest[];
   payers: ExpensePayer[];
-  totals: ReviewParticipantTotal[];
   partial: boolean;
   remainingCents: number;
   issues: ReviewIssue[];
@@ -45,7 +34,6 @@ export function ReviewSection({
   participants,
   guests,
   payers,
-  totals,
   partial,
   remainingCents,
   issues,
@@ -79,18 +67,6 @@ export function ReviewSection({
         </div>
       )}
 
-      <SectionHeading title="Itens" />
-      <div className="divide-y divide-border rounded-2xl border bg-card">
-        {items.map((item) => (
-          <div key={item.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
-            <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">
-              {item.description || "Item sem nome"}
-            </span>
-            <Money cents={item.totalPriceCents} className="shrink-0 text-sm" />
-          </div>
-        ))}
-      </div>
-
       <BillSummary
         expense={expense}
         items={items}
@@ -98,27 +74,9 @@ export function ReviewSection({
         participants={participants}
         guests={guests}
       />
-
-      <SectionHeading title="Por pessoa" trailing={partial ? "Parcial" : undefined} />
-      <div className="divide-y divide-border rounded-2xl border bg-card">
-        {totals.map((total) => (
-          <div key={total.id} className="flex min-h-12 items-center gap-3 px-4 py-2">
-            {total.isGuest ? (
-              <GuestAvatar size="sm" />
-            ) : (
-              <UserAvatar name={total.name} avatarUrl={total.avatarUrl} size="sm" />
-            )}
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-              {total.name}
-              {total.isGuest && <GuestBadge />}
-            </span>
-            <Money cents={total.cents} className="text-sm" />
-          </div>
-        ))}
-      </div>
-      {partial && remainingCents > 0 && (
+      {partial && (
         <p className="px-1 text-xs font-semibold text-muted-foreground">
-          A distribuir: {formatBRL(remainingCents)}.
+          Totais parciais · a distribuir: {formatBRL(remainingCents)}.
         </p>
       )}
 

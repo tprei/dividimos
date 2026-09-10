@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { ExpenseDetail } from "./expense-detail";
 import { LedgerError } from "@/lib/sync/errors";
 import { deleteExpense } from "@/lib/sync/mutations";
+import { issueGuestClaimToken } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type { ExpenseDetail as ExpenseDetailType, GroupSnapshot, Me } from "@/types/ledger";
@@ -132,7 +133,7 @@ function makeDetail(
           { kind: "user", userId: "user-1" },
           { kind: "guest", guestId: "guest-1", displayName: "Bruno" },
         ],
-        shares: [6000, 6000],
+        shares: [7000, 5000],
         payers: [{ participantIndex: 0, amountCents: 12000 }],
         itemAssignments: null,
       },
@@ -163,7 +164,7 @@ function makeDetail(
             { kind: "user", userId: "user-1" },
             { kind: "guest", guestId: "guest-1", displayName: "Bruno" },
           ],
-          shares: [6000, 6000],
+          shares: [7000, 5000],
           payers: [{ participantIndex: 0, amountCents: 12000 }],
           itemAssignments: null,
         },
@@ -187,7 +188,7 @@ function makeDetail(
             { kind: "user", userId: "user-1" },
             { kind: "guest", guestId: "guest-1", displayName: "Bruno" },
           ],
-          shares: [6000, 6000],
+          shares: [7000, 5000],
           payers: [{ participantIndex: 0, amountCents: 12000 }],
           itemAssignments: null,
         },
@@ -204,7 +205,7 @@ function makeDetail(
       {
         participantIndex: 0,
         kind: "user",
-        shareCents: 6000,
+        shareCents: 7000,
         paidCents: 12000,
         user: { id: "user-1", handle: "alice", name: "Alice", avatarUrl: null },
         guest: null,
@@ -212,10 +213,15 @@ function makeDetail(
       {
         participantIndex: 1,
         kind: "guest",
-        shareCents: 6000,
+        shareCents: 5000,
         paidCents: 0,
         user: null,
-        guest: { id: "guest-1", displayName: "Bruno", claimedBy: null },
+        guest: {
+          id: "guest-1",
+          displayName: "Bruno",
+          claimedBy: null,
+          claimLinkGeneration: 0,
+        },
       },
     ],
     group: {
@@ -241,6 +247,7 @@ beforeEach(() => {
   useAppStore.getState().reset();
   vi.clearAllMocks();
   vi.mocked(refreshExpense).mockResolvedValue(undefined);
+  window.localStorage.clear();
 });
 
 describe("ExpenseDetail", () => {
@@ -253,6 +260,59 @@ describe("ExpenseDetail", () => {
     expect(
       screen.getByText("Carol Souza mudou o nome de “Almoço” para “Jantar”"),
     ).toBeInTheDocument();
+  });
+  it("shows the total, the Você paid and share row, and guest shares summing to the total", () => {
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    const list = within(screen.getByRole("list", { name: "Participantes" }));
+    const rows = list.getAllByRole("listitem");
+    expect(within(rows[0]).getByText("Você")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent?.replace(/\s+/g, " ") === "Pagou R$ 120,00",
+      ),
+    ).toBeInTheDocument();
+    expect(within(rows[0]).getByText("R$ 70,00")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Convidado")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("R$ 50,00")).toBeInTheDocument();
+    expect(screen.getAllByText("R$ 120,00")).toHaveLength(2);
+    expect(screen.queryByText(/depois de entrar/i)).not.toBeInTheDocument();
+  });
+
+  it("opens the invite dialog from the guest row and issues the first link", async () => {
+    const user = userEvent.setup();
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Convidar Bruno" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText("Convidar Bruno"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Parte de R$ 50,00 em Jantar"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(issueGuestClaimToken).toHaveBeenCalledWith("guest-1");
+    });
+    await waitFor(() => {
+      expect(refreshExpense).toHaveBeenCalledWith("e1");
+    });
+  });
+
+  it("returns to /app from the Pronto footer", async () => {
+    const user = userEvent.setup();
+    seedStore("active");
+    render(<ExpenseDetail expenseId="e1" />);
+
+    await user.click(screen.getByRole("button", { name: "Pronto" }));
+
+    expect(routerMock.push).toHaveBeenCalledWith("/app");
   });
 
   it("shows deleted banner and Restaurar button when status is deleted", () => {

@@ -3,15 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import { ScreenHeader } from "@/components/shared/screen-header";
-import type { ReviewParticipantTotal } from "@/components/bill/itemized/review-section";
 import { ItemizedWorkspace } from "@/components/bill/itemized/itemized-workspace";
 import { useItemizedIssues } from "@/components/bill/itemized/use-itemized-issues";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import { computeServiceFeeCents, parseExpenseCentsText, parseServiceFeeBasisPointsText } from "@/lib/expense-money";
 import { unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
 import { divisionForItem } from "@/lib/item-division";
-import { useBillStore, type Guest } from "@/stores/bill-store";
-import type { User } from "@/types";
+import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
 
@@ -43,29 +41,6 @@ const SECTION_ORDER: ItemizedSectionKey[] = ["account", "items", "split", "payme
 
 function serviceFeeText(basisPoints: number): string {
   return String(basisPoints / 100).replace(".", ",");
-}
-
-function participantTotals(
-  participants: User[],
-  guests: Guest[],
-  getParticipantTotal: (id: string) => number,
-): ReviewParticipantTotal[] {
-  return [
-    ...participants.map((participant) => ({
-      id: participant.id,
-      name: participant.name,
-      avatarUrl: participant.avatarUrl ?? null,
-      isGuest: false,
-      cents: getParticipantTotal(participant.id),
-    })),
-    ...guests.map((guest) => ({
-      id: guest.id,
-      name: guest.name,
-      avatarUrl: null,
-      isGuest: true,
-      cents: getParticipantTotal(guest.id),
-    })),
-  ];
 }
 
 export function ItemizedBillForm({
@@ -143,7 +118,6 @@ export function ItemizedBillForm({
   }, 0);
   const partial = unresolvedItems.length > 0;
   const remainingCents = partial ? Math.max(0, itemsTotal - assignedItemCents) : 0;
-  const totals = participantTotals(store.participants, store.guests, store.getParticipantTotal);
   const paidTotal = store.payers.reduce((sum, payer) => sum + payer.amountCents, 0);
   const dmEligible = store.participants.filter((participant) => participant.id !== me.id).length === 1 && store.guests.length === 0;
   const accountReady = Boolean(expense?.title.trim()) && store.participants.length + store.guests.length >= 2;
@@ -243,7 +217,6 @@ export function ItemizedBillForm({
         serviceFeeInput={serviceFeeInput}
         serviceFeeCents={serviceFeeCents}
         grandTotal={grandTotal}
-        totals={totals}
         partial={partial}
         remainingCents={remainingCents}
         issues={issues}

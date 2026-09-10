@@ -30,7 +30,7 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, action }: S
       )}
       <div className="min-w-0 flex-1">
         {eyebrow && (
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <p className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
             {eyebrow}
           </p>
         )}

@@ -507,7 +507,7 @@ export function decodeExpenseSummaries(
   return arrayOf(raw, path, decodeExpenseSummary);
 }
 
-const GUEST_PARTICIPANT_KEYS = ["id", "displayName", "claimedBy"] as const;
+const GUEST_PARTICIPANT_KEYS = ["id", "displayName", "claimedBy", "claimLinkGeneration"] as const;
 
 export function decodeGuestParticipant(
   raw: unknown,
@@ -522,7 +522,9 @@ export function decodeGuestParticipant(
   if (!d.ok) return d;
   const c = nullableId(raw.claimedBy, [...path, "claimedBy"]);
   if (!c.ok) return c;
-  return ok({ id: gid.value, displayName: d.value, claimedBy: c.value });
+  const gen = int(raw.claimLinkGeneration, [...path, "claimLinkGeneration"]);
+  if (!gen.ok) return gen;
+  return ok({ id: gid.value, displayName: d.value, claimedBy: c.value, claimLinkGeneration: gen.value });
 }
 
 const PARTICIPANT_KEYS = [

@@ -126,17 +126,13 @@ function ConsolidatedSide({
           />
         ))}
       </div>
-      <div className="relative h-4" aria-hidden="true">
-        {resolved.map((entry, index) => (
+      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5" aria-hidden="true">
+        {resolved.map((entry) => (
           <span
             key={entry.balance.participantId}
-            className={cn(
-              "absolute top-0 -translate-x-1/2 font-mono text-[10px] font-medium tabular-nums",
-              toneClass,
-            )}
-            style={{ left: `clamp(22px, ${centers[index]}%, calc(100% - 22px))` }}
+            className={cn("font-mono text-[10px] font-medium tabular-nums whitespace-nowrap", toneClass)}
           >
-            {formatBRL(Math.abs(entry.balance.netCents)).slice(3)}
+            {entry.person.name.split(" ")[0]} {formatBRL(Math.abs(entry.balance.netCents)).slice(3)}
           </span>
         ))}
       </div>

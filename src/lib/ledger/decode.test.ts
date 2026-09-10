@@ -8,6 +8,7 @@ import {
   decodeExpensePayload,
   decodeGroupEvent,
   decodeGuestClaimResolution,
+  decodeGuestParticipant,
   decodeInviteLink,
   decodeInvitePreview,
   decodeMutationAck,
@@ -463,5 +464,37 @@ describe("additional wire decoders", () => {
       },
     };
     expect(decodeExpenseDetail(detail).ok).toBe(true);
+  });
+  it("decodes guest participants with the claim link generation and exact keys", () => {
+    const guest = {
+      id: "guest-1",
+      displayName: "Zé",
+      claimedBy: null,
+      claimLinkGeneration: 2,
+    };
+    const result = decodeGuestParticipant(guest);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual(guest);
+    }
+
+    expect(
+      decodeGuestParticipant({ ...guest, unexpected: true }).ok,
+    ).toBe(false);
+    expect(
+      decodeGuestParticipant({
+        id: "guest-1",
+        displayName: "Zé",
+        claimedBy: null,
+      }).ok,
+    ).toBe(false);
+    expect(
+      decodeGuestParticipant({
+        id: "guest-1",
+        displayName: "Zé",
+        claimedBy: null,
+        claimLinkGeneration: 1.5,
+      }).ok,
+    ).toBe(false);
   });
 });

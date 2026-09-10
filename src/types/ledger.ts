@@ -151,6 +151,7 @@ export interface GuestParticipant {
   id: string;
   displayName: string;
   claimedBy: string | null;
+  claimLinkGeneration: number;
 }
 
 export interface Participant {

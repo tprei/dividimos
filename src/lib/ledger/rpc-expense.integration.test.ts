@@ -63,7 +63,12 @@ type ExpenseDetail = {
     kind: string;
     shareCents: number;
     paidCents: number;
-    guest: { id: string; displayName: string; claimedBy: string | null } | null;
+    guest: {
+      id: string;
+      displayName: string;
+      claimedBy: string | null;
+      claimLinkGeneration: number;
+    } | null;
   }>;
 };
 
@@ -920,6 +925,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(guestParticipant?.kind).toBe("guest");
     expect(guestParticipant?.guest?.displayName).toBe("Zé");
     expect(guestParticipant?.guest?.claimedBy).toBeNull();
+    expect(guestParticipant?.guest?.claimLinkGeneration).toBe(0);
     expect(typeof detail.current.payload.participants[1]?.guestId).toBe("string");
   });
 });

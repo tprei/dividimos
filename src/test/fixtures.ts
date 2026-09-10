@@ -126,7 +126,7 @@ export function makeUserParticipant(
 export function makeGuestParticipant(
   index: number,
   shareCents: number,
-  guest = { id: "guest-uuid-1", displayName: "Maria", claimedBy: null },
+  guest = { id: "guest-uuid-1", displayName: "Maria", claimedBy: null, claimLinkGeneration: 0 },
 ): Participant {
   return { participantIndex: index, kind: "guest", shareCents, paidCents: 0, user: null, guest };
 }

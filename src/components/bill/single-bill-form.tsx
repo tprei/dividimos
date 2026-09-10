@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
+
 import { SingleBillDetails } from "@/components/bill/single-bill/details-section";
 import {
   initialFixedTexts,
@@ -139,7 +141,7 @@ export function SingleBillForm({
           groups={groups}
           totalCents={totalCents}
           title={title}
-          occurredOn={store.occurredOn ?? ""}
+          occurredOn={store.occurredOn ?? todayIsoDate()}
           groupSelection={groupSelection}
           createGroupName={createGroupName}
           createGroupEnabled={createGroupEnabled}

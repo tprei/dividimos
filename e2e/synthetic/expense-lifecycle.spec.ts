@@ -24,8 +24,8 @@ test.describe("Expense Lifecycle", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText("Lifecycle Dinner")).toBeVisible();
-    await expect(page.getByText("Total da despesa")).toBeVisible();
-    await expect(page.getByText("R$ 100,00", { exact: true })).toBeVisible();
+    const total = page.getByText("Total", { exact: true }).locator("..");
+    await expect(total).toContainText("R$ 100,00");
 
     // Bob views the same expense in a separate context
     const bobContext = await browser.newContext();
@@ -36,7 +36,7 @@ test.describe("Expense Lifecycle", () => {
     await bobPage.waitForLoadState("networkidle");
 
     await expect(bobPage.getByText("Lifecycle Dinner")).toBeVisible();
-    await expect(bobPage.getByText("Total da despesa")).toBeVisible();
+    await expect(bobPage.getByText("Total", { exact: true }).locator("..")).toContainText("R$ 100,00");
 
     // Bob sees the bill and his debt on the group page
     await bobPage.goto(`/app/groups/${group.id}`);
