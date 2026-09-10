@@ -252,10 +252,23 @@ BEGIN
       SELECT count(*)::integer FROM chat_messages m
       WHERE m.group_id = g.id
         AND m.sender_id <> p_viewer
-        AND m.created_at > COALESCE((
-          SELECT cr.last_read_at FROM conversation_reads cr
-          WHERE cr.user_id = p_viewer AND cr.group_id = g.id
-        ), '-infinity'::timestamptz)
+        AND (
+          NOT EXISTS (
+            SELECT 1
+            FROM conversation_reads cr
+            WHERE cr.user_id = p_viewer AND cr.group_id = g.id
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM conversation_reads cr
+            WHERE cr.user_id = p_viewer
+              AND cr.group_id = g.id
+              AND (
+                cr.last_read_message_id IS NULL
+                OR (m.created_at, m.id) > (cr.last_read_at, cr.last_read_message_id)
+              )
+          )
+        )
     ),
     'lastMessage', COALESCE((
       SELECT jsonb_build_object('content', m.content, 'senderId', m.sender_id, 'createdAt', to_jsonb(m.created_at))

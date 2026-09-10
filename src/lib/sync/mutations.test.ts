@@ -1006,7 +1006,7 @@ describe("mutations", () => {
   });
 
   describe("markRead", () => {
-    it("optimistically zeroes unreadCount and rolls back on failure", async () => {
+    it("keeps unread state until the server confirms the boundary", async () => {
       useAppStore.setState({
         hydrated: true,
         me: ME,
@@ -1023,14 +1023,17 @@ describe("mutations", () => {
       expect(useAppStore.getState().groups.g1?.unreadCount).toBe(3);
 
       vi.mocked(rpcVoid).mockRejectedValueOnce(new Error("failed"));
-      await expect(markRead("g1")).rejects.toThrow("failed");
+      await expect(markRead("g1", "message-3")).rejects.toThrow("failed");
       expect(useAppStore.getState().groups.g1?.unreadCount).toBe(3);
       expect(refreshGroup).toHaveBeenCalledWith("g1");
 
       vi.mocked(rpcVoid).mockResolvedValueOnce(undefined);
-      await markRead("g1");
-      expect(useAppStore.getState().groups.g1?.unreadCount).toBe(0);
-      expect(rpcVoid).toHaveBeenCalledWith("mark_read", { p_group_id: "g1" });
+      await markRead("g1", "message-3");
+      expect(useAppStore.getState().groups.g1?.unreadCount).toBe(3);
+      expect(rpcVoid).toHaveBeenCalledWith("mark_read", {
+        p_group_id: "g1",
+        p_last_read_message_id: "message-3",
+      });
     });
   });
 

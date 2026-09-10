@@ -33,7 +33,14 @@ import { subscribeChat } from "@/lib/sync/realtime";
 import { loadConversation } from "@/lib/sync/refresh";
 import { findDmGroup } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
-import type { ExpenseHeader, ExpensePayload, Me, MutationAck, UserProfile } from "@/types/ledger";
+import type {
+  ChatMessage,
+  ExpenseHeader,
+  ExpensePayload,
+  Me,
+  MutationAck,
+  UserProfile,
+} from "@/types/ledger";
 import {
   dmExpenseHeader,
   dmExpensePayload,
@@ -104,6 +111,22 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const [splitSheetOpen, setSplitSheetOpen] = useState(false);
   const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
   const [splitError, setSplitError] = useState<string | undefined>();
+  const lastIncomingMessageId = useMemo(() => {
+    if (!me || !conversation) return null;
+    let latest: ChatMessage | null = null;
+    for (const message of conversation.messages) {
+      if (message.senderId === me.id) continue;
+      if (
+        !latest ||
+        message.createdAt > latest.createdAt ||
+        (message.createdAt === latest.createdAt && message.id > latest.id)
+      ) {
+        latest = message;
+      }
+    }
+    return latest?.id ?? null;
+  }, [conversation, me]);
+
   const [historyComplete, setHistoryComplete] = useState(false);
   const chargeResetTimer = useRef<number | undefined>(undefined);
   const splitResetTimer = useRef<number | undefined>(undefined);
@@ -168,10 +191,10 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   }, [groupId]);
 
   useEffect(() => {
-    if (!groupId || !dm || dm.unreadCount === 0) return;
+    if (!groupId || !dm || dm.unreadCount === 0 || !lastIncomingMessageId) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-    markRead(groupId).catch(() => {});
-  }, [groupId, dm]);
+    markRead(groupId, lastIncomingMessageId).catch(() => {});
+  }, [dm, groupId, lastIncomingMessageId]);
 
 
   const handleRetryResolve = useCallback(() => {
