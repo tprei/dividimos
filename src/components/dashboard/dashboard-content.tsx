@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Plus, ScanLine } from "lucide-react";
+import { Bell, Plus, ScanLine, Search } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useState } from "react";
@@ -113,6 +113,14 @@ export function DashboardContent() {
         action={
           <div className="flex items-center gap-1">
             <InstallPrompt />
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              className="min-h-11 min-w-11 rounded-full"
+              render={<Link href="/app/search" aria-label="Buscar" />}
+            >
+              <Search className="size-5" aria-hidden="true" />
+            </Button>
             <Button
               variant="ghost"
               size="icon-lg"
