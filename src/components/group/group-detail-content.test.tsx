@@ -243,6 +243,21 @@ describe("GroupDetailContent", () => {
     ]);
   });
 
+  it("links to the group chat with an unread count", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: { [groupId]: { ...snapshot(), unreadCount: 7 } },
+      groupOrder: [groupId],
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    const chatLink = screen.getByRole("link", { name: "Conversa" });
+    expect(chatLink.getAttribute("href")).toBe(`/app/groups/${groupId}/chat`);
+    expect(screen.getByLabelText("7 mensagens não lidas")).toBeInTheDocument();
+  });
+
   it("reveals the bills panel when the Contas tab is selected", async () => {
     seedLoaded();
 

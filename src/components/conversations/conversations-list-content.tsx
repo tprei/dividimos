@@ -1,209 +1,162 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MessageSquare, Share2 } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { MessageSquare, Search, Share2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { ConversationShareModal } from "@/components/conversations/conversation-share-modal";
+import { ConversationRow } from "@/components/conversations/conversation-row";
 import { NewConversationButton } from "@/components/conversations/new-conversation-button";
 import { EmptyState } from "@/components/shared/empty-state";
-import { UserAvatar } from "@/components/shared/user-avatar";
+import { ScreenHeader } from "@/components/shared/screen-header";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { staggerContainer, staggerItem } from "@/lib/animations";
+import {
+  matchesFilter,
+  matchesQuery,
+  type BalanceFilter,
+  type ConversationRowData,
+  conversationRow,
+} from "@/lib/conversations";
+import { subscribeChat } from "@/lib/sync/realtime";
 import { useMe } from "@/hooks/use-me";
 import { useAppStore } from "@/stores/app-store";
-import type { GroupSnapshot, MemberStatus } from "@/types/ledger";
 
-function formatRelativeTime(isoDate: string): string {
-  const diffMs = Date.now() - new Date(isoDate).getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-
-  if (diffMin < 1) return "agora";
-  if (diffMin < 60) return `${diffMin}min`;
-
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}h`;
-
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d`;
-
-  return new Date(isoDate).toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short",
-  });
-}
-
-interface ConversationRow {
-  groupId: string;
-  kind: "dm" | "group";
-  title: string;
-  avatarName: string;
-  avatarUrl: string | null;
-  href: string;
-  preview: string | null;
-  lastMessageAt: string | null;
-  unreadCount: number;
-  statusLine: string | null;
-}
-
-function dmInviteStatusLine(
-  myStatus: MemberStatus | undefined,
-  counterpartyStatus: MemberStatus,
-): string | null {
-  if (myStatus === "invited") return "Convite para conversar";
-  if (counterpartyStatus === "invited") return "Aguardando aceitar o convite";
-  return null;
-}
-
-function toRow(snapshot: GroupSnapshot, meId: string): ConversationRow | null {
-  const isDm = snapshot.group.kind === "dm";
-  if (!isDm && !snapshot.lastMessage) return null;
-
-  if (isDm) {
-    const counterparty = snapshot.members.find((m) => m.userId !== meId);
-    if (!counterparty) return null;
-    const myStatus = snapshot.members.find((m) => m.userId === meId)?.status;
-    const statusLine = dmInviteStatusLine(myStatus, counterparty.status);
-    const lastMessage = statusLine ? null : snapshot.lastMessage;
-    return {
-      groupId: snapshot.group.id,
-      kind: "dm",
-      title: counterparty.user.name,
-      avatarName: counterparty.user.name,
-      avatarUrl: counterparty.user.avatarUrl,
-      href: `/app/conversations/${counterparty.userId}`,
-      preview: lastMessage?.content ?? null,
-      lastMessageAt: lastMessage?.createdAt ?? null,
-      unreadCount: statusLine ? 0 : snapshot.unreadCount,
-      statusLine,
-    };
-  }
-  return {
-    groupId: snapshot.group.id,
-    kind: "group",
-    title: snapshot.group.name,
-    avatarName: snapshot.group.name,
-    avatarUrl: null,
-    href: `/app/groups/${snapshot.group.id}`,
-    preview: snapshot.lastMessage?.content ?? null,
-    lastMessageAt: snapshot.lastMessage?.createdAt ?? null,
-    unreadCount: snapshot.unreadCount,
-    statusLine: null,
-  };
-}
+const FILTERS: Array<{ key: BalanceFilter; label: string }> = [
+  { key: "all", label: "Todas" },
+  { key: "owes", label: "A pagar" },
+  { key: "owed", label: "A receber" },
+  { key: "none", label: "Sem saldo" },
+];
 
 export function ConversationsListContent() {
   const me = useMe();
-  const groupOrder = useAppStore((s) => s.groupOrder);
-  const groups = useAppStore((s) => s.groups);
+  const groupOrder = useAppStore((state) => state.groupOrder);
+  const groups = useAppStore((state) => state.groups);
   const [shareOpen, setShareOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<BalanceFilter>("all");
 
   const rows = useMemo(() => {
     if (!me) return [];
-    const built: ConversationRow[] = [];
+    const built: ConversationRowData[] = [];
     for (const groupId of groupOrder) {
       const snapshot = groups[groupId];
       if (!snapshot) continue;
-      const row = toRow(snapshot, me.id);
+      const row = conversationRow(snapshot, me.id);
       if (row) built.push(row);
     }
     return built;
-  }, [me, groupOrder, groups]);
+  }, [groupOrder, groups, me]);
+
+  const visibleRows = useMemo(
+    () => rows.filter((row) => matchesQuery(query, row) && matchesFilter(filter, row.netCents)),
+    [filter, query, rows],
+  );
+  const hasFilters = query.trim().length > 0 || filter !== "all";
+  const showFilteredEmpty = rows.length > 0 && visibleRows.length === 0 && hasFilters;
+
+  useEffect(() => {
+    if (!me || groupOrder.length === 0) return undefined;
+    const unsubscribes = groupOrder.map((groupId) => subscribeChat(groupId));
+    return () => {
+      for (const unsubscribe of unsubscribes) unsubscribe();
+    };
+  }, [groupOrder, me]);
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="flex items-start justify-between"
-      >
-        <div>
-          <h1 className="text-2xl font-bold">Conversas</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {rows.length === 0
-              ? "Nenhuma conversa ainda"
-              : `${rows.length} conversa${rows.length !== 1 ? "s" : ""}`}
-          </p>
+    <div className="mx-auto max-w-lg pb-6">
+      <ScreenHeader
+        title="Conversas"
+        action={
+          me ? (
+            <div className="flex items-center gap-1">
+              <NewConversationButton inline />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-lg"
+                className="size-11"
+                onClick={() => setShareOpen(true)}
+                aria-label="Compartilhar convite"
+              >
+                <Share2 className="size-5" />
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
+      <div className="px-4">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-[15px] -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por nome"
+            aria-label="Buscar por nome"
+            className="h-11 rounded-full border-border bg-card pl-9 text-[13px]"
+          />
         </div>
-        {me && (
-          <button
-            type="button"
-            onClick={() => setShareOpen(true)}
-            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Compartilhar convite"
+        <div className="mt-3 grid grid-cols-4 gap-1 border-b border-border" role="tablist">
+          {FILTERS.map((option) => {
+            const active = filter === option.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setFilter(option.key)}
+                className={`-mb-px flex min-h-11 items-center justify-center border-b-2 text-[12.5px] font-semibold transition-colors ${
+                  active
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-3.5 px-4">
+        {showFilteredEmpty ? (
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <p className="text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11"
+              onClick={() => {
+                setQuery("");
+                setFilter("all");
+              }}
+            >
+              Limpar filtros
+            </Button>
+          </div>
+        ) : visibleRows.length > 0 ? (
+          <motion.ul
+            variants={staggerContainer}
+            initial="hidden"
+            animate="visible"
+            className="divide-y rounded-2xl border bg-card"
           >
-            <Share2 className="h-4 w-4" />
-          </button>
-        )}
-      </motion.div>
-
-      <motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        animate="visible"
-        className="mt-4 space-y-2"
-      >
-        {rows.map((row) => (
-          <motion.div key={row.groupId} variants={staggerItem}>
-            <Link href={row.href} data-testid={`conversation-row-${row.kind}`}>
-              <div className="flex items-center gap-3 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                <UserAvatar name={row.avatarName} avatarUrl={row.avatarUrl} size="md" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p
-                      className={`truncate font-medium ${row.unreadCount > 0 ? "text-foreground" : ""}`}
-                    >
-                      {row.title}
-                    </p>
-                    {row.lastMessageAt && (
-                      <span
-                        className={`shrink-0 text-xs ${
-                          row.unreadCount > 0
-                            ? "font-medium text-primary"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {formatRelativeTime(row.lastMessageAt)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2">
-                    <p
-                      className={`truncate text-sm ${
-                        row.unreadCount > 0
-                          ? "font-medium text-foreground"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {row.statusLine ?? row.preview ?? (
-                        <span className="italic">Sem mensagens</span>
-                      )}
-                    </p>
-                    {row.unreadCount > 0 && (
-                      <span
-                        className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground"
-                        data-testid="unread-badge"
-                      >
-                        {row.unreadCount > 99 ? "99+" : row.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Link>
-          </motion.div>
-        ))}
-
-        {rows.length === 0 && (
+            {visibleRows.map((row) => (
+              <motion.li key={row.groupId} variants={staggerItem}>
+                <ConversationRow row={row} />
+              </motion.li>
+            ))}
+          </motion.ul>
+        ) : (
           <EmptyState
             icon={MessageSquare}
             title="Nenhuma conversa"
             description="Conversas aparecem quando você divide contas diretamente com alguém."
           />
         )}
-      </motion.div>
-
-      <NewConversationButton />
+      </div>
 
       {me && (
         <ConversationShareModal

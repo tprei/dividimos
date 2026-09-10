@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ChatAiInput } from "@/components/chat/chat-ai-input";
 import { ChatThread } from "@/components/chat/chat-thread";
-import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ConversationQuickActions } from "@/components/chat/conversation-quick-actions";
 import {
@@ -20,7 +19,8 @@ import {
   type QuickSplitStatus,
 } from "@/components/chat/quick-split-sheet";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
-import { formatBRL } from "@/lib/currency";
+import { Money } from "@/components/shared/money";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { createExpense, markRead, sendMessage } from "@/lib/sync/mutations";
@@ -154,6 +154,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         await sendMessage(groupId, content);
       } catch (error) {
         toast.error(ledgerErrorMessage(error));
+        throw error;
       }
     },
     [groupId],
@@ -320,9 +321,11 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
 
   return (
     <div className="flex h-full flex-col">
-      <ConversationHeader
-        counterparty={counterparty}
-        actions={
+      <ScreenHeader
+        back
+        title={counterparty.name}
+        eyebrow={`@${counterparty.handle}`}
+        action={
           !isCounterpartyPending ? (
             <ConversationPayButton
               groupId={dm.group.id}
@@ -344,28 +347,31 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
       {netCents !== 0 && (
         <div className="border-b bg-muted/30 px-4 py-1.5 text-center">
           <p
-            className={`text-xs font-medium ${
+            className={`flex items-center justify-center gap-1 text-xs font-medium ${
               netCents > 0
                 ? "text-emerald-600 dark:text-emerald-400"
                 : "text-red-600 dark:text-red-400"
             }`}
           >
             {netCents > 0
-              ? `${counterparty.name.split(" ")[0]} te deve ${formatBRL(netCents)}`
-              : `Você deve ${formatBRL(-netCents)}`}
+              ? `${counterparty.name.split(" ")[0]} te deve`
+              : "Você deve"}
+            <Money cents={netCents} signed />
           </p>
         </div>
       )}
-      <ChatThread
-        groupId={dm.group.id}
-        meId={me.id}
-        messages={conversation?.messages ?? []}
-        events={conversation?.events ?? []}
-        settlements={dm.settlements}
-        nameOf={nameOf}
-        hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
-        onLoadMore={handleLoadMore}
-      />
+      <div className="flex min-h-0 flex-1 flex-col justify-center">
+        <ChatThread
+          groupId={dm.group.id}
+          meId={me.id}
+          messages={conversation?.messages ?? []}
+          events={conversation?.events ?? []}
+          settlements={dm.settlements}
+          nameOf={nameOf}
+          hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
+          onLoadMore={handleLoadMore}
+        />
+      </div>
       {!isCounterpartyPending && groupId && (
         <>
           <AnimatePresence>

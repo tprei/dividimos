@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export type QuickChargeStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -69,6 +70,7 @@ export function QuickChargeSheet({
   status = "idle",
   errorMessage,
 }: QuickChargeSheetProps) {
+  useBackHandler(true, onDismiss);
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
   const [descriptionEdited, setDescriptionEdited] = useState(false);

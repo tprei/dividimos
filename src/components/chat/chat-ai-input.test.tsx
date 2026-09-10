@@ -81,6 +81,19 @@ describe("ChatAiInput", () => {
     expect(onSend).toHaveBeenCalledWith("Olá");
   });
 
+  it("keeps the authored text when onSend rejects", async () => {
+    const onSend = vi.fn().mockRejectedValue(new Error("send failed"));
+    const { user } = setup({ onSend });
+
+    await user.type(screen.getByTestId("chat-input"), "Olá");
+    await user.click(screen.getByTestId("send-button"));
+
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith("Olá");
+    });
+    expect(screen.getByTestId("chat-input")).toHaveValue("Olá");
+  });
+
   it("calls parse API when submitting in AI mode", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

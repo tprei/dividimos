@@ -14,7 +14,7 @@ type InputMode = "normal" | "ai";
 interface ChatAiInputProps {
   groupId: string;
   members?: MemberContext[];
-  onSend?: (text: string) => void;
+  onSend?: (text: string) => Promise<void> | void;
   onConfirmDraft: (
     result: ChatExpenseResult,
   ) => Promise<{ expenseId: string } | { error: string }>;
@@ -59,8 +59,12 @@ export function ChatAiInput(props: ChatAiInputProps) {
       return;
     }
 
-    onSend?.(trimmed);
-    setText("");
+    try {
+      await onSend?.(trimmed);
+      setText("");
+    } catch {
+      return;
+    }
   }, [text, isAiMode, parse, members, onSend]);
 
   const handleKeyDown = useCallback(

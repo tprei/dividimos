@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, X } from "lucide-react";
-import { ConversationHeader } from "@/components/chat/conversation-header";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import type { UserProfile } from "@/types/ledger";
@@ -19,7 +19,7 @@ export function ConversationInviteScreen({
 }: ConversationInviteScreenProps) {
   return (
     <div className="flex h-full flex-col">
-      <ConversationHeader counterparty={counterparty} />
+      <ScreenHeader back title={counterparty.name} eyebrow={`@${counterparty.handle}`} />
       <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
         <UserAvatar name={counterparty.name} avatarUrl={counterparty.avatarUrl} size="lg" />
         <div className="space-y-1">
