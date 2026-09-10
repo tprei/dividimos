@@ -15,18 +15,29 @@ import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib
 import type { NfceQrResult } from "@/lib/nfce-qr";
 import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
+import type { ItemDivisionValue } from "@/lib/item-division";
+import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import type { ExpenseType, UserProfile } from "@/types";
 
 export interface TypeStepProps {
   groupMembers: UserProfile[];
+  participants: ItemDivisionParticipant[];
+  occurredOn: string;
   onTypeSelect: (type: ExpenseType) => void;
-  onScanConfirm: (result: ReceiptOcrResult, chaveAcesso: string | null) => void;
+  onScanConfirm: (
+    result: ReceiptOcrResult,
+    chaveAcesso: string | null,
+    divisions: Record<number, ItemDivisionValue>,
+    occurredOn: string,
+  ) => void;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
 }
 
 export function TypeStep({
   groupMembers,
+  occurredOn,
+  participants,
   onTypeSelect,
   onScanConfirm,
   onVoiceConfirm,
@@ -57,6 +68,7 @@ export function TypeStep({
   }, [searchParams, showScanner, scanResult]);
 
   const handleScanProcess = useCallback(async (file: File) => {
+    lastQrResultRef.current = null;
     setScanProcessing(true);
     setScanProcessingPhoto(true);
     setScanError(null);
@@ -133,7 +145,11 @@ export function TypeStep({
     }
   }, []);
 
-  const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
+  const handleScanConfirm = useCallback((
+    result: ReceiptOcrResult,
+    divisions: Record<number, ItemDivisionValue>,
+    occurredOn: string,
+  ) => {
     const chaveAcesso = lastQrResultRef.current?.chaveAcesso ?? null;
     if (chaveAcesso) {
       markReceiptScanned(chaveAcesso);
@@ -141,13 +157,15 @@ export function TypeStep({
     }
     setScanResult(null);
     setDuplicateWarning(null);
-    onScanConfirm(result, chaveAcesso);
+    onScanConfirm(result, chaveAcesso, divisions, occurredOn);
   }, [onScanConfirm]);
 
   const handleScanCancel = useCallback(() => {
+    lastQrResultRef.current = null;
     setScanResult(null);
-  }, []);
+    setDuplicateWarning(null);
 
+  }, []);
   const handleVoiceResult = useCallback((result: VoiceExpenseResult) => {
     setVoiceResult(result);
     setShowVoiceInput(false);
@@ -166,6 +184,8 @@ export function TypeStep({
     return (
       <ScannedItemsReview
         result={scanResult}
+        participants={participants}
+        initialOccurredOn={occurredOn}
         onConfirm={handleScanConfirm}
         onCancel={handleScanCancel}
       />
@@ -180,9 +200,15 @@ export function TypeStep({
     return (
       <div className="space-y-3">
         <ReceiptScanner
-          key={sefazFallback ? "fallback" : "default"}
           onProcess={handleScanProcess}
-          onBack={() => { setShowScanner(false); setScanError(null); setSefazFallback(false); }}
+          key={sefazFallback ? "fallback" : "default"}
+          onBack={() => {
+            lastQrResultRef.current = null;
+            setShowScanner(false);
+            setScanError(null);
+            setSefazFallback(false);
+            setDuplicateWarning(null);
+          }}
           processing={scanProcessing}
           onQrDetected={handleQrDetected}
         />

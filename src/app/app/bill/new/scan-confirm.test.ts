@@ -1,16 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { userAlice } from "@/test/fixtures";
 import { useBillStore } from "@/stores/bill-store";
+import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
-/**
- * Tests the scan-confirm integration logic: given a ReceiptOcrResult,
- * verify the bill store is populated correctly with items, merchant,
- * expense type, and service fee — matching what handleScanConfirm does
- * in the new bill page.
- */
 
-function simulateScanConfirm(result: ReceiptOcrResult) {
+function simulateScanConfirm(
+  result: ReceiptOcrResult,
+  divisions: Record<number, ItemDivisionValue> = {},
+  occurredOn = "2026-09-10",
+) {
   const store = useBillStore.getState();
   store.setCurrentUser(userAlice);
   store.createExpense(
@@ -19,7 +18,9 @@ function simulateScanConfirm(result: ReceiptOcrResult) {
     result.merchant || undefined,
   );
   store.updateExpense({
-    serviceFeePercent: (result.serviceFeeBasisPoints || 0) / 100,
+    serviceFeePercent: result.serviceFeeBasisPoints / 100,
+    serviceFeeBasisPoints: result.serviceFeeBasisPoints,
+    fixedFees: result.fixedFeesCents,
   });
 
   for (const item of result.items) {
@@ -30,6 +31,13 @@ function simulateScanConfirm(result: ReceiptOcrResult) {
       totalPriceCents: item.totalCents,
     });
   }
+
+  const addedItems = useBillStore.getState().items;
+  for (const [indexText, division] of Object.entries(divisions)) {
+    const item = addedItems[Number(indexText)];
+    if (item) store.setItemDivision(item.id, division);
+  }
+  store.setOccurredOn(occurredOn);
 }
 
 const sampleResult: ReceiptOcrResult = {
@@ -144,9 +152,28 @@ describe("scan confirm → bill store integration", () => {
   it("grand total reflects scanned items with service fee", () => {
     simulateScanConfirm(sampleResult);
     const store = useBillStore.getState();
-    // Items total: 2400 + 4500 = 6900
-    // Service fee 10%: 690
-    // Grand total: 7590
     expect(store.getGrandTotal()).toBe(7590);
+  });
+  it("applies divisions to items in scan order and preserves the date", () => {
+    const divisions: Record<number, ItemDivisionValue> = {
+      0: {
+        mode: "equal",
+        shares: [{ participantId: userAlice.id, cents: 2400 }],
+      },
+      1: {
+        mode: "fixed",
+        shares: [{ participantId: userAlice.id, cents: 4500 }],
+      },
+    };
+
+    simulateScanConfirm(sampleResult, divisions, "2026-09-09");
+
+    const store = useBillStore.getState();
+    expect(store.occurredOn).toBe("2026-09-09");
+    expect(store.splits).toHaveLength(2);
+    expect(store.splits.map((split) => [split.itemId, split.computedAmountCents])).toEqual([
+      [store.items[0].id, 2400],
+      [store.items[1].id, 4500],
+    ]);
   });
 });

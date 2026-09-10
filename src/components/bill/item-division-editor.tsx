@@ -64,7 +64,7 @@ function ShareCell({
         onChange={(event) => onPercentChange(event.target.value)}
         inputMode="decimal"
         aria-label={inputLabel}
-        className="h-9 w-24 bg-card text-right font-mono"
+        className="h-11 w-24 bg-card text-right font-mono"
       />
     );
   }
@@ -75,7 +75,7 @@ function ShareCell({
         onChange={(event) => onFixedChange(event.target.value)}
         inputMode="decimal"
         aria-label={inputLabel}
-        className="h-9 w-24 bg-card text-right font-mono"
+        className="h-11 w-24 bg-card text-right font-mono"
       />
     );
   }
@@ -190,10 +190,10 @@ export function ItemDivisionEditor({
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Pessoas</p>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" className="min-h-9" onClick={() => setSelectedIds([...participantIds])}>
+          <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setSelectedIds([...participantIds])}>
             Todos
           </Button>
-          <Button variant="ghost" size="sm" className="min-h-9" onClick={() => setSelectedIds([])}>
+          <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setSelectedIds([])}>
             Nenhum
           </Button>
         </div>
@@ -203,13 +203,15 @@ export function ItemDivisionEditor({
           const selected = selectedIds.includes(participant.id);
           return (
             <div key={participant.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
-              <input
-                type="checkbox"
-                className="size-5 accent-primary"
-                checked={selected}
-                onChange={() => toggleParticipant(participant.id)}
-                aria-label={`Incluir ${participant.name} em ${itemName}`}
-              />
+              <label className="flex min-h-11 min-w-11 shrink-0 items-center justify-center">
+                <input
+                  type="checkbox"
+                  className="size-5 accent-primary"
+                  checked={selected}
+                  onChange={() => toggleParticipant(participant.id)}
+                  aria-label={`Incluir ${participant.name} em ${itemName}`}
+                />
+              </label>
               {participant.isGuest ? (
                 <GuestAvatar size="sm" />
               ) : (
