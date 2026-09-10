@@ -419,9 +419,10 @@ describe("vendor charges", () => {
 });
 
 describe("migrateAppState", () => {
-  it("backfills expenseCount on snapshots persisted before the field existed", () => {
+  it("backfills expenseCount and pairwiseEdges on snapshots persisted before the fields existed", () => {
     const legacyGroup: Record<string, unknown> = { ...snapshot("g1", []) };
     delete legacyGroup.expenseCount;
+    delete legacyGroup.pairwiseEdges;
 
     const migrated = migrateAppState({
       groups: { g1: legacyGroup },
@@ -429,6 +430,7 @@ describe("migrateAppState", () => {
     });
 
     expect(migrated.groups.g1?.expenseCount).toBe(0);
+    expect(migrated.groups.g1?.pairwiseEdges).toEqual([]);
     expect(migrated.groups.g1?.group.id).toBe("g1");
     expect(migrated.groupOrder).toEqual(["g1"]);
   });

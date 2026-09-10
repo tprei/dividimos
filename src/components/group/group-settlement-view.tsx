@@ -78,12 +78,12 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
 
   const graphParticipants = useMemo(() => {
     const involved = new Set<string>();
-    for (const transfer of transfers) {
-      involved.add(transfer.fromId);
-      involved.add(transfer.toId);
+    for (const edge of [...snapshot.pairwiseEdges, ...transfers]) {
+      involved.add(edge.fromId);
+      involved.add(edge.toId);
     }
     return people.filter((person) => involved.has(person.id));
-  }, [transfers, people]);
+  }, [snapshot.pairwiseEdges, transfers, people]);
 
   const selectedTransfer = selected
     ? transfers.find((t) => t.fromId === selected.from && t.toId === selected.to)

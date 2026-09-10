@@ -97,10 +97,11 @@ export function migrateAppState(persisted: unknown): AppStateData {
   const legacy = (persisted ?? {}) as Partial<AppStateData>;
   const groups: Record<string, GroupSnapshot> = {};
   for (const [id, snapshot] of Object.entries(legacy.groups ?? {})) {
-    groups[id] =
-      snapshot.expenseCount === undefined
-        ? { ...snapshot, expenseCount: 0 }
-        : snapshot;
+    groups[id] = {
+      ...snapshot,
+      expenseCount: snapshot.expenseCount ?? 0,
+      pairwiseEdges: snapshot.pairwiseEdges ?? [],
+    };
   }
   return { ...initialData, ...legacy, groups };
 }
