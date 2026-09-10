@@ -8,6 +8,7 @@ import type {
   Conversation,
   ConversationReadWatermark,
   EventKind,
+  ChargePage,
   ExpensePage,
   Group,
   GroupGuest,
@@ -869,6 +870,47 @@ const CONVERSATION_KEYS = [
 ] as const;
 const CURSOR_KEYS = ["createdAt", "id"] as const;
 const EXPENSE_PAGE_KEYS = ["expenses", "nextCursor", "complete", "total"] as const;
+const CHARGE_PAGE_KEYS = [
+  "charges",
+  "nextCursor",
+  "complete",
+  "total",
+  "receivedCount",
+  "receivedTodayCents",
+] as const;
+
+export function decodeChargePage(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<ChargePage, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, CHARGE_PAGE_KEYS, path);
+  if (!k.ok) return k;
+
+  const charges = decodeVendorCharges(raw.charges, [...path, "charges"]);
+  if (!charges.ok) return charges;
+  const nextCursor = decodePageCursor(raw.nextCursor, [...path, "nextCursor"], id);
+  if (!nextCursor.ok) return nextCursor;
+  const complete = bool(raw.complete, [...path, "complete"]);
+  if (!complete.ok) return complete;
+  const total = int(raw.total, [...path, "total"]);
+  if (!total.ok) return total;
+  const receivedCount = int(raw.receivedCount, [...path, "receivedCount"]);
+  if (!receivedCount.ok) return receivedCount;
+  // A day's takings can exceed int4, so this arrives as a bigint and must stay
+  // a safe integer rather than being silently truncated.
+  const receivedTodayCents = int(raw.receivedTodayCents, [...path, "receivedTodayCents"]);
+  if (!receivedTodayCents.ok) return receivedTodayCents;
+
+  return ok({
+    charges: charges.value,
+    nextCursor: nextCursor.value,
+    complete: complete.value,
+    total: total.value,
+    receivedCount: receivedCount.value,
+    receivedTodayCents: receivedTodayCents.value,
+  });
+}
 
 export function decodeExpensePage(
   raw: unknown,

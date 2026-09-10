@@ -948,7 +948,14 @@ export type Database = {
       }
       get_my_profile: { Args: never; Returns: Json }
       get_or_create_dm: { Args: { p_user_id: string }; Returns: Json }
-      get_vendor_charges: { Args: { p_limit?: number }; Returns: Json }
+      get_vendor_charges: {
+        Args: {
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+          p_limit?: number
+        }
+        Returns: Json
+      }
       group_transfers: {
         Args: { p_group_id: string }
         Returns: {

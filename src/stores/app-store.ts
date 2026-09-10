@@ -6,6 +6,7 @@ import { createIdbStorage } from "@/lib/idb-storage";
 import type { LedgerErrorCode } from "@/lib/sync/errors";
 import type {
   Bootstrap,
+  ChargePage,
   ExpensePage,
   PageCursor,
   ChatMessage,
@@ -106,6 +107,14 @@ interface AppStateData {
   activityViewedAt: Record<string, string>;
   conversations: Record<string, ConversationState>;
   vendorCharges: VendorCharge[];
+  /** Server-owned charge history metadata: cursor, totals and today's sum. */
+  chargeSummary: {
+    cursor: PageCursor | null;
+    complete: boolean;
+    total: number | null;
+    receivedCount: number | null;
+    receivedTodayCents: number | null;
+  };
   /**
    * Read lifecycle per resource, keyed by the helpers below. Runtime only, and
    * cleared by reset(), so it is never inherited across accounts.
@@ -141,7 +150,7 @@ export interface AppState extends AppStateData {
   upsertExpense(summary: ExpenseSummary): void;
   replaceExpenseId(oldId: string, newId: string): void;
   patch(fn: (state: AppState) => Partial<AppState>): void;
-  applyVendorCharges(list: VendorCharge[]): void;
+  applyChargePage(page: ChargePage, reset: boolean): void;
   upsertVendorCharge(c: VendorCharge): void;
   reset(): void;
 }
@@ -159,6 +168,13 @@ const initialData: AppStateData = {
   activityViewedAt: {},
   conversations: {},
   vendorCharges: [],
+  chargeSummary: {
+    cursor: null,
+    complete: false,
+    total: null,
+    receivedCount: null,
+    receivedTodayCents: null,
+  },
   reads: {},
   lastBootstrapAt: null,
   bootstrapStatus: "idle",
@@ -441,7 +457,21 @@ export const useAppStore = create<AppState>()(
             expenseDetails,
           };
         }),
-      applyVendorCharges: (list) => set({ vendorCharges: list }),
+      applyChargePage: (page, reset) =>
+        set((state) => {
+          const known = new Set(reset ? [] : state.vendorCharges.map((c) => c.id));
+          const rows = reset ? [] : state.vendorCharges;
+          return {
+            vendorCharges: [...rows, ...page.charges.filter((c) => !known.has(c.id))],
+            chargeSummary: {
+              cursor: page.nextCursor,
+              complete: page.complete,
+              total: page.total,
+              receivedCount: page.receivedCount,
+              receivedTodayCents: page.receivedTodayCents,
+            },
+          };
+        }),
 
       upsertVendorCharge: (c) =>
         set((state) => {
@@ -476,6 +506,7 @@ export const useAppStore = create<AppState>()(
         activityViewedAt: state.activityViewedAt,
         conversations: state.conversations,
         vendorCharges: state.vendorCharges,
+        chargeSummary: state.chargeSummary,
         lastBootstrapAt: state.lastBootstrapAt,
         lastBootstrappedAccountId: state.lastBootstrappedAccountId,
       }),
