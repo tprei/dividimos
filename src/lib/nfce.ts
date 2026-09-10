@@ -55,6 +55,64 @@ export function isAllowedSefazUrl(url: string): boolean {
   return SEFAZ_DOMAIN_PATTERN.test(parsed.hostname);
 }
 
+/**
+ * Largest SEFAZ page we will decode. Content-Length is advisory and absent on
+ * chunked responses, so the cap is enforced on decoded bytes as they arrive.
+ */
+const MAX_SEFAZ_BODY_BYTES = 2 * 1024 * 1024;
+
+/**
+ * The HTTPS URL to fetch for an allowlisted SEFAZ target, or `null` when the
+ * target is not allowed. A plaintext `http:` URL is upgraded rather than
+ * fetched: nothing on a fiscal portal is worth sending in the clear, and the
+ * upgrade applies to the inbound URL and to every redirect hop.
+ */
+export function httpsSefazUrl(url: string): string | null {
+  if (!isAllowedSefazUrl(url)) return null;
+
+  const parsed = new URL(url);
+  parsed.protocol = "https:";
+  return parsed.toString();
+}
+
+/**
+ * Reads a response body as text, stopping at `maxBytes`.
+ *
+ * @returns The decoded text, or `null` when the body exceeded the cap (the
+ * stream is cancelled before that happens, so nothing oversized is parsed).
+ */
+async function readCappedText(
+  response: Response,
+  maxBytes: number,
+): Promise<string | null> {
+  const body = response.body;
+  if (!body) return await response.text();
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let received = 0;
+  let text = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value === undefined) continue;
+
+      received += value.byteLength;
+      if (received > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return text + decoder.decode();
+}
+
 /** Label text used by SEFAZ portals to identify the fiscal access-key field. */
 const ACCESS_KEY_LABEL_PATTERN = /chave\s*de\s*acesso|access\s*key/i;
 
@@ -697,6 +755,8 @@ export async function fetchSefazPage(
 ): Promise<SefazFetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  /** Bodies abandoned by an early exit, cancelled before the timer is cleared. */
+  const pendingBodies: Response[] = [];
 
   try {
     let currentUrl = url;
@@ -706,11 +766,12 @@ export async function fetchSefazPage(
     // allowlist. With `redirect: "follow"`, a SEFAZ open-redirect could pivot the
     // request to an internal host (cloud metadata, RFC1918) — an SSRF vector.
     for (let hop = 0; ; hop++) {
-      if (!isAllowedSefazUrl(currentUrl)) {
+      const target = httpsSefazUrl(currentUrl);
+      if (target === null) {
         return { ok: false, error: "URL fora do domínio SEFAZ permitido" };
       }
 
-      response = await fetch(currentUrl, {
+      response = await fetch(target, {
         signal: controller.signal,
         headers: {
           "User-Agent":
@@ -725,6 +786,9 @@ export async function fetchSefazPage(
         break;
       }
 
+      // A redirect body is never read.
+      pendingBodies.push(response);
+
       const location = response.headers.get("location");
       if (!location) {
         break;
@@ -736,10 +800,8 @@ export async function fetchSefazPage(
     }
 
     if (!response.ok) {
-      return {
-        ok: false,
-        error: `HTTP ${response.status}`,
-      };
+      pendingBodies.push(response);
+      return { ok: false, error: `HTTP ${response.status}` };
     }
 
     const contentType = response.headers.get("content-type") ?? "";
@@ -747,19 +809,23 @@ export async function fetchSefazPage(
       !contentType.includes("text/html") &&
       !contentType.includes("application/xhtml")
     ) {
+      pendingBodies.push(response);
       return {
         ok: false,
         error: `Tipo de conteúdo inesperado: ${contentType}`,
       };
     }
 
-    const html = await response.text();
+    const body = await readCappedText(response, MAX_SEFAZ_BODY_BYTES);
+    if (body === null) {
+      return { ok: false, error: "Página da SEFAZ excede o tamanho permitido" };
+    }
 
     // Detect CAPTCHA pages (several SEFAZ portals use reCAPTCHA)
     if (
-      html.includes("g-recaptcha") ||
-      html.includes("recaptcha") ||
-      html.includes("hcaptcha")
+      body.includes("g-recaptcha") ||
+      body.includes("recaptcha") ||
+      body.includes("hcaptcha")
     ) {
       return {
         ok: false,
@@ -767,7 +833,7 @@ export async function fetchSefazPage(
       };
     }
 
-    return { ok: true, html };
+    return { ok: true, html: body };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       return { ok: false, error: "Timeout ao acessar SEFAZ" };
@@ -776,6 +842,11 @@ export async function fetchSefazPage(
       error instanceof Error ? error.message : "Erro desconhecido";
     return { ok: false, error: message };
   } finally {
+    // Dispose abandoned bodies while the abort timer is still armed, so a
+    // stalled stream cannot keep the connection alive past the deadline.
+    await Promise.all(
+      pendingBodies.map((abandoned) => abandoned.body?.cancel().catch(() => {})),
+    );
     clearTimeout(timer);
   }
 }
