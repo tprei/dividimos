@@ -26,7 +26,7 @@ test.describe("DM first expense", () => {
     await page.waitForLoadState("networkidle");
 
     // Group members are auto-added; their names show inside the sheet.
-    await page.getByRole("button", { name: "Participantes" }).click();
+    await page.getByRole("button", { name: /Participantes/ }).click();
     await expect(page.getByText(bob.name).first()).toBeVisible({
       timeout: 5000,
     });

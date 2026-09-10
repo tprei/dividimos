@@ -1,6 +1,7 @@
 "use client";
 
 import { Users } from "lucide-react";
+import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { GroupSelect } from "@/components/bill/group-select";
 import { SingleBillParticipantsSheet } from "@/components/bill/single-bill/participants-sheet";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +81,33 @@ export function SingleBillDetails({
   onRemoveGuest,
   onPickContacts,
 }: SingleBillDetailsProps) {
+  const people: AvatarStackPerson[] = [
+    ...participants.map((participant) => ({
+      id: participant.id,
+      name: participant.name,
+      avatarUrl: participant.avatarUrl ?? null,
+    })),
+    ...guests.map((guest) => ({
+      id: guest.id,
+      name: guest.name,
+      avatarUrl: null,
+      isGuest: true,
+    })),
+  ];
+  const participantSummary = people
+    .map((person) => (person.id === me.id ? "Você" : person.name.split(" ")[0]))
+    .join(", ");
+  const selectedGroup = groups.find((snapshot) => snapshot.group.id === groupSelection);
+  const inviteeNames = selectedGroup
+    ? participants
+        .filter(
+          (participant) =>
+            participant.id !== me.id &&
+            !selectedGroup.members.some((member) => member.userId === participant.id),
+        )
+        .map((participant) => participant.name.split(" ")[0])
+    : [];
+
   return (
     <>
       <div className="px-4 pb-2">
@@ -129,16 +157,31 @@ export function SingleBillDetails({
           <Button
             type="button"
             variant="outline"
-            className="min-h-11 w-full justify-between rounded-xl px-4"
+            className="min-h-14 w-full justify-between rounded-xl px-4"
+            aria-label={`Participantes: ${participantSummary || "nenhum"}`}
             onClick={() => onParticipantsOpenChange(true)}
           >
-            <span className="flex items-center gap-2 text-sm font-semibold">
-              <Users className="size-4" />
-              Participantes
+            <span className="flex min-w-0 items-center gap-2">
+              <Users className="size-4 shrink-0" />
+              <span className="min-w-0 truncate text-sm font-semibold">
+                {participantSummary || "Quem participa?"}
+              </span>
             </span>
-            <Badge variant="secondary">{participantCount}</Badge>
+            {people.length > 0 ? (
+              <AvatarStack people={people} />
+            ) : (
+              <Badge variant="secondary">{participantCount}</Badge>
+            )}
           </Button>
-          {participantCount < 2 && <p className="pt-2 text-xs text-destructive">Adicione pelo menos uma pessoa.</p>}
+          <div className="min-h-5 pt-1">
+            {participantCount < 2 ? (
+              <p className="text-xs text-destructive">Adicione pelo menos uma pessoa.</p>
+            ) : inviteeNames.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {inviteeNames.join(", ")} {inviteeNames.length > 1 ? "serão convidados" : "será convidado"} ao grupo.
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
       <SingleBillParticipantsSheet

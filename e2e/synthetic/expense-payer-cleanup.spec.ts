@@ -30,7 +30,7 @@ test.describe("Expense payer cleanup (browser)", () => {
     await page.waitForLoadState("networkidle");
 
     // Group members are auto-added; their names show inside the sheet.
-    await page.getByRole("button", { name: "Participantes" }).click();
+    await page.getByRole("button", { name: /Participantes/ }).click();
     await expect(page.getByText("Bob Cleanup").first()).toBeVisible({
       timeout: 5000,
     });
@@ -217,7 +217,7 @@ test.describe("Expense payer cleanup (browser)", () => {
     );
     await page.waitForLoadState("networkidle");
     // Group members are auto-added; their names show inside the sheet.
-    await page.getByRole("button", { name: "Participantes" }).click();
+    await page.getByRole("button", { name: /Participantes/ }).click();
     await expect(page.getByText("Bob Guest Cleanup").first()).toBeVisible({
       timeout: 5000,
     });
