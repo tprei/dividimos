@@ -4,7 +4,7 @@ import {
   fetchSefazPage,
   parseSefazPage,
   extractSefazAccessKeys,
-  SEFAZ_DOMAIN_PATTERN,
+  httpsSefazUrl,
 } from "@/lib/nfce";
 
 export const runtime = "nodejs";
@@ -42,27 +42,18 @@ export async function POST(request: Request) {
 
   const url = body.url.trim();
 
-  // Validate URL points to a known SEFAZ domain. fetchSefazPage re-validates
-  // every redirect hop against the same allowlist.
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return NextResponse.json(
-        { error: "URL deve ser HTTP ou HTTPS" },
-        { status: 400 },
-      );
-    }
-    if (!SEFAZ_DOMAIN_PATTERN.test(parsed.hostname)) {
-      return NextResponse.json(
-        { error: "URL deve ser de um portal SEFAZ" },
-        { status: 400 },
-      );
-    }
-  } catch {
-    return NextResponse.json({ error: "URL invalida" }, { status: 400 });
+  // Validate the URL points to a known SEFAZ domain and resolve the HTTPS
+  // target actually fetched. fetchSefazPage applies the same policy to every
+  // redirect hop, so no plaintext request is ever made.
+  const target = httpsSefazUrl(url);
+  if (target === null) {
+    return NextResponse.json(
+      { error: "URL deve ser de um portal SEFAZ" },
+      { status: 400 },
+    );
   }
 
-  const fetchResult = await fetchSefazPage(url);
+  const fetchResult = await fetchSefazPage(target);
 
   if (!fetchResult.ok || fetchResult.html === undefined) {
     return NextResponse.json(
