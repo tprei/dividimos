@@ -19,11 +19,20 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => scopedAdminClient()),
 }));
 
+const mockEnforceRateLimit = vi.fn<(bucket: string, subject: string) => Promise<void>>(
+  async () => {},
+);
+vi.mock("@/lib/rate-limit", () => ({
+  enforceRateLimit: (bucket: string, subject: string) =>
+    mockEnforceRateLimit(bucket, subject),
+}));
+
 vi.mock("@/lib/push/notify-user", () => ({
   notifyUser: (userId: string, payload: unknown) => mockNotifyUser(userId, payload),
 }));
 
 import { POST } from "./route";
+import { AppError } from "@/lib/errors";
 
 function eventRowFor(id: number) {
   return {
@@ -39,6 +48,7 @@ function eventRowFor(id: number) {
     notified_at: null,
   };
 }
+
 
 interface MockQueryResult {
   data: unknown;
@@ -148,6 +158,8 @@ describe("POST /api/notify", () => {
     serverMock.reset();
     adminMock.reset();
     mockNotifyUser.mockClear();
+    mockEnforceRateLimit.mockReset();
+    mockEnforceRateLimit.mockResolvedValue(undefined);
     mockNotifyUser.mockResolvedValue({ sent: 1, cleaned: 0, failed: 0 });
   });
 
@@ -634,5 +646,66 @@ describe("POST /api/notify", () => {
       "bruno",
       expect.objectContaining({ body: expect.stringContaining("sua parte:") }),
     );
+  });
+
+  it("answers 429 and sends nothing when the actor's dispatch budget is spent", async () => {
+    serverMock.setUser({ id: "ana" });
+    mockEnforceRateLimit.mockImplementation(async (bucket) => {
+      if (bucket === "push.send") {
+        throw new AppError("RATE_LIMIT_EXCEEDED", "limite");
+      }
+    });
+
+    adminMock.onTable("group_events", { data: eventRowFor(140) });
+
+    const res = await POST(makeRequest({ eventId: 140 }));
+    expect(res.status).toBe(429);
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    // The claim is released so a retry after the window can dispatch.
+    const updates = adminMock.findCalls("group_events", "update");
+    expect(updates.at(-1)?.args[0]).toEqual({ notified_at: null });
+  });
+
+  it("answers 503 and sends nothing when the limiter cannot decide", async () => {
+    serverMock.setUser({ id: "ana" });
+    mockEnforceRateLimit.mockRejectedValue(
+      new AppError("RATE_LIMIT_UNAVAILABLE", "indisponível"),
+    );
+
+    adminMock.onTable("group_events", { data: eventRowFor(141) });
+
+    const res = await POST(makeRequest({ eventId: 141 }));
+    expect(res.status).toBe(503);
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+  });
+
+  it("skips only the recipient whose pair budget is spent", async () => {
+    serverMock.setUser({ id: "ana" });
+    mockEnforceRateLimit.mockImplementation(async (bucket, subject) => {
+      if (bucket === "push.send-pair" && subject === "ana:david") {
+        throw new AppError("RATE_LIMIT_EXCEEDED", "limite");
+      }
+    });
+
+    adminMock.onTable("group_events", {
+      data: {
+        ...eventRowFor(142),
+        kind: "member_invited" as const,
+        subject_user_id: null,
+        payload: { userIds: ["david", "eva"] },
+      },
+    });
+    adminMock.onTable("groups", { data: { id: "group-1", kind: "regular", name: "Viagem" } });
+    adminMock.onTable("group_members", {
+      data: [memberRow("ana"), memberRow("david", "invited"), memberRow("eva", "invited")],
+    });
+
+    const res = await POST(makeRequest({ eventId: 142 }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ skipped: 1 });
+
+    const notified = mockNotifyUser.mock.calls.map((call) => call[0]);
+    expect(notified).toContain("eva");
+    expect(notified).not.toContain("david");
   });
 });
