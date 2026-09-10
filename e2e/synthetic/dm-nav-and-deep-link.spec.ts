@@ -41,13 +41,13 @@ test.describe("DM navigation and deep links", () => {
     await loginAs(alice);
     await page.waitForLoadState("networkidle");
 
-    // Wait for debt card to appear and click the card header button
-    const debtCard = page.locator(".rounded-2xl.border.bg-card").first();
-    await expect(debtCard).toBeVisible({ timeout: 10000 });
+    const debtRow = page.getByRole("button", { name: /^Bob, .*, Trip$/ });
+    await expect(debtRow).toBeVisible({ timeout: 10000 });
+    await debtRow.click();
 
-    const cardLink = debtCard.locator("a[href*='/app/conversations/']").first();
-    await expect(cardLink).toBeVisible();
-    await cardLink.click();
+    const openConversation = page.getByRole("link", { name: /Abrir conversa/i });
+    await expect(openConversation).toBeVisible();
+    await openConversation.click();
 
     await expect(page).toHaveURL(/\/app\/conversations\/.+/, { timeout: 8000 });
 
@@ -92,11 +92,12 @@ test.describe("DM navigation and deep links", () => {
     await loginAs(alice);
     await page.waitForLoadState("networkidle");
 
-    const debtCard = page.locator(".rounded-2xl.border.bg-card").first();
-    await expect(debtCard).toBeVisible({ timeout: 10000 });
+    const debtRow = page.getByRole("button", { name: /^Bob, .*, Conversa direta$/ });
+    await expect(debtRow).toBeVisible({ timeout: 10000 });
+    await debtRow.click();
 
-    const cardLink = debtCard.locator("a[href*='/app/conversations/']").first();
-    await cardLink.click();
+    const openConversation = page.getByRole("link", { name: /Abrir conversa/i });
+    await openConversation.click();
 
     await expect(page).toHaveURL(`/app/conversations/${bob.id}`, {
       timeout: 8000,
