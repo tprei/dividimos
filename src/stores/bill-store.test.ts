@@ -185,69 +185,62 @@ describe("splitBillEqually", () => {
   });
 });
 
-describe("splitBillByPercentage", () => {
-  function setupSingleAmountExpense() {
+describe("splitBillByBasisPoints", () => {
+  function setupSingleAmountExpense(totalAmountInput = 10000) {
     const s = setup();
     s.createExpense("Test", "single_amount");
-    s.updateExpense({ totalAmountInput: 10000 });
+    s.updateExpense({ totalAmountInput });
     return useBillStore.getState();
   }
 
-  it("50/50 split of 10000 cents", () => {
+  it("allocates an exact basis point split", () => {
     const s = setupSingleAmountExpense();
-    s.splitBillByPercentage([
-      { userId: "user-alice", percentage: 50 },
-      { userId: "user-bob", percentage: 50 },
+    s.addParticipant(userBob);
+    s.splitBillByBasisPoints([
+      { userId: "user-alice", basisPoints: 5000 },
+      { userId: "user-bob", basisPoints: 5000 },
     ]);
     const splits = useBillStore.getState().billSplits;
-    expect(splits.every((s) => s.computedAmountCents === 5000)).toBe(true);
+    expect(splits.map((split) => split.computedAmountCents)).toEqual([5000, 5000]);
+    expect(splits.map((split) => split.value)).toEqual([50, 50]);
   });
 
-  it("100% to one person", () => {
-    const s = setupSingleAmountExpense();
-    s.splitBillByPercentage([{ userId: "user-alice", percentage: 100 }]);
-    expect(useBillStore.getState().billSplits[0].computedAmountCents).toBe(10000);
-  });
-
-  it("rejects assignments that sum to less than 100%", () => {
-    const s = setupSingleAmountExpense();
-    s.addParticipant(userBob);
-    s.splitBillByPercentage([
-      { userId: "user-alice", percentage: 40 },
-      { userId: "user-bob", percentage: 40 },
-    ]);
-    expect(useBillStore.getState().billSplits).toHaveLength(0);
-  });
-
-  it("rejects assignments that sum to more than 100%", () => {
-    const s = setupSingleAmountExpense();
-    s.addParticipant(userBob);
-    s.splitBillByPercentage([
-      { userId: "user-alice", percentage: 60 },
-      { userId: "user-bob", percentage: 60 },
-    ]);
-    expect(useBillStore.getState().billSplits).toHaveLength(0);
-  });
-
-  it("accepts assignments that sum to exactly 100 with floating point", () => {
-    const s = setupSingleAmountExpense();
+  it("uses largest-remainder allocation in assignment order", () => {
+    const s = setupSingleAmountExpense(100);
     s.addParticipant(userBob);
     s.addParticipant(userCarlos);
-    // 33.33 + 33.33 + 33.34 = 100
-    s.splitBillByPercentage([
-      { userId: "user-alice", percentage: 33.33 },
-      { userId: "user-bob", percentage: 33.33 },
-      { userId: "user-carlos", percentage: 33.34 },
+    s.splitBillByBasisPoints([
+      { userId: "user-alice", basisPoints: 3333 },
+      { userId: "user-bob", basisPoints: 3333 },
+      { userId: "user-carlos", basisPoints: 3334 },
     ]);
-    const splits = useBillStore.getState().billSplits;
-    expect(splits).toHaveLength(3);
-    expect(splits.reduce((sum, sp) => sum + sp.computedAmountCents, 0)).toBe(10000);
+    expect(useBillStore.getState().billSplits.map((split) => split.computedAmountCents)).toEqual([33, 33, 34]);
+  });
+
+  it("rejects assignments below the exact basis point total", () => {
+    const s = setupSingleAmountExpense();
+    s.addParticipant(userBob);
+    s.splitBillByBasisPoints([
+      { userId: "user-alice", basisPoints: 5000 },
+      { userId: "user-bob", basisPoints: 4999 },
+    ]);
+    expect(useBillStore.getState().billSplits).toHaveLength(0);
+  });
+
+  it("rejects assignments above the exact basis point total", () => {
+    const s = setupSingleAmountExpense();
+    s.addParticipant(userBob);
+    s.splitBillByBasisPoints([
+      { userId: "user-alice", basisPoints: 5000 },
+      { userId: "user-bob", basisPoints: 5001 },
+    ]);
+    expect(useBillStore.getState().billSplits).toHaveLength(0);
   });
 
   it("is a no-op when no bill exists", () => {
-    useBillStore.getState().splitBillByPercentage([
-      { userId: "user-alice", percentage: 50 },
-      { userId: "user-bob", percentage: 50 },
+    useBillStore.getState().splitBillByBasisPoints([
+      { userId: "user-alice", basisPoints: 5000 },
+      { userId: "user-bob", basisPoints: 5000 },
     ]);
     expect(useBillStore.getState().billSplits).toHaveLength(0);
   });

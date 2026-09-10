@@ -26,6 +26,7 @@ export interface ParticipantsStepProps {
   onRemoveGuest: (id: string) => void;
   hasContactPicker: boolean;
   onPickContacts: () => Promise<void>;
+  showGroupPicker?: boolean;
 }
 
 export function ParticipantsStep({
@@ -44,6 +45,7 @@ export function ParticipantsStep({
   onRemoveGuest,
   onPickContacts,
   hasContactPicker,
+  showGroupPicker = true,
 }: ParticipantsStepProps) {
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [showAddGuest, setShowAddGuest] = useState(false);
@@ -58,12 +60,16 @@ export function ParticipantsStep({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        {selectedGroupId
-          ? "Participantes do grupo selecionado."
-          : "Adiciona a galera pelo @handle ou escolhe um grupo."}
-      </p>
+      {showGroupPicker && (
+        <p className="text-sm text-muted-foreground">
+          {selectedGroupId
+            ? "Participantes do grupo selecionado."
+            : "Adiciona a galera pelo @handle ou escolhe um grupo."}
+        </p>
+      )}
 
+      {showGroupPicker && (
+        <>
       {selectedGroup ? (
         <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
           <div className="rounded-xl bg-primary/10 p-2 text-primary">
@@ -108,6 +114,8 @@ export function ParticipantsStep({
             ))}
           </div>
         )
+      )}
+        </>
       )}
 
       <div className="space-y-2">
@@ -268,7 +276,7 @@ export function ParticipantsStep({
         </div>
       )}
 
-      {!selectedGroupId && !isSingleUserNoGuests && (
+      {showGroupPicker && !selectedGroupId && !isSingleUserNoGuests && (
         <div className="rounded-2xl border bg-card p-4">
           <label className="flex items-center gap-3">
             <input

@@ -95,8 +95,10 @@ test.describe("Expense Lifecycle", () => {
     await page.goto(`/app/bill/new?groupId=${group.id}&title=Draft Test&amount=8000`);
     await page.waitForLoadState("networkidle");
 
-    // participants step → nothing is persisted while the wizard is open
+    // participants sheet → nothing is persisted while the form is open
+    await page.getByRole("button", { name: "Participantes" }).click();
     await expect(page.getByText(bob.name).first()).toBeVisible({ timeout: 5000 });
+    await page.getByRole("button", { name: "Concluir" }).click();
 
     const { data: beforeSubmit } = await adminClient
       .from("expenses")
@@ -104,11 +106,9 @@ test.describe("Expense Lifecycle", () => {
       .eq("group_id", group.id);
     expect(beforeSubmit ?? []).toHaveLength(0);
 
-    await page.getByRole("button", { name: /Próximo|Continuar/i }).click();
-    await page.getByRole("button", { name: /Próximo|Continuar/i }).click();
-    await page.getByRole("button", { name: alice.name }).click();
-    await page.getByRole("button", { name: /Próximo|Continuar/i }).click();
-    await page.getByRole("button", { name: /Gerar cobranças Pix/i }).click();
+    await page.getByRole("button", { name: "Continuar" }).click();
+    await page.getByRole("button", { name: /Alice/ }).click();
+    await page.getByRole("button", { name: "Criar conta" }).click();
 
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, { timeout: 15000 });
 

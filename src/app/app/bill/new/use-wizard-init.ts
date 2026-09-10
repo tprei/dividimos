@@ -32,7 +32,7 @@ export interface WizardInitInput {
   selectedGroupId: string | null;
   onSetSelectedGroupId: (groupId: string) => void;
   onSetBillType: (type: ExpenseType) => void;
-  onSetStep: (step: "type" | "info" | "participants" | "items" | "split" | "amount-split" | "payer" | "summary") => void;
+  onSetStep: (step: "type" | "info" | "participants" | "items" | "split" | "payer" | "summary") => void;
   onSetTitle: (title: string) => void;
   onSetMerchantName: (merchant: string) => void;
   onSetServiceFee: (fee: string) => void;
@@ -82,7 +82,7 @@ export function useWizardInit({
       billStore.updateExpense({ title: autoTitle });
       onSetTitle(autoTitle);
       onSetBillType("single_amount");
-      onSetStep("amount-split");
+      onSetStep("info");
     } else {
       billStore.createExpense("", "itemized", undefined, modes.dm.groupId);
       billStore.addParticipant(counterparty);
@@ -100,10 +100,15 @@ export function useWizardInit({
     billStore.setCurrentUser(meToLegacyUser(me));
     billStore.createExpense(modes.chatDraft.title, "single_amount", undefined, modes.chatDraft.groupId);
     billStore.updateExpense({ totalAmountInput: modes.chatDraft.amountCents });
-    onSetTitle(modes.chatDraft.title);
+    const snapshot = useAppStore.getState().groups[modes.chatDraft.groupId];
+    for (const member of snapshot?.members ?? []) {
+      if (member.userId === me.id || member.status !== "accepted") continue;
+      billStore.addParticipant(profileToUser(member.user));
+    }
+    onSetSelectedGroupId(modes.chatDraft.groupId);
     onSetBillType("single_amount");
-    onSetStep("participants");
-  }, [modes.chatDraft, me, onSetTitle, onSetBillType, onSetStep]);
+    onSetStep("info");
+  }, [modes.chatDraft, me, onSetSelectedGroupId, onSetBillType, onSetStep]);
 
   // Edit mode: consume ?edit=<id> from the store's cached expense detail.
   useEffect(() => {
@@ -126,12 +131,12 @@ export function useWizardInit({
       onSetFixedFees(hydrated.expense?.fixedFees ? String(hydrated.expense.fixedFees / 100) : "");
       onSetSelectedGroupId(detail.expense.groupId);
 
-      if (hydrated.payers.length > 0) {
+      if (hydrated.expense?.expenseType === "single_amount") {
+        onSetStep("info");
+      } else if (hydrated.payers.length > 0) {
         onSetStep("payer");
-      } else if (hydrated.expense?.expenseType === "itemized" && hydrated.items.length > 0) {
+      } else if (hydrated.items.length > 0) {
         onSetStep("items");
-      } else if (hydrated.expense?.expenseType === "single_amount" && hydrated.billSplits.length > 0) {
-        onSetStep("amount-split");
       } else {
         onSetStep("participants");
       }

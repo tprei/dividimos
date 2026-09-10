@@ -7,8 +7,6 @@ import { formatBRL } from "@/lib/currency";
 export interface WizardErrorInputs {
   step: string;
   participantCount: number;
-  totalAmountInput: number;
-  assignedAmountCents: number;
   grandTotal: number;
   paidTotalCents: number;
   pendingInviteNames: string[];
@@ -18,8 +16,6 @@ export interface WizardErrorInputs {
 export function computeWizardError({
   step,
   participantCount,
-  totalAmountInput,
-  assignedAmountCents,
   grandTotal,
   paidTotalCents,
   pendingInviteNames,
@@ -27,12 +23,6 @@ export function computeWizardError({
 }: WizardErrorInputs): string | null {
   if (step === "participants" && participantCount < 2) {
     return "Adicione pelo menos uma pessoa para dividir a conta";
-  }
-  if (step === "amount-split") {
-    if (totalAmountInput <= 0) return "Informe o valor total da conta";
-    if (Math.abs(totalAmountInput - assignedAmountCents) > 1) {
-      return `A divisão (${formatBRL(assignedAmountCents)}) não bate com o total (${formatBRL(totalAmountInput)})`;
-    }
   }
   if (step === "payer") {
     if (paidTotalCents > 0 && grandTotal > 0 && Math.abs(grandTotal - paidTotalCents) > 1) {

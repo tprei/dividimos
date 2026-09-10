@@ -18,37 +18,23 @@ test.describe("DM first expense", () => {
 
     await expect(page.getByText(bob.name).first()).toBeVisible();
 
-    // Open the wizard with the chat-edit URL shape (title + amount). The
-    // bill-new page consumes these params and lands at the participants step
-    // with title and totalAmountInput pre-filled, skipping the type and info
-    // steps the same way ?dm= jumps straight to amount-split.
+    // Open the form with the chat-edit URL shape (title + amount). The
+    // bill-new page consumes these params and lands on the Conta stage with
+    // title and totalAmountInput pre-filled, the same way ?dm= jumps straight
+    // into the DM flow.
     await page.goto(`/app/bill/new?groupId=${dm.id}&title=Uber&amount=2500`);
     await page.waitForLoadState("networkidle");
 
-    // participants step → amount-split (group members auto-loaded from groupId)
+    // Group members are auto-added; their names show inside the sheet.
+    await page.getByRole("button", { name: "Participantes" }).click();
     await expect(page.getByText(bob.name).first()).toBeVisible({
       timeout: 5000,
     });
-    await page
-      .getByRole("button", { name: /Próximo|Continuar/i })
-      .click();
+    await page.getByRole("button", { name: "Concluir" }).click();
+    await page.getByRole("button", { name: "Continuar" }).click();
 
-    // amount-split step → payer (split is auto-equal because totalInput is set)
-    await page
-      .getByRole("button", { name: /Próximo|Continuar/i })
-      .click();
-
-    // payer step needs an explicit selection; pick alice as the full payer
-    await page.getByRole("button", { name: alice.name }).click();
-    await page
-      .getByRole("button", { name: /Próximo|Continuar/i })
-      .click();
-
-    // summary step → finalize ("Gerar cobranças Pix" calls create_expense; on
-    // success the page navigates to /app/bill/{id})
-    await page
-      .getByRole("button", { name: /Gerar cobranças Pix/i })
-      .click();
+    await page.getByRole("button", { name: /Alice/ }).click();
+    await page.getByRole("button", { name: "Criar conta" }).click();
 
     // Wait for navigation away from /new — the page only leaves /app/bill/new
     // after create_expense completes.

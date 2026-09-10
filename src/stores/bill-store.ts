@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
+import { allocateByBasisPoints, allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
 import type { ExpenseAllocationIssue } from "@/lib/expense-money";
 import type {
   DebtEdge,
@@ -94,7 +94,7 @@ export interface ExpenseState {
   removePayerEntry: (userId: string) => void;
 
   splitBillEqually: (userIds: string[]) => void;
-  splitBillByPercentage: (assignments: { userId: string; percentage: number }[]) => void;
+  splitBillByBasisPoints: (assignments: { userId: string; basisPoints: number }[]) => void;
   splitBillByFixed: (assignments: { userId: string; amountCents: number }[]) => void;
 
   getGrandTotal: () => number;
@@ -867,16 +867,17 @@ export const useBillStore = create<ExpenseState>()(
     set({ billSplits });
   },
 
-  splitBillByPercentage: (assignments) => {
+  splitBillByBasisPoints: (assignments) => {
     if (!get().expense) return;
-    const sum = assignments.reduce((s, a) => s + a.percentage, 0);
-    if (Math.abs(sum - 100) > 0.01) return;
-    const total = get().totalAmountInput;
-    const billSplits: AmountSplit[] = assignments.map((a) => ({
-      userId: a.userId,
+    const basisPoints = assignments.map((assignment) => assignment.basisPoints);
+    if (basisPoints.reduce((sum, value) => sum + value, 0) !== 10_000) return;
+    const allocation = allocateByBasisPoints(get().totalAmountInput, basisPoints);
+    if (!allocation.ok) return;
+    const billSplits: AmountSplit[] = assignments.map((assignment, index) => ({
+      userId: assignment.userId,
       splitType: "percentage" as SplitType,
-      value: a.percentage,
-      computedAmountCents: Math.round((total * a.percentage) / 100),
+      value: assignment.basisPoints / 100,
+      computedAmountCents: allocation.value[index],
     }));
     set({ billSplits });
   },
