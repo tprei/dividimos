@@ -136,4 +136,41 @@ describe("SingleBillForm division", () => {
     );
     expect(screen.getAllByText(/R\$\s*50,00/)).toHaveLength(2);
   });
+
+  it("adopts a group the page resolves after mount and submits into it", async () => {
+    const submit = vi.fn().mockResolvedValue(false);
+    const group = {
+      group: { id: "g-late", kind: "group" as const, name: "Viagem", creatorId: me.id, dmUserA: null, dmUserB: null, ledgerVersion: 1, createdAt: "2026-01-01T00:00:00Z" },
+      members: [],
+      balances: [],
+      guests: [],
+      settlements: [],
+      recentExpenses: [],
+      lastEventId: 0,
+      unreadCount: 0,
+      lastMessage: null,
+      lastActivityAt: "2026-01-01T00:00:00Z",
+      expenseCount: 0,
+    };
+    const props = {
+      me,
+      groups: [group],
+      isDmMode: false,
+      isEditing: false,
+      hasContactPicker: false,
+      onPickContacts: vi.fn().mockResolvedValue(undefined),
+      onBack: vi.fn(),
+      submit,
+    };
+    const { rerender } = render(<SingleBillForm {...props} initialGroupId={null} />);
+    rerender(<SingleBillForm {...props} initialGroupId="g-late" />);
+
+    expect(screen.getByRole("combobox", { name: "Grupo" })).toHaveValue("g-late");
+    fireEvent.click(screen.getByRole("button", { name: /Alice/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Criar conta" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith("g-late"));
+    expect(getOrCreateDmMock).not.toHaveBeenCalled();
+    expect(createGroupMock).not.toHaveBeenCalled();
+  });
 });

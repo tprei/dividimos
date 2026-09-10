@@ -76,6 +76,13 @@ export function SingleBillForm({
   const [groupSelection, setGroupSelection] = useState<string | null>(() =>
     isDmMode ? "dm" : initialGroupId,
   );
+  const [seenInitialGroupId, setSeenInitialGroupId] = useState(initialGroupId);
+  if (initialGroupId !== seenInitialGroupId) {
+    setSeenInitialGroupId(initialGroupId);
+    if (initialGroupId && !isDmMode && (groupSelection === null || groupSelection === seenInitialGroupId)) {
+      setGroupSelection(initialGroupId);
+    }
+  }
   const [createGroupEnabled, setCreateGroupEnabled] = useState(!isDmMode);
   const [createGroupName, setCreateGroupName] = useState("");
   const [divisionValid, setDivisionValid] = useState(false);
