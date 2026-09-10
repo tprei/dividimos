@@ -17,7 +17,7 @@ export function ParticipantsSheet({ open, onOpenChange, participants }: Particip
           <SheetTitle>Participantes</SheetTitle>
           <SheetDescription>Escolha quem divide esta conta.</SheetDescription>
         </SheetHeader>
-        <ParticipantsStep {...participants} />
+        <ParticipantsStep {...participants} showGroupPicker={false} />
       </SheetContent>
     </Sheet>
   );

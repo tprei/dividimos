@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
+import { ParticipantsSheet } from "@/components/bill/itemized/participants-sheet";
 import { SingleBillForm } from "@/components/bill/single-bill-form";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
@@ -152,23 +153,40 @@ function NewBillPageContent() {
   );
   const scanParticipants = useMemo<ItemDivisionParticipant[]>(() => {
     if (!me) return [];
+    const others = store.participants.filter((participant) => participant.id !== me.id);
     return [
-      {
-        id: me.id,
-        name: me.name,
-        avatarUrl: me.avatarUrl ?? null,
+      { id: me.id, name: me.name, avatarUrl: me.avatarUrl ?? null, isGuest: false },
+      ...others.map((participant) => ({
+        id: participant.id,
+        name: participant.name,
+        avatarUrl: participant.avatarUrl ?? null,
         isGuest: false,
-      },
-      ...(scanGroup?.members ?? [])
-        .filter((member) => member.userId !== me.id && member.status === "accepted")
-        .map((member) => ({
-          id: member.user.id,
-          name: member.user.name,
-          avatarUrl: member.user.avatarUrl ?? null,
-          isGuest: false,
-        })),
+      })),
+      ...store.guests.map((guest) => ({
+        id: guest.id,
+        name: guest.name,
+        avatarUrl: null,
+        isGuest: true,
+      })),
     ];
-  }, [me, scanGroup]);
+  }, [me, store.participants, store.guests]);
+
+  const [scanParticipantsOpen, setScanParticipantsOpen] = useState(false);
+
+  const handleReviewingChange = useCallback(
+    (reviewing: boolean) => {
+      setReviewingScan(reviewing);
+      if (!reviewing || !me) return;
+      const billStore = useBillStore.getState();
+      billStore.setCurrentUser(meToLegacyUser(me));
+      billStore.createExpense("", "itemized", undefined, scanGroup?.group.id);
+      for (const member of scanGroup?.members ?? []) {
+        if (member.userId === me.id || member.status !== "accepted") continue;
+        billStore.addParticipant(profileToUser(member.user));
+      }
+    },
+    [me, scanGroup],
+  );
 
   const defaultGroupName = useMemo(() => {
     const names = [
@@ -207,13 +225,13 @@ function NewBillPageContent() {
     if (scanGroup) setSelectedGroupId(scanGroup.group.id);
     if (me) {
       billStore.setCurrentUser(meToLegacyUser(me));
-      billStore.createExpense(
-        result.merchant || "Nota escaneada",
-        "itemized",
-        result.merchant || undefined,
-        scanGroup?.group.id,
-      );
+      if (!billStore.expense) {
+        billStore.createExpense("", "itemized", undefined, scanGroup?.group.id);
+      }
       billStore.updateExpense({
+        title: result.merchant || "Nota escaneada",
+        merchantName: result.merchant || undefined,
+        groupId: scanGroup?.group.id ?? "",
         serviceFeePercent: result.serviceFeeBasisPoints / 100,
         serviceFeeBasisPoints: result.serviceFeeBasisPoints,
         fixedFees: result.fixedFeesCents,
@@ -226,10 +244,6 @@ function NewBillPageContent() {
           unitPriceCents: item.unitPriceCents,
           totalPriceCents: item.totalCents,
         });
-      }
-      for (const member of scanGroup?.members ?? []) {
-        if (member.userId === me.id || member.status !== "accepted") continue;
-        billStore.addParticipant(profileToUser(member.user));
       }
 
       const addedItems = useBillStore.getState().items;
@@ -457,9 +471,33 @@ function NewBillPageContent() {
           onTypeSelect={handleTypeSelect}
           onScanConfirm={handleScanConfirm}
           onVoiceConfirm={handleVoiceConfirm}
-          onReviewingChange={setReviewingScan}
+          onReviewingChange={handleReviewingChange}
+          onManageParticipants={() => setScanParticipantsOpen(true)}
         />
       </div>
+      {me && (
+        <ParticipantsSheet
+          open={scanParticipantsOpen}
+          onOpenChange={setScanParticipantsOpen}
+          participants={{
+            me,
+            participants: store.participants,
+            guests: store.guests,
+            selectedGroupId,
+            groups: groupSnapshots,
+            createGroup: { enabled: createGroupEnabled, name: createGroupName },
+            onToggleCreateGroup: setCreateGroupEnabled,
+            onCreateGroupName: setCreateGroupName,
+            onSelectGroup: setSelectedGroupId,
+            onAddParticipant: (profile) => useBillStore.getState().addParticipant(profileToUser(profile)),
+            onRemoveParticipant: (id) => useBillStore.getState().removeParticipant(id),
+            onAddGuest: (name, phone) => useBillStore.getState().addGuest(name, phone),
+            onRemoveGuest: (id) => useBillStore.getState().removeGuest(id),
+            hasContactPicker,
+            onPickContacts: handlePickContacts,
+          }}
+        />
+      )}
     </div>
   );
 }

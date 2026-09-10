@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Plus, ScanLine, Search } from "lucide-react";
+import { Bell, Plus, ScanLine, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useState } from "react";
@@ -69,11 +69,12 @@ export function DashboardContent() {
   const owedTotal = owed.reduce((sum, row) => sum + row.amountCents, 0);
   const net = owedTotal - owesTotal;
 
-  const handleMarkPaid = async (amountCents: number) => {
+  const handleMarkPaid = async (amountCents: number, operationId: string) => {
     if (!me || !pixTarget) throw new LedgerError("unauthenticated");
     const { debt, mode } = pixTarget;
     await recordSettlement({
       groupId: debt.groupId,
+      operationId,
       fromUserId: mode === "pay" ? me.id : debt.counterpartyId,
       toUserId: mode === "pay" ? debt.counterpartyId : me.id,
       amountCents,
@@ -187,6 +188,16 @@ export function DashboardContent() {
             <Plus className="size-4 shrink-0" aria-hidden="true" />
             <span className="truncate">Nova conta</span>
           </Link>
+          <Button
+            variant="outline"
+            className="h-11 min-w-0 flex-1"
+            onClick={openQuickCharge}
+            disabled={!me.pixKeyHint}
+            title={me.pixKeyHint ? undefined : "Cadastre uma chave Pix no perfil"}
+          >
+            <Zap className="size-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">Cobrar rápido</span>
+          </Button>
         </div>
       </div>
 
@@ -243,7 +254,6 @@ export function DashboardContent() {
         <CounterpartyDialog
           row={selectedDebt}
           meId={me.id}
-          canQuickCharge={Boolean(me.pixKeyHint)}
           open
           onClose={() => setSelectedDebt(null)}
           onPay={openPay}
@@ -251,7 +261,6 @@ export function DashboardContent() {
           onNudge={(row) => {
             void handleNudge(row.groupId, row.counterpartyId);
           }}
-          onQuickCharge={openQuickCharge}
         />
       )}
 

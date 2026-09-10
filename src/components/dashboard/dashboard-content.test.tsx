@@ -214,7 +214,7 @@ describe("DashboardContent", () => {
     expect(pixProps.current?.mode).toBe("collect");
   });
 
-  it("exposes nudge and quick charge from a receivable dialog", async () => {
+  it("exposes nudge from a receivable dialog", async () => {
     groupMutations.sendNudge.mockResolvedValue({ groupId: "g1", ledgerVersion: 1, eventId: 10 });
     seedStore([
       snapshot({
@@ -233,12 +233,17 @@ describe("DashboardContent", () => {
       expect(groupMutations.sendNudge).toHaveBeenCalledWith("g1", carol.id);
       expect(toastSuccess).toHaveBeenCalledWith("Lembrete enviado");
     });
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Cobrar valor" }));
+  it("opens quick charge from the home actions when a Pix key exists", async () => {
+    seedStore([snapshot()], meWithPixKey);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cobrar rápido" }));
     await waitFor(() => expect(quickProps.current?.open).toBe(true));
   });
 
-  it("hides Cobrar valor without a Pix key", () => {
+  it("disables quick charge without a Pix key", () => {
     seedStore([
       snapshot({
         balances: [
@@ -249,10 +254,10 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
+    expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
     expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lembrar" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Cobrar valor" })).not.toBeInTheDocument();
   });
 
   it("keeps guest rows free of Pix and nudge actions", () => {

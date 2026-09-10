@@ -117,7 +117,7 @@ describe("PixQrModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Já paguei/i }));
 
     await waitFor(() => {
-      expect(onMarkPaid).toHaveBeenCalledWith(10000);
+      expect(onMarkPaid).toHaveBeenCalledWith(10000, expect.any(String));
     });
   });
 
@@ -133,7 +133,7 @@ describe("PixQrModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Paguei/i }));
 
     await waitFor(() => {
-      expect(onMarkPaid).toHaveBeenCalledWith(5000);
+      expect(onMarkPaid).toHaveBeenCalledWith(5000, expect.any(String));
     });
   });
 

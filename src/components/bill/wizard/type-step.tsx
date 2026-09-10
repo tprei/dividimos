@@ -33,6 +33,7 @@ export interface TypeStepProps {
   ) => void;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
   onReviewingChange: (reviewing: boolean) => void;
+  onManageParticipants: () => void;
 }
 
 export function TypeStep({
@@ -43,6 +44,7 @@ export function TypeStep({
   onScanConfirm,
   onVoiceConfirm,
   onReviewingChange,
+  onManageParticipants,
 }: TypeStepProps) {
   const searchParams = useSearchParams();
 
@@ -196,6 +198,7 @@ export function TypeStep({
         initialOccurredOn={occurredOn}
         onConfirm={handleScanConfirm}
         onCancel={handleScanCancel}
+        onManageParticipants={onManageParticipants}
       />
     );
   }

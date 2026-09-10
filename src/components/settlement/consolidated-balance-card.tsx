@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef, useState } from "react";
+
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -38,6 +40,49 @@ function segmentCenters(balances: BalanceRow[], total: number): number[] {
     cumulative += width;
   }
   return centers;
+}
+
+const AVATAR_DIAMETER = 24;
+const AVATAR_GAP = 4;
+
+export interface FanPlacement {
+  index: number;
+  x: number;
+  row: number;
+}
+
+export function fanLayout(params: {
+  centers: number[];
+  laneWidth: number;
+  diameter: number;
+  gap: number;
+}): FanPlacement[] {
+  const { centers, laneWidth, diameter, gap } = params;
+  const radius = diameter / 2;
+  const step = diameter + gap;
+  const upperBound = Math.max(radius, laneWidth - radius);
+  const rowTails: number[] = [];
+  const placements: FanPlacement[] = [];
+  const order = centers
+    .map((center, index) => ({ center, index }))
+    .sort((a, b) => a.center - b.center || a.index - b.index);
+  for (const { center, index } of order) {
+    const desired = Math.min(Math.max(center, radius), upperBound);
+    let row = rowTails.length;
+    for (let candidate = 0; candidate < rowTails.length; candidate += 1) {
+      if (Math.max(desired, rowTails[candidate] + step) <= upperBound) {
+        row = candidate;
+        break;
+      }
+    }
+    const x =
+      row < rowTails.length
+        ? Math.max(desired, rowTails[row] + step)
+        : desired;
+    rowTails[row] = x;
+    placements.push({ index, x, row });
+  }
+  return placements;
 }
 
 function PersonAvatar({
@@ -88,6 +133,33 @@ function ConsolidatedSide({
     resolved.map((entry) => entry.balance),
     total,
   );
+  const laneRef = useRef<HTMLDivElement | null>(null);
+  const [laneWidth, setLaneWidth] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const element = laneRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setLaneWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const placements =
+    laneWidth === null
+      ? []
+      : fanLayout({
+          centers: centers.map((center) => (center / 100) * laneWidth),
+          laneWidth,
+          diameter: AVATAR_DIAMETER,
+          gap: AVATAR_GAP,
+        });
+  const rowCount =
+    placements.length === 0
+      ? 1
+      : Math.max(...placements.map((placement) => placement.row)) + 1;
 
   return (
     <div
@@ -95,15 +167,26 @@ function ConsolidatedSide({
       role="group"
       aria-label={isDebt ? "Dívidas" : "Créditos"}
     >
-      <div className="relative h-6" aria-hidden="true">
-        {resolved.map((entry, index) => (
+      <div
+        ref={laneRef}
+        className="relative"
+        style={{
+          height:
+            rowCount * AVATAR_DIAMETER + (rowCount - 1) * AVATAR_GAP,
+        }}
+        aria-hidden="true"
+      >
+        {placements.map(({ index, x, row }) => (
           <span
-            key={entry.balance.participantId}
-            className="absolute top-0 -translate-x-1/2"
-            style={{ left: `clamp(14px, ${centers[index]}%, calc(100% - 14px))` }}
+            key={resolved[index].balance.participantId}
+            className="absolute -translate-x-1/2"
+            style={{
+              left: x,
+              bottom: row * (AVATAR_DIAMETER + AVATAR_GAP),
+            }}
           >
             <PersonAvatar
-              person={entry.person}
+              person={resolved[index].person}
               className={
                 isDebt
                   ? "bg-destructive/10 text-destructive"

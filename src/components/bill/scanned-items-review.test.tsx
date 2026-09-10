@@ -48,6 +48,7 @@ function renderReview(
       participants={participants}
       onConfirm={onConfirm}
       onCancel={onCancel}
+      onManageParticipants={vi.fn()}
     />,
   );
   return { onConfirm, onCancel };

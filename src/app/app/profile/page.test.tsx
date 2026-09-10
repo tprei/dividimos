@@ -235,9 +235,7 @@ describe("ProfilePage Pix key card", () => {
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
 
-    expect(screen.getByRole("combobox", { name: "Tipo" })).toHaveTextContent(
-      "E-mail",
-    );
+    expect(screen.getByRole("radio", { name: "E-mail" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByLabelText("Chave")).toHaveValue("");
   });
 
@@ -246,8 +244,7 @@ describe("ProfilePage Pix key card", () => {
     render(<ProfilePage />);
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
-    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
-    await user.click(screen.getByRole("option", { name: "Telefone" }));
+    await user.click(screen.getByRole("radio", { name: "Telefone" }));
     await user.type(screen.getByPlaceholderText("(11) 99999-9999"), "11999998888");
 
     expect(
@@ -264,8 +261,7 @@ describe("ProfilePage Pix key card", () => {
     render(<ProfilePage />);
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
-    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
-    await user.click(screen.getByRole("option", { name: "Telefone" }));
+    await user.click(screen.getByRole("radio", { name: "Telefone" }));
     await user.type(screen.getByPlaceholderText("(11) 99999-9999"), "11999998888");
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
@@ -291,8 +287,7 @@ describe("ProfilePage Pix key card", () => {
     render(<ProfilePage />);
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
-    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
-    await user.click(screen.getByRole("option", { name: "CPF" }));
+    await user.click(screen.getByRole("radio", { name: "CPF" }));
     await user.type(screen.getByLabelText("Chave"), "123");
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
@@ -312,8 +307,7 @@ describe("ProfilePage identity-keyed state", () => {
     const { rerender } = render(<ProfilePage />);
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
-    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
-    await user.click(screen.getByRole("option", { name: "Telefone" }));
+    await user.click(screen.getByRole("radio", { name: "Telefone" }));
     await user.type(
       screen.getByPlaceholderText("(11) 99999-9999"),
       "11999998888",
@@ -338,8 +332,7 @@ describe("ProfilePage identity-keyed state", () => {
     const { rerender } = render(<ProfilePage />);
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
-    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
-    await user.click(screen.getByRole("option", { name: "Telefone" }));
+    await user.click(screen.getByRole("radio", { name: "Telefone" }));
     await user.type(
       screen.getByPlaceholderText("(11) 99999-9999"),
       "11999998888",

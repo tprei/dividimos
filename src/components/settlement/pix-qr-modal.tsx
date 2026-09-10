@@ -1,8 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Loader2, QrCode, Shield } from "lucide-react";
+import { Check, Copy, Loader2, Pencil, QrCode, Shield } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -43,7 +44,7 @@ interface PixQrModalBaseProps {
   recipientName: string;
   amountCents: number;
   mode?: "pay" | "collect";
-  onMarkPaid: (amountCents: number) => Promise<void>;
+  onMarkPaid: (amountCents: number, operationId: string) => Promise<void>;
   onSettlementComplete?: () => void;
 }
 
@@ -69,6 +70,7 @@ export function PixQrModal({
   const [showSuccess, setShowSuccess] = useState(false);
   const [settledAmountCents, setSettledAmountCents] = useState(0);
   const [paymentCents, setPaymentCents] = useState(amountCents);
+  const [editingAmount, setEditingAmount] = useState(false);
   const [fetched, setFetched] = useState<FetchedPayload | null>(null);
   const [payloadError, setPayloadError] = useState(false);
   const [payloadLoading, setPayloadLoading] = useState(false);
@@ -83,6 +85,12 @@ export function PixQrModal({
   const snapStep = getSnapStep(range);
   const snapPoints = getSnapPoints(sliderMin, amountCents);
   const snapRadius = getSnapRadius(snapStep, sliderStep);
+
+  const commitAmount = useCallback(() => {
+    setEditingAmount(false);
+    setPaymentCents((current) => Math.min(Math.max(current, 1), amountCents));
+  }, [amountCents]);
+  const settleKey = useRef(crypto.randomUUID());
 
   const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -219,7 +227,8 @@ export function PixQrModal({
     if (!isValidAmount || isSettling) return;
     setIsSettling(true);
     try {
-      await onMarkPaid(paymentCents);
+      await onMarkPaid(paymentCents, settleKey.current);
+      settleKey.current = crypto.randomUUID();
       setSettledAmountCents(paymentCents);
       haptics.success();
       setShowSuccess(true);
@@ -329,9 +338,36 @@ export function PixQrModal({
                 </DialogDescription>
 
                 <div className="mt-3">
-                  <p className="text-3xl font-bold tabular-nums text-primary">
-                    {formatBRL(paymentCents)}
-                  </p>
+                  {editingAmount ? (
+                    <label
+                      className="flex items-center justify-center gap-1 text-3xl font-bold tabular-nums text-primary"
+                      onBlur={commitAmount}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === "Escape") commitAmount();
+                      }}
+                    >
+                      <span className="sr-only">Editar valor</span>
+                      <span aria-hidden="true">R$</span>
+                      <CurrencyInput
+                        autoFocus
+                        valueCents={paymentCents}
+                        maxCents={amountCents}
+                        onChangeCents={setPaymentCents}
+                        className="h-12 w-40 text-3xl font-bold text-primary"
+                      />
+                    </label>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setEditingAmount(true)}
+                      disabled={isSettling}
+                      aria-label={`Editar valor, ${formatBRL(paymentCents)}`}
+                      className="inline-flex items-center gap-2 rounded-lg px-2 text-3xl font-bold tabular-nums text-primary transition-colors hover:bg-primary/10"
+                    >
+                      {formatBRL(paymentCents)}
+                      <Pencil className="size-4 text-muted-foreground" aria-hidden="true" />
+                    </button>
+                  )}
                   <input
                     type="range"
                     min={sliderMin}

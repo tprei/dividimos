@@ -1,17 +1,22 @@
 "use client";
 
-import { Loader2, UsersRound } from "lucide-react";
+import { Banknote, Loader2, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatThread } from "@/components/chat/chat-thread";
+import {
+  GroupRegisterPaymentSheet,
+  type GroupPaymentResult,
+  type GroupPaymentStatus,
+} from "@/components/chat/group-register-payment-sheet";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
-import { markRead, sendMessage } from "@/lib/sync/mutations";
+import { markRead, recordSettlement, sendMessage } from "@/lib/sync/mutations";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { loadConversation } from "@/lib/sync/refresh";
 import { selectGroup } from "@/stores/app-selectors";
@@ -52,6 +57,48 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const nameOf = useCallback(
     (userId: string) => nameById.get(userId) ?? "Alguém",
     [nameById],
+  );
+  const paymentCounterparties = useMemo(
+    () =>
+      accepted
+        .filter((member) => member.userId !== me?.id)
+        .map((member) => ({
+          id: member.userId,
+          name: member.user.name,
+          handle: member.user.handle,
+        })),
+    [accepted, me?.id],
+  );
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<GroupPaymentStatus>("idle");
+  const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
+  const paymentKey = useRef(crypto.randomUUID());
+
+  const handleRegisterPayment = useCallback(
+    async (result: GroupPaymentResult) => {
+      if (!me) return;
+      setPaymentStatus("confirming");
+      setPaymentError(undefined);
+      try {
+        await recordSettlement({
+          operationId: paymentKey.current,
+          groupId,
+          fromUserId: result.payerIsSelf ? me.id : result.counterpartyId,
+          toUserId: result.payerIsSelf ? result.counterpartyId : me.id,
+          amountCents: result.amountCents,
+        });
+        paymentKey.current = crypto.randomUUID();
+        setPaymentStatus("confirmed");
+        window.setTimeout(() => {
+          setPaymentOpen(false);
+          setPaymentStatus("idle");
+        }, 1200);
+      } catch (error) {
+        setPaymentStatus("error");
+        setPaymentError(ledgerErrorMessage(error));
+      }
+    },
+    [groupId, me],
   );
 
   useEffect(() => {
@@ -163,6 +210,34 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           onLoadMore={handleLoadMore}
         />
       </div>
+      {paymentOpen && paymentCounterparties.length > 0 && (
+        <div className="px-4 pb-2">
+          <GroupRegisterPaymentSheet
+            currentUserHandle={me.handle}
+            counterparties={paymentCounterparties}
+            onConfirm={handleRegisterPayment}
+            onDismiss={() => setPaymentOpen(false)}
+            status={paymentStatus}
+            errorMessage={paymentError}
+          />
+        </div>
+      )}
+      {paymentCounterparties.length > 0 && (
+        <div className="flex px-4 pb-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPaymentStatus("idle");
+              setPaymentError(undefined);
+              setPaymentOpen((prev) => !prev);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+          >
+            <Banknote className="h-3.5 w-3.5" />
+            Registrar pagamento
+          </button>
+        </div>
+      )}
       <ChatInput onSend={handleSend} />
     </div>
   );

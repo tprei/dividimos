@@ -1,14 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { DebtGraph } from "./debt-graph";
 import type { DebtEdge } from "@/lib/simplify";
 
-const motionState = vi.hoisted(() => ({ reduced: false }));
+const originalMatchMedia = globalThis.matchMedia;
 
-vi.mock("framer-motion", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("framer-motion")>()),
-  useReducedMotion: () => motionState.reduced,
-}));
+function enableReducedMotion(): void {
+  globalThis.matchMedia = ((query: string) => ({
+    matches: query.includes("prefers-reduced-motion"),
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as typeof globalThis.matchMedia;
+}
 
 const participants = [
   { id: "a", name: "Ana Lima" },
@@ -36,15 +49,25 @@ function edgeLabel(edge: DebtEdge): string {
   return `${name(edge.fromUserId)} paga ${brl(edge.amountCents)} para ${name(edge.toUserId)}`;
 }
 
+function edgeLabels(container: HTMLElement): number {
+  return container.querySelectorAll('svg[role="group"] foreignObject').length;
+}
+
+function nodeCoordinates(container: HTMLElement): string[] {
+  return Array.from(
+    container.querySelectorAll('svg[role="group"] circle'),
+  ).map((circle) => `${circle.getAttribute("cx")},${circle.getAttribute("cy")}`);
+}
+
 afterEach(() => {
-  motionState.reduced = false;
+  globalThis.matchMedia = originalMatchMedia;
   vi.useRealTimers();
   cleanup();
 });
 
 describe("DebtGraph", () => {
   it("renders the final arrangement immediately under reduced motion", () => {
-    motionState.reduced = true;
+    enableReducedMotion();
 
     render(
       <DebtGraph participants={participants} edges={edges} rawEdges={rawEdges} />,
@@ -54,23 +77,58 @@ describe("DebtGraph", () => {
     expect(screen.queryByText("R$ 40,00")).not.toBeInTheDocument();
   });
 
+  it("keeps the raw/simplified toggle working without transitions under reduced motion", () => {
+    enableReducedMotion();
 
-  it("shows raw edges first and crossfades once to the final edges", () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-
-    render(
+    const { container } = render(
       <DebtGraph participants={participants} edges={edges} rawEdges={rawEdges} />,
     );
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver dívidas originais" }),
+    );
     expect(screen.getByText("R$ 40,00")).toBeInTheDocument();
-    expect(screen.queryByText("R$ 30,00")).not.toBeInTheDocument();
-
-    act(() => {
-      vi.advanceTimersByTime(200);
-    });
-
-
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ver plano simplificado" }),
+    );
+    expect(screen.queryByText("R$ 40,00")).not.toBeInTheDocument();
     expect(screen.getByText("R$ 30,00")).toBeInTheDocument();
+    expect(edgeLabels(container)).toBe(2);
+  });
+
+  it("shows every raw edge first, then settles on exactly the simplified transfers", async () => {
+    enableReducedMotion();
+
+    const { container } = render(
+      <DebtGraph participants={participants} edges={edges} rawEdges={rawEdges} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver dívidas originais" }));
+    expect(screen.getByText("R$ 40,00")).toBeInTheDocument();
+    expect(screen.getByText("R$ 70,00")).toBeInTheDocument();
+    expect(await screen.findByText("R$ 60,00")).toBeInTheDocument();
+    expect(edgeLabels(container)).toBe(rawEdges.length);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver plano simplificado" }));
+    expect(screen.queryByText("R$ 40,00")).not.toBeInTheDocument();
+    expect(await screen.findByText("R$ 30,00")).toBeInTheDocument();
+    expect(edgeLabels(container)).toBe(edges.length);
+  });
+
+  it("keeps node positions stable across the raw and simplified phases", () => {
+    enableReducedMotion();
+
+    const { container } = render(
+      <DebtGraph participants={participants} edges={edges} rawEdges={rawEdges} />,
+    );
+    const simplifiedPositions = nodeCoordinates(container);
+    expect(simplifiedPositions).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver dívidas originais" }));
+    expect(nodeCoordinates(container)).toEqual(simplifiedPositions);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ver plano simplificado" }));
+    expect(nodeCoordinates(container)).toEqual(simplifiedPositions);
   });
 
   it("selecting an edge calls onSelectEdge with the edge", () => {
