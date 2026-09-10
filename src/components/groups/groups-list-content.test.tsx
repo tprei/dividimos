@@ -230,7 +230,7 @@ describe("GroupsListContent", () => {
     expect(screen.getByText("Convite · Ainda não")).toBeInTheDocument();
   });
 
-  it("removes an invitation only after a successful refresh", async () => {
+  it("removes an invitation only after the accepted snapshot lands", async () => {
     const invitedSnapshot = snapshot("g2", {
       group: { name: "Casa nova" },
       members: [
@@ -246,20 +246,15 @@ describe("GroupsListContent", () => {
       ],
     });
     seed([invitedSnapshot]);
-    vi.mocked(acceptInvitation).mockResolvedValue({
-      groupId: "g2",
-      ledgerVersion: 2,
-      eventId: 1,
-    });
 
-    let resolveRefresh!: () => void;
-    const refreshPromise = new Promise<void>((resolve) => {
-      resolveRefresh = () => {
+    let resolveAccept!: () => void;
+    const acceptPromise = new Promise<{ groupId: string; ledgerVersion: number; eventId: number }>((resolve) => {
+      resolveAccept = () => {
         useAppStore.getState().applyGroup(acceptedSnapshot);
-        resolve();
+        resolve({ groupId: "g2", ledgerVersion: 2, eventId: 1 });
       };
     });
-    vi.mocked(refreshGroup).mockReturnValueOnce(refreshPromise);
+    vi.mocked(acceptInvitation).mockReturnValueOnce(acceptPromise);
 
     render(<GroupsListContent />);
 
@@ -267,13 +262,14 @@ describe("GroupsListContent", () => {
       screen.getByRole("button", { name: "Aceitar convite para Casa nova" }),
     );
     await waitFor(() => {
-      expect(refreshGroup).toHaveBeenCalledWith("g2");
+      expect(acceptInvitation).toHaveBeenCalledWith("g2");
     });
     expect(screen.getByText("Convite · Casa nova")).toBeInTheDocument();
+    expect(refreshGroup).not.toHaveBeenCalled();
 
     await act(async () => {
-      resolveRefresh();
-      await refreshPromise;
+      resolveAccept();
+      await acceptPromise;
     });
 
     await waitFor(() => {
