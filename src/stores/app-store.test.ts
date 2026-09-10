@@ -1,3 +1,4 @@
+import { conversationState } from "./app-store-merge";
 import { beforeEach, describe, expect, it } from "vitest";
 import type {
   Bootstrap,
@@ -157,8 +158,8 @@ describe("applyBootstrap", () => {
         g2: { ids: [], oldestCursor: null, complete: true },
       },
       conversations: {
-        g1: { messages: [message("m1", "m1", "2026-01-02T00:00:00Z")], events: [], oldestCursor: "2026-01-02T00:00:00Z" },
-        g2: { messages: [], events: [], oldestCursor: null },
+        g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T00:00:00Z")] }),
+        g2: conversationState(),
       },
       expenseDetails: { e1: detail("e1", "g1"), e2: detail("e2", "g2") },
     });
@@ -187,6 +188,21 @@ describe("applyBootstrap", () => {
       groups: [snapshot("g1", recentExpenses(20, "g1"))],
     });
     expect(useAppStore.getState().expenseLists.g1?.complete).toBe(false);
+  });
+
+  it("seeds a conversation the reader can consume for a group it has never opened", () => {
+    useAppStore.getState().applyBootstrap({
+      me,
+      serverTime: "2026-01-03T00:00:00Z",
+      groups: [snapshot("g1", [])],
+    });
+
+    // The chat screen reads the reconcile slice on first render; a seed
+    // missing it took the whole conversation down.
+    const conversation = useAppStore.getState().conversations.g1;
+    expect(conversation?.reconcile.readableThroughMessageId).toBeNull();
+    expect(conversation?.messagesComplete).toBe(false);
+    expect(conversation?.messageCursor).toBeNull();
   });
 
   it("seeds complete=true when the snapshot has fewer than 20 recent expenses", () => {
@@ -275,31 +291,77 @@ describe("replaceExpenseId", () => {
 });
 
 describe("applyConversation", () => {
-  it("dedupes by clientId, replaces the optimistic message on ack and keeps oldestCursor on append", () => {
+  it("replaces the optimistic message with its acknowledgement exactly once", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", []) },
       conversations: {},
     });
 
-    useAppStore.getState().applyConversation(
-      "g1",
-      { messages: [message("optimistic", "client-1", "2026-01-02T10:00:00Z")], events: [] },
-      false,
-    );
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("client-1", "client-1", "2026-01-02T10:00:00Z")],
+      events: [],
+    });
     let conversation = useAppStore.getState().conversations.g1;
     expect(conversation?.messages).toHaveLength(1);
-    expect(conversation?.oldestCursor).toBe("2026-01-02T10:00:00Z");
+    expect(conversation?.messages[0]?.id).toBe("client-1");
 
-    useAppStore.getState().applyConversation(
-      "g1",
-      { messages: [message("srv-1", "client-1", "2026-01-02T10:00:00Z")], events: [] },
-      false,
-    );
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("srv-1", "client-1", "2026-01-02T10:00:00Z")],
+      events: [],
+    });
     conversation = useAppStore.getState().conversations.g1;
     expect(conversation?.messages).toHaveLength(1);
     expect(conversation?.messages[0]?.id).toBe("srv-1");
-    expect(conversation?.oldestCursor).toBe("2026-01-02T10:00:00Z");
+
+    // The acknowledgement arriving twice, or an out-of-order provisional row,
+    // must not resurrect the optimistic id or duplicate the row.
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("client-1", "client-1", "2026-01-02T10:00:00Z")],
+      events: [],
+    });
+    conversation = useAppStore.getState().conversations.g1;
+    expect(conversation?.messages).toHaveLength(1);
+    expect(conversation?.messages[0]?.id).toBe("srv-1");
+  });
+
+  it("keeps cursors untouched for a live row but adopts them from a page", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+      conversations: {
+        g1: conversationState({
+          messages: [message("m1", "m1", "2026-01-02T10:00:00Z")],
+          messageCursor: { createdAt: "2026-01-02T10:00:00.000000Z", id: "m1" },
+        }),
+      },
+    });
+
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("m2", "m2", "2026-01-02T10:00:05Z")],
+      events: [],
+    });
+    expect(useAppStore.getState().conversations.g1?.messageCursor?.id).toBe("m1");
+    expect(useAppStore.getState().conversations.g1?.messagesComplete).toBe(false);
+
+    useAppStore.getState().applyConversation("g1", {
+      kind: "older",
+      envelope: {
+        messages: [],
+        messageCursor: null,
+        messagesComplete: true,
+        events: [],
+        eventCursor: null,
+        eventsComplete: true,
+        readWatermark: null,
+      },
+    });
+    expect(useAppStore.getState().conversations.g1?.messageCursor).toBeNull();
+    expect(useAppStore.getState().conversations.g1?.messagesComplete).toBe(true);
   });
 
   it("dedupes events by id", () => {
@@ -307,11 +369,15 @@ describe("applyConversation", () => {
       me,
       groups: { g1: snapshot("g1", []) },
       conversations: {
-        g1: { messages: [message("m1", "m1", "2026-01-02T10:00:00Z")], events: [], oldestCursor: "2026-01-02T10:00:00Z" },
+        g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T10:00:00Z")] }),
       },
     });
 
-    useAppStore.getState().applyConversation("g1", { messages: [], events: [event(1, "2026-01-02T10:00:01Z"), event(1, "2026-01-02T10:00:01Z")] }, false);
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [],
+      events: [event(1, "2026-01-02T10:00:01Z"), event(1, "2026-01-02T10:00:01Z")],
+    });
 
     expect(useAppStore.getState().conversations.g1?.events).toHaveLength(1);
   });

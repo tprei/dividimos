@@ -305,9 +305,24 @@ export interface GuestClaimResolution {
   status: GuestClaimStatus;
 }
 
+export interface ChatCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface ConversationReadWatermark {
+  lastReadAt: string;
+  lastReadMessageId: string;
+}
+
 export interface Conversation {
   messages: ChatMessage[];
+  messageCursor: ChatCursor | null;
+  messagesComplete: boolean;
   events: GroupEvent[];
+  eventCursor: ChatCursor | null;
+  eventsComplete: boolean;
+  readWatermark: ConversationReadWatermark | null;
 }
 
 export interface WireIssue {

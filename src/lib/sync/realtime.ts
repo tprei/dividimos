@@ -1,7 +1,8 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { decodeChatMessage } from "@/lib/ledger/decode";
 import { useAppStore } from "@/stores/app-store";
-import type { AppState, ConversationState } from "@/stores/app-store";
+import type { AppState } from "@/stores/app-store";
+import { mergeConversation } from "@/stores/app-store-merge";
 import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
 import { runBootstrap } from "./bootstrap";
 import { getSupabase } from "./client";
@@ -58,12 +59,6 @@ export function shouldRefreshGroup(
   );
 }
 
-function compareCreatedAtAsc(a: ChatMessage, b: ChatMessage): number {
-  if (a.createdAt < b.createdAt) return -1;
-  if (a.createdAt > b.createdAt) return 1;
-  return 0;
-}
-
 export function mergeChatBroadcast(
   state: AppState,
   groupId: string,
@@ -78,16 +73,15 @@ export function mergeChatBroadcast(
   const patch: Partial<AppState> = {};
 
   if (!isDuplicate) {
-    const prevMessages = existingConv?.messages ?? [];
-    const prevEvents = existingConv?.events ?? [];
-    const newConv: ConversationState = {
-      messages: [...prevMessages, message].sort(compareCreatedAtAsc),
-      events: prevEvents,
-      oldestCursor: existingConv?.oldestCursor ?? null,
-    };
+    // The shared reducer owns identity and ordering; a live row never changes
+    // either stream's cursor or completeness.
     patch.conversations = {
       ...state.conversations,
-      [groupId]: newConv,
+      [groupId]: mergeConversation(
+        existingConv,
+        { kind: "broadcast", messages: [message], events: [] },
+        state.me?.id ?? null,
+      ),
     };
   }
 
@@ -200,6 +194,11 @@ export function startRealtime(): () => void {
           .channel(`group:${id}`, { config: { private: true } })
           .on("broadcast", { event: "ledger" }, ({ payload }) => {
             handleLedgerBroadcast(id, payload);
+          })
+          .on("broadcast", { event: "chat_activity" }, () => {
+            // Wakes conversation previews and unread badges through the one
+            // coalesced group refresh; never a per-event query burst.
+            void refreshGroup(id).catch(() => {});
           })
           .subscribe(
             onRecovery(() => {
