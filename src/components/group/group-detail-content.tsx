@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence } from "framer-motion";
-import { ArrowLeft, Share2, UserPlus, UsersRound } from "lucide-react";
+import { ArrowLeft, MessageSquare, Share2, UserPlus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -119,6 +119,23 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             </div>
           )}
         </div>
+        {isAcceptedMember && (
+          <Button
+            variant="outline"
+            className="relative size-11 shrink-0 rounded-full"
+            render={<Link href={`/app/groups/${groupId}/chat`} aria-label="Conversa" />}
+          >
+            <MessageSquare className="h-5 w-5" />
+            {snapshot.unreadCount > 0 && (
+              <span
+                aria-label={`${snapshot.unreadCount} mensagens não lidas`}
+                className="absolute -right-1 -top-1 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-primary px-[5px] text-[9.5px] font-extrabold text-primary-foreground"
+              >
+                {snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}
+              </span>
+            )}
+          </Button>
+        )}
         {canInvite && (
           <div className="flex items-center gap-1.5">
             <Button

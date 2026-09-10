@@ -164,7 +164,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
   };
 
   return (
-    <div className="mx-auto w-full max-w-xs py-1">
+    <div className="w-full">
       <p className="mb-1 text-center text-[11px] text-muted-foreground">{copy}</p>
       <div className="rounded-2xl border bg-card p-3" data-testid="event-settlement-card">
         <div className="flex items-center gap-3">

@@ -20,7 +20,7 @@ import type { UserProfile } from "@/types/ledger";
 
 type HandleSearchResult = UserProfile | "not_found" | null;
 
-export function NewConversationButton() {
+export function NewConversationButton({ inline = false }: { inline?: boolean }) {
   const router = useRouter();
   const me = useMe();
   const groupOrder = useAppStore((s) => s.groupOrder);
@@ -118,14 +118,27 @@ export function NewConversationButton() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95"
-        aria-label="Nova conversa"
-      >
-        <MessageSquarePlus className="h-6 w-6" />
-      </button>
+      {inline ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-lg"
+          className="size-11"
+          onClick={() => setOpen(true)}
+          aria-label="Nova conversa"
+        >
+          <MessageSquarePlus className="h-5 w-5" />
+        </Button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95"
+          aria-label="Nova conversa"
+        >
+          <MessageSquarePlus className="h-6 w-6" />
+        </button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[80vh] overflow-y-auto">

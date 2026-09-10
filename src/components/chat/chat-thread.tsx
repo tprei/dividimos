@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
+import {
+  ChatRailRow,
+  formatRailTime,
+  type ChatRailMarker,
+} from "@/components/chat/chat-rail-row";
 import { ChatDateSeparator, shouldShowDateSeparator } from "@/components/chat/chat-date-separator";
 import { EventCard } from "@/components/chat/event-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -32,6 +37,38 @@ export function mergeTimeline(
     return a.kind === "event" ? -1 : 1;
   });
   return items;
+}
+
+const RUN_WINDOW_MS = 5 * 60 * 1000;
+
+function isSameRun(
+  previous: TimelineItem | undefined,
+  message: ChatMessage,
+): boolean {
+  if (previous?.kind !== "message" || previous.message.senderId !== message.senderId) {
+    return false;
+  }
+  return (
+    new Date(message.createdAt).getTime() - new Date(previous.message.createdAt).getTime() <=
+    RUN_WINDOW_MS
+  );
+}
+
+function messageMarker(
+  previous: TimelineItem | undefined,
+  message: ChatMessage,
+  meId: string,
+): ChatRailMarker {
+  if (message.senderId !== meId && !isSameRun(previous, message)) {
+    return { kind: "avatar", name: message.sender.name, avatarUrl: message.sender.avatarUrl };
+  }
+  return { kind: "message" };
+}
+
+function eventMarker(event: GroupEvent): ChatRailMarker {
+  if (event.kind.startsWith("expense_")) return { kind: "expense" };
+  if (event.kind.startsWith("settlement_")) return { kind: "payment" };
+  return { kind: "message" };
 }
 
 interface ChatThreadProps {
@@ -131,13 +168,17 @@ export function ChatThread({
           <div key={item.kind === "message" ? item.message.id : `event-${item.event.id}`}>
             {showSeparator && <ChatDateSeparator date={item.at} />}
             {item.kind === "message" ? (
-              <ChatMessageBubble
-                message={item.message}
-                isOwn={item.message.senderId === meId}
-                showAvatar={item.message.senderId !== meId}
-              />
+              <ChatRailRow
+                time={formatRailTime(item.at)}
+                marker={messageMarker(previous, item.message, meId)}
+              >
+                <ChatMessageBubble
+                  message={item.message}
+                  isOwn={item.message.senderId === meId}
+                />
+              </ChatRailRow>
             ) : (
-              <div className="py-2">
+              <ChatRailRow time={formatRailTime(item.at)} marker={eventMarker(item.event)}>
                 <EventCard
                   event={item.event}
                   groupId={groupId}
@@ -154,7 +195,7 @@ export function ChatThread({
                   }
                   nameOf={nameOf}
                 />
-              </div>
+              </ChatRailRow>
             )}
           </div>
         );
