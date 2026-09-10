@@ -1,0 +1,32 @@
+name: Retarget stacked PRs
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  retarget:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Point child PRs at the merged base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MERGED_HEAD: ${{ github.event.pull_request.head.ref }}
+          MERGED_BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          children=$(gh pr list -R "$REPO" --state open --json number,baseRefName \
+            --jq ".[] | select(.baseRefName == \"$MERGED_HEAD\") | .number")
+          if [ -z "$children" ]; then
+            echo "No open PRs based on $MERGED_HEAD; nothing to retarget."
+            exit 0
+          fi
+          for pr in $children; do
+            echo "Retargeting #$pr from $MERGED_HEAD to $MERGED_BASE"
+            gh pr edit "$pr" -R "$REPO" --base "$MERGED_BASE"
+          done
