@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Loader2, QrCode, Shield, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ export function QuickChargeModal({
   onClose,
   onChargeConfirmed,
 }: QuickChargeModalProps) {
+  useBackHandler(open, onClose);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
