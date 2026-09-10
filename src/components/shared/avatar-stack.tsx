@@ -22,7 +22,7 @@ export function AvatarStack({
   const shownNames = shown.map((person) => person.name).join(", ");
   return (
     <div
-      className="flex -space-x-2"
+      className="flex -space-x-1"
       aria-label={hidden > 0 ? `${shownNames}, e mais ${hidden}` : shownNames}
     >
       {shown.map((person) =>

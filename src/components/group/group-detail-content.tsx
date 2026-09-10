@@ -91,62 +91,28 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
         onBack={() => router.push("/app/groups")}
         action={
-          canInvite ? (
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
+            {isAcceptedMember && (
               <Button
                 size="icon-lg"
-                variant="outline"
-                className="size-11"
-                onClick={() => setShowInviteModal(true)}
-                aria-label="Compartilhar convite"
+                variant="ghost"
+                className="relative size-11 rounded-full"
+                render={<Link href={`/app/groups/${groupId}/chat`} aria-label="Conversa" />}
               >
-                <Share2 className="h-4 w-4" />
+                <MessageSquare className="size-5" />
+                {snapshot.unreadCount > 0 && (
+                  <span
+                    aria-label={`${snapshot.unreadCount} mensagens não lidas`}
+                    className="absolute top-0.5 right-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-primary px-[5px] text-[9.5px] font-extrabold text-primary-foreground"
+                  >
+                    {snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}
+                  </span>
+                )}
               </Button>
-              <Button
-                variant="outline"
-                className="min-h-11 gap-1.5"
-                onClick={() => setShowInvitePanel(!showInvitePanel)}
-              >
-                <UserPlus className="h-4 w-4" />
-                Convidar
-              </Button>
-            </div>
-          ) : undefined
+            )}
+          </div>
         }
       />
-      {isAcceptedMember && (
-        <div className="mt-2 flex items-center gap-2">
-          <Button
-            variant="outline"
-            className="relative min-h-11 gap-1.5 rounded-full"
-            render={<Link href={`/app/groups/${groupId}/chat`} aria-label="Conversa" />}
-          >
-            <MessageSquare className="h-5 w-5" />
-            Conversa
-            {snapshot.unreadCount > 0 && (
-              <span
-                aria-label={`${snapshot.unreadCount} mensagens não lidas`}
-                className="absolute -right-1 -top-1 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-primary px-[5px] text-[9.5px] font-extrabold text-primary-foreground"
-              >
-                {snapshot.unreadCount > 99 ? "99+" : snapshot.unreadCount}
-              </span>
-            )}
-          </Button>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {showInvitePanel && canInvite && (
-          <div className="mt-4">
-            <InviteByHandlePanel
-              groupId={groupId}
-              members={members}
-              onClose={() => setShowInvitePanel(false)}
-              onInvited={() => setShowInvitePanel(false)}
-            />
-          </div>
-        )}
-      </AnimatePresence>
 
       <NotificationPrompt />
 
@@ -166,7 +132,39 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         <TabsContent value="contas" className="mt-4">
           <GroupExpensesSection groupId={groupId} members={members} />
         </TabsContent>
-        <TabsContent value="membros" className="mt-4">
+        <TabsContent value="membros" className="mt-4 space-y-4">
+          {canInvite && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="min-h-11 flex-1 gap-1.5"
+                onClick={() => setShowInviteModal(true)}
+                aria-label="Compartilhar convite"
+              >
+                <Share2 className="size-4" />
+                Compartilhar
+              </Button>
+              <Button
+                variant="outline"
+                className="min-h-11 flex-1 gap-1.5"
+                onClick={() => setShowInvitePanel(!showInvitePanel)}
+                aria-label="Convidar"
+              >
+                <UserPlus className="size-4" />
+                Convidar
+              </Button>
+            </div>
+          )}
+          <AnimatePresence>
+            {showInvitePanel && canInvite && (
+              <InviteByHandlePanel
+                groupId={groupId}
+                members={members}
+                onClose={() => setShowInvitePanel(false)}
+                onInvited={() => setShowInvitePanel(false)}
+              />
+            )}
+          </AnimatePresence>
           <GroupMembersSection
             snapshot={snapshot}
             meId={meId ?? ""}

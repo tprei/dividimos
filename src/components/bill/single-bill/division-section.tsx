@@ -187,7 +187,7 @@ export function SingleBillDivision({
                   <UserAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-semibold">{person.name}</p>
+                  <p className="truncate text-[15px] font-semibold">{person.name.split(" ")[0]}</p>
                   {person.isGuest && <GuestBadge />}
                 </div>
                 {mode === "equal" ? (

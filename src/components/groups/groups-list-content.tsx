@@ -53,18 +53,13 @@ function GroupRow({
       aria-label={`${snapshot.group.name}, ${accepted.length} membros, ${snapshot.expenseCount} contas, ${balanceDescription}`}
       className="flex min-h-16 w-full items-center gap-3 px-4 py-2"
     >
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <Users className="size-5" />
-      </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-semibold">{snapshot.group.name}</p>
-        <div className="mt-1 flex min-w-0 items-center gap-2">
-          <div className="shrink-0">
-            <AvatarStack people={people} />
-          </div>
-          <span className="min-w-0 truncate text-xs text-muted-foreground">
-            {accepted.length} membros · {snapshot.expenseCount} contas
-          </span>
+        <p className="truncate text-xs text-muted-foreground">
+          {accepted.length} membros · {snapshot.expenseCount} contas
+        </p>
+        <div className="mt-1.5">
+          <AvatarStack people={people} />
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end">

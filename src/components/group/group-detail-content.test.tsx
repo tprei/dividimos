@@ -290,13 +290,14 @@ describe("GroupDetailContent", () => {
     expect(screen.getByText("Convidado")).toBeInTheDocument();
   });
 
-  it("opens the link invite modal from the header", async () => {
+  it("opens the link invite modal from the Membros tab", async () => {
     seedLoaded();
 
     render(<GroupDetailContent groupId={groupId} />);
 
     expect(screen.queryByTestId("invite-modal-stub")).not.toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Compartilhar convite" }),
     );
@@ -307,12 +308,13 @@ describe("GroupDetailContent", () => {
     expect(props.groupName).toBe("Viagem");
   });
 
-  it("opens the handle invite panel from the header", async () => {
+  it("opens the handle invite panel from the Membros tab", async () => {
     seedLoaded();
 
     render(<GroupDetailContent groupId={groupId} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /Convidar/ }));
+    await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
+    await userEvent.click(screen.getByRole("button", { name: "Convidar" }));
 
     expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
   });
