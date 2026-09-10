@@ -6,20 +6,15 @@ import { useAppStore } from "@/stores/app-store";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useInvitationActions } from "./use-invitation-actions";
 
-const { mockAccept, mockDecline, mockRefreshGroup, mockToast } = vi.hoisted(() => ({
+const { mockAccept, mockDecline, mockToast } = vi.hoisted(() => ({
   mockAccept: vi.fn(),
   mockDecline: vi.fn(),
-  mockRefreshGroup: vi.fn(),
   mockToast: { error: vi.fn(), success: vi.fn() },
 }));
 
 vi.mock("@/lib/sync/mutations-group", () => ({
   acceptInvitation: mockAccept,
   declineInvitation: mockDecline,
-}));
-
-vi.mock("@/lib/sync/refresh", () => ({
-  refreshGroup: mockRefreshGroup,
 }));
 
 vi.mock("react-hot-toast", () => ({
@@ -82,11 +77,9 @@ beforeEach(() => {
 });
 
 describe("useInvitationActions", () => {
-  it("accept awaits refreshGroup before toasting success", async () => {
+  it("accept toasts success only after the mutation resolves", async () => {
     const { promise: acceptPromise, resolve: resolveAccept } = Promise.withResolvers<unknown>();
-    const { promise: refreshPromise, resolve: resolveRefresh } = Promise.withResolvers<void>();
     mockAccept.mockReturnValueOnce(acceptPromise);
-    mockRefreshGroup.mockReturnValueOnce(refreshPromise);
 
     const { result } = renderHook(() => useInvitationActions());
 
@@ -95,20 +88,12 @@ describe("useInvitationActions", () => {
       accept = result.current.accept("g1");
     });
 
-    expect(result.current.pendingGroupId).toBe("g1");
-    expect(mockRefreshGroup).not.toHaveBeenCalled();
-
-    await act(async () => {
-      resolveAccept({ eventId: 1 });
-      await Promise.resolve();
-    });
-
-    expect(mockRefreshGroup).toHaveBeenCalledWith("g1");
+    expect(mockAccept).toHaveBeenCalledWith("g1");
     expect(result.current.pendingGroupId).toBe("g1");
     expect(mockToast.success).not.toHaveBeenCalled();
 
     await act(async () => {
-      resolveRefresh();
+      resolveAccept({ eventId: 1 });
       await accept;
     });
 
@@ -128,7 +113,6 @@ describe("useInvitationActions", () => {
 
     expect(mockToast.error).toHaveBeenCalledWith("Essa pessoa não tem convite pendente.");
     expect(mockToast.success).not.toHaveBeenCalled();
-    expect(mockRefreshGroup).not.toHaveBeenCalled();
     expect(useAppStore.getState().groups).toBe(groupsBefore);
     expect(useAppStore.getState().groups.g1?.members).toEqual(
       expect.arrayContaining([
@@ -148,7 +132,6 @@ describe("useInvitationActions", () => {
     });
 
     expect(mockDecline).toHaveBeenCalledWith("g1");
-    expect(mockRefreshGroup).not.toHaveBeenCalled();
     expect(mockToast.success).toHaveBeenCalledWith("Convite recusado");
     expect(result.current.pendingGroupId).toBeNull();
   });

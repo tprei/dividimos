@@ -7,7 +7,6 @@ import {
   acceptInvitation,
   declineInvitation,
 } from "@/lib/sync/mutations-group";
-import { refreshGroup } from "@/lib/sync/refresh";
 
 export interface InvitationActions {
   accept: (groupId: string) => Promise<void>;
@@ -22,7 +21,6 @@ export function useInvitationActions(): InvitationActions {
     setPendingGroupId(groupId);
     try {
       await acceptInvitation(groupId);
-      await refreshGroup(groupId);
       toast.success("Convite aceito");
     } catch (err) {
       toast.error(ledgerErrorMessage(err));
