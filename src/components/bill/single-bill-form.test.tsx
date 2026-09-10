@@ -59,6 +59,10 @@ function renderForm(submit = vi.fn().mockResolvedValue(false)) {
   };
 }
 
+function goToDivision() {
+  fireEvent.click(screen.getByRole("tab", { name: "Divisão" }));
+}
+
 beforeEach(() => {
   useBillStore.getState().reset();
   useBillStore.setState({ currentUser: null });
@@ -72,6 +76,7 @@ beforeEach(() => {
 describe("SingleBillForm division", () => {
   it("blocks percent submit until the exact 100,00% total and updates the status", async () => {
     renderForm();
+    goToDivision();
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
 
     const aliceInput = screen.getByRole("textbox", { name: "Percentual de Alice Silva" });
@@ -89,6 +94,7 @@ describe("SingleBillForm division", () => {
 
   it("blocks fixed submit until the values equal the total", async () => {
     renderForm();
+    goToDivision();
     fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
 
     const aliceInput = screen.getByRole("textbox", { name: "Valor de Alice Silva" });
@@ -105,6 +111,7 @@ describe("SingleBillForm division", () => {
   it("preserves the authored mode and values when submit fails", async () => {
     const submit = vi.fn().mockResolvedValue(false);
     renderForm(submit);
+    goToDivision();
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Percentual de Alice Silva" }), {
       target: { value: "60,00" },
@@ -124,6 +131,7 @@ describe("SingleBillForm division", () => {
 
   it("builds a payload from the same shares rendered in the summary", async () => {
     renderForm();
+    goToDivision();
     fireEvent.click(screen.getByRole("button", { name: /Alice/ }));
     await waitFor(() => expect(useBillStore.getState().billSplits).toHaveLength(2));
 
@@ -166,11 +174,26 @@ describe("SingleBillForm division", () => {
     rerender(<SingleBillForm {...props} initialGroupId="g-late" />);
 
     expect(screen.getByRole("combobox", { name: "Grupo" })).toHaveValue("g-late");
+    goToDivision();
     fireEvent.click(screen.getByRole("button", { name: /Alice/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Criar conta" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
     await waitFor(() => expect(submit).toHaveBeenCalledWith("g-late"));
     expect(getOrCreateDmMock).not.toHaveBeenCalled();
     expect(createGroupMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps typed percent values when switching stages", () => {
+    renderForm();
+    goToDivision();
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Percentual de Alice Silva" }), {
+      target: { value: "33,33" },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Conta" }));
+    expect(screen.getByRole("combobox", { name: "Grupo" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Divisão" }));
+    expect(screen.getByRole("radio", { name: "Percentual" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("textbox", { name: "Percentual de Alice Silva" })).toHaveValue("33,33");
   });
 });

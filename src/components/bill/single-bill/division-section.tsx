@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
@@ -15,18 +15,23 @@ import {
   type DivisionComputation,
   type ItemDivisionMode,
 } from "@/lib/item-division";
-import type { AmountSplit, Guest } from "@/stores/bill-store";
+import type { Guest } from "@/stores/bill-store";
 import type { User } from "@/types";
 
 export interface SingleBillDivisionProps {
   totalCents: number;
   participants: User[];
   guests: Guest[];
-  billSplits: AmountSplit[];
   splitBillEqually: (userIds: string[]) => void;
   splitBillByBasisPoints: (assignments: { userId: string; basisPoints: number }[]) => void;
   splitBillByFixed: (assignments: { userId: string; amountCents: number }[]) => void;
   onValidityChange: (valid: boolean) => void;
+  mode: ItemDivisionMode;
+  onModeChange: (mode: ItemDivisionMode) => void;
+  percentTexts: Record<string, string>;
+  onPercentTextChange: (userId: string, value: string) => void;
+  fixedTexts: Record<string, string>;
+  onFixedTextChange: (userId: string, value: string) => void;
 }
 
 const MODE_OPTIONS: { key: ItemDivisionMode; label: string }[] = [
@@ -42,29 +47,6 @@ interface DivisionPerson {
   isGuest: boolean;
 }
 
-function initialMode(billSplits: AmountSplit[]): ItemDivisionMode {
-  const splitType = billSplits[0]?.splitType;
-  if (splitType === "percentage") return "percent";
-  return splitType === "fixed" ? "fixed" : "equal";
-}
-
-function initialPercentTexts(billSplits: AmountSplit[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const split of billSplits) {
-    if (split.splitType === "percentage") {
-      values[split.userId] = percentText(Math.round(split.value * 100));
-    }
-  }
-  return values;
-}
-
-function initialFixedTexts(billSplits: AmountSplit[]): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const split of billSplits) {
-    if (split.splitType === "fixed") values[split.userId] = centsText(split.computedAmountCents);
-  }
-  return values;
-}
 function statusText(
   division: DivisionComputation,
   mode: ItemDivisionMode,
@@ -90,16 +72,17 @@ export function SingleBillDivision({
   totalCents,
   participants,
   guests,
-  billSplits,
   splitBillEqually,
   splitBillByBasisPoints,
   splitBillByFixed,
   onValidityChange,
+  mode,
+  onModeChange,
+  percentTexts,
+  onPercentTextChange,
+  fixedTexts,
+  onFixedTextChange,
 }: SingleBillDivisionProps) {
-  const [mode, setMode] = useState<ItemDivisionMode>(() => initialMode(billSplits));
-  const [percentTexts, setPercentTexts] = useState<Record<string, string>>(() => initialPercentTexts(billSplits));
-  const [fixedTexts, setFixedTexts] = useState<Record<string, string>>(() => initialFixedTexts(billSplits));
-
   const people = useMemo<DivisionPerson[]>(
     () => [
       ...participants.map((participant) => ({
@@ -178,7 +161,7 @@ export function SingleBillDivision({
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  onClick={() => setMode(option.key)}
+                  onClick={() => onModeChange(option.key)}
                   className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
                     selected
                       ? "border-primary/40 bg-primary/15 text-primary"
@@ -215,9 +198,9 @@ export function SingleBillDivision({
                       value={mode === "percent" ? percentValues[person.id] : fixedValues[person.id]}
                       onChange={(event) => {
                         if (mode === "percent") {
-                          setPercentTexts((current) => ({ ...current, [person.id]: event.target.value }));
+                          onPercentTextChange(person.id, event.target.value);
                         } else {
-                          setFixedTexts((current) => ({ ...current, [person.id]: event.target.value }));
+                          onFixedTextChange(person.id, event.target.value);
                         }
                       }}
                       inputMode="decimal"
