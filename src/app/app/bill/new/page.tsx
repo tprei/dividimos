@@ -8,7 +8,9 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 import { SingleBillForm } from "@/components/bill/single-bill-form";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
+import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
+import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
@@ -65,6 +67,7 @@ function NewBillPageContent() {
       expense: s.expense,
       participants: s.participants,
       guests: s.guests,
+      occurredOn: s.occurredOn,
     })),
   );
 
@@ -83,6 +86,7 @@ function NewBillPageContent() {
   const mounted = useMounted();
   const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [isDmMode, setIsDmMode] = useState(false);
+  const [reviewingScan, setReviewingScan] = useState(false);
 
   useEffect(() => {
     if (!useBillStore.getState().occurredOn) {
@@ -143,6 +147,28 @@ function NewBillPageContent() {
     [groupOrder, groups],
   );
   const selectedGroup = selectedGroupId ? groups[selectedGroupId] ?? null : null;
+  const scanGroup = selectedGroup ?? (
+    modes.entryGroupId ? groups[modes.entryGroupId] ?? null : null
+  );
+  const scanParticipants = useMemo<ItemDivisionParticipant[]>(() => {
+    if (!me) return [];
+    return [
+      {
+        id: me.id,
+        name: me.name,
+        avatarUrl: me.avatarUrl ?? null,
+        isGuest: false,
+      },
+      ...(scanGroup?.members ?? [])
+        .filter((member) => member.userId !== me.id && member.status === "accepted")
+        .map((member) => ({
+          id: member.user.id,
+          name: member.user.name,
+          avatarUrl: member.user.avatarUrl ?? null,
+          isGuest: false,
+        })),
+    ];
+  }, [me, scanGroup]);
 
   const defaultGroupName = useMemo(() => {
     const names = [
@@ -170,18 +196,27 @@ function NewBillPageContent() {
     setStep("info");
   }, [me, selectedGroupId]);
 
-  const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
+  const handleScanConfirm = useCallback((
+    result: ReceiptOcrResult,
+    _chaveAcesso: string | null,
+    divisions: Record<number, ItemDivisionValue>,
+    occurredOn: string,
+  ) => {
     setBillType("itemized");
+    const billStore = useBillStore.getState();
+    if (scanGroup) setSelectedGroupId(scanGroup.group.id);
     if (me) {
-      const billStore = useBillStore.getState();
       billStore.setCurrentUser(meToLegacyUser(me));
       billStore.createExpense(
         result.merchant || "Nota escaneada",
         "itemized",
         result.merchant || undefined,
+        scanGroup?.group.id,
       );
       billStore.updateExpense({
-        serviceFeePercent: (result.serviceFeeBasisPoints || 0) / 100,
+        serviceFeePercent: result.serviceFeeBasisPoints / 100,
+        serviceFeeBasisPoints: result.serviceFeeBasisPoints,
+        fixedFees: result.fixedFeesCents,
       });
 
       for (const item of result.items) {
@@ -192,9 +227,20 @@ function NewBillPageContent() {
           totalPriceCents: item.totalCents,
         });
       }
+      for (const member of scanGroup?.members ?? []) {
+        if (member.userId === me.id || member.status !== "accepted") continue;
+        billStore.addParticipant(profileToUser(member.user));
+      }
+
+      const addedItems = useBillStore.getState().items;
+      for (const [indexText, division] of Object.entries(divisions)) {
+        const item = addedItems[Number(indexText)];
+        if (item) billStore.setItemDivision(item.id, division);
+      }
     }
+    billStore.setOccurredOn(occurredOn);
     setStep("split");
-  }, [me]);
+  }, [me, scanGroup]);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!me) return;
@@ -380,20 +426,22 @@ function NewBillPageContent() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/app"
-          aria-label="Fechar"
-          className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <X className="h-5 w-5" />
-        </Link>
-        <h1 className="text-[22px] leading-tight font-bold tracking-tight">
-          {isDmMode ? "Cobrar" : "Nova conta"}
-        </h1>
-      </div>
+      {!reviewingScan && (
+        <div className="flex items-center gap-3">
+          <Link
+            href="/app"
+            aria-label="Fechar"
+            className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <X className="h-5 w-5" />
+          </Link>
+          <h1 className="text-[22px] leading-tight font-bold tracking-tight">
+            {isDmMode ? "Cobrar" : "Nova conta"}
+          </h1>
+        </div>
+      )}
 
-      <div className="mt-6 min-h-[400px]">
+      <div className={reviewingScan ? "min-h-[400px]" : "mt-6 min-h-[400px]"}>
         <TypeStep
           groupMembers={(selectedGroup?.members ?? []).map((m) => ({
             id: m.user.id,
@@ -401,9 +449,12 @@ function NewBillPageContent() {
             name: m.user.name,
             avatarUrl: m.user.avatarUrl ?? undefined,
           }))}
+          participants={scanParticipants}
+          occurredOn={store.occurredOn ?? todayIsoDate()}
           onTypeSelect={handleTypeSelect}
           onScanConfirm={handleScanConfirm}
           onVoiceConfirm={handleVoiceConfirm}
+          onReviewingChange={setReviewingScan}
         />
       </div>
     </div>

@@ -1,12 +1,21 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi } from "vitest";
-import { ScannedItemsReview } from "./scanned-items-review";
+import { describe, expect, it, vi } from "vitest";
+import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
+import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
+import { ScannedItemsReview } from "./scanned-items-review";
 
-const makeResult = (
-  overrides?: Partial<ReceiptOcrResult>,
-): ReceiptOcrResult => ({
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ back: vi.fn() }),
+}));
+
+const participants: ItemDivisionParticipant[] = [
+  { id: "user-alice", name: "Alice", avatarUrl: null, isGuest: false },
+  { id: "user-bob", name: "Bob", avatarUrl: null, isGuest: false },
+];
+
+const makeResult = (overrides?: Partial<ReceiptOcrResult>): ReceiptOcrResult => ({
   merchant: "Bar do Zé",
   items: [
     {
@@ -28,232 +37,125 @@ const makeResult = (
   ...overrides,
 });
 
+function renderReview(
+  result: ReceiptOcrResult = makeResult(),
+  onConfirm = vi.fn(),
+  onCancel = vi.fn(),
+) {
+  render(
+    <ScannedItemsReview
+      result={result}
+      participants={participants}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />,
+  );
+  return { onConfirm, onCancel };
+}
+
 describe("ScannedItemsReview", () => {
-  it("renders merchant name, items, service fee, and total", () => {
-    const onConfirm = vi.fn();
-    const onCancel = vi.fn();
-    render(
-      <ScannedItemsReview
-        result={makeResult()}
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />,
-    );
+  it("renders the receipt draft and fee-inclusive total", () => {
+    renderReview();
 
-    const merchantInput = screen.getByPlaceholderText(
-      "Nome do estabelecimento",
-    );
-    expect(merchantInput).toHaveValue("Bar do Zé");
-
-    expect(screen.getByText("Cerveja Brahma 600ml")).toBeInTheDocument();
-    expect(screen.getByText("Picanha 400g")).toBeInTheDocument();
-
-    expect(screen.getByText("Confirmar")).toBeInTheDocument();
-    expect(screen.getByText("Cancelar")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recibo" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Nome do estabelecimento")).toHaveValue("Bar do Zé");
+    expect(screen.getByLabelText("Data do recibo")).toHaveValue(todayIsoDate());
+    expect(screen.getByDisplayValue("24,00")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("45,00")).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s*75,90/)).toBeInTheDocument();
   });
 
-  it("calls onCancel when Cancelar is clicked", async () => {
+  it("calls onCancel from the screen header", async () => {
     const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    const onCancel = vi.fn();
-    render(
-      <ScannedItemsReview
-        result={makeResult()}
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />,
-    );
+    const { onCancel } = renderReview();
 
-    await user.click(screen.getByText("Cancelar"));
+    await user.click(screen.getByRole("button", { name: "Voltar" }));
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("calls onConfirm with updated data", async () => {
+  it("updates pending count after saving an inline division", async () => {
     const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    const onCancel = vi.fn();
-    render(
-      <ScannedItemsReview
-        result={makeResult()}
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />,
-    );
+    renderReview();
 
-    await user.click(screen.getByText("Confirmar"));
+    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
+    await user.click(screen.getByLabelText("Incluir Alice em Cerveja Brahma 600ml"));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(screen.getByText("1 pendente")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  it("applies batch assignment only to selected rows", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderReview();
+
+    await user.click(screen.getByLabelText("Selecionar Cerveja Brahma 600ml"));
+    await user.click(screen.getByRole("button", { name: "Atribuir · 1" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("Atribuir a Alice"));
+    await user.click(screen.getByRole("button", { name: "Aplicar em 1 item" }));
+    await user.click(screen.getByRole("button", { name: "Limpar" }));
+    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
+
+    const divisions = onConfirm.mock.calls[0][1] as Record<number, { mode: string; shares: { participantId: string }[] }>;
+    expect(divisions[0].mode).toBe("equal");
+    expect(divisions[0].shares.map((share) => share.participantId)).toEqual(["user-bob"]);
+    expect(divisions[1]).toBeUndefined();
+  });
+
+  it("keeps item selection while expanding and collapsing a row", async () => {
+    const user = userEvent.setup();
+    renderReview();
+
+    await user.click(screen.getByLabelText("Selecionar Cerveja Brahma 600ml"));
+    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
+    expect(screen.getByRole("button", { name: "Atribuir · 1" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
+    expect(screen.getByRole("button", { name: "Atribuir · 1" })).toBeInTheDocument();
+  });
+
+  it("continues with edited items, divisions, and date", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderReview();
+
+    fireEvent.change(screen.getByLabelText("Nome do estabelecimento"), { target: { value: "Mercado" } });
+    const nameInput = screen.getByRole("textbox", { name: "Nome de Cerveja Brahma 600ml" });
+    fireEvent.change(nameInput, { target: { value: "Cerveja" } });
+    const amountInput = screen.getByDisplayValue("24,00");
+    fireEvent.change(amountInput, { target: { value: "30,00" } });
+    fireEvent.change(screen.getByLabelText("Data do recibo"), { target: { value: "2026-09-09" } });
+    await user.click(screen.getByLabelText("Selecionar Cerveja"));
+    await user.click(screen.getByRole("button", { name: "Atribuir · 1" }));
+    await user.click(screen.getByRole("button", { name: "Aplicar em 1 item" }));
+    await user.click(screen.getByRole("button", { name: "Limpar" }));
+    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
+
     expect(onConfirm).toHaveBeenCalledOnce();
-
-    const call = onConfirm.mock.calls[0][0] as ReceiptOcrResult;
-    expect(call.merchant).toBe("Bar do Zé");
-    expect(call.items).toHaveLength(2);
-    expect(call.serviceFeeBasisPoints).toBe(1000);
-    expect(call.totalCents).toBe(6900);
-  });
-
-  it("allows removing an item", async () => {
-    const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    render(
-      <ScannedItemsReview
-        result={makeResult()}
-        onConfirm={onConfirm}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    const removeButtons = screen.getAllByLabelText(/Remover/);
-    await user.click(removeButtons[0]);
-
-    expect(screen.queryByText("Cerveja Brahma 600ml")).not.toBeInTheDocument();
-    expect(screen.getByText("Picanha 400g")).toBeInTheDocument();
-
-    await user.click(screen.getByText("Confirmar"));
-    const call = onConfirm.mock.calls[0][0] as ReceiptOcrResult;
-    expect(call.items).toHaveLength(1);
-    expect(call.totalCents).toBe(4500);
-  });
-
-  it("allows editing an item inline", async () => {
-    const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    render(
-      <ScannedItemsReview
-        result={makeResult()}
-        onConfirm={onConfirm}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    const editButtons = screen.getAllByLabelText(/Editar/);
-    await user.click(editButtons[1]); // edit Picanha
-
-    const descInput = screen.getByDisplayValue("Picanha 400g");
-    fireEvent.change(descInput, { target: { value: "Picanha 500g" } });
-
-    await user.click(screen.getByText("Salvar"));
-
-    expect(screen.getByText("Picanha 500g")).toBeInTheDocument();
-  });
-
-  it("shows add item form when clicking Adicionar mais item", async () => {
-    const user = userEvent.setup();
-    render(
-      <ScannedItemsReview
-        result={makeResult()}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByText("Adicionar mais item"));
-    expect(
-      screen.getByPlaceholderText("Descricao (ex: Picanha 400g)"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Preco unitario (R$)")).toBeInTheDocument();
-    // Adicionar button should be disabled when fields are empty
-    expect(screen.getByText("Adicionar")).toBeDisabled();
-  });
-
-  it("includes manually added items in confirm result", () => {
-    const onConfirm = vi.fn();
-    const resultWithExtra = makeResult();
-    resultWithExtra.items.push({
-      description: "Agua mineral",
-      quantity: 1,
-      unitPriceCents: 500,
-      totalCents: 500,
+    const [draft, divisions, occurredOn] = onConfirm.mock.calls[0] as [
+      ReceiptOcrResult,
+      Record<number, { mode: string; shares: { participantId: string; cents: number }[] }>,
+      string,
+    ];
+    expect(draft.merchant).toBe("Mercado");
+    expect(draft.items[0]).toMatchObject({
+      description: "Cerveja",
+      totalCents: 3000,
+      quantity: 2000,
     });
-    render(
-      <ScannedItemsReview
-        result={resultWithExtra}
-        onConfirm={onConfirm}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Agua mineral")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Confirmar"));
-    const call = onConfirm.mock.calls[0][0] as ReceiptOcrResult;
-    expect(call.items).toHaveLength(3);
-    expect(call.items[2].description).toBe("Agua mineral");
-    expect(call.items[2].unitPriceCents).toBe(500);
-    expect(call.items[2].totalCents).toBe(500);
+    expect(draft.totalCents).toBe(8250);
+    expect(divisions[0].shares).toHaveLength(2);
+    expect(divisions[0].shares.reduce((sum, share) => sum + share.cents, 0)).toBe(3000);
+    expect(occurredOn).toBe("2026-09-09");
   });
 
-  it("disables Confirmar when all items are removed", async () => {
-    const user = userEvent.setup();
-    render(
-      <ScannedItemsReview
-        result={makeResult({
-          items: [
-            {
-              description: "Solo item",
-              quantity: 1,
-              unitPriceCents: 1000,
-              totalCents: 1000,
-            },
-          ],
-        })}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
+  it("shows the empty receipt state and disables continue", () => {
+    renderReview(makeResult({ items: [], totalCents: 0 }));
 
-    await user.click(screen.getByLabelText("Remover Solo item"));
-    expect(screen.getByText("Confirmar")).toBeDisabled();
-  });
-
-  it("updates total when items are edited", async () => {
-    const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    render(
-      <ScannedItemsReview
-        result={makeResult({
-          items: [
-            {
-              description: "Item A",
-              quantity: 1,
-              unitPriceCents: 1000,
-              totalCents: 1000,
-            },
-          ],
-          totalCents: 1000,
-        })}
-        onConfirm={onConfirm}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByLabelText("Editar Item A"));
-    // Find the unit price CurrencyInput by its current value "10,00"
-    const priceInputs = screen.getAllByRole("textbox");
-    const priceInput = priceInputs.find(
-      (el) => (el as HTMLInputElement).value === "10,00",
-    );
-    expect(priceInput).toBeDefined();
-    // CurrencyInput responds to change events with Brazilian format parsing
-    fireEvent.change(priceInput!, { target: { value: "20,00" } });
-    await user.click(screen.getByText("Salvar"));
-
-    await user.click(screen.getByText("Confirmar"));
-    const call = onConfirm.mock.calls[0][0] as ReceiptOcrResult;
-    expect(call.items[0].unitPriceCents).toBe(2000);
-    expect(call.items[0].totalCents).toBe(2000);
-    expect(call.totalCents).toBe(2000);
-  });
-
-  it("handles null merchant in result", () => {
-    render(
-      <ScannedItemsReview
-        result={makeResult({ merchant: null })}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
-
-    const merchantInput = screen.getByPlaceholderText(
-      "Nome do estabelecimento",
-    );
-    expect(merchantInput).toHaveValue("");
+    expect(screen.getByText("Nenhum item. Tente escanear novamente ou adicione manualmente.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.getByText("0 pendentes")).toBeInTheDocument();
   });
 });
