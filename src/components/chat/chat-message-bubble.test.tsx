@@ -24,20 +24,25 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 describe("ChatMessageBubble", () => {
-  it("renders text message content and timestamp", () => {
-    render(<ChatMessageBubble message={makeMessage()} isOwn={false} showAvatar={false} />);
+  it("renders message content without an in-bubble timestamp", () => {
+    const { container } = render(<ChatMessageBubble message={makeMessage()} isOwn={false} />);
     expect(screen.getByText("Olá!")).toBeDefined();
+    expect(container.textContent).not.toContain("12:00");
   });
 
-  it("shows avatar when showAvatar is true", () => {
-    const { container } = render(
-      <ChatMessageBubble message={makeMessage()} isOwn={false} showAvatar />,
-    );
-    expect(container.querySelector("img") ?? container.textContent).toBeTruthy();
+  it("aligns own bubbles right with primary styling", () => {
+    const { container } = render(<ChatMessageBubble message={makeMessage()} isOwn />);
+    const bubble = container.firstElementChild?.firstElementChild;
+    expect(bubble?.className).toContain("ml-auto");
+    expect(bubble?.className).toContain("rounded-br-md");
+    expect(bubble?.className).toContain("bg-primary");
   });
 
-  it("does not show avatar when isOwn is true", () => {
-    render(<ChatMessageBubble message={makeMessage()} isOwn showAvatar={false} />);
-    expect(screen.getByText("Olá!")).toBeDefined();
+  it("aligns other people's bubbles left with muted styling", () => {
+    const { container } = render(<ChatMessageBubble message={makeMessage()} isOwn={false} />);
+    const bubble = container.firstElementChild?.firstElementChild;
+    expect(bubble?.className).not.toContain("ml-auto");
+    expect(bubble?.className).toContain("rounded-bl-md");
+    expect(bubble?.className).toContain("bg-muted");
   });
 });
