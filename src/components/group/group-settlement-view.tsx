@@ -204,9 +204,10 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
           }
           groupId={groupId}
           mode={pixTarget.mode}
-          onMarkPaid={(amountCents: number) =>
+          onMarkPaid={(amountCents: number, operationId: string) =>
             recordSettlement({
               groupId,
+              operationId,
               fromUserId:
                 pixTarget.mode === "pay" ? meId : pixTarget.counterpartyId,
               toUserId:
