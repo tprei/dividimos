@@ -172,7 +172,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -257,7 +257,7 @@ describe("mutations", () => {
           },
         },
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -286,7 +286,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -326,7 +326,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -360,7 +360,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -400,7 +400,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -457,7 +457,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {
           g1: {
             messages: [
@@ -517,7 +517,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {
           g1: {
             messages: [
@@ -612,7 +612,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: ["exp-1"], oldestCursor: null, complete: true } },
         expenses: { "exp-1": initialSummary },
         expenseDetails: { "exp-1": detail },
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -727,7 +727,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: ["exp-1"], oldestCursor: null, complete: true } },
         expenses: { "exp-1": initialSummary },
         expenseDetails: { "exp-1": detail },
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -826,7 +826,7 @@ describe("mutations", () => {
         expenseLists: { g1: { ids: ["exp-1"], oldestCursor: null, complete: true } },
         expenses: { "exp-1": summary },
         expenseDetails: { "exp-1": detail },
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -870,7 +870,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -926,7 +926,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -989,6 +989,8 @@ describe("mutations", () => {
             },
           ],
           oldestId: 90,
+          complete: false,
+          read: { status: "ready" },
         },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
@@ -1022,7 +1024,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -1071,7 +1073,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -1096,7 +1098,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -1113,7 +1115,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });

@@ -502,7 +502,13 @@ describe("reset", () => {
     expect(state.expenseDetails).toEqual({});
     expect(state.conversations).toEqual({});
     expect(state.vendorCharges).toEqual([]);
-    expect(state.activity).toEqual({ items: [], oldestId: null });
+    expect(state.activity).toEqual({
+      items: [],
+      oldestId: null,
+      complete: false,
+      read: { status: "idle" },
+    });
+    expect(state.activityViewedAt).toEqual({});
     expect(state.lastBootstrapAt).toBeNull();
     expect(state.hydrated).toBe(true);
   });
