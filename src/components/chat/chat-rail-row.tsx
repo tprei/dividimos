@@ -23,8 +23,8 @@ interface ChatRailRowProps {
 
 export function ChatRailRow({ time, marker, children }: ChatRailRowProps) {
   return (
-    <div className="flex gap-2.5 pb-3">
-      <div className="w-[46px] flex-none pt-0.5 text-right">
+    <div className="flex gap-3 pb-3">
+      <div className="w-[38px] flex-none pt-1 text-right">
         <p className="font-mono text-[10.5px] leading-none text-muted-foreground">{time}</p>
       </div>
       <div className="relative w-px flex-none bg-border">
