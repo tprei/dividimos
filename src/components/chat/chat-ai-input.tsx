@@ -11,10 +11,13 @@ import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 type InputMode = "normal" | "ai";
 
+/** Explicit result so the input knows whether the text may be cleared. */
+export type SendOutcome = { ok: true } | { ok: false; message: string };
+
 interface ChatAiInputProps {
   groupId: string;
   members?: MemberContext[];
-  onSend?: (text: string) => Promise<void> | void;
+  onSend?: (text: string) => Promise<SendOutcome>;
   onConfirmDraft: (
     result: ChatExpenseResult,
   ) => Promise<{ expenseId: string } | { error: string }>;
@@ -23,7 +26,7 @@ interface ChatAiInputProps {
 }
 
 export function ChatAiInput(props: ChatAiInputProps) {
-  const { members, onSend, onConfirmDraft, onEditDraft, disabled = false } = props;
+  const { groupId, members, onSend, onConfirmDraft, onEditDraft, disabled = false } = props;
   const [mode, setMode] = useState<InputMode>("normal");
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +52,15 @@ export function ChatAiInput(props: ChatAiInputProps) {
     setTimeout(() => inputRef.current?.focus(), 50);
   }, [hasDraft, isParsing, isConfirming, reset]);
 
+  // Synchronous so a double submit cannot start two sends before React
+  // re-renders with the pending state.
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  // Bumped on every edit: a success only clears text the user has not touched
+  // since submitting.
+  const editGenerationRef = useRef(0);
+
   const handleSubmit = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -59,13 +71,33 @@ export function ChatAiInput(props: ChatAiInputProps) {
       return;
     }
 
+    if (sendingRef.current || onSend === undefined) return;
+    sendingRef.current = true;
+    const submittedGeneration = editGenerationRef.current;
+    const submittedGroupId = groupId;
+    setSending(true);
+    setSendError(null);
+
     try {
-      await onSend?.(trimmed);
-      setText("");
+      const outcome = await onSend(trimmed);
+      if (!outcome.ok) {
+        // The authored text stays exactly as typed so the send is retryable.
+        setSendError(outcome.message);
+        return;
+      }
+      if (
+        editGenerationRef.current === submittedGeneration &&
+        submittedGroupId === groupId
+      ) {
+        setText("");
+      }
     } catch {
-      return;
+      setSendError("Não foi possível enviar. Tente novamente.");
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
-  }, [text, isAiMode, parse, members, onSend]);
+  }, [text, isAiMode, parse, members, onSend, groupId]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -164,6 +196,20 @@ export function ChatAiInput(props: ChatAiInputProps) {
             {error}
           </motion.div>
         )}
+
+        {sendError !== null && (
+          <motion.div
+            key="send-error"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            role="alert"
+            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive"
+            data-testid="send-error"
+          >
+            {sendError} Sua mensagem continua aqui, toca em enviar pra tentar de novo.
+          </motion.div>
+        )}
       </AnimatePresence>
 
       <div
@@ -194,7 +240,11 @@ export function ChatAiInput(props: ChatAiInputProps) {
           ref={inputRef}
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            editGenerationRef.current += 1;
+            setSendError(null);
+            setText(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           disabled={disabled || isParsing || hasDraft}
           placeholder={
@@ -212,11 +262,13 @@ export function ChatAiInput(props: ChatAiInputProps) {
           variant="ghost"
           className="h-8 w-8 shrink-0"
           onClick={handleSubmit}
-          disabled={disabled || isParsing || hasDraft || !text.trim()}
+          disabled={disabled || isParsing || hasDraft || sending || !text.trim()}
           data-testid="send-button"
           aria-label="Enviar"
         >
-          {isAiMode ? (
+          {sending ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : isAiMode ? (
             <Sparkles className="h-4 w-4 text-primary" />
           ) : (
             <Send className="h-4 w-4" />
