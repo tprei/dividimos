@@ -225,4 +225,15 @@ describe("QuickSplitSheet", () => {
     expect(result.splitType).toBe("percentage");
     expect(result.shares[0].shareAmountCents + result.shares[1].shareAmountCents).toBe(1001);
   });
+
+  it("reports the current user as the payer and still confirms them as payer", async () => {
+    const { user, onConfirm } = renderSheet();
+    expect(screen.getByTestId("quick-split-payer")).toHaveTextContent("Você");
+
+    fillForm("Pizza", "50,00");
+    await user.click(screen.getByTestId("quick-split-confirm"));
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0][0].payerId).toBe(CURRENT_USER);
+  });
 });

@@ -5,6 +5,16 @@ import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot } from "@/types/ledger";
 import { ItemDivisionEditor, type ItemDivisionParticipant } from "./item-division-editor";
 
+vi.mock("@/hooks/use-haptics", () => ({
+  haptics: {
+    tap: vi.fn(),
+    impact: vi.fn(),
+    success: vi.fn(),
+    error: vi.fn(),
+    selectionChanged: vi.fn(),
+  },
+}));
+
 const PEOPLE: ItemDivisionParticipant[] = [
   { id: "u1", name: "Ana", avatarUrl: null, isGuest: false },
   { id: "u2", name: "Bruno", avatarUrl: null, isGuest: false },
@@ -59,17 +69,17 @@ describe("ItemDivisionEditor", () => {
     expect(ana.value).toBe("50,00");
     expect(bruno.value).toBe("50,00");
 
-    fireEvent.change(ana, { target: { value: "49,99" } });
-    expect(screen.getByText("Faltam 0,01% para fechar 100%.")).toBeInTheDocument();
+    fireEvent.change(ana, { target: { value: "49" } });
+    expect(screen.getByText("Faltam 1,00% para fechar 100%.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
 
-    fireEvent.change(bruno, { target: { value: "50,01" } });
+    fireEvent.change(bruno, { target: { value: "51" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
-        { participantId: "u1", cents: 6449, basisPoints: 4999 },
-        { participantId: "u2", cents: 6451, basisPoints: 5001 },
+        { participantId: "u1", cents: 6321, basisPoints: 4900 },
+        { participantId: "u2", cents: 6579, basisPoints: 5100 },
       ],
     });
   });
@@ -106,35 +116,35 @@ describe("ItemDivisionEditor", () => {
 
     const anaInput = screen.getByLabelText("Percentual de Ana em Picanha") as HTMLInputElement;
     const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana em Picanha" });
-    fireEvent.change(anaSlider, { target: { value: "4000" } });
-    expect(anaInput.value).toBe("40,00");
+    fireEvent.change(anaSlider, { target: { value: "40.6" } });
+    expect(anaInput.value).toBe("41,00");
 
-    fireEvent.change(anaInput, { target: { value: "33,33" } });
-    expect(anaSlider).toHaveValue("3333");
+    fireEvent.change(anaInput, { target: { value: "33" } });
+    expect(anaSlider).toHaveValue("33");
 
     const brunoSlider = screen.getByRole("slider", { name: "Percentual deslizante de Bruno em Picanha" });
-    fireEvent.change(brunoSlider, { target: { value: "6667" } });
+    fireEvent.change(brunoSlider, { target: { value: "67" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
-        { participantId: "u1", cents: 4300, basisPoints: 3333 },
-        { participantId: "u2", cents: 8600, basisPoints: 6667 },
+        { participantId: "u1", cents: 4257, basisPoints: 3300 },
+        { participantId: "u2", cents: 8643, basisPoints: 6700 },
       ],
     });
   });
 
-  it("snaps a percent slider release to the exact quarter of the range", () => {
+  it("snaps a percent slider release to the nearest multiple of 5 within the window", () => {
     const { onSave } = renderEditor();
     fireEvent.click(screen.getByLabelText("Incluir Ana em Picanha"));
     fireEvent.click(screen.getByLabelText("Incluir Bruno em Picanha"));
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
 
     const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana em Picanha" });
-    fireEvent.change(anaSlider, { target: { value: "4900" } });
+    fireEvent.change(anaSlider, { target: { value: "48" } });
     fireEvent.pointerUp(anaSlider);
 
-    expect(anaSlider).toHaveValue("5000");
+    expect(anaSlider).toHaveValue("50");
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",

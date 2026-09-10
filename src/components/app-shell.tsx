@@ -126,6 +126,8 @@ function usePullToRefresh(onRefresh: () => Promise<void>) {
   const threshold = 80;
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
+    const source = e.target as HTMLElement | null;
+    if (source?.closest('input[type="range"], [data-no-pull]')) return;
     const target = e.currentTarget as HTMLElement;
     if (target.scrollTop <= 0) {
       startY.current = e.touches[0].clientY;

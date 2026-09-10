@@ -19,7 +19,7 @@ test.describe("Expenses with a pending invitee", () => {
     await page.keyboard.type("8000");
     await page.getByRole("textbox", { name: "Nome" }).fill("Jantar pendente");
 
-    await page.getByRole("button", { name: "Participantes" }).click();
+    await page.getByRole("button", { name: /Participantes/ }).click();
     await page.getByRole("button", { name: "Por @handle" }).click();
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
     await page.getByRole("button", { name: "Buscar handle" }).click();

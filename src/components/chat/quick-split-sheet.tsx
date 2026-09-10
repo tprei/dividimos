@@ -237,6 +237,16 @@ export function QuickSplitSheet({
             </div>
 
             <div>
+              <div className="mb-1.5 block text-xs font-medium text-muted-foreground">Quem pagou?</div>
+              <div
+                className="rounded-lg border border-primary bg-primary/10 px-3 py-2 text-sm font-medium text-primary"
+                data-testid="quick-split-payer"
+              >
+                Você
+              </div>
+            </div>
+
+            <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                 Como dividir?
               </label>

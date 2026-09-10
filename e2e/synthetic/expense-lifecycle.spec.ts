@@ -95,7 +95,7 @@ test.describe("Expense Lifecycle", () => {
     await page.waitForLoadState("networkidle");
 
     // participants sheet → nothing is persisted while the form is open
-    await page.getByRole("button", { name: "Participantes" }).click();
+    await page.getByRole("button", { name: /Participantes/ }).click();
     await expect(page.getByText(bob.name).first()).toBeVisible({ timeout: 5000 });
     await page.getByRole("button", { name: "Concluir" }).click();
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DivisionSlider } from "@/components/bill/division-slider";
+import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
 import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
@@ -74,7 +75,7 @@ function fallbackValues(totalCents: number, count: number): number[] {
 
 function percentSliderValue(text: string): number {
   const parsed = parseAllocationPercentText(text);
-  return parsed.ok ? parsed.value : 0;
+  return parsed.ok ? Math.round(parsed.value / 100) : 0;
 }
 
 function fixedSliderValue(text: string): number {
@@ -117,9 +118,9 @@ export function SingleBillDivision({
   const ids = useMemo(() => people.map((person) => person.id), [people]);
   const percentValues = useMemo(() => {
     const values: Record<string, string> = {};
-    const fallback = fallbackValues(10_000, ids.length);
+    const fallback = fallbackValues(FULL_PERCENT_BASIS_POINTS / 100, ids.length);
     ids.forEach((id, index) => {
-      values[id] = percentTexts[id] ?? percentText(fallback[index] ?? 0);
+      values[id] = percentTexts[id] ?? percentText((fallback[index] ?? 0) * 100);
     });
     return values;
   }, [ids, percentTexts]);
@@ -141,15 +142,18 @@ export function SingleBillDivision({
     for (const id of ids) values[id] = fixedSliderValue(fixedValues[id]);
     return values;
   }, [fixedValues, ids]);
-  const fixedRemainingById = useMemo(() => {
+  const fixedRemaining = useMemo(() => {
     let sum = 0;
     for (const id of ids) sum += fixedSliderValues[id] ?? 0;
-    const remaining: Record<string, number> = {};
+    const byId: Record<string, number> = {};
     for (const id of ids) {
-      remaining[id] = Math.max(0, totalCents - (sum - (fixedSliderValues[id] ?? 0)));
+      byId[id] = Math.max(0, totalCents - (sum - (fixedSliderValues[id] ?? 0)));
     }
-    return remaining;
+    return { byId, total: Math.max(0, totalCents - sum) };
   }, [fixedSliderValues, ids, totalCents]);
+  const [lastFixedId, setLastFixedId] = useState<string | null>(null);
+  const chipTargetId =
+    lastFixedId !== null && ids.includes(lastFixedId) ? lastFixedId : ids.length > 0 ? ids[0] : null;
   const division = useMemo(
     () => computeDivision(totalCents, mode, ids, percentValues, fixedValues),
     [fixedValues, ids, mode, percentValues, totalCents],
@@ -237,15 +241,16 @@ export function SingleBillDivision({
                       value={mode === "percent" ? percentValues[person.id] : fixedValues[person.id]}
                       onChange={(event) => {
                         if (mode === "percent") {
-                          onPercentTextChange(person.id, event.target.value);
+                          onPercentTextChange(person.id, event.target.value.replace(/\D/g, ""));
                         } else {
                           onFixedTextChange(person.id, event.target.value);
                         }
                       }}
-                      inputMode="decimal"
+                      onFocus={() => setLastFixedId(person.id)}
+                      inputMode={mode === "percent" ? "numeric" : "decimal"}
                       aria-label={mode === "percent" ? `Percentual de ${person.name}` : `Valor de ${person.name}`}
                       className="h-9 w-24 rounded-lg bg-card text-right font-mono"
-                      placeholder="0,00"
+                      placeholder={mode === "percent" ? "0" : "0,00"}
                     />
                     {shareCents === null ? (
                       <span className="w-[4.5rem] text-right text-sm text-muted-foreground">—</span>
@@ -263,7 +268,9 @@ export function SingleBillDivision({
                     }
                     className="basis-full"
                     min={0}
-                    max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS : fixedRemainingById[person.id] ?? 0}
+                    max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS / 100 : fixedRemaining.byId[person.id] ?? 0}
+                    step={mode === "percent" ? 1 : "any"}
+                    snap={mode === "percent" ? { step: 5, threshold: 2 } : undefined}
                     value={
                       mode === "percent"
                         ? percentSliderValues[person.id] ?? 0
@@ -271,12 +278,26 @@ export function SingleBillDivision({
                     }
                     onChange={(next) => {
                       if (mode === "percent") {
-                        onPercentTextChange(person.id, percentText(next));
+                        onPercentTextChange(person.id, percentText(next * 100));
                       } else {
+                        setLastFixedId(person.id);
                         onFixedTextChange(person.id, centsText(next));
                       }
                     }}
                   />
+                )}
+                {mode === "fixed" && person.id === chipTargetId && (
+                  <div className="basis-full">
+                    <FixedAmountHelpers
+                      totalCents={totalCents}
+                      remainingCents={fixedRemaining.total}
+                      onAdd={(deltaCents) => {
+                        if (chipTargetId === null) return;
+                        const current = fixedSliderValues[chipTargetId] ?? 0;
+                        onFixedTextChange(chipTargetId, centsText(current + deltaCents));
+                      }}
+                    />
+                  </div>
                 )}
               </div>
             );
@@ -286,7 +307,7 @@ export function SingleBillDivision({
       <p
         id="single-bill-division-status"
         aria-live="polite"
-        className={status ? "pt-2 text-xs font-semibold text-destructive" : "sr-only"}
+        className="min-h-6 pt-2 text-xs font-semibold text-destructive"
       >
         {status}
       </p>

@@ -62,6 +62,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const [historyComplete, setHistoryComplete] = useState(false);
   const chargeResetTimer = useRef<number | undefined>(undefined);
   const splitResetTimer = useRef<number | undefined>(undefined);
+  const chargeKey = useRef(crypto.randomUUID());
+  const splitKey = useRef(crypto.randomUUID());
+  const draftKey = useRef(crypto.randomUUID());
   const requestedRef = useRef(false);
   const loadedRef = useRef<Set<string>>(new Set());
 
@@ -180,9 +183,13 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   }, [groupId, router]);
 
   const createDmExpense = useCallback(
-    async (header: ExpenseHeader, payload: ExpensePayload): Promise<MutationAck> => {
+    async (
+      clientId: string,
+      header: ExpenseHeader,
+      payload: ExpensePayload,
+    ): Promise<MutationAck> => {
       if (!groupId) throw new Error("no_group");
-      return await createExpense({ groupId, header, payload });
+      return await createExpense({ groupId, clientId, header, payload });
     },
     [groupId],
   );
@@ -202,8 +209,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         result.amountCents,
       );
       try {
-        await createDmExpense(header, payload);
+        await createDmExpense(chargeKey.current, header, payload);
         setChargeStatus("confirmed");
+        chargeKey.current = crypto.randomUUID();
         chargeResetTimer.current = window.setTimeout(() => {
           setChargeSheetOpen(false);
           setChargeStatus("idle");
@@ -234,8 +242,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         result.amountCents,
       );
       try {
-        await createDmExpense(header, payload);
+        await createDmExpense(splitKey.current, header, payload);
         setSplitStatus("confirmed");
+        splitKey.current = crypto.randomUUID();
         splitResetTimer.current = window.setTimeout(() => {
           setSplitSheetOpen(false);
           setSplitStatus("idle");
@@ -270,7 +279,8 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         return { error: resolution.message };
       }
       try {
-        const ack = await createDmExpense(resolution.header, resolution.payload);
+        const ack = await createDmExpense(draftKey.current, resolution.header, resolution.payload);
+        draftKey.current = crypto.randomUUID();
         return { expenseId: ack.expenseId ?? "" };
       } catch (error) {
         return { error: ledgerErrorMessage(error) };

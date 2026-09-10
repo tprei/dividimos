@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 
@@ -33,7 +34,8 @@ export interface SingleBillFormProps {
   hasContactPicker: boolean;
   onPickContacts: () => Promise<void>;
   onBack: () => void;
-  submit: (groupId: string | null) => Promise<boolean>;
+  submit: (resolveGroupId: () => Promise<string | null | undefined>) => Promise<boolean>;
+  submitting: boolean;
 }
 
 export function SingleBillForm({
@@ -46,6 +48,7 @@ export function SingleBillForm({
   onPickContacts,
   onBack,
   submit,
+  submitting,
 }: SingleBillFormProps) {
   const store = useBillStore(
     useShallow((state) => ({
@@ -121,9 +124,7 @@ export function SingleBillForm({
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
-    const groupId = await resolveGroup(defaultGroupName);
-    if (groupId === undefined) return;
-    await submit(groupId);
+    await submit(() => resolveGroup(defaultGroupName));
   }, [canSubmit, defaultGroupName, resolveGroup, submit]);
 
   return (
@@ -210,11 +211,20 @@ export function SingleBillForm({
             type="button"
             size="lg"
             className="h-12 w-full text-base font-bold"
-            disabled={!canSubmit}
+            disabled={!canSubmit || submitting}
             onClick={() => void handleSubmit()}
             aria-describedby="single-bill-division-status"
           >
-            {isEditing ? "Salvar" : "Criar conta"}
+            {submitting ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                {isEditing ? "Salvando…" : "Criando…"}
+              </>
+            ) : isEditing ? (
+              "Salvar"
+            ) : (
+              "Criar conta"
+            )}
           </Button>
         )}
       </footer>

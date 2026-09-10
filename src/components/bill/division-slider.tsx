@@ -1,7 +1,13 @@
 "use client";
 
 import type { ChangeEvent, CSSProperties, PointerEvent } from "react";
+import { haptics } from "@/hooks/use-haptics";
 import { cn } from "@/lib/utils";
+
+export interface DivisionSliderSnap {
+  step: number;
+  threshold: number;
+}
 
 export interface DivisionSliderProps {
   ariaLabel: string;
@@ -9,6 +15,8 @@ export interface DivisionSliderProps {
   max: number;
   min: number;
   onChange: (value: number) => void;
+  snap?: DivisionSliderSnap;
+  step?: number | "any";
   value: number;
 }
 
@@ -25,6 +33,8 @@ export function DivisionSlider({
   max,
   min,
   onChange,
+  snap,
+  step = "any",
   value,
 }: DivisionSliderProps) {
   const span = max - min;
@@ -39,26 +49,36 @@ export function DivisionSlider({
 
   const handleRelease = (event: PointerEvent<HTMLInputElement>) => {
     const current = clamp(Math.round(Number(event.currentTarget.value)), min, max);
-    const threshold = span * SNAP_THRESHOLD_FRACTION;
     let snapped = current;
-    let best = threshold;
-    for (const fraction of SNAP_POINT_FRACTIONS) {
-      const point = Math.round(min + fraction * span);
-      const distance = Math.abs(current - point);
-      if (distance < best) {
-        best = distance;
-        snapped = point;
+    if (snap) {
+      const aligned = min + Math.round((current - min) / snap.step) * snap.step;
+      const target = clamp(aligned, min, max);
+      if (Math.abs(current - target) <= snap.threshold) snapped = target;
+    } else {
+      const threshold = span * SNAP_THRESHOLD_FRACTION;
+      let best = threshold;
+      for (const fraction of SNAP_POINT_FRACTIONS) {
+        const point = Math.round(min + fraction * span);
+        const distance = Math.abs(current - point);
+        if (distance < best) {
+          best = distance;
+          snapped = point;
+        }
       }
     }
-    if (snapped !== current) onChange(snapped);
+    if (snapped !== current) {
+      haptics.tap();
+      onChange(snapped);
+    }
   };
 
   return (
     <input
       type="range"
+      data-no-pull
       min={min}
       max={max}
-      step="any"
+      step={step}
       value={value}
       onChange={handleChange}
       onPointerUp={handleRelease}

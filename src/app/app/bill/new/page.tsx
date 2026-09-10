@@ -350,12 +350,14 @@ function NewBillPageContent() {
 
   const submitItemized = useCallback(async (): Promise<boolean> => {
     if (!me) return false;
-    const state = useBillStore.getState();
-    const otherParticipants = state.participants.filter((participant) => participant.id !== me.id);
-    const needsGroup = otherParticipants.length > 0 || state.guests.length > 0;
-    const groupId = await resolveGroup();
-    if (needsGroup && !groupId) return false;
-    return submit(groupId);
+    return submit(async () => {
+      const state = useBillStore.getState();
+      const otherParticipants = state.participants.filter((participant) => participant.id !== me.id);
+      const needsGroup = otherParticipants.length > 0 || state.guests.length > 0;
+      const groupId = await resolveGroup();
+      if (needsGroup && !groupId) return undefined;
+      return groupId;
+    });
   }, [me, resolveGroup, submit]);
 
   const goBack = () => {
@@ -420,6 +422,7 @@ function NewBillPageContent() {
         onPickContacts={handlePickContacts}
         onBack={goBack}
         submit={submit}
+        submitting={submitting}
       />
     );
   }

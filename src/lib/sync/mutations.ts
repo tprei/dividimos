@@ -128,15 +128,15 @@ export function notify(eventId: number | null): void {
 
 export async function createExpense(input: {
   groupId: string;
+  clientId: string;
   header: ExpenseHeader;
   payload: ExpensePayload;
 }): Promise<MutationAck> {
-  const { groupId, header, payload } = input;
+  const { groupId, clientId, header, payload } = input;
   const store = useAppStore.getState();
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
-  const clientId = crypto.randomUUID();
   const { myShareCents, myPaidCents } = computeMyShareAndPaid(payload, me.id);
   const rollback: RollbackStep[] = [removeOptimisticExpense(clientId, groupId)];
 

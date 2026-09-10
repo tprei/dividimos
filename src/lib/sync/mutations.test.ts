@@ -122,6 +122,8 @@ function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
   };
 }
 
+const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
+
 const HEADER: ExpenseHeader = {
   occurredOn: "2026-01-02",
   title: "Almoço",
@@ -181,7 +183,7 @@ describe("mutations", () => {
       };
       vi.mocked(rpc).mockResolvedValueOnce(ack);
 
-      const result = await createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD });
+      const result = await createExpense({ groupId: "g1", clientId: CLIENT_ID, header: HEADER, payload: PAYLOAD });
 
       expect(result).toEqual(ack);
       expect(rpc).toHaveBeenCalledWith(
@@ -259,7 +261,7 @@ describe("mutations", () => {
       vi.mocked(rpc).mockRejectedValueOnce(new Error("network"));
 
       await expect(
-        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+        createExpense({ groupId: "g1", clientId: CLIENT_ID, header: HEADER, payload: PAYLOAD }),
       ).rejects.toThrow("network");
 
       const state = useAppStore.getState();
@@ -295,7 +297,7 @@ describe("mutations", () => {
       });
 
       await expect(
-        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+        createExpense({ groupId: "g1", clientId: CLIENT_ID, header: HEADER, payload: PAYLOAD }),
       ).rejects.toThrow("network");
 
       const state = useAppStore.getState();
@@ -329,7 +331,7 @@ describe("mutations", () => {
       });
 
       await expect(
-        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+        createExpense({ groupId: "g1", clientId: CLIENT_ID, header: HEADER, payload: PAYLOAD }),
       ).rejects.toThrow("network");
 
       expect(useAppStore.getState().groups.g1).toBe(refreshed);
@@ -370,7 +372,7 @@ describe("mutations", () => {
         .mockResolvedValueOnce(undefined);
 
       await expect(
-        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+        createExpense({ groupId: "g1", clientId: CLIENT_ID, header: HEADER, payload: PAYLOAD }),
       ).rejects.toThrow("invalid_wire");
       expect(refreshGroup).toHaveBeenCalledTimes(1);
 
@@ -394,7 +396,7 @@ describe("mutations", () => {
         .mockRejectedValueOnce(new Error("down"));
 
       await expect(
-        createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD }),
+        createExpense({ groupId: "g1", clientId: CLIENT_ID, header: HEADER, payload: PAYLOAD }),
       ).rejects.toThrow("invalid_wire");
 
       await vi.advanceTimersByTimeAsync(60_000);

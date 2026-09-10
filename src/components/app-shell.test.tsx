@@ -275,6 +275,56 @@ describe("AppShell haptics", () => {
     expect(haptics.success).toHaveBeenCalledOnce();
   });
 
+  it("ignores pull gestures that start on a range input", async () => {
+    render(
+      <AppShell>
+        <input type="range" aria-label="Parcela" />
+      </AppShell>,
+    );
+
+    const main = document.querySelector("main")!;
+    const slider = screen.getByRole("slider", { name: "Parcela" });
+
+    act(() => {
+      fireEvent.touchStart(slider, { touches: [{ clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 250 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    expect(haptics.impact).not.toHaveBeenCalled();
+    expect(haptics.success).not.toHaveBeenCalled();
+  });
+
+  it("ignores pull gestures that start inside a data-no-pull element", async () => {
+    render(
+      <AppShell>
+        <div data-no-pull>
+          <span>alça do controle</span>
+        </div>
+      </AppShell>,
+    );
+
+    const main = document.querySelector("main")!;
+    const handle = screen.getByText("alça do controle");
+
+    act(() => {
+      fireEvent.touchStart(handle, { touches: [{ clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 250 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    expect(haptics.impact).not.toHaveBeenCalled();
+    expect(haptics.success).not.toHaveBeenCalled();
+  });
+
   it("does not trigger haptics when pull distance is below threshold", () => {
     render(<AppShell><div>content</div></AppShell>);
 
