@@ -256,9 +256,9 @@ describe("buildExpensePayload", () => {
     store.addParticipant(userAlice);
     store.addParticipant(userBob);
 
-    store.splitBillByPercentage([
-      { userId: userAlice.id, percentage: 70 },
-      { userId: userBob.id, percentage: 30 },
+    store.splitBillByBasisPoints([
+      { userId: userAlice.id, basisPoints: 7000 },
+      { userId: userBob.id, basisPoints: 3000 },
     ]);
     store.splitPaymentEqually([userAlice.id, userBob.id]);
 

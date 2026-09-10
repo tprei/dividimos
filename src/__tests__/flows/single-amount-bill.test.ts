@@ -34,9 +34,9 @@ describe("Single amount expense flows", () => {
     store.updateExpense({ totalAmountInput: 10000 });
     store.addParticipant(userBob);
 
-    store.splitBillByPercentage([
-      { userId: "user-alice", percentage: 60 },
-      { userId: "user-bob", percentage: 40 },
+    store.splitBillByBasisPoints([
+      { userId: "user-alice", basisPoints: 6000 },
+      { userId: "user-bob", basisPoints: 4000 },
     ]);
     store.setPayerFull("user-alice");
 

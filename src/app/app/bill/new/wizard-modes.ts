@@ -6,7 +6,6 @@ export type Step =
   | "participants"
   | "items"
   | "split"
-  | "amount-split"
   | "payer"
   | "summary";
 
@@ -24,13 +23,6 @@ export const ITEMIZED_STEPS: StepDef[] = [
   { key: "summary", label: "Resumo" },
 ];
 
-export const SINGLE_STEPS: StepDef[] = [
-  { key: "info", label: "Dados" },
-  { key: "participants", label: "Pessoas" },
-  { key: "amount-split", label: "Divisão" },
-  { key: "payer", label: "Pagamento" },
-  { key: "summary", label: "Resumo" },
-];
 
 /** `?dm=<userId>&groupId=<id>&type=<expenseType>` quick-charge mode. */
 export interface DmMode {

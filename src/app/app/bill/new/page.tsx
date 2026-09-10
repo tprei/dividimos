@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { PayerStep } from "@/components/bill/payer-step";
-import { SingleAmountStep } from "@/components/bill/single-amount-step";
+import { SingleBillForm } from "@/components/bill/single-bill-form";
 import { ItemsStep } from "@/components/bill/wizard/items-step";
 import { ParticipantsStep } from "@/components/bill/wizard/participants-step";
 import { SplitStep } from "@/components/bill/wizard/split-step";
@@ -31,7 +31,7 @@ import { InfoStep } from "./info-step";
 import { SummaryStep } from "./summary-step";
 import { useWizardInit } from "./use-wizard-init";
 import { useItemAssignment } from "./use-item-assignment";
-import { ITEMIZED_STEPS, parseWizardModes, SINGLE_STEPS, type Step } from "./wizard-modes";
+import { ITEMIZED_STEPS, parseWizardModes, type Step } from "./wizard-modes";
 import { todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
 import { computeWizardError, WizardFooter } from "./wizard-footer";
 
@@ -77,7 +77,6 @@ function NewBillPageContent() {
       payers: s.payers,
       splits: s.splits,
       billSplits: s.billSplits,
-      totalAmountInput: s.totalAmountInput,
       occurredOn: s.occurredOn,
       setCurrentUser: s.setCurrentUser,
       setOccurredOn: s.setOccurredOn,
@@ -90,9 +89,6 @@ function NewBillPageContent() {
       addItem: s.addItem,
       removeItem: s.removeItem,
       splitItemEqually: s.splitItemEqually,
-      splitBillByFixed: s.splitBillByFixed,
-      splitBillByPercentage: s.splitBillByPercentage,
-      splitBillEqually: s.splitBillEqually,
       splitPaymentEqually: s.splitPaymentEqually,
       setPayerAmount: s.setPayerAmount,
       setPayerFull: s.setPayerFull,
@@ -181,13 +177,12 @@ function NewBillPageContent() {
     );
   }, []);
 
-  const steps = useMemo(
-    () => (billType === "single_amount" ? SINGLE_STEPS : ITEMIZED_STEPS),
-    [billType],
-  );
+  const steps = ITEMIZED_STEPS;
   const stepIndex = steps.findIndex((s) => s.key === step);
   const isTypeStep = step === "type";
-
+  const isSingleFlow =
+    !isTypeStep &&
+    (store.expense?.expenseType === "single_amount" || billType === "single_amount");
   const groupSnapshots = useMemo(
     () =>
       groupOrder
@@ -220,8 +215,13 @@ function NewBillPageContent() {
 
   const handleTypeSelect = useCallback((type: ExpenseType) => {
     setBillType(type);
+    if (type === "single_amount" && me) {
+      const billStore = useBillStore.getState();
+      billStore.setCurrentUser(meToLegacyUser(me));
+      billStore.createExpense("", "single_amount");
+    }
     setStep("info");
-  }, []);
+  }, [me]);
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult) => {
     setBillType("itemized");
@@ -403,12 +403,6 @@ function NewBillPageContent() {
     if (navigating || submitting || isTypeStep) return true;
     if (step === "info") return !title.trim();
     if (step === "participants") return (store.participants.length + store.guests.length) < 2;
-    if (step === "amount-split") {
-      const total = store.totalAmountInput || 0;
-      if (total <= 0) return true;
-      const assigned = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
-      return Math.abs(total - assigned) > 1;
-    }
     if (step === "payer") {
       const gt = store.getGrandTotal();
       const paid = store.payers.reduce((s, p) => s + p.amountCents, 0);
@@ -422,7 +416,7 @@ function NewBillPageContent() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Enter") return;
+      if (e.key !== "Enter" || isSingleFlow) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON" || tag === "SELECT") return;
       if (isNextDisabled()) return;
@@ -432,9 +426,22 @@ function NewBillPageContent() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [goNext, isNextDisabled]);
+  }, [goNext, isNextDisabled, isSingleFlow]);
 
   const goBack = () => {
+    if (billType === "single_amount" && step !== "type") {
+      if (isDmMode && modes.dm) {
+        router.push(`/app/conversations/${modes.dm.userId}`);
+        return;
+      }
+      if (isEditing && modes.editExpenseId) {
+        router.push(`/app/bill/${modes.editExpenseId}`);
+        return;
+      }
+      setStep("type");
+      setBillType(null);
+      return;
+    }
     if (stepIndex === 0) {
       if (isDmMode && modes.dm) {
         router.push(`/app/conversations/${modes.dm.userId}`);
@@ -455,20 +462,6 @@ function NewBillPageContent() {
       setCreateGroupName("");
       return;
     }
-    if (isDmMode && billType === "single_amount") {
-      const prev = steps[stepIndex - 1];
-      if (prev && prev.key === "participants") {
-        const prevPrev = steps[stepIndex - 2];
-        if (prevPrev) {
-          setStep(prevPrev.key);
-          return;
-        }
-        if (modes.dm) {
-          router.push(`/app/conversations/${modes.dm.userId}`);
-          return;
-        }
-      }
-    }
     const prev = steps[stepIndex - 1];
     if (prev) setStep(prev.key);
   };
@@ -481,13 +474,25 @@ function NewBillPageContent() {
     );
   }
 
-  const assignedAmountCents = store.billSplits.reduce((s, bs) => s + bs.computedAmountCents, 0);
+  if (isSingleFlow) {
+    return (
+      <SingleBillForm
+        me={me}
+        groups={groupSnapshots}
+        initialGroupId={selectedGroupId ?? (store.expense?.groupId || null)}
+        isDmMode={isDmMode}
+        isEditing={isEditing}
+        hasContactPicker={hasContactPicker}
+        onPickContacts={handlePickContacts}
+        onBack={goBack}
+        submit={submit}
+      />
+    );
+  }
   const paidTotalCents = store.payers.reduce((s, p) => s + p.amountCents, 0);
   const errorMessage = computeWizardError({
     step,
     participantCount: store.participants.length + store.guests.length,
-    totalAmountInput: store.totalAmountInput || 0,
-    assignedAmountCents,
     grandTotal: store.getGrandTotal(),
     paidTotalCents,
     pendingInviteNames,
@@ -661,25 +666,6 @@ function NewBillPageContent() {
             </motion.div>
           )}
 
-          {step === "amount-split" && (
-            <motion.div
-              key="amount-split"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <SingleAmountStep
-                participants={store.participants}
-                guests={store.guests}
-                totalAmountInput={store.totalAmountInput || 0}
-                onSetTotal={(cents) => store.updateExpense({ totalAmountInput: cents, totalAmount: cents })}
-                onSplitEqually={(ids) => store.splitBillEqually(ids)}
-                onSplitByPercentage={(a) => store.splitBillByPercentage(a)}
-                onSplitByFixed={(a) => store.splitBillByFixed(a)}
-              />
-            </motion.div>
-          )}
 
           {step === "payer" && (
             <motion.div
