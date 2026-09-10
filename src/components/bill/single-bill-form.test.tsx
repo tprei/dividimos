@@ -159,6 +159,7 @@ describe("SingleBillForm division", () => {
       lastMessage: null,
       lastActivityAt: "2026-01-01T00:00:00Z",
       expenseCount: 0,
+      pairwiseEdges: [],
     };
     const props = {
       me,
