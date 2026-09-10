@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
@@ -10,6 +10,8 @@ const mutations = vi.hoisted(() => ({
 vi.mock("@/lib/sync/mutations", () => mutations);
 
 const groupMutations = vi.hoisted(() => ({
+  acceptInvitation: vi.fn(),
+  declineInvitation: vi.fn(),
   sendNudge: vi.fn(),
 }));
 vi.mock("@/lib/sync/mutations-group", () => groupMutations);
@@ -29,12 +31,26 @@ const pixProps = vi.hoisted(() => ({
 vi.mock("@/components/settlement/pix-qr-modal", () => ({
   PixQrModal: (props: Record<string, unknown>) => {
     pixProps.current = props;
-    return null;
+    return <div data-testid="pix-modal" />;
   },
 }));
 
+const quickProps = vi.hoisted(() => ({
+  current: null as { open: boolean } | null,
+}));
+vi.mock("@/components/dashboard/quick-charge-modal", () => ({
+  QuickChargeModal: (props: { open: boolean }) => {
+    quickProps.current = props;
+    return <div data-testid="quick-charge-modal" />;
+  },
+}));
+
+vi.mock("@/components/pwa/install-prompt", () => ({
+  InstallPrompt: () => null,
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }));
 
 vi.mock("next/link", () => ({
@@ -59,8 +75,12 @@ const me: Me = {
 
 const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
 const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null };
+const meWithPixKey: Me = { ...me, pixKeyHint: "a****@banco.com" };
+type SnapshotOverrides = Omit<Partial<GroupSnapshot>, "group"> & {
+  group?: Partial<GroupSnapshot["group"]>;
+};
 
-function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
+function snapshot(overrides: SnapshotOverrides = {}): GroupSnapshot {
   const base: GroupSnapshot = {
     group: {
       id: "g1",
@@ -89,43 +109,57 @@ function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
 }
 
-function seedStore(snapshots: GroupSnapshot[]) {
-  const groups = Object.fromEntries(snapshots.map((s) => [s.group.id, s]));
-  useAppStore.setState({ hydrated: true, me, groups, groupOrder: snapshots.map((s) => s.group.id) });
+function seedStore(snapshots: GroupSnapshot[], user: Me = me) {
+  const groups = Object.fromEntries(snapshots.map((item) => [item.group.id, item]));
+  useAppStore.setState({ hydrated: true, me: user, groups, groupOrder: snapshots.map((item) => item.group.id) });
 }
 
 describe("DashboardContent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pixProps.current = null;
+    quickProps.current = null;
     useAppStore.getState().reset();
   });
 
-  it("renders the skeleton before hydration", () => {
+  it("keeps the skeleton visible before hydration", () => {
     useAppStore.setState({ hydrated: false, me });
     render(<DashboardContent />);
 
-    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+    expect(screen.queryByText("Oi, Alice")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 
-  it("renders the greeting and the net balance across debt rows", () => {
+  it("matches net and direction totals to the displayed debt rows", () => {
     seedStore([
       snapshot({
         balances: [
-          { kind: "user", participantId: me.id, netCents: -3000 },
-          { kind: "user", participantId: carol.id, netCents: 3000 },
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+      }),
+      snapshot({
+        group: { id: "g2", name: "Almoço" },
+        members: [
+          { groupId: "g2", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+          { groupId: "g2", userId: dave.id, status: "accepted", invitedBy: null, acceptedAt: null, user: dave },
+        ],
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 3000 },
+          { kind: "user", participantId: dave.id, netCents: -3000 },
         ],
       }),
     ]);
     render(<DashboardContent />);
 
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("A pagar")).toBeInTheDocument();
-    expect(screen.getAllByText("R$ 30,00").length).toBeGreaterThan(0);
+    expect(screen.getByText("Oi, Alice")).toBeInTheDocument();
+    expect(screen.getByText("Saldo geral")).toBeInTheDocument();
+    expect(screen.getByText(/20,00/)).toBeInTheDocument();
+    expect(screen.getAllByText(/50,00/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/30,00/).length).toBeGreaterThan(0);
   });
 
-  it("opens the Pix modal in pay mode and records the settlement through it", async () => {
+  it("opens the pay Pix flow from a payable row and records its direction", async () => {
     mutations.recordSettlement.mockResolvedValue({});
     seedStore([
       snapshot({
@@ -137,19 +171,18 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
+    fireEvent.click(screen.getByRole("button", { name: /Carol, você deve/ }));
     fireEvent.click(screen.getByRole("button", { name: "Pagar via Pix" }));
 
-    await waitFor(() => {
-      expect(pixProps.current).not.toBeNull();
-    });
-    expect(pixProps.current?.recipientName).toBe("Carol Souza");
+    await waitFor(() => expect(pixProps.current).not.toBeNull());
+    expect(pixProps.current?.recipientUserId).toBe(carol.id);
+    expect(pixProps.current?.groupId).toBe("g1");
+    expect(pixProps.current?.recipientName).toBe(carol.name);
     expect(pixProps.current?.amountCents).toBe(5000);
     expect(pixProps.current?.mode).toBe("pay");
-    expect(pixProps.current?.pixKey).toBeUndefined();
 
     const onMarkPaid = pixProps.current?.onMarkPaid as (cents: number) => Promise<void>;
     await onMarkPaid(3000);
-
     expect(mutations.recordSettlement).toHaveBeenCalledWith({
       groupId: "g1",
       fromUserId: me.id,
@@ -158,7 +191,69 @@ describe("DashboardContent", () => {
     });
   });
 
-  it("renders guest debt rows with a chip and no pay action", () => {
+  it("opens collect Pix with the viewer as merchant", async () => {
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Cobrar via Pix" }));
+
+    await waitFor(() => expect(pixProps.current).not.toBeNull());
+    expect(pixProps.current?.recipientUserId).toBe(me.id);
+    expect(pixProps.current?.groupId).toBe("g1");
+    expect(pixProps.current?.amountCents).toBe(5000);
+    expect(pixProps.current?.mode).toBe("collect");
+  });
+
+  it("exposes nudge and quick charge from a receivable dialog", async () => {
+    groupMutations.sendNudge.mockResolvedValue({ groupId: "g1", ledgerVersion: 1, eventId: 10 });
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ], meWithPixKey);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Lembrar" }));
+    await waitFor(() => {
+      expect(groupMutations.sendNudge).toHaveBeenCalledWith("g1", carol.id);
+      expect(toastSuccess).toHaveBeenCalledWith("Lembrete enviado");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cobrar valor" }));
+    await waitFor(() => expect(quickProps.current?.open).toBe(true));
+  });
+
+  it("hides Cobrar valor without a Pix key", () => {
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lembrar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cobrar valor" })).not.toBeInTheDocument();
+  });
+
+  it("keeps guest rows free of Pix and nudge actions", () => {
     seedStore([
       snapshot({
         balances: [
@@ -170,48 +265,31 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
-    expect(screen.getByText("Convidado")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Bruno, você deve/ }));
+    expect(screen.getAllByText("Convidado").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Pagar via Pix" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cobrar via Pix" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Lembrar" })).not.toBeInTheDocument();
   });
 
-  it("sends a nudge to a debtor from the Você recebe tab", async () => {
-    groupMutations.sendNudge.mockResolvedValue({ groupId: "g1", ledgerVersion: 1, eventId: 10 });
-    seedStore([
-      snapshot({
-        balances: [
-          { kind: "user", participantId: me.id, netCents: 5000 },
-          { kind: "user", participantId: carol.id, netCents: -5000 },
-        ],
-      }),
-    ]);
+  it("shows invitation count and keeps a failed decline visible", async () => {
+    groupMutations.declineInvitation.mockRejectedValue(new LedgerError("network"));
+    const invitation = snapshot({
+      group: { id: "invite-1", name: "Convite", creatorId: carol.id },
+      members: [
+        { groupId: "invite-1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
+        { groupId: "invite-1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
+      ],
+    });
+    seedStore([invitation]);
     render(<DashboardContent />);
 
-    fireEvent.click(screen.getByRole("button", { name: /você recebe/i }));
-    fireEvent.click(screen.getByRole("button", { name: /lembrar/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Notificações, 1 não lidas" }));
+    expect(await screen.findByText("Convite · Convite")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Recusar convite para Convite" }));
 
-    await waitFor(() => {
-      expect(groupMutations.sendNudge).toHaveBeenCalledWith("g1", carol.id);
-      expect(toastSuccess).toHaveBeenCalledWith("Lembrete enviado");
-    });
-  });
-
-  it("shows an error toast when sending a nudge fails with cooldown", async () => {
-    groupMutations.sendNudge.mockRejectedValue(new LedgerError("nudge_cooldown"));
-    seedStore([
-      snapshot({
-        balances: [
-          { kind: "user", participantId: me.id, netCents: 5000 },
-          { kind: "user", participantId: carol.id, netCents: -5000 },
-        ],
-      }),
-    ]);
-    render(<DashboardContent />);
-
-    fireEvent.click(screen.getByRole("button", { name: /você recebe/i }));
-    fireEvent.click(screen.getByRole("button", { name: /lembrar/i }));
-
-    await waitFor(() => {
-      expect(toastError).toHaveBeenCalledWith("Você já lembrou essa pessoa hoje.");
-    });
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar."));
+    expect(screen.getByText("Convite · Convite")).toBeInTheDocument();
+    expect(groupMutations.declineInvitation).toHaveBeenCalledWith("invite-1");
   });
 });

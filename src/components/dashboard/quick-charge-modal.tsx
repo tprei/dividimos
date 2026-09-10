@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Loader2, QrCode, Shield, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ export function QuickChargeModal({
   const [isConfirming, setIsConfirming] = useState(false);
   const [chargeId, setChargeId] = useState<string | null>(null);
   const [confirmedAmount, setConfirmedAmount] = useState(0);
+  useBackHandler(open && !isConfirming && phase !== "success", onClose);
 
   useEffect(() => {
     if (open) {
