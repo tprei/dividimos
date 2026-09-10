@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { decryptPixKey as decrypt } from "@/lib/crypto";
+import { hashEndpoint } from "@/lib/crypto";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -12,83 +16,53 @@ export async function POST(request: Request) {
   }
   const userId = claimsData.claims.sub;
 
-  let body: { endpoint?: string; token?: string; channel?: "web" | "fcm" };
+  let body: Record<string, unknown>;
   try {
-    body = await request.json();
+    const parsed: unknown = await request.json();
+    if (!isRecord(parsed)) {
+      return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+    }
+    body = parsed;
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const channel = body.channel === "fcm" ? "fcm" : "web";
+  const requestedChannel = body.channel;
+  if (
+    requestedChannel !== undefined &&
+    requestedChannel !== "web" &&
+    requestedChannel !== "fcm"
+  ) {
+    return NextResponse.json({ error: "Canal inválido" }, { status: 400 });
+  }
+  const channel = requestedChannel === "fcm" ? "fcm" : "web";
+  const identity = channel === "fcm" ? body.token : body.endpoint;
+  if (typeof identity !== "string" || identity.length === 0) {
+    return NextResponse.json(
+      { error: channel === "fcm" ? "Token FCM é obrigatório" : "Endpoint é obrigatório" },
+      { status: 400 },
+    );
+  }
 
   const admin = createAdminClient();
-
-  if (channel === "fcm") {
-    const { token } = body;
-    if (!token) {
-      return NextResponse.json({ error: "Token FCM é obrigatório" }, { status: 400 });
-    }
-
-    const { data: rows, error: fetchError } = await admin
-      .from("push_subscriptions")
-      .select("id, subscription_encrypted")
-      .eq("user_id", userId)
-      .eq("channel", "fcm");
-
-    if (fetchError || !rows) {
-      return NextResponse.json({ error: "Erro ao buscar subscriptions" }, { status: 500 });
-    }
-
-    const idsToDelete: string[] = [];
-    for (const row of rows) {
-      try {
-        const decrypted = decrypt(row.subscription_encrypted);
-        if (decrypted === token) {
-          idsToDelete.push(row.id);
-        }
-      } catch {
-        // Skip rows that can't be decrypted — they're stale anyway
-      }
-    }
-
-    if (idsToDelete.length > 0) {
-      await admin.from("push_subscriptions").delete().in("id", idsToDelete);
-    }
-
-    return NextResponse.json({ ok: true, deleted: idsToDelete.length });
-  }
-
-  // Web Push flow (existing behavior)
-  const { endpoint } = body;
-  if (!endpoint) {
-    return NextResponse.json({ error: "Endpoint é obrigatório" }, { status: 400 });
-  }
-
-  const { data: rows, error: fetchError } = await admin
+  const { data, error } = await admin
     .from("push_subscriptions")
-    .select("id, subscription_encrypted")
+    .delete()
     .eq("user_id", userId)
-    .eq("channel", "web");
+    .eq("channel", channel)
+    .eq("endpoint_digest", hashEndpoint(identity))
+    .select("id");
 
-  if (fetchError || !rows) {
-    return NextResponse.json({ error: "Erro ao buscar subscriptions" }, { status: 500 });
+  if (error) {
+    console.error("[push/unsubscribe] delete failed:", error);
+    return NextResponse.json(
+      { error: "Erro ao remover subscription" },
+      { status: 500 },
+    );
   }
 
-  const idsToDelete: string[] = [];
-  for (const row of rows) {
-    try {
-      const sub = JSON.parse(decrypt(row.subscription_encrypted)) as { endpoint: string };
-      if (sub.endpoint === endpoint) {
-        idsToDelete.push(row.id);
-      }
-    } catch {
-      // Skip rows that can't be decrypted — they're stale anyway
-    }
-  }
-
-  if (idsToDelete.length > 0) {
-    await admin.from("push_subscriptions").delete().in("id", idsToDelete);
-  }
-
-  return NextResponse.json({ ok: true, deleted: idsToDelete.length });
+  return NextResponse.json({
+    ok: true,
+    deleted: Array.isArray(data) ? data.length : 0,
+  });
 }

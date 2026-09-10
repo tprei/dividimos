@@ -5,15 +5,15 @@ const serverMock = createMockSupabase();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => serverMock.client),
 }));
-
 const adminMock = createMockSupabase();
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => adminMock.client),
 }));
 
-const mockDecrypt = vi.fn();
+
+const mockHashEndpoint = vi.fn((value: string) => `digest:${value}`);
 vi.mock("@/lib/crypto", () => ({
-  decryptPixKey: (...args: unknown[]) => mockDecrypt(...args),
+  hashEndpoint: (value: string) => mockHashEndpoint(value),
 }));
 
 import { POST } from "./route";
@@ -37,7 +37,7 @@ describe("POST /api/push/unsubscribe", () => {
   beforeEach(() => {
     serverMock.reset();
     adminMock.reset();
-    mockDecrypt.mockReset();
+    mockHashEndpoint.mockClear();
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -58,80 +58,60 @@ describe("POST /api/push/unsubscribe", () => {
     expect((await res.json()).error).toContain("Endpoint");
   });
 
-  it("returns 500 when fetching subscriptions fails", async () => {
+  it("rejects an unsupported channel instead of defaulting to web", async () => {
     serverMock.setUser({ id: "u1" });
-    adminMock.onTable("push_subscriptions", { data: null, error: { message: "db error" } });
+    const res = await POST(makeRequest({ channel: "sms", endpoint: "https://x.com/sub" }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain("Canal");
+    expect(adminMock.findCalls("push_subscriptions")).toHaveLength(0);
+  });
+
+  it("deletes the current user's web subscription by endpoint digest", async () => {
+    serverMock.setUser({ id: "u1" });
+    const endpoint = "https://push.example.com/sub/abc";
+    adminMock.onTable("push_subscriptions", {
+      data: [{ id: "sub-1" }],
+      error: null,
+    });
+
+    const res = await POST(makeRequest({ endpoint }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, deleted: 1 });
+    expect(mockHashEndpoint).toHaveBeenCalledWith(endpoint);
+    expect(adminMock.findCalls("push_subscriptions", "delete")).toHaveLength(1);
+    expect(adminMock.findCalls("push_subscriptions", "eq").map((call) => call.args)).toEqual([
+      ["user_id", "u1"],
+      ["channel", "web"],
+      ["endpoint_digest", `digest:${endpoint}`],
+    ]);
+  });
+
+  it("uses the FCM token digest when removing a native subscription", async () => {
+    serverMock.setUser({ id: "u1" });
+    const token = "fcm-token";
+    adminMock.onTable("push_subscriptions", { data: [], error: null });
+
+    const res = await POST(makeRequest({ channel: "fcm", token }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, deleted: 0 });
+    expect(adminMock.findCalls("push_subscriptions", "eq").map((call) => call.args)).toEqual([
+      ["user_id", "u1"],
+      ["channel", "fcm"],
+      ["endpoint_digest", `digest:${token}`],
+    ]);
+  });
+
+  it("returns 500 when the scoped delete fails", async () => {
+    serverMock.setUser({ id: "u1" });
+    adminMock.onTable("push_subscriptions", {
+      data: null,
+      error: { message: "db error" },
+    });
 
     const res = await POST(makeRequest({ endpoint: "https://x.com/sub" }));
+
     expect(res.status).toBe(500);
-  });
-
-  it("deletes matching subscriptions by endpoint", async () => {
-    serverMock.setUser({ id: "u1" });
-
-    const targetEndpoint = "https://push.example.com/sub/abc";
-    mockDecrypt.mockImplementation((encrypted: string) => {
-      if (encrypted === "enc-match")
-        return JSON.stringify({ endpoint: targetEndpoint });
-      if (encrypted === "enc-other")
-        return JSON.stringify({ endpoint: "https://other.com/sub" });
-      throw new Error("bad");
-    });
-
-    adminMock.onTable("push_subscriptions", {
-      data: [
-        { id: "match-1", subscription_encrypted: "enc-match" },
-        { id: "other-1", subscription_encrypted: "enc-other" },
-      ],
-    });
-    adminMock.onTable("push_subscriptions", { data: null, error: null });
-
-    const res = await POST(makeRequest({ endpoint: targetEndpoint }));
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json).toEqual({ ok: true, deleted: 1 });
-
-    const deleteCalls = adminMock.findCalls("push_subscriptions", "delete");
-    expect(deleteCalls.length).toBe(1);
-  });
-
-  it("returns deleted: 0 when no endpoints match", async () => {
-    serverMock.setUser({ id: "u1" });
-
-    mockDecrypt.mockReturnValue(JSON.stringify({ endpoint: "https://other.com/sub" }));
-
-    adminMock.onTable("push_subscriptions", {
-      data: [{ id: "row-1", subscription_encrypted: "enc-1" }],
-    });
-
-    const res = await POST(makeRequest({ endpoint: "https://no-match.com/sub" }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).deleted).toBe(0);
-
-    const deleteCalls = adminMock.findCalls("push_subscriptions", "delete");
-    expect(deleteCalls.length).toBe(0);
-  });
-
-  it("skips rows that fail to decrypt", async () => {
-    serverMock.setUser({ id: "u1" });
-
-    const targetEndpoint = "https://push.example.com/sub/abc";
-    mockDecrypt.mockImplementation((encrypted: string) => {
-      if (encrypted === "enc-good")
-        return JSON.stringify({ endpoint: targetEndpoint });
-      throw new Error("decrypt failed");
-    });
-
-    adminMock.onTable("push_subscriptions", {
-      data: [
-        { id: "bad-1", subscription_encrypted: "garbage" },
-        { id: "good-1", subscription_encrypted: "enc-good" },
-      ],
-    });
-    adminMock.onTable("push_subscriptions", { data: null, error: null });
-
-    const res = await POST(makeRequest({ endpoint: targetEndpoint }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).deleted).toBe(1);
   });
 });

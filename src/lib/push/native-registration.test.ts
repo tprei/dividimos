@@ -209,14 +209,14 @@ describe("native-registration", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("unregister still clears native state when server unsubscribe fails", async () => {
+  it("clears local state when server unsubscribe fails", async () => {
     const promise = registerNativePushToken();
     await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
     await registrationHandler!({ value: "token-x" });
     await promise;
 
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("network"));
-    await expect(unregisterNativePushToken()).resolves.toBeUndefined();
+    await expect(unregisterNativePushToken()).rejects.toThrow("network");
     expect(mockUnregister).toHaveBeenCalled();
     expect(getCachedFcmToken()).toBeNull();
   });

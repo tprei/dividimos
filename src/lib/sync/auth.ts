@@ -1,7 +1,16 @@
 import { useAppStore } from "@/stores/app-store";
 import { runBootstrap } from "./bootstrap";
-import { advanceAuthGeneration, getSupabase } from "./client";
+import {
+  advanceAuthGeneration,
+  getSupabase,
+} from "./client";
+import { invalidateSyncReads } from "./refresh";
+import {
+  detachLocalPushForSignOut,
+  detachPushForSignOut,
+} from "@/lib/push/detach";
 import { clearPendingVendorChargeCancellations } from "./mutations-group";
+import { invalidateNativeRegistration } from "@/lib/push/native-registration";
 
 export function attachAuthListener(
   onSignedOut: () => void,
@@ -20,11 +29,14 @@ export function attachAuthListener(
 
   const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
     if (disposed) return;
-
     if (event === "SIGNED_OUT") {
+      const signedOutUserId = priorUserId();
       observedUserId = null;
       advanceAuthGeneration();
+      invalidateNativeRegistration();
+      invalidateSyncReads();
       clearPendingVendorChargeCancellations();
+      void detachLocalPushForSignOut(signedOutUserId);
       useAppStore.getState().reset();
       onSignedOut();
       return;
@@ -46,6 +58,8 @@ export function attachAuthListener(
 
     observedUserId = nextUserId;
     advanceAuthGeneration();
+    invalidateNativeRegistration();
+    invalidateSyncReads();
     clearPendingVendorChargeCancellations();
     useAppStore.getState().reset();
     runBootstrap().catch(onError);
@@ -59,6 +73,7 @@ export function attachAuthListener(
     disposed = true;
     data.subscription.unsubscribe();
     advanceAuthGeneration();
+    invalidateNativeRegistration();
   };
 }
 
@@ -68,6 +83,7 @@ export type SignOutResult =
 
 export async function signOut(): Promise<SignOutResult> {
   try {
+    await detachPushForSignOut();
     const { error } = await getSupabase().auth.signOut();
     return error ? { ok: false, error } : { ok: true };
   } catch (error) {
