@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { rpc } from "./client";
-import { refreshGroup } from "./refresh";
+import { loadActivity, refreshGroup } from "./refresh";
+import { LedgerError } from "./errors";
 
 vi.mock("./client", () => ({ rpc: vi.fn() }));
 
@@ -100,5 +101,48 @@ describe("refreshGroup", () => {
     await Promise.all([first, second, third]);
 
     expect(useAppStore.getState().groups.g1?.group.ledgerVersion).toBe(8);
+  });
+});
+
+describe("loadActivity", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAppStore.getState().reset();
+  });
+
+  it("publishes rows and marks completeness only from a successful short page", async () => {
+    vi.mocked(rpc).mockResolvedValueOnce([] as never);
+
+    await loadActivity();
+
+    const activity = useAppStore.getState().activity;
+    expect(activity.read).toEqual({ status: "ready" });
+    expect(activity.complete).toBe(true);
+  });
+
+  it("records the failure code and keeps existing rows", async () => {
+    vi.mocked(rpc).mockResolvedValueOnce([
+      {
+        id: 7,
+        groupId: "g1",
+        actorId: null,
+        kind: "nudge",
+        expenseId: null,
+        settlementId: null,
+        subjectUserId: null,
+        payload: {},
+        createdAt: "2026-01-01T00:00:00.000Z",
+        actor: null,
+        expenseTitle: null,
+      },
+    ] as never);
+    await loadActivity();
+
+    vi.mocked(rpc).mockRejectedValueOnce(new LedgerError("network"));
+    await expect(loadActivity()).rejects.toThrow();
+
+    const activity = useAppStore.getState().activity;
+    expect(activity.read).toEqual({ status: "error", code: "network" });
+    expect(activity.items).toHaveLength(1);
   });
 });
