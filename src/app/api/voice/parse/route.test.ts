@@ -462,7 +462,8 @@ describe("POST /api/voice/parse", () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe("Erro ao processar comando de voz");
+    expect(body.code).toBe("LLM_INTERNAL");
+    expect(body.retryable).toBe(false);
     expect(body.timeout).toBe(false);
   });
 
@@ -476,7 +477,8 @@ describe("POST /api/voice/parse", () => {
     expect(res.status).toBe(504);
     const body = await res.json();
     expect(body.timeout).toBe(true);
-    expect(body.error).toContain("Tente novamente");
+    expect(body.code).toBe("LLM_TIMEOUT");
+    expect(body.retryable).toBe(true);
   });
 
   it("returns 504 with timeout flag on AbortError", async () => {
