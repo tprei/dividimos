@@ -54,6 +54,7 @@ const baseSnapshot: GroupSnapshot = {
   unreadCount: 0,
   lastMessage: null,
   lastActivityAt: "2026-09-01T10:00:00.000Z",
+  pairwiseEdges: [],
 };
 
 const incomingMessage: ChatMessage = {

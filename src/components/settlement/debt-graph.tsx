@@ -1,13 +1,22 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useState } from "react";
 import type { DebtEdge } from "@/lib/simplify";
 import { formatBRL } from "@/lib/currency";
-import type { UserProfile } from "@/types";
+
+export interface DebtGraphNode {
+  id: string;
+  name: string;
+}
 
 interface DebtGraphProps {
-  participants: UserProfile[];
+  participants: DebtGraphNode[];
   edges: DebtEdge[];
+  rawEdges?: DebtEdge[];
+  replayKey?: number;
+  selected?: { from: string; to: string } | null;
+  onSelectEdge?: (edge: { from: string; to: string } | null) => void;
   highlightEdge?: { from: string; to: string };
   fadingEdges?: { from: string; to: string }[];
   dimOthers?: boolean;
@@ -17,6 +26,8 @@ const VIEWBOX = 320;
 const CENTER = VIEWBOX / 2;
 const ORBIT_RADIUS = 108;
 const NODE_RADIUS = 22;
+const RAW_PHASE_MS = 200;
+const CROSSFADE_SECONDS = 1.2;
 
 function getNodePosition(index: number, total: number): { x: number; y: number } {
   const angle = (2 * Math.PI * index) / total - Math.PI / 2;
@@ -59,6 +70,7 @@ function getLabelPosition(
   to: { x: number; y: number },
   hasReverse: boolean,
 ): { x: number; y: number } {
+  const t = hasReverse ? 0.3 : 0.5;
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const len = Math.sqrt(dx * dx + dy * dy);
@@ -67,19 +79,45 @@ function getLabelPosition(
   const curvature = len * 0.25;
   const cpx = (from.x + to.x) / 2 + nx * curvature;
   const cpy = (from.y + to.y) / 2 + ny * curvature;
-  const t = hasReverse ? 0.3 : 0.5;
-  const x = (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * cpx + t * t * to.x;
-  const y = (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * cpy + t * t * to.y;
-  return { x, y };
+  const mt = 1 - t;
+  return {
+    x: mt * mt * from.x + 2 * mt * t * cpx + t * t * to.x,
+    y: mt * mt * from.y + 2 * mt * t * cpy + t * t * to.y,
+  };
 }
 
 export function DebtGraph({
   participants,
   edges,
+  rawEdges,
+  replayKey = 0,
+  selected = null,
+  onSelectEdge,
   highlightEdge,
   fadingEdges = [],
   dimOthers = false,
 }: DebtGraphProps) {
+  const reducedMotion = useReducedMotion();
+  const hasRawPhase = rawEdges !== undefined;
+  const animateRaw = hasRawPhase && !reducedMotion;
+  const [phase, setPhase] = useState<{ key: number; raw: boolean }>({ key: replayKey, raw: animateRaw });
+  if (phase.key !== replayKey) {
+    setPhase({ key: replayKey, raw: animateRaw });
+  }
+
+  useEffect(() => {
+    if (!phase.raw) return;
+    const timer = setTimeout(
+      () => setPhase((current) => (current.key === phase.key ? { key: current.key, raw: false } : current)),
+      RAW_PHASE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [phase]);
+
+  const showingRaw = phase.raw && animateRaw;
+  const displayedEdges = showingRaw && rawEdges ? rawEdges : edges;
+  const crossfade = animateRaw;
+
   const positions = participants.map((_, i) =>
     getNodePosition(i, participants.length),
   );
@@ -89,16 +127,53 @@ export function DebtGraph({
   );
 
   const isHighlighted = (fromId: string, toId: string) =>
-    highlightEdge?.from === fromId && highlightEdge?.to === toId;
+    (highlightEdge?.from === fromId && highlightEdge?.to === toId) ||
+    (selected !== null && selected.from === fromId && selected.to === toId);
 
   const isFading = (fromId: string, toId: string) =>
     fadingEdges.some((e) => e.from === fromId && e.to === toId);
+
+  function handleSelectEdge(fromId: string, toId: string) {
+    if (!onSelectEdge) return;
+    if (selected && selected.from === fromId && selected.to === toId) {
+      onSelectEdge(null);
+      return;
+    }
+    onSelectEdge({ from: fromId, to: toId });
+  }
+
+  function handleSelectNode(nodeId: string) {
+    if (!onSelectEdge) return;
+    const edge = displayedEdges.find(
+      (e) => e.fromUserId === nodeId || e.toUserId === nodeId,
+    );
+    if (!edge) {
+      onSelectEdge(null);
+      return;
+    }
+    handleSelectEdge(edge.fromUserId, edge.toUserId);
+  }
+
+  const selectable = (label: string, onActivate: () => void) => ({
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-label": label,
+    className: "cursor-pointer outline-none focus-visible:opacity-60",
+    onClick: onActivate,
+    onKeyDown: (event: React.KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onActivate();
+      }
+    },
+  });
 
   return (
     <svg
       viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
       className="w-full max-w-xs mx-auto"
-      aria-label="Grafo de dividas"
+      role="group"
+      aria-label="Grafo de dívidas"
     >
       <defs>
         <marker
@@ -144,7 +219,7 @@ export function DebtGraph({
       </defs>
 
       <AnimatePresence>
-        {edges.map((edge, edgeIdx) => {
+        {displayedEdges.map((edge, edgeIdx) => {
           const fromPos = positionMap.get(edge.fromUserId);
           const toPos = positionMap.get(edge.toUserId);
           if (!fromPos || !toPos) return null;
@@ -155,7 +230,7 @@ export function DebtGraph({
           const dimmed = dimOthers && !isInvolved;
           const edgeKey = `${edge.fromUserId}-${edge.toUserId}-${edgeIdx}`;
 
-          const hasReverse = edges.some(
+          const hasReverse = displayedEdges.some(
             (e) => e.fromUserId === edge.toUserId && e.toUserId === edge.fromUserId,
           );
           const pathD = getCurvedPath(fromPos, toPos);
@@ -174,14 +249,22 @@ export function DebtGraph({
                 : "arrow-primary";
 
           const targetOpacity = fading ? 0.4 : dimmed ? 0.15 : 1;
+          const fromName = participants.find((p) => p.id === edge.fromUserId)?.name ?? edge.fromUserId;
+          const toName = participants.find((p) => p.id === edge.toUserId)?.name ?? edge.toUserId;
 
           return (
             <motion.g
               key={edgeKey}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: targetOpacity, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: targetOpacity }}
+              exit={{ opacity: 0 }}
+              transition={crossfade ? { duration: CROSSFADE_SECONDS, ease: "easeInOut" } : { type: "spring", stiffness: 300, damping: 25 }}
+              {...(onSelectEdge
+                ? selectable(
+                    `${fromName} paga ${formatBRL(edge.amountCents)} para ${toName}`,
+                    () => handleSelectEdge(edge.fromUserId, edge.toUserId),
+                  )
+                : {})}
             >
               <motion.path
                 d={pathD}
@@ -191,10 +274,10 @@ export function DebtGraph({
                 strokeLinecap="round"
                 strokeDasharray={fading ? "6 4" : undefined}
                 markerEnd={`url(#${markerId})`}
-                initial={{ pathLength: 0 }}
+                initial={crossfade ? false : { pathLength: 0 }}
                 animate={{ pathLength: 1 }}
-                exit={{ pathLength: 0 }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
+                exit={{ pathLength: crossfade ? 1 : 0 }}
+                transition={crossfade ? { duration: 0 } : { duration: 0.4, ease: "easeOut" }}
               />
 
               {!dimmed && (
@@ -231,7 +314,12 @@ export function DebtGraph({
         const firstName = participant.name.split(" ")[0];
 
         return (
-          <g key={participant.id}>
+          <g
+            key={participant.id}
+            {...(onSelectEdge
+              ? selectable(participant.name, () => handleSelectNode(participant.id))
+              : {})}
+          >
             <circle
               cx={pos.x}
               cy={pos.y}
@@ -243,7 +331,7 @@ export function DebtGraph({
               x={pos.x}
               y={pos.y + 5}
               textAnchor="middle"
-              className="fill-foreground text-sm font-semibold"
+              className="fill-foreground text-sm font-semibold pointer-events-none"
               style={{ fontSize: 14, fontWeight: 600 }}
             >
               {initial}
@@ -252,7 +340,7 @@ export function DebtGraph({
               x={pos.x}
               y={pos.y + NODE_RADIUS + 13}
               textAnchor="middle"
-              className="fill-muted-foreground"
+              className="fill-muted-foreground pointer-events-none"
               style={{ fontSize: 10 }}
             >
               {firstName}

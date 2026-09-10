@@ -1,23 +1,34 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { CheckCheck } from "lucide-react";
+import { useReducedMotion } from "framer-motion";
+import { CheckCheck, RefreshCw } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useMemo, useState } from "react";
+import { DebtGraph } from "@/components/settlement/debt-graph";
+import {
+  ConsolidatedBalanceCard,
+  type SettlementPerson,
+} from "@/components/settlement/consolidated-balance-card";
+import { TransferRow } from "@/components/settlement/transfer-row";
 import { ModalLoadingSkeleton } from "@/components/shared/skeleton";
+import { SectionHeading } from "@/components/shared/section-heading";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { formatBRL } from "@/lib/currency";
+import type { DebtEdge } from "@/lib/simplify";
+import { recordSettlement } from "@/lib/sync/mutations";
+import { selectTransfers } from "@/stores/app-selectors";
+import { useAppStore } from "@/stores/app-store";
+import type { GroupSnapshot, Transfer } from "@/types/ledger";
+
 const PixQrModal = dynamic(
   () => import("@/components/settlement/pix-qr-modal").then((m) => ({ default: m.PixQrModal })),
   { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
-import { UserAvatar } from "@/components/shared/user-avatar";
-import { Button } from "@/components/ui/button";
-import { formatBRL } from "@/lib/currency";
-import type { DebtRow } from "@/lib/ledger/debt-rows";
-import { recordSettlement } from "@/lib/sync/mutations";
 
 interface GroupSettlementViewProps {
   groupId: string;
-  rows: DebtRow[];
+  snapshot: GroupSnapshot;
   meId: string;
 }
 
@@ -28,10 +39,60 @@ interface PixTarget {
   mode: "pay" | "collect";
 }
 
-export function GroupSettlementView({ groupId, rows, meId }: GroupSettlementViewProps) {
-  const [pixTarget, setPixTarget] = useState<PixTarget | null>(null);
+function toEdge(transfer: Transfer): DebtEdge {
+  return {
+    fromUserId: transfer.fromId,
+    toUserId: transfer.toId,
+    amountCents: transfer.amountCents,
+  };
+}
 
-  if (rows.length === 0) {
+export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlementViewProps) {
+  const transfers = useAppStore((s) => selectTransfers(s, groupId));
+  const reducedMotion = useReducedMotion();
+  const [pixTarget, setPixTarget] = useState<PixTarget | null>(null);
+  const [selected, setSelected] = useState<{ from: string; to: string } | null>(null);
+  const [replayKey, setReplayKey] = useState(0);
+
+  const settled = snapshot.balances.every((balance) => balance.netCents === 0);
+
+  const people = useMemo<SettlementPerson[]>(
+    () => [
+      ...snapshot.members.map((member) => ({
+        id: member.userId,
+        name: member.user.name,
+        avatarUrl: member.user.avatarUrl,
+        isGuest: false,
+      })),
+      ...snapshot.guests.map((guest) => ({
+        id: guest.id,
+        name: guest.displayName,
+        avatarUrl: null,
+        isGuest: true,
+      })),
+    ],
+    [snapshot.members, snapshot.guests],
+  );
+
+  const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+
+  const graphParticipants = useMemo(() => {
+    const involved = new Set<string>();
+    for (const transfer of transfers) {
+      involved.add(transfer.fromId);
+      involved.add(transfer.toId);
+    }
+    return people.filter((person) => involved.has(person.id));
+  }, [transfers, people]);
+
+  const selectedTransfer = selected
+    ? transfers.find((t) => t.fromId === selected.from && t.toId === selected.to)
+    : undefined;
+  const announcement = selectedTransfer
+    ? `Transferência selecionada: ${peopleById.get(selectedTransfer.fromId)?.name ?? selectedTransfer.fromId} paga ${formatBRL(selectedTransfer.amountCents)} para ${peopleById.get(selectedTransfer.toId)?.name ?? selectedTransfer.toId}`
+    : "";
+
+  if (settled) {
     return (
       <div className="flex flex-col items-center py-12 text-center">
         <div className="rounded-2xl bg-success/10 p-3">
@@ -46,84 +107,91 @@ export function GroupSettlementView({ groupId, rows, meId }: GroupSettlementView
   }
 
   return (
-    <div className="space-y-3">
-      {rows.map((row) => {
-        const isUser = row.counterpartyKind === "user";
-        const iOwe = row.direction === "owes";
-        const firstName = row.counterpartyName.split(" ")[0];
-        const rowKey = `${row.counterpartyId}-${row.direction}`;
-        return (
-          <motion.div
-            key={rowKey}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border bg-card p-4"
-          >
-            <div className="mb-3 flex items-center gap-3">
-              <UserAvatar
-                name={row.counterpartyName}
-                avatarUrl={row.counterpartyAvatarUrl}
-                size="sm"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
-                  {iOwe ? `Você → ${firstName}` : `${firstName} → Você`}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {iOwe ? "Você deve" : "Você recebe"}
-                  {!isUser && " · Convidado"}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-semibold tabular-nums">
-                  {formatBRL(row.amountCents)}
-                </p>
-              </div>
-            </div>
+    <div className="space-y-5">
+      <ConsolidatedBalanceCard
+        balances={snapshot.balances}
+        people={people}
+        debtsCount={snapshot.pairwiseEdges.length}
+        pixCount={transfers.length}
+      />
 
-            <div className="flex gap-2">
-              {isUser && iOwe && (
-                <Button
-                  className="flex-1"
-                  size="sm"
-                  onClick={() =>
-                    setPixTarget({
-                      counterpartyId: row.counterpartyId,
-                      recipientName: row.counterpartyName,
-                      amountCents: row.amountCents,
-                      mode: "pay",
-                    })
-                  }
-                >
-                  Pagar via Pix
-                </Button>
-              )}
-              {isUser && !iOwe && (
-                <Button
-                  className="flex-1"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setPixTarget({
-                      counterpartyId: row.counterpartyId,
-                      recipientName: row.counterpartyName,
-                      amountCents: row.amountCents,
-                      mode: "collect",
-                    })
-                  }
-                >
-                  Cobrar via Pix
-                </Button>
-              )}
-              {!isUser && (
-                <div className="flex-1 py-2 text-center text-xs text-muted-foreground">
-                  Participante convidado
-                </div>
-              )}
-            </div>
-          </motion.div>
-        );
-      })}
+      <section aria-label="Transferências">
+        <SectionHeading
+          title="Transferências"
+          trailing={<Badge variant="secondary">{transfers.length}</Badge>}
+        />
+        <div className="divide-y divide-border rounded-2xl border bg-card">
+          {transfers.map((transfer) => {
+            const from = peopleById.get(transfer.fromId);
+            const to = peopleById.get(transfer.toId);
+            if (!from || !to) return null;
+            const highlighted =
+              selected !== null &&
+              selected.from === transfer.fromId &&
+              selected.to === transfer.toId;
+            return (
+              <TransferRow
+                key={`${transfer.fromId}-${transfer.toId}`}
+                transfer={transfer}
+                from={from}
+                to={to}
+                meId={meId}
+                highlighted={highlighted}
+                onPay={() =>
+                  setPixTarget({
+                    counterpartyId: transfer.toId,
+                    recipientName: to.name,
+                    amountCents: transfer.amountCents,
+                    mode: "pay",
+                  })
+                }
+                onCollect={() =>
+                  setPixTarget({
+                    counterpartyId: transfer.fromId,
+                    recipientName: from.name,
+                    amountCents: transfer.amountCents,
+                    mode: "collect",
+                  })
+                }
+              />
+            );
+          })}
+        </div>
+        <p aria-live="polite" className="sr-only">
+          {announcement}
+        </p>
+      </section>
+
+      <section aria-label="Plano sugerido">
+        <SectionHeading
+          title="Plano sugerido"
+          trailing={
+            !reducedMotion && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Repetir animação"
+                onClick={() => setReplayKey((key) => key + 1)}
+              >
+                <RefreshCw className="size-4" />
+              </Button>
+            )
+          }
+        />
+        <div className="rounded-2xl border bg-card p-2">
+          <DebtGraph
+            participants={graphParticipants}
+            edges={transfers.map(toEdge)}
+            rawEdges={snapshot.pairwiseEdges.map(toEdge)}
+            replayKey={replayKey}
+            selected={selected}
+            onSelectEdge={setSelected}
+          />
+          <p className="px-2 pb-2 text-xs text-muted-foreground">
+            Simplificação · {snapshot.pairwiseEdges.length} → {transfers.length}
+          </p>
+        </div>
+      </section>
 
       {pixTarget && (
         <PixQrModal

@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence } from "framer-motion";
-import { ArrowLeft, MessageSquare, Share2, UserPlus, UsersRound } from "lucide-react";
+import { MessageSquare, Share2, UserPlus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,12 +13,11 @@ import { GroupMembersSection } from "@/components/group/group-members-section";
 import { GroupSettlementView } from "@/components/group/group-settlement-view";
 import { NotificationPrompt } from "@/components/pwa/notification-prompt";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
-import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
-import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
@@ -34,6 +33,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const meId = useAppStore((s) => s.me?.id ?? null);
   const snapshot = useAppStore((s) => s.groups[groupId]);
   const [loadError, setLoadError] = useState(false);
+  const [tab, setTab] = useState("saldos");
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const departedRef = useRef(false);
@@ -50,11 +50,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
       }
     });
   }, [hydrated, snapshot, groupId, loadError]);
-
-  const debtRows = useMemo(
-    () => (snapshot && meId !== null ? debtRowsForGroup(snapshot, meId) : []),
-    [snapshot, meId],
-  );
 
   if (!hydrated || (!snapshot && !loadError)) {
     return (
@@ -90,42 +85,44 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/app/groups"
-          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate font-semibold">{snapshot.group.name}</h1>
-          <p className="text-xs text-muted-foreground">
-            {accepted.length} membro{accepted.length !== 1 ? "s" : ""}
-          </p>
-        </div>
-        <div className="flex -space-x-2">
-          {accepted.slice(0, 4).map((m) => (
-            <UserAvatar
-              key={m.userId}
-              name={m.user.name}
-              avatarUrl={m.user.avatarUrl}
-              size="xs"
-              className="ring-2 ring-card"
-            />
-          ))}
-          {accepted.length > 4 && (
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[9px] font-bold ring-2 ring-card">
-              +{accepted.length - 4}
+      <ScreenHeader
+        back
+        eyebrow={tab === "saldos" ? snapshot.group.name : `${accepted.length} membro${accepted.length !== 1 ? "s" : ""}`}
+        title={tab === "saldos" ? "Acerto do grupo" : snapshot.group.name}
+        onBack={() => router.push("/app/groups")}
+        action={
+          canInvite ? (
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="icon-lg"
+                variant="outline"
+                className="size-11"
+                onClick={() => setShowInviteModal(true)}
+                aria-label="Compartilhar convite"
+              >
+                <Share2 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                className="min-h-11 gap-1.5"
+                onClick={() => setShowInvitePanel(!showInvitePanel)}
+              >
+                <UserPlus className="h-4 w-4" />
+                Convidar
+              </Button>
             </div>
-          )}
-        </div>
-        {isAcceptedMember && (
+          ) : undefined
+        }
+      />
+      {isAcceptedMember && (
+        <div className="mt-2 flex items-center gap-2">
           <Button
             variant="outline"
-            className="relative size-11 shrink-0 rounded-full"
+            className="relative min-h-11 gap-1.5 rounded-full"
             render={<Link href={`/app/groups/${groupId}/chat`} aria-label="Conversa" />}
           >
             <MessageSquare className="h-5 w-5" />
+            Conversa
             {snapshot.unreadCount > 0 && (
               <span
                 aria-label={`${snapshot.unreadCount} mensagens não lidas`}
@@ -135,30 +132,8 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
               </span>
             )}
           </Button>
-        )}
-        {canInvite && (
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 w-8 p-0"
-              onClick={() => setShowInviteModal(true)}
-              aria-label="Compartilhar convite"
-            >
-              <Share2 className="h-4 w-4" />
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => setShowInvitePanel(!showInvitePanel)}
-            >
-              <UserPlus className="h-4 w-4" />
-              Convidar
-            </Button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {showInvitePanel && canInvite && (
@@ -175,7 +150,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
 
       <NotificationPrompt />
 
-      <Tabs defaultValue="saldos" className="mt-5">
+      <Tabs value={tab} onValueChange={setTab} className="mt-5">
         <TabsList className="w-full">
           <TabsTrigger value="saldos">Saldos</TabsTrigger>
           <TabsTrigger value="contas">Contas</TabsTrigger>
@@ -184,7 +159,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         <TabsContent value="saldos" className="mt-4">
           <GroupSettlementView
             groupId={groupId}
-            rows={debtRows}
+            snapshot={snapshot}
             meId={meId ?? ""}
           />
         </TabsContent>

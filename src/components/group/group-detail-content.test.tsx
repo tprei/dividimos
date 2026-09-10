@@ -40,19 +40,15 @@ vi.mock("@/lib/sync/mutations-group", () => ({
 
 const settlementProps: Array<{
   groupId: string;
+  snapshot: GroupSnapshot;
   meId: string;
-  rows: Array<{ counterpartyName: string; amountCents: number; direction: string }>;
 }> = [];
 
 vi.mock("./group-settlement-view", () => ({
   GroupSettlementView: (props: {
     groupId: string;
+    snapshot: GroupSnapshot;
     meId: string;
-    rows: Array<{
-      counterpartyName: string;
-      amountCents: number;
-      direction: string;
-    }>;
   }) => {
     settlementProps.push(props);
     return <div data-testid="settlement-stub" />;
@@ -149,6 +145,7 @@ function snapshot(): GroupSnapshot {
     unreadCount: 0,
     lastMessage: null,
     lastActivityAt: "2026-01-02T00:00:00Z",
+    pairwiseEdges: [],
   };
 }
 
@@ -221,25 +218,23 @@ describe("GroupDetailContent", () => {
     });
   });
 
-  it("renders the header and shows the Saldos panel on mount", () => {
+  it("renders the settlement header and passes the snapshot on mount", () => {
     seedLoaded();
 
     render(<GroupDetailContent groupId={groupId} />);
 
-    expect(screen.getAllByText("Viagem").length).toBeGreaterThan(0);
-    expect(screen.getByText(/2 membros/)).toBeInTheDocument();
+    expect(screen.getByText("Acerto do grupo")).toBeInTheDocument();
+    expect(screen.getByText("Viagem")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Saldos" })).toBeInTheDocument();
     expect(screen.getByTestId("settlement-stub")).toBeInTheDocument();
 
     const props = settlementProps.at(-1)!;
     expect(props.groupId).toBe(groupId);
     expect(props.meId).toBe(me.id);
-    expect(props.rows).toEqual([
-      expect.objectContaining({
-        counterpartyName: "Carol Souza",
-        amountCents: 5000,
-        direction: "owes",
-      }),
+    expect(props.snapshot.group.id).toBe(groupId);
+    expect(props.snapshot.balances).toEqual([
+      { kind: "user", participantId: "user-1", netCents: -5000 },
+      { kind: "user", participantId: "user-2", netCents: 5000 },
     ]);
   });
 
@@ -256,6 +251,18 @@ describe("GroupDetailContent", () => {
     const chatLink = screen.getByRole("link", { name: "Conversa" });
     expect(chatLink.getAttribute("href")).toBe(`/app/groups/${groupId}/chat`);
     expect(screen.getByLabelText("7 mensagens não lidas")).toBeInTheDocument();
+  });
+
+  it("restores the group header when another tab is selected", async () => {
+    seedLoaded();
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Contas" }));
+
+    expect(screen.getByText(/2 membros/)).toBeInTheDocument();
+    expect(screen.getByText("Jantar")).toBeInTheDocument();
+    expect(screen.queryByText("Acerto do grupo")).not.toBeInTheDocument();
   });
 
   it("reveals the bills panel when the Contas tab is selected", async () => {
