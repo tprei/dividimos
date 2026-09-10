@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bell, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
+import { pushFailureMessage } from "@/lib/push/failures";
 
 const SESSION_KEY = "dividimos:notification-prompt-dismissed";
 
@@ -25,11 +26,22 @@ export function NotificationPrompt() {
     isInitializing,
     isNative,
     subscribe,
+    error,
+    retry,
   } = usePushNotifications();
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === "undefined") return true;
     return sessionStorage.getItem(SESSION_KEY) === "1";
   });
+  const handleDismiss = useCallback(() => {
+    sessionStorage.setItem(SESSION_KEY, "1");
+    setDismissed(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isSubscribed || typeof window === "undefined") return;
+    sessionStorage.setItem(SESSION_KEY, "1");
+  }, [isSubscribed]);
 
   // Hold the prompt back until the hook finishes its initial permission +
   // subscription check. Otherwise it flashes visible for the already-subscribed
@@ -42,14 +54,9 @@ export function NotificationPrompt() {
     return null;
   }
 
-  const handleDismiss = () => {
-    sessionStorage.setItem(SESSION_KEY, "1");
-    setDismissed(true);
-  };
 
   const handleSubscribe = async () => {
     await subscribe();
-    handleDismiss();
   };
 
   return (
@@ -66,19 +73,25 @@ export function NotificationPrompt() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">Ativar notificações</p>
-          <p className="text-xs text-muted-foreground">
-            {isNative
-              ? "Receba alertas de contas novas e pagamentos"
-              : "Fica sabendo quando rolar conta nova ou pagamento"}
-          </p>
+          {error === null ? (
+            <p className="text-xs text-muted-foreground">
+              {isNative
+                ? "Receba alertas de contas novas e pagamentos"
+                : "Fica sabendo quando rolar conta nova ou pagamento"}
+            </p>
+          ) : (
+            <p role="alert" className="text-xs text-destructive">
+              {pushFailureMessage(error)}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button
             size="sm"
-            onClick={handleSubscribe}
+            onClick={error !== null && error.retryable ? () => void retry() : handleSubscribe}
             disabled={isLoading}
           >
-            {isLoading ? "..." : "Ativar"}
+            {isLoading ? "..." : error !== null && error.retryable ? "Tentar de novo" : "Ativar"}
           </Button>
           {!isNative && (
             <button
