@@ -6,7 +6,9 @@ import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
 import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } from "@/lib/expense-money";
 import { formatBRL } from "@/lib/currency";
 import {
@@ -153,6 +155,7 @@ export function SingleBillDivision({
     [fixedValues, ids, mode, percentValues, totalCents],
   );
   const status = statusText(division, mode);
+  const invitedUserIds = useInvitedUserIds();
 
   useEffect(() => {
     onValidityChange(division.ok);
@@ -220,6 +223,11 @@ export function SingleBillDivision({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold">{person.name.split(" ")[0]}</p>
                   {person.isGuest && <GuestBadge />}
+                  {!person.isGuest && invitedUserIds.has(person.id) && (
+                    <Badge variant="secondary" className="shrink-0">
+                      Convite pendente
+                    </Badge>
+                  )}
                 </div>
                 {mode === "equal" ? (
                   <Money cents={shareCents ?? 0} className="shrink-0 text-sm" />

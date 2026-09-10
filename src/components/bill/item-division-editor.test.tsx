@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useAppStore } from "@/stores/app-store";
+import { useBillStore } from "@/stores/bill-store";
+import type { GroupSnapshot } from "@/types/ledger";
 import { ItemDivisionEditor, type ItemDivisionParticipant } from "./item-division-editor";
 
 const PEOPLE: ItemDivisionParticipant[] = [
@@ -161,5 +164,53 @@ describe("ItemDivisionEditor", () => {
         { participantId: "g1", cents: 4300 },
       ],
     });
+  });
+});
+
+describe("ItemDivisionEditor pending invite", () => {
+  beforeEach(() => {
+    useAppStore.getState().reset();
+    useBillStore.getState().reset();
+  });
+
+  it("marks a participant whose invite is still pending", () => {
+    useBillStore.getState().createExpense("Churrasco", "itemized", undefined, "g1");
+    const snapshot: GroupSnapshot = {
+      group: {
+        id: "g1",
+        kind: "group",
+        name: "Churrasco",
+        creatorId: "u1",
+        dmUserA: null,
+        dmUserB: null,
+        ledgerVersion: 1,
+        createdAt: "2026-09-01T00:00:00Z",
+      },
+      members: [
+        {
+          groupId: "g1",
+          userId: "u2",
+          status: "invited",
+          invitedBy: "u1",
+          acceptedAt: null,
+          user: { id: "u2", handle: "bruno", name: "Bruno", avatarUrl: null },
+        },
+      ],
+      balances: [],
+      guests: [],
+      settlements: [],
+      recentExpenses: [],
+      expenseCount: 0,
+      lastEventId: 0,
+      unreadCount: 0,
+      lastMessage: null,
+      lastActivityAt: "2026-09-01T00:00:00Z",
+      pairwiseEdges: [],
+    };
+    useAppStore.setState({ groups: { g1: snapshot } });
+
+    renderEditor();
+
+    expect(screen.getByText("Convite pendente")).toBeInTheDocument();
   });
 });

@@ -1,13 +1,15 @@
 "use client";
 
+import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { DivisionSlider } from "@/components/bill/division-slider";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
+import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
 import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } from "@/lib/expense-money";
 import {
   FULL_PERCENT_BASIS_POINTS,
@@ -178,6 +180,7 @@ export function ItemDivisionEditor({
   };
 
   const status = divisionStatusText(division, mode);
+  const invitedUserIds = useInvitedUserIds();
 
   return (
     <div className="space-y-3 border-t border-dashed border-border bg-muted/30 px-4 pt-3 pb-4">
@@ -239,6 +242,11 @@ export function ItemDivisionEditor({
                 <UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} size="sm" />
               )}
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">{participant.name}</span>
+              {!participant.isGuest && invitedUserIds.has(participant.id) && (
+                <Badge variant="secondary" className="shrink-0">
+                  Convite pendente
+                </Badge>
+              )}
               <ShareCell
                 shareCents={selected && division.ok ? division.centsById[participant.id] : null}
                 percentInput={mode === "percent" && selected ? percentValues[participant.id] ?? "" : null}

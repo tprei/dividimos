@@ -1,6 +1,6 @@
 import { transfersFromBalances } from "@/lib/ledger/transfers";
 import type { AppState } from "@/stores/app-store";
-import type { GroupSnapshot, ParticipantKind } from "@/types/ledger";
+import type { GroupSnapshot, MemberStatus, ParticipantKind } from "@/types/ledger";
 
 export interface DebtRow {
   groupId: string;
@@ -18,19 +18,26 @@ interface Counterparty {
   kind: ParticipantKind;
   name: string;
   avatarUrl: string | null;
+  status: MemberStatus | null;
 }
+
 function resolveCounterparty(
   snapshot: GroupSnapshot,
   participantId: string,
 ): Counterparty | null {
   for (const member of snapshot.members) {
     if (member.userId === participantId) {
-      return { kind: "user", name: member.user.name, avatarUrl: member.user.avatarUrl };
+      return {
+        kind: "user",
+        name: member.user.name,
+        avatarUrl: member.user.avatarUrl,
+        status: member.status,
+      };
     }
   }
   for (const guest of snapshot.guests) {
     if (guest.id === participantId) {
-      return { kind: "guest", name: guest.displayName, avatarUrl: null };
+      return { kind: "guest", name: guest.displayName, avatarUrl: null, status: null };
     }
   }
   return null;
@@ -45,7 +52,7 @@ export function debtRowsForGroup(snapshot: GroupSnapshot, meId: string): DebtRow
 
     const counterpartyId = direction === "owes" ? transfer.toId : transfer.fromId;
     const counterparty = resolveCounterparty(snapshot, counterpartyId);
-    if (!counterparty) continue;
+    if (!counterparty || counterparty.status === "invited") continue;
 
     const isDm = snapshot.group.kind === "dm";
     rows.push({

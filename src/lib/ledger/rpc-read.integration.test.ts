@@ -1085,7 +1085,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(balances.has(ay.id)).toBe(false);
     });
 
-    it("still requires accepted membership for participants newly added on create or edit", async () => {
+    it("rejects participants outside the group but accepts a pending invitee", async () => {
       const [carol, alicia, draco, eve] = await createTestUsers(4);
       const groupId = await createGroupWithMembers(carol, [alicia]);
       await rpcOk(authenticateAs(carol), "invite_member", {
@@ -1133,7 +1133,6 @@ describe.skipIf(!isIntegrationTestReady)(
         });
 
       expect(await expectRpcError(editAdding(alicia.id))).toBe("not_a_member");
-      expect(await expectRpcError(editAdding(draco.id))).toBe("not_a_member");
       expect(
         await expectRpcError(
           carolClient.rpc("create_expense", {
@@ -1159,6 +1158,9 @@ describe.skipIf(!isIntegrationTestReady)(
           }),
         ),
       ).toBe("not_a_member");
+
+      const { error: pendingError } = await editAdding(draco.id);
+      expect(pendingError).toBeNull();
     });
   },
 );

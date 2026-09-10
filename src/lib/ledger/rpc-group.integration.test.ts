@@ -4,10 +4,13 @@ import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   createTestUsers,
   authenticateAs,
+  createGroup,
   createGroupWithMembers,
+  acceptInvitation,
   createExpense,
   equalSplitPayload,
   getBalances,
+  withPg,
   expectRpcError,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -446,25 +449,28 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(counterparty?.invitedBy).toBe(u2.id);
       });
 
-      it("blocks create_expense naming the invited counterparty with not_a_member", async () => {
-        const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
-          p_user_id: u3.id,
+      it("accepts an expense naming the invited counterparty", async () => {
+        const [initiator, invitee] = await createTestUsers(2);
+        const initiatorClient = authenticateAs(initiator);
+        const dm = await rpc<DmAck>(initiatorClient, "get_or_create_dm", {
+          p_user_id: invitee.id,
         });
-        const err = await expectError(
-          c2.rpc("create_expense", {
-            p_client_id: crypto.randomUUID(),
-            p_group_id: dm.groupId,
-            p_occurred_on: new Date().toISOString().slice(0, 10),
-            p_title: "Almoço",
-            p_merchant_name: null,
-            p_expense_type: "single_amount",
-            p_total_cents: 1000,
-            p_service_fee_bps: 0,
-            p_fixed_fee_cents: 0,
-            p_payload: equalSplitPayload([u2.id, u3.id], 1000, 0),
-          }),
-        );
-        expect(err).toBe("not_a_member");
+        const ack = await rpc<{ expenseId: string }>(initiatorClient, "create_expense", {
+          p_client_id: crypto.randomUUID(),
+          p_group_id: dm.groupId,
+          p_occurred_on: new Date().toISOString().slice(0, 10),
+          p_title: "Almoço",
+          p_merchant_name: null,
+          p_expense_type: "single_amount",
+          p_total_cents: 1000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: equalSplitPayload([initiator.id, invitee.id], 1000, 0),
+        });
+        expect(ack.expenseId).toBeTruthy();
+
+        const balances = await getBalances(dm.groupId);
+        expect(balances.find((row) => row.participant_id === invitee.id)?.net_cents).toBe(-500);
       });
 
       it("blocks record_settlement toward the invited counterparty with counterparty_not_member", async () => {
@@ -527,7 +533,7 @@ describe.skipIf(!isIntegrationTestReady)(
         expect(snap.lastMessage).toBeNull();
       });
 
-      it("unlocks shared expenses after accept_invitation and moves balances", async () => {
+      it("keeps shared expense balances correct once the counterparty accepts", async () => {
         const dm = await rpc<DmAck>(c2, "get_or_create_dm", {
           p_user_id: u3.id,
         });
@@ -831,6 +837,68 @@ describe.skipIf(!isIntegrationTestReady)(
           { p_handle: "nonexistent_handle_xyz_123" },
         );
         expect(missingUser).toBeNull();
+      });
+    });
+
+    describe("expenses with a pending invitee", () => {
+      it("splits with an invited member but refuses to settle with them", async () => {
+        const [creator, invitee] = await createTestUsers(2);
+        const { groupId } = await createGroup(creator, "Pendente", [invitee.id]);
+
+        const { expenseId } = await createExpense(creator, {
+          groupId,
+          totalCents: 5000,
+          payload: equalSplitPayload([creator.id, invitee.id], 5000),
+        });
+        expect(expenseId).toBeTruthy();
+
+        const balances = await getBalances(groupId);
+        const inviteeBalance = balances.find((row) => row.participant_id === invitee.id);
+        expect(inviteeBalance?.net_cents).toBe(-2500);
+
+        const message = await expectError(
+          authenticateAs(creator).rpc("record_settlement", {
+            p_operation_id: crypto.randomUUID(),
+            p_group_id: groupId,
+            p_from_user_id: invitee.id,
+            p_to_user_id: creator.id,
+            p_amount_cents: 2500,
+          }),
+        );
+        expect(message).toContain("counterparty_not_member");
+      });
+
+      it("invalidates only the expenses naming the decliner", async () => {
+        const [creator, invitee, other] = await createTestUsers(3);
+        const { groupId } = await createGroup(creator, "Recusa", [invitee.id, other.id]);
+        await acceptInvitation(other, groupId);
+
+        const withInvitee = await createExpense(creator, {
+          groupId,
+          totalCents: 4000,
+          payload: equalSplitPayload([creator.id, invitee.id], 4000),
+        });
+        const withoutInvitee = await createExpense(creator, {
+          groupId,
+          totalCents: 6000,
+          payload: equalSplitPayload([creator.id, other.id], 6000),
+        });
+
+        await rpc(authenticateAs(invitee), "decline_invitation", { p_group_id: groupId });
+
+        const statuses = await withPg(async (pg) => {
+          const result = await pg.query<{ id: string; status: string }>(
+            "select id, status from public.expenses where group_id = $1",
+            [groupId],
+          );
+          return new Map(result.rows.map((row) => [row.id, row.status]));
+        });
+        expect(statuses.get(withInvitee.expenseId)).toBe("deleted");
+        expect(statuses.get(withoutInvitee.expenseId)).toBe("active");
+
+        const balances = await getBalances(groupId);
+        expect(balances.some((row) => row.participant_id === invitee.id)).toBe(false);
+        expect(balances.find((row) => row.participant_id === other.id)?.net_cents).toBe(-3000);
       });
     });
   },
