@@ -3,6 +3,11 @@ import { decodeChatMessage } from "@/lib/ledger/decode";
 import { useAppStore } from "@/stores/app-store";
 import type { AppState } from "@/stores/app-store";
 import { mergeConversation } from "@/stores/app-store-merge";
+import {
+  invalidateChatReconciliation,
+  isMalformedHint,
+  reconcileChat,
+} from "./chat-reconcile";
 import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
 import { runBootstrap } from "./bootstrap";
 import { getSupabase } from "./client";
@@ -120,9 +125,15 @@ function handleChatBroadcast(groupId: string, payload: unknown): void {
   const decoded = decodeChatMessage(payload);
   if (!decoded.ok) return;
 
+  // A row older than everything we hold proves a gap the live stream cannot
+  // fill, so schedule one coalesced reconciliation instead of a query burst.
+  const gapped = isMalformedHint(groupId, decoded.value.createdAt);
+
   useAppStore
     .getState()
     .patch((state) => mergeChatBroadcast(state, groupId, decoded.value));
+
+  if (gapped) reconcileChat(groupId);
 }
 
 let membershipInFlight: Promise<void> | null = null;
@@ -265,9 +276,25 @@ export function subscribeChat(groupId: string): () => void {
     .on("broadcast", { event: "message" }, ({ payload }) => {
       handleChatBroadcast(groupId, payload);
     })
-    .subscribe();
+    .subscribe((status) => {
+      // Reconcile once the subscription is live: anything inserted before this
+      // point was never broadcast to us.
+      if (status === "SUBSCRIBED") reconcileChat(groupId);
+    });
+
+  const handleVisibility = () => {
+    if (document.visibilityState === "visible") reconcileChat(groupId);
+  };
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibility);
+  }
 
   return () => {
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    }
+    // Invalidate before removing the channel so in-flight pages cannot publish.
+    invalidateChatReconciliation(groupId);
     void getSupabase().removeChannel(channel);
   };
 }
