@@ -33,6 +33,17 @@ function readPreferences(json: Json | null): NotificationPreferences {
   return prefs;
 }
 
+/** Lets a later attempt re-dispatch an event that never reached anyone. */
+async function releaseClaim(
+  admin: ReturnType<typeof createAdminClient>,
+  eventId: number,
+): Promise<void> {
+  await admin
+    .from("group_events")
+    .update({ notified_at: null })
+    .eq("id", eventId);
+}
+
 export async function POST(request: Request): Promise<Response> {
   const supabase = await createClient();
   const { data: claims, error: claimsError } = await supabase.auth.getClaims();
@@ -164,11 +175,27 @@ export async function POST(request: Request): Promise<Response> {
       }),
     );
 
-    return NextResponse.json({
-      sent: results.reduce((sent, result) => sent + result.sent, 0),
-    });
+    const outcome = results.reduce(
+      (total, result) => ({
+        sent: total.sent + result.sent,
+        cleaned: total.cleaned + result.cleaned,
+        failed: total.failed + result.failed,
+      }),
+      { sent: 0, cleaned: 0, failed: 0 },
+    );
+
+    // The claim exists to stop concurrent duplicates. If nothing was
+    // delivered there is nothing to be duplicate with, so release it and let
+    // the caller re-dispatch this same event.
+    if (outcome.sent === 0) await releaseClaim(admin, eventId);
+
+    return NextResponse.json({ ...outcome, recipients: targets.length });
   } catch (error) {
     console.error("notify route failed", error);
-    return NextResponse.json({ sent: 0 });
+    await releaseClaim(admin, eventId);
+    return NextResponse.json(
+      { sent: 0, cleaned: 0, failed: 1, recipients: 0 },
+      { status: 500 },
+    );
   }
 }

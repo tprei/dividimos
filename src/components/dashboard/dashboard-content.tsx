@@ -21,7 +21,7 @@ import { formatBRL } from "@/lib/currency";
 import { selectDebtRows, type DebtRow } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage, LedgerError } from "@/lib/sync/errors";
 import { recordSettlement } from "@/lib/sync/mutations";
-import { sendNudge } from "@/lib/sync/mutations-group";
+import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
 import { selectPendingInvitations } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
@@ -82,8 +82,41 @@ export function DashboardContent() {
 
   const handleNudge = async (groupId: string, counterpartyId: string) => {
     try {
-      await sendNudge(groupId, counterpartyId);
-      toast.success("Lembrete enviado");
+      const { ack, delivered } = await sendNudge(groupId, counterpartyId);
+      if (delivered) {
+        toast.success("Lembrete enviado");
+        return;
+      }
+
+      // The nudge exists but reached nobody: say so, and offer the retry that
+      // re-dispatches this same event.
+      const eventId = ack.eventId;
+      if (eventId === null) {
+        toast.error("Não conseguimos entregar o lembrete.");
+        return;
+      }
+
+      toast.error(
+        (t) => (
+          <span className="flex items-center gap-3">
+            Não conseguimos entregar o lembrete.
+            <button
+              type="button"
+              className="shrink-0 underline"
+              onClick={() => {
+                toast.dismiss(t.id);
+                void retryNudgeDispatch(eventId).then((sent) => {
+                  if (sent) toast.success("Lembrete enviado");
+                  else toast.error("Ainda não conseguimos entregar.");
+                });
+              }}
+            >
+              Tentar de novo
+            </button>
+          </span>
+        ),
+        { duration: 8000 },
+      );
     } catch (error) {
       toast.error(ledgerErrorMessage(error));
     }
