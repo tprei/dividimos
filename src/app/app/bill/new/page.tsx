@@ -16,9 +16,10 @@ import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { createGroup, getOrCreateDm } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useBillStore } from "@/stores/bill-store";
-import { useAppStore } from "@/stores/app-store";
+import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
 import { useMe } from "@/hooks/use-me";
 import { useClientOnly, useMounted } from "@/hooks/use-client-only";
@@ -60,6 +61,9 @@ function NewBillPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const modes = useMemo(() => parseWizardModes(searchParams), [searchParams]);
+  const editRead = useAppStore((s) =>
+    modes.editExpenseId ? (s.reads[expenseReadKey(modes.editExpenseId)] ?? IDLE_READ) : IDLE_READ,
+  );
   const me = useMe();
 
   const store = useBillStore(
@@ -381,6 +385,21 @@ function NewBillPageContent() {
     return (
       <div className="mx-auto max-w-lg px-4 py-6" aria-busy="true">
         <ScanSkeletonLoader />
+      </div>
+    );
+  }
+
+  // Editing an expense we could not read would silently present an empty
+  // wizard as though the user were creating a new bill.
+  if (modes.editExpenseId && editDetail === null && editRead.status === "error") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <SyncErrorState
+          message={ledgerErrorMessage(new LedgerError(editRead.code))}
+          onRetry={() => {
+            void refreshExpense(modes.editExpenseId!).catch(() => {});
+          }}
+        />
       </div>
     );
   }
