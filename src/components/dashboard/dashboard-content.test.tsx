@@ -13,6 +13,7 @@ const groupMutations = vi.hoisted(() => ({
   acceptInvitation: vi.fn(),
   declineInvitation: vi.fn(),
   sendNudge: vi.fn(),
+  retryNudgeDispatch: vi.fn(),
 }));
 vi.mock("@/lib/sync/mutations-group", () => groupMutations);
 
@@ -215,8 +216,11 @@ describe("DashboardContent", () => {
     expect(pixProps.current?.mode).toBe("collect");
   });
 
-  it("exposes nudge from a receivable dialog", async () => {
-    groupMutations.sendNudge.mockResolvedValue({ groupId: "g1", ledgerVersion: 1, eventId: 10 });
+  it("exposes nudge and quick charge from a receivable dialog", async () => {
+    groupMutations.sendNudge.mockResolvedValue({
+      ack: { groupId: "g1", ledgerVersion: 1, eventId: 10 },
+      delivery: "delivered",
+    });
     seedStore([
       snapshot({
         balances: [
@@ -242,6 +246,31 @@ describe("DashboardContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cobrar rápido" }));
     await waitFor(() => expect(quickProps.current?.open).toBe(true));
+  });
+
+  it("does not claim success when the nudge reached nobody", async () => {
+    groupMutations.sendNudge.mockResolvedValue({
+      ack: { groupId: "g1", ledgerVersion: 1, eventId: 11 },
+      delivery: "failed",
+    });
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ], meWithPixKey);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, te deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Lembrar" }));
+
+    await waitFor(() => {
+      expect(groupMutations.sendNudge).toHaveBeenCalledWith("g1", carol.id);
+    });
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalled();
   });
 
   it("disables quick charge without a Pix key", () => {

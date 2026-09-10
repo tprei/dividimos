@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  ChatMessage,
   ExpenseHeader,
   ExpensePayload,
   GroupSnapshot,
@@ -46,12 +47,16 @@ import {
   updateProfile,
 } from "./mutations-group";
 
+const authState = vi.hoisted(() => ({ generation: 0 }));
 vi.mock("@/lib/sync/client", () => ({
   rpc: vi.fn(),
   rpcVoid: vi.fn(),
   getSupabase: vi.fn(),
-  getAuthGeneration: () => 0,
-  advanceAuthGeneration: () => 1,
+  getAuthGeneration: () => authState.generation,
+  advanceAuthGeneration: () => {
+    authState.generation += 1;
+    return authState.generation;
+  },
 }));
 
 vi.mock("@/lib/sync/refresh", () => ({
@@ -150,12 +155,12 @@ const PAYLOAD: ExpensePayload = {
   payers: [{ participantIndex: 0, amountCents: 5000 }],
   itemAssignments: null,
 };
-
 describe("mutations", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.generation = 0;
     useAppStore.getState().reset();
     globalThis.fetch = vi.fn(async () => new Response("{}", { status: 200 }));
   });
@@ -509,6 +514,31 @@ describe("mutations", () => {
       expect(conversation?.messages).toHaveLength(2);
       expect(conversation?.messages.map((m) => m.id)).toEqual(["msg-old", "msg-server-id"]);
       expect(conversation?.messages[1]?.clientId).toBe(message.clientId);
+    });
+    it("does not publish an acknowledgement after the account changes", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+      const gate = Promise.withResolvers<ChatMessage>();
+      vi.mocked(rpc).mockImplementationOnce(() => gate.promise);
+      const pending = sendMessage("g1", "Conta antiga");
+      authState.generation = 1;
+      useAppStore.getState().reset();
+      gate.resolve({
+        id: "msg-stale",
+        clientId: "stale-client",
+        groupId: "g1",
+        senderId: ME.id,
+        content: "Conta antiga",
+        createdAt: "2026-01-01T00:01:00.000000Z",
+        sender: ME,
+      });
+
+      await expect(pending).rejects.toMatchObject({ code: "unauthenticated" });
+      expect(useAppStore.getState().conversations).toEqual({});
     });
 
     it("on failure removes the optimistic message and reloads the conversation", async () => {
@@ -1269,6 +1299,34 @@ describe("mutations", () => {
 
       expect(rpcVoid).toHaveBeenCalledTimes(2);
       clearPendingVendorChargeCancellations();
+    });
+    it("drops terminal cancellation failures instead of retrying them", async () => {
+      clearPendingVendorChargeCancellations();
+      vi.mocked(rpcVoid).mockRejectedValueOnce(
+        new LedgerError("charge_already_received"),
+      );
+
+      await expect(cancelVendorCharge("vc-terminal")).rejects.toThrow();
+
+      vi.mocked(rpcVoid).mockClear();
+      await retryPendingVendorChargeCancellations();
+      expect(rpcVoid).not.toHaveBeenCalled();
+    });
+
+    it("shares one in-flight cancellation across concurrent drains", async () => {
+      clearPendingVendorChargeCancellations();
+      vi.mocked(rpcVoid).mockRejectedValueOnce(new Error("offline"));
+      await expect(cancelVendorCharge("vc-dedup")).rejects.toThrow("offline");
+
+      const { promise, resolve } = Promise.withResolvers<void>();
+      vi.mocked(rpcVoid).mockReturnValueOnce(promise);
+      const first = retryPendingVendorChargeCancellations();
+      const second = retryPendingVendorChargeCancellations();
+      await vi.waitFor(() => expect(rpcVoid).toHaveBeenCalledTimes(2));
+
+      resolve();
+      await Promise.all([first, second]);
+      expect(rpcVoid).toHaveBeenCalledTimes(2);
     });
   });
 });
