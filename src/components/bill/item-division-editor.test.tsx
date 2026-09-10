@@ -49,7 +49,7 @@ describe("ItemDivisionEditor", () => {
     const { onSave } = renderEditor();
     fireEvent.click(screen.getByLabelText("Incluir Ana em Picanha"));
     fireEvent.click(screen.getByLabelText("Incluir Bruno em Picanha"));
-    fireEvent.change(screen.getByLabelText("Modo de divisão de Picanha"), { target: { value: "percent" } });
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
 
     const ana = screen.getByLabelText("Percentual de Ana em Picanha") as HTMLInputElement;
     const bruno = screen.getByLabelText("Percentual de Bruno em Picanha") as HTMLInputElement;
@@ -79,7 +79,7 @@ describe("ItemDivisionEditor", () => {
         { participantId: "g1", cents: 2900 },
       ],
     });
-    expect((screen.getByLabelText("Modo de divisão de Picanha") as HTMLSelectElement).value).toBe("fixed");
+    expect(screen.getByRole("radio", { name: "Fixo" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByLabelText("Incluir Ana em Picanha")).toBeChecked();
     expect(screen.getByLabelText("Incluir Bruno em Picanha")).not.toBeChecked();
     expect(screen.getByLabelText("Incluir Maria em Picanha")).toBeChecked();

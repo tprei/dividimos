@@ -6,7 +6,7 @@ import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
 import { allocateEvenly } from "@/lib/expense-money";
 import {
   FULL_PERCENT_BASIS_POINTS,
@@ -36,10 +36,10 @@ export interface ItemDivisionEditorProps {
   onCancel: () => void;
 }
 
-const MODE_OPTIONS: { key: ItemDivisionMode; label: string }[] = [
-  { key: "equal", label: "Igual" },
-  { key: "percent", label: "Percentual" },
-  { key: "fixed", label: "Fixo" },
+const MODE_OPTIONS: { key: ItemDivisionMode; label: string; name: string; icon: LucideIcon }[] = [
+  { key: "equal", label: "Igual", name: "Igual", icon: Equal },
+  { key: "percent", label: "%", name: "Percentual", icon: Percent },
+  { key: "fixed", label: "R$", name: "Fixo", icon: Coins },
 ];
 
 function ShareCell({
@@ -158,34 +158,41 @@ export function ItemDivisionEditor({
   const status = divisionStatusText(division, mode);
 
   return (
-    <div className="space-y-3 rounded-2xl border border-input bg-background p-3">
-      <div className="flex min-h-10 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-base font-bold">{itemName}</p>
-        <Money cents={itemCents} className="text-base" />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor={`modo-divisao-${itemId}`}>Modo de divisão</Label>
-        <select
-          id={`modo-divisao-${itemId}`}
-          aria-label={`Modo de divisão de ${itemName}`}
-          value={mode}
-          onChange={(event) => setMode(event.target.value as ItemDivisionMode)}
-          className="h-9 w-full rounded-lg border border-input bg-card px-2.5 text-sm font-medium outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          {MODE_OPTIONS.map((option) => (
-            <option key={option.key} value={option.key}>
+    <div className="space-y-3 border-t border-dashed border-border bg-muted/30 px-4 pt-3 pb-4">
+      <div
+        role="radiogroup"
+        id={`modo-divisao-${itemId}`}
+        aria-label={`Modo de divisão de ${itemName}`}
+        className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
+      >
+        {MODE_OPTIONS.map((option) => {
+          const active = mode === option.key;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={option.name}
+              onClick={() => setMode(option.key)}
+              className={cn(
+                "flex min-h-10 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-colors",
+                active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
+              )}
+            >
+              <option.icon className="size-4" aria-hidden="true" />
               {option.label}
-            </option>
-          ))}
-        </select>
+            </button>
+          );
+        })}
       </div>
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Pessoas</p>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={() => setSelectedIds([...participantIds])}>
+          <Button variant="ghost" size="sm" className="min-h-9" onClick={() => setSelectedIds([...participantIds])}>
             Todos
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>
+          <Button variant="ghost" size="sm" className="min-h-9" onClick={() => setSelectedIds([])}>
             Nenhum
           </Button>
         </div>
