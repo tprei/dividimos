@@ -1,9 +1,16 @@
 "use client";
 
+import { useMe } from "@/hooks/use-me";
 import type { GroupSnapshot } from "@/types/ledger";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/ui/select-field";
 import { cn } from "@/lib/utils";
+
+function dmLabel(snapshot: GroupSnapshot, meId: string | null): string {
+  if (meId === null) return "Conversa direta";
+  const counterparty = snapshot.members.find((member) => member.userId !== meId);
+  return counterparty?.user.name || "Conversa direta";
+}
 
 export interface GroupSelectProps {
   value: string | null;
@@ -29,6 +36,7 @@ export function GroupSelect({
   className,
 }: GroupSelectProps) {
   const selectedValue = value ?? "";
+  const me = useMe();
   const showCreateName = selectedValue === "create" && createGroupEnabled;
 
   return (
@@ -41,7 +49,10 @@ export function GroupSelect({
           { value: "", label: "Escolha um grupo" },
           ...groups.map((group) => ({
             value: group.group.id,
-            label: group.group.name,
+            label:
+              group.group.kind === "dm"
+                ? dmLabel(group, me?.id ?? null)
+                : group.group.name,
           })),
           { value: "create", label: "Novo grupo…" },
           ...(dmEligible
