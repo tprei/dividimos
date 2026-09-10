@@ -60,6 +60,7 @@ interface GroupSnapshot {
   unreadCount: number;
   lastMessage: { content: string; senderId: string; createdAt: string } | null;
   lastActivityAt: string;
+  expenseCount: number;
 }
 
 interface ExpenseSummary {
@@ -204,6 +205,7 @@ const SNAPSHOT_KEYS = [
   "unreadCount",
   "lastMessage",
   "lastActivityAt",
+  "expenseCount",
 ];
 
 const EXPENSE_SUMMARY_KEYS = [
@@ -368,6 +370,35 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     if (!forB) throw new Error("expected one recent expense for B");
     expect(forB.myShareCents).toBe(500);
     expect(forB.myPaidCents).toBe(0);
+  });
+
+  it("reports the active expense count instead of the recent preview length", async () => {
+    const [countUser, countMember] = await createTestUsers(2);
+    const countGroup = await createGroupWithMembers(
+      countUser,
+      [countMember],
+      "Leitura de contagem",
+    );
+    await createExpense(countUser, {
+      groupId: countGroup,
+      title: "Despesa ativa",
+      totalCents: 1000,
+      payload: equalSplitPayload([countUser.id, countMember.id], 1000),
+    });
+    const deleted = await createExpense(countUser, {
+      groupId: countGroup,
+      title: "Despesa removida",
+      totalCents: 2000,
+      payload: equalSplitPayload([countUser.id, countMember.id], 2000),
+    });
+    await rpcOk(authenticateAs(countUser), "delete_expense", {
+      p_expense_id: deleted.expenseId,
+    });
+
+    const snap = await rpcOk<GroupSnapshot>(authenticateAs(countUser), "get_group", {
+      p_group_id: countGroup,
+    });
+    expect(snap.expenseCount).toBe(1);
   });
 
   it("counts unread per sender, and mark_read clears only the caller's count", async () => {
@@ -589,6 +620,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.guests).toEqual([]);
       expect(snap.settlements).toEqual([]);
       expect(snap.recentExpenses).toEqual([]);
+      expect(snap.expenseCount).toBe(0);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();
       expect(snap.members.map((m) => m.userId).sort()).toEqual(
@@ -610,6 +642,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.guests).toHaveLength(1);
       expect(snap.settlements).toHaveLength(1);
       expect(snap.recentExpenses).toHaveLength(1);
+      expect(snap.expenseCount).toBe(1);
       expect(snap.unreadCount).toBe(1);
       expect(snap.lastMessage?.content).toBe(MESSAGE);
     });
@@ -622,6 +655,7 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.guests).toEqual([]);
       expect(snap.settlements).toEqual([]);
       expect(snap.recentExpenses).toEqual([]);
+      expect(snap.expenseCount).toBe(0);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();
       expect(snap.members.map((m) => m.userId).sort()).toEqual(

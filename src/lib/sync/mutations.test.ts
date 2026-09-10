@@ -113,6 +113,7 @@ function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
     guests: [],
     settlements: [],
     recentExpenses: [],
+    expenseCount: 0,
     lastEventId: 10,
     unreadCount: 3,
     lastMessage: null,

@@ -57,6 +57,7 @@ interface GroupSnapshot {
   unreadCount: number;
   lastMessage: unknown | null;
   lastActivityAt: string;
+  expenseCount: number;
 }
 
 interface BootstrapPayload {

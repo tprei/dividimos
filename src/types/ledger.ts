@@ -250,6 +250,7 @@ export interface GroupSnapshot {
   unreadCount: number;
   lastMessage: ChatLastMessage | null;
   lastActivityAt: string;
+  expenseCount: number;
 }
 
 export interface Bootstrap {

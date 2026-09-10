@@ -144,6 +144,7 @@ function snapshot(): GroupSnapshot {
         participantCount: 3,
       },
     ],
+    expenseCount: 0,
     lastEventId: 1,
     unreadCount: 0,
     lastMessage: null,

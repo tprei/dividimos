@@ -102,6 +102,7 @@ describe("decodeBootstrap", () => {
             participantCount: 2,
           },
         ],
+        expenseCount: 0,
         lastEventId: 42,
         unreadCount: 0,
         lastMessage: {
@@ -141,6 +142,17 @@ describe("decodeBootstrap", () => {
     if (!result.ok) {
       expect(result.issue.code).toBe("invalid_wire");
       expect(result.issue.path).toEqual(["serverTime"]);
+    }
+  });
+
+  it("rejects missing expenseCount", () => {
+    const invalid = JSON.parse(JSON.stringify(fixture));
+    delete invalid.groups[0].expenseCount;
+    const result = decodeBootstrap(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.code).toBe("invalid_wire");
+      expect(result.issue.path).toEqual(["groups", 0, "expenseCount"]);
     }
   });
 

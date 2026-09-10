@@ -49,6 +49,7 @@ const baseSnapshot: GroupSnapshot = {
   guests: [],
   settlements: [],
   recentExpenses: [],
+  expenseCount: 0,
   lastEventId: 20,
   unreadCount: 0,
   lastMessage: null,

@@ -93,6 +93,18 @@ const initialData: AppStateData = {
   lastBootstrapAt: null,
 };
 
+export function migrateAppState(persisted: unknown): AppStateData {
+  const legacy = (persisted ?? {}) as Partial<AppStateData>;
+  const groups: Record<string, GroupSnapshot> = {};
+  for (const [id, snapshot] of Object.entries(legacy.groups ?? {})) {
+    groups[id] =
+      snapshot.expenseCount === undefined
+        ? { ...snapshot, expenseCount: 0 }
+        : snapshot;
+  }
+  return { ...initialData, ...legacy, groups };
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
@@ -273,7 +285,8 @@ export const useAppStore = create<AppState>()(
         useAppStore.setState({ hydrated: true });
       },
       skipHydration: true,
-      version: 1,
+      migrate: migrateAppState,
+      version: 2,
     },
   ),
 );

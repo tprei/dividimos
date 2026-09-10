@@ -51,6 +51,7 @@ function makeGroup(id: string, name: string, members: Array<{ id: string; name: 
     guests: [],
     settlements: [],
     recentExpenses: [],
+    expenseCount: 0,
     lastEventId: 0,
     unreadCount: 0,
     lastMessage: null,

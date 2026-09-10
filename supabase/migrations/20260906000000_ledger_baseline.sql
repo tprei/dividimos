@@ -1346,7 +1346,11 @@ BEGIN
       g.created_at,
       (SELECT max(ev.created_at) FROM group_events ev WHERE ev.group_id = g.id),
       (SELECT max(m.created_at) FROM chat_messages m WHERE m.group_id = g.id)
-    ))
+    )),
+    'expenseCount', (
+      SELECT count(*) FROM expenses e
+      WHERE e.group_id = g.id AND e.status = 'active'
+    )
   ) INTO v_out
   FROM groups g
   WHERE g.id = p_group_id;
@@ -1373,9 +1377,10 @@ BEGIN
            'guests', '[]'::jsonb,
            'settlements', '[]'::jsonb,
            'recentExpenses', '[]'::jsonb,
+           'expenseCount', 0,
            'unreadCount', 0,
            'lastMessage', 'null'::jsonb
-         );
+        );
   END IF;
 
   RETURN v_out;
