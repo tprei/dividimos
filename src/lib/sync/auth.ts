@@ -2,6 +2,7 @@ import { useAppStore } from "@/stores/app-store";
 import { runBootstrap } from "./bootstrap";
 import { advanceAuthGeneration, getSupabase } from "./client";
 import { clearPendingVendorChargeCancellations } from "./mutations-group";
+import { detachPushForSignOut } from "@/lib/push/detach";
 
 export function attachAuthListener(
   onSignedOut: () => void,
@@ -23,6 +24,9 @@ export function attachAuthListener(
 
     if (event === "SIGNED_OUT") {
       observedUserId = null;
+      // Best-effort: the account losing the session must stop receiving on
+      // this device, but teardown never waits on the network.
+      void detachPushForSignOut();
       advanceAuthGeneration();
       clearPendingVendorChargeCancellations();
       useAppStore.getState().reset();
