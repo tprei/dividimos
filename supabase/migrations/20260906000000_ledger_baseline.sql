@@ -1151,10 +1151,10 @@ BEGIN
       ) d
      GROUP BY d.left_id, d.right_id
   )
-  SELECT CASE WHEN c.net > 0 THEN c.left_kind ELSE c.right_kind END,
-         CASE WHEN c.net > 0 THEN c.left_id ELSE c.right_id END,
-         CASE WHEN c.net > 0 THEN c.right_id ELSE c.left_id END,
-         CASE WHEN c.net > 0 THEN c.net ELSE -c.net END
+  SELECT (CASE WHEN c.net > 0 THEN c.left_kind ELSE c.right_kind END)::participant_kind,
+         (CASE WHEN c.net > 0 THEN c.left_id ELSE c.right_id END)::uuid,
+         (CASE WHEN c.net > 0 THEN c.right_id ELSE c.left_id END)::uuid,
+         (CASE WHEN c.net > 0 THEN c.net ELSE -c.net END)::bigint
     FROM combined c
    WHERE c.net <> 0
    ORDER BY 1, 2, 3;
