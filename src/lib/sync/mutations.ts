@@ -478,6 +478,25 @@ export async function voidSettlement(
   }
 }
 
+
+/** Reconciler shape for rollbackAndReconcile: reloads the newest page. */
+async function reloadConversation(groupId: string): Promise<void> {
+  await loadConversation(groupId);
+}
+/**
+ * Provisional timestamp for an optimistic row. Server rows carry microsecond
+ * precision, so a millisecond `Date` string would sort ambiguously against
+ * them; the counter keeps successive local sends strictly ordered.
+ */
+let optimisticCounter = 0;
+
+function optimisticCreatedAt(): string {
+  optimisticCounter = (optimisticCounter + 1) % 1000;
+  const now = new Date();
+  const micros = String(optimisticCounter).padStart(3, "0");
+  return `${now.toISOString().slice(0, 23)}${micros}Z`;
+}
+
 export async function sendMessage(groupId: string, content: string): Promise<ChatMessage> {
   const store = useAppStore.getState();
   const me = store.me;
@@ -485,24 +504,21 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
 
   const clientId = crypto.randomUUID();
 
-  store.applyConversation(
-    groupId,
-    {
-      messages: [
-        {
-          id: clientId,
-          clientId,
-          groupId,
-          senderId: me.id,
-          content,
-          createdAt: new Date().toISOString(),
-          sender: { id: me.id, handle: me.handle, name: me.name, avatarUrl: me.avatarUrl },
-        },
-      ],
-      events: [],
-    },
-    false,
-  );
+  store.applyConversation(groupId, {
+    kind: "broadcast",
+    messages: [
+      {
+        id: clientId,
+        clientId,
+        groupId,
+        senderId: me.id,
+        content,
+        createdAt: optimisticCreatedAt(),
+        sender: { id: me.id, handle: me.handle, name: me.name, avatarUrl: me.avatarUrl },
+      },
+    ],
+    events: [],
+  });
 
   try {
     const ack = await rpc(
@@ -510,10 +526,14 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
       { p_client_id: clientId, p_group_id: groupId, p_content: content },
       decodeChatMessage,
     );
-    useAppStore.getState().applyConversation(groupId, { messages: [ack], events: [] }, false);
+    // The shared reducer keys by clientId, so this replaces the provisional
+    // row rather than adding a duplicate.
+    useAppStore
+      .getState()
+      .applyConversation(groupId, { kind: "broadcast", messages: [ack], events: [] });
     return ack;
   } catch (error) {
-    rollbackAndReconcile([removeOptimisticMessage(groupId, clientId)], groupId, error, loadConversation);
+    rollbackAndReconcile([removeOptimisticMessage(groupId, clientId)], groupId, error, reloadConversation);
   }
 }
 
