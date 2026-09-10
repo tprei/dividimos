@@ -3162,7 +3162,8 @@ BEGIN
   INTO v_guest
   FROM guests g
   JOIN expenses e ON e.id = g.expense_id
-  WHERE g.id = p_guest_id;
+  WHERE g.id = p_guest_id
+  FOR UPDATE OF g;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';

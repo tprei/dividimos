@@ -145,7 +145,7 @@ export function GuestInviteDialog({
             <Copy className="size-4" />
             Copiar link
           </Button>
-          {!claimUrl && (
+          {!claimUrl && guest.claimLinkGeneration < 2 && (
             <Button
               type="button"
               variant="outline"
@@ -156,6 +156,11 @@ export function GuestInviteDialog({
               <RefreshCw className="size-4" />
               {working ? "Gerando link..." : "Gerar link"}
             </Button>
+          )}
+          {!claimUrl && guest.claimLinkGeneration >= 2 && (
+            <p role="status" className="text-xs font-semibold text-muted-foreground">
+              Este link só está disponível no aparelho onde foi gerado e já foi substituído uma vez.
+            </p>
           )}
           {claimUrl && canReplace && !confirming && (
             <Button
