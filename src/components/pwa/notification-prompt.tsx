@@ -5,6 +5,7 @@ import { Bell, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
+import { pushFailureMessage } from "@/lib/push/failures";
 
 const SESSION_KEY = "dividimos:notification-prompt-dismissed";
 
@@ -25,6 +26,8 @@ export function NotificationPrompt() {
     isInitializing,
     isNative,
     subscribe,
+    error,
+    retry,
   } = usePushNotifications();
   const [dismissed, setDismissed] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -49,7 +52,9 @@ export function NotificationPrompt() {
 
   const handleSubscribe = async () => {
     await subscribe();
-    handleDismiss();
+    // A failed activation keeps the prompt on screen with its error; only a
+    // real subscription dismisses it.
+    if (error === null) handleDismiss();
   };
 
   return (
@@ -66,19 +71,25 @@ export function NotificationPrompt() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">Ativar notificações</p>
-          <p className="text-xs text-muted-foreground">
-            {isNative
-              ? "Receba alertas de contas novas e pagamentos"
-              : "Fica sabendo quando rolar conta nova ou pagamento"}
-          </p>
+          {error === null ? (
+            <p className="text-xs text-muted-foreground">
+              {isNative
+                ? "Receba alertas de contas novas e pagamentos"
+                : "Fica sabendo quando rolar conta nova ou pagamento"}
+            </p>
+          ) : (
+            <p role="alert" className="text-xs text-destructive">
+              {pushFailureMessage(error)}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button
             size="sm"
-            onClick={handleSubscribe}
+            onClick={error !== null && error.retryable ? () => void retry() : handleSubscribe}
             disabled={isLoading}
           >
-            {isLoading ? "..." : "Ativar"}
+            {isLoading ? "..." : error !== null && error.retryable ? "Tentar de novo" : "Ativar"}
           </Button>
           {!isNative && (
             <button

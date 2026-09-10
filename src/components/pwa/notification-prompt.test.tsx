@@ -14,6 +14,8 @@ vi.mock("@/hooks/use-push-notifications", () => ({
     isNative: false,
     subscribe: mockSubscribe,
     unsubscribe: mockUnsubscribe,
+    error: null,
+    retry: vi.fn(),
   })),
 }));
 
@@ -33,6 +35,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
   });
 
@@ -51,6 +55,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -66,6 +72,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -81,6 +89,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -96,6 +106,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -135,6 +147,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     render(<NotificationPrompt />);
@@ -153,6 +167,8 @@ describe("NotificationPrompt", () => {
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
+        error: null,
+        retry: vi.fn(),
       });
     });
 
@@ -191,6 +207,8 @@ describe("NotificationPrompt", () => {
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
+        error: null,
+        retry: vi.fn(),
       });
 
       const { container } = render(<NotificationPrompt />);
@@ -206,6 +224,8 @@ describe("NotificationPrompt", () => {
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
+        error: null,
+        retry: vi.fn(),
       });
 
       const { container } = render(<NotificationPrompt />);
