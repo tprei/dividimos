@@ -9,6 +9,7 @@ import { useItemizedIssues } from "@/components/bill/itemized/use-itemized-issue
 import { Input } from "@/components/ui/input";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import { computeServiceFeeCents, parseExpenseCentsText, parseServiceFeeBasisPointsText } from "@/lib/expense-money";
+import { unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
 import { divisionForItem } from "@/lib/item-division";
 import { useBillStore, type Guest } from "@/stores/bill-store";
 import type { User } from "@/types";
@@ -119,7 +120,7 @@ export function ItemizedBillForm({
   const [amountInputs, setAmountInputs] = useState<Record<string, string>>({});
   const titleRef = useRef<HTMLInputElement>(null);
 
-  useBackHandler(expandedId !== null, () => setExpandedId(null));
+  useBackHandler(expandedId !== null && !participantsOpen, () => setExpandedId(null));
 
   const expense = store.expense;
   const grandTotal = store.getGrandTotal();
@@ -161,8 +162,20 @@ export function ItemizedBillForm({
     setAmountInputs((current) => ({ ...current, [itemId]: text }));
     const parsed = parseExpenseCentsText(text, { format: "plain_decimal", zeroPolicy: "positive" });
     if (!parsed.ok) return;
-    store.updateItem(itemId, { unitPriceCents: parsed.value, totalPriceCents: parsed.value });
+    const item = store.items.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    const unitPriceCents = unitPriceCentsForLineTotal(item.quantity, parsed.value);
+    if (unitPriceCents === null) return;
+    store.updateItem(itemId, { unitPriceCents, totalPriceCents: parsed.value });
   };
+
+  const invalidAmountIds = store.items.flatMap((item) => {
+    const text = amountInputs[item.id];
+    if (text === undefined) return [];
+    const parsed = parseExpenseCentsText(text, { format: "plain_decimal", zeroPolicy: "positive" });
+    if (parsed.ok && unitPriceCentsForLineTotal(item.quantity, parsed.value) !== null) return [];
+    return [item.id];
+  });
 
   const handleServiceFeeChange = (text: string) => {
     setServiceFeeInput(text);
@@ -227,6 +240,7 @@ export function ItemizedBillForm({
         section={section}
         onSectionChange={setSection}
         amountInputs={amountInputs}
+        invalidAmountIds={invalidAmountIds}
         serviceFeeInput={serviceFeeInput}
         serviceFeeCents={serviceFeeCents}
         grandTotal={grandTotal}

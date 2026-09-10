@@ -31,6 +31,7 @@ export interface ItemizedWorkspaceProps {
   section: ItemizedSectionKey;
   onSectionChange: (section: ItemizedSectionKey) => void;
   amountInputs: Record<string, string>;
+  invalidAmountIds: string[];
   serviceFeeInput: string;
   serviceFeeCents: number;
   grandTotal: number;
@@ -58,6 +59,7 @@ export function ItemizedWorkspace({
   section,
   onSectionChange,
   amountInputs,
+  invalidAmountIds,
   serviceFeeInput,
   serviceFeeCents,
   grandTotal,
@@ -85,6 +87,7 @@ export function ItemizedWorkspace({
         section={section}
         items={store.items}
         amountTexts={amountInputs}
+        invalidAmountIds={invalidAmountIds}
         serviceFeeText={serviceFeeInput}
         serviceFeeCents={serviceFeeCents}
         fixedFees={expense?.fixedFees ?? 0}

@@ -12,6 +12,7 @@ export interface SectionContentProps {
   section: ItemizedSectionKey;
   items: ExpenseItem[];
   amountTexts: Record<string, string>;
+  invalidAmountIds: string[];
   serviceFeeText: string;
   serviceFeeCents: number;
   fixedFees: number;
@@ -46,6 +47,7 @@ export function SectionContent({
   section,
   items,
   amountTexts,
+  invalidAmountIds,
   serviceFeeText,
   serviceFeeCents,
   fixedFees,
@@ -80,6 +82,7 @@ export function SectionContent({
       <ItemsSection
         items={items}
         amountTexts={amountTexts}
+        invalidAmountIds={invalidAmountIds}
         serviceFeeText={serviceFeeText}
         fixedFees={fixedFees}
         grandTotal={grandTotal}

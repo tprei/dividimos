@@ -189,6 +189,21 @@ describe("setItemDivision", () => {
     });
   });
 
+  it("ignores a division that references someone who is no longer in the bill", () => {
+    const s = setupItemizedExpense();
+    const itemId = s.items[0].id;
+    s.setItemDivision(itemId, {
+      mode: "equal",
+      shares: [
+        { participantId: "user-alice", cents: 5000 },
+        { participantId: "user-carol", cents: 5000 },
+      ],
+    });
+    const state = useBillStore.getState();
+    expect(state.splits).toHaveLength(0);
+    expect(divisionForItem(state.items[0], state.splits)).toBeNull();
+  });
+
   it("stores exact percentage shares", () => {
     const s = setupItemizedExpense();
     const itemId = s.items[0].id;

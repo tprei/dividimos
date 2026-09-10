@@ -836,20 +836,28 @@ export const useBillStore = create<ExpenseState>()(
       if (!state.items.some((item) => item.id === itemId) || value.shares.length === 0) {
         return {};
       }
+      const memberIds = new Set<string>([
+        ...state.participants.map((participant) => participant.id),
+        ...state.guests.map((guest) => guest.id),
+      ]);
+      if (value.shares.some((share) => !memberIds.has(share.participantId))) {
+        return {};
+      }
 
-      const splitsForItem: ExpenseSplit[] = value.shares.map((share) => ({
-        id: generateId(),
-        itemId,
-        userId: share.participantId,
-        splitType: value.mode === "percent" ? "percentage" : value.mode,
-        value:
-          value.mode === "equal"
-            ? 100 / value.shares.length
-            : value.mode === "percent"
-              ? (share.basisPoints ?? 0) / 100
-              : share.cents,
-        computedAmountCents: share.cents,
-      }));
+      const splitType: SplitType = value.mode === "percent" ? "percentage" : value.mode;
+      const splitsForItem: ExpenseSplit[] = value.shares.map((share) => {
+        let splitValue = share.cents;
+        if (value.mode === "equal") splitValue = 100 / value.shares.length;
+        if (value.mode === "percent") splitValue = (share.basisPoints ?? 0) / 100;
+        return {
+          id: generateId(),
+          itemId,
+          userId: share.participantId,
+          splitType,
+          value: splitValue,
+          computedAmountCents: share.cents,
+        };
+      });
       return {
         splits: [
           ...state.splits.filter((split) => split.itemId !== itemId),

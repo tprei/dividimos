@@ -13,6 +13,7 @@ import type { ExpenseItem } from "@/types";
 export interface ItemsSectionProps {
   items: ExpenseItem[];
   amountTexts: Record<string, string>;
+  invalidAmountIds: string[];
   serviceFeeText: string;
   fixedFees: number;
   grandTotal: number;
@@ -31,6 +32,7 @@ export interface ItemsSectionProps {
 export function ItemsSection({
   items,
   amountTexts,
+  invalidAmountIds,
   serviceFeeText,
   fixedFees,
   grandTotal,
@@ -45,33 +47,45 @@ export function ItemsSection({
   return (
     <div className="space-y-3 px-4 py-3">
       <div className="divide-y divide-border rounded-2xl border bg-card">
-        {items.map((item) => (
-          <div key={item.id} className="flex min-h-14 items-center gap-2 px-4 py-2">
-            <Input
-              value={item.description}
-              onChange={(event) => onDescriptionChange(item.id, event.target.value)}
-              aria-label={`Nome do item ${item.description || "sem nome"}`}
-              className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-            />
-            <Input
-              value={amountTexts[item.id] ?? centsText(item.totalPriceCents)}
-              onChange={(event) => onAmountChange(item.id, event.target.value)}
-              inputMode="decimal"
-              aria-label={`Valor de ${item.description || "item"}`}
-              className="h-9 w-24 shrink-0 border-0 bg-transparent px-0 text-right font-mono shadow-none focus-visible:ring-0"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-lg"
-              aria-label={`Remover ${item.description || "item"}`}
-              className="min-h-11 min-w-11"
-              onClick={() => onRemoveItem(item.id)}
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </div>
-        ))}
+        {items.map((item) => {
+          const invalid = invalidAmountIds.includes(item.id);
+          return (
+            <div key={item.id} className="px-4 py-2">
+              <div className="flex min-h-14 items-center gap-2">
+                <Input
+                  value={item.description}
+                  onChange={(event) => onDescriptionChange(item.id, event.target.value)}
+                  aria-label={`Nome do item ${item.description || "sem nome"}`}
+                  className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                />
+                <Input
+                  value={amountTexts[item.id] ?? centsText(item.totalPriceCents)}
+                  onChange={(event) => onAmountChange(item.id, event.target.value)}
+                  inputMode="decimal"
+                  aria-label={`Valor de ${item.description || "item"}`}
+                  aria-invalid={invalid || undefined}
+                  aria-describedby={invalid ? `item-amount-error-${item.id}` : undefined}
+                  className="h-9 w-24 shrink-0 border-0 bg-transparent px-0 text-right font-mono shadow-none focus-visible:ring-0"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-lg"
+                  aria-label={`Remover ${item.description || "item"}`}
+                  className="min-h-11 min-w-11"
+                  onClick={() => onRemoveItem(item.id)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+              {invalid && (
+                <p id={`item-amount-error-${item.id}`} className="text-xs font-semibold text-destructive">
+                  Valor incompatível com a quantidade do item.
+                </p>
+              )}
+            </div>
+          );
+        })}
         <div className="flex min-h-14 items-center gap-2 px-4 py-2">
           <label htmlFor="itemized-service-fee" className="min-w-0 flex-1 text-sm text-muted-foreground">
             Taxa de serviço
