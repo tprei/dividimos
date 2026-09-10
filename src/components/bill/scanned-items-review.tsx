@@ -1,11 +1,13 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Users } from "lucide-react";
 import { useState } from "react";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { ReceiptBatchDialog } from "@/components/bill/receipt/receipt-batch-dialog";
 import { ReceiptItemRow } from "@/components/bill/receipt/receipt-item-row";
+import { AvatarStack } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +82,7 @@ export interface ScannedItemsReviewProps {
     occurredOn: string,
   ) => void;
   onCancel: () => void;
+  onManageParticipants: () => void;
 }
 
 export function ScannedItemsReview({
@@ -88,6 +91,7 @@ export function ScannedItemsReview({
   initialOccurredOn,
   onConfirm,
   onCancel,
+  onManageParticipants,
 }: ScannedItemsReviewProps) {
   const [items, setItems] = useState<ReceiptItem[]>(() =>
     result.items.map((item) => ({
@@ -240,6 +244,22 @@ export function ScannedItemsReview({
               {pendingCount} {pendingCount === 1 ? "pendente" : "pendentes"}
             </Badge>
           </div>
+          <button
+            type="button"
+            onClick={onManageParticipants}
+            aria-label={`Participantes: ${participants.map((person) => person.name.split(" ")[0]).join(", ")}`}
+            className="flex min-h-12 w-full items-center justify-between gap-3 border-t px-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Users className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 truncate text-sm font-semibold">
+                {participants.length > 1
+                  ? participants.map((person) => person.name.split(" ")[0]).join(", ")
+                  : "Adicionar pessoas"}
+              </span>
+            </span>
+            <AvatarStack people={participants} />
+          </button>
           <div className="divide-y divide-border border-t">
             {items.length === 0 && (
               <p className="px-4 py-8 text-center text-sm text-muted-foreground">
