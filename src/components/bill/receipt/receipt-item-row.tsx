@@ -110,17 +110,15 @@ export function ReceiptItemRow({
         </div>
       )}
       {expanded && (
-        <div className="px-3 pb-4 pt-1">
-          <ItemDivisionEditor
-            itemId={`receipt-item-${index}`}
-            itemName={item.description}
-            itemCents={item.totalCents}
-            participants={participants}
-            value={division ?? null}
-            onSave={(value) => onSaveDivision(index, value)}
-            onCancel={onCancelDivision}
-          />
-        </div>
+        <ItemDivisionEditor
+          itemId={`receipt-item-${index}`}
+          itemName={item.description}
+          itemCents={item.totalCents}
+          participants={participants}
+          value={division ?? null}
+          onSave={(value) => onSaveDivision(index, value)}
+          onCancel={onCancelDivision}
+        />
       )}
     </Fragment>
   );
