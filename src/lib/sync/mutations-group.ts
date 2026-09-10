@@ -6,7 +6,8 @@ import {
   decodeUserProfile,
   decodeVendorCharge,
 } from "@/lib/ledger/decode";
-import { rpc, rpcVoid } from "@/lib/sync/client";
+import { getAuthGeneration, rpc, rpcVoid } from "@/lib/sync/client";
+import { LedgerError } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type {
@@ -60,15 +61,44 @@ export async function inviteMember(groupId: string, userId: string): Promise<Mut
   return ack;
 }
 
+/** Codes that mean the group is authoritatively gone for this caller. */
+const ABSENCE_CODES = new Set(["not_a_member", "group_not_found"]);
+
 export async function acceptInvitation(groupId: string): Promise<MutationAck> {
+  const generation = getAuthGeneration();
   const ack = await rpc("accept_invitation", { p_group_id: groupId }, decodeMutationAck);
+
+  // Confirm against authoritative membership before reporting success, so the
+  // screen never unlocks chat and payment on an unconfirmed transition.
   await refreshGroup(groupId);
+  if (getAuthGeneration() !== generation) return ack;
+
+  const meId = useAppStore.getState().me?.id;
+  const mine = useAppStore
+    .getState()
+    .groups[groupId]?.members.find((member) => member.userId === meId);
+  if (mine?.status !== "accepted") {
+    throw new LedgerError("unknown");
+  }
   notify(ack.eventId);
   return ack;
 }
 
 export async function declineInvitation(groupId: string): Promise<MutationAck> {
+  const generation = getAuthGeneration();
   const ack = await rpc("decline_invitation", { p_group_id: groupId }, decodeMutationAck);
+
+  try {
+    await refreshGroup(groupId);
+  } catch (error) {
+    // After declining, an unreadable group is the expected authoritative
+    // outcome rather than a failure to report.
+    if (!(error instanceof LedgerError && ABSENCE_CODES.has(error.code))) {
+      throw error;
+    }
+  }
+
+  if (getAuthGeneration() !== generation) return ack;
   useAppStore.getState().removeGroup(groupId);
   notify(ack.eventId);
   return ack;

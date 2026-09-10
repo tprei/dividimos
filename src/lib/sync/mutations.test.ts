@@ -10,6 +10,7 @@ import type {
 } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { rpc, rpcVoid } from "./client";
+import { LedgerError } from "./errors";
 import { loadConversation, refreshExpense, refreshGroup } from "./refresh";
 import {
   createExpense,
@@ -49,6 +50,8 @@ vi.mock("@/lib/sync/client", () => ({
   rpc: vi.fn(),
   rpcVoid: vi.fn(),
   getSupabase: vi.fn(),
+  getAuthGeneration: () => 0,
+  advanceAuthGeneration: () => 1,
 }));
 
 vi.mock("@/lib/sync/refresh", () => ({
@@ -1089,6 +1092,64 @@ describe("mutations", () => {
       vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: null });
       await declineInvitation("g1");
       expect(useAppStore.getState().groups.g1).toBeUndefined();
+    });
+
+    it("fails an accept the refreshed membership does not confirm", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        // Refresh is mocked, so the store keeps this unconfirmed membership.
+        groups: {
+          g1: {
+            ...makeGroupSnapshot("g1"),
+            members: [
+              {
+                groupId: "g1",
+                userId: ME.id,
+                status: "invited" as const,
+                invitedBy: USER_2.id,
+                acceptedAt: null,
+                user: { id: ME.id, handle: ME.handle, name: ME.name, avatarUrl: null },
+              },
+            ],
+          },
+        },
+        groupOrder: ["g1"],
+      });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 1 });
+      await expect(acceptInvitation("g1")).rejects.toThrow();
+      // The screen must not unlock chat on an unconfirmed transition.
+      expect(useAppStore.getState().groups.g1?.members[0]?.status).toBe("invited");
+    });
+
+    it("treats an unreadable group after decline as the expected outcome", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: null });
+      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("not_a_member"));
+
+      await expect(declineInvitation("g1")).resolves.toBeTruthy();
+      expect(useAppStore.getState().groups.g1).toBeUndefined();
+    });
+
+    it("surfaces an unrelated refresh failure after decline", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: null });
+      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("network"));
+
+      await expect(declineInvitation("g1")).rejects.toThrow();
     });
 
     it("leaves and deletes group", async () => {
