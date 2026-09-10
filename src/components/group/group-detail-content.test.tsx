@@ -156,7 +156,7 @@ function seedLoaded() {
     groups: { [groupId]: snap },
     groupOrder: [groupId],
     expenseLists: {
-      [groupId]: { ids: ["e1"], oldestCursor: null, complete: true },
+      [groupId]: { ids: ["e1"], cursor: null, complete: true, total: null },
     },
     expenses: Object.fromEntries(
       snap.recentExpenses.map((e) => [e.id, e]),

@@ -182,7 +182,7 @@ describe("resource read state", () => {
   it("keeps the cursor and rows when an older expense page fails", async () => {
     useAppStore.setState({
       expenseLists: {
-        g1: { ids: ["e1"], oldestCursor: "2026-01-02T00:00:00Z", complete: false },
+        g1: { ids: ["e1"], cursor: { createdAt: "2026-01-02T00:00:00Z", id: "e1" }, complete: false, total: null },
       },
     });
 
@@ -191,7 +191,7 @@ describe("resource read state", () => {
 
     const list = useAppStore.getState().expenseLists.g1;
     expect(list?.ids).toEqual(["e1"]);
-    expect(list?.oldestCursor).toBe("2026-01-02T00:00:00Z");
+    expect(list?.cursor).toEqual({ createdAt: "2026-01-02T00:00:00Z", id: "e1" });
     expect(list?.complete).toBe(false);
     expect(useAppStore.getState().reads[expensePageReadKey("g1")]).toEqual({
       status: "error",

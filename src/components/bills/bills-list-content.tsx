@@ -3,7 +3,8 @@
 import { motion } from "framer-motion";
 import { Loader2, Receipt, Search } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { useShallow } from "zustand/react/shallow";
 import { SwipeableBillCard } from "@/components/bill/swipeable-bill-card";
@@ -22,10 +23,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { formatBRL } from "@/lib/currency";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import { loadMyExpenses } from "@/lib/sync/refresh";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { deleteExpense } from "@/lib/sync/mutations";
 import { useMe } from "@/hooks/use-me";
-import { useAppStore } from "@/stores/app-store";
+import { IDLE_READ, MY_EXPENSES_READ_KEY, useAppStore } from "@/stores/app-store";
 import type { GroupSnapshot } from "@/types/ledger";
 
 interface BillRow {
@@ -55,22 +58,54 @@ function groupNameOf(snapshot: GroupSnapshot | undefined, meId: string): string 
 }
 
 export function BillsListContent() {
+  const router = useRouter();
   const me = useMe();
-  const { hydrated, expenses, groups } = useAppStore(
+  const { hydrated, expenses, groups, myExpenses } = useAppStore(
     useShallow((s) => ({
       hydrated: s.hydrated,
       expenses: s.expenses,
       groups: s.groups,
+      myExpenses: s.myExpenses,
     })),
   );
+  const read = useAppStore((s) => s.reads[MY_EXPENSES_READ_KEY] ?? IDLE_READ);
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
+  const load = useCallback(() => {
+    void loadMyExpenses().catch(() => {
+      // Recorded as a failed read; the retry control renders it.
+    });
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleLoadMore = useCallback(async () => {
+    const cursor = useAppStore.getState().myExpenses.cursor;
+    if (cursor === null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      await loadMyExpenses(cursor);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore]);
+
+  // The server owns the order, so the list follows its ids rather than
+  // re-sorting a page by occurredOn and contradicting the advertised total.
   const bills = useMemo<BillRow[]>(() => {
     if (!me) return [];
-    return Object.values(expenses)
-      .map((e) => ({
+    const rows: BillRow[] = [];
+    for (const id of myExpenses.ids) {
+      const e = expenses[id];
+      if (e === undefined) continue;
+      rows.push({
         id: e.id,
         title: e.title,
         merchantName: e.merchantName,
@@ -79,18 +114,19 @@ export function BillsListContent() {
         totalCents: e.totalCents,
         deleted: e.status === "deleted",
         groupName: groupNameOf(groups[e.groupId], me.id),
-      }))
-      .sort((a, b) => b.occurredOn.localeCompare(a.occurredOn) || b.createdAt.localeCompare(a.createdAt));
-  }, [expenses, groups, me]);
+      });
+    }
+    return rows;
+  }, [myExpenses.ids, expenses, groups, me]);
 
-  const filtered = bills.filter((bill) => {
-    const query = search.trim().toLowerCase();
-    if (!query) return true;
-    return (
-      bill.title.toLowerCase().includes(query) ||
-      (bill.merchantName?.toLowerCase().includes(query) ?? false)
-    );
-  });
+  const query = search.trim().toLowerCase();
+  const filtered = query
+    ? bills.filter(
+        (bill) =>
+          bill.title.toLowerCase().includes(query) ||
+          (bill.merchantName?.toLowerCase().includes(query) ?? false),
+      )
+    : bills;
 
   if (!hydrated || !me) {
     return (
@@ -124,7 +160,9 @@ export function BillsListContent() {
       >
         <h1 className="text-2xl font-bold">Suas contas</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {bills.length} conta{bills.length !== 1 ? "s" : ""} no total
+          {myExpenses.total === null
+            ? `${bills.length} conta${bills.length !== 1 ? "s" : ""} carregada${bills.length !== 1 ? "s" : ""}`
+            : `${myExpenses.total} conta${myExpenses.total !== 1 ? "s" : ""} no total`}
         </p>
       </motion.div>
 
@@ -181,18 +219,37 @@ export function BillsListContent() {
           </motion.div>
         ))}
 
-        {filtered.length === 0 && (
+        {filtered.length === 0 && read.status === "error" && bills.length === 0 ? (
+          <SyncErrorState
+            message={ledgerErrorMessage(new LedgerError(read.code))}
+            onRetry={load}
+          />
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={Receipt}
-            title="Nenhuma conta por aqui"
+            title={query ? "Nenhum resultado" : "Nenhuma conta por aqui"}
             description={
-              search
-                ? `Sem resultados para "${search}".`
+              query
+                ? myExpenses.complete
+                  ? `Sem resultados para "${search}".`
+                  : `Sem resultados para "${search}" nas contas já carregadas. Carrega mais pra buscar no resto.`
                 : "Cria uma conta pra rachar com a galera."
             }
-            actionLabel={!search ? "Nova conta" : undefined}
-            onAction={!search ? () => {} : undefined}
+            actionLabel={query ? undefined : "Nova conta"}
+            onAction={query ? undefined : () => router.push("/app/bill/new")}
           />
+        ) : null}
+
+        {!myExpenses.complete && myExpenses.cursor !== null && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="w-full"
+          >
+            {loadingMore ? "Carregando..." : "Carregar mais"}
+          </Button>
         )}
       </motion.div>
 

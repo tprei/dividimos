@@ -4,10 +4,11 @@ import type {
   Bootstrap,
   ChatMessage,
   ChatLastMessage,
-  ChatCursor,
+  PageCursor,
   Conversation,
   ConversationReadWatermark,
   EventKind,
+  ExpensePage,
   Group,
   GroupGuest,
   GroupEvent,
@@ -34,6 +35,7 @@ import type {
 import {
   arrayOf,
   bool,
+  decodeExpenseSummaries,
   decodeExpenseSummary,
   decodeUserProfile,
   exactKeys,
@@ -865,7 +867,33 @@ const CONVERSATION_KEYS = [
   "eventsComplete",
   "readWatermark",
 ] as const;
-const CHAT_CURSOR_KEYS = ["createdAt", "id"] as const;
+const CURSOR_KEYS = ["createdAt", "id"] as const;
+const EXPENSE_PAGE_KEYS = ["expenses", "nextCursor", "complete", "total"] as const;
+
+export function decodeExpensePage(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<ExpensePage, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, EXPENSE_PAGE_KEYS, path);
+  if (!k.ok) return k;
+
+  const expenses = decodeExpenseSummaries(raw.expenses, [...path, "expenses"]);
+  if (!expenses.ok) return expenses;
+  const nextCursor = decodePageCursor(raw.nextCursor, [...path, "nextCursor"], id);
+  if (!nextCursor.ok) return nextCursor;
+  const complete = bool(raw.complete, [...path, "complete"]);
+  if (!complete.ok) return complete;
+  const total = int(raw.total, [...path, "total"]);
+  if (!total.ok) return total;
+
+  return ok({
+    expenses: expenses.value,
+    nextCursor: nextCursor.value,
+    complete: complete.value,
+    total: total.value,
+  });
+}
 const READ_WATERMARK_KEYS = ["lastReadAt", "lastReadMessageId"] as const;
 
 /**
@@ -890,14 +918,14 @@ export function canonicalizeTimestamp(
   return ok(`${date}T${time}.${fraction.padEnd(6, "0")}Z`);
 }
 
-function decodeChatCursor(
+function decodePageCursor(
   raw: unknown,
   path: Path,
   decodeId: (value: unknown, idPath: Path) => ValidationResult<string, WireIssue>,
-): ValidationResult<ChatCursor | null, WireIssue> {
+): ValidationResult<PageCursor | null, WireIssue> {
   if (raw === null) return ok(null);
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, CHAT_CURSOR_KEYS, path);
+  const k = exactKeys(raw, CURSOR_KEYS, path);
   if (!k.ok) return k;
 
   const createdAt = canonicalizeTimestamp(raw.createdAt, [...path, "createdAt"]);
@@ -941,14 +969,14 @@ export function decodeConversation(
 
   const messages = arrayOf(raw.messages, [...path, "messages"], decodeChatMessage);
   if (!messages.ok) return messages;
-  const messageCursor = decodeChatCursor(raw.messageCursor, [...path, "messageCursor"], id);
+  const messageCursor = decodePageCursor(raw.messageCursor, [...path, "messageCursor"], id);
   if (!messageCursor.ok) return messageCursor;
   const messagesComplete = bool(raw.messagesComplete, [...path, "messagesComplete"]);
   if (!messagesComplete.ok) return messagesComplete;
 
   const events = arrayOf(raw.events, [...path, "events"], decodeGroupEvent);
   if (!events.ok) return events;
-  const eventCursor = decodeChatCursor(raw.eventCursor, [...path, "eventCursor"], eventCursorId);
+  const eventCursor = decodePageCursor(raw.eventCursor, [...path, "eventCursor"], eventCursorId);
   if (!eventCursor.ok) return eventCursor;
   const eventsComplete = bool(raw.eventsComplete, [...path, "eventsComplete"]);
   if (!eventsComplete.ok) return eventsComplete;
