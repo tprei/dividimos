@@ -29,15 +29,14 @@ export async function bootstrapIfStale(maxAgeMs = 60_000): Promise<void> {
   await runBootstrap();
 }
 
-export function attachVisibilityRefresh(): () => void {
+export function attachVisibilityRefresh(onError: (error: unknown) => void): () => void {
   if (typeof document === "undefined") {
     return () => {};
   }
 
   const handleVisibilityChange = () => {
-    if (document.visibilityState === "visible") {
-      void bootstrapIfStale();
-    }
+    if (document.visibilityState !== "visible") return;
+    bootstrapIfStale().catch(onError);
   };
 
   document.addEventListener("visibilitychange", handleVisibilityChange);

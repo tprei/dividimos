@@ -1,41 +1,55 @@
 "use client";
 
+import { Keyboard } from "@capacitor/keyboard";
 import { useEffect, useState } from "react";
+import { isNativePlatform } from "@/lib/capacitor/auth";
 
 export function useKeyboardVisible() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
+    function observeViewport(): (() => void) | undefined {
+      const vv = window.visualViewport;
+      if (!vv) return undefined;
 
-    async function init() {
-      try {
-        const { Keyboard } = await import("@capacitor/keyboard");
-        const showHandle = Keyboard.addListener("keyboardWillShow", () => setVisible(true));
-        const hideHandle = Keyboard.addListener("keyboardWillHide", () => setVisible(false));
+      const threshold = 150;
+      const handler = () => {
+        setVisible(window.innerHeight - vv.height > threshold);
+      };
 
-        cleanup = () => {
-          showHandle.then((h) => h.remove());
-          hideHandle.then((h) => h.remove());
-        };
-      } catch {
-        const vv = window.visualViewport;
-        if (!vv) return;
-
-        const threshold = 150;
-        const handler = () => {
-          const keyboardOpen = window.innerHeight - vv.height > threshold;
-          setVisible(keyboardOpen);
-        };
-
-        vv.addEventListener("resize", handler);
-        cleanup = () => vv.removeEventListener("resize", handler);
-      }
+      vv.addEventListener("resize", handler);
+      return () => vv.removeEventListener("resize", handler);
     }
 
-    init();
+    async function observePlugin(): Promise<() => void> {
+      const showHandle = await Keyboard.addListener("keyboardWillShow", () => setVisible(true));
+      const hideHandle = await Keyboard.addListener("keyboardWillHide", () => setVisible(false));
 
-    return () => cleanup?.();
+      return () => {
+        void showHandle.remove();
+        void hideHandle.remove();
+      };
+    }
+
+    if (!isNativePlatform()) {
+      return observeViewport();
+    }
+
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    void observePlugin().then((remove) => {
+      if (disposed) {
+        remove();
+        return;
+      }
+      cleanup = remove;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, []);
 
   return visible;
