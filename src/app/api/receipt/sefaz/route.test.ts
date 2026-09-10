@@ -21,6 +21,20 @@ vi.mock("@/lib/nfce", () => ({
   parseSefazPage: (...args: unknown[]) => mockParseSefazPage(...args),
   extractSefazAccessKeys: (...args: unknown[]) => mockExtractSefazAccessKeys(...args),
   SEFAZ_DOMAIN_PATTERN: /\.(fazenda|sefaz|sef|svrs)\.[a-z]{2}\.gov\.br$/i,
+  // Mirrors the real policy: allowlisted hosts only, always over HTTPS.
+  httpsSefazUrl: (url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+      if (!/\.(fazenda|sefaz|sef|svrs)\.[a-z]{2}\.gov\.br$/i.test(parsed.hostname)) {
+        return null;
+      }
+      parsed.protocol = "https:";
+      return parsed.toString();
+    } catch {
+      return null;
+    }
+  },
 }));
 
 const { POST, runtime, maxDuration } = await import("./route");
@@ -122,20 +136,28 @@ describe("POST /api/receipt/sefaz", () => {
     expect(mockFetchSefazPage).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when url is not HTTP(S)", async () => {
+  it("refuses a non-HTTP scheme without fetching", async () => {
     const res = await POST(keyedRequest({ url: "ftp://nfce.sefaz.sp.gov.br" }));
 
     expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBe("URL deve ser HTTP ou HTTPS");
+    expect(mockFetchSefazPage).not.toHaveBeenCalled();
   });
 
-  it("returns 400 for invalid URL", async () => {
+  it("refuses a malformed URL without fetching", async () => {
     const res = await POST(keyedRequest({ url: "not-a-url" }));
 
     expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBe("URL invalida");
+    expect(mockFetchSefazPage).not.toHaveBeenCalled();
+  });
+
+  it("fetches an allowlisted plaintext URL over HTTPS", async () => {
+    mockFetchSefazPage.mockResolvedValue({ ok: false, error: "HTTP 500" });
+
+    await POST(keyedRequest({ url: "http://nfce.sefaz.sp.gov.br/consulta" }));
+
+    expect(mockFetchSefazPage).toHaveBeenCalledWith(
+      "https://nfce.sefaz.sp.gov.br/consulta",
+    );
   });
 
   it("returns 400 for non-SEFAZ domain (SSRF protection)", async () => {

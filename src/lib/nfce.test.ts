@@ -375,7 +375,26 @@ describe("isAllowedSefazUrl", () => {
 });
 
 describe("fetchSefazPage SSRF guards", () => {
-  function htmlResponse(html: string, contentType = "text/html"): Response {
+  function bodyOf(chunks: string[], cancel = vi.fn().mockResolvedValue(undefined)) {
+    let i = 0;
+    return {
+      cancel,
+      getReader: () => ({
+        read: async () =>
+          i < chunks.length
+            ? { done: false, value: new TextEncoder().encode(chunks[i++]) }
+            : { done: true, value: undefined },
+        cancel,
+        releaseLock: () => {},
+      }),
+    };
+  }
+
+  function htmlResponse(
+    html: string,
+    contentType = "text/html",
+    chunks?: string[],
+  ): Response {
     return {
       ok: true,
       status: 200,
@@ -383,17 +402,23 @@ describe("fetchSefazPage SSRF guards", () => {
         get: (k: string) =>
           k.toLowerCase() === "content-type" ? contentType : null,
       },
+      body: bodyOf(chunks ?? [html]),
       text: async () => html,
     } as unknown as Response;
   }
 
-  function redirectResponse(location: string | null, status = 302): Response {
+  function redirectResponse(
+    location: string | null,
+    status = 302,
+    cancel = vi.fn().mockResolvedValue(undefined),
+  ): Response {
     return {
       ok: false,
       status,
       headers: {
         get: (k: string) => (k.toLowerCase() === "location" ? location : null),
       },
+      body: bodyOf([""], cancel),
       text: async () => "",
     } as unknown as Response;
   }
@@ -447,6 +472,49 @@ describe("fetchSefazPage SSRF guards", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain("redirecionamentos");
+  });
+
+  it("never fetches plaintext, for the initial URL or a redirect hop", async () => {
+    fetchMock
+      .mockResolvedValueOnce(redirectResponse("http://nfce.sefaz.go.gov.br/final"))
+      .mockResolvedValueOnce(htmlResponse("<table><tr><td>item</td></tr></table>"));
+
+    const result = await fetchSefazPage("http://nfe.svrs.rs.gov.br/start");
+
+    expect(result.ok).toBe(true);
+    // Both hops were upgraded: nothing on a fiscal portal goes in the clear.
+    expect(fetchMock.mock.calls[0][0]).toBe("https://nfe.svrs.rs.gov.br/start");
+    expect(fetchMock.mock.calls[1][0]).toBe("https://nfce.sefaz.go.gov.br/final");
+  });
+
+  it("cuts off a body that expands past the cap, before parsing it", async () => {
+    // 3 MB in 512 KB chunks: the cap must trip mid-stream.
+    const chunk = "x".repeat(512 * 1024);
+    fetchMock.mockResolvedValueOnce(
+      htmlResponse("", "text/html", Array.from({ length: 6 }, () => chunk)),
+    );
+
+    const result = await fetchSefazPage("https://nfe.svrs.rs.gov.br/start");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("tamanho");
+  });
+
+  it("cancels the body of an early exit", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      headers: { get: () => null },
+      body: bodyOf([""], cancel),
+      text: async () => "",
+    } as unknown as Response);
+
+    const result = await fetchSefazPage("https://nfe.svrs.rs.gov.br/start");
+
+    expect(result.ok).toBe(false);
+    // An abandoned stream would otherwise hold the connection open.
+    expect(cancel).toHaveBeenCalled();
   });
 
   it("rejects an initial URL outside the allowlist without fetching", async () => {
