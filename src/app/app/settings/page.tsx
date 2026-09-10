@@ -250,8 +250,8 @@ function NotificationPreferencesSection() {
 
     const previous = chainsRef.current[category];
     const task = previous.then(async () => {
-      if (generationsRef.current[category] !== generation) return;
       try {
+        if (generationsRef.current[category] !== generation) return;
         await updateProfile({ notificationPreferences: { [category]: intent } });
       } catch (err) {
         if (generationsRef.current[category] === generation) {

@@ -93,6 +93,8 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
       }
       onSaved(result);
       onOpenChange(false);
+    } catch {
+      setPixError("Erro ao salvar. Tente novamente.");
     } finally {
       setIsSaving(false);
     }

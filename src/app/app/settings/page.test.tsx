@@ -272,6 +272,31 @@ describe("SettingsPage notification deltas", () => {
       expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
     });
   });
+
+  it("keeps the rollback when the latest of several rapid toggles fails", async () => {
+    const firstDeferred = deferred<Me>();
+    updateProfileMock.mockImplementationOnce(() => firstDeferred.promise);
+    updateProfileMock.mockRejectedValueOnce(new Error("Network error"));
+
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+    expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(false);
+
+    firstDeferred.resolve(makeMe("user-a", { expenses: false }));
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalled();
+    });
+    expect(updateProfileMock).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().me?.notificationPreferences?.expenses).toBe(true);
+    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
+  });
 });
 
 describe("SettingsPage account", () => {
