@@ -154,8 +154,8 @@ describe("applyBootstrap", () => {
       groups: { g1: snapshot("g1", []), g2: snapshot("g2", []) },
       groupOrder: ["g1", "g2"],
       expenseLists: {
-        g1: { ids: ["e1"], oldestCursor: "2026-01-02T00:00:00Z", complete: true },
-        g2: { ids: [], oldestCursor: null, complete: true },
+        g1: { ids: ["e1"], cursor: { createdAt: "2026-01-02T00:00:00Z", id: "e1" }, complete: true, total: null },
+        g2: { ids: [], cursor: null, complete: true, total: null },
       },
       conversations: {
         g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T00:00:00Z")] }),
@@ -187,7 +187,7 @@ describe("applyBootstrap", () => {
       me,
       groups: { g1: snapshot("g1", [localExpense], { group: { ...snapshot("g1", []).group, ledgerVersion: 9 } }) },
       groupOrder: ["g1"],
-      expenseLists: { g1: { ids: ["e-local"], oldestCursor: null, complete: true } },
+      expenseLists: { g1: { ids: ["e-local"], cursor: null, complete: true, total: null } },
       conversations: { g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T00:00:00Z")] }) },
       expenses: { "e-local": localExpense },
     });
@@ -274,7 +274,7 @@ describe("applyBootstrap", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", [summary("e2", "g1", "2026-01-01T00:00:02Z"), summary("e3", "g1", "2026-01-01T00:00:01Z")]) },
-      expenseLists: { g1: { ids: ["e2", "e3", "e4"], oldestCursor: "2026-01-01T00:00:00Z", complete: true } },
+      expenseLists: { g1: { ids: ["e2", "e3", "e4"], cursor: { createdAt: "2026-01-01T00:00:00Z", id: "e4" }, complete: true, total: null } },
     });
 
     useAppStore.getState().applyGroup(
@@ -290,19 +290,31 @@ describe("applyExpensePage", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", []) },
-      expenseLists: { g1: { ids: ["e1"], oldestCursor: "2026-01-01T00:00:00Z", complete: false } },
+      expenseLists: { g1: { ids: ["e1"], cursor: { createdAt: "2026-01-01T00:00:00Z", id: "e1" }, complete: false, total: null } },
     });
 
-    useAppStore.getState().applyExpensePage("g1", [
-      summary("e2", "g1", "2026-01-01T00:00:01Z"),
-      summary("e3", "g1", "2026-01-01T00:00:02Z"),
-    ], false);
+    useAppStore.getState().applyExpensePage("g1", {
+      expenses: [
+        summary("e2", "g1", "2026-01-01T00:00:01Z"),
+        summary("e3", "g1", "2026-01-01T00:00:02Z"),
+      ],
+      nextCursor: { createdAt: "2026-01-01T00:00:02Z", id: "e3" },
+      complete: false,
+      total: 9,
+    });
     let list = useAppStore.getState().expenseLists.g1;
     expect(list?.ids).toEqual(["e1", "e2", "e3"]);
-    expect(list?.oldestCursor).toBe("2026-01-01T00:00:02Z");
+    // Cursor, completeness and total all come from the server envelope.
+    expect(list?.cursor).toEqual({ createdAt: "2026-01-01T00:00:02Z", id: "e3" });
     expect(list?.complete).toBe(false);
+    expect(list?.total).toBe(9);
 
-    useAppStore.getState().applyExpensePage("g1", [summary("e3", "g1", "2026-01-01T00:00:02Z")], true);
+    useAppStore.getState().applyExpensePage("g1", {
+      expenses: [summary("e3", "g1", "2026-01-01T00:00:02Z")],
+      nextCursor: null,
+      complete: true,
+      total: 3,
+    });
     list = useAppStore.getState().expenseLists.g1;
     expect(list?.ids).toEqual(["e1", "e2", "e3"]);
     expect(list?.complete).toBe(true);
@@ -312,13 +324,18 @@ describe("applyExpensePage", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", []) },
-      expenseLists: { g1: { ids: ["e1"], oldestCursor: "2026-01-01T00:00:00Z", complete: false } },
+      expenseLists: { g1: { ids: ["e1"], cursor: { createdAt: "2026-01-01T00:00:00Z", id: "e1" }, complete: false, total: null } },
     });
 
-    useAppStore.getState().applyExpensePage("g1", [], true);
+    useAppStore.getState().applyExpensePage("g1", {
+      expenses: [],
+      nextCursor: null,
+      complete: true,
+      total: 1,
+    });
 
     const list = useAppStore.getState().expenseLists.g1;
-    expect(list?.oldestCursor).toBe("2026-01-01T00:00:00Z");
+    expect(list?.cursor).toBeNull();
     expect(list?.complete).toBe(true);
   });
 });
@@ -329,7 +346,7 @@ describe("replaceExpenseId", () => {
       me,
       groups: { g1: snapshot("g1", []) },
       expenses: { old: summary("old", "g1", "2026-01-01T00:00:00Z") },
-      expenseLists: { g1: { ids: ["old", "e9"], oldestCursor: null, complete: true } },
+      expenseLists: { g1: { ids: ["old", "e9"], cursor: null, complete: true, total: null } },
       expenseDetails: { old: detail("old") },
     });
 

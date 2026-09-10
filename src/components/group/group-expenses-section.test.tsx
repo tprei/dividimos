@@ -62,7 +62,7 @@ function seed(
     groups: {},
     groupOrder: [],
     expenseLists: {
-      [groupId]: { ids: expenses.map((e) => e.id), oldestCursor: null, complete },
+      [groupId]: { ids: expenses.map((e) => e.id), cursor: null, complete, total: null },
     },
     expenses: Object.fromEntries(expenses.map((e) => [e.id, e])),
   });

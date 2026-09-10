@@ -1,7 +1,7 @@
 import {
   decodeConversation,
   decodeExpenseDetail,
-  decodeExpenseSummaries,
+  decodeExpensePage,
   decodeGroupEvents,
   decodeGroupSnapshot,
   decodeVendorCharges,
@@ -11,10 +11,11 @@ import {
   conversationReadKey,
   expensePageReadKey,
   expenseReadKey,
+  MY_EXPENSES_READ_KEY,
   groupReadKey,
   useAppStore,
 } from "@/stores/app-store";
-import type { ChatCursor, Conversation, ExpenseSummary, GroupSnapshot } from "@/types/ledger";
+import type { Conversation, ExpenseSummary, GroupSnapshot, PageCursor } from "@/types/ledger";
 import { rpc } from "./client";
 import { LedgerError } from "./errors";
 
@@ -163,7 +164,7 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
   if (!list || list.complete || inFlightExpensePages.has(groupId)) {
     return;
   }
-  const before = list.oldestCursor;
+  const before = list.cursor;
   if (before === null) {
     return;
   }
@@ -181,10 +182,15 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
         () =>
           rpc(
             "get_group_expenses",
-            { p_group_id: groupId, p_before: before, p_limit: 30 },
-            decodeExpenseSummaries,
+            {
+              p_group_id: groupId,
+              p_before_created_at: before.createdAt,
+              p_before_id: before.id,
+              p_limit: 30,
+            },
+            decodeExpensePage,
           ),
-        (page) => useAppStore.getState().applyExpensePage(groupId, page, page.length < 30),
+        (page) => useAppStore.getState().applyExpensePage(groupId, page),
       );
     } finally {
       inFlightExpensePages.delete(groupId);
@@ -193,6 +199,29 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
 
   inFlightExpensePages.set(groupId, task);
   await task;
+}
+
+/**
+ * Cross-group history for the bills screen. Without a cursor this reseeds the
+ * list from the newest page; with one it appends the next older page.
+ */
+export async function loadMyExpenses(cursor?: PageCursor): Promise<void> {
+  const generation = beginRead(MY_EXPENSES_READ_KEY);
+  await trackedRead(
+    MY_EXPENSES_READ_KEY,
+    generation,
+    () =>
+      rpc(
+        "get_my_expenses",
+        {
+          p_before_created_at: cursor?.createdAt ?? null,
+          p_before_id: cursor?.id ?? null,
+          p_limit: 50,
+        },
+        decodeExpensePage,
+      ),
+    (page) => useAppStore.getState().applyMyExpensePage(page, cursor === undefined),
+  );
 }
 
 const ACTIVITY_PAGE_SIZE = 50;
@@ -225,8 +254,8 @@ export async function loadActivity(before?: number): Promise<void> {
 }
 
 export interface ConversationPageCursors {
-  messageBefore: ChatCursor | null;
-  eventBefore: ChatCursor | null;
+  messageBefore: PageCursor | null;
+  eventBefore: PageCursor | null;
 }
 
 /**
