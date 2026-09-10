@@ -1,13 +1,99 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { evaluateServerFinancialGate } from "@/lib/financial-compatibility";
 
-const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u", "/manutencao"];
+const PUBLIC_PATHS = [
+  "/",
+  "/demo",
+  "/auth",
+  "/auth/callback",
+  "/api/dev/login",
+  "/claim",
+  "/join",
+  "/.well-known",
+  "/u",
+  "/manutencao",
+];
+
+type PendingCookie = {
+  name: string;
+  value: string;
+  options: CookieOptions;
+};
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
     (p) => pathname === p || (p !== "/" && pathname.startsWith(p + "/")),
+  );
+}
+
+function hasSupabaseSessionCookie(request: NextRequest, supabaseUrl: string): boolean {
+  let projectRef: string;
+  try {
+    projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+  } catch {
+    return false;
+  }
+  if (!projectRef) return false;
+  const prefix = `sb-${projectRef}-auth-token`;
+  return request.cookies.getAll().some(
+    ({ name }) => name === prefix || name.startsWith(`${prefix}.`),
+  );
+}
+
+function isExplicitNoSession(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { name?: unknown; status?: unknown };
+  return (
+    candidate.name === "AuthSessionMissingError" ||
+    candidate.status === 401
+  );
+}
+function applyPendingCookies(
+  response: NextResponse,
+  cookies: readonly PendingCookie[],
+): NextResponse {
+  for (const cookie of cookies) {
+    const carrier = NextResponse.next();
+    carrier.cookies.set(cookie.name, cookie.value, cookie.options);
+    const serialized = carrier.headers.get("set-cookie");
+    if (serialized) response.headers.append("Set-Cookie", serialized);
+  }
+  return response;
+}
+
+function noStore(response: NextResponse): NextResponse {
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
+}
+
+function authUnavailableResponse(
+  request: NextRequest,
+  cookies: readonly PendingCookie[],
+): NextResponse {
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    return applyPendingCookies(
+      NextResponse.json(
+        { error: "Serviço de autenticação indisponível", retryable: true },
+        { status: 503, headers: { "Cache-Control": "private, no-store" } },
+      ),
+      cookies,
+    );
+  }
+
+  return applyPendingCookies(
+    new NextResponse(
+      "Não foi possível verificar sua sessão. Tente novamente.",
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "private, no-store",
+          "Content-Type": "text/plain; charset=utf-8",
+        },
+      },
+    ),
+    cookies,
   );
 }
 
@@ -21,10 +107,21 @@ export async function updateSession(request: NextRequest) {
     }
     const url = request.nextUrl.clone();
     url.pathname = "/";
-    return NextResponse.redirect(url);
+    return noStore(NextResponse.redirect(url));
   }
 
+  const pendingCookies: PendingCookie[] = [];
   let supabaseResponse = NextResponse.next({ request });
+  let responseVersion = 0;
+  let appliedVersion = 0;
+
+  const finish = (response: NextResponse): NextResponse => {
+    if (response === supabaseResponse && appliedVersion === responseVersion) {
+      return response;
+    }
+    if (response === supabaseResponse) appliedVersion = responseVersion;
+    return applyPendingCookies(response, pendingCookies);
+  };
 
   const supabase = createServerClient(
     supabaseUrl,
@@ -35,49 +132,62 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
+          for (const cookie of cookiesToSet) {
+            request.cookies.set(cookie.name, cookie.value);
+            pendingCookies.push(cookie);
+          }
+          responseVersion++;
+          supabaseResponse = applyPendingCookies(
+            NextResponse.next({ request }),
+            pendingCookies,
           );
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
-          );
+          appliedVersion = responseVersion;
         },
       },
     },
   );
 
   const pathname = request.nextUrl.pathname;
-
-  if (isPublicPath(pathname) && pathname !== "/auth" && pathname !== "/") {
-    return supabaseResponse;
+  let data: Awaited<ReturnType<typeof supabase.auth.getClaims>>["data"] = null;
+  let error: unknown = null;
+  let threw = false;
+  try {
+    ({ data, error } = await supabase.auth.getClaims());
+  } catch (caught) {
+    threw = true;
+    error = caught;
   }
 
-  const { data, error } = await supabase.auth.getClaims();
-  const user = error || !data ? null : { id: data.claims.sub };
+  const hasSessionCookie = hasSupabaseSessionCookie(request, supabaseUrl);
+  const verificationUnavailable =
+    threw || (Boolean(error) && !isExplicitNoSession(error));
+  if (verificationUnavailable && hasSessionCookie) {
+    return authUnavailableResponse(request, pendingCookies);
+  }
 
-  // API routes answer with their own JSON status; redirecting them to /auth
-  // would turn a 401 into a 307 that fetch() silently follows.
+  const user =
+    !verificationUnavailable && data?.claims?.sub
+      ? { id: data.claims.sub }
+      : null;
+
+  if (isPublicPath(pathname) && pathname !== "/auth" && pathname !== "/") {
+    return finish(supabaseResponse);
+  }
+
   if (!user && !isPublicPath(pathname) && !pathname.startsWith("/api/")) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth";
     url.search = `?next=${encodeURIComponent(pathname)}`;
-    return NextResponse.redirect(url);
+    return noStore(finish(NextResponse.redirect(url)));
   }
 
-  // Enforce maintenance/schema compatibility BEFORE any protected server
-  // component renders. A client-side gate alone cannot prevent a server
-  // component's own data fetch from running (and its result being
-  // serialized into the RSC payload) — this redirect runs upstream of
-  // that render entirely, so an incompatible/maintenance window can never
-  // let a financial page's server-side fetch execute at all.
   if (user && !isPublicPath(pathname)) {
     const gate = evaluateServerFinancialGate();
     if (!gate.compatible) {
       const url = request.nextUrl.clone();
       url.pathname = "/manutencao";
       url.search = `?reason=${encodeURIComponent(gate.issue.code)}`;
-      return NextResponse.redirect(url);
+      return noStore(finish(NextResponse.redirect(url)));
     }
   }
 
@@ -87,12 +197,12 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = redirectTo;
     url.search = "";
-    return NextResponse.redirect(url);
+    return noStore(finish(NextResponse.redirect(url)));
   }
 
   if (!pathname.startsWith("/app")) {
     supabaseResponse.headers.set("Cache-Control", "private, no-store");
   }
 
-  return supabaseResponse;
+  return finish(supabaseResponse);
 }

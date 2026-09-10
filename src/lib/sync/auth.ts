@@ -29,3 +29,16 @@ export function attachAuthListener(
     data.subscription.unsubscribe();
   };
 }
+
+export type SignOutResult =
+  | { ok: true }
+  | { ok: false; error: unknown };
+
+export async function signOut(): Promise<SignOutResult> {
+  try {
+    const { error } = await getSupabase().auth.signOut();
+    return error ? { ok: false, error } : { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
