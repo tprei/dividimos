@@ -32,8 +32,12 @@ import {
 import { subscribeChat } from "@/lib/sync/realtime";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { loadConversation } from "@/lib/sync/refresh";
-import { findDmGroup } from "@/stores/app-selectors";
-import { conversationReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
+import {
+  findDmGroup,
+  selectDmMembership,
+  type DmMembershipView,
+} from "@/stores/app-selectors";
+import { conversationReadKey, groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import type {
   ExpenseHeader,
   ExpensePayload,
@@ -127,7 +131,18 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const groupId = dm?.group.id ?? null;
   const counterpartyMember = dm?.members.find((m) => m.userId === counterpartyId);
   const counterparty: UserProfile | null = counterpartyMember?.user ?? null;
-  const myStatus = dm?.members.find((m) => m.userId === me?.id)?.status ?? "invited";
+  // Subscribe to stable references only: deriving the view inside the store
+  // selector would return a fresh object every render and loop forever.
+  const groupRead = useAppStore((s) =>
+    dm ? (s.reads[groupReadKey(dm.group.id)] ?? IDLE_READ) : IDLE_READ,
+  );
+  const membership: DmMembershipView = useMemo(
+    () =>
+      me
+        ? selectDmMembership(dm ?? undefined, me.id, groupRead)
+        : { status: "loading" },
+    [dm, me, groupRead],
+  );
   const isCounterpartyPending = counterpartyMember?.status === "invited";
 
   const debtRows = useMemo(
@@ -236,22 +251,14 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   );
 
   const handleAccept = useCallback(async () => {
-    if (!groupId) return;
-    try {
-      await acceptInvitation(groupId);
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    }
+    if (!groupId) throw new LedgerError("unknown");
+    await acceptInvitation(groupId);
   }, [groupId]);
 
   const handleDecline = useCallback(async () => {
-    if (!groupId) return;
-    try {
-      await declineInvitation(groupId);
-      router.replace("/app/conversations");
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    }
+    if (!groupId) throw new LedgerError("unknown");
+    await declineInvitation(groupId);
+    router.replace("/app/conversations");
   }, [groupId, router]);
 
   const createDmExpense = useCallback(
@@ -429,12 +436,12 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
 
   if (!dm || !counterparty) return null;
 
-  if (myStatus === "invited") {
+  if (membership.status === "invited") {
     return (
       <ConversationInviteScreen
         counterparty={counterparty}
-        onAccept={() => void handleAccept()}
-        onDecline={() => void handleDecline()}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
       />
     );
   }

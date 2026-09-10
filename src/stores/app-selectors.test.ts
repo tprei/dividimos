@@ -9,6 +9,7 @@ import type {
 } from "@/types/ledger";
 import { useAppStore } from "./app-store";
 import {
+  selectDmMembership,
   selectExpenseList,
   selectMyDebts,
   selectPendingInvitations,
@@ -285,3 +286,79 @@ describe("selectPendingInvitations", () => {
   });
 });
 
+describe("selectDmMembership", () => {
+  const meId = "user-me";
+  const dm = (status: string | null): GroupSnapshot => ({
+    group: {
+      id: "dm-1",
+      kind: "dm",
+      name: "DM",
+      creatorId: "user-other",
+      dmUserA: meId,
+      dmUserB: "user-other",
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    members:
+      status === null
+        ? []
+        : [
+            {
+              groupId: "dm-1",
+              userId: meId,
+              status: status as "invited" | "accepted",
+              invitedBy: "user-other",
+              acceptedAt: null,
+              user: { id: meId, handle: "me", name: "Eu", avatarUrl: null },
+            },
+          ],
+    balances: [],
+    guests: [],
+    settlements: [],
+    recentExpenses: [],
+    lastEventId: 1,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt: "2026-01-01T00:00:00.000Z",
+    expenseCount: 0,
+    pairwiseEdges: [],
+  });
+
+  it("does not call an unread group absent until a read finished", () => {
+    expect(selectDmMembership(undefined, meId, { status: "idle" })).toEqual({
+      status: "loading",
+    });
+    expect(selectDmMembership(undefined, meId, { status: "loading" })).toEqual({
+      status: "loading",
+    });
+    expect(selectDmMembership(undefined, meId, { status: "ready" })).toEqual({
+      status: "absent",
+    });
+    expect(
+      selectDmMembership(undefined, meId, { status: "error", code: "network" }),
+    ).toEqual({ status: "error", code: "network" });
+  });
+
+  it("reports the caller's own membership", () => {
+    expect(selectDmMembership(dm("accepted"), meId, { status: "ready" })).toEqual({
+      status: "accepted",
+    });
+    expect(selectDmMembership(dm("invited"), meId, { status: "ready" })).toEqual({
+      status: "invited",
+      invitedBy: "user-other",
+    });
+  });
+
+  it("never treats missing or malformed membership as accepted", () => {
+    expect(selectDmMembership(dm(null), meId, { status: "ready" })).toEqual({
+      status: "absent",
+    });
+    expect(selectDmMembership(dm("bogus"), meId, { status: "ready" })).toEqual({
+      status: "absent",
+    });
+    // Another member's row must not stand in for the caller's.
+    expect(selectDmMembership(dm("accepted"), "someone-else", { status: "ready" })).toEqual({
+      status: "absent",
+    });
+  });
+});
