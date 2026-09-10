@@ -80,6 +80,10 @@ interface ChatThreadProps {
   nameOf: (userId: string) => string;
   loading?: boolean;
   hasMore?: boolean;
+  /** Server-confirmed contiguous boundary this thread may acknowledge. */
+  acknowledgeThroughId?: string | null;
+  /** Fires once that boundary is actually present in the rendered timeline. */
+  onRenderedThrough?: (messageId: string) => void;
   onLoadMore?: () => void;
 }
 
@@ -92,6 +96,8 @@ export function ChatThread({
   nameOf,
   loading,
   hasMore,
+  acknowledgeThroughId,
+  onRenderedThrough,
   onLoadMore,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -116,6 +122,14 @@ export function ChatThread({
   useEffect(() => {
     bottomRef.current?.scrollIntoView();
   }, []);
+
+  useEffect(() => {
+    // Reporting after render is what makes acknowledgement honest: a boundary
+    // the user never had on screen must not count as read.
+    if (!acknowledgeThroughId || !onRenderedThrough) return;
+    if (!messages.some((message) => message.id === acknowledgeThroughId)) return;
+    onRenderedThrough(acknowledgeThroughId);
+  }, [acknowledgeThroughId, messages, onRenderedThrough]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;

@@ -3,7 +3,7 @@
 import { Loader2, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatThread } from "@/components/chat/chat-thread";
@@ -27,9 +27,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const me = useAppStore((state) => state.me);
   const snapshot = useAppStore((state) => selectGroup(state, groupId));
   const conversation = useAppStore((state) => state.conversations[groupId]);
-  const [historyCompleteGroupId, setHistoryCompleteGroupId] = useState<string | null>(null);
   const loadedRef = useRef<Set<string>>(new Set());
-  const historyComplete = historyCompleteGroupId === groupId;
   const myStatus = snapshot?.members.find((member) => member.userId === me?.id)?.status;
 
   const accepted = useMemo(
@@ -90,14 +88,14 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   }, [groupId, me, myStatus, snapshot, lastIncomingMessageId]);
 
   const handleLoadMore = useCallback(() => {
-    const cursor = useAppStore.getState().conversations[groupId]?.oldestCursor;
-    if (!cursor) return;
-    loadConversation(groupId, cursor)
-      .then(() => {
-        const next = useAppStore.getState().conversations[groupId];
-        if (next?.oldestCursor === cursor) setHistoryCompleteGroupId(groupId);
-      })
-      .catch((error) => toast.error(ledgerErrorMessage(error)));
+    const conv = useAppStore.getState().conversations[groupId];
+    if (conv === undefined) return;
+    // Each stream is paged by its own strict (created_at, id) boundary.
+    if (conv.messageCursor === null && conv.eventCursor === null) return;
+    loadConversation(groupId, {
+      messageBefore: conv.messageCursor,
+      eventBefore: conv.eventCursor,
+    }).catch((error) => toast.error(ledgerErrorMessage(error)));
   }, [groupId]);
 
   const handleSend = useCallback(
@@ -179,7 +177,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           events={conversation?.events ?? []}
           settlements={snapshot.settlements}
           nameOf={nameOf}
-          hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
+          hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
           onLoadMore={handleLoadMore}
         />
       </div>

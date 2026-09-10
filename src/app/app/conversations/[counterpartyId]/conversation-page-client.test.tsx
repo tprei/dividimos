@@ -132,7 +132,18 @@ function seedDm(
       [snapshot.group.id]: {
         messages: conversation.messages,
         events: conversation.events,
-        oldestCursor: "2026-01-01T00:00:00Z",
+        messageCursor: null,
+        messagesComplete: true,
+        eventCursor: null,
+        eventsComplete: true,
+        readWatermark: null,
+        reconcile: {
+          status: "ready",
+          // Mirrors the store reducer: with a complete history, the newest
+          // incoming message is the acknowledgeable boundary.
+          readableThroughMessageId:
+            conversation.messages.filter((m) => m.senderId !== me.id).at(-1)?.id ?? null,
+        },
       },
     },
   });
