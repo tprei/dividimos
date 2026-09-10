@@ -44,18 +44,18 @@ test.describe("Group Invite & Accept", () => {
     await bobPage.goto("/app/groups");
     await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Convites pendentes")).toBeVisible({ timeout: 10000 });
-    await expect(bobPage.getByText("Invite Test Group")).toBeVisible();
-    await expect(bobPage.getByText(/Convidado por.*Alice/i)).toBeVisible();
+    await expect(bobPage.getByText("Convite · Invite Test Group")).toBeVisible({ timeout: 10000 });
+    await expect(bobPage.getByText(/Enviado por.*Alice/i)).toBeVisible();
 
     // Bob accepts the invite
-    await bobPage.getByRole("button", { name: /Aceitar/i }).click();
+    await bobPage.getByRole("button", { name: "Aceitar convite para Invite Test Group" }).click();
+    await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Convites pendentes")).not.toBeVisible({ timeout: 10000 });
-    await expect(bobPage.getByText("Invite Test Group")).toBeVisible();
+    await expect(bobPage.getByText("Convite · Invite Test Group")).not.toBeVisible({ timeout: 10000 });
+    await expect(bobPage.getByRole("link", { name: /Invite Test Group/ })).toBeVisible();
 
     // Bob navigates to the group — sees himself as a member
-    await bobPage.getByText("Invite Test Group").click();
+    await bobPage.getByRole("link", { name: /Invite Test Group/ }).click();
     await bobPage.waitForLoadState("networkidle");
 
     await bobPage.getByRole("tab", { name: "Membros" }).click();
@@ -94,18 +94,13 @@ test.describe("Group Invite & Accept", () => {
     await bobPage.goto("/app/groups");
     await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Convites pendentes")).toBeVisible({ timeout: 10000 });
-    await expect(bobPage.getByText("Decline Test Group")).toBeVisible();
+    await expect(bobPage.getByText("Convite · Decline Test Group")).toBeVisible({ timeout: 10000 });
 
     // Bob declines the invite
-    const inviteCard = bobPage.locator("div", { hasText: "Decline Test Group" })
-      .filter({ has: bobPage.getByRole("button", { name: /Aceitar/i }) })
-      .last();
-    await inviteCard.getByRole("button", { name: /Recusar/i }).click();
+    await bobPage.getByRole("button", { name: "Recusar convite para Decline Test Group" }).click();
 
     // Invite disappears
     await expect(bobPage.getByText("Decline Test Group")).not.toBeVisible({ timeout: 10000 });
-    await expect(bobPage.getByText("Convites pendentes")).not.toBeVisible();
 
     await bobCtx.close();
   });
