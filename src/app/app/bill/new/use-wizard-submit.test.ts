@@ -67,7 +67,7 @@ describe("useWizardSubmit", () => {
 
     let ok = false;
     await act(async () => {
-      ok = await result.current.submit("group-1");
+      ok = await result.current.submit(async () => "group-1");
     });
 
     expect(ok).toBe(true);
@@ -109,7 +109,7 @@ describe("useWizardSubmit", () => {
 
     let ok = false;
     await act(async () => {
-      ok = await result.current.submit("group-1");
+      ok = await result.current.submit(async () => "group-1");
     });
 
     expect(ok).toBe(true);
@@ -137,7 +137,7 @@ describe("useWizardSubmit", () => {
 
     let ok = true;
     await act(async () => {
-      ok = await result.current.submit("group-1");
+      ok = await result.current.submit(async () => "group-1");
     });
 
     expect(ok).toBe(false);
@@ -183,7 +183,7 @@ describe("useWizardSubmit", () => {
 
     let ok = true;
     await act(async () => {
-      ok = await result.current.submit("group-1");
+      ok = await result.current.submit(async () => "group-1");
     });
 
     expect(ok).toBe(false);
@@ -207,11 +207,78 @@ describe("useWizardSubmit", () => {
 
     let ok = true;
     await act(async () => {
-      ok = await result.current.submit(null);
+      ok = await result.current.submit(async () => null);
     });
 
     expect(ok).toBe(false);
     expect(mockToast.error).toHaveBeenCalledWith("Escolha um grupo para dividir a conta.");
     expect(mockCreateExpense).not.toHaveBeenCalled();
+  });
+
+  it("creates one expense when the submit button is spammed", async () => {
+    setupValidSingleExpense();
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockCreateExpense.mockImplementation(async () => {
+      await gate;
+      return { groupId: "group-1", ledgerVersion: 1, eventId: 1, expenseId: "exp-1" };
+    });
+
+    const { result } = renderHook(() =>
+      useWizardSubmit({
+        router,
+        editExpenseId: null,
+        expectedVersionNo: null,
+        onStaleReload,
+      }),
+    );
+
+    const results: boolean[] = [];
+    await act(async () => {
+      const attempts = [
+        result.current.submit(async () => "group-1"),
+        result.current.submit(async () => "group-1"),
+        result.current.submit(async () => "group-1"),
+      ];
+      release?.();
+      results.push(...(await Promise.all(attempts)));
+    });
+
+    expect(mockCreateExpense).toHaveBeenCalledOnce();
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("sends the draft key as the client id so a retry cannot duplicate the bill", async () => {
+    setupValidSingleExpense();
+    const draftKey = useBillStore.getState().draftKey;
+    mockCreateExpense.mockRejectedValueOnce(new LedgerError("network"));
+    mockCreateExpense.mockResolvedValueOnce({
+      groupId: "group-1",
+      ledgerVersion: 1,
+      eventId: 1,
+      expenseId: "exp-1",
+    });
+
+    const { result } = renderHook(() =>
+      useWizardSubmit({
+        router,
+        editExpenseId: null,
+        expectedVersionNo: null,
+        onStaleReload,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.submit(async () => "group-1");
+    });
+    await act(async () => {
+      await result.current.submit(async () => "group-1");
+    });
+
+    expect(draftKey).toBeTruthy();
+    expect(mockCreateExpense.mock.calls[0][0].clientId).toBe(draftKey);
+    expect(mockCreateExpense.mock.calls[1][0].clientId).toBe(draftKey);
   });
 });

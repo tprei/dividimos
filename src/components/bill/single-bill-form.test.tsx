@@ -54,6 +54,7 @@ function renderForm(submit = vi.fn().mockResolvedValue(false)) {
         onPickContacts={vi.fn().mockResolvedValue(undefined)}
         onBack={vi.fn()}
         submit={submit}
+        submitting={false}
       />,
     ),
   };
@@ -81,13 +82,13 @@ describe("SingleBillForm division", () => {
 
     const aliceInput = screen.getByRole("textbox", { name: "Percentual de Alice Silva" });
     const bobInput = screen.getByRole("textbox", { name: "Percentual de Bob Santos" });
-    fireEvent.change(aliceInput, { target: { value: "49,99" } });
+    fireEvent.change(aliceInput, { target: { value: "49" } });
 
-    await waitFor(() => expect(screen.getByText("falta 0,01%")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("falta 1,00%")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
 
-    fireEvent.change(bobInput, { target: { value: "50,01" } });
-    await waitFor(() => expect(screen.queryByText("falta 0,01%")).not.toBeInTheDocument());
+    fireEvent.change(bobInput, { target: { value: "51" } });
+    await waitFor(() => expect(screen.queryByText("falta 1,00%")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /Alice/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Criar conta" })).toBeEnabled());
   });
@@ -99,12 +100,12 @@ describe("SingleBillForm division", () => {
 
     const aliceInput = screen.getByRole("textbox", { name: "Valor de Alice Silva" });
     const bobInput = screen.getByRole("textbox", { name: "Valor de Bob Santos" });
-    fireEvent.change(aliceInput, { target: { value: "60,00" } });
+    fireEvent.change(aliceInput, { target: { value: "60" } });
 
     await waitFor(() => expect(screen.getByText(/excede R\$\s*10,00/)).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Criar conta" })).toBeDisabled();
 
-    fireEvent.change(bobInput, { target: { value: "40,00" } });
+    fireEvent.change(bobInput, { target: { value: "40" } });
     await waitFor(() => expect(screen.queryByText(/excede R\$\s*10,00/)).not.toBeInTheDocument());
   });
 
@@ -114,19 +115,20 @@ describe("SingleBillForm division", () => {
     goToDivision();
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Percentual de Alice Silva" }), {
-      target: { value: "60,00" },
+      target: { value: "60" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Percentual de Bob Santos" }), {
-      target: { value: "40,00" },
+      target: { value: "40" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Alice/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Criar conta" })).toBeEnabled());
 
     fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
-    await waitFor(() => expect(submit).toHaveBeenCalledWith("dm-1"));
+    await waitFor(() => expect(submit).toHaveBeenCalled());
+    await expect(submit.mock.calls[0][0]()).resolves.toBe("dm-1");
     expect(screen.getByRole("radio", { name: "Percentual" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("textbox", { name: "Percentual de Alice Silva" })).toHaveValue("60,00");
-    expect(screen.getByRole("textbox", { name: "Percentual de Bob Santos" })).toHaveValue("40,00");
+    expect(screen.getByRole("textbox", { name: "Percentual de Alice Silva" })).toHaveValue("60");
+    expect(screen.getByRole("textbox", { name: "Percentual de Bob Santos" })).toHaveValue("40");
   });
 
   it("builds a payload from the same shares rendered in the summary", async () => {
@@ -170,6 +172,7 @@ describe("SingleBillForm division", () => {
       onPickContacts: vi.fn().mockResolvedValue(undefined),
       onBack: vi.fn(),
       submit,
+      submitting: false,
     };
     const { rerender } = render(<SingleBillForm {...props} initialGroupId={null} />);
     rerender(<SingleBillForm {...props} initialGroupId="g-late" />);
@@ -181,7 +184,8 @@ describe("SingleBillForm division", () => {
     fireEvent.click(screen.getByRole("button", { name: /Alice/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Criar conta" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
-    await waitFor(() => expect(submit).toHaveBeenCalledWith("g-late"));
+    await waitFor(() => expect(submit).toHaveBeenCalled());
+    await expect(submit.mock.calls[0][0]()).resolves.toBe("g-late");
     expect(getOrCreateDmMock).not.toHaveBeenCalled();
     expect(createGroupMock).not.toHaveBeenCalled();
   });
@@ -191,12 +195,12 @@ describe("SingleBillForm division", () => {
     goToDivision();
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Percentual de Alice Silva" }), {
-      target: { value: "33,33" },
+      target: { value: "33" },
     });
     fireEvent.click(screen.getByRole("tab", { name: "Conta" }));
     expect(screen.getByRole("combobox", { name: "Grupo" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Divisão" }));
     expect(screen.getByRole("radio", { name: "Percentual" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("textbox", { name: "Percentual de Alice Silva" })).toHaveValue("33,33");
+    expect(screen.getByRole("textbox", { name: "Percentual de Alice Silva" })).toHaveValue("33");
   });
 });

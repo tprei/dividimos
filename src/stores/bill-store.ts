@@ -64,6 +64,7 @@ export interface ExpenseState {
   billSplits: AmountSplit[];
   /** Wizard "Data" input (YYYY-MM-DD); null until the wizard sets it. */
   occurredOn: string | null;
+  draftKey: string;
 
   setCurrentUser: (user: User) => void;
   setOccurredOn: (date: string) => void;
@@ -510,6 +511,7 @@ export const useBillStore = create<ExpenseState>()(
       splits: [],
       billSplits: [],
       occurredOn: null,
+      draftKey: crypto.randomUUID(),
 
       setCurrentUser: (user) => set({ currentUser: user }),
       setOccurredOn: (date) => set({ occurredOn: date }),
@@ -542,6 +544,7 @@ export const useBillStore = create<ExpenseState>()(
       splits: [],
       billSplits: [],
       occurredOn: null,
+      draftKey: crypto.randomUUID(),
     });
   },
 
@@ -1108,6 +1111,7 @@ export const useBillStore = create<ExpenseState>()(
       splits: [],
       billSplits: [],
       occurredOn: null,
+      draftKey: crypto.randomUUID(),
     });
   },
 
@@ -1171,6 +1175,7 @@ export const useBillStore = create<ExpenseState>()(
       splits: [],
       billSplits: [],
       occurredOn: null,
+      draftKey: crypto.randomUUID(),
     });
   },
 
@@ -1189,6 +1194,7 @@ export const useBillStore = create<ExpenseState>()(
       splits: [],
       billSplits: [],
       occurredOn: null,
+      draftKey: crypto.randomUUID(),
     });
   },
     }),

@@ -1,11 +1,25 @@
 "use client";
 
-import { createElement, useCallback, useState } from "react";
+import { createElement, useCallback, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { buildExpensePayload } from "@/lib/ledger/payload";
 import { createExpense, editExpense } from "@/lib/sync/mutations";
+import { inviteMember } from "@/lib/sync/mutations-group";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
+import type { User } from "@/types";
+
+async function inviteMissingMembers(groupId: string, participants: User[]): Promise<void> {
+  const snapshot = useAppStore.getState().groups[groupId];
+  if (!snapshot) return;
+  const meId = useAppStore.getState().me?.id;
+  const known = new Set(snapshot.members.map((member) => member.userId));
+  for (const participant of participants) {
+    if (participant.id === meId || known.has(participant.id)) continue;
+    await inviteMember(groupId, participant.id);
+  }
+}
 
 export function todayIsoDate(): string {
   const now = new Date();
@@ -43,8 +57,12 @@ export function useWizardSubmit({
 }: WizardSubmitInput) {
   const [submitting, setSubmitting] = useState(false);
 
+  const inFlight = useRef(false);
+
   const submit = useCallback(
-    async (groupId: string | null): Promise<boolean> => {
+    async (resolveGroupId: () => Promise<string | null | undefined>): Promise<boolean> => {
+      if (inFlight.current) return false;
+
       const state = useBillStore.getState();
       const occurredOn = state.occurredOn ?? todayIsoDate();
       const result = buildExpensePayload(state, occurredOn);
@@ -52,13 +70,17 @@ export function useWizardSubmit({
         toast.error(payloadIssueMessage(result.issue));
         return false;
       }
-      if (!editExpenseId && !groupId) {
-        toast.error("Escolha um grupo para dividir a conta.");
-        return false;
-      }
 
+      inFlight.current = true;
       setSubmitting(true);
       try {
+        const groupId = editExpenseId ? null : await resolveGroupId();
+        if (!editExpenseId && groupId === undefined) return false;
+        if (!editExpenseId && !groupId) {
+          toast.error("Escolha um grupo para dividir a conta.");
+          return false;
+        }
+
         const { header, payload } = result.value;
         if (editExpenseId) {
           await editExpense({
@@ -71,7 +93,13 @@ export function useWizardSubmit({
           router.push(`/app/bill/${editExpenseId}`);
           return true;
         }
-        const ack = await createExpense({ groupId: groupId ?? "", header, payload });
+        await inviteMissingMembers(groupId ?? "", state.participants);
+        const ack = await createExpense({
+          groupId: groupId ?? "",
+          clientId: state.draftKey,
+          header,
+          payload,
+        });
         useBillStore.getState().reset();
         router.push(`/app/bill/${ack.expenseId ?? ""}`);
         return true;
@@ -110,6 +138,7 @@ export function useWizardSubmit({
         }
         return false;
       } finally {
+        inFlight.current = false;
         setSubmitting(false);
       }
     },
