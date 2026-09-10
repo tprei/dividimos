@@ -354,16 +354,16 @@ export async function restoreExpense(expenseId: string): Promise<MutationAck> {
 
 export async function recordSettlement(input: {
   groupId: string;
+  operationId: string;
   fromUserId: string;
   toUserId: string;
   amountCents: number;
 }): Promise<MutationAck> {
-  const { groupId, fromUserId, toUserId, amountCents } = input;
+  const { groupId, operationId, fromUserId, toUserId, amountCents } = input;
   const store = useAppStore.getState();
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
-  const operationId = crypto.randomUUID();
   const now = new Date().toISOString();
   const optimistic: Settlement = {
     id: operationId,

@@ -123,6 +123,7 @@ function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
 }
 
 const CLIENT_ID = "11111111-1111-4111-8111-111111111111";
+const SETTLE_ID = "22222222-2222-4222-8222-222222222222";
 
 const HEADER: ExpenseHeader = {
   occurredOn: "2026-01-02",
@@ -830,6 +831,7 @@ describe("mutations", () => {
       });
 
       const ack = await recordSettlement({
+        operationId: SETTLE_ID,
         groupId: "g1",
         fromUserId: ME.id,
         toUserId: USER_2.id,
@@ -882,7 +884,13 @@ describe("mutations", () => {
       vi.mocked(rpc).mockRejectedValueOnce(new Error("not_party"));
 
       await expect(
-        recordSettlement({ groupId: "g1", fromUserId: ME.id, toUserId: USER_2.id, amountCents: 2000 }),
+        recordSettlement({
+          operationId: SETTLE_ID,
+          groupId: "g1",
+          fromUserId: ME.id,
+          toUserId: USER_2.id,
+          amountCents: 2000,
+        }),
       ).rejects.toThrow("not_party");
 
       expect(useAppStore.getState().groups.g1).toBe(prevGroup);
