@@ -279,6 +279,15 @@ AS $$
   )
 $$;
 
+CREATE FUNCTION public.is_member_or_invited(p_group_id uuid, p_user_id uuid) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM group_members
+    WHERE group_id = p_group_id AND user_id = p_user_id AND status IN ('invited', 'accepted')
+  )
+$$;
+
 CREATE FUNCTION public.lock_group(p_group_id uuid) RETURNS void
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -810,7 +819,7 @@ BEGIN
     v_display_name := NULL;
     IF v_participant->>'kind' = 'user' THEN
       v_user_id := (v_participant->>'userId')::uuid;
-      IF NOT is_member(v_group_id, v_user_id)
+      IF NOT is_member_or_invited(v_group_id, v_user_id)
          AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
       END IF;
@@ -830,7 +839,7 @@ BEGIN
       IF v_claimed_by IS NOT NULL THEN
         v_guest_id := NULL;
         v_user_id := v_claimed_by;
-        IF NOT is_member(v_group_id, v_user_id)
+        IF NOT is_member_or_invited(v_group_id, v_user_id)
            AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
           RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
         END IF;
@@ -2463,6 +2472,11 @@ DECLARE
   v_ledger_version bigint;
   v_invited_by uuid;
   v_kind group_kind;
+  v_expense_id uuid;
+  v_title text;
+  v_total_cents integer;
+  v_event_id bigint;
+  v_invalidated boolean := false;
 BEGIN
   v_actor := current_user_id();
 
@@ -2488,6 +2502,35 @@ BEGIN
     END IF;
     DELETE FROM groups WHERE id = p_group_id;
   ELSE
+    FOR v_expense_id, v_title, v_total_cents IN
+      WITH declined_expenses AS (
+        UPDATE expenses e
+        SET status = 'deleted', deleted_at = now(), deleted_by = v_actor
+        WHERE e.group_id = p_group_id
+          AND e.status = 'active'
+          AND EXISTS (
+            SELECT 1 FROM expense_participants p
+            WHERE p.expense_id = e.id AND p.user_id = v_actor
+          )
+        RETURNING e.id, e.current_version_no
+      )
+      SELECT d.id, ev.title, ev.total_cents
+      FROM declined_expenses d
+      JOIN expense_versions ev
+        ON ev.expense_id = d.id AND ev.version_no = d.current_version_no
+    LOOP
+      v_event_id := emit_event(
+        p_group_id, 'expense_deleted', v_actor, v_expense_id,
+        NULL, NULL, jsonb_build_object('title', v_title, 'totalCents', v_total_cents)
+      );
+      v_invalidated := true;
+    END LOOP;
+
+    IF v_invalidated THEN
+      v_ledger_version := recompute_group_balances(p_group_id);
+      PERFORM broadcast_group(p_group_id, v_ledger_version, v_event_id);
+    END IF;
+
     DELETE FROM group_members
     WHERE group_id = p_group_id AND user_id = v_actor;
     IF v_invited_by IS NOT NULL THEN
@@ -2499,7 +2542,7 @@ BEGIN
   RETURN jsonb_build_object(
     'groupId', p_group_id,
     'ledgerVersion', v_ledger_version,
-    'eventId', NULL
+    'eventId', v_event_id
   );
 END;
 $$;

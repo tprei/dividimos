@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { Check, Pencil, Receipt, RotateCcw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { ExpenseHistory } from "./expense-history";
 import { ExpenseItems } from "./expense-items";
@@ -65,6 +65,13 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   }, [expenseId]);
 
   const members = snapshot?.members;
+  const invitedUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const member of members ?? []) {
+      if (member.status === "invited") ids.add(member.userId);
+    }
+    return ids;
+  }, [members]);
   const payloadParticipants = detail?.current.payload.participants;
 
   const nameOf = useCallback(
@@ -237,6 +244,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       <ExpenseParticipantList
         participants={detail.participants}
         meId={me?.id ?? null}
+        invitedUserIds={invitedUserIds}
         onInviteGuest={(participant) => setInviteIndex(participant.participantIndex)}
       />
 

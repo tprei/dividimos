@@ -174,7 +174,9 @@ describe("SingleBillForm division", () => {
     const { rerender } = render(<SingleBillForm {...props} initialGroupId={null} />);
     rerender(<SingleBillForm {...props} initialGroupId="g-late" />);
 
-    expect(screen.getByRole("combobox", { name: "Grupo" })).toHaveValue("g-late");
+    expect(screen.getByRole("combobox", { name: "Grupo" })).toHaveTextContent(
+      "Viagem",
+    );
     goToDivision();
     fireEvent.click(screen.getByRole("button", { name: /Alice/ }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Criar conta" })).toBeEnabled());

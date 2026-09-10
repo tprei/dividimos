@@ -173,20 +173,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const me = useAppStore((s) => s.me);
 
   useEffect(() => {
-    void useAppStore.persist.rehydrate();
-    runBootstrap().catch((err) => {
+    const reportBootstrapError = (err: unknown) => {
       if (err instanceof LedgerError && err.code === "unauthenticated") {
         router.replace("/auth");
         return;
       }
       toast.error(ledgerErrorMessage(err));
-    });
+    };
+
+    void useAppStore.persist.rehydrate();
+    runBootstrap().catch(reportBootstrapError);
 
     const stopRealtime = startRealtime();
-    const stopVisibility = attachVisibilityRefresh();
+    const stopVisibility = attachVisibilityRefresh(reportBootstrapError);
     const stopAuth = attachAuthListener(() => {
       router.replace("/auth");
-    });
+    }, reportBootstrapError);
 
     return () => {
       stopRealtime();

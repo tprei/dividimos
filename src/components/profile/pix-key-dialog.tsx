@@ -12,14 +12,18 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  SelectField,
+  type SelectOption,
+} from "@/components/ui/select-field";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 
-const PIX_TYPE_ENTRIES: [PixKeyType, string][] = [
-  ["email", "E-mail"],
-  ["phone", "Telefone"],
-  ["cpf", "CPF"],
-  ["random", "Chave aleatória"],
+const PIX_TYPE_OPTIONS: SelectOption[] = [
+  { value: "email", label: "E-mail" },
+  { value: "phone", label: "Telefone" },
+  { value: "cpf", label: "CPF" },
+  { value: "random", label: "Chave aleatória" },
 ];
 
 const PIX_KEY_PLACEHOLDERS: Record<PixKeyType, string> = {
@@ -107,23 +111,17 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
         <DialogDescription>Usada para receber pagamentos.</DialogDescription>
         <div className="grid gap-4">
           <div className="grid gap-2">
-            <Label htmlFor="pix-type">Tipo</Label>
-            <select
+            <SelectField
               id="pix-type"
+              label="Tipo"
               value={pixType}
-              onChange={(event) => {
-                setPixType(event.target.value as PixKeyType);
+              options={PIX_TYPE_OPTIONS}
+              onChange={(nextValue) => {
+                setPixType(nextValue as PixKeyType);
                 setPixInput("");
                 setPixError("");
               }}
-              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
-            >
-              {PIX_TYPE_ENTRIES.map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="pix-key">Chave</Label>

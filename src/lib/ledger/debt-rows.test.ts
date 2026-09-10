@@ -127,6 +127,35 @@ describe("debtRowsForGroup", () => {
     ]);
   });
 
+  it("skips invited counterparties while keeping accepted ones", () => {
+    const group = snapshot("g4", {
+      members: [
+        { groupId: "g4", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+        { groupId: "g4", userId: carol.id, status: "invited", invitedBy: me.id, acceptedAt: null, user: carol },
+        { groupId: "g4", userId: dave.id, status: "accepted", invitedBy: null, acceptedAt: null, user: dave },
+      ],
+      balances: [
+        balance("user", me.id, -6000),
+        balance("user", carol.id, 3000),
+        balance("user", dave.id, 3000),
+      ],
+    });
+
+    expect(debtRowsForGroup(group, me.id)).toEqual([
+      {
+        groupId: "g4",
+        groupName: "Group g4",
+        isDm: false,
+        counterpartyKind: "user",
+        counterpartyId: dave.id,
+        counterpartyName: "Dave Lima",
+        counterpartyAvatarUrl: null,
+        amountCents: 3000,
+        direction: "owes",
+      },
+    ]);
+  });
+
   it("names a DM row after the counterparty", () => {
     const group = snapshot("dm-1", {
       group: { kind: "dm", name: "", dmUserA: me.id, dmUserB: carol.id },

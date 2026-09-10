@@ -92,6 +92,7 @@ export function AddParticipantByHandle({
         <Button
           type="button"
           size="icon"
+          aria-label="Buscar handle"
           onClick={search}
           disabled={loading || !handle.trim()}
         >

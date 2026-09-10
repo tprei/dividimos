@@ -50,11 +50,14 @@ vi.mock("@/hooks/use-haptics", () => ({
 }));
 
 const mockRunBootstrap = vi.fn(() => Promise.resolve());
-const mockAttachVisibilityRefresh = vi.fn(() => vi.fn());
+const mockAttachVisibilityRefresh = vi.fn<(onError: (error: unknown) => void) => () => void>(
+  () => vi.fn(),
+);
 
 vi.mock("@/lib/sync/bootstrap", () => ({
   runBootstrap: () => mockRunBootstrap(),
-  attachVisibilityRefresh: () => mockAttachVisibilityRefresh(),
+  attachVisibilityRefresh: (onError: (error: unknown) => void) =>
+    mockAttachVisibilityRefresh(onError),
 }));
 
 const mockStartRealtime = vi.fn(() => vi.fn());
@@ -63,10 +66,13 @@ vi.mock("@/lib/sync/realtime", () => ({
   startRealtime: () => mockStartRealtime(),
 }));
 
-const mockAttachAuthListener = vi.fn<(onSignedOut: () => void) => () => void>(() => vi.fn());
+const mockAttachAuthListener = vi.fn<
+  (onSignedOut: () => void, onError: (error: unknown) => void) => () => void
+>(() => vi.fn());
 
 vi.mock("@/lib/sync/auth", () => ({
-  attachAuthListener: (cb: () => void) => mockAttachAuthListener(cb),
+  attachAuthListener: (cb: () => void, onError: (error: unknown) => void) =>
+    mockAttachAuthListener(cb, onError),
 }));
 
 import { haptics } from "@/hooks/use-haptics";

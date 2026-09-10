@@ -47,6 +47,15 @@ AS $$
   )
 $$;
 
+CREATE FUNCTION public.is_member_or_invited(p_group_id uuid, p_user_id uuid) RETURNS boolean
+  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM group_members
+    WHERE group_id = p_group_id AND user_id = p_user_id AND status IN ('invited', 'accepted')
+  )
+$$;
+
 CREATE FUNCTION public.lock_group(p_group_id uuid) RETURNS void
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -578,7 +587,7 @@ BEGIN
     v_display_name := NULL;
     IF v_participant->>'kind' = 'user' THEN
       v_user_id := (v_participant->>'userId')::uuid;
-      IF NOT is_member(v_group_id, v_user_id)
+      IF NOT is_member_or_invited(v_group_id, v_user_id)
          AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
       END IF;
@@ -598,7 +607,7 @@ BEGIN
       IF v_claimed_by IS NOT NULL THEN
         v_guest_id := NULL;
         v_user_id := v_claimed_by;
-        IF NOT is_member(v_group_id, v_user_id)
+        IF NOT is_member_or_invited(v_group_id, v_user_id)
            AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
           RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
         END IF;

@@ -1,16 +1,20 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { DivisionSlider } from "@/components/bill/division-slider";
 import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { allocateEvenly } from "@/lib/expense-money";
+import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
+import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } from "@/lib/expense-money";
 import { formatBRL } from "@/lib/currency";
 import {
   centsText,
   computeDivision,
+  FULL_PERCENT_BASIS_POINTS,
   percentText,
   type DivisionComputation,
   type ItemDivisionMode,
@@ -68,6 +72,16 @@ function fallbackValues(totalCents: number, count: number): number[] {
   return result.ok ? [...result.value] : [];
 }
 
+function percentSliderValue(text: string): number {
+  const parsed = parseAllocationPercentText(text);
+  return parsed.ok ? parsed.value : 0;
+}
+
+function fixedSliderValue(text: string): number {
+  const parsed = parseExpenseCentsText(text, { format: "plain_decimal", zeroPolicy: "allow" });
+  return parsed.ok ? parsed.value : 0;
+}
+
 export function SingleBillDivision({
   totalCents,
   participants,
@@ -117,11 +131,31 @@ export function SingleBillDivision({
     });
     return values;
   }, [fixedTexts, ids, totalCents]);
+  const percentSliderValues = useMemo(() => {
+    const values: Record<string, number> = {};
+    for (const id of ids) values[id] = percentSliderValue(percentValues[id]);
+    return values;
+  }, [ids, percentValues]);
+  const fixedSliderValues = useMemo(() => {
+    const values: Record<string, number> = {};
+    for (const id of ids) values[id] = fixedSliderValue(fixedValues[id]);
+    return values;
+  }, [fixedValues, ids]);
+  const fixedRemainingById = useMemo(() => {
+    let sum = 0;
+    for (const id of ids) sum += fixedSliderValues[id] ?? 0;
+    const remaining: Record<string, number> = {};
+    for (const id of ids) {
+      remaining[id] = Math.max(0, totalCents - (sum - (fixedSliderValues[id] ?? 0)));
+    }
+    return remaining;
+  }, [fixedSliderValues, ids, totalCents]);
   const division = useMemo(
     () => computeDivision(totalCents, mode, ids, percentValues, fixedValues),
     [fixedValues, ids, mode, percentValues, totalCents],
   );
   const status = statusText(division, mode);
+  const invitedUserIds = useInvitedUserIds();
 
   useEffect(() => {
     onValidityChange(division.ok);
@@ -180,7 +214,7 @@ export function SingleBillDivision({
           {people.map((person) => {
             const shareCents = division.ok ? division.centsById[person.id] : null;
             return (
-              <div key={person.id} className="flex min-h-14 min-w-0 items-center gap-3 px-3 py-2 sm:px-4">
+              <div key={person.id} className="flex min-h-14 min-w-0 flex-wrap items-center gap-3 px-3 py-2 sm:px-4">
                 {person.isGuest ? (
                   <GuestAvatar size="sm" />
                 ) : (
@@ -189,6 +223,11 @@ export function SingleBillDivision({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[15px] font-semibold">{person.name.split(" ")[0]}</p>
                   {person.isGuest && <GuestBadge />}
+                  {!person.isGuest && invitedUserIds.has(person.id) && (
+                    <Badge variant="secondary" className="shrink-0">
+                      Convite pendente
+                    </Badge>
+                  )}
                 </div>
                 {mode === "equal" ? (
                   <Money cents={shareCents ?? 0} className="shrink-0 text-sm" />
@@ -214,6 +253,30 @@ export function SingleBillDivision({
                       <Money cents={shareCents} className="w-[4.5rem] shrink-0 text-right text-sm" />
                     )}
                   </div>
+                )}
+                {mode !== "equal" && (
+                  <DivisionSlider
+                    ariaLabel={
+                      mode === "percent"
+                        ? `Percentual deslizante de ${person.name}`
+                        : `Valor deslizante de ${person.name}`
+                    }
+                    className="basis-full"
+                    min={0}
+                    max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS : fixedRemainingById[person.id] ?? 0}
+                    value={
+                      mode === "percent"
+                        ? percentSliderValues[person.id] ?? 0
+                        : fixedSliderValues[person.id] ?? 0
+                    }
+                    onChange={(next) => {
+                      if (mode === "percent") {
+                        onPercentTextChange(person.id, percentText(next));
+                      } else {
+                        onFixedTextChange(person.id, centsText(next));
+                      }
+                    }}
+                  />
                 )}
               </div>
             );

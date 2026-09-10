@@ -1,13 +1,16 @@
 "use client";
 
+import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
 import { useState } from "react";
+import { DivisionSlider } from "@/components/bill/division-slider";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
-import { allocateEvenly } from "@/lib/expense-money";
+import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
+import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } from "@/lib/expense-money";
 import {
   FULL_PERCENT_BASIS_POINTS,
   centsText,
@@ -85,6 +88,16 @@ function ShareCell({
   return <Money cents={shareCents} className="text-sm" />;
 }
 
+function percentSliderValue(text: string): number {
+  const parsed = parseAllocationPercentText(text);
+  return parsed.ok ? parsed.value : 0;
+}
+
+function fixedSliderValue(text: string): number {
+  const parsed = parseExpenseCentsText(text, { format: "plain_decimal", zeroPolicy: "allow" });
+  return parsed.ok ? parsed.value : 0;
+}
+
 export function ItemDivisionEditor({
   itemId,
   itemName,
@@ -136,6 +149,16 @@ export function ItemDivisionEditor({
     }
   }
   const division = computeDivision(itemCents, mode, selectedIds, percentValues, fixedValues);
+  const percentSliderValues: Record<string, number> = {};
+  for (const id of selectedIds) percentSliderValues[id] = percentSliderValue(percentValues[id] ?? "");
+  const fixedSliderValues: Record<string, number> = {};
+  for (const id of selectedIds) fixedSliderValues[id] = fixedSliderValue(fixedValues[id] ?? "");
+  let fixedSum = 0;
+  for (const id of selectedIds) fixedSum += fixedSliderValues[id] ?? 0;
+  const fixedRemainingById: Record<string, number> = {};
+  for (const id of selectedIds) {
+    fixedRemainingById[id] = Math.max(0, itemCents - (fixedSum - (fixedSliderValues[id] ?? 0)));
+  }
 
   const toggleParticipant = (id: string) =>
     setSelectedIds((ids) =>
@@ -157,6 +180,7 @@ export function ItemDivisionEditor({
   };
 
   const status = divisionStatusText(division, mode);
+  const invitedUserIds = useInvitedUserIds();
 
   return (
     <div className="space-y-3 border-t border-dashed border-border bg-muted/30 px-4 pt-3 pb-4">
@@ -202,7 +226,7 @@ export function ItemDivisionEditor({
         {participants.map((participant) => {
           const selected = selectedIds.includes(participant.id);
           return (
-            <div key={participant.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
+            <div key={participant.id} className="flex min-h-12 min-w-0 flex-wrap items-center gap-3 px-3 py-2">
               <label className="flex min-h-11 min-w-11 shrink-0 items-center justify-center">
                 <input
                   type="checkbox"
@@ -218,6 +242,11 @@ export function ItemDivisionEditor({
                 <UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} size="sm" />
               )}
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">{participant.name}</span>
+              {!participant.isGuest && invitedUserIds.has(participant.id) && (
+                <Badge variant="secondary" className="shrink-0">
+                  Convite pendente
+                </Badge>
+              )}
               <ShareCell
                 shareCents={selected && division.ok ? division.centsById[participant.id] : null}
                 percentInput={mode === "percent" && selected ? percentValues[participant.id] ?? "" : null}
@@ -230,6 +259,30 @@ export function ItemDivisionEditor({
                 onPercentChange={(next) => setPercentTexts((prev) => ({ ...prev, [participant.id]: next }))}
                 onFixedChange={(next) => setFixedTexts((prev) => ({ ...prev, [participant.id]: next }))}
               />
+              {selected && mode !== "equal" && (
+                <DivisionSlider
+                  ariaLabel={
+                    mode === "percent"
+                      ? `Percentual deslizante de ${participant.name} em ${itemName}`
+                      : `Valor deslizante de ${participant.name} em ${itemName}`
+                  }
+                  className="basis-full"
+                  min={0}
+                  max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS : fixedRemainingById[participant.id] ?? 0}
+                  value={
+                    mode === "percent"
+                      ? percentSliderValues[participant.id] ?? 0
+                      : fixedSliderValues[participant.id] ?? 0
+                  }
+                  onChange={(next) => {
+                    if (mode === "percent") {
+                      setPercentTexts((prev) => ({ ...prev, [participant.id]: percentText(next) }));
+                    } else {
+                      setFixedTexts((prev) => ({ ...prev, [participant.id]: centsText(next) }));
+                    }
+                  }}
+                />
+              )}
             </div>
           );
         })}

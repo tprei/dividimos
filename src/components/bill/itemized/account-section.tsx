@@ -5,6 +5,7 @@ import { ChevronDown, Users } from "lucide-react";
 import { GroupSelect } from "@/components/bill/group-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import type { GroupSnapshot } from "@/types/ledger";
 
@@ -68,12 +69,10 @@ export function AccountSection({
           />
         </Field>
         <Field label="Data">
-          <Input
-            type="date"
+          <DateField
+            label="Data"
             value={occurredOn}
-            onChange={(event) => onOccurredOnChange(event.target.value)}
-            aria-label="Data"
-            className="h-11 rounded-xl"
+            onChange={onOccurredOnChange}
           />
         </Field>
       </div>

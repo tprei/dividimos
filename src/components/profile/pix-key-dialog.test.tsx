@@ -52,7 +52,9 @@ describe("PixKeyDialog", () => {
   it("seeds the type from me and starts with an empty key", () => {
     setup({ pixKeyType: "cpf" });
 
-    expect(screen.getByLabelText("Tipo")).toHaveValue("cpf");
+    expect(screen.getByRole("combobox", { name: "Tipo" })).toHaveTextContent(
+      "CPF",
+    );
     expect(screen.getByLabelText("Chave")).toHaveValue("");
     expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
   });
@@ -62,7 +64,8 @@ describe("PixKeyDialog", () => {
     setup();
 
     await user.type(screen.getByLabelText("Chave"), "ana@test.com");
-    await user.selectOptions(screen.getByLabelText("Tipo"), "phone");
+    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
+    await user.click(screen.getByRole("option", { name: "Telefone" }));
 
     expect(screen.getByLabelText("Chave")).toHaveValue("");
   });
@@ -75,7 +78,8 @@ describe("PixKeyDialog", () => {
       pixKeyHint: "(11) 99999-8888",
     });
 
-    await user.selectOptions(screen.getByLabelText("Tipo"), "phone");
+    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
+    await user.click(screen.getByRole("option", { name: "Telefone" }));
     await user.type(screen.getByPlaceholderText("(11) 99999-9999"), "11999998888");
     expect(screen.getByLabelText("Chave")).toHaveValue("(11) 99999-8888");
 
@@ -104,7 +108,8 @@ describe("PixKeyDialog", () => {
       pixKeyHint: "***.***.*89*-01",
     });
 
-    await user.selectOptions(screen.getByLabelText("Tipo"), "cpf");
+    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
+    await user.click(screen.getByRole("option", { name: "CPF" }));
     await user.type(screen.getByPlaceholderText("000.000.000-00"), "12345678901");
     expect(screen.getByLabelText("Chave")).toHaveValue("123.456.789-01");
 
@@ -119,7 +124,8 @@ describe("PixKeyDialog", () => {
     const user = userEvent.setup();
     setup();
 
-    await user.selectOptions(screen.getByLabelText("Tipo"), "random");
+    await user.click(screen.getByRole("combobox", { name: "Tipo" }));
+    await user.click(screen.getByRole("option", { name: "Chave aleatória" }));
     await user.type(
       screen.getByPlaceholderText("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"),
       "ABC-123xyz!",

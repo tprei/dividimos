@@ -64,7 +64,8 @@ describe("ItemizedBillForm Conta section", () => {
     renderForm();
     expect(screen.getByRole("tab", { name: "Conta" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("textbox", { name: "Nome" })).toHaveValue("");
-    expect(screen.getByLabelText("Data")).toHaveValue(todayIsoDate());
+    const [year, month, day] = todayIsoDate().split("-");
+    expect(screen.getByRole("button", { name: "Data" })).toHaveTextContent(`${day}/${month}/${year}`);
     expect(screen.getByRole("combobox", { name: "Grupo" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Participantes/ })).toBeInTheDocument();
   });

@@ -6,6 +6,7 @@ import { SingleBillParticipantsSheet } from "@/components/bill/single-bill/parti
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import type { Guest } from "@/stores/bill-store";
 import type { User } from "@/types";
@@ -88,7 +89,7 @@ export function SingleBillDetails({
           <CurrencyInput
             valueCents={totalCents}
             onChangeCents={onTotalChange}
-            className="h-14 flex-1 text-4xl font-semibold"
+            className="h-14 min-w-0 flex-1 text-4xl font-semibold"
           />
         </label>
         {totalCents <= 0 && <p className="pt-1 text-xs text-destructive">Informe o valor da conta.</p>}
@@ -104,12 +105,10 @@ export function SingleBillDetails({
             />
           </Field>
           <Field label="Data">
-            <Input
-              aria-label="Data"
-              type="date"
+            <DateField
+              label="Data"
               value={occurredOn}
-              onChange={(event) => onOccurredOnChange(event.target.value)}
-              className="h-11 rounded-xl"
+              onChange={onOccurredOnChange}
             />
           </Field>
         </div>

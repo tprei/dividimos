@@ -59,7 +59,10 @@ describe("ScannedItemsReview", () => {
 
     expect(screen.getByRole("heading", { name: "Recibo" })).toBeInTheDocument();
     expect(screen.getByLabelText("Nome do estabelecimento")).toHaveValue("Bar do Zé");
-    expect(screen.getByLabelText("Data do recibo")).toHaveValue(todayIsoDate());
+    const [year, month, day] = todayIsoDate().split("-");
+    expect(screen.getByRole("button", { name: "Data do recibo" })).toHaveTextContent(
+      `${day}/${month}/${year}`,
+    );
     expect(screen.getByDisplayValue("24,00")).toBeInTheDocument();
     expect(screen.getByDisplayValue("45,00")).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*75,90/)).toBeInTheDocument();
@@ -126,7 +129,8 @@ describe("ScannedItemsReview", () => {
     fireEvent.change(nameInput, { target: { value: "Cerveja" } });
     const amountInput = screen.getByDisplayValue("24,00");
     fireEvent.change(amountInput, { target: { value: "30,00" } });
-    fireEvent.change(screen.getByLabelText("Data do recibo"), { target: { value: "2026-09-09" } });
+    await user.click(screen.getByRole("button", { name: "Data do recibo" }));
+    await user.click(screen.getByRole("button", { name: "9 de setembro de 2026" }));
     await user.click(screen.getByLabelText("Selecionar Cerveja"));
     await user.click(screen.getByRole("button", { name: "Atribuir · 1" }));
     await user.click(screen.getByRole("button", { name: "Aplicar em 1 item" }));

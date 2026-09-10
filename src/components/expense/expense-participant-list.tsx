@@ -3,18 +3,21 @@
 import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Participant } from "@/types/ledger";
 
 interface ExpenseParticipantListProps {
   participants: Participant[];
   meId: string | null;
+  invitedUserIds: ReadonlySet<string>;
   onInviteGuest: (participant: Participant) => void;
 }
 
 export function ExpenseParticipantList({
   participants,
   meId,
+  invitedUserIds,
   onInviteGuest,
 }: ExpenseParticipantListProps) {
   return (
@@ -57,6 +60,8 @@ export function ExpenseParticipantList({
           }
 
           const name = participant.user?.name ?? "Alguém";
+          const invited =
+            participant.user !== null && invitedUserIds.has(participant.user.id);
           return (
             <li
               key={participant.participantIndex}
@@ -68,9 +73,16 @@ export function ExpenseParticipantList({
                 size="md"
               />
               <div className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-semibold">
-                  {isMe ? "Você" : name}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[15px] font-semibold">
+                    {isMe ? "Você" : name}
+                  </span>
+                  {invited && (
+                    <Badge variant="secondary" className="shrink-0">
+                      Convite pendente
+                    </Badge>
+                  )}
+                </div>
                 {isMe && participant.paidCents > 0 && (
                   <p className="text-xs text-muted-foreground">
                     Pagou <Money cents={participant.paidCents} />

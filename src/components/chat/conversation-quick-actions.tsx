@@ -17,7 +17,7 @@ export function ConversationQuickActions({
         className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
       >
         <DollarSign className="h-3.5 w-3.5" />
-        Cobrar
+        Nova cobrança
       </button>
       <button
         type="button"
