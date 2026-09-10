@@ -3,6 +3,7 @@
 import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { DivisionSlider } from "@/components/bill/division-slider";
+import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -50,6 +51,7 @@ function ShareCell({
   percentInput,
   fixedInput,
   inputLabel,
+  onFocus,
   onPercentChange,
   onFixedChange,
 }: {
@@ -57,6 +59,7 @@ function ShareCell({
   percentInput: string | null;
   fixedInput: string | null;
   inputLabel: string;
+  onFocus: () => void;
   onPercentChange: (value: string) => void;
   onFixedChange: (value: string) => void;
 }) {
@@ -64,8 +67,9 @@ function ShareCell({
     return (
       <Input
         value={percentInput}
-        onChange={(event) => onPercentChange(event.target.value)}
-        inputMode="decimal"
+        onChange={(event) => onPercentChange(event.target.value.replace(/\D/g, ""))}
+        onFocus={onFocus}
+        inputMode="numeric"
         aria-label={inputLabel}
         className="h-11 w-24 bg-card text-right font-mono"
       />
@@ -76,6 +80,7 @@ function ShareCell({
       <Input
         value={fixedInput}
         onChange={(event) => onFixedChange(event.target.value)}
+        onFocus={onFocus}
         inputMode="decimal"
         aria-label={inputLabel}
         className="h-11 w-24 bg-card text-right font-mono"
@@ -90,7 +95,7 @@ function ShareCell({
 
 function percentSliderValue(text: string): number {
   const parsed = parseAllocationPercentText(text);
-  return parsed.ok ? parsed.value : 0;
+  return parsed.ok ? Math.round(parsed.value / 100) : 0;
 }
 
 function fixedSliderValue(text: string): number {
@@ -115,6 +120,7 @@ export function ItemDivisionEditor({
     return participantIds.filter((id) => saved.has(id));
   });
   const selectedIds = rawSelectedIds.filter((id) => participantIds.includes(id));
+  const [lastFixedId, setLastFixedId] = useState<string | null>(null);
   const [percentTexts, setPercentTexts] = useState<Record<string, string>>(() => {
     const texts: Record<string, string> = {};
     for (const share of value?.shares ?? []) {
@@ -132,10 +138,10 @@ export function ItemDivisionEditor({
 
   const percentValues: Record<string, string> = {};
   if (mode === "percent" && selectedIds.length > 0) {
-    const seeded = allocateEvenly(FULL_PERCENT_BASIS_POINTS, selectedIds.length);
+    const seeded = allocateEvenly(FULL_PERCENT_BASIS_POINTS / 100, selectedIds.length);
     if (seeded.ok) {
       selectedIds.forEach((id, index) => {
-        percentValues[id] = percentTexts[id] ?? percentText(seeded.value[index]);
+        percentValues[id] = percentTexts[id] ?? percentText(seeded.value[index] * 100);
       });
     }
   }
@@ -159,6 +165,12 @@ export function ItemDivisionEditor({
   for (const id of selectedIds) {
     fixedRemainingById[id] = Math.max(0, itemCents - (fixedSum - (fixedSliderValues[id] ?? 0)));
   }
+  const chipTargetId =
+    lastFixedId !== null && selectedIds.includes(lastFixedId)
+      ? lastFixedId
+      : selectedIds.length > 0
+        ? selectedIds[0]
+        : null;
 
   const toggleParticipant = (id: string) =>
     setSelectedIds((ids) =>
@@ -256,6 +268,7 @@ export function ItemDivisionEditor({
                     ? `Percentual de ${participant.name} em ${itemName}`
                     : `Valor fixo de ${participant.name} em ${itemName}`
                 }
+                onFocus={() => setLastFixedId(participant.id)}
                 onPercentChange={(next) => setPercentTexts((prev) => ({ ...prev, [participant.id]: next }))}
                 onFixedChange={(next) => setFixedTexts((prev) => ({ ...prev, [participant.id]: next }))}
               />
@@ -268,7 +281,9 @@ export function ItemDivisionEditor({
                   }
                   className="basis-full"
                   min={0}
-                  max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS : fixedRemainingById[participant.id] ?? 0}
+                  max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS / 100 : fixedRemainingById[participant.id] ?? 0}
+                  step={mode === "percent" ? 1 : "any"}
+                  snap={mode === "percent" ? { step: 5, threshold: 2 } : undefined}
                   value={
                     mode === "percent"
                       ? percentSliderValues[participant.id] ?? 0
@@ -276,12 +291,26 @@ export function ItemDivisionEditor({
                   }
                   onChange={(next) => {
                     if (mode === "percent") {
-                      setPercentTexts((prev) => ({ ...prev, [participant.id]: percentText(next) }));
+                      setPercentTexts((prev) => ({ ...prev, [participant.id]: percentText(next * 100) }));
                     } else {
+                      setLastFixedId(participant.id);
                       setFixedTexts((prev) => ({ ...prev, [participant.id]: centsText(next) }));
                     }
                   }}
                 />
+              )}
+              {mode === "fixed" && selected && participant.id === chipTargetId && (
+                <div className="basis-full">
+                  <FixedAmountHelpers
+                    totalCents={itemCents}
+                    remainingCents={Math.max(0, itemCents - fixedSum)}
+                    onAdd={(deltaCents) => {
+                      if (chipTargetId === null) return;
+                      const current = fixedSliderValues[chipTargetId] ?? 0;
+                      setFixedTexts((prev) => ({ ...prev, [chipTargetId]: centsText(current + deltaCents) }));
+                    }}
+                  />
+                </div>
               )}
             </div>
           );
