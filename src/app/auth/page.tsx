@@ -39,7 +39,11 @@ function AuthPageContent() {
       try {
         const success = await nativeGoogleSignIn(supabase);
         if (success) {
-          router.push(next);
+          // Go through /auth/continue so a first native login makes the same
+          // onboarded decision the web callback makes: a new user completes
+          // onboarding before any invite or claim mutation runs, and returns
+          // to this exact destination afterwards.
+          router.replace(`/auth/continue?next=${encodeURIComponent(next)}`);
           router.refresh();
         } else {
           setIsGoogleLoading(false);
