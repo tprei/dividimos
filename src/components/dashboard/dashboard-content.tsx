@@ -235,6 +235,7 @@ export function DashboardContent() {
         <CounterpartyDialog
           row={selectedDebt}
           meId={me.id}
+          canQuickCharge={Boolean(me.pixKeyHint)}
           open
           onClose={() => setSelectedDebt(null)}
           onPay={openPay}

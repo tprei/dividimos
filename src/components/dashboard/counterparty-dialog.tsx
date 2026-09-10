@@ -23,6 +23,7 @@ export interface CounterpartyDialogProps {
   onCollect: (row: DebtRow) => void;
   onNudge: (row: DebtRow) => void;
   onQuickCharge: () => void;
+  canQuickCharge: boolean;
 }
 
 export function CounterpartyDialog({
@@ -34,6 +35,7 @@ export function CounterpartyDialog({
   onCollect,
   onNudge,
   onQuickCharge,
+  canQuickCharge,
 }: CounterpartyDialogProps) {
   const group = row.isDm ? "Conversa direta" : row.groupName;
   const direction = row.direction === "owes" ? "você deve" : "te deve";
@@ -79,14 +81,16 @@ export function CounterpartyDialog({
                       <Bell className="size-4" aria-hidden="true" />
                       Lembrar
                     </Button>
-                    <Button
-                      variant="ghost"
-                      className="h-11 w-full"
-                      type="button"
-                      onClick={onQuickCharge}
-                    >
-                      Cobrar valor
-                    </Button>
+                    {canQuickCharge && (
+                      <Button
+                        variant="ghost"
+                        className="h-11 w-full"
+                        type="button"
+                        onClick={onQuickCharge}
+                      >
+                        Cobrar valor
+                      </Button>
+                    )}
                   </>
                 )}
                 <Link

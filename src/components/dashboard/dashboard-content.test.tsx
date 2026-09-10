@@ -75,6 +75,7 @@ const me: Me = {
 
 const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
 const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null };
+const meWithPixKey: Me = { ...me, pixKeyHint: "a****@banco.com" };
 type SnapshotOverrides = Omit<Partial<GroupSnapshot>, "group"> & {
   group?: Partial<GroupSnapshot["group"]>;
 };
@@ -108,9 +109,9 @@ function snapshot(overrides: SnapshotOverrides = {}): GroupSnapshot {
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
 }
 
-function seedStore(snapshots: GroupSnapshot[]) {
+function seedStore(snapshots: GroupSnapshot[], user: Me = me) {
   const groups = Object.fromEntries(snapshots.map((item) => [item.group.id, item]));
-  useAppStore.setState({ hydrated: true, me, groups, groupOrder: snapshots.map((item) => item.group.id) });
+  useAppStore.setState({ hydrated: true, me: user, groups, groupOrder: snapshots.map((item) => item.group.id) });
 }
 
 describe("DashboardContent", () => {
@@ -220,7 +221,7 @@ describe("DashboardContent", () => {
           { kind: "user", participantId: carol.id, netCents: -5000 },
         ],
       }),
-    ]);
+    ], meWithPixKey);
     render(<DashboardContent />);
 
     fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
@@ -233,6 +234,23 @@ describe("DashboardContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cobrar valor" }));
     await waitFor(() => expect(quickProps.current?.open).toBe(true));
+  });
+
+  it("hides Cobrar valor without a Pix key", () => {
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lembrar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cobrar valor" })).not.toBeInTheDocument();
   });
 
   it("keeps guest rows free of Pix and nudge actions", () => {

@@ -31,7 +31,6 @@ export function QuickChargeModal({
   onClose,
   onChargeConfirmed,
 }: QuickChargeModalProps) {
-  useBackHandler(open, onClose);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,6 +47,7 @@ export function QuickChargeModal({
   const [isConfirming, setIsConfirming] = useState(false);
   const [chargeId, setChargeId] = useState<string | null>(null);
   const [confirmedAmount, setConfirmedAmount] = useState(0);
+  useBackHandler(open && !isConfirming && phase !== "success", onClose);
 
   useEffect(() => {
     if (open) {
