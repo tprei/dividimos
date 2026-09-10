@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ActivityContent } from "./activity-content";
-import { markActivityViewed } from "@/lib/activity-badge";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { loadActivity } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
@@ -19,9 +18,6 @@ vi.mock("@/lib/sync/mutations", () => ({
   }),
 }));
 
-vi.mock("@/lib/activity-badge", () => ({
-  markActivityViewed: vi.fn(),
-}));
 vi.mock("next/link", () => ({
   default: ({
     children,
@@ -225,8 +221,57 @@ describe("ActivityContent", () => {
       activity: {
         items: [recordedSettlementEvent, dmEvent, expenseCreatedEvent],
         oldestId: 101,
+        complete: false,
+        read: { status: "ready" },
       },
     });
+  });
+
+  it("shows a retry instead of an empty history when the first read failed", () => {
+    useAppStore.setState({
+      activity: {
+        items: [],
+        oldestId: null,
+        complete: false,
+        read: { status: "error", code: "network" },
+      },
+    });
+
+    render(<ActivityContent />);
+
+    expect(screen.queryByText("Nenhuma atividade ainda")).toBeNull();
+    expect(screen.getByRole("button", { name: /Tentar novamente/ })).toBeInTheDocument();
+  });
+
+  it("does not record a view when the read failed", () => {
+    useAppStore.setState({
+      activityViewedAt: {},
+      activity: {
+        items: [],
+        oldestId: null,
+        complete: false,
+        read: { status: "error", code: "network" },
+      },
+    });
+
+    render(<ActivityContent />);
+
+    expect(useAppStore.getState().activityViewedAt[me.id]).toBeUndefined();
+  });
+
+  it("hides load-more once the server reported no older rows", () => {
+    useAppStore.setState({
+      activity: {
+        items: [recordedSettlementEvent],
+        oldestId: 101,
+        complete: true,
+        read: { status: "ready" },
+      },
+    });
+
+    render(<ActivityContent />);
+
+    expect(screen.queryByRole("button", { name: "Carregar mais" })).toBeNull();
   });
 
   it("renders activity feed with sentences and group labels (DM displays counterparty name)", () => {
@@ -258,11 +303,13 @@ describe("ActivityContent", () => {
     expect(expense2Link).toHaveAttribute("href", "/app/bill/exp-456");
   });
 
-  it("calls loadActivity and markActivityViewed on mount", () => {
+  it("loads activity on mount and records the view once the read succeeded", () => {
     render(<ActivityContent />);
 
-    expect(markActivityViewed).toHaveBeenCalled();
     expect(loadActivity).toHaveBeenCalledWith();
+    // The seeded slice is already "ready", so the newest snapshot activity is
+    // recorded as seen for this account.
+    expect(useAppStore.getState().activityViewedAt[me.id]).toBeDefined();
   });
 
   it("calls loadActivity(oldestId) when 'Carregar mais' is clicked", async () => {
@@ -312,6 +359,8 @@ describe("ActivityContent", () => {
       activity: {
         items: [recordedSettlementEvent, voidedEvent],
         oldestId: 101,
+        complete: false,
+        read: { status: "ready" },
       },
     });
 
@@ -325,6 +374,8 @@ describe("ActivityContent", () => {
       activity: {
         items: [],
         oldestId: null,
+        complete: false,
+        read: { status: "ready" },
       },
     });
 
