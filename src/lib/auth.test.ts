@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { AuthSessionMissingError } from "@supabase/supabase-js";
 import { createMockSupabase, type MockSupabase } from "@/test/mock-supabase";
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -6,7 +7,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { createClient } from "@/lib/supabase/server";
-import { getAuthUser } from "@/lib/auth";
+import { resolveAuthProfile } from "@/lib/auth";
 
 function validMe(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -40,11 +41,62 @@ beforeEach(() => {
   vi.mocked(createClient).mockResolvedValue(mock.client);
 });
 
-describe("getAuthUser", () => {
-  it("returns null when there is no authenticated user and never calls the profile RPC", async () => {
-    const result = await getAuthUser();
+describe("resolveAuthProfile", () => {
+  it("reports read_failed when the server client cannot be constructed", async () => {
+    vi.mocked(createClient).mockRejectedValueOnce(new Error("cookie access failed"));
 
-    expect(result).toBeNull();
+    const result = await resolveAuthProfile();
+
+    expect(result).toEqual({ kind: "read_failed" });
+  });
+
+  it("reports read_failed when getClaims throws", async () => {
+    mock.setClaimsThrow(new Error("jwt decode failure"));
+
+    const result = await resolveAuthProfile();
+
+    expect(result).toEqual({ kind: "read_failed" });
+  });
+
+  it("reports read_failed when claims lack a string subject", async () => {
+    mock.setClaimsData({ claims: { sub: null } });
+
+    const result = await resolveAuthProfile();
+
+    expect(result).toEqual({ kind: "read_failed" });
+  });
+
+  it("reports read_failed when the profile RPC throws", async () => {
+    mock.setUser({ id: "user-a" });
+    mock.setRpcThrow("get_my_profile", new Error("network failure"));
+
+    const result = await resolveAuthProfile();
+
+    expect(result).toEqual({ kind: "read_failed" });
+  });
+
+  it("reports unauthenticated when there are no claims and never calls the profile RPC", async () => {
+    const result = await resolveAuthProfile();
+
+    expect(result).toEqual({ kind: "unauthenticated" });
+    expect(mock.findCalls("rpc:get_my_profile", "rpc")).toHaveLength(0);
+  });
+
+  it("reports unauthenticated when the SDK reports the session is explicitly missing", async () => {
+    mock.setClaimsError(new AuthSessionMissingError());
+
+    const result = await resolveAuthProfile();
+
+    expect(result).toEqual({ kind: "unauthenticated" });
+    expect(mock.findCalls("rpc:get_my_profile", "rpc")).toHaveLength(0);
+  });
+
+  it("reports read_failed for an unknown claims error so callers can retry", async () => {
+    mock.setClaimsError(new Error("network outage"));
+
+    const result = await resolveAuthProfile();
+
+    expect(result).toEqual({ kind: "read_failed" });
     expect(mock.findCalls("rpc:get_my_profile", "rpc")).toHaveLength(0);
   });
 
@@ -52,61 +104,67 @@ describe("getAuthUser", () => {
     mock.setUser({ id: "user-a" });
     mock.onRpc("get_my_profile", { data: validMe() });
 
-    const result = await getAuthUser();
+    const result = await resolveAuthProfile();
 
     expect(result).toEqual({
-      id: "user-a",
-      handle: "alice",
-      name: "Alice Test",
-      avatarUrl: "https://cdn.example.com/alice.png",
-      email: "alice@example.com",
-      pixKeyType: "cpf",
-      pixKeyHint: "***.456.789-**",
-      onboarded: true,
-      notificationPreferences: { expenses: true, settlements: false },
+      kind: "ok",
+      me: {
+        id: "user-a",
+        handle: "alice",
+        name: "Alice Test",
+        avatarUrl: "https://cdn.example.com/alice.png",
+        email: "alice@example.com",
+        pixKeyType: "cpf",
+        pixKeyHint: "***.456.789-**",
+        onboarded: true,
+        notificationPreferences: { expenses: true, settlements: false },
+      },
     });
   });
 
-  it("returns Me when nullable fields are null", async () => {
+  it("returns ok when nullable fields are null", async () => {
     mock.setUser({ id: "user-a" });
     mock.onRpc("get_my_profile", {
       data: validMe({ avatarUrl: null, pixKeyType: null, pixKeyHint: null }),
     });
 
-    const result = await getAuthUser();
+    const result = await resolveAuthProfile();
 
     expect(result).toEqual({
-      id: "user-a",
-      handle: "alice",
-      name: "Alice Test",
-      avatarUrl: null,
-      email: "alice@example.com",
-      pixKeyType: null,
-      pixKeyHint: null,
-      onboarded: true,
-      notificationPreferences: { expenses: true, settlements: false },
+      kind: "ok",
+      me: {
+        id: "user-a",
+        handle: "alice",
+        name: "Alice Test",
+        avatarUrl: null,
+        email: "alice@example.com",
+        pixKeyType: null,
+        pixKeyHint: null,
+        onboarded: true,
+        notificationPreferences: { expenses: true, settlements: false },
+      },
     });
   });
 
-  it("returns null when the profile RPC errors", async () => {
+  it("reports read_failed when the profile RPC errors", async () => {
     mock.setUser({ id: "user-a" });
     mock.onRpc("get_my_profile", {
       data: validMe(),
       error: { code: "PGRST116", message: "rpc failed" },
     });
 
-    const result = await getAuthUser();
+    const result = await resolveAuthProfile();
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ kind: "read_failed" });
   });
 
-  it("returns null when the RPC returns null data", async () => {
+  it("reports profile_missing when the RPC succeeds with a null profile", async () => {
     mock.setUser({ id: "user-a" });
     mock.onRpc("get_my_profile", { data: null });
 
-    const result = await getAuthUser();
+    const result = await resolveAuthProfile();
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ kind: "profile_missing" });
   });
 
   const malformedRows: { label: string; row: Record<string, unknown> }[] = [
@@ -120,31 +178,31 @@ describe("getAuthUser", () => {
   ];
 
   it.each(malformedRows)(
-    "returns null when the RPC payload is malformed ($label)",
+    "reports read_failed when the RPC payload is malformed ($label)",
     async ({ row }) => {
       mock.setUser({ id: "user-a" });
       mock.onRpc("get_my_profile", { data: row });
 
-      const result = await getAuthUser();
+      const result = await resolveAuthProfile();
 
-      expect(result).toBeNull();
+      expect(result).toEqual({ kind: "read_failed" });
     },
   );
 
-  it("rejects a profile whose id belongs to a different account (account-isolation guarantee)", async () => {
+  it("reports read_failed for a profile whose id belongs to a different account (account-isolation guarantee)", async () => {
     mock.setUser({ id: "user-a" });
     mock.onRpc("get_my_profile", { data: validMe({ id: "user-b" }) });
 
-    const result = await getAuthUser();
+    const result = await resolveAuthProfile();
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ kind: "read_failed" });
   });
 
   it("never reads the users table directly", async () => {
     mock.setUser({ id: "user-a" });
     mock.onRpc("get_my_profile", { data: validMe() });
 
-    await getAuthUser();
+    await resolveAuthProfile();
 
     expect(mock.findCalls("users", "from")).toHaveLength(0);
   });

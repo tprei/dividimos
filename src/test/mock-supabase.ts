@@ -30,6 +30,11 @@ export function createMockSupabase() {
   const _queues = new Map<string, MockResponse[]>();
   const _calls: ChainCall[] = [];
   let _user: Record<string, unknown> | null = null;
+  let _claimsError: unknown = null;
+  let _claimsThrow: unknown = null;
+  let _claimsData: Record<string, unknown> | null = null;
+  let _claimsDataSet = false;
+  let _rpcThrow: { name: string; error: unknown } | null = null;
 
   /** Queue a response for the next awaited query on `table`. */
   function onTable(table: string, response: Partial<MockResponse> = {}) {
@@ -54,10 +59,36 @@ export function createMockSupabase() {
     _user = user;
   }
 
+  /** Force `auth.getClaims()` to fail (e.g. network errors) until reset. */
+  function setClaimsError(error: unknown) {
+    _claimsError = error;
+  }
+
+  /** Force `auth.getClaims()` to reject until reset. */
+  function setClaimsThrow(error: unknown) {
+    _claimsThrow = error;
+  }
+
+  /** Force raw claims data (e.g. a malformed subject) for `auth.getClaims()`. */
+  function setClaimsData(data: Record<string, unknown> | null) {
+    _claimsData = data;
+    _claimsDataSet = true;
+  }
+
+  /** Force the next `rpc(name)` call to reject instead of resolving. */
+  function setRpcThrow(name: string, error: unknown) {
+    _rpcThrow = { name, error };
+  }
+
   function reset() {
     _queues.clear();
     _calls.length = 0;
     _user = null;
+    _claimsError = null;
+    _claimsThrow = null;
+    _claimsData = null;
+    _rpcThrow = null;
+    _claimsDataSet = false;
   }
 
   /**
@@ -109,18 +140,41 @@ export function createMockSupabase() {
     rpc: (name: string, args?: unknown) => {
       const key = `rpc:${name}`;
       _calls.push({ table: key, method: "rpc", args: [name, args] });
+      if (_rpcThrow !== null && _rpcThrow.name === name) {
+        const { error } = _rpcThrow;
+        _rpcThrow = null;
+        return Promise.reject(error);
+      }
       return makeChain(key);
     },
     auth: {
       getUser: async () => ({ data: { user: _user }, error: null }),
-      getClaims: async () =>
-        _user
-          ? { data: { claims: { ..._user, sub: _user.id } }, error: null }
-          : { data: null, error: null },
+      getClaims: async () => {
+        if (_claimsThrow !== null) throw _claimsThrow;
+        if (_claimsDataSet || _user === null) {
+          return { data: _claimsData, error: _claimsError };
+        }
+        return {
+          data: { claims: { ..._user, sub: _user.id } },
+          error: _claimsError,
+        };
+      },
     },
   } as unknown as SupabaseClient;
 
-  return { client, onTable, onRpc, findCalls, setUser, reset, calls: _calls };
+  return {
+    client,
+    onTable,
+    onRpc,
+    findCalls,
+    setUser,
+    setClaimsError,
+    setClaimsThrow,
+    setClaimsData,
+    setRpcThrow,
+    reset,
+    calls: _calls,
+  };
 }
 
 export type MockSupabase = ReturnType<typeof createMockSupabase>;
