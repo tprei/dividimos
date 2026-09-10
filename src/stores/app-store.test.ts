@@ -552,22 +552,48 @@ describe("vendor charges", () => {
     confirmedAt: "2026-01-01T11:05:00Z",
   };
 
-  it("applies a list of vendor charges", () => {
-    useAppStore.getState().applyVendorCharges([charge1, charge2]);
+  const chargePage = (charges: VendorCharge[], overrides = {}) => ({
+    charges,
+    nextCursor: null,
+    complete: true,
+    total: charges.length,
+    receivedCount: charges.filter((c) => c.status === "received").length,
+    receivedTodayCents: 0,
+    ...overrides,
+  });
+
+  it("seeds charges from a head page and appends an older one", () => {
+    useAppStore.getState().applyChargePage(chargePage([charge1]), true);
+    expect(useAppStore.getState().vendorCharges).toEqual([charge1]);
+
+    useAppStore.getState().applyChargePage(chargePage([charge2]), false);
     expect(useAppStore.getState().vendorCharges).toEqual([charge1, charge2]);
 
-    useAppStore.getState().applyVendorCharges([charge1]);
+    // A head load replaces the list rather than appending to it again.
+    useAppStore.getState().applyChargePage(chargePage([charge1]), true);
     expect(useAppStore.getState().vendorCharges).toEqual([charge1]);
   });
 
+  it("takes totals and today's sum from the server envelope", () => {
+    useAppStore
+      .getState()
+      .applyChargePage(chargePage([charge1], { total: 87, receivedCount: 40, receivedTodayCents: 5_000_000_000 }), true);
+
+    const summary = useAppStore.getState().chargeSummary;
+    expect(summary.total).toBe(87);
+    expect(summary.receivedCount).toBe(40);
+    // Beyond int4: a day's takings must survive intact.
+    expect(summary.receivedTodayCents).toBe(5_000_000_000);
+  });
+
   it("upserts a new vendor charge at the beginning", () => {
-    useAppStore.getState().applyVendorCharges([charge1]);
+    useAppStore.getState().applyChargePage(chargePage([charge1]), true);
     useAppStore.getState().upsertVendorCharge(charge2);
     expect(useAppStore.getState().vendorCharges).toEqual([charge2, charge1]);
   });
 
   it("updates an existing vendor charge in place", () => {
-    useAppStore.getState().applyVendorCharges([charge1, charge2]);
+    useAppStore.getState().applyChargePage(chargePage([charge1, charge2]), true);
     const updatedCharge1: VendorCharge = {
       ...charge1,
       status: "received",

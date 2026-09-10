@@ -4,7 +4,7 @@ import {
   decodeExpensePage,
   decodeGroupEvents,
   decodeGroupSnapshot,
-  decodeVendorCharges,
+  decodeChargePage,
 } from "@/lib/ledger/decode";
 import {
   CHARGES_READ_KEY,
@@ -298,12 +298,21 @@ export async function loadConversation(
   );
 }
 
-export async function loadVendorCharges(limit = 50): Promise<void> {
+export async function loadVendorCharges(cursor?: PageCursor): Promise<void> {
   const generation = beginRead(CHARGES_READ_KEY);
   await trackedRead(
     CHARGES_READ_KEY,
     generation,
-    () => rpc("get_vendor_charges", { p_limit: limit }, decodeVendorCharges),
-    (charges) => useAppStore.getState().applyVendorCharges(charges),
+    () =>
+      rpc(
+        "get_vendor_charges",
+        {
+          p_before_created_at: cursor?.createdAt ?? null,
+          p_before_id: cursor?.id ?? null,
+          p_limit: 50,
+        },
+        decodeChargePage,
+      ),
+    (page) => useAppStore.getState().applyChargePage(page, cursor === undefined),
   );
 }

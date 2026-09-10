@@ -3,14 +3,15 @@
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Clock, Zap } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatBRL } from "@/lib/currency";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { loadVendorCharges } from "@/lib/sync/refresh";
+import toast from "react-hot-toast";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { Button } from "@/components/ui/button";
 import { CHARGES_READ_KEY, IDLE_READ, useAppStore } from "@/stores/app-store";
-import type { VendorCharge } from "@/types/ledger";
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -34,27 +35,11 @@ function formatRelativeTime(dateStr: string): string {
   });
 }
 
-function todayTotal(charges: readonly VendorCharge[]): number {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  return charges
-    .filter(
-      (c) =>
-        c.status === "received" &&
-        new Date(c.createdAt).getTime() >= todayStart.getTime(),
-    )
-    .reduce((sum, c) => sum + c.amountCents, 0);
-}
-
-interface ChargeHistoryListProps {
-  initialCharges?: VendorCharge[];
-}
-
-export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {}) {
-  const storeCharges = useAppStore((state) => state.vendorCharges);
-  const charges = initialCharges ?? storeCharges;
-
+export function ChargeHistoryList() {
+  const charges = useAppStore((state) => state.vendorCharges);
+  const summary = useAppStore((state) => state.chargeSummary);
   const read = useAppStore((state) => state.reads[CHARGES_READ_KEY] ?? IDLE_READ);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(() => {
     void loadVendorCharges().catch(() => {
@@ -66,10 +51,24 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
     load();
   }, [load]);
 
-  const total = todayTotal(charges);
-  const receivedCount = charges.filter(
-    (c) => c.status === "received",
-  ).length;
+  const handleLoadMore = useCallback(async () => {
+    const cursor = useAppStore.getState().chargeSummary.cursor;
+    if (cursor === null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      await loadVendorCharges(cursor);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore]);
+
+  // Totals come from the server: summing the loaded page would undercount and
+  // a local midnight would use the device's timezone instead of Sao Paulo's.
+  const total = summary.receivedTodayCents ?? 0;
+  const receivedCount = summary.receivedCount ?? 0;
+  const chargeCount = summary.total ?? charges.length;
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
@@ -120,7 +119,7 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
         <>
           <p className="mt-4 text-sm text-muted-foreground">
             {receivedCount} recebida{receivedCount !== 1 ? "s" : ""} de{" "}
-            {charges.length} cobrança{charges.length !== 1 ? "s" : ""}
+            {chargeCount} cobrança{chargeCount !== 1 ? "s" : ""}
           </p>
           <motion.div
             variants={staggerContainer}
@@ -174,6 +173,17 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
               </motion.div>
             ))}
           </motion.div>
+          {!summary.complete && summary.cursor !== null && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="mt-3 w-full"
+            >
+              {loadingMore ? "Carregando..." : "Carregar mais"}
+            </Button>
+          )}
         </>
       )}
     </div>
