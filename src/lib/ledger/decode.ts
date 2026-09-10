@@ -516,6 +516,7 @@ const GROUP_SNAPSHOT_KEYS = [
   "unreadCount",
   "lastMessage",
   "lastActivityAt",
+  "expenseCount",
 ] as const;
 
 
@@ -551,6 +552,8 @@ export function decodeGroupSnapshot(
   if (!lastEventId.ok) return lastEventId;
   const unreadCount = int(raw.unreadCount, [...path, "unreadCount"]);
   if (!unreadCount.ok) return unreadCount;
+  const expenseCount = int(raw.expenseCount, [...path, "expenseCount"]);
+  if (!expenseCount.ok) return expenseCount;
 
   let lastMessage: ChatLastMessage | null = null;
   if (raw.lastMessage !== null) {
@@ -573,6 +576,7 @@ export function decodeGroupSnapshot(
     unreadCount: unreadCount.value,
     lastMessage,
     lastActivityAt: lastActivityAt.value,
+    expenseCount: expenseCount.value,
   });
 }
 

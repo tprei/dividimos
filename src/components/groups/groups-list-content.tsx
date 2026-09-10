@@ -1,112 +1,137 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Check, Plus, Users, X } from "lucide-react";
-import toast from "react-hot-toast";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ChevronRight, Plus, Users, X } from "lucide-react";
+import toast from "react-hot-toast";
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { UserAvatar } from "@/components/shared/user-avatar";
+import { AvatarStack } from "@/components/shared/avatar-stack";
 import { EmptyState } from "@/components/shared/empty-state";
+import { InvitationCard } from "@/components/groups/invitation-card";
+import { Money } from "@/components/shared/money";
+import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
-import { staggerContainer, staggerItem } from "@/lib/animations";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBRL } from "@/lib/currency";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
-import {
-  acceptInvitation,
-  createGroup,
-  declineInvitation,
-} from "@/lib/sync/mutations-group";
+import { createGroup } from "@/lib/sync/mutations-group";
+import { useInvitationActions } from "@/hooks/use-invitation-actions";
+import { selectPendingInvitations } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
-import type { GroupSnapshot, GroupMember } from "@/types/ledger";
+import type { GroupSnapshot } from "@/types/ledger";
 
-function isInvitedHere(snapshot: GroupSnapshot, meId: string | null): boolean {
-  if (!meId) return false;
-  return snapshot.members.some(
-    (m) => m.userId === meId && m.status === "invited",
-  );
-}
-
-function invitedByMember(
-  snapshot: GroupSnapshot,
-  meId: string | null,
-): GroupMember | null {
-  if (!meId) return null;
-  return snapshot.members.find((m) => m.userId === meId) ?? null;
-}
-
-function netInGroup(snapshot: GroupSnapshot, meId: string | null): number {
-  if (!meId) return 0;
+function netInGroup(snapshot: GroupSnapshot, meId: string): number {
   const row = snapshot.balances.find(
-    (b) => b.kind === "user" && b.participantId === meId,
+    (balance) => balance.kind === "user" && balance.participantId === meId,
   );
   return row?.netCents ?? 0;
 }
 
+function GroupRow({
+  snapshot,
+  meId,
+}: {
+  snapshot: GroupSnapshot;
+  meId: string;
+}) {
+  const accepted = snapshot.members.filter((member) => member.status === "accepted");
+  const netCents = netInGroup(snapshot, meId);
+  const balanceLabel = netCents < 0 ? "A pagar" : "A receber";
+  const balanceDescription =
+    netCents === 0 ? "Em dia" : `${balanceLabel} ${formatBRL(Math.abs(netCents))}`;
+  const people = accepted.map((member) => ({
+    id: member.userId,
+    name: member.user.name,
+    avatarUrl: member.user.avatarUrl,
+  }));
+
+  return (
+    <Link
+      href={`/app/groups/${snapshot.group.id}`}
+      aria-label={`${snapshot.group.name}, ${accepted.length} membros, ${snapshot.expenseCount} contas, ${balanceDescription}`}
+      className="flex min-h-16 w-full items-center gap-3 px-4 py-2"
+    >
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Users className="size-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold">{snapshot.group.name}</p>
+        <div className="mt-1 flex min-w-0 items-center gap-2">
+          <div className="shrink-0">
+            <AvatarStack people={people} />
+          </div>
+          <span className="min-w-0 truncate text-xs text-muted-foreground">
+            {accepted.length} membros · {snapshot.expenseCount} contas
+          </span>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end">
+        {netCents !== 0 && (
+          <Money
+            cents={netCents}
+            signed
+            className="text-sm"
+            label={`${balanceLabel} ${formatBRL(Math.abs(netCents))}`}
+          />
+        )}
+        <span className="text-[11px] text-muted-foreground">
+          {netCents === 0 ? "Em dia" : balanceLabel}
+        </span>
+      </div>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </Link>
+  );
+}
+
 export function GroupsListContent() {
   const router = useRouter();
-  const { hydrated, groupOrder, groups } = useAppStore(
-    useShallow((s) => ({
-      hydrated: s.hydrated,
-      groupOrder: s.groupOrder,
-      groups: s.groups,
+  const { hydrated, groupOrder, groups, meId } = useAppStore(
+    useShallow((state) => ({
+      hydrated: state.hydrated,
+      groupOrder: state.groupOrder,
+      groups: state.groups,
+      meId: state.me?.id ?? null,
     })),
   );
-  const meId = useAppStore((s) => s.me?.id ?? null);
+  const invitations = useAppStore(selectPendingInvitations);
+  const { accept, decline, pendingGroupId } = useInvitationActions();
   const [showCreate, setShowCreate] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const { joined, invites } = useMemo(() => {
-    const joinedRows: GroupSnapshot[] = [];
-    const inviteRows: GroupSnapshot[] = [];
-    for (const id of groupOrder) {
-      const snapshot = groups[id];
+  const joined = useMemo(() => {
+    const snapshots: GroupSnapshot[] = [];
+    if (meId === null) return snapshots;
+    for (const groupId of groupOrder) {
+      const snapshot = groups[groupId];
       if (!snapshot || snapshot.group.kind !== "group") continue;
-      if (isInvitedHere(snapshot, meId)) inviteRows.push(snapshot);
-      else joinedRows.push(snapshot);
+      const member = snapshot.members.find((item) => item.userId === meId);
+      if (member?.status === "accepted") snapshots.push(snapshot);
     }
-    return { joined: joinedRows, invites: inviteRows };
+    return snapshots;
   }, [groupOrder, groups, meId]);
 
-  const handleCreateGroup = async () => {
+  const handleCreateGroup = async (): Promise<void> => {
     const name = newGroupName.trim();
     if (!name || creating) return;
     setCreating(true);
     try {
       const ack = await createGroup(name, []);
       router.push(`/app/groups/${ack.groupId}`);
-    } catch (e) {
-      toast.error(ledgerErrorMessage(e));
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
     } finally {
       setCreating(false);
-    }
-  };
-
-  const handleAcceptInvite = async (groupId: string) => {
-    try {
-      await acceptInvitation(groupId);
-    } catch (e) {
-      toast.error(ledgerErrorMessage(e));
-    }
-  };
-
-  const handleDeclineInvite = async (groupId: string) => {
-    try {
-      await declineInvitation(groupId);
-    } catch (e) {
-      toast.error(ledgerErrorMessage(e));
     }
   };
 
   if (!hydrated) {
     return (
       <div className="mx-auto max-w-lg space-y-3 px-4 py-6">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="rounded-2xl border bg-card">
+        {[1, 2, 3, 4].map((item) => (
+          <div key={item} className="rounded-2xl border bg-card">
             <GroupRowSkeleton />
           </div>
         ))}
@@ -115,183 +140,86 @@ export function GroupsListContent() {
   }
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="flex items-center justify-between"
-      >
-        <div>
-          <h1 className="text-2xl font-bold">Grupos</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {joined.length} grupo{joined.length !== 1 ? "s" : ""}
-          </p>
-        </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
-          <Plus className="h-4 w-4" />
-          Novo
-        </Button>
-      </motion.div>
-
-      <AnimatePresence>
-        {showCreate && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mt-4 overflow-hidden rounded-2xl border bg-card p-4"
+    <>
+      <ScreenHeader
+        eyebrow="Suas divisões"
+        title="Grupos"
+        action={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-lg"
+            className="min-h-11 min-w-11"
+            aria-label="Novo grupo"
+            aria-expanded={showCreate}
+            onClick={() => setShowCreate((current) => !current)}
           >
+            <Plus className="size-5" />
+          </Button>
+        }
+      />
+      <div className="mx-auto max-w-lg space-y-4 px-4 pb-4">
+        {showCreate && (
+          <div className="rounded-2xl border bg-card p-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold">Novo grupo</span>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-lg"
+                className="min-h-11 min-w-11"
+                aria-label="Fechar criação de grupo"
                 onClick={() => setShowCreate(false)}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-muted"
               >
-                <X className="h-4 w-4" />
-              </button>
+                <X className="size-4" />
+              </Button>
             </div>
             <Input
-              className="mt-3"
+              className="mt-3 min-h-11"
               placeholder="Nome do grupo"
+              aria-label="Nome do grupo"
               value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
+              onChange={(event) => setNewGroupName(event.target.value)}
               autoFocus
-              onKeyDown={(e) => e.key === "Enter" && handleCreateGroup()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void handleCreateGroup();
+              }}
             />
             <Button
-              className="mt-3 w-full"
-              onClick={handleCreateGroup}
+              type="button"
+              className="mt-3 min-h-11 w-full"
+              onClick={() => void handleCreateGroup()}
               disabled={!newGroupName.trim() || creating}
             >
               Criar grupo
             </Button>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
-      {invites.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05, duration: 0.4 }}
-          className="mt-5"
-        >
-          <div className="mb-3 flex items-center gap-2">
-            <Bell className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">Convites pendentes</h2>
-          </div>
+        {meId !== null && invitations.length > 0 && (
           <div className="space-y-2">
-            {invites.map((snapshot) => {
-              const membership = invitedByMember(snapshot, meId);
-              const inviter =
-                snapshot.members.find(
-                  (m) => m.userId === membership?.invitedBy,
-                ) ?? null;
-              return (
-                <div
-                  key={snapshot.group.id}
-                  className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4"
-                >
-                  <div>
-                    <p className="font-medium">{snapshot.group.name}</p>
-                    {inviter && (
-                      <p className="text-xs text-muted-foreground">
-                        Convidado por {inviter.user.name}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 w-8 p-0 text-muted-foreground"
-                      onClick={() => handleDeclineInvite(snapshot.group.id)}
-                      aria-label="Recusar"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="h-8 gap-1"
-                      onClick={() => handleAcceptInvite(snapshot.group.id)}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      Aceitar
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
+            {invitations.map((snapshot) => (
+              <InvitationCard
+                key={snapshot.group.id}
+                snapshot={snapshot}
+                meId={meId}
+                busy={pendingGroupId === snapshot.group.id}
+                onAccept={() => void accept(snapshot.group.id)}
+                onDecline={() => void decline(snapshot.group.id)}
+              />
+            ))}
           </div>
-        </motion.div>
-      )}
+        )}
 
-      <motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        animate="visible"
-        className="mt-6 space-y-3"
-      >
-        {joined.map((snapshot) => {
-          const accepted = snapshot.members.filter(
-            (m) => m.status === "accepted",
-          );
-          const memberCount = snapshot.members.length;
-          const net = netInGroup(snapshot, meId);
-          return (
-            <motion.div key={snapshot.group.id} variants={staggerItem}>
-              <Link href={`/app/groups/${snapshot.group.id}`}>
-                <div className="group flex items-center gap-4 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/30">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Users className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{snapshot.group.name}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {memberCount} membro{memberCount !== 1 ? "s" : ""}
-                      {net > 2 && (
-                        <span className="text-success">
-                          {" "}
-                          · a receber {formatBRL(net)}
-                        </span>
-                      )}
-                      {net < -2 && (
-                        <span className="text-destructive">
-                          {" "}
-                          · a pagar {formatBRL(-net)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  {snapshot.unreadCount > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-                      {snapshot.unreadCount}
-                    </span>
-                  )}
-                  <div className="flex -space-x-2">
-                    {accepted.slice(0, 3).map((m) => (
-                      <UserAvatar
-                        key={m.userId}
-                        name={m.user.name}
-                        avatarUrl={m.user.avatarUrl}
-                        size="xs"
-                        className="ring-2 ring-card"
-                      />
-                    ))}
-                    {accepted.length > 3 && (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[9px] font-bold ring-2 ring-card">
-                        +{accepted.length - 3}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Link>
-            </motion.div>
-          );
-        })}
+        {meId !== null && joined.length > 0 && (
+          <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
+            {joined.map((snapshot) => (
+              <GroupRow key={snapshot.group.id} snapshot={snapshot} meId={meId} />
+            ))}
+          </div>
+        )}
 
-        {joined.length === 0 && invites.length === 0 && (
+        {joined.length === 0 && invitations.length === 0 && (
           <EmptyState
             icon={Users}
             title="Nenhum grupo ainda"
@@ -300,7 +228,7 @@ export function GroupsListContent() {
             onAction={() => setShowCreate(true)}
           />
         )}
-      </motion.div>
-    </div>
+      </div>
+    </>
   );
 }

@@ -84,6 +84,7 @@ function makeDmSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
     guests: [],
     settlements: [],
     recentExpenses: [],
+    expenseCount: 0,
     lastEventId: 1,
     unreadCount: 0,
     lastMessage: null,

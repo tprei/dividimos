@@ -9,7 +9,7 @@ import type {
   Me,
   VendorCharge,
 } from "@/types/ledger";
-import { useAppStore } from "./app-store";
+import { migrateAppState, useAppStore } from "./app-store";
 
 const me: Me = {
   id: "user-1",
@@ -75,6 +75,7 @@ function snapshot(
     guests: [],
     settlements: [],
     recentExpenses: recent,
+    expenseCount: 0,
     lastEventId: 0,
     unreadCount: 0,
     lastMessage: null,
@@ -413,5 +414,38 @@ describe("vendor charges", () => {
     };
     useAppStore.getState().upsertVendorCharge(updatedCharge1);
     expect(useAppStore.getState().vendorCharges).toEqual([updatedCharge1, charge2]);
+  });
+});
+
+describe("migrateAppState", () => {
+  it("backfills expenseCount on snapshots persisted before the field existed", () => {
+    const legacyGroup: Record<string, unknown> = { ...snapshot("g1", []) };
+    delete legacyGroup.expenseCount;
+
+    const migrated = migrateAppState({
+      groups: { g1: legacyGroup },
+      groupOrder: ["g1"],
+    });
+
+    expect(migrated.groups.g1?.expenseCount).toBe(0);
+    expect(migrated.groups.g1?.group.id).toBe("g1");
+    expect(migrated.groupOrder).toEqual(["g1"]);
+  });
+
+  it("keeps the persisted authoritative count when present", () => {
+    const migrated = migrateAppState({
+      groups: { g1: snapshot("g1", [], { expenseCount: 4 }) },
+      groupOrder: ["g1"],
+    });
+
+    expect(migrated.groups.g1?.expenseCount).toBe(4);
+  });
+
+  it("fills missing persisted fields with initial data", () => {
+    const migrated = migrateAppState({});
+
+    expect(migrated.groups).toEqual({});
+    expect(migrated.me).toBeNull();
+    expect(migrated.vendorCharges).toEqual([]);
   });
 });

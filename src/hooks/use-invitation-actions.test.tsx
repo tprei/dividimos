@@ -59,6 +59,7 @@ function invitedSnapshot(groupId: string): GroupSnapshot {
     guests: [],
     settlements: [],
     recentExpenses: [],
+    expenseCount: 0,
     lastEventId: 0,
     unreadCount: 0,
     lastMessage: null,

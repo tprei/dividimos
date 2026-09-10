@@ -35,7 +35,7 @@ export function EmptyState({
         {description}
       </p>
       {actionLabel && onAction && (
-        <Button onClick={onAction} className="mt-5 gap-2" size="sm">
+        <Button onClick={onAction} className="mt-5 min-h-11 gap-2" size="sm">
           <Plus className="h-4 w-4" />
           {actionLabel}
         </Button>
