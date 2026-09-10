@@ -62,7 +62,7 @@ export async function inviteMember(groupId: string, userId: string): Promise<Mut
 
 export async function acceptInvitation(groupId: string): Promise<MutationAck> {
   const ack = await rpc("accept_invitation", { p_group_id: groupId }, decodeMutationAck);
-  void refreshGroup(groupId);
+  await refreshGroup(groupId);
   notify(ack.eventId);
   return ack;
 }

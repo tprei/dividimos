@@ -155,6 +155,7 @@ describe("AppShell hydration & auth lifecycle", () => {
 describe("AppShell header", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPathname.mockReturnValue("/app/settings");
     useAppStore.setState({ hydrated: true, me: mockMe });
   });
 
@@ -174,6 +175,20 @@ describe("AppShell header", () => {
     });
 
     expect(mockRunBootstrap).toHaveBeenCalled();
+  });
+
+  it("hides the legacy header on screen-header routes", () => {
+    mockPathname.mockReturnValue("/app");
+    const { rerender } = render(<AppShell><div>content</div></AppShell>);
+
+    expect(document.querySelector('a[href="/app/search"]')).toBeNull();
+    expect(screen.queryByTestId("logo")).toBeNull();
+
+    mockPathname.mockReturnValue("/app/groups/abc");
+    rerender(<AppShell><div>content</div></AppShell>);
+
+    expect(document.querySelector('a[href="/app/search"]')).toBeNull();
+    expect(screen.queryByTestId("logo")).toBeNull();
   });
 });
 
@@ -279,7 +294,7 @@ describe("AppShell haptics", () => {
 describe("AppShell activity bell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPathname.mockReturnValue("/app");
+    mockPathname.mockReturnValue("/app/settings");
     mockHasUnread.mockReturnValue(false);
     useAppStore.setState({ hydrated: true, me: mockMe });
   });

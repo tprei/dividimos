@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Nunito } from "next/font/google";
 import { Geist_Mono } from "next/font/google";
 import { Toaster } from "react-hot-toast";
+import { MotionProvider } from "@/components/motion-provider";
 import { RegisterSW } from "@/components/pwa/register-sw";
 import "./globals.css";
 
@@ -59,7 +60,7 @@ export default function RootLayout({
       </head>
       <body className="h-full overflow-hidden flex flex-col safe-top safe-bottom">
         <RegisterSW />
-        {children}
+        <MotionProvider>{children}</MotionProvider>
         <Toaster
           position="top-center"
           toastOptions={{

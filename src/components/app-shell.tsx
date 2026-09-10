@@ -46,6 +46,13 @@ const navItems = [
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
 
+const SCREEN_HEADER_PREFIXES = ["/app/conversations", "/app/groups", "/app/bill", "/app/profile"] as const;
+
+export function usesScreenHeader(pathname: string): boolean {
+  if (pathname === "/app") return true;
+  return SCREEN_HEADER_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 function NavBar() {
   const pathname = usePathname();
   const keyboardOpen = useKeyboardVisible();
@@ -269,6 +276,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : (
         <div className="flex h-dvh flex-col overflow-hidden bg-background">
+          {!usesScreenHeader(pathname) && (
           <header className="sticky top-0 z-40 glass border-b border-border/50">
             <div className="flex h-14 items-center justify-between px-4">
               <Logo size="sm" />
@@ -310,6 +318,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           </header>
+          )}
 
           {(pulling || pullDistance > 0) && (
             <div className="flex justify-center py-2">
