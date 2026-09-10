@@ -173,7 +173,7 @@ export function divisionStatusText(division: DivisionComputation, mode: ItemDivi
   if (division.reason === "empty") return "Selecione quem divide este item.";
   if (division.reason === "invalid_input") {
     return mode === "percent"
-      ? "Informe percentuais de 0 a 100 com até duas casas decimais."
+      ? "Informe percentuais inteiros de 0 a 100."
       : "Informe valores em reais com até duas casas decimais.";
   }
   if (mode === "percent") {
