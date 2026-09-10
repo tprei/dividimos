@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { BalanceRow, ExpenseSummary, GroupSnapshot, Me } from "@/types/ledger";
+import type {
+  BalanceRow,
+  ExpenseSummary,
+  GroupMember,
+  GroupSnapshot,
+  Me,
+  MemberStatus,
+} from "@/types/ledger";
 import { useAppStore } from "./app-store";
 import {
   selectExpenseList,
   selectMyDebts,
+  selectPendingInvitations,
   selectTransfers,
   selectUnreadTotal,
 } from "./app-selectors";
@@ -47,6 +55,22 @@ function snapshot(groupId: string, overrides: Partial<GroupSnapshot> = {}): Grou
     lastActivityAt: "2026-01-02T00:00:00Z",
   };
   return { ...base, ...overrides, group: { ...base.group, ...overrides.group } };
+}
+
+function member(userId: string, status: MemberStatus, invitedBy: string | null = null): GroupMember {
+  return {
+    groupId: "g1",
+    userId,
+    status,
+    invitedBy,
+    acceptedAt: status === "accepted" ? "2026-01-02T00:00:00Z" : null,
+    user: {
+      id: userId,
+      handle: `${userId}-handle`,
+      name: `User ${userId}`,
+      avatarUrl: null,
+    },
+  };
 }
 
 function summary(id: string, groupId: string): ExpenseSummary {
@@ -163,6 +187,99 @@ describe("selectExpenseList", () => {
     });
 
     expect(selectExpenseList(useAppStore.getState(), "g1").map((row) => row.id)).toEqual(["e1", "e3"]);
+  });
+});
+
+describe("selectPendingInvitations", () => {
+  it("returns groups where the viewer is invited, in groupOrder order", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", {
+          members: [member("user-2", "accepted"), member("user-1", "invited", "user-2")],
+        }),
+        g2: snapshot("g2", { members: [member("user-2", "accepted")] }),
+        g3: snapshot("g3", {
+          members: [member("user-1", "invited", "user-2"), member("user-2", "accepted")],
+        }),
+      },
+      groupOrder: ["g1", "g2", "g3"],
+    });
+
+    expect(
+      selectPendingInvitations(useAppStore.getState()).map((s) => s.group.id),
+    ).toEqual(["g1", "g3"]);
+  });
+
+  it("excludes DMs even when the viewer is invited", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        dm1: snapshot("dm1", {
+          members: [member("user-1", "invited", "user-2"), member("user-2", "accepted")],
+          group: {
+            id: "dm1",
+            kind: "dm",
+            name: "DM",
+            creatorId: "user-2",
+            dmUserA: "user-1",
+            dmUserB: "user-2",
+            ledgerVersion: 1,
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        }),
+      },
+      groupOrder: ["dm1"],
+    });
+
+    expect(selectPendingInvitations(useAppStore.getState())).toEqual([]);
+  });
+
+  it("excludes groups where the viewer already accepted", () => {
+    useAppStore.setState({
+      me,
+      groups: {
+        g1: snapshot("g1", {
+          members: [member("user-1", "accepted"), member("user-2", "accepted")],
+        }),
+      },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectPendingInvitations(useAppStore.getState())).toEqual([]);
+  });
+
+  it("returns an empty list when there is no viewer", () => {
+    useAppStore.setState({
+      me: null,
+      groups: { g1: snapshot("g1", { members: [member("user-1", "invited", "user-2")] }) },
+      groupOrder: ["g1"],
+    });
+
+    expect(selectPendingInvitations(useAppStore.getState())).toEqual([]);
+  });
+
+  it("returns the cached array while groups identity is unchanged and recomputes on change", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", { members: [member("user-1", "invited", "user-2")] }) },
+      groupOrder: ["g1"],
+    });
+
+    const first = selectPendingInvitations(useAppStore.getState());
+    expect(selectPendingInvitations(useAppStore.getState())).toBe(first);
+
+    useAppStore.setState({
+      groups: {
+        g1: snapshot("g1", {
+          members: [member("user-1", "accepted"), member("user-2", "accepted")],
+        }),
+      },
+    });
+
+    const second = selectPendingInvitations(useAppStore.getState());
+    expect(second).not.toBe(first);
+    expect(second).toEqual([]);
   });
 });
 

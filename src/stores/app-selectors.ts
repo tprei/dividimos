@@ -79,6 +79,36 @@ export function selectExpenseList(state: AppState, groupId: string) {
   return summaries;
 }
 
+interface PendingInvitationsCache {
+  groups: Record<string, GroupSnapshot>;
+  meId: string | null;
+  snapshots: GroupSnapshot[];
+}
+
+let pendingInvitationsCache: PendingInvitationsCache | null = null;
+
+export function selectPendingInvitations(state: AppState): GroupSnapshot[] {
+  const meId = state.me?.id ?? null;
+  if (
+    pendingInvitationsCache &&
+    pendingInvitationsCache.groups === state.groups &&
+    pendingInvitationsCache.meId === meId
+  ) {
+    return pendingInvitationsCache.snapshots;
+  }
+  const snapshots: GroupSnapshot[] = [];
+  if (meId !== null) {
+    for (const groupId of state.groupOrder) {
+      const snapshot = state.groups[groupId];
+      if (!snapshot || snapshot.group.kind !== "group") continue;
+      const member = snapshot.members.find((m) => m.userId === meId);
+      if (member?.status !== "invited") continue;
+      snapshots.push(snapshot);
+    }
+  }
+  pendingInvitationsCache = { groups: state.groups, meId, snapshots };
+  return snapshots;
+}
 
 export function findDmGroup(
   state: AppState,
