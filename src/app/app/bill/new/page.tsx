@@ -86,6 +86,7 @@ function NewBillPageContent() {
   const mounted = useMounted();
   const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [isDmMode, setIsDmMode] = useState(false);
+  const [reviewingScan, setReviewingScan] = useState(false);
 
   useEffect(() => {
     if (!useBillStore.getState().occurredOn) {
@@ -425,20 +426,22 @@ function NewBillPageContent() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/app"
-          aria-label="Fechar"
-          className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <X className="h-5 w-5" />
-        </Link>
-        <h1 className="text-[22px] leading-tight font-bold tracking-tight">
-          {isDmMode ? "Cobrar" : "Nova conta"}
-        </h1>
-      </div>
+      {!reviewingScan && (
+        <div className="flex items-center gap-3">
+          <Link
+            href="/app"
+            aria-label="Fechar"
+            className="flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <X className="h-5 w-5" />
+          </Link>
+          <h1 className="text-[22px] leading-tight font-bold tracking-tight">
+            {isDmMode ? "Cobrar" : "Nova conta"}
+          </h1>
+        </div>
+      )}
 
-      <div className="mt-6 min-h-[400px]">
+      <div className={reviewingScan ? "min-h-[400px]" : "mt-6 min-h-[400px]"}>
         <TypeStep
           groupMembers={(selectedGroup?.members ?? []).map((m) => ({
             id: m.user.id,
@@ -451,6 +454,7 @@ function NewBillPageContent() {
           onTypeSelect={handleTypeSelect}
           onScanConfirm={handleScanConfirm}
           onVoiceConfirm={handleVoiceConfirm}
+          onReviewingChange={setReviewingScan}
         />
       </div>
     </div>

@@ -32,6 +32,7 @@ export interface TypeStepProps {
     occurredOn: string,
   ) => void;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
+  onReviewingChange: (reviewing: boolean) => void;
 }
 
 export function TypeStep({
@@ -41,6 +42,7 @@ export function TypeStep({
   onTypeSelect,
   onScanConfirm,
   onVoiceConfirm,
+  onReviewingChange,
 }: TypeStepProps) {
   const searchParams = useSearchParams();
 
@@ -66,6 +68,12 @@ export function TypeStep({
       setShowScanner(true);
     }
   }, [searchParams, showScanner, scanResult]);
+
+  const reviewing = scanResult !== null;
+  useEffect(() => {
+    onReviewingChange(reviewing);
+    return () => onReviewingChange(false);
+  }, [reviewing, onReviewingChange]);
 
   const handleScanProcess = useCallback(async (file: File) => {
     lastQrResultRef.current = null;
