@@ -4,7 +4,7 @@ import { AnimatePresence } from "framer-motion";
 import { MessageSquare, Share2, UserPlus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { GroupExpensesSection } from "@/components/group/group-expenses-section";
 import { GroupInviteModal } from "@/components/group/group-invite-modal";
@@ -20,7 +20,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
-import { useAppStore } from "@/stores/app-store";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 
 const UNAVAILABLE_CODES: Record<string, true> = {
   not_a_member: true,
@@ -40,18 +41,29 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
 
   usePrefetchRoutes(useMemo(() => [`/app/bill/new?groupId=${groupId}`], [groupId]));
 
-  useEffect(() => {
-    if (!hydrated || snapshot || loadError || departedRef.current) return;
+  const read = useAppStore((s) => s.reads[groupReadKey(groupId)] ?? IDLE_READ);
+
+  const load = useCallback(() => {
     refreshGroup(groupId).catch((e: unknown) => {
       if (e instanceof LedgerError && UNAVAILABLE_CODES[e.code]) {
+        // The group really is gone or we are no longer a member.
         setLoadError(true);
-      } else {
+        return;
+      }
+      // Otherwise the read failed; only warn over data already on screen.
+      if (useAppStore.getState().groups[groupId] !== undefined) {
         toast.error(ledgerErrorMessage(e));
       }
     });
-  }, [hydrated, snapshot, groupId, loadError]);
+  }, [groupId]);
 
-  if (!hydrated || (!snapshot && !loadError)) {
+  useEffect(() => {
+    if (!hydrated || snapshot || loadError || departedRef.current) return;
+    if (read.status === "loading" || read.status === "error") return;
+    load();
+  }, [hydrated, snapshot, loadError, read.status, load]);
+
+  if (!hydrated || (!snapshot && !loadError && read.status !== "error")) {
     return (
       <div className="mx-auto max-w-lg space-y-3 px-4 py-6">
         {[1, 2, 3].map((i) => (
@@ -59,6 +71,18 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             <GroupRowSkeleton />
           </div>
         ))}
+      </div>
+    );
+  }
+
+  // A failed read must not claim the group was deleted.
+  if (!snapshot && !loadError && read.status === "error") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <SyncErrorState
+          message={ledgerErrorMessage(new LedgerError(read.code))}
+          onRetry={load}
+        />
       </div>
     );
   }
