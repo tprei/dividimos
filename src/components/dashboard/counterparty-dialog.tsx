@@ -36,8 +36,6 @@ export interface CounterpartyDialogProps {
   onPay: (row: DebtRow) => void;
   onCollect: (row: DebtRow) => void;
   onNudge: (row: DebtRow) => void;
-  onQuickCharge: () => void;
-  canQuickCharge: boolean;
 }
 
 export function CounterpartyDialog({
@@ -48,8 +46,6 @@ export function CounterpartyDialog({
   onPay,
   onCollect,
   onNudge,
-  onQuickCharge,
-  canQuickCharge,
 }: CounterpartyDialogProps) {
   const snapshot = useAppStore((s) => s.groups[row.groupId]);
   const guestExpense =
@@ -146,16 +142,6 @@ export function CounterpartyDialog({
                         <Bell className="size-4" aria-hidden="true" />
                         Lembrar
                       </Button>
-                      {canQuickCharge && (
-                        <Button
-                          variant="ghost"
-                          className="h-11 w-full"
-                          type="button"
-                          onClick={onQuickCharge}
-                        >
-                          Cobrar valor
-                        </Button>
-                      )}
                     </>
                   )}
                   <Link

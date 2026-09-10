@@ -148,7 +148,6 @@ function renderDialog(row: DebtRow) {
     onPay: vi.fn(),
     onCollect: vi.fn(),
     onNudge: vi.fn(),
-    onQuickCharge: vi.fn(),
   };
   render(
     <CounterpartyDialog
@@ -159,8 +158,6 @@ function renderDialog(row: DebtRow) {
       onPay={handlers.onPay}
       onCollect={handlers.onCollect}
       onNudge={handlers.onNudge}
-      onQuickCharge={handlers.onQuickCharge}
-      canQuickCharge
     />,
   );
   return { user, ...handlers };
