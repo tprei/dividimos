@@ -55,10 +55,16 @@ export function NotificationsSheet({
             ))}
           </div>
         )}
-        <div className="px-4">
+        <div className="flex gap-2 px-4">
+          <Link
+            href="/app/scan-invite"
+            className={buttonVariants({ variant: "ghost", className: "h-11 flex-1" })}
+          >
+            Ler convite
+          </Link>
           <Link
             href="/app/activity"
-            className={buttonVariants({ variant: "ghost", className: "h-11 w-full" })}
+            className={buttonVariants({ variant: "ghost", className: "h-11 flex-1" })}
           >
             Ver atividade
           </Link>
