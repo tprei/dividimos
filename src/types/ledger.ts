@@ -305,7 +305,8 @@ export interface GuestClaimResolution {
   status: GuestClaimStatus;
 }
 
-export interface ChatCursor {
+/** Strict `(created_at, id)` paging boundary shared by every cursored read. */
+export interface PageCursor {
   createdAt: string;
   id: string;
 }
@@ -315,12 +316,21 @@ export interface ConversationReadWatermark {
   lastReadMessageId: string;
 }
 
+/** Envelope returned by every cursored expense history read. */
+export interface ExpensePage {
+  expenses: ExpenseSummary[];
+  nextCursor: PageCursor | null;
+  complete: boolean;
+  /** Count over the whole visible scope, not the page. */
+  total: number;
+}
+
 export interface Conversation {
   messages: ChatMessage[];
-  messageCursor: ChatCursor | null;
+  messageCursor: PageCursor | null;
   messagesComplete: boolean;
   events: GroupEvent[];
-  eventCursor: ChatCursor | null;
+  eventCursor: PageCursor | null;
   eventsComplete: boolean;
   readWatermark: ConversationReadWatermark | null;
 }
