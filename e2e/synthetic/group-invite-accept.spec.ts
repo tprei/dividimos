@@ -18,6 +18,7 @@ test.describe("Group Invite & Accept", () => {
 
     await expect(page.getByText("Invite Test Group")).toBeVisible();
 
+    await page.getByRole("tab", { name: "Membros" }).click();
     await page.getByRole("button", { name: /Convidar/i }).click();
 
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
@@ -32,7 +33,6 @@ test.describe("Group Invite & Accept", () => {
     await expect(page.getByTestId("lookup-result")).not.toBeVisible({ timeout: 10000 });
 
     // Alice sees Bob as "Pendente" in the members tab
-    await page.getByRole("tab", { name: "Membros" }).click();
     await expect(page.getByText("Bob Invite")).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
 
