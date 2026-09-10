@@ -20,6 +20,7 @@ vi.mock("@/lib/sync/mutations-group", () => mutationsGroup);
 
 const refresh = vi.hoisted(() => ({
   loadConversation: vi.fn().mockResolvedValue(undefined),
+  refreshGroup: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/sync/refresh", () => refresh);
 
@@ -169,6 +170,10 @@ describe("ConversationPageClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     aiParse.result = null;
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
   });
 
   it("timeline merges messages and events by createdAt", () => {
@@ -218,6 +223,30 @@ describe("ConversationPageClient", () => {
     const text1 = screen.getByText("Primeira mensagem");
     const text2 = screen.getByText("Segunda mensagem");
     expect(text1.compareDocumentPosition(text2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("loads DM history on mount without waiting for realtime", async () => {
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    await waitFor(() => {
+      expect(refresh.loadConversation).toHaveBeenCalledWith("dm-1");
+    });
+  });
+  it("does not render chat actions when the account is absent from the DM", () => {
+    const snapshot = makeDmSnapshot({
+      members: [makeDmSnapshot().members[1]!],
+    });
+    seedDm(snapshot, { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Essa conversa não está disponível para sua conta.",
+    );
+    expect(screen.queryByTestId("chat-input")).toBeNull();
+    expect(screen.queryByText("Nova cobrança")).toBeNull();
   });
 
   it("sending a message calls sendMessage", async () => {
