@@ -20,6 +20,8 @@ const mockPushState = {
   isLoading: false,
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
+  error: null,
+  retry: vi.fn(),
 };
 
 const mockRouterReplace = vi.fn();

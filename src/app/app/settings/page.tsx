@@ -15,6 +15,7 @@ import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
+import { pushFailureMessage } from "@/lib/push/failures";
 import { useMe } from "@/hooks/use-me";
 import { useSignOut } from "@/hooks/use-sign-out";
 import { useAppStore } from "@/stores/app-store";
@@ -70,7 +71,15 @@ const CATEGORIES: CategoryConfig[] = [
 export default function SettingsPage() {
   const me = useMe();
   const router = useRouter();
-  const { permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
+  const {
+    permission,
+    isSubscribed,
+    isLoading: pushLoading,
+    subscribe,
+    unsubscribe,
+    error: pushError,
+    retry: pushRetry,
+  } = usePushNotifications();
   const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
 
   const handleSignOut = async () => {
@@ -163,6 +172,20 @@ export default function SettingsPage() {
                 >
                   {pushLoading ? "Ativando..." : "Ativar notificações"}
                 </Button>
+              )}
+              {pushError !== null && (
+                <p role="alert" className="mt-2 text-xs text-destructive">
+                  {pushFailureMessage(pushError)}
+                  {pushError.retryable && (
+                    <button
+                      type="button"
+                      onClick={() => void pushRetry()}
+                      className="ml-1 underline"
+                    >
+                      Tentar novamente
+                    </button>
+                  )}
+                </p>
               )}
             </div>
           </div>

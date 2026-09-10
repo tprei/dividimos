@@ -57,8 +57,40 @@ describe("usePushNotifications", () => {
   };
   let mockRegistration: { pushManager: typeof mockPushManager };
 
+  const VAPID_KEY =
+    "BBFHYPW1DmrRx70PNTDn7G7v6GYpyno04I0DwwVdBwQaqek4oi65LJ34e-p4meJR7VfEn5UBpOeoVHGMYzGCpwc";
+
+  /** The bytes the hook derives from the configured key. */
+  function configuredKeyBytes(): ArrayBuffer {
+    const padding = "=".repeat((4 - (VAPID_KEY.length % 4)) % 4);
+    const base64 = (VAPID_KEY + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function subscriptionWithCurrentKey() {
+    return {
+      endpoint: "https://fcm.example.com/abc",
+      options: { applicationServerKey: configuredKeyBytes() },
+      unsubscribe: vi.fn().mockResolvedValue(true),
+      toJSON: () => ({
+        endpoint: "https://fcm.example.com/abc",
+        keys: { p256dh: "pk", auth: "ak" },
+      }),
+    };
+  }
+
+  async function settle() {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+  }
+
   beforeEach(() => {
     mockIsNativePlatform = false;
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = VAPID_KEY;
     __resetNativeRegistrationForTests();
     registrationHandler = null;
     mockAddListener.mockClear();
@@ -99,8 +131,13 @@ describe("usePushNotifications", () => {
       configurable: true,
     });
 
-    // Mock fetch
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
+    // Mock fetch: status answers "owned", subscribe answers ok.
+    globalThis.fetch = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(url === "/api/push/status" ? { subscribed: true } : { ok: true }),
+      }),
+    );
   });
 
   afterEach(() => {
@@ -140,19 +177,77 @@ describe("usePushNotifications", () => {
     expect(result.current.isInitializing).toBe(false);
   });
 
-  it("detects existing subscription", async () => {
-    const existingSub = { endpoint: "https://fcm.example.com/abc" };
-    mockPushManager.getSubscription.mockResolvedValue(existingSub);
+  it("reports subscribed only when the server says this account owns the endpoint", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(subscriptionWithCurrentKey());
+    globalThis.fetch = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(url === "/api/push/status" ? { subscribed: true } : { ok: true }),
+      }),
+    );
 
     const { result } = renderHook(() => usePushNotifications());
-
-    // Wait for the async check to complete
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 10));
-    });
+    await settle();
 
     expect(result.current.isSubscribed).toBe(true);
-    expect(result.current.permission).toBe("default");
+    expect(result.current.error).toBeNull();
+  });
+
+  it("re-uploads the subscription when the server row is gone", async () => {
+    const sub = subscriptionWithCurrentKey();
+    mockPushManager.getSubscription.mockResolvedValue(sub);
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      calls.push(url);
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(url === "/api/push/status" ? { subscribed: false } : { ok: true }),
+      });
+    });
+
+    const { result } = renderHook(() => usePushNotifications());
+    await settle();
+
+    // No gesture involved: a lost row is repaired on init.
+    expect(calls).toEqual(["/api/push/status", "/api/push/subscribe"]);
+    expect(result.current.isSubscribed).toBe(true);
+  });
+
+  it("replaces a subscription made with a rotated VAPID key", async () => {
+    const stale = {
+      endpoint: "https://fcm.example.com/stale",
+      options: { applicationServerKey: new Uint8Array([9, 9, 9]).buffer },
+      unsubscribe: vi.fn().mockResolvedValue(true),
+      toJSON: () => ({ endpoint: "https://fcm.example.com/stale" }),
+    };
+    const fresh = subscriptionWithCurrentKey();
+    mockPushManager.getSubscription.mockResolvedValue(stale);
+    mockPushManager.subscribe.mockResolvedValue(fresh);
+    (globalThis.Notification as unknown as { permission: string }).permission = "granted";
+
+    const { result } = renderHook(() => usePushNotifications());
+    await settle();
+
+    expect(stale.unsubscribe).toHaveBeenCalled();
+    expect(mockPushManager.subscribe).toHaveBeenCalled();
+    expect(result.current.isSubscribed).toBe(true);
+  });
+
+  it("is not subscribed, with a retryable error, when the server rejects the upload", async () => {
+    mockPushManager.getSubscription.mockResolvedValue(subscriptionWithCurrentKey());
+    globalThis.fetch = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: url !== "/api/push/subscribe",
+        json: () => Promise.resolve(url === "/api/push/status" ? { subscribed: false } : {}),
+      }),
+    );
+
+    const { result } = renderHook(() => usePushNotifications());
+    await settle();
+
+    expect(result.current.isSubscribed).toBe(false);
+    expect(result.current.error?.code).toBe("server");
+    expect(result.current.error?.retryable).toBe(true);
   });
 
   it("subscribe requests permission and saves subscription", async () => {
