@@ -699,7 +699,15 @@ BEGIN
 
   IF p_notification_preferences IS NOT NULL THEN
     IF jsonb_typeof(p_notification_preferences) <> 'object' THEN
-      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_notification_preferences';
+    END IF;
+    IF EXISTS (
+      SELECT 1
+      FROM jsonb_object_keys(p_notification_preferences) AS k(key)
+      WHERE k.key NOT IN ('expenses', 'settlements', 'nudges', 'groups', 'messages')
+        OR jsonb_typeof(p_notification_preferences -> k.key) <> 'boolean'
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_notification_preferences';
     END IF;
   END IF;
 
@@ -707,7 +715,7 @@ BEGIN
   SET
     name = COALESCE(v_name, name),
     handle = COALESCE(v_handle, handle),
-    notification_preferences = COALESCE(p_notification_preferences, notification_preferences),
+    notification_preferences = notification_preferences || COALESCE(p_notification_preferences, '{}'::jsonb),
     onboarded = true,
     updated_at = now()
   WHERE id = v_actor

@@ -11,6 +11,7 @@ import {
   Users,
   BellRing,
 } from "lucide-react";
+import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
@@ -23,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
-import type { NotificationCategory, NotificationPreferences } from "@/types";
+import type { NotificationCategory } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
 interface CategoryConfig {
@@ -165,21 +166,16 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
-
-          {isSubscribed && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              transition={{ delay: 0.15, duration: 0.3 }}
-              className="mt-4"
-            >
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Categorias
-              </h2>
-              <NotificationPreferencesSection key={me.id} />
-            </motion.div>
-          )}
         </motion.div>
+      )}
+
+      {permission !== "unsupported" && isSubscribed && (
+        <div className="mt-4">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Categorias
+          </h2>
+          <NotificationPreferencesSection key={me.id} />
+        </div>
       )}
 
       <motion.div
@@ -201,33 +197,92 @@ export default function SettingsPage() {
   );
 }
 
+const CATEGORY_KEYS = CATEGORIES.map((cat) => cat.key);
+
+function emptyCategoryRecord<T>(value: T): Record<NotificationCategory, T> {
+  return {
+    expenses: value,
+    settlements: value,
+    nudges: value,
+    groups: value,
+    messages: value,
+  };
+}
+
 function NotificationPreferencesSection() {
   const me = useMe();
   const prefs = me?.notificationPreferences ?? {};
 
-  const toggleCategory = async (category: NotificationCategory) => {
+  const chainsRef = useRef<Record<NotificationCategory, Promise<void>>>(
+    emptyCategoryRecord(Promise.resolve()),
+  );
+  const generationsRef = useRef<Record<NotificationCategory, number>>(
+    emptyCategoryRecord(0),
+  );
+  const intentsRef = useRef<Record<NotificationCategory, boolean>>(
+    emptyCategoryRecord(true),
+  );
+  const pendingRef = useRef<Record<NotificationCategory, number>>(
+    emptyCategoryRecord(0),
+  );
+
+  const toggleCategory = (category: NotificationCategory) => {
     const currentMe = useAppStore.getState().me;
     if (!currentMe) return;
 
-    const currentPrefs = currentMe.notificationPreferences ?? {};
-    const currentVal = currentPrefs[category] !== false;
-    const nextPrefs: NotificationPreferences = {
-      ...currentPrefs,
-      [category]: !currentVal,
-    };
+    const currentVal = (currentMe.notificationPreferences ?? {})[category] !== false;
+    const intent = !currentVal;
 
-    useAppStore.getState().patch((s) => ({
-      me: s.me ? { ...s.me, notificationPreferences: nextPrefs } : null,
-    }));
+    generationsRef.current[category] += 1;
+    const generation = generationsRef.current[category];
+    intentsRef.current[category] = intent;
+    pendingRef.current[category] += 1;
 
-    try {
-      await updateProfile({ notificationPreferences: nextPrefs });
-    } catch (err) {
-      useAppStore.getState().patch((s) => ({
-        me: s.me ? { ...s.me, notificationPreferences: currentPrefs } : null,
-      }));
-      toast.error(ledgerErrorMessage(err));
-    }
+    useAppStore.getState().patch((s) => {
+      if (!s.me) return {};
+      return {
+        me: {
+          ...s.me,
+          notificationPreferences: { ...s.me.notificationPreferences, [category]: intent },
+        },
+      };
+    });
+
+    const previous = chainsRef.current[category];
+    const task = previous.then(async () => {
+      if (generationsRef.current[category] !== generation) return;
+      try {
+        await updateProfile({ notificationPreferences: { [category]: intent } });
+      } catch (err) {
+        if (generationsRef.current[category] === generation) {
+          useAppStore.getState().patch((s) => {
+            if (!s.me) return {};
+            return {
+              me: {
+                ...s.me,
+                notificationPreferences: {
+                  ...s.me.notificationPreferences,
+                  [category]: !intent,
+                },
+              },
+            };
+          });
+          toast.error(ledgerErrorMessage(err));
+        }
+      } finally {
+        pendingRef.current[category] -= 1;
+        const queued = CATEGORY_KEYS.filter((key) => pendingRef.current[key] > 0);
+        if (queued.length > 0) {
+          useAppStore.getState().patch((s) => {
+            if (!s.me) return {};
+            const nextPrefs = { ...s.me.notificationPreferences };
+            for (const key of queued) nextPrefs[key] = intentsRef.current[key];
+            return { me: { ...s.me, notificationPreferences: nextPrefs } };
+          });
+        }
+      }
+    });
+    chainsRef.current[category] = task;
   };
 
   return (
