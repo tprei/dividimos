@@ -12,14 +12,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  SelectField,
-  type SelectOption,
-} from "@/components/ui/select-field";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 
-const PIX_TYPE_OPTIONS: SelectOption[] = [
+const PIX_TYPE_OPTIONS: { value: PixKeyType; label: string }[] = [
   { value: "email", label: "E-mail" },
   { value: "phone", label: "Telefone" },
   { value: "cpf", label: "CPF" },
@@ -111,17 +107,38 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
         <DialogDescription>Usada para receber pagamentos.</DialogDescription>
         <div className="grid gap-4">
           <div className="grid gap-2">
-            <SelectField
-              id="pix-type"
-              label="Tipo"
-              value={pixType}
-              options={PIX_TYPE_OPTIONS}
-              onChange={(nextValue) => {
-                setPixType(nextValue as PixKeyType);
-                setPixInput("");
-                setPixError("");
-              }}
-            />
+            <span id="pix-type-label" className="text-sm font-medium">
+              Tipo
+            </span>
+            <div
+              role="radiogroup"
+              aria-labelledby="pix-type-label"
+              className="flex flex-wrap gap-1.5"
+            >
+              {PIX_TYPE_OPTIONS.map((option) => {
+                const selected = option.value === pixType;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => {
+                      setPixType(option.value);
+                      setPixInput("");
+                      setPixError("");
+                    }}
+                    className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                      selected
+                        ? "border-primary/40 bg-primary/15 text-primary"
+                        : "border-border bg-card text-foreground"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="pix-key">Chave</Label>
