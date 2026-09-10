@@ -154,7 +154,12 @@ export function ItemizedWorkspace({
       />
       <SectionFooter
         label={section === "review" ? (isEditing ? "Salvar" : "Criar conta") : "Continuar"}
-        disabled={submitting || (section === "review" && issues.length > 0) || (section === "account" && !accountReady)}
+        disabled={
+          submitting ||
+          (section === "review" && issues.length > 0) ||
+          (section === "account" && !accountReady) ||
+          (section === "items" && store.items.length === 0)
+        }
         onClick={onFooter}
       />
     </>

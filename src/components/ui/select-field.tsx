@@ -43,6 +43,7 @@ export function SelectField({
       value={value}
       onValueChange={(nextValue) => onChange(nextValue ?? "")}
       disabled={disabled}
+      modal={false}
     >
       {label && !hideLabel ? <Label htmlFor={triggerId}>{label}</Label> : null}
       <SelectPrimitive.Trigger
@@ -63,6 +64,7 @@ export function SelectField({
       <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
           sideOffset={4}
+          alignItemWithTrigger={false}
           className="isolate z-50 outline-none"
         >
           <SelectPrimitive.Popup
