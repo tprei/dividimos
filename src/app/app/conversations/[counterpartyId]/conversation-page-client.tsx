@@ -356,7 +356,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
             {netCents > 0
               ? `${counterparty.name.split(" ")[0]} te deve`
               : "Você deve"}
-            <Money cents={netCents} signed />
+            <Money cents={netCents} />
           </p>
         </div>
       )}

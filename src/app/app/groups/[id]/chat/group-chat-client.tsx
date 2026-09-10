@@ -147,7 +147,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
             }`}
           >
             {netLabel}
-            <Money cents={netCents} signed />
+            <Money cents={netCents} />
           </p>
         </div>
       )}
