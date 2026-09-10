@@ -94,4 +94,72 @@ describe("ItemDivisionEditor", () => {
     expect(onCancel).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("keeps percent slider drags and typed input on the same state", () => {
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByLabelText("Incluir Ana em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Bruno em Picanha"));
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+
+    const anaInput = screen.getByLabelText("Percentual de Ana em Picanha") as HTMLInputElement;
+    const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana em Picanha" });
+    fireEvent.change(anaSlider, { target: { value: "4000" } });
+    expect(anaInput.value).toBe("40,00");
+
+    fireEvent.change(anaInput, { target: { value: "33,33" } });
+    expect(anaSlider).toHaveValue("3333");
+
+    const brunoSlider = screen.getByRole("slider", { name: "Percentual deslizante de Bruno em Picanha" });
+    fireEvent.change(brunoSlider, { target: { value: "6667" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(onSave).toHaveBeenCalledWith({
+      mode: "percent",
+      shares: [
+        { participantId: "u1", cents: 4300, basisPoints: 3333 },
+        { participantId: "u2", cents: 8600, basisPoints: 6667 },
+      ],
+    });
+  });
+
+  it("snaps a percent slider release to the exact quarter of the range", () => {
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByLabelText("Incluir Ana em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Bruno em Picanha"));
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+
+    const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana em Picanha" });
+    fireEvent.change(anaSlider, { target: { value: "4900" } });
+    fireEvent.pointerUp(anaSlider);
+
+    expect(anaSlider).toHaveValue("5000");
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(onSave).toHaveBeenCalledWith({
+      mode: "percent",
+      shares: [
+        { participantId: "u1", cents: 6450, basisPoints: 5000 },
+        { participantId: "u2", cents: 6450, basisPoints: 5000 },
+      ],
+    });
+  });
+
+  it("bounds the fixed slider by the amount still unassigned for that person", () => {
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByRole("button", { name: "Todos" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
+    const anaSlider = screen.getByRole("slider", { name: "Valor deslizante de Ana em Picanha" });
+    expect(anaSlider).toHaveAttribute("max", "4300");
+    fireEvent.change(anaSlider, { target: { value: "999999" } });
+
+    expect(anaSlider).toHaveValue("4300");
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(onSave).toHaveBeenCalledWith({
+      mode: "fixed",
+      shares: [
+        { participantId: "u1", cents: 4300 },
+        { participantId: "u2", cents: 4300 },
+        { participantId: "g1", cents: 4300 },
+      ],
+    });
+  });
 });
