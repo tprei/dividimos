@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { classifyLlmFailure, LLM_FAILURE_MESSAGE } from "@/lib/llm-errors";
 import { createClient } from "@/lib/supabase/server";
 import { parseReceiptImage } from "@/lib/receipt-ocr";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -92,18 +93,19 @@ export async function POST(request: Request) {
     const result = await parseReceiptImage(imageBase64, mimeType, apiKey);
     return NextResponse.json(result);
   } catch (error) {
-    const isTimeout =
-      error instanceof Error &&
-      (error.name === "TimeoutError" || error.name === "AbortError");
-    if (!isTimeout) {
-      console.error("[receipt/ocr] parse failed:", error);
+    const failure = classifyLlmFailure(error);
+    if (failure.code !== "LLM_TIMEOUT") {
+      // Logged server-side only: provider text must never reach the client.
+      console.error(`[receipt/ocr] ${failure.code}:`, error);
     }
-    const message = isTimeout
-      ? "Não foi possível processar. Tente novamente ou adicione manualmente."
-      : "Erro ao processar imagem";
     return NextResponse.json(
-      { error: message, timeout: isTimeout },
-      { status: isTimeout ? 504 : 500 },
+      {
+        error: LLM_FAILURE_MESSAGE[failure.code],
+        code: failure.code,
+        retryable: failure.retryable,
+        timeout: failure.code === "LLM_TIMEOUT",
+      },
+      { status: failure.status },
     );
   }
 }

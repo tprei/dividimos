@@ -55,3 +55,20 @@ export function sanitizeMemberField(value: string): string {
 export function sanitizeUserText(value: string): string {
   return capLength(neutralize(value), MAX_USER_TEXT_LENGTH);
 }
+
+/**
+ * Serializes members as JSON for the untrusted data block of a user message.
+ * Values are sanitized and JSON-encoded, so a display name cannot break out of
+ * the block or fabricate prompt structure. The system prompt never sees these
+ * values, only the block's meaning.
+ */
+export function memberDataBlock(
+  members: readonly { handle: string; name: string }[] | undefined,
+): string {
+  return JSON.stringify(
+    (members ?? []).map((member) => ({
+      handle: sanitizeMemberField(member.handle),
+      name: sanitizeMemberField(member.name),
+    })),
+  );
+}
