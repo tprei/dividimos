@@ -931,7 +931,20 @@ export type Database = {
       get_expense: { Args: { p_expense_id: string }; Returns: Json }
       get_group: { Args: { p_group_id: string }; Returns: Json }
       get_group_expenses: {
-        Args: { p_before: string; p_group_id: string; p_limit?: number }
+        Args: {
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+          p_group_id: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      get_my_expenses: {
+        Args: {
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+          p_limit?: number
+        }
         Returns: Json
       }
       get_my_profile: { Args: never; Returns: Json }

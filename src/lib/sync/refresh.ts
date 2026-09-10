@@ -1,7 +1,7 @@
 import {
   decodeConversation,
   decodeExpenseDetail,
-  decodeExpenseSummaries,
+  decodeExpensePage,
   decodeGroupEvents,
   decodeGroupSnapshot,
   decodeVendorCharges,
@@ -11,58 +11,83 @@ import {
   conversationReadKey,
   expensePageReadKey,
   expenseReadKey,
+  MY_EXPENSES_READ_KEY,
   groupReadKey,
   useAppStore,
+  type ResourceReadState,
 } from "@/stores/app-store";
-import type { ChatCursor, Conversation, ExpenseSummary, GroupSnapshot } from "@/types/ledger";
-import { rpc } from "./client";
+import type { Conversation, ExpenseSummary, GroupSnapshot, PageCursor } from "@/types/ledger";
+import { getAuthGeneration, rpc } from "./client";
 import { LedgerError } from "./errors";
 
 const inFlightGroups = new Map<string, Promise<void>>();
 const pendingGroups = new Map<string, Promise<void>>();
 const inFlightExpensePages = new Map<string, Promise<void>>();
 
-/**
- * Read generations per resource key. A read publishes its lifecycle only while
- * it is still the newest attempt, so a slow response cannot overwrite the
- * state of a request that started after it.
- */
-const readGenerations = new Map<string, number>();
-
-function beginRead(key: string): number {
-  const generation = (readGenerations.get(key) ?? 0) + 1;
-  readGenerations.set(key, generation);
-  useAppStore.getState().setResourceRead(key, { status: "loading" });
-  return generation;
+interface ReadAttempt {
+  generation: number;
+  authGeneration: number;
 }
 
-function isCurrentRead(key: string, generation: number): boolean {
-  return readGenerations.get(key) === generation;
+const readGenerations = new Map<string, ReadAttempt>();
+const ACTIVITY_READ_KEY = "activity";
+
+function setReadState(key: string, read: ResourceReadState): void {
+  if (key === ACTIVITY_READ_KEY) {
+    useAppStore.getState().setActivityRead(read);
+    return;
+  }
+  useAppStore.getState().setResourceRead(key, read);
 }
 
-/** Runs `read`, recording its lifecycle, and rethrows so callers can react. */
+function beginRead(key: string): ReadAttempt {
+  const previous = readGenerations.get(key);
+  const attempt: ReadAttempt = {
+    generation: (previous?.generation ?? 0) + 1,
+    authGeneration: getAuthGeneration(),
+  };
+  readGenerations.set(key, attempt);
+  setReadState(key, { status: "loading" });
+  return attempt;
+}
+
+function isCurrentRead(key: string, attempt: ReadAttempt): boolean {
+  const current = readGenerations.get(key);
+  return (
+    current?.generation === attempt.generation &&
+    current.authGeneration === attempt.authGeneration &&
+    getAuthGeneration() === attempt.authGeneration
+  );
+}
+
+export function invalidateSyncReads(): void {
+  readGenerations.clear();
+  inFlightGroups.clear();
+  pendingGroups.clear();
+  inFlightExpensePages.clear();
+}
+
 async function trackedRead<T>(
   key: string,
-  generation: number,
+  attempt: ReadAttempt,
   read: () => Promise<T>,
   publish: (value: T) => void,
-): Promise<T> {
+): Promise<T | null> {
   let value: T;
   try {
     value = await read();
   } catch (error) {
-    if (isCurrentRead(key, generation)) {
-      useAppStore.getState().setResourceRead(key, {
-        status: "error",
-        code: error instanceof LedgerError ? error.code : "unknown",
-      });
-    }
+    if (!isCurrentRead(key, attempt)) return null;
+    setReadState(key, {
+      status: "error",
+      code: error instanceof LedgerError ? error.code : "unknown",
+    });
     throw error;
   }
 
-  if (!isCurrentRead(key, generation)) return value;
+  if (!isCurrentRead(key, attempt)) return null;
   publish(value);
-  useAppStore.getState().setResourceRead(key, { status: "ready" });
+  setReadState(key, { status: "ready" });
   return value;
 }
 
@@ -104,16 +129,16 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
   const prevEventId = prev?.lastEventId ?? null;
 
   const key = groupReadKey(groupId);
-  const generation = beginRead(key);
+  const attempt = beginRead(key);
 
   const snapshot = await trackedRead(
     key,
-    generation,
+    attempt,
     () => rpc("get_group", { p_group_id: groupId }, decodeGroupSnapshot),
     (value) => useAppStore.getState().applyGroup(value),
   );
 
-  if (!isCurrentRead(key, generation)) return;
+  if (snapshot === null || !isCurrentRead(key, attempt)) return;
   refreshStaleDetails(groupId, snapshot, prevVersion);
   const conversation = useAppStore.getState().conversations[groupId];
   const loaded = conversation !== undefined && conversation.messages.length > 0;
@@ -142,17 +167,21 @@ export function refreshGroup(groupId: string): Promise<void> {
   const scheduled = pendingGroups.get(groupId);
   if (scheduled) return scheduled;
 
-  const followUp = current.catch(() => undefined).then(() => runGroupRefresh(groupId));
+  const authGeneration = getAuthGeneration();
+  const followUp = current.catch(() => undefined).then(() => {
+    if (getAuthGeneration() !== authGeneration) return;
+    return runGroupRefresh(groupId);
+  });
   pendingGroups.set(groupId, followUp);
   return followUp;
 }
 
 export async function refreshExpense(expenseId: string): Promise<void> {
   const key = expenseReadKey(expenseId);
-  const generation = beginRead(key);
+  const attempt = beginRead(key);
   await trackedRead(
     key,
-    generation,
+    attempt,
     () => rpc("get_expense", { p_expense_id: expenseId }, decodeExpenseDetail),
     (detail) => useAppStore.getState().applyExpenseDetail(detail),
   );
@@ -163,13 +192,13 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
   if (!list || list.complete || inFlightExpensePages.has(groupId)) {
     return;
   }
-  const before = list.oldestCursor;
+  const before = list.cursor;
   if (before === null) {
     return;
   }
 
   const key = expensePageReadKey(groupId);
-  const generation = beginRead(key);
+  const attempt = beginRead(key);
 
   const task = (async () => {
     try {
@@ -177,14 +206,19 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
       // the user can retry the same page.
       await trackedRead(
         key,
-        generation,
+        attempt,
         () =>
           rpc(
             "get_group_expenses",
-            { p_group_id: groupId, p_before: before, p_limit: 30 },
-            decodeExpenseSummaries,
+            {
+              p_group_id: groupId,
+              p_before_created_at: before.createdAt,
+              p_before_id: before.id,
+              p_limit: 30,
+            },
+            decodeExpensePage,
           ),
-        (page) => useAppStore.getState().applyExpensePage(groupId, page, page.length < 30),
+        (page) => useAppStore.getState().applyExpensePage(groupId, page),
       );
     } finally {
       inFlightExpensePages.delete(groupId);
@@ -195,38 +229,52 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
   await task;
 }
 
+/**
+ * Cross-group history for the bills screen. Without a cursor this reseeds the
+ * list from the newest page; with one it appends the next older page.
+ */
+export async function loadMyExpenses(cursor?: PageCursor): Promise<void> {
+  const attempt = beginRead(MY_EXPENSES_READ_KEY);
+  await trackedRead(
+    MY_EXPENSES_READ_KEY,
+    attempt,
+    () =>
+      rpc(
+        "get_my_expenses",
+        {
+          p_before_created_at: cursor?.createdAt ?? null,
+          p_before_id: cursor?.id ?? null,
+          p_limit: 50,
+        },
+        decodeExpensePage,
+      ),
+    (page) => useAppStore.getState().applyMyExpensePage(page, cursor === undefined),
+  );
+}
+
 const ACTIVITY_PAGE_SIZE = 50;
 
 export async function loadActivity(before?: number): Promise<void> {
-  const store = useAppStore.getState();
-  store.setActivityRead({ status: "loading" });
-
-  let items;
-  try {
-    items = await rpc(
-      "get_activity",
-      {
-        p_before_id: before ?? Number.MAX_SAFE_INTEGER,
-        p_limit: ACTIVITY_PAGE_SIZE,
-      },
-      decodeGroupEvents,
-    );
-  } catch (error) {
-    // Keep whatever rows are already published and say why the read failed.
-    useAppStore.getState().setActivityRead({
-      status: "error",
-      code: error instanceof LedgerError ? error.code : "unknown",
-    });
-    throw error;
-  }
-
-  // A short page is the only proof the server has nothing older.
-  useAppStore.getState().applyActivity(items, items.length < ACTIVITY_PAGE_SIZE);
+  const attempt = beginRead(ACTIVITY_READ_KEY);
+  await trackedRead(
+    ACTIVITY_READ_KEY,
+    attempt,
+    () =>
+      rpc(
+        "get_activity",
+        {
+          p_before_id: before ?? Number.MAX_SAFE_INTEGER,
+          p_limit: ACTIVITY_PAGE_SIZE,
+        },
+        decodeGroupEvents,
+      ),
+    (items) => useAppStore.getState().applyActivity(items, items.length < ACTIVITY_PAGE_SIZE),
+  );
 }
 
 export interface ConversationPageCursors {
-  messageBefore: ChatCursor | null;
-  eventBefore: ChatCursor | null;
+  messageBefore: PageCursor | null;
+  eventBefore: PageCursor | null;
 }
 
 /**
@@ -237,12 +285,12 @@ export interface ConversationPageCursors {
 export async function loadConversation(
   groupId: string,
   cursors?: ConversationPageCursors,
-): Promise<Conversation> {
+): Promise<Conversation | null> {
   const key = conversationReadKey(groupId);
-  const generation = beginRead(key);
+  const attempt = beginRead(key);
   return await trackedRead(
     key,
-    generation,
+    attempt,
     () =>
       rpc(
         "get_conversation",
@@ -270,10 +318,10 @@ export async function loadConversation(
 }
 
 export async function loadVendorCharges(limit = 50): Promise<void> {
-  const generation = beginRead(CHARGES_READ_KEY);
+  const attempt = beginRead(CHARGES_READ_KEY);
   await trackedRead(
     CHARGES_READ_KEY,
-    generation,
+    attempt,
     () => rpc("get_vendor_charges", { p_limit: limit }, decodeVendorCharges),
     (charges) => useAppStore.getState().applyVendorCharges(charges),
   );

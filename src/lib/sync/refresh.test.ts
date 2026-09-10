@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { expensePageReadKey, groupReadKey, useAppStore } from "@/stores/app-store";
 import { rpc } from "./client";
-import { loadActivity, loadMoreExpenses, refreshGroup } from "./refresh";
+import { invalidateSyncReads, loadActivity, loadMoreExpenses, refreshGroup } from "./refresh";
 import { LedgerError } from "./errors";
 
-vi.mock("./client", () => ({ rpc: vi.fn() }));
+const clientState = vi.hoisted(() => ({ authGeneration: 0 }));
+vi.mock("./client", () => ({
+  rpc: vi.fn(),
+  getAuthGeneration: () => clientState.authGeneration,
+}));
 
 const ME: Me = {
   id: "user-me",
@@ -52,7 +56,9 @@ const resolvers: SnapshotResolver[] = [];
 describe("refreshGroup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clientState.authGeneration = 0;
     resolvers.length = 0;
+    invalidateSyncReads();
     useAppStore.getState().reset();
     vi.mocked(rpc).mockImplementation(async () => {
       const { promise, resolve } = Promise.withResolvers<GroupSnapshot>();
@@ -106,7 +112,7 @@ describe("refreshGroup", () => {
 
 describe("loadActivity", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    clientState.authGeneration = 0;
     useAppStore.getState().reset();
   });
 
@@ -145,12 +151,34 @@ describe("loadActivity", () => {
     expect(activity.read).toEqual({ status: "error", code: "network" });
     expect(activity.items).toHaveLength(1);
   });
+
+  it("ignores a result from the previous auth generation", async () => {
+    const first = Promise.withResolvers<unknown>();
+    const second = Promise.withResolvers<unknown>();
+    vi.mocked(rpc)
+      .mockReturnValueOnce(first.promise as never)
+      .mockReturnValueOnce(second.promise as never);
+
+    const oldRead = loadActivity();
+    clientState.authGeneration = 1;
+    const currentRead = loadActivity();
+
+    first.reject(new LedgerError("network"));
+    await expect(oldRead).resolves.toBeUndefined();
+    expect(useAppStore.getState().activity.read).toEqual({ status: "loading" });
+
+    second.resolve([]);
+    await currentRead;
+    expect(useAppStore.getState().activity.read).toEqual({ status: "ready" });
+  });
 });
 
 describe("resource read state", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clientState.authGeneration = 0;
     resolvers.length = 0;
+    invalidateSyncReads();
     useAppStore.getState().reset();
     vi.mocked(rpc).mockImplementation(async () => {
       const { promise, resolve } = Promise.withResolvers<GroupSnapshot>();
@@ -182,7 +210,7 @@ describe("resource read state", () => {
   it("keeps the cursor and rows when an older expense page fails", async () => {
     useAppStore.setState({
       expenseLists: {
-        g1: { ids: ["e1"], oldestCursor: "2026-01-02T00:00:00Z", complete: false },
+        g1: { ids: ["e1"], cursor: { createdAt: "2026-01-02T00:00:00Z", id: "e1" }, complete: false, total: null },
       },
     });
 
@@ -191,7 +219,7 @@ describe("resource read state", () => {
 
     const list = useAppStore.getState().expenseLists.g1;
     expect(list?.ids).toEqual(["e1"]);
-    expect(list?.oldestCursor).toBe("2026-01-02T00:00:00Z");
+    expect(list?.cursor).toEqual({ createdAt: "2026-01-02T00:00:00Z", id: "e1" });
     expect(list?.complete).toBe(false);
     expect(useAppStore.getState().reads[expensePageReadKey("g1")]).toEqual({
       status: "error",
