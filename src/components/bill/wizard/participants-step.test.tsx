@@ -84,6 +84,7 @@ function makeSnapshot(
     unreadCount: 0,
     lastMessage: null,
     lastActivityAt: "",
+    pairwiseEdges: [],
   };
 }
 

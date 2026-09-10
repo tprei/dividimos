@@ -117,7 +117,7 @@ export function SimplificationViewer({
             className="flex flex-col items-center gap-4"
           >
             <DebtGraph
-              participants={participants}
+              participants={participants.map((user) => ({ id: user.id, name: user.name }))}
               edges={[
                 ...step.edges,
                 ...(step.removedEdges || []),

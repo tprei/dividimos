@@ -95,6 +95,7 @@ function makeSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
     lastMessage: null,
     lastActivityAt: "2026-01-01T00:00:00Z",
     expenseCount: 0,
+    pairwiseEdges: [],
     ...overrides,
   };
 }

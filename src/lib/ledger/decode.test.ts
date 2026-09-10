@@ -111,6 +111,14 @@ describe("decodeBootstrap", () => {
           createdAt: "2026-09-02T11:00:00.000Z",
         },
         lastActivityAt: "2026-09-02T11:00:00.000Z",
+        pairwiseEdges: [
+          {
+            fromKind: "user",
+            fromId: "user-2",
+            toId: "user-1",
+            amountCents: 1500,
+          },
+        ],
       },
     ],
     serverTime: "2026-09-05T00:00:00.000Z",
@@ -186,6 +194,28 @@ describe("decodeBootstrap", () => {
     if (!result.ok) {
       expect(result.issue.code).toBe("invalid_wire");
       expect(result.issue.path).toEqual(["groups", 0, "lastMessage", "createdAt"]);
+    }
+  });
+
+  it("rejects a pairwiseEdges entry with an unknown key", () => {
+    const invalid = JSON.parse(JSON.stringify(fixture));
+    invalid.groups[0].pairwiseEdges[0].toKind = "user";
+    const result = decodeBootstrap(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.code).toBe("invalid_wire");
+      expect(result.issue.path).toEqual(["groups", 0, "pairwiseEdges", 0, "toKind"]);
+    }
+  });
+
+  it("rejects a pairwiseEdges entry with a non-integer amount", () => {
+    const invalid = JSON.parse(JSON.stringify(fixture));
+    invalid.groups[0].pairwiseEdges[0].amountCents = 15.5;
+    const result = decodeBootstrap(invalid);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.code).toBe("invalid_wire");
+      expect(result.issue.path).toEqual(["groups", 0, "pairwiseEdges", 0, "amountCents"]);
     }
   });
 });

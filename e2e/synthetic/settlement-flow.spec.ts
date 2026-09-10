@@ -33,11 +33,13 @@ test.describe("Settlement Flow", () => {
     await page.waitForLoadState("networkidle");
 
     await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText("Você recebe").first()).toBeVisible();
+    await expect(page.getByText("Saldo consolidado")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Cobrar/ })).toBeVisible();
     await expect(page.getByText(/R\$\s/).first()).toBeVisible();
 
     // Bob is the intermediary: he paid R$ 60 and owes R$ 60, so he nets to
-    // zero and the simplified view leaves him nothing to settle.
+    // zero. The settled state only renders when every balance is zero, so he
+    // still sees the transfer list; his row is marked Outro acerto.
     const bobCtx = await browser.newContext();
     const bobPage = await bobCtx.newPage();
     await loginInContext(bobCtx, bobPage, bob);
@@ -45,9 +47,11 @@ test.describe("Settlement Flow", () => {
     await bobPage.goto(`/app/groups/${group.id}`);
     await bobPage.waitForLoadState("networkidle");
 
-    await expect(bobPage.getByText("Tudo liquidado!")).toBeVisible({
+    await expect(bobPage.getByText("Transferências")).toBeVisible({
       timeout: 10000,
     });
+    await expect(bobPage.getByText("Outro acerto")).toBeVisible();
+    await expect(bobPage.getByText("Tudo liquidado!")).toHaveCount(0);
 
     // Carol paid nothing, so she owes her whole share
     const carolCtx = await browser.newContext();
@@ -57,7 +61,7 @@ test.describe("Settlement Flow", () => {
     await carolPage.goto(`/app/groups/${group.id}`);
     await carolPage.waitForLoadState("networkidle");
 
-    await expect(carolPage.getByText("Você deve")).toBeVisible({
+    await expect(carolPage.getByText("Você paga")).toBeVisible({
       timeout: 10000,
     });
 
@@ -136,7 +140,7 @@ test.describe("Settlement Flow", () => {
     await carolCtx.close();
   });
 
-  test("debtor sees the Pay with Pix button on the group balances", async ({
+  test("debtor sees the pay row on the group balances", async ({
     page,
     seed,
     loginAs,
@@ -158,11 +162,10 @@ test.describe("Settlement Flow", () => {
     await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
 
     await expect(
-      page.getByRole("button", { name: /Pagar via Pix/i }),
+      page.getByRole("button", { name: /Você paga/i }),
     ).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByText("R$ 100,00").first()).toBeVisible();
-    await expect(page.getByText("Você deve")).toBeVisible();
   });
 
   test("creditor sees a charge row and can record the receipt", async ({
@@ -186,13 +189,10 @@ test.describe("Settlement Flow", () => {
 
     await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
 
-    await expect(page.getByText("Você recebe")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Cobrar/ })).toBeVisible();
     await expect(page.getByText("R$ 50,00").first()).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Pagar via Pix/i }),
-    ).not.toBeVisible();
 
-    await page.getByRole("button", { name: /Cobrar via Pix/i }).click();
+    await page.getByRole("button", { name: /Cobrar/ }).click();
     await page.getByRole("button", { name: /Já recebi/i }).click();
 
     await expect(page.getByText("Tudo liquidado!")).toBeVisible({ timeout: 15000 });

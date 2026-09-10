@@ -24,6 +24,7 @@ import type {
   PixKeyType,
   Settlement,
   SettlementStatus,
+  Transfer,
   VendorCharge,
   VendorChargeStatus,
   WireIssue,
@@ -286,6 +287,33 @@ export function decodeBalanceRow(
   return ok({ kind: kind.value, participantId: pid.value, netCents: net.value });
 }
 
+const TRANSFER_KEYS = ["fromKind", "fromId", "toId", "amountCents"] as const;
+
+export function decodeTransfer(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<Transfer, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, TRANSFER_KEYS, path);
+  if (!k.ok) return k;
+
+  const kind = oneOf(raw.fromKind, PARTICIPANT_KINDS, [...path, "fromKind"]);
+  if (!kind.ok) return kind;
+  const from = id(raw.fromId, [...path, "fromId"]);
+  if (!from.ok) return from;
+  const to = id(raw.toId, [...path, "toId"]);
+  if (!to.ok) return to;
+  const amount = int(raw.amountCents, [...path, "amountCents"]);
+  if (!amount.ok) return amount;
+
+  return ok({
+    fromKind: kind.value,
+    fromId: from.value,
+    toId: to.value,
+    amountCents: amount.value,
+  });
+}
+
 const SETTLEMENT_KEYS = [
   "id",
   "operationId",
@@ -517,6 +545,7 @@ const GROUP_SNAPSHOT_KEYS = [
   "lastMessage",
   "lastActivityAt",
   "expenseCount",
+  "pairwiseEdges",
 ] as const;
 
 
@@ -527,7 +556,6 @@ export function decodeGroupSnapshot(
   if (!isRecord(raw)) return fail(path);
   const k = exactKeys(raw, GROUP_SNAPSHOT_KEYS, path);
   if (!k.ok) return k;
-
   const group = decodeGroup(raw.group, [...path, "group"]);
   if (!group.ok) return group;
   const members = arrayOf(raw.members, [...path, "members"], decodeGroupMember);
@@ -564,6 +592,12 @@ export function decodeGroupSnapshot(
 
   const lastActivityAt = str(raw.lastActivityAt, [...path, "lastActivityAt"]);
   if (!lastActivityAt.ok) return lastActivityAt;
+  const pairwiseEdges = arrayOf(
+    raw.pairwiseEdges,
+    [...path, "pairwiseEdges"],
+    decodeTransfer,
+  );
+  if (!pairwiseEdges.ok) return pairwiseEdges;
 
   return ok({
     group: group.value,
@@ -577,6 +611,7 @@ export function decodeGroupSnapshot(
     lastMessage,
     lastActivityAt: lastActivityAt.value,
     expenseCount: expenseCount.value,
+    pairwiseEdges: pairwiseEdges.value,
   });
 }
 

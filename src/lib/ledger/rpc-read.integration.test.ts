@@ -61,6 +61,12 @@ interface GroupSnapshot {
   lastMessage: { content: string; senderId: string; createdAt: string } | null;
   lastActivityAt: string;
   expenseCount: number;
+  pairwiseEdges: Array<{
+    fromKind: string;
+    fromId: string;
+    toId: string;
+    amountCents: number;
+  }>;
 }
 
 interface ExpenseSummary {
@@ -206,6 +212,7 @@ const SNAPSHOT_KEYS = [
   "lastMessage",
   "lastActivityAt",
   "expenseCount",
+  "pairwiseEdges",
 ];
 
 const EXPENSE_SUMMARY_KEYS = [

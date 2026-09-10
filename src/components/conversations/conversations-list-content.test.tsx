@@ -108,6 +108,7 @@ function makeDmSnapshot(
       createdAt: "2026-01-01T10:00:00Z",
     },
     lastActivityAt: "2026-01-01T10:00:00Z",
+    pairwiseEdges: [],
     ...overrides,
   };
 }
@@ -147,6 +148,7 @@ function makeGroupSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapsho
       createdAt: "2026-01-01T09:00:00Z",
     },
     lastActivityAt: "2026-01-01T09:00:00Z",
+    pairwiseEdges: [],
     ...overrides,
   };
 }

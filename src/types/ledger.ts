@@ -251,6 +251,7 @@ export interface GroupSnapshot {
   lastMessage: ChatLastMessage | null;
   lastActivityAt: string;
   expenseCount: number;
+  pairwiseEdges: Transfer[];
 }
 
 export interface Bootstrap {

@@ -64,6 +64,7 @@ function invitedSnapshot(groupId: string): GroupSnapshot {
     unreadCount: 0,
     lastMessage: null,
     lastActivityAt: "2026-01-02T00:00:00Z",
+    pairwiseEdges: [],
   };
 }
 

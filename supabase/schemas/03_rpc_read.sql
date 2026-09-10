@@ -272,7 +272,16 @@ BEGIN
     'expenseCount', (
       SELECT count(*) FROM expenses e
       WHERE e.group_id = g.id AND e.status = 'active'
-    )
+    ),
+    'pairwiseEdges', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'fromKind', pe.from_kind,
+        'fromId', pe.from_id,
+        'toId', pe.to_id,
+        'amountCents', pe.amount_cents
+      ) ORDER BY pe.from_kind, pe.from_id, pe.to_id)
+      FROM public.group_pairwise_edges(g.id) pe
+    ), '[]'::jsonb)
   ) INTO v_out
   FROM groups g
   WHERE g.id = p_group_id;
@@ -298,6 +307,7 @@ BEGIN
            'balances', '[]'::jsonb,
            'guests', '[]'::jsonb,
            'settlements', '[]'::jsonb,
+           'pairwiseEdges', '[]'::jsonb,
            'recentExpenses', '[]'::jsonb,
            'expenseCount', 0,
            'unreadCount', 0,
