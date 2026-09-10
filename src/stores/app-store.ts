@@ -3,9 +3,10 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { createIdbStorage } from "@/lib/idb-storage";
-import type { LedgerErrorCode } from "@/lib/sync/errors";
+import { type LedgerErrorCode } from "@/lib/sync/errors";
 import type {
   Bootstrap,
+  ChargePage,
   ExpensePage,
   PageCursor,
   ChatMessage,
@@ -106,6 +107,14 @@ interface AppStateData {
   activityViewedAt: Record<string, string>;
   conversations: Record<string, ConversationState>;
   vendorCharges: VendorCharge[];
+  /** Server-owned charge history metadata: cursor, totals and today's sum. */
+  chargeSummary: {
+    cursor: PageCursor | null;
+    complete: boolean;
+    total: number | null;
+    receivedCount: number | null;
+    receivedTodayCents: number | null;
+  };
   /**
    * Read lifecycle per resource, keyed by the helpers below. Runtime only, and
    * cleared by reset(), so it is never inherited across accounts.
@@ -141,7 +150,7 @@ export interface AppState extends AppStateData {
   upsertExpense(summary: ExpenseSummary): void;
   replaceExpenseId(oldId: string, newId: string): void;
   patch(fn: (state: AppState) => Partial<AppState>): void;
-  applyVendorCharges(list: VendorCharge[]): void;
+  applyChargePage(page: ChargePage, reset: boolean): void;
   upsertVendorCharge(c: VendorCharge): void;
   reset(): void;
 }
@@ -159,6 +168,13 @@ const initialData: AppStateData = {
   activityViewedAt: {},
   conversations: {},
   vendorCharges: [],
+  chargeSummary: {
+    cursor: null,
+    complete: false,
+    total: null,
+    receivedCount: null,
+    receivedTodayCents: null,
+  },
   reads: {},
   lastBootstrapAt: null,
   bootstrapStatus: "idle",
@@ -166,10 +182,67 @@ const initialData: AppStateData = {
   lastBootstrappedAccountId: null,
 };
 
+function normalizeCursor(value: unknown): PageCursor | null {
+  const record =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  if (record === null || typeof record.createdAt !== "string" || typeof record.id !== "string") {
+    return null;
+  }
+  return { createdAt: record.createdAt, id: record.id };
+}
+
+function normalizeExpenseList(value: unknown): ExpenseListState {
+  const record =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const ids = Array.isArray(record.ids)
+    ? record.ids.filter((id): id is string => typeof id === "string")
+    : [];
+  const complete = typeof record.complete === "boolean" ? record.complete : false;
+  const total =
+    typeof record.total === "number" && Number.isInteger(record.total) && record.total >= 0
+      ? record.total
+      : null;
+  return {
+    ids,
+    cursor: normalizeCursor(record.cursor ?? record.oldestCursor),
+    complete,
+    total,
+  };
+}
+
+
+function normalizeConversationReconcile(value: unknown): ConversationReconcileState {
+  const record =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  return {
+    status: "idle",
+    readableThroughMessageId:
+      record !== null && typeof record.readableThroughMessageId === "string"
+        ? record.readableThroughMessageId
+        : null,
+  };
+}
+
 export function migrateAppState(persisted: unknown): AppStateData {
-  const legacy = (persisted ?? {}) as Partial<AppStateData>;
+  const root =
+    persisted !== null && typeof persisted === "object" && !Array.isArray(persisted)
+      ? (persisted as Record<string, unknown>)
+      : {};
+  const legacy = root as Partial<AppStateData>;
   const groups: Record<string, GroupSnapshot> = {};
-  for (const [id, snapshot] of Object.entries(legacy.groups ?? {})) {
+  const persistedGroups =
+    root.groups !== null && typeof root.groups === "object" && !Array.isArray(root.groups)
+      ? (root.groups as Record<string, unknown>)
+      : {};
+  for (const [id, value] of Object.entries(persistedGroups)) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+    const snapshot = value as GroupSnapshot;
     groups[id] = {
       ...snapshot,
       expenseCount: snapshot.expenseCount ?? 0,
@@ -177,32 +250,124 @@ export function migrateAppState(persisted: unknown): AppStateData {
     };
   }
 
-  // A conversation persisted before paired (created_at, id) cursors existed
-  // cannot express the strict boundary. Its rows stay as known-good data, but
-  // the history is marked incomplete so reconciliation reseeds it rather than
-  // trusting a subset.
+  const expenseLists: Record<string, ExpenseListState> = {};
+  const persistedExpenseLists =
+    root.expenseLists !== null &&
+    typeof root.expenseLists === "object" &&
+    !Array.isArray(root.expenseLists)
+      ? (root.expenseLists as Record<string, unknown>)
+      : {};
+  for (const [groupId, value] of Object.entries(persistedExpenseLists)) {
+    expenseLists[groupId] = normalizeExpenseList(value);
+  }
+
+  const persistedActivity =
+    root.activity !== null && typeof root.activity === "object" && !Array.isArray(root.activity)
+      ? (root.activity as Record<string, unknown>)
+      : {};
+  const activity: AppStateData["activity"] = {
+    items: Array.isArray(persistedActivity.items)
+      ? (persistedActivity.items as GroupEvent[])
+      : [],
+    oldestId: typeof persistedActivity.oldestId === "number" ? persistedActivity.oldestId : null,
+    complete: typeof persistedActivity.complete === "boolean" ? persistedActivity.complete : false,
+    read: { status: "idle" },
+  };
+
   const conversations: Record<string, ConversationState> = {};
-  for (const [groupId, persistedConversation] of Object.entries(
-    legacy.conversations ?? {},
-  )) {
-    const cached = persistedConversation as Partial<ConversationState>;
+  const persistedConversations =
+    root.conversations !== null &&
+    typeof root.conversations === "object" &&
+    !Array.isArray(root.conversations)
+      ? (root.conversations as Record<string, unknown>)
+      : {};
+  for (const [groupId, value] of Object.entries(persistedConversations)) {
+    const cached =
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as Partial<ConversationState>)
+        : {};
+    const messages = Array.isArray(cached.messages) ? (cached.messages as ChatMessage[]) : [];
+    const events = Array.isArray(cached.events) ? (cached.events as GroupEvent[]) : [];
     const paired =
       cached.messagesComplete !== undefined && cached.eventsComplete !== undefined;
     conversations[groupId] = paired
-      ? (cached as ConversationState)
-      : {
-          messages: cached.messages ?? [],
-          events: cached.events ?? [],
+      ? conversationState({
+          ...cached,
+          messages,
+          events,
+          messageCursor: normalizeCursor(cached.messageCursor),
+          eventCursor: normalizeCursor(cached.eventCursor),
+          messagesComplete: cached.messagesComplete === true,
+          eventsComplete: cached.eventsComplete === true,
+          reconcile: normalizeConversationReconcile(cached.reconcile),
+        })
+      : conversationState({
+          messages,
+          events,
           messageCursor: null,
           messagesComplete: false,
           eventCursor: null,
           eventsComplete: false,
           readWatermark: null,
           reconcile: { status: "idle", readableThroughMessageId: null },
-        };
+        });
   }
 
-  return { ...initialData, ...legacy, groups, conversations };
+  const persistedExpenses =
+    root.expenses !== null && typeof root.expenses === "object" && !Array.isArray(root.expenses)
+      ? (root.expenses as Record<string, ExpenseSummary>)
+      : {};
+  const persistedExpenseDetails =
+    root.expenseDetails !== null &&
+    typeof root.expenseDetails === "object" &&
+    !Array.isArray(root.expenseDetails)
+      ? (root.expenseDetails as Record<string, ExpenseDetail>)
+      : {};
+  const groupOrder = Array.isArray(root.groupOrder)
+    ? root.groupOrder.filter((id): id is string => typeof id === "string")
+    : [];
+  const activityViewedAt =
+    root.activityViewedAt !== null &&
+    typeof root.activityViewedAt === "object" &&
+    !Array.isArray(root.activityViewedAt)
+      ? Object.fromEntries(
+          Object.entries(root.activityViewedAt).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          ),
+        )
+      : {};
+  const chargeSummary =
+    root.chargeSummary !== null &&
+    typeof root.chargeSummary === "object" &&
+    !Array.isArray(root.chargeSummary)
+      ? {
+          ...initialData.chargeSummary,
+          ...(root.chargeSummary as Partial<AppStateData["chargeSummary"]>),
+        }
+      : initialData.chargeSummary;
+
+  return {
+    ...initialData,
+    me: legacy.me ?? null,
+    groups,
+    groupOrder,
+    expenseLists,
+    myExpenses: normalizeExpenseList(root.myExpenses),
+    expenses: persistedExpenses,
+    expenseDetails: persistedExpenseDetails,
+    activity,
+    activityViewedAt,
+    conversations,
+    vendorCharges: Array.isArray(root.vendorCharges)
+      ? (root.vendorCharges as VendorCharge[])
+      : [],
+    chargeSummary,
+    lastBootstrapAt: typeof legacy.lastBootstrapAt === "string" ? legacy.lastBootstrapAt : null,
+    lastBootstrappedAccountId:
+      typeof legacy.lastBootstrappedAccountId === "string"
+        ? legacy.lastBootstrappedAccountId
+        : null,
+  };
 }
 
 export const useAppStore = create<AppState>()(
@@ -408,8 +573,9 @@ export const useAppStore = create<AppState>()(
         set((state) => {
           const list = state.expenseLists[summary.groupId] ?? {
             ids: [],
-            oldestCursor: null,
+            cursor: null,
             complete: false,
+            total: null,
           };
           return {
             expenses: upsertSummaries(state.expenses, [summary]),
@@ -441,7 +607,21 @@ export const useAppStore = create<AppState>()(
             expenseDetails,
           };
         }),
-      applyVendorCharges: (list) => set({ vendorCharges: list }),
+      applyChargePage: (page, reset) =>
+        set((state) => {
+          const known = new Set(reset ? [] : state.vendorCharges.map((c) => c.id));
+          const rows = reset ? [] : state.vendorCharges;
+          return {
+            vendorCharges: [...rows, ...page.charges.filter((c) => !known.has(c.id))],
+            chargeSummary: {
+              cursor: page.nextCursor,
+              complete: page.complete,
+              total: page.total,
+              receivedCount: page.receivedCount,
+              receivedTodayCents: page.receivedTodayCents,
+            },
+          };
+        }),
 
       upsertVendorCharge: (c) =>
         set((state) => {
@@ -470,12 +650,14 @@ export const useAppStore = create<AppState>()(
         groups: state.groups,
         groupOrder: state.groupOrder,
         expenseLists: state.expenseLists,
+        myExpenses: state.myExpenses,
         expenses: state.expenses,
         expenseDetails: state.expenseDetails,
         activity: state.activity,
         activityViewedAt: state.activityViewedAt,
         conversations: state.conversations,
         vendorCharges: state.vendorCharges,
+        chargeSummary: state.chargeSummary,
         lastBootstrapAt: state.lastBootstrapAt,
         lastBootstrappedAccountId: state.lastBootstrappedAccountId,
       }),
@@ -484,7 +666,7 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      version: 2,
+      version: 3,
     },
   ),
 );

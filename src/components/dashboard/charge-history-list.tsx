@@ -3,14 +3,17 @@
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Clock, Zap } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatBRL } from "@/lib/currency";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { loadVendorCharges } from "@/lib/sync/refresh";
+import { retryPendingVendorChargeCancellations } from "@/lib/sync/mutations-group";
+import toast from "react-hot-toast";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/shared/skeleton";
 import { CHARGES_READ_KEY, IDLE_READ, useAppStore } from "@/stores/app-store";
-import type { VendorCharge } from "@/types/ledger";
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -34,42 +37,60 @@ function formatRelativeTime(dateStr: string): string {
   });
 }
 
-function todayTotal(charges: readonly VendorCharge[]): number {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  return charges
-    .filter(
-      (c) =>
-        c.status === "received" &&
-        new Date(c.createdAt).getTime() >= todayStart.getTime(),
-    )
-    .reduce((sum, c) => sum + c.amountCents, 0);
+function ChargeHistorySkeleton() {
+  return (
+    <div className="mt-8 space-y-3" aria-label="Carregando cobranças">
+      {[1, 2, 3].map((item) => (
+        <div key={item} className="rounded-xl border bg-card p-3">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-9 rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+            <Skeleton className="h-4 w-16" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
-interface ChargeHistoryListProps {
-  initialCharges?: VendorCharge[];
-}
-
-export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {}) {
-  const storeCharges = useAppStore((state) => state.vendorCharges);
-  const charges = initialCharges ?? storeCharges;
-
+export function ChargeHistoryList() {
+  const charges = useAppStore((state) => state.vendorCharges);
+  const summary = useAppStore((state) => state.chargeSummary);
   const read = useAppStore((state) => state.reads[CHARGES_READ_KEY] ?? IDLE_READ);
-
-  const load = useCallback(() => {
-    void loadVendorCharges().catch(() => {
-      // The store records the failure; the retry control renders it.
-    });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const load = useCallback(async () => {
+    await retryPendingVendorChargeCancellations();
+    await loadVendorCharges();
   }, []);
 
   useEffect(() => {
-    load();
+    void load().catch(() => {
+      // The store records the failure; the retry control renders it.
+    });
   }, [load]);
+  const handleLoadMore = useCallback(async () => {
+    const cursor = useAppStore.getState().chargeSummary.cursor;
+    if (cursor === null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      await loadVendorCharges(cursor);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore]);
 
-  const total = todayTotal(charges);
-  const receivedCount = charges.filter(
-    (c) => c.status === "received",
-  ).length;
+  // Totals come from the server: summing the loaded page would undercount and
+  // a local midnight would use the device's timezone instead of Sao Paulo's.
+  const total = summary.receivedTodayCents ?? 0;
+  const receivedCount = summary.receivedCount ?? 0;
+  const chargeCount = summary.total ?? charges.length;
+  const isInitialLoad =
+    charges.length === 0 && (read.status === "idle" || read.status === "loading");
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
@@ -82,7 +103,7 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
         <h1 className="text-xl font-bold">Cobranças recebidas</h1>
       </div>
 
-      {total > 0 && (
+      {!isInitialLoad && total > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -95,7 +116,9 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
         </motion.div>
       )}
 
-      {charges.length === 0 && read.status === "error" ? (
+      {isInitialLoad ? (
+        <ChargeHistorySkeleton />
+      ) : charges.length === 0 && read.status === "error" ? (
         <SyncErrorState
           message={ledgerErrorMessage(new LedgerError(read.code))}
           onRetry={load}
@@ -120,7 +143,7 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
         <>
           <p className="mt-4 text-sm text-muted-foreground">
             {receivedCount} recebida{receivedCount !== 1 ? "s" : ""} de{" "}
-            {charges.length} cobrança{charges.length !== 1 ? "s" : ""}
+            {chargeCount} cobrança{chargeCount !== 1 ? "s" : ""}
           </p>
           <motion.div
             variants={staggerContainer}
@@ -174,6 +197,17 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
               </motion.div>
             ))}
           </motion.div>
+          {!summary.complete && summary.cursor !== null && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="mt-3 w-full"
+            >
+              {loadingMore ? "Carregando..." : "Carregar mais"}
+            </Button>
+          )}
         </>
       )}
     </div>
