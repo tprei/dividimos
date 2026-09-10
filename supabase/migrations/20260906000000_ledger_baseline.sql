@@ -1349,7 +1349,7 @@ BEGIN
     )),
     'expenseCount', (
       SELECT count(*) FROM expenses e
-      WHERE e.group_id = g.id AND e.deleted_at IS NULL
+      WHERE e.group_id = g.id AND e.status = 'active'
     )
   ) INTO v_out
   FROM groups g
