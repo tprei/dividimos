@@ -9,8 +9,8 @@ import {
   userCarlos,
 } from "@/test/fixtures";
 import { useBillStore, _testGetCacheState, selectPreviewDebts } from "./bill-store";
+import { divisionForItem } from "@/lib/item-division";
 import type { ExpenseDetail } from "@/types/ledger";
-
 function setup() {
   const s = useBillStore.getState();
   s.setCurrentUser(userAlice);
@@ -156,6 +156,119 @@ describe("splitItemEqually", () => {
     const itemId = useBillStore.getState().items[0].id;
     s.splitItemEqually(itemId, []);
     expect(useBillStore.getState().splits).toHaveLength(0);
+  });
+});
+
+describe("setItemDivision", () => {
+  function setupItemizedExpense() {
+    const s = setup();
+    s.createExpense("Test", "itemized");
+    s.addParticipant(userBob);
+    s.addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 10000, totalPriceCents: 10000 });
+    return useBillStore.getState();
+  }
+
+  it("stores equal shares that reconcile to the item", () => {
+    const s = setupItemizedExpense();
+    const itemId = s.items[0].id;
+    s.setItemDivision(itemId, {
+      mode: "equal",
+      shares: [
+        { participantId: "user-alice", cents: 5000 },
+        { participantId: "user-bob", cents: 5000 },
+      ],
+    });
+    const state = useBillStore.getState();
+    expect(state.splits).toHaveLength(2);
+    expect(divisionForItem(state.items[0], state.splits)).toEqual({
+      mode: "equal",
+      shares: [
+        { participantId: "user-alice", cents: 5000 },
+        { participantId: "user-bob", cents: 5000 },
+      ],
+    });
+  });
+
+  it("ignores a division that references someone who is no longer in the bill", () => {
+    const s = setupItemizedExpense();
+    const itemId = s.items[0].id;
+    s.setItemDivision(itemId, {
+      mode: "equal",
+      shares: [
+        { participantId: "user-alice", cents: 5000 },
+        { participantId: "user-carol", cents: 5000 },
+      ],
+    });
+    const state = useBillStore.getState();
+    expect(state.splits).toHaveLength(0);
+    expect(divisionForItem(state.items[0], state.splits)).toBeNull();
+  });
+
+  it("stores exact percentage shares", () => {
+    const s = setupItemizedExpense();
+    const itemId = s.items[0].id;
+    s.setItemDivision(itemId, {
+      mode: "percent",
+      shares: [
+        { participantId: "user-alice", cents: 7500, basisPoints: 7500 },
+        { participantId: "user-bob", cents: 2500, basisPoints: 2500 },
+      ],
+    });
+    const state = useBillStore.getState();
+    expect(state.splits.map((split) => [split.splitType, split.value, split.computedAmountCents])).toEqual([
+      ["percentage", 75, 7500],
+      ["percentage", 25, 2500],
+    ]);
+  });
+
+  it("stores fixed shares that reconcile to the item", () => {
+    const s = setupItemizedExpense();
+    const itemId = s.items[0].id;
+    s.setItemDivision(itemId, {
+      mode: "fixed",
+      shares: [
+        { participantId: "user-alice", cents: 6500 },
+        { participantId: "user-bob", cents: 3500 },
+      ],
+    });
+    const state = useBillStore.getState();
+    expect(divisionForItem(state.items[0], state.splits)).toEqual({
+      mode: "fixed",
+      shares: [
+        { participantId: "user-alice", cents: 6500 },
+        { participantId: "user-bob", cents: 3500 },
+      ],
+    });
+  });
+
+  it("recomputes equal shares when the item amount changes", () => {
+    const s = setupItemizedExpense();
+    const itemId = s.items[0].id;
+    s.setItemDivision(itemId, {
+      mode: "equal",
+      shares: [
+        { participantId: "user-alice", cents: 5000 },
+        { participantId: "user-bob", cents: 5000 },
+      ],
+    });
+    s.updateItem(itemId, { totalPriceCents: 10001, unitPriceCents: 10001 });
+    expect(useBillStore.getState().splits.map((split) => split.computedAmountCents)).toEqual([5001, 5000]);
+  });
+
+  it("preserves fixed shares and exposes their mismatch after an amount change", () => {
+    const s = setupItemizedExpense();
+    const itemId = s.items[0].id;
+    s.setItemDivision(itemId, {
+      mode: "fixed",
+      shares: [
+        { participantId: "user-alice", cents: 6500 },
+        { participantId: "user-bob", cents: 3500 },
+      ],
+    });
+    s.updateItem(itemId, { totalPriceCents: 12000, unitPriceCents: 12000 });
+    const state = useBillStore.getState();
+    expect(state.splits.map((split) => split.computedAmountCents)).toEqual([6500, 3500]);
+    expect(divisionForItem(state.items[0], state.splits)).toBeNull();
   });
 });
 

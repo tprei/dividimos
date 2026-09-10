@@ -5,6 +5,8 @@ import {
   parseAllocationPercentText,
   parseExpenseCentsText,
 } from "@/lib/expense-money";
+import type { ExpenseItem, SplitType } from "@/types";
+
 
 export type ItemDivisionMode = "equal" | "percent" | "fixed";
 
@@ -20,6 +22,13 @@ export interface ItemDivisionValue {
 }
 
 export const FULL_PERCENT_BASIS_POINTS = 10_000;
+interface ItemDivisionSplit {
+  itemId: string;
+  userId: string;
+  splitType: SplitType;
+  value: number;
+  computedAmountCents: number;
+}
 
 export type DivisionComputation =
   | { ok: true; centsById: Record<string, number>; basisPointsById?: Record<string, number> }
@@ -94,7 +103,44 @@ export function equalDivision(participantIds: readonly string[], cents: number):
 }
 
 export function isDivisionValid(value: ItemDivisionValue, cents: number): boolean {
-  return value.shares.length > 0 && value.shares.reduce((sum, share) => sum + share.cents, 0) === cents;
+  if (value.shares.length === 0 || !Number.isInteger(cents) || cents < 0) return false;
+  const ids = new Set<string>();
+  for (const share of value.shares) {
+    if (ids.has(share.participantId) || !Number.isInteger(share.cents) || share.cents < 0) return false;
+    ids.add(share.participantId);
+  }
+  if (value.shares.reduce((sum, share) => sum + share.cents, 0) !== cents) return false;
+  if (value.mode !== "percent") return true;
+  return (
+    value.shares.every(
+      (share) =>
+        share.basisPoints !== undefined &&
+        Number.isInteger(share.basisPoints) &&
+        share.basisPoints >= 0 &&
+        share.basisPoints <= FULL_PERCENT_BASIS_POINTS,
+    ) &&
+    value.shares.reduce((sum, share) => sum + (share.basisPoints ?? 0), 0) === FULL_PERCENT_BASIS_POINTS
+  );
+}
+
+export function divisionForItem(
+  item: Pick<ExpenseItem, "id" | "totalPriceCents">,
+  splits: readonly ItemDivisionSplit[],
+): ItemDivisionValue | null {
+  const itemSplits = splits.filter((split) => split.itemId === item.id);
+  if (itemSplits.length === 0) return null;
+  const storedMode = itemSplits[0].splitType;
+  if (itemSplits.some((split) => split.splitType !== storedMode)) return null;
+  const mode: ItemDivisionMode = storedMode === "percentage" ? "percent" : storedMode;
+  const value: ItemDivisionValue = {
+    mode,
+    shares: itemSplits.map((split) => ({
+      participantId: split.userId,
+      cents: split.computedAmountCents,
+      ...(mode === "percent" ? { basisPoints: Math.round(split.value * 100) } : {}),
+    })),
+  };
+  return isDivisionValid(value, item.totalPriceCents) ? value : null;
 }
 
 export function recomputeDivisionShares(value: ItemDivisionValue, cents: number): ItemDivisionValue {

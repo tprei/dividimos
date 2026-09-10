@@ -9,7 +9,7 @@ import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { ExpenseDetail, Me, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
-import type { WizardModes } from "./wizard-modes";
+import type { Step, WizardModes } from "./wizard-modes";
 
 function profileToUser(profile: UserProfile): User {
   return {
@@ -32,11 +32,7 @@ export interface WizardInitInput {
   selectedGroupId: string | null;
   onSetSelectedGroupId: (groupId: string) => void;
   onSetBillType: (type: ExpenseType) => void;
-  onSetStep: (step: "type" | "info" | "participants" | "items" | "split" | "payer" | "summary") => void;
-  onSetTitle: (title: string) => void;
-  onSetMerchantName: (merchant: string) => void;
-  onSetServiceFee: (fee: string) => void;
-  onSetFixedFees: (fees: string) => void;
+  onSetStep: (step: Step) => void;
   onSetIsEditing: (isEditing: boolean) => void;
   onSetIsDmMode: (isDm: boolean) => void;
 }
@@ -49,10 +45,6 @@ export function useWizardInit({
   onSetSelectedGroupId,
   onSetBillType,
   onSetStep,
-  onSetTitle,
-  onSetMerchantName,
-  onSetServiceFee,
-  onSetFixedFees,
   onSetIsEditing,
   onSetIsDmMode,
 }: WizardInitInput) {
@@ -78,9 +70,7 @@ export function useWizardInit({
 
     if (modes.dm.type === "single_amount") {
       billStore.createExpenseFromDm(modes.dm.groupId, counterparty);
-      const autoTitle = `Cobrança - ${counterpartyMember.user.name.split(" ")[0]}`;
-      billStore.updateExpense({ title: autoTitle });
-      onSetTitle(autoTitle);
+      billStore.updateExpense({ title: `Cobrança - ${counterpartyMember.user.name.split(" ")[0]}` });
       onSetBillType("single_amount");
       onSetStep("info");
     } else {
@@ -89,7 +79,7 @@ export function useWizardInit({
       onSetBillType("itemized");
       onSetStep("info");
     }
-  }, [modes.dm, me, onSetSelectedGroupId, onSetIsDmMode, onSetTitle, onSetBillType, onSetStep]);
+  }, [modes.dm, me, onSetSelectedGroupId, onSetIsDmMode, onSetBillType, onSetStep]);
 
   // Chat draft edit mode: consume ?groupId=<id>&title=<text>&amount=<cents>
   useEffect(() => {
@@ -125,10 +115,6 @@ export function useWizardInit({
       const hydrated = useBillStore.getState();
       onSetIsEditing(true);
       onSetBillType(hydrated.expense?.expenseType ?? "single_amount");
-      onSetTitle(hydrated.expense?.title ?? "");
-      onSetMerchantName(hydrated.expense?.merchantName ?? "");
-      onSetServiceFee(String(hydrated.expense?.serviceFeePercent ?? 0).replace(".", ","));
-      onSetFixedFees(hydrated.expense?.fixedFees ? String(hydrated.expense.fixedFees / 100) : "");
       onSetSelectedGroupId(detail.expense.groupId);
 
       if (hydrated.expense?.expenseType === "single_amount") {
@@ -156,18 +142,18 @@ export function useWizardInit({
       .catch((e) => {
         toast.error(ledgerErrorMessage(e));
       });
-  }, [modes.editExpenseId, me, onSetIsEditing, onSetBillType, onSetTitle, onSetMerchantName, onSetServiceFee, onSetFixedFees, onSetSelectedGroupId, onSetStep]);
+  }, [modes.editExpenseId, me, onSetIsEditing, onSetBillType, onSetSelectedGroupId, onSetStep]);
 
-  // Auto-select the ?groupId group when entering the participants step.
   useEffect(() => {
     const groupIdParam = modes.entryGroupId;
-    if (!groupIdParam || modes.dm || selectedGroupId || step !== "participants" || !me) return;
+    if (!groupIdParam || modes.dm || selectedGroupId || step === "type" || !me) return;
 
     const snapshot = useAppStore.getState().groups[groupIdParam];
     if (!snapshot) return;
 
     onSetSelectedGroupId(groupIdParam);
     const billStore = useBillStore.getState();
+    billStore.updateExpense({ groupId: groupIdParam });
     const hasOthers = billStore.participants.some((p) => p.id !== me.id);
     if (hasOthers) return;
     for (const member of snapshot.members) {
@@ -176,7 +162,6 @@ export function useWizardInit({
     }
   }, [step, modes.entryGroupId, modes.dm, selectedGroupId, me, onSetSelectedGroupId]);
 
-  // Voice hydration navigate-then-render flow (?step=payer|participants).
   useEffect(() => {
     const stepParam = modes.entryStep;
     if (!stepParam || voiceStepRef.current) return;
@@ -185,9 +170,7 @@ export function useWizardInit({
     if (storeState.expense) {
       voiceStepRef.current = true;
       onSetBillType(storeState.expense.expenseType);
-      onSetTitle(storeState.expense.title);
-      onSetMerchantName(storeState.expense.merchantName ?? "");
-      onSetStep("participants");
+      onSetStep(stepParam);
     }
-  }, [modes.entryStep, onSetBillType, onSetTitle, onSetMerchantName, onSetStep]);
+  }, [modes.entryStep, onSetBillType, onSetStep]);
 }

@@ -96,11 +96,12 @@ export function ItemDivisionEditor({
 }: ItemDivisionEditorProps) {
   const participantIds = participants.map((participant) => participant.id);
   const [mode, setMode] = useState<ItemDivisionMode>(value?.mode ?? "equal");
-  const [selectedIds, setSelectedIds] = useState<string[]>(() => {
+  const [rawSelectedIds, setSelectedIds] = useState<string[]>(() => {
     if (!value) return [];
     const saved = new Set(value.shares.map((share) => share.participantId));
     return participantIds.filter((id) => saved.has(id));
   });
+  const selectedIds = rawSelectedIds.filter((id) => participantIds.includes(id));
   const [percentTexts, setPercentTexts] = useState<Record<string, string>>(() => {
     const texts: Record<string, string> = {};
     for (const share of value?.shares ?? []) {

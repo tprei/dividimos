@@ -133,3 +133,23 @@ export function computeExpenseLineTotalCents(
   }
   return { ok: true, value: brandExpenseCents(Number(total)) };
 }
+
+export function unitPriceCentsForLineTotal(
+  quantityMilliunits: number,
+  totalCents: number,
+): ExpenseCents | null {
+  if (!Number.isSafeInteger(quantityMilliunits) || quantityMilliunits <= 0) return null;
+  if (!Number.isSafeInteger(totalCents) || totalCents <= 0) return null;
+  const quantity = BigInt(quantityMilliunits);
+  const total = BigInt(totalCents);
+  const minimumNumerator = total * MILLIUNITS_PER_UNIT - HALF_UP_BIAS;
+  const minimum =
+    minimumNumerator <= BigInt(0) ? BigInt(1) : (minimumNumerator + quantity - BigInt(1)) / quantity;
+  const maximum = (total * MILLIUNITS_PER_UNIT + HALF_UP_BIAS - BigInt(1)) / quantity;
+  if (minimum > maximum) return null;
+  let unit = (total * MILLIUNITS_PER_UNIT + quantity / BigInt(2)) / quantity;
+  if (unit < minimum) unit = minimum;
+  if (unit > maximum) unit = maximum;
+  if (unit > BigInt(MAX_EXPENSE_CENTS as number)) return null;
+  return brandExpenseCents(Number(unit));
+}

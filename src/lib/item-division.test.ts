@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeDivision,
+  divisionForItem,
   divisionStatusText,
   equalDivision,
   isDivisionValid,
@@ -82,6 +83,35 @@ describe("equalDivision and isDivisionValid", () => {
 
   it("returns null when there is nobody to split with", () => {
     expect(equalDivision([], 100)).toBeNull();
+  });
+});
+
+describe("divisionForItem", () => {
+  it("converts persisted split rows into a valid percent division", () => {
+    expect(
+      divisionForItem(
+        { id: "item-1", totalPriceCents: 1000 },
+        [
+          { itemId: "item-1", userId: "a", splitType: "percentage", value: 25, computedAmountCents: 250 },
+          { itemId: "item-1", userId: "b", splitType: "percentage", value: 75, computedAmountCents: 750 },
+        ],
+      ),
+    ).toEqual({
+      mode: "percent",
+      shares: [
+        { participantId: "a", cents: 250, basisPoints: 2500 },
+        { participantId: "b", cents: 750, basisPoints: 7500 },
+      ],
+    });
+  });
+
+  it("returns null when persisted shares no longer reconcile", () => {
+    expect(
+      divisionForItem(
+        { id: "item-1", totalPriceCents: 1000 },
+        [{ itemId: "item-1", userId: "a", splitType: "fixed", value: 4, computedAmountCents: 400 }],
+      ),
+    ).toBeNull();
   });
 });
 

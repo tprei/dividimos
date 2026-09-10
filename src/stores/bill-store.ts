@@ -4,6 +4,8 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { allocateByBasisPoints, allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
 import type { ExpenseAllocationIssue } from "@/lib/expense-money";
+import { divisionForItem, recomputeDivisionShares } from "@/lib/item-division";
+import type { ItemDivisionValue } from "@/lib/item-division";
 import type {
   DebtEdge,
   Expense,
@@ -87,6 +89,7 @@ export interface ExpenseState {
   assignItem: (itemId: string, userId: string, splitType: SplitType, value: number) => void;
   unassignItem: (itemId: string, userId: string) => void;
   splitItemEqually: (itemId: string, userIds: string[]) => void;
+  setItemDivision: (itemId: string, value: ItemDivisionValue) => void;
 
   setPayerFull: (userId: string) => PayerMutationResult;
   splitPaymentEqually: (userIds: string[]) => PayerMutationResult;
@@ -149,6 +152,14 @@ function getGrandTotalFor(
   const feeResult = computeServiceFeeCents(itemsTotal, expense.serviceFeeBasisPoints);
   return itemsTotal + (feeResult.ok ? feeResult.value : 0) + expense.fixedFees;
 }
+export function selectItemDivision(
+  state: Pick<ExpenseState, "items" | "splits">,
+  itemId: string,
+): ItemDivisionValue | null {
+  const item = state.items.find((candidate) => candidate.id === itemId);
+  return item ? divisionForItem(item, state.splits) : null;
+}
+
 
 function recalculateItemizedExpense(
   expense: Expense | null,
@@ -677,11 +688,46 @@ export const useBillStore = create<ExpenseState>()(
 
   updateItem: (itemId, updates) => {
     set((state) => {
-      if (!state.items.some((item) => item.id === itemId)) return {};
+      const existingItem = state.items.find((item) => item.id === itemId);
+      if (!existingItem) return {};
 
-      const items = state.items.map((item) =>
-        item.id === itemId ? { ...item, ...updates } : item,
-      );
+      const updatedItem = { ...existingItem, ...updates };
+      const items = state.items.map((item) => (item.id === itemId ? updatedItem : item));
+      let splits = state.splits;
+      if (existingItem.totalPriceCents !== updatedItem.totalPriceCents) {
+        const itemSplits = state.splits.filter((split) => split.itemId === itemId);
+        const splitType = itemSplits[0]?.splitType;
+        if (
+          splitType &&
+          splitType !== "fixed" &&
+          itemSplits.every((split) => split.splitType === splitType)
+        ) {
+          const value: ItemDivisionValue = {
+            mode: splitType === "percentage" ? "percent" : splitType,
+            shares: itemSplits.map((split) => ({
+              participantId: split.userId,
+              cents: split.computedAmountCents,
+              ...(splitType === "percentage"
+                ? { basisPoints: Math.round(split.value * 100) }
+                : {}),
+            })),
+          };
+          const recomputed = recomputeDivisionShares(value, updatedItem.totalPriceCents);
+          const nextItemSplits = itemSplits.map((split, index) => {
+            const share = recomputed.shares[index];
+            return {
+              ...split,
+              value:
+                splitType === "percentage"
+                  ? (share.basisPoints ?? 0) / 100
+                  : 100 / recomputed.shares.length,
+              computedAmountCents: share.cents,
+            };
+          });
+          splits = [...state.splits.filter((split) => split.itemId !== itemId), ...nextItemSplits];
+        }
+      }
+
       const expense = recalculateItemizedExpense(
         state.expense,
         items,
@@ -694,6 +740,7 @@ export const useBillStore = create<ExpenseState>()(
       return {
         items,
         expense,
+        splits,
         ...(totalChanged ? { payers: [] } : {}),
       };
     });
@@ -783,6 +830,41 @@ export const useBillStore = create<ExpenseState>()(
     }));
 
     set({ splits: [...existingOther, ...newSplits] });
+  },
+  setItemDivision: (itemId, value) => {
+    set((state) => {
+      if (!state.items.some((item) => item.id === itemId) || value.shares.length === 0) {
+        return {};
+      }
+      const memberIds = new Set<string>([
+        ...state.participants.map((participant) => participant.id),
+        ...state.guests.map((guest) => guest.id),
+      ]);
+      if (value.shares.some((share) => !memberIds.has(share.participantId))) {
+        return {};
+      }
+
+      const splitType: SplitType = value.mode === "percent" ? "percentage" : value.mode;
+      const splitsForItem: ExpenseSplit[] = value.shares.map((share) => {
+        let splitValue = share.cents;
+        if (value.mode === "equal") splitValue = 100 / value.shares.length;
+        if (value.mode === "percent") splitValue = (share.basisPoints ?? 0) / 100;
+        return {
+          id: generateId(),
+          itemId,
+          userId: share.participantId,
+          splitType,
+          value: splitValue,
+          computedAmountCents: share.cents,
+        };
+      });
+      return {
+        splits: [
+          ...state.splits.filter((split) => split.itemId !== itemId),
+          ...splitsForItem,
+        ],
+      };
+    });
   },
 
   setPayerFull: (userId) => {
