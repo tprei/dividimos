@@ -306,11 +306,14 @@ export function ScannedItemsReview({
                 }
                 inputMode="decimal"
                 aria-invalid={!serviceFeeResult.ok}
+                aria-describedby={!serviceFeeResult.ok ? "receipt-service-fee-error" : undefined}
                 className="h-11 w-24 shrink-0 bg-transparent text-right font-mono"
               />
             </div>
             {!serviceFeeResult.ok && (
-              <p className="px-4 py-2 text-xs text-destructive">Taxa de serviço inválida.</p>
+              <p id="receipt-service-fee-error" className="px-4 py-2 text-xs text-destructive">
+                Taxa de serviço inválida.
+              </p>
             )}
             <div className="flex min-h-14 items-center justify-between gap-3 px-4 py-2">
               <p className="text-sm font-bold">Total</p>

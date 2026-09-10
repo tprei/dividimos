@@ -205,6 +205,7 @@ function NewBillPageContent() {
     const billStore = useBillStore.getState();
     if (scanGroup) setSelectedGroupId(scanGroup.group.id);
     if (me) {
+      billStore.setCurrentUser(meToLegacyUser(me));
       billStore.createExpense(
         result.merchant || "Nota escaneada",
         "itemized",
