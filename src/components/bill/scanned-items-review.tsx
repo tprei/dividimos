@@ -10,6 +10,7 @@ import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import {
   computeServiceFeeCents,
@@ -224,17 +225,10 @@ export function ScannedItemsReview({
                 placeholder="Nome do estabelecimento"
                 className="mt-1 h-11 border-0 bg-transparent px-0 text-base font-bold shadow-none"
               />
-              <Input
-                type="date"
+              <DateField
+                label="Data do recibo"
                 value={occurredOn}
-                onChange={(event) => setOccurredOn(event.target.value)}
-                aria-label="Data do recibo"
-                aria-invalid={!isOccurredOnValid(occurredOn)}
-                aria-describedby={
-                  !isOccurredOnValid(occurredOn) ? "receipt-occurred-on-error" : undefined
-                }
-                required
-                className="h-11 w-36 border-0 bg-transparent px-0 font-mono text-xs text-muted-foreground shadow-none"
+                onChange={setOccurredOn}
               />
               {!isOccurredOnValid(occurredOn) && (
                 <p id="receipt-occurred-on-error" className="text-xs text-destructive">
