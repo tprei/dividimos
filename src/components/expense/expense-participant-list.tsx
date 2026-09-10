@@ -41,15 +41,17 @@ export function ExpenseParticipantList({
                     <Money cents={participant.shareCents} />
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  aria-label={`Convidar ${participant.guest.displayName}`}
-                  className="h-11 shrink-0 rounded-full px-4"
-                  onClick={() => onInviteGuest(participant)}
-                >
-                  Convidar
-                </Button>
+                {participant.guest.claimedBy === null && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    aria-label={`Convidar ${participant.guest.displayName}`}
+                    className="h-11 shrink-0 rounded-full px-4"
+                    onClick={() => onInviteGuest(participant)}
+                  >
+                    Convidar
+                  </Button>
+                )}
               </li>
             );
           }

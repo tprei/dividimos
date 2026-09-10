@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, ExternalLink, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { buildClaimUrl } from "@/lib/claim-qr";
-import { readClaimToken, writeClaimToken } from "@/lib/claim-token-cache";
+import { clearClaimToken, readClaimToken, writeClaimToken } from "@/lib/claim-token-cache";
 import { formatBRL } from "@/lib/currency";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { issueGuestClaimToken } from "@/lib/sync/mutations-group";
@@ -42,8 +42,11 @@ export function GuestInviteDialog({
   const [token, setToken] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const inFlightRef = useRef(false);
 
   const issue = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setWorking(true);
     try {
       const next = await issueGuestClaimToken(guest.id);
@@ -54,6 +57,7 @@ export function GuestInviteDialog({
     } catch (error) {
       toast.error(ledgerErrorMessage(error));
     } finally {
+      inFlightRef.current = false;
       setWorking(false);
     }
   }, [guest.id, expenseId]);
@@ -61,6 +65,11 @@ export function GuestInviteDialog({
   useEffect(() => {
     if (!open) return;
     setConfirming(false);
+    if (guest.claimedBy) {
+      clearClaimToken(guest.id);
+      setToken(null);
+      return;
+    }
     const cached = readClaimToken(guest.id);
     if (cached) {
       setToken(cached);
@@ -70,7 +79,7 @@ export function GuestInviteDialog({
     if (guest.claimLinkGeneration === 0) {
       void issue();
     }
-  }, [open, guest.id, guest.claimLinkGeneration, issue]);
+  }, [open, guest.id, guest.claimLinkGeneration, guest.claimedBy, issue]);
 
   const claimUrl = token ? buildClaimUrl(token) : null;
   const canReplace = guest.claimLinkGeneration === 1;
