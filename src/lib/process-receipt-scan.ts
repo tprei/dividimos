@@ -80,14 +80,23 @@ function assertReconciledReceipt(
 
 /**
  * Fetch and parse an NFC-e receipt via the SEFAZ HTML scraper route.
- * Throws `SefazFallbackError` when the server indicates a fallback is appropriate
- * (captcha, timeout, unparseable page). Other errors throw a generic `Error`.
+ * Posts both the consultation URL and the expected 44-digit access key; the
+ * server only returns parsed data when the page's dedicated access-key field
+ * matches that key. Throws `SefazFallbackError` when the server indicates a
+ * fallback is appropriate (captcha, timeout, unparseable page). Other errors
+ * throw a generic `Error`. An optional `signal` lets the caller abort the
+ * request (e.g. when the scan attempt is invalidated).
  */
-export async function fetchSefazReceipt(url: string): Promise<ReceiptOcrResult> {
+export async function fetchSefazReceipt(
+  receiptUrl: string,
+  receiptAccessKey: string,
+  signal?: AbortSignal,
+): Promise<ReceiptOcrResult> {
   const res = await fetch("/api/receipt/sefaz", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url: receiptUrl, receiptAccessKey }),
+    signal,
   });
 
   if (!res.ok) {
@@ -104,9 +113,13 @@ export async function fetchSefazReceipt(url: string): Promise<ReceiptOcrResult> 
 
 /**
  * Compress an image file and send it to the OCR API route.
- * Returns the parsed receipt result on success.
+ * Returns the parsed receipt result on success. An optional `signal` lets the
+ * caller abort the upload when the scan attempt is invalidated.
  */
-export async function processReceiptScan(file: File): Promise<ReceiptOcrResult> {
+export async function processReceiptScan(
+  file: File,
+  signal?: AbortSignal,
+): Promise<ReceiptOcrResult> {
   const compressed = await compressImage(file);
   const buffer = await compressed.arrayBuffer();
   const base64 = btoa(
@@ -120,6 +133,7 @@ export async function processReceiptScan(file: File): Promise<ReceiptOcrResult> 
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: base64, mimeType: compressed.type }),
+    signal,
   });
 
   if (!res.ok) {

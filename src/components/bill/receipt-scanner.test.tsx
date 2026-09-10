@@ -19,23 +19,43 @@ vi.mock("@/lib/capacitor/camera", () => ({
     mockPickNativeGalleryPhoto(...args),
 }));
 
+vi.mock("./qr-scanner-view", () => ({
+  QrScannerView: ({ paused, onDecode }: { paused?: boolean; onDecode: (data: string) => void }) => (
+    <div data-testid="qr-scanner-view" data-paused={paused ? "true" : "false"}>
+      <button
+        type="button"
+        onClick={() =>
+          onDecode(
+            "https://nfce.sefaz.sp.gov.br/consulta?chNFe=35240199999999999999550010000001231234567890",
+          )
+        }
+      >
+        Simular decodificação
+      </button>
+    </div>
+  ),
+}));
+
 import { ReceiptScanner } from "./receipt-scanner";
 
 function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
   return new File(["fake-image-data"], name, { type });
 }
 
-// Stub URL.createObjectURL / revokeObjectURL for happy-dom
+// Stub object-URL helpers without replacing the URL constructor used by QR parsing.
 const fakeUrl = "blob:http://localhost/fake-preview";
+const originalUrlConstructor = globalThis.URL;
 beforeEach(() => {
   mockGetPlatform.mockReturnValue("web");
   mockTakeNativePhoto.mockReset();
   mockPickNativeGalleryPhoto.mockReset();
-  vi.stubGlobal("URL", {
-    ...globalThis.URL,
-    createObjectURL: vi.fn(() => fakeUrl),
-    revokeObjectURL: vi.fn(),
-  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(originalUrlConstructor, {
+      createObjectURL: vi.fn(() => fakeUrl),
+      revokeObjectURL: vi.fn(),
+    }),
+  );
 });
 
 afterEach(() => {
@@ -304,6 +324,58 @@ describe("ReceiptScanner", () => {
 
       expect(mockTakeNativePhoto).not.toHaveBeenCalled();
       expect(mockPickNativeGalleryPhoto).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("source switching", () => {
+    it("reports tab switches through onSourceChange", async () => {
+      const onSourceChange = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <ReceiptScanner
+          onProcess={vi.fn()}
+          onBack={vi.fn()}
+          onSourceChange={onSourceChange}
+        />,
+      );
+
+      await user.click(screen.getByText("QR Code"));
+      expect(onSourceChange).toHaveBeenLastCalledWith("qr");
+
+      await user.click(screen.getByText("Foto"));
+      expect(onSourceChange).toHaveBeenLastCalledWith("photo");
+    });
+
+    it("pauses the QR surface visibly while a decoded result is processed", async () => {
+      const onQrDetected = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <ReceiptScanner
+          onProcess={vi.fn()}
+          onBack={vi.fn()}
+          processing={true}
+          onQrDetected={onQrDetected}
+        />,
+      );
+
+      await user.click(screen.getByText("QR Code"));
+      expect(screen.getByTestId("qr-scanner-view")).toHaveAttribute(
+        "data-paused",
+        "false",
+      );
+
+      await user.click(screen.getByRole("button", { name: "Simular decodificação" }));
+
+      expect(onQrDetected).toHaveBeenCalledOnce();
+      expect(onQrDetected.mock.calls[0][0]).toMatchObject({
+        chaveAcesso: "35240199999999999999550010000001231234567890",
+      });
+      expect(screen.getByTestId("qr-scanner-view")).toHaveAttribute(
+        "data-paused",
+        "true",
+      );
+      // While paused the surface stays visibly busy instead of freezing silently.
+      expect(screen.getByText("Consultando nota fiscal...")).toBeInTheDocument();
     });
   });
 });
