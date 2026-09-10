@@ -3,9 +3,45 @@ import { decodeExpenseResult } from "@/lib/expense-money";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 /**
- * Error thrown when an API call times out or fails in a retryable way.
- * Callers should offer "Tente novamente" and "Adicionar manualmente" options.
+ * Application-owned deadlines. A server-side timeout does not cover a proxy
+ * that accepts the connection and then stalls, which would wedge the scan
+ * flow with no way out.
  */
+const OCR_DEADLINE_MS = 35_000;
+
+/**
+ * Fetches with our own deadline, honouring a caller's signal too. The timer
+ * and listener are always released, so an abandoned scan leaves nothing armed.
+ */
+async function fetchWithDeadline(
+  input: string,
+  init: RequestInit,
+  deadlineMs: number,
+  caller?: AbortSignal,
+): Promise<Response> {
+  const controller = new AbortController();
+  const onCallerAbort = () => controller.abort(caller?.reason);
+  const timer = setTimeout(() => controller.abort(new DOMException("deadline", "TimeoutError")), deadlineMs);
+
+  if (caller?.aborted) onCallerAbort();
+  else caller?.addEventListener("abort", onCallerAbort, { once: true });
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    caller?.removeEventListener("abort", onCallerAbort);
+  }
+}
+
+/** Did this failure come from an abort (ours or the caller's)? */
+function isAbort(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
+}
+
 export class ReceiptTimeoutError extends Error {
   readonly timeout = true as const;
   constructor(
@@ -63,6 +99,7 @@ function assertReconciledReceipt(result: ReceiptOcrResult): ReceiptOcrResult {
 }
 
 /**
+
  * Compress an image file and send it to the OCR API route.
  * Returns the parsed receipt result on success. An optional `signal` lets the
  * caller abort the upload when the scan attempt is invalidated.
@@ -80,12 +117,22 @@ export async function processReceiptScan(
     ),
   );
 
-  const res = await fetch("/api/receipt/ocr", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image: base64, mimeType: compressed.type }),
-    signal,
-  });
+  let res: Response;
+  try {
+    res = await fetchWithDeadline(
+      "/api/receipt/ocr",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64, mimeType: compressed.type }),
+      },
+      OCR_DEADLINE_MS,
+      signal,
+    );
+  } catch (error) {
+    if (isAbort(error)) throw new ReceiptTimeoutError();
+    throw error;
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
