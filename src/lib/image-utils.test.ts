@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { compressImage } from "./image-utils";
+import { compressImage, ImagePolicyError } from "./image-utils";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -157,5 +157,44 @@ describe("compressImage", () => {
     expect(result.name).toBe("foto.jpg");
     expect(toBlobMock).toHaveBeenCalledOnce();
     expect(fallbackCtx.drawImage).toHaveBeenCalledOnce();
+  });
+});
+
+describe("decode policy", () => {
+  it("refuses an oversized file before decoding it", async () => {
+    const decode = vi.fn();
+    vi.stubGlobal("createImageBitmap", decode);
+
+    await expect(compressImage(makeFile("huge.jpg", 13 * 1024 * 1024))).rejects.toThrow(
+      ImagePolicyError,
+    );
+    // The whole point: no raster is ever allocated.
+    expect(decode).not.toHaveBeenCalled();
+  });
+
+  it("refuses an over-resolution image and still releases the bitmap", async () => {
+    const bitmap = makeBitmap(9000, 9000);
+    vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue(bitmap));
+
+    await expect(compressImage(makeFile())).rejects.toThrow(ImagePolicyError);
+    expect(bitmap.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the bitmap exactly once when encoding fails after the decode", async () => {
+    convertToBlobMock.mockRejectedValue(new Error("encoder died"));
+
+    await expect(compressImage(makeFile())).rejects.toThrow();
+    expect(mockBitmap.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an undecodable image as retryable", async () => {
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn().mockRejectedValue(new Error("not an image")),
+    );
+
+    const error = await compressImage(makeFile()).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ImagePolicyError);
+    expect((error as ImagePolicyError).retryable).toBe(true);
   });
 });
