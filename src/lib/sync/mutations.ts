@@ -120,6 +120,42 @@ function computeMyShareAndPaid(
   return { myShareCents: payload.shares[idx] ?? 0, myPaidCents };
 }
 
+/** What a dispatch achieved, as reported by /api/notify. */
+export interface NotifyOutcome {
+  sent: number;
+  cleaned: number;
+  failed: number;
+  recipients: number;
+}
+
+/**
+ * Dispatches notifications for an event and reports what happened. `null`
+ * means the request itself never produced an answer, which is not evidence of
+ * delivery either way.
+ */
+export async function dispatchNotification(
+  eventId: number,
+): Promise<NotifyOutcome | null> {
+  try {
+    const response = await fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId }),
+    });
+    if (!response.ok) return null;
+    if (response.status === 204) return { sent: 0, cleaned: 0, failed: 0, recipients: 0 };
+    const body = (await response.json()) as Partial<NotifyOutcome>;
+    return {
+      sent: body.sent ?? 0,
+      cleaned: body.cleaned ?? 0,
+      failed: body.failed ?? 0,
+      recipients: body.recipients ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function notify(eventId: number | null): void {
   if (eventId === null) return;
   fetch("/api/notify", {

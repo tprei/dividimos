@@ -4,10 +4,12 @@ import { createMockSupabase } from "@/test/mock-supabase";
 
 const serverMock = createMockSupabase();
 const adminMock = createMockSupabase();
-const mockNotifyUser =
-  vi.fn<(userId: string, payload: unknown) => Promise<{ sent: number; cleaned: number }>>(
-    async () => ({ sent: 1, cleaned: 0 }),
-  );
+const mockNotifyUser = vi.fn<
+  (
+    userId: string,
+    payload: unknown,
+  ) => Promise<{ sent: number; cleaned: number; failed: number }>
+>(async () => ({ sent: 1, cleaned: 0, failed: 0 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => serverMock.client),
@@ -131,7 +133,7 @@ describe("POST /api/notify", () => {
     serverMock.reset();
     adminMock.reset();
     mockNotifyUser.mockClear();
-    mockNotifyUser.mockResolvedValue({ sent: 1, cleaned: 0 });
+    mockNotifyUser.mockResolvedValue({ sent: 1, cleaned: 0, failed: 0 });
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -222,7 +224,7 @@ describe("POST /api/notify", () => {
     const res = await POST(makeRequest({ eventId: 101 }));
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual({ sent: 2 });
+    expect(json).toMatchObject({ sent: 2 });
 
     // expense_created notifies accepted members except the actor
     expect(mockNotifyUser).toHaveBeenCalledTimes(2);
@@ -358,7 +360,7 @@ describe("POST /api/notify", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     // Only carol notified; bruno filtered out by preference
-    expect(json).toEqual({ sent: 1 });
+    expect(json).toMatchObject({ sent: 1 });
     expect(mockNotifyUser).toHaveBeenCalledTimes(1);
     expect(mockNotifyUser).toHaveBeenCalledWith("carol", expect.any(Object));
   });
@@ -394,7 +396,7 @@ describe("POST /api/notify", () => {
     const res = await POST(makeRequest({ eventId: 102 }));
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual({ sent: 1 });
+    expect(json).toMatchObject({ sent: 1 });
 
     // settlement_recorded sends only to subject_user_id
     expect(mockNotifyUser).toHaveBeenCalledTimes(1);
@@ -436,7 +438,7 @@ describe("POST /api/notify", () => {
     const res = await POST(makeRequest({ eventId: 103 }));
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual({ sent: 2 });
+    expect(json).toMatchObject({ sent: 2 });
 
     // member_invited sends to payload.userIds regardless of status
     expect(mockNotifyUser).toHaveBeenCalledTimes(2);
@@ -447,8 +449,8 @@ describe("POST /api/notify", () => {
   it("aggregates sent count from multiple notifyUser calls", async () => {
     serverMock.setUser({ id: "ana" });
 
-    mockNotifyUser.mockResolvedValueOnce({ sent: 2, cleaned: 0 });
-    mockNotifyUser.mockResolvedValueOnce({ sent: 1, cleaned: 0 });
+    mockNotifyUser.mockResolvedValueOnce({ sent: 2, cleaned: 0, failed: 0 });
+    mockNotifyUser.mockResolvedValueOnce({ sent: 1, cleaned: 0, failed: 0 });
 
     const eventRow = {
       id: 104,
@@ -488,10 +490,10 @@ describe("POST /api/notify", () => {
     const res = await POST(makeRequest({ eventId: 104 }));
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual({ sent: 3 });
+    expect(json).toMatchObject({ sent: 3 });
   });
 
-  it("returns 200 { sent: 0 } on error after claim", async () => {
+  it("fails the dispatch and releases the claim when it throws after claiming", async () => {
     serverMock.setUser({ id: "ana" });
 
     const eventRow = {
@@ -508,13 +510,50 @@ describe("POST /api/notify", () => {
     };
 
     adminMock.onTable("group_events", { data: eventRow });
-    // Don't queue a response for "groups" — will return null, causing error
-    // The route should catch this and return { sent: 0 }
+    // No response queued for "groups": the group read fails after the claim.
 
     const res = await POST(makeRequest({ eventId: 105 }));
+    // A dispatch that reached nobody is not a success.
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ sent: 0, failed: 1 });
+
+    // The claim is released so the same event can be dispatched again.
+    const updates = adminMock.findCalls("group_events", "update");
+    expect(updates.at(-1)?.args[0]).toEqual({ notified_at: null });
+  });
+
+  it("releases the claim when the dispatch delivered to nobody", async () => {
+    serverMock.setUser({ id: "ana" });
+    mockNotifyUser.mockResolvedValue({ sent: 0, cleaned: 0, failed: 1 });
+
+    adminMock.onTable("group_events", {
+      data: {
+        id: 130,
+        group_id: "group-1",
+        actor_id: "ana",
+        kind: "nudge" as const,
+        expense_id: null,
+        settlement_id: null,
+        subject_user_id: "bob",
+        payload: { amountCents: 1000 },
+        created_at: "2026-09-06T12:00:00Z",
+        notified_at: null,
+      },
+    });
+    adminMock.onTable("groups", { data: { id: "group-1", kind: "group", name: "Viagem" } });
+    adminMock.onTable("group_members", {
+      data: [
+        { user_id: "ana", status: "accepted", users: { name: "Ana", notification_preferences: null } },
+        { user_id: "bob", status: "accepted", users: { name: "Bob", notification_preferences: null } },
+      ],
+    });
+
+    const res = await POST(makeRequest({ eventId: 130 }));
     expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json).toEqual({ sent: 0 });
+    expect(await res.json()).toMatchObject({ sent: 0 });
+
+    const updates = adminMock.findCalls("group_events", "update");
+    expect(updates.at(-1)?.args[0]).toEqual({ notified_at: null });
   });
 
   it("uses share_cents in notification body for expense recipients", async () => {
