@@ -1,9 +1,13 @@
-CREATE FUNCTION public.send_nudge(
-  p_group_id uuid,
-  p_user_id uuid
-) RETURNS jsonb
-  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
-AS $$
+-- 737a: tie the nudge cooldown to delivery.
+
+set check_function_bodies = off;
+
+CREATE OR REPLACE FUNCTION public.send_nudge(p_group_id uuid, p_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
 DECLARE
   v_actor uuid;
   v_amount_cents bigint;
@@ -68,7 +72,7 @@ BEGIN
     'eventId', v_event_id
   );
 END;
-$$;
+$function$
+;
 
-REVOKE ALL ON FUNCTION public.send_nudge(uuid, uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.send_nudge(uuid, uuid) TO authenticated;
+

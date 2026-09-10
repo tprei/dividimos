@@ -19,7 +19,7 @@ import type {
   VendorCharge,
   WireIssue,
 } from "@/types/ledger";
-import { notify } from "./mutations";
+import { dispatchNotification, notify } from "./mutations";
 
 function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val);
@@ -118,10 +118,28 @@ export async function removeMember(groupId: string, userId: string): Promise<Mut
   return ack;
 }
 
-export async function sendNudge(groupId: string, userId: string): Promise<MutationAck> {
+export interface NudgeResult {
+  ack: MutationAck;
+  /** True only when a device actually accepted the notification. */
+  delivered: boolean;
+}
+
+/**
+ * Records the nudge, then waits for its dispatch: a nudge nobody received is
+ * not a nudge, and the caller may retry the same event.
+ */
+export async function sendNudge(groupId: string, userId: string): Promise<NudgeResult> {
   const ack = await rpc("send_nudge", { p_group_id: groupId, p_user_id: userId }, decodeMutationAck);
-  notify(ack.eventId);
-  return ack;
+  if (ack.eventId === null) return { ack, delivered: false };
+
+  const outcome = await dispatchNotification(ack.eventId);
+  return { ack, delivered: outcome !== null && outcome.sent > 0 };
+}
+
+/** Re-dispatches a nudge event whose delivery failed. */
+export async function retryNudgeDispatch(eventId: number): Promise<boolean> {
+  const outcome = await dispatchNotification(eventId);
+  return outcome !== null && outcome.sent > 0;
 }
 
 export async function deleteGroup(groupId: string): Promise<void> {

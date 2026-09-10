@@ -215,7 +215,10 @@ describe("DashboardContent", () => {
   });
 
   it("exposes nudge and quick charge from a receivable dialog", async () => {
-    groupMutations.sendNudge.mockResolvedValue({ groupId: "g1", ledgerVersion: 1, eventId: 10 });
+    groupMutations.sendNudge.mockResolvedValue({
+      ack: { groupId: "g1", ledgerVersion: 1, eventId: 10 },
+      delivered: true,
+    });
     seedStore([
       snapshot({
         balances: [
@@ -236,6 +239,32 @@ describe("DashboardContent", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cobrar valor" }));
     await waitFor(() => expect(quickProps.current?.open).toBe(true));
+  });
+
+  it("does not claim success when the nudge reached nobody", async () => {
+    groupMutations.sendNudge.mockResolvedValue({
+      ack: { groupId: "g1", ledgerVersion: 1, eventId: 11 },
+      delivered: false,
+    });
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 5000 },
+          { kind: "user", participantId: carol.id, netCents: -5000 },
+        ],
+      }),
+    ], meWithPixKey);
+    render(<DashboardContent />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Lembrar" }));
+
+    await waitFor(() => {
+      expect(groupMutations.sendNudge).toHaveBeenCalledWith("g1", carol.id);
+    });
+    // A nudge nobody received is not a nudge.
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalled();
   });
 
   it("hides Cobrar valor without a Pix key", () => {

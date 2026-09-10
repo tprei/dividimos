@@ -197,5 +197,48 @@ describe.skipIf(!isIntegrationTestReady)(
         }),
       ).resolves.toBe("nudge_cooldown");
     });
+
+    it("holds the cooldown for a delivered nudge but frees an undelivered one", async () => {
+      // Age the existing nudge past the in-flight grace window and mark it
+      // delivered: that is the case the 24h cooldown exists for.
+      await withPg(async (pg) => {
+        await pg.query(
+          `UPDATE group_events SET notified_at = now(), created_at = now() - interval '10 minutes'
+           WHERE group_id = $1 AND kind = 'nudge' AND actor_id = $2 AND subject_user_id = $3`,
+          [groupId, alice.id, bob.id],
+        );
+      });
+
+      await expect(
+        rpcErrorCode(clientAlice, "send_nudge", {
+          p_group_id: groupId,
+          p_user_id: bob.id,
+        }),
+      ).resolves.toBe("nudge_cooldown");
+
+      // The same nudge, never delivered, must not cost the sender a day.
+      await withPg(async (pg) => {
+        await pg.query(
+          `UPDATE group_events SET notified_at = NULL
+           WHERE group_id = $1 AND kind = 'nudge' AND actor_id = $2 AND subject_user_id = $3`,
+          [groupId, alice.id, bob.id],
+        );
+      });
+
+      const retry = await rpcOk<NudgeAck>(clientAlice, "send_nudge", {
+        p_group_id: groupId,
+        p_user_id: bob.id,
+      });
+      expect(typeof retry.eventId).toBe("number");
+
+      // That retry is itself undelivered and recent, so the grace window
+      // still blocks a burst.
+      await expect(
+        rpcErrorCode(clientAlice, "send_nudge", {
+          p_group_id: groupId,
+          p_user_id: bob.id,
+        }),
+      ).resolves.toBe("nudge_cooldown");
+    });
   },
 );
