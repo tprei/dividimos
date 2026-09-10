@@ -5,7 +5,6 @@ import {
   decodeMutationAck,
   decodeUserProfile,
   decodeVendorCharge,
-  decodeVendorCharges,
 } from "@/lib/ledger/decode";
 import { rpc, rpcVoid } from "@/lib/sync/client";
 import { refreshGroup } from "@/lib/sync/refresh";
@@ -197,6 +196,3 @@ export function clearPendingVendorChargeCancellations(): void {
   pendingVendorChargeCancellations.clear();
 }
 
-export async function getVendorCharges(limit = 50): Promise<VendorCharge[]> {
-  return await rpc("get_vendor_charges", { p_limit: limit }, decodeVendorCharges);
-}
