@@ -46,6 +46,7 @@ vi.mock("@capacitor/push-notifications", () => ({
 
 import { usePushNotifications } from "./use-push-notifications";
 import { __resetNativeRegistrationForTests } from "@/lib/push/native-registration";
+import { __resetServiceWorkerForTests } from "@/lib/push/service-worker";
 
 describe("usePushNotifications", () => {
   const originalNavigator = globalThis.navigator;
@@ -92,6 +93,7 @@ describe("usePushNotifications", () => {
     mockIsNativePlatform = false;
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = VAPID_KEY;
     __resetNativeRegistrationForTests();
+    __resetServiceWorkerForTests();
     registrationHandler = null;
     mockAddListener.mockClear();
     mockCheckPermissions.mockReset();
@@ -111,6 +113,7 @@ describe("usePushNotifications", () => {
         ...originalNavigator,
         serviceWorker: {
           ready: Promise.resolve(mockRegistration),
+          register: vi.fn().mockResolvedValue(mockRegistration),
         },
       },
       writable: true,

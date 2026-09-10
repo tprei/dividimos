@@ -15,6 +15,11 @@ vi.mock("./client", async () => {
   };
 });
 
+const mockDetachPush = vi.fn(async () => {});
+vi.mock("@/lib/push/detach", () => ({
+  detachPushForSignOut: () => mockDetachPush(),
+}));
+
 vi.mock("./mutations-group", () => ({
   clearPendingVendorChargeCancellations: vi.fn(),
 }));
@@ -160,6 +165,20 @@ describe("bootstrap account epoch", () => {
     await Promise.all([pending, next]);
 
     expect(useAppStore.getState().me?.id).toBe("user-b");
+    detach();
+  });
+});
+
+describe("sign-out push detach", () => {
+  it("detaches this device's push before dropping the session", async () => {
+    mockDetachPush.mockClear();
+    const detach = attachAuthListener(() => {}, () => {});
+
+    emit("SIGNED_OUT", null);
+    await Promise.resolve();
+
+    // The account losing the session must stop receiving on this browser.
+    expect(mockDetachPush).toHaveBeenCalledTimes(1);
     detach();
   });
 });
