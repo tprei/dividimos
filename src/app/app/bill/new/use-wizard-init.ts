@@ -100,11 +100,15 @@ export function useWizardInit({
     billStore.setCurrentUser(meToLegacyUser(me));
     billStore.createExpense(modes.chatDraft.title, "single_amount", undefined, modes.chatDraft.groupId);
     billStore.updateExpense({ totalAmountInput: modes.chatDraft.amountCents });
+    const snapshot = useAppStore.getState().groups[modes.chatDraft.groupId];
+    for (const member of snapshot?.members ?? []) {
+      if (member.userId === me.id || member.status !== "accepted") continue;
+      billStore.addParticipant(profileToUser(member.user));
+    }
     onSetSelectedGroupId(modes.chatDraft.groupId);
-    onSetTitle(modes.chatDraft.title);
     onSetBillType("single_amount");
     onSetStep("info");
-  }, [modes.chatDraft, me, onSetSelectedGroupId, onSetTitle, onSetBillType, onSetStep]);
+  }, [modes.chatDraft, me, onSetSelectedGroupId, onSetBillType, onSetStep]);
 
   // Edit mode: consume ?edit=<id> from the store's cached expense detail.
   useEffect(() => {
