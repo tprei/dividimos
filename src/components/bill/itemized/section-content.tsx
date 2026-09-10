@@ -23,7 +23,6 @@ export interface SectionContentProps {
   splits: ExpenseSplit[];
   payers: ExpensePayer[];
   expense: Expense | null;
-  totals: ReviewSectionProps["totals"];
   partial: boolean;
   remainingCents: number;
   issues: ReviewSectionProps["issues"];
@@ -57,7 +56,6 @@ export function SectionContent({
   splits,
   payers,
   expense,
-  totals,
   partial,
   remainingCents,
   issues,
@@ -134,7 +132,6 @@ export function SectionContent({
       participants={participants}
       guests={guests}
       payers={payers}
-      totals={totals}
       partial={partial}
       remainingCents={remainingCents}
       issues={issues}

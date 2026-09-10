@@ -7,7 +7,7 @@ import { ParticipantsSheet } from "@/components/bill/itemized/participants-sheet
 import { SectionContent, type SectionContentProps } from "@/components/bill/itemized/section-content";
 import { SectionFooter } from "@/components/bill/itemized/section-footer";
 import { SectionTabs } from "@/components/bill/itemized/section-tabs";
-import type { ReviewIssue, ReviewParticipantTotal } from "@/components/bill/itemized/review-section";
+import type { ReviewIssue } from "@/components/bill/itemized/review-section";
 import type { ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 import type { ExpenseState } from "@/stores/bill-store";
 import type { Expense } from "@/types";
@@ -45,7 +45,6 @@ export interface ItemizedWorkspaceProps {
   serviceFeeInput: string;
   serviceFeeCents: number;
   grandTotal: number;
-  totals: ReviewParticipantTotal[];
   partial: boolean;
   remainingCents: number;
   issues: ReviewIssue[];
@@ -78,7 +77,6 @@ export function ItemizedWorkspace({
   serviceFeeInput,
   serviceFeeCents,
   grandTotal,
-  totals,
   partial,
   remainingCents,
   issues,
@@ -132,7 +130,6 @@ export function ItemizedWorkspace({
         splits={store.splits}
         payers={store.payers}
         expense={expense}
-        totals={totals}
         partial={partial}
         remainingCents={remainingCents}
         issues={issues}

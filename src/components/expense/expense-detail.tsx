@@ -27,7 +27,6 @@ import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { deleteExpense, restoreExpense } from "@/lib/sync/mutations";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
-import type { Participant } from "@/types/ledger";
 
 export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const router = useRouter();
@@ -40,9 +39,11 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [unavailable, setUnavailable] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [working, setWorking] = useState(false);
-  const [inviteParticipant, setInviteParticipant] = useState<Participant | null>(
-    null,
-  );
+  const [inviteIndex, setInviteIndex] = useState<number | null>(null);
+  const inviteParticipant =
+    inviteIndex === null
+      ? null
+      : detail?.participants.find((p) => p.participantIndex === inviteIndex) ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -236,7 +237,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       <ExpenseParticipantList
         participants={detail.participants}
         meId={me?.id ?? null}
-        onInviteGuest={setInviteParticipant}
+        onInviteGuest={(participant) => setInviteIndex(participant.participantIndex)}
       />
 
       {current.expenseType === "itemized" &&
@@ -296,7 +297,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         <GuestInviteDialog
           open
           onOpenChange={(open) => {
-            if (!open) setInviteParticipant(null);
+            if (!open) setInviteIndex(null);
           }}
           guest={inviteParticipant.guest}
           shareCents={inviteParticipant.shareCents}
