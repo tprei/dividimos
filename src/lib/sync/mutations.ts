@@ -515,22 +515,14 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
   }
 }
 
-export async function markRead(groupId: string): Promise<void> {
-  const store = useAppStore.getState();
-
-  const rollback: RollbackStep[] = [];
-  const priorGroup = store.groups[groupId];
-  if (priorGroup) {
-    const patchedGroup: GroupSnapshot = { ...priorGroup, unreadCount: 0 };
-    store.patch((s) => ({
-      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
-    }));
-    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
-  }
-
+export async function markRead(groupId: string, lastReadMessageId: string): Promise<void> {
   try {
-    await rpcVoid("mark_read", { p_group_id: groupId });
+    await rpcVoid("mark_read", {
+      p_group_id: groupId,
+      p_last_read_message_id: lastReadMessageId,
+    });
+    await refreshGroup(groupId);
   } catch (error) {
-    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
+    rollbackAndReconcile([], groupId, error, refreshGroup);
   }
 }
