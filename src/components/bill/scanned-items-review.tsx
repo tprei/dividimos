@@ -29,7 +29,7 @@ import {
   MAX_EXPENSE_CENTS,
   MAX_EXPENSE_SOURCE_ITEM_DESCRIPTION_CODE_POINTS,
 } from "@/lib/expense-money";
-import { parseExpenseQuantity } from "@/lib/expense-quantity";
+import { parseExpenseQuantity, unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import type { ReceiptItem, ReceiptOcrResult } from "@/lib/receipt-ocr";
 
@@ -38,28 +38,8 @@ function quantityToMilliunits(raw: number): number {
   return parsed.ok ? (parsed.value as number) : 1000;
 }
 
-const MILLIUNITS_PER_UNIT = BigInt(1000);
-const HALF_UP_BIAS = BigInt(500);
-const TWO = BigInt(2);
-
 function unitPriceForTotal(item: ReceiptItem, totalCents: number): number | null {
-  if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) return null;
-  if (!Number.isSafeInteger(totalCents) || totalCents <= 0) return null;
-  const quantity = BigInt(item.quantity);
-  const total = BigInt(totalCents);
-  const minimumNumerator = total * MILLIUNITS_PER_UNIT - HALF_UP_BIAS;
-  const minimum =
-    minimumNumerator <= BigInt(0)
-      ? BigInt(1)
-      : (minimumNumerator + quantity - BigInt(1)) / quantity;
-  const maximum = (total * MILLIUNITS_PER_UNIT + HALF_UP_BIAS - BigInt(1)) / quantity;
-  if (minimum > maximum) return null;
-  const approximate = (total * MILLIUNITS_PER_UNIT + quantity / TWO) / quantity;
-  let unit = approximate;
-  if (unit < minimum) unit = minimum;
-  if (unit > maximum) unit = maximum;
-  if (unit > BigInt(Number.MAX_SAFE_INTEGER)) return null;
-  return Number(unit);
+  return unitPriceCentsForLineTotal(item.quantity, totalCents);
 }
 
 function amountCentsForText(text: string): number | null {
