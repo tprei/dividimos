@@ -142,11 +142,7 @@ describe("ScannedItemsReview", () => {
     await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
 
     expect(onConfirm).toHaveBeenCalledOnce();
-    const [draft, , occurredOn] = onConfirm.mock.calls[0] as [
-      ReceiptOcrResult,
-      string | null,
-      string,
-    ];
+    const [draft, occurredOn] = onConfirm.mock.calls[0] as [ReceiptOcrResult, string];
     expect(draft.merchant).toBe("Mercado");
     expect(draft.items[0]).toMatchObject({
       description: "Cerveja",
@@ -181,6 +177,32 @@ describe("ScannedItemsReview", () => {
     expect(screen.getByText("Valor incompatível com a quantidade.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
     expect(screen.queryByLabelText("Valor de Cerveja")).not.toBeInTheDocument();
+  });
+
+  it("lets an unfixable row be removed so continue becomes reachable", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderReview(
+      makeResult({
+        items: [
+          { description: "Cerveja", quantity: 3, unitPriceCents: 334, totalCents: 1000 },
+          { description: "Picanha", quantity: 1, unitPriceCents: 4500, totalCents: 4500 },
+        ],
+        totalCents: 5500,
+      }),
+    );
+
+    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja" }));
+    await user.click(screen.getByRole("button", { name: "Remover Cerveja" }));
+
+    expect(screen.queryByText("Valor incompatível com a quantidade.")).not.toBeInTheDocument();
+    const proceed = screen.getByRole("button", { name: "Continuar para divisão" });
+    expect(proceed).toBeEnabled();
+
+    await user.click(proceed);
+    const [draft] = onConfirm.mock.calls[0] as [ReceiptOcrResult, string];
+    expect(draft.items.map((item) => item.description)).toEqual(["Picanha"]);
   });
 
   it("shows the empty receipt state and disables continue", () => {

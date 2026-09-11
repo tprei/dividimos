@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { Money } from "@/components/shared/money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ export interface ReceiptItemRowProps {
   onTogglePanel: (index: number) => void;
   onNameChange: (index: number, value: string) => void;
   onAmountChange: (index: number, value: string) => void;
+  onRemove: (index: number) => void;
 }
 
 export function ReceiptItemRow({
@@ -30,6 +31,7 @@ export function ReceiptItemRow({
   onTogglePanel,
   onNameChange,
   onAmountChange,
+  onRemove,
 }: ReceiptItemRowProps) {
   const itemLabel = item.description.trim() || "item";
   const nameErrorId = `receipt-item-${index}-name-error`;
@@ -98,13 +100,20 @@ export function ReceiptItemRow({
               className="h-11 w-full bg-card text-right font-mono"
             />
           </div>
-          <Button
-            variant="ghost"
-            className="h-11 w-full"
-            onClick={() => onTogglePanel(index)}
-          >
-            Pronto
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              className="h-11 flex-1 text-destructive hover:bg-destructive/10"
+              onClick={() => onRemove(index)}
+              aria-label={`Remover ${itemLabel}`}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              Remover
+            </Button>
+            <Button variant="ghost" className="h-11 flex-1" onClick={() => onTogglePanel(index)}>
+              Pronto
+            </Button>
+          </div>
         </div>
       )}
     </Fragment>

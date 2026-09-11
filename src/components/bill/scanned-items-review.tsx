@@ -66,7 +66,7 @@ export interface ScannedItemsReviewProps {
   result: ReceiptOcrResult;
   participants: ItemDivisionParticipant[];
   initialOccurredOn?: string;
-  onConfirm: (result: ReceiptOcrResult, chaveAcesso: string | null, occurredOn: string) => void;
+  onConfirm: (result: ReceiptOcrResult, occurredOn: string) => void;
   onCancel: () => void;
   onManageParticipants: () => void;
 }
@@ -142,6 +142,20 @@ export function ScannedItemsReview({
     );
   };
 
+  const handleRemoveItem = (index: number) => {
+    setItems((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setAmountTexts((current) => {
+      const next: Record<number, string> = {};
+      for (const [key, text] of Object.entries(current)) {
+        const position = Number(key);
+        if (position === index) continue;
+        next[position > index ? position - 1 : position] = text;
+      }
+      return next;
+    });
+    setPanel(null);
+  };
+
   const togglePanel = (index: number) => {
     setPanel((current) => (current?.index === index ? null : { index }));
   };
@@ -156,7 +170,6 @@ export function ScannedItemsReview({
         serviceFeeBasisPoints: serviceFeeResult.value,
         totalCents,
       },
-      null,
       occurredOn,
     );
   };
@@ -218,6 +231,7 @@ export function ScannedItemsReview({
               onTogglePanel={togglePanel}
               onNameChange={handleNameChange}
               onAmountChange={handleAmountChange}
+              onRemove={handleRemoveItem}
             />
           ))}
           <div className="border-t border-dashed" />
