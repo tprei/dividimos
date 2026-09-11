@@ -12,6 +12,8 @@ export interface SettlementPerson {
   name: string;
   avatarUrl: string | null;
   isGuest: boolean;
+  /** Invited but has not accepted: `record_settlement` rejects them either way. */
+  isPending: boolean;
 }
 
 interface ConsolidatedBalanceCardProps {

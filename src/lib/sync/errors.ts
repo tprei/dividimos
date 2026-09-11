@@ -73,7 +73,7 @@ const MESSAGES: Record<LedgerErrorCode, string> = {
   settlement_not_found: "Não achamos esse acerto.",
   settlement_voided: "Esse acerto foi cancelado.",
   not_party: "Você não faz parte desse acerto.",
-  counterparty_not_member: "A outra pessoa saiu do grupo.",
+  counterparty_not_member: "A outra pessoa não está no grupo.",
   amount_exceeds_debt: "Esse valor é maior que a dívida.",
   invalid_name: "Esse nome não vale. Use entre 1 e 80 caracteres.",
   user_not_found: "Não achamos esse usuário.",
