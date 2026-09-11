@@ -22,8 +22,11 @@ vi.mock("react-hot-toast", () => ({
   },
 }));
 
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: navigation.push, prefetch: vi.fn(), replace: vi.fn() }),
 }));
 
 vi.mock("next/link", () => ({
@@ -134,6 +137,7 @@ function seedStore(
       complete: options.complete ?? true,
       total: options.total === undefined ? ids.length : options.total,
     },
+    reads: { myExpenses: { status: "ready" } },
   });
 }
 
@@ -225,6 +229,16 @@ describe("BillsListContent", () => {
     });
 
     expect(screen.getByText(/contas já carregadas/)).toBeInTheDocument();
+  });
+
+  it("navigates to the new bill flow from the empty state", async () => {
+    seedStore({});
+    const user = userEvent.setup();
+    render(<BillsListContent />);
+
+    await user.click(screen.getByRole("button", { name: "Nova conta" }));
+
+    expect(navigation.push).toHaveBeenCalledWith("/app/bill/new");
   });
 
   it("shows the counterparty name for DM rows and the group name for groups", () => {

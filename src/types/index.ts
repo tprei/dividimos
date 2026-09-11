@@ -44,7 +44,6 @@ export interface Expense {
   serviceFeePercent: number;
   serviceFeeBasisPoints: number;
   fixedFees: number;
-  status: "draft" | "active" | "settled";
   createdAt: string;
   updatedAt: string;
 }
