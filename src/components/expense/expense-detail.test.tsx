@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { ExpenseDetail } from "./expense-detail";
 import { LedgerError } from "@/lib/sync/errors";
 import { deleteExpense } from "@/lib/sync/mutations";
-import { issueGuestClaimToken } from "@/lib/sync/mutations-group";
+import { createGuestClaimToken } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import type { ExpenseDetail as ExpenseDetailType, GroupSnapshot, Me } from "@/types/ledger";
@@ -42,7 +42,7 @@ vi.mock("@/lib/sync/mutations", () => ({
 }));
 
 vi.mock("@/lib/sync/mutations-group", () => ({
-  issueGuestClaimToken: vi.fn().mockResolvedValue("guest_token_123"),
+  createGuestClaimToken: vi.fn().mockResolvedValue("guest_token_123"),
 }));
 
 const me: Me = {
@@ -298,7 +298,7 @@ describe("ExpenseDetail", () => {
       within(dialog).getByText("Parte de R$ 50,00 em Jantar"),
     ).toBeInTheDocument();
     await waitFor(() => {
-      expect(issueGuestClaimToken).toHaveBeenCalledWith("guest-1");
+      expect(createGuestClaimToken).toHaveBeenCalledWith("guest-1");
     });
     await waitFor(() => {
       expect(refreshExpense).toHaveBeenCalledWith("e1");

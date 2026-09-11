@@ -1,6 +1,29 @@
--- A claim token is a bearer credential: whoever opens the link becomes the
--- guest. It therefore expires, and any member can revoke it and issue another.
-CREATE FUNCTION public.create_guest_claim_token(p_guest_id uuid)
+-- Guest claim tokens expire and can be revoked.
+--
+-- The baseline migration is regenerated in place, so a database that already
+-- recorded it never receives later schema changes. This migration carries the
+-- claim-token TTL, the revoke RPC, and the lookups that now reject an expired
+-- token, taken verbatim from the baseline.
+--
+-- Existing rows are backfilled to seven days after issuance, so a link already
+-- older than a week is dead on deploy and a member issues another.
+--
+-- `issue_guest_claim_token` returned the bare token, which left no room for
+-- the expiry. It is replaced by `create_guest_claim_token`, which returns both.
+
+set check_function_bodies = off;
+
+ALTER TABLE guest_credentials.claim_tokens ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+
+UPDATE guest_credentials.claim_tokens
+SET expires_at = created_at + interval '7 days'
+WHERE expires_at IS NULL;
+
+ALTER TABLE guest_credentials.claim_tokens ALTER COLUMN expires_at SET NOT NULL;
+
+DROP FUNCTION IF EXISTS public.issue_guest_claim_token(uuid);
+
+CREATE OR REPLACE FUNCTION public.create_guest_claim_token(p_guest_id uuid)
 RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -52,7 +75,10 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.resolve_guest_claim_token(p_token text)
+REVOKE ALL ON FUNCTION public.create_guest_claim_token(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.create_guest_claim_token(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.resolve_guest_claim_token(p_token text)
 RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$
@@ -127,7 +153,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-CREATE FUNCTION public.claim_guest(p_token text)
+CREATE OR REPLACE FUNCTION public.claim_guest(p_token text)
 RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -253,9 +279,7 @@ BEGIN
 END;
 $$;
 
--- Revoking an already-claimed guest is a no-op delete, not an error, so a
--- member can always clear a credential that leaked.
-CREATE FUNCTION public.revoke_guest_claim_token(p_guest_id uuid)
+CREATE OR REPLACE FUNCTION public.revoke_guest_claim_token(p_guest_id uuid)
 RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -287,15 +311,6 @@ BEGIN
   RETURN jsonb_build_object('guestId', p_guest_id);
 END;
 $$;
-
-REVOKE ALL ON FUNCTION public.create_guest_claim_token(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.create_guest_claim_token(uuid) TO authenticated;
-
-REVOKE ALL ON FUNCTION public.resolve_guest_claim_token(text) FROM public;
-GRANT EXECUTE ON FUNCTION public.resolve_guest_claim_token(text) TO anon, authenticated;
-
-REVOKE ALL ON FUNCTION public.claim_guest(text) FROM public;
-GRANT EXECUTE ON FUNCTION public.claim_guest(text) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.revoke_guest_claim_token(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.revoke_guest_claim_token(uuid) TO authenticated;

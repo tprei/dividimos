@@ -32,6 +32,11 @@ interface ClaimAck {
   eventId: number | null;
 }
 
+interface IssuedToken {
+  token: string;
+  expiresAt: string;
+}
+
 interface EditAck {
   expenseId: string;
   groupId: string;
@@ -171,14 +176,17 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(payloadGuest?.displayName).toBe("Zé");
     });
 
-    it("lets any accepted member issue a claim token (non-empty, URL-safe)", async () => {
-      const token = await rpc<string>(memberClient, "issue_guest_claim_token", {
+    it("lets any accepted member issue a claim token with an expiry", async () => {
+      const issuedToken = await rpc<IssuedToken>(memberClient, "create_guest_claim_token", {
         p_guest_id: guestId,
       });
-      expect(typeof token).toBe("string");
-      expect(token.length).toBeGreaterThanOrEqual(40); // 32 random bytes, base64url
-      expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
-      initialToken = token;
+      expect(Object.keys(issuedToken).sort()).toEqual(["expiresAt", "token"]);
+      expect(issuedToken.token.length).toBeGreaterThanOrEqual(40); // 32 random bytes, base64url
+      expect(issuedToken.token).toMatch(/^[A-Za-z0-9_-]+$/);
+      const ttlMs = Date.parse(issuedToken.expiresAt) - Date.now();
+      expect(ttlMs).toBeGreaterThan(6 * 24 * 60 * 60 * 1000);
+      expect(ttlMs).toBeLessThanOrEqual(7 * 24 * 60 * 60 * 1000);
+      initialToken = issuedToken.token;
 
       const issued = await getExpenseDetail(payerClient, expenseId);
       expect(issued.participants[2]?.guest?.claimLinkGeneration).toBe(1);
@@ -187,7 +195,7 @@ describe.skipIf(!isIntegrationTestReady)(
     it("refuses token issuance by a non-member with not_a_member", async () => {
       const code = await expectRpcError(
         Promise.resolve(
-          outsiderClient.rpc("issue_guest_claim_token", { p_guest_id: guestId }),
+          outsiderClient.rpc("create_guest_claim_token", { p_guest_id: guestId }),
         ),
       );
       expect(code).toBe("not_a_member");
@@ -218,11 +226,10 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     it("rotates the token on the first replacement: old resolves not_found, new resolves ready", async () => {
-      rotatedToken = await rpc<string>(
-        payerClient,
-        "issue_guest_claim_token",
-        { p_guest_id: guestId },
-      );
+      const issuedToken = await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
+        p_guest_id: guestId,
+      });
+      rotatedToken = issuedToken.token;
       expect(rotatedToken).not.toBe(initialToken);
 
       const oldResolved = await rpc<GuestClaimResolve>(
@@ -245,13 +252,97 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(rotated.participants[2]?.guest?.claimLinkGeneration).toBe(2);
     });
 
-    it("caps replacement at one: a third issue raises guest_link_replacement_limit", async () => {
+    it("keeps rotating past the second issue: rotation is the safety valve", async () => {
+      const issuedToken = await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
+        p_guest_id: guestId,
+      });
+      const superseded = rotatedToken;
+      rotatedToken = issuedToken.token;
+      expect(rotatedToken).not.toBe(superseded);
+
+      const oldResolved = await rpc<GuestClaimResolve>(
+        anonClient,
+        "resolve_guest_claim_token",
+        { p_token: superseded },
+      );
+      expect(oldResolved.status).toBe("not_found");
+
+      const detail = await getExpenseDetail(payerClient, expenseId);
+      expect(detail.participants[2]?.guest?.claimLinkGeneration).toBe(3);
+    });
+
+    it("treats an expired token as unknown for both resolve and claim", async () => {
+      await withPg(async (pg) => {
+        await pg.query(
+          "update guest_credentials.claim_tokens set expires_at = now() - interval '1 second' where guest_id = $1",
+          [guestId],
+        );
+      });
+
+      const resolved = await rpc<GuestClaimResolve>(
+        anonClient,
+        "resolve_guest_claim_token",
+        { p_token: rotatedToken },
+      );
+      expect(resolved.status).toBe("not_found");
+      expect(resolved.guestId).toBeNull();
+
+      const code = await expectRpcError(
+        Promise.resolve(outsiderClient.rpc("claim_guest", { p_token: rotatedToken })),
+      );
+      expect(code).toBe("invalid_token");
+
+      const reissued = await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
+        p_guest_id: guestId,
+      });
+      rotatedToken = reissued.token;
+    });
+
+    it("revokes the current token: it stops resolving and cannot be claimed", async () => {
+      const revoked = await rpc<{ guestId: string }>(
+        memberClient,
+        "revoke_guest_claim_token",
+        { p_guest_id: guestId },
+      );
+      expect(revoked.guestId).toBe(guestId);
+
+      const resolved = await rpc<GuestClaimResolve>(
+        anonClient,
+        "resolve_guest_claim_token",
+        { p_token: rotatedToken },
+      );
+      expect(resolved.status).toBe("not_found");
+
+      const code = await expectRpcError(
+        Promise.resolve(outsiderClient.rpc("claim_guest", { p_token: rotatedToken })),
+      );
+      expect(code).toBe("invalid_token");
+
+      const detail = await getExpenseDetail(payerClient, expenseId);
+      expect(detail.participants[2]?.guest?.claimLinkGeneration).toBe(0);
+
+      const secondRevoke = await rpc<{ guestId: string }>(
+        memberClient,
+        "revoke_guest_claim_token",
+        { p_guest_id: guestId },
+      );
+      expect(secondRevoke.guestId).toBe(guestId);
+    });
+
+    it("refuses revocation by a non-member with not_a_member", async () => {
       const code = await expectRpcError(
         Promise.resolve(
-          payerClient.rpc("issue_guest_claim_token", { p_guest_id: guestId }),
+          outsiderClient.rpc("revoke_guest_claim_token", { p_guest_id: guestId }),
         ),
       );
-      expect(code).toBe("guest_link_replacement_limit");
+      expect(code).toBe("not_a_member");
+    });
+
+    it("claims the guest with a freshly issued token", async () => {
+      const issuedToken = await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
+        p_guest_id: guestId,
+      });
+      rotatedToken = issuedToken.token;
 
       const stillCurrent = await rpc<GuestClaimResolve>(
         anonClient,
@@ -376,13 +467,11 @@ describe.skipIf(!isIntegrationTestReady)(
         throw new Error("Fixture failure: second guest was not materialized");
       }
 
-      const token = await rpc<string>(
-        payerClient,
-        "issue_guest_claim_token",
-        { p_guest_id: guestParticipant.guestId },
-      );
+      const issuedToken = await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
+        p_guest_id: guestParticipant.guestId,
+      });
       const code = await expectRpcError(
-        Promise.resolve(payerClient.rpc("claim_guest", { p_token: token })),
+        Promise.resolve(payerClient.rpc("claim_guest", { p_token: issuedToken.token })),
       );
       expect(code).toBe("already_participant");
     });
@@ -480,9 +569,11 @@ describe.skipIf(!isIntegrationTestReady)(
       }
       guestId = guestParticipant.guestId;
 
-      token = await rpc<string>(payerClient, "issue_guest_claim_token", {
-        p_guest_id: guestId,
-      });
+      token = (
+        await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
+          p_guest_id: guestId,
+        })
+      ).token;
 
       const ack = await rpc<EditAck>(payerClient, "edit_expense", {
         p_expense_id: created.expenseId,

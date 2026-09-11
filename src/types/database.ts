@@ -844,6 +844,7 @@ export type Database = {
         }
         Returns: Json
       }
+      create_guest_claim_token: { Args: { p_guest_id: string }; Returns: Json }
       create_group: {
         Args: { p_member_ids: string[]; p_name: string }
         Returns: Json
@@ -931,7 +932,6 @@ export type Database = {
         Args: { p_group_id: string; p_user_id: string }
         Returns: boolean
       }
-      issue_guest_claim_token: { Args: { p_guest_id: string }; Returns: string }
       join_via_link: { Args: { p_token: string }; Returns: Json }
       leave_group: { Args: { p_group_id: string }; Returns: Json }
       ledger_chat_message_json: {
@@ -989,6 +989,7 @@ export type Database = {
       }
       resolve_guest_claim_token: { Args: { p_token: string }; Returns: Json }
       restore_expense: { Args: { p_expense_id: string }; Returns: Json }
+      revoke_guest_claim_token: { Args: { p_guest_id: string }; Returns: Json }
       send_message: {
         Args: { p_client_id: string; p_content: string; p_group_id: string }
         Returns: Json

@@ -19,7 +19,7 @@ import {
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import {
   deleteGroup,
-  issueGuestClaimToken,
+  createGuestClaimToken,
   leaveGroup,
   removeMember,
 } from "@/lib/sync/mutations-group";
@@ -95,7 +95,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
   }) => {
     setIssuingGuestId(guest.id);
     try {
-      const token = await issueGuestClaimToken(guest.id);
+      const { token } = await createGuestClaimToken(guest.id);
       const expense = snapshot.recentExpenses.find((e) => e.id === guest.expenseId);
       const expenseTitle = expense?.title ?? snapshot.group.name;
       setShareGuest({

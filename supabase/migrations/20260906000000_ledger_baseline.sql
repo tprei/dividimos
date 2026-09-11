@@ -210,6 +210,7 @@ CREATE TABLE guest_credentials.claim_tokens (
   guest_id uuid PRIMARY KEY REFERENCES public.guests(id) ON DELETE CASCADE,
   token_digest bytea NOT NULL UNIQUE,
   generation integer NOT NULL DEFAULT 1,
+  expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -3184,8 +3185,10 @@ REVOKE ALL ON FUNCTION public.mark_read(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.mark_read(uuid) TO authenticated;
 
 -- ---- 08_rpc_guest.sql ----
-CREATE FUNCTION public.issue_guest_claim_token(p_guest_id uuid)
-RETURNS text
+-- A claim token is a bearer credential: whoever opens the link becomes the
+-- guest. It therefore expires, and any member can revoke it and issue another.
+CREATE FUNCTION public.create_guest_claim_token(p_guest_id uuid)
+RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
@@ -3194,7 +3197,7 @@ DECLARE
   v_bytes bytea;
   v_token text;
   v_digest bytea;
-  v_generation integer;
+  v_expires_at timestamptz;
 BEGIN
   v_actor := current_user_id();
 
@@ -3218,26 +3221,21 @@ BEGIN
   IF v_guest.claimed_by IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_already_claimed';
   END IF;
-  SELECT generation INTO v_generation
-  FROM guest_credentials.claim_tokens
-  WHERE guest_id = p_guest_id;
 
-  IF v_generation >= 2 THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_link_replacement_limit';
-  END IF;
-
+  v_expires_at := now() + interval '7 days';
   v_bytes := extensions.gen_random_bytes(32);
   v_token := 'gst1_' || rtrim(translate(encode(v_bytes, 'base64'), '+/', '-_'), '=');
   v_digest := extensions.digest(convert_to(v_token, 'utf8'), 'sha256');
 
-  INSERT INTO guest_credentials.claim_tokens AS ct (guest_id, token_digest, generation, created_at)
-  VALUES (p_guest_id, v_digest, 1, now())
+  INSERT INTO guest_credentials.claim_tokens AS ct (guest_id, token_digest, generation, expires_at, created_at)
+  VALUES (p_guest_id, v_digest, 1, v_expires_at, now())
   ON CONFLICT (guest_id)
   DO UPDATE SET token_digest = EXCLUDED.token_digest,
                 generation = ct.generation + 1,
+                expires_at = EXCLUDED.expires_at,
                 created_at = now();
 
-  RETURN v_token;
+  RETURN jsonb_build_object('token', v_token, 'expiresAt', to_jsonb(v_expires_at));
 END;
 $$;
 
@@ -3277,7 +3275,7 @@ BEGIN
   JOIN expense_versions ev ON ev.expense_id = e.id AND ev.version_no = e.current_version_no
   JOIN groups grp ON grp.id = e.group_id
   LEFT JOIN expense_participants ep ON ep.expense_id = e.id AND ep.guest_id = g.id
-  WHERE ct.token_digest = v_digest;
+  WHERE ct.token_digest = v_digest AND ct.expires_at > now();
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object(
@@ -3343,7 +3341,7 @@ BEGIN
   FROM guest_credentials.claim_tokens ct
   JOIN guests g ON g.id = ct.guest_id
   JOIN expenses e ON e.id = g.expense_id
-  WHERE ct.token_digest = v_digest;
+  WHERE ct.token_digest = v_digest AND ct.expires_at > now();
 
   IF NOT FOUND THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
@@ -3442,14 +3440,52 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.issue_guest_claim_token(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.issue_guest_claim_token(uuid) TO authenticated;
+-- Revoking an already-claimed guest is a no-op delete, not an error, so a
+-- member can always clear a credential that leaked.
+CREATE FUNCTION public.revoke_guest_claim_token(p_guest_id uuid)
+RETURNS jsonb
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_actor uuid;
+  v_guest RECORD;
+BEGIN
+  v_actor := current_user_id();
+
+  IF p_guest_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
+  END IF;
+
+  SELECT g.id, e.group_id
+  INTO v_guest
+  FROM guests g
+  JOIN expenses e ON e.id = g.expense_id
+  WHERE g.id = p_guest_id
+  FOR UPDATE OF g;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
+  END IF;
+
+  PERFORM assert_member(v_guest.group_id, v_actor);
+
+  DELETE FROM guest_credentials.claim_tokens WHERE guest_id = p_guest_id;
+
+  RETURN jsonb_build_object('guestId', p_guest_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_guest_claim_token(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.create_guest_claim_token(uuid) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.resolve_guest_claim_token(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.resolve_guest_claim_token(text) TO anon, authenticated;
 
 REVOKE ALL ON FUNCTION public.claim_guest(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.claim_guest(text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.revoke_guest_claim_token(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.revoke_guest_claim_token(uuid) TO authenticated;
 
 -- ---- 09_realtime.sql ----
 -- Topic ids are matched as uuids: a malformed topic yields a clean denial

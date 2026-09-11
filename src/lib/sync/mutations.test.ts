@@ -34,7 +34,7 @@ import {
   getOrCreateDm,
   getVendorCharges,
   inviteMember,
-  issueGuestClaimToken,
+  createGuestClaimToken,
   joinViaLink,
   leaveGroup,
   lookupUserByHandle,
@@ -1103,9 +1103,9 @@ describe("mutations", () => {
       const user = await lookupUserByHandle("amigo");
       expect(user).toEqual(USER_2);
 
-      vi.mocked(rpc).mockResolvedValueOnce("token-abc");
-      const tok = await issueGuestClaimToken("guest-1");
-      expect(tok).toBe("token-abc");
+      vi.mocked(rpc).mockResolvedValueOnce({ token: "gst1_abc", expiresAt: "2026-09-18T00:00:00Z" });
+      const issued = await createGuestClaimToken("guest-1");
+      expect(issued).toEqual({ token: "gst1_abc", expiresAt: "2026-09-18T00:00:00Z" });
 
       vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 105 });
       await claimGuest("token-abc");

@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, MessageCircle, RefreshCw, Share2 } from "lucide-react";
+import { Copy, MessageCircle, RefreshCw, Share2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
@@ -12,10 +12,10 @@ import {
 } from "@/components/ui/dialog";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { buildClaimUrl } from "@/lib/claim-qr";
-import { clearClaimToken, readClaimToken, writeClaimToken } from "@/lib/claim-token-cache";
+import { clearClaimToken, readClaimTokenEntry, writeClaimToken } from "@/lib/claim-token-cache";
 import { formatBRL } from "@/lib/currency";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
-import { issueGuestClaimToken } from "@/lib/sync/mutations-group";
+import { createGuestClaimToken, revokeGuestClaimToken } from "@/lib/sync/mutations-group";
 import { cn } from "@/lib/utils";
 import { refreshExpense } from "@/lib/sync/refresh";
 import type { GuestParticipant } from "@/types/ledger";
@@ -41,6 +41,7 @@ export function GuestInviteDialog({
     () => typeof navigator !== "undefined" && typeof navigator.share === "function",
   );
   const [token, setToken] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const inFlightRef = useRef(false);
@@ -50,9 +51,29 @@ export function GuestInviteDialog({
     inFlightRef.current = true;
     setWorking(true);
     try {
-      const next = await issueGuestClaimToken(guest.id);
-      writeClaimToken(guest.id, next);
-      setToken(next);
+      const next = await createGuestClaimToken(guest.id);
+      writeClaimToken(guest.id, next.token, next.expiresAt);
+      setToken(next.token);
+      setExpiresAt(next.expiresAt);
+      setConfirming(false);
+      await refreshExpense(expenseId);
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+    } finally {
+      inFlightRef.current = false;
+      setWorking(false);
+    }
+  }, [guest.id, expenseId]);
+
+  const revoke = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setWorking(true);
+    try {
+      await revokeGuestClaimToken(guest.id);
+      clearClaimToken(guest.id);
+      setToken(null);
+      setExpiresAt(null);
       setConfirming(false);
       await refreshExpense(expenseId);
     } catch (error) {
@@ -69,21 +90,24 @@ export function GuestInviteDialog({
     if (guest.claimedBy) {
       clearClaimToken(guest.id);
       setToken(null);
+      setExpiresAt(null);
       return;
     }
-    const cached = readClaimToken(guest.id);
+    const cached = readClaimTokenEntry(guest.id);
     if (cached) {
-      setToken(cached);
+      setToken(cached.token);
+      setExpiresAt(cached.expiresAt);
       return;
     }
     setToken(null);
+    setExpiresAt(null);
     if (guest.claimLinkGeneration === 0) {
       void issue();
     }
   }, [open, guest.id, guest.claimLinkGeneration, guest.claimedBy, issue]);
 
   const claimUrl = token ? buildClaimUrl(token) : null;
-  const canReplace = guest.claimLinkGeneration === 1;
+  const canReplace = guest.claimedBy === null;
 
   const shareText = `Participe da conta "${expenseTitle}" no Dividimos! Sua parte: ${formatBRL(shareCents)}`;
   const whatsappUrl = claimUrl
@@ -125,6 +149,11 @@ export function GuestInviteDialog({
               {claimUrl}
             </p>
           )}
+          {claimUrl && expiresAt && (
+            <p className="text-xs text-muted-foreground">
+              Expira em {new Date(expiresAt).toLocaleDateString("pt-BR")}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-2">
             {canShare && (
               <Button
@@ -158,7 +187,7 @@ export function GuestInviteDialog({
             <Copy className="size-4" />
             Copiar link
           </Button>
-          {!claimUrl && guest.claimLinkGeneration < 2 && (
+          {!claimUrl && (
             <Button
               type="button"
               variant="outline"
@@ -170,9 +199,10 @@ export function GuestInviteDialog({
               {working ? "Gerando link..." : "Gerar link"}
             </Button>
           )}
-          {!claimUrl && guest.claimLinkGeneration >= 2 && (
-            <p role="status" className="text-xs font-semibold text-muted-foreground">
-              Este link só está disponível no aparelho onde foi gerado e já foi substituído uma vez.
+          {!claimUrl && guest.claimLinkGeneration > 0 && (
+            <p role="status" className="text-xs text-muted-foreground">
+              O link atual só está salvo no aparelho onde foi gerado. Gere outro para
+              compartilhar daqui.
             </p>
           )}
           {claimUrl && canReplace && !confirming && (
@@ -215,6 +245,19 @@ export function GuestInviteDialog({
                 </Button>
               </div>
             </div>
+          )}
+          {claimUrl && canReplace && !confirming && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full text-muted-foreground"
+              disabled={working}
+              onClick={() => void revoke()}
+            >
+              <Trash2 className="size-4" />
+              Revogar link
+            </Button>
           )}
         </div>
       </DialogContent>
