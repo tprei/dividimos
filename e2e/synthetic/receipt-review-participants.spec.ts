@@ -6,7 +6,7 @@ const TINY_PNG = Buffer.from(
 );
 
 test.describe("Receipt review participants", () => {
-  test("a scan without a group can still add people before assigning items", async ({
+  test("a scan without a group can still add people before splitting", async ({
     page,
     seed,
     loginAs,
@@ -44,6 +44,10 @@ test.describe("Receipt review participants", () => {
     const participantsRow = page.getByRole("button", { name: /^Participantes:/ });
     await expect(participantsRow).toHaveAccessibleName(/Alice$/);
 
+    const proceed = page.getByRole("button", { name: "Continuar para divisão" });
+    await expect(proceed).toBeDisabled();
+    await expect(page.getByText("Adicione pelo menos uma pessoa além de você.")).toBeVisible();
+
     await participantsRow.click();
     await page.getByRole("button", { name: "Por @handle" }).click();
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
@@ -52,14 +56,7 @@ test.describe("Receipt review participants", () => {
     await page.getByRole("button", { name: "Concluir" }).click();
 
     await expect(participantsRow).toHaveAccessibleName(/Alice, Bob$/);
-    await page.getByRole("button", { name: "Dividir Pão de queijo" }).click();
-    await expect(page.getByLabel("Incluir Bob Recibo em Pão de queijo")).toBeVisible();
-    await page.getByRole("button", { name: "Cancelar" }).click();
-
-    await page.getByRole("button", { name: "Dividir tudo igualmente" }).click();
-    await expect(page.getByText(/pendente/)).toHaveCount(0);
-
-    const proceed = page.getByRole("button", { name: "Continuar para divisão" });
+    await expect(page.getByText("Adicione pelo menos uma pessoa além de você.")).toBeHidden();
     await expect(proceed).toBeEnabled();
     await proceed.click();
     await expect(page.getByRole("button", { name: /^Participantes:/ })).toHaveCount(0);

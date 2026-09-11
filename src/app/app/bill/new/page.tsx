@@ -11,7 +11,6 @@ import { SingleBillForm } from "@/components/bill/single-bill-form";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
-import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
@@ -214,12 +213,7 @@ function NewBillPageContent() {
     setStep("info");
   }, [me, selectedGroupId]);
 
-  const handleScanConfirm = useCallback((
-    result: ReceiptOcrResult,
-    _chaveAcesso: string | null,
-    divisions: Record<number, ItemDivisionValue>,
-    occurredOn: string,
-  ) => {
+  const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     setBillType("itemized");
     const billStore = useBillStore.getState();
     if (scanGroup) setSelectedGroupId(scanGroup.group.id);
@@ -246,11 +240,6 @@ function NewBillPageContent() {
         });
       }
 
-      const addedItems = useBillStore.getState().items;
-      for (const [indexText, division] of Object.entries(divisions)) {
-        const item = addedItems[Number(indexText)];
-        if (item) billStore.setItemDivision(item.id, division);
-      }
     }
     billStore.setOccurredOn(occurredOn);
     setStep("split");
