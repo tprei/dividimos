@@ -439,7 +439,7 @@ BEGIN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
     IF jsonb_typeof(v_item->'quantityMilliunits') <> 'number'
-       OR (v_item->>'quantityMilliunits')::numeric <> floor((v_item->>'quantityMilliunits')::numeric)
+       OR (v_item->>'quantityMilliunits')::text <> floor((v_item->>'quantityMilliunits')::numeric)::text
        OR (v_item->>'quantityMilliunits')::numeric < 1
        OR (v_item->>'quantityMilliunits')::numeric > 999999999
     THEN
