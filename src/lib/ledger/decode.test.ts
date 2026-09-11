@@ -302,6 +302,61 @@ describe("decodeExpensePayload", () => {
     }
   });
 
+  it("accepts the authored split method the server now sends", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+      splitMethod: "percentage",
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.splitMethod).toBe("percentage");
+  });
+
+  it("accepts a version written before the method was recorded", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.splitMethod).toBeNull();
+  });
+
+  it("treats a null method as not stated", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+      splitMethod: null,
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.splitMethod).toBeNull();
+  });
+
+  it("rejects a method the division controls cannot produce", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+      splitMethod: "weighted",
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issue.path).toEqual(["splitMethod"]);
+  });
+
   it("rejects a payer with a non-integer amount", () => {
     const raw = {
       items: [],
