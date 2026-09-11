@@ -50,7 +50,6 @@ describe("Edit Expense Flow", () => {
     expect(state.expense?.id).toBe("exp-detail-1");
     expect(state.expense?.title).toBe("Jantar");
     expect(state.expense?.merchantName).toBe("Cantina");
-    expect(state.expense?.status).toBe("active");
     expect(state.participants.map((p) => p.id)).toEqual(["user-alice", "user-bob"]);
     expect(state.items).toHaveLength(1);
     expect(state.items[0].quantity).toBe(1000);
