@@ -3,7 +3,7 @@
 import { Users } from "lucide-react";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { GroupSelect } from "@/components/bill/group-select";
-import { SingleBillParticipantsSheet } from "@/components/bill/single-bill/participants-sheet";
+import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -184,18 +184,27 @@ export function SingleBillDetails({
           </div>
         </div>
       </div>
-      <SingleBillParticipantsSheet
+      <ParticipantsDialog
         open={participantsOpen}
         onOpenChange={onParticipantsOpenChange}
-        me={me}
-        participants={participants}
-        guests={guests}
-        onAddParticipant={onAddParticipant}
-        onRemoveParticipant={onRemoveParticipant}
-        onAddGuest={onAddGuest}
-        onRemoveGuest={onRemoveGuest}
-        hasContactPicker={hasContactPicker}
-        onPickContacts={onPickContacts}
+        description="Adicione quem participa desta conta."
+        participants={{
+          me,
+          participants,
+          guests,
+          selectedGroupId: null,
+          groups: [],
+          createGroup: { enabled: false, name: "" },
+          onToggleCreateGroup: () => undefined,
+          onCreateGroupName: () => undefined,
+          onSelectGroup: () => undefined,
+          onAddParticipant,
+          onRemoveParticipant,
+          onAddGuest,
+          onRemoveGuest,
+          hasContactPicker,
+          onPickContacts,
+        }}
       />
     </>
   );

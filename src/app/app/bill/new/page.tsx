@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
-import { ParticipantsSheet } from "@/components/bill/itemized/participants-sheet";
+import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
 import { SingleBillForm } from "@/components/bill/single-bill-form";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
@@ -476,9 +476,10 @@ function NewBillPageContent() {
         />
       </div>
       {me && (
-        <ParticipantsSheet
+        <ParticipantsDialog
           open={scanParticipantsOpen}
           onOpenChange={setScanParticipantsOpen}
+          description="Escolha quem divide esta conta."
           participants={{
             me,
             participants: store.participants,
