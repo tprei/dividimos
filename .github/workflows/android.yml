@@ -3,12 +3,68 @@ name: Android Build
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "android/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/android.yml"
 
 permissions:
   contents: read
 
 jobs:
+  # PR gate: proves the Android project still assembles. No signing secrets
+  # and no upload — a broken manifest, resource or Gradle change is red here
+  # instead of on main.
+  compile:
+    name: Android compiles
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
+
+      - run: npm ci --ignore-scripts
+
+      # cap sync copies the web assets and regenerates the plugin wiring, so
+      # a plugin added to package.json without a native counterpart fails here.
+      - name: Create placeholder web assets
+        run: |
+          mkdir -p out
+          cat > out/index.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="pt-BR">
+            <head><meta charset="UTF-8"><title>Dividimos</title></head>
+            <body><p>Carregando...</p></body>
+          </html>
+          HTML
+
+      - run: npx cap sync android
+
+      # Firebase config is a release-only requirement, and the debug variant
+      # exercises the same manifest, resources and Gradle wiring.
+      - name: Assemble debug APK
+        run: cd android && ./gradlew assembleDebug
+
   build:
+    name: Signed release bundle
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -64,7 +120,7 @@ jobs:
         run: npx cap sync android
 
       - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Decode keystore
         env:
@@ -135,24 +191,39 @@ jobs:
           set -euo pipefail
           AAB=android/app/build/outputs/bundle/release/app-release.aab
           test -s "$AAB"
-          AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort | tail -1)
-          MANIFEST=$("$AAPT2" dump xmltree --file AndroidManifest.xml "$AAB" 2>/dev/null || true)
-          if [ -z "$MANIFEST" ]; then
-            # base/manifest/AndroidManifest.xml is the bundle's own layout.
-            MANIFEST=$(unzip -p "$AAB" base/manifest/AndroidManifest.xml | "$AAPT2" dump xmltree --file - -)
-          fi
-          echo "$MANIFEST" | grep -q 'package="ai.dividimos.app"' || {
-            echo "::error::built bundle is not ai.dividimos.app."
-            exit 1
+
+          BUNDLETOOL_VERSION=1.18.1
+          BUNDLETOOL_SHA256=675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c
+          BUNDLETOOL=bundletool-all-"$BUNDLETOOL_VERSION".jar
+          curl --fail --location --retry 3 \
+            --output "$BUNDLETOOL" \
+            "https://github.com/google/bundletool/releases/download/$BUNDLETOOL_VERSION/$BUNDLETOOL"
+          printf '%s  %s\n' "$BUNDLETOOL_SHA256" "$BUNDLETOOL" | sha256sum --check --strict
+
+          MANIFEST=/tmp/dividimos-AndroidManifest.xml
+          java -jar "$BUNDLETOOL" dump manifest --bundle="$AAB" > "$MANIFEST"
+          python3 - "$MANIFEST" "$VERSION_CODE" "$VERSION_NAME" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ElementTree
+
+          manifest_path, expected_code, expected_name = sys.argv[1:]
+          android = "http://schemas.android.com/apk/res/android"
+          root = ElementTree.parse(manifest_path).getroot()
+          actual = {
+              "package": root.attrib.get("package"),
+              "versionCode": root.attrib.get(f"{{{android}}}versionCode"),
+              "versionName": root.attrib.get(f"{{{android}}}versionName"),
           }
-          echo "$MANIFEST" | grep -q "versionCode.*$VERSION_CODE" || {
-            echo "::error::built bundle does not carry versionCode $VERSION_CODE."
-            exit 1
+          expected = {
+              "package": "ai.dividimos.app",
+              "versionCode": expected_code,
+              "versionName": expected_name,
           }
-          echo "$MANIFEST" | grep -q "$VERSION_NAME" || {
-            echo "::error::built bundle does not carry versionName $VERSION_NAME."
-            exit 1
-          }
+          if actual != expected:
+              raise SystemExit(f"bundle manifest metadata mismatch: {actual!r} != {expected!r}")
+          PY
+
+          jarsigner -verify -strict -certs "$AAB"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
