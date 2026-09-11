@@ -421,18 +421,28 @@ function detailToWizardState(
     return userId ? [{ expenseId: record.id, userId, amountCents: payer.amountCents }] : [];
   });
 
+  // Reopens the control the author used. Versions written before the method
+  // was recorded fall back to fixed amounts, which is what they effectively
+  // were: only the cents survived.
+  const authoredMethod: SplitType = payload.splitMethod ?? "fixed";
   const billSplits: AmountSplit[] =
     current.expenseType === "single_amount"
       ? detail.participants.flatMap((participant) => {
           const userId = localIdByIndex.get(participant.participantIndex);
-          return userId
-            ? [{
-                userId,
-                splitType: "fixed" as SplitType,
-                value: participant.shareCents,
-                computedAmountCents: participant.shareCents,
-              }]
-            : [];
+          if (!userId) return [];
+          const totalCents = current.totalCents || 0;
+          const value =
+            authoredMethod === "percentage" && totalCents > 0
+              ? (participant.shareCents / totalCents) * 100
+              : authoredMethod === "equal"
+                ? 100 / detail.participants.length
+                : participant.shareCents;
+          return [{
+            userId,
+            splitType: authoredMethod,
+            value,
+            computedAmountCents: participant.shareCents,
+          }];
         })
       : [];
 

@@ -20,6 +20,7 @@ import type {
   ExpenseItemPayload,
   ExpensePayerPayload,
   ExpensePayload,
+  ExpenseSplitMethod,
   ParticipantRef,
   WireIssue,
 } from "@/types/ledger";
@@ -202,6 +203,14 @@ export function buildExpensePayload(
         }))
       : null;
 
+  // Recorded so an edit reopens the control the author used. Shares alone
+  // cannot distinguish "split equally" from a custom split that happens to
+  // come out even.
+  const splitMethod: ExpenseSplitMethod | null =
+    expense.expenseType === "single_amount"
+      ? (state.billSplits[0]?.splitType ?? null)
+      : null;
+
   return {
     ok: true,
     value: {
@@ -212,6 +221,7 @@ export function buildExpensePayload(
         shares: payloadShares,
         payers: payloadPayers,
         itemAssignments: payloadItemAssignments,
+        splitMethod,
       },
     },
   };
