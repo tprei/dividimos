@@ -1149,3 +1149,119 @@ describe("authored split method", () => {
     ).toBe("invalid_payload");
   });
 });
+
+describe("create_expense_with_group", () => {
+  function args(clientId: string, payload: unknown, overrides: Record<string, unknown> = {}) {
+    return {
+      p_client_id: clientId,
+      p_group_name: "Viagem",
+      p_member_ids: [bruno.id],
+      p_occurred_on: OCCURRED_ON,
+      p_title: "Jantar",
+      p_merchant_name: "Cantina",
+      p_expense_type: "single_amount",
+      p_total_cents: 10000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: payload,
+      p_chave_acesso: null,
+      ...overrides,
+    };
+  }
+
+  it("creates the group and its first expense together", async () => {
+    if (!isIntegrationTestReady) return;
+    const clientId = crypto.randomUUID();
+    const payload = equalSplitPayload([alice.id, bruno.id], 10000);
+
+    const { data, error } = await callRpc(
+      aliceClient,
+      "create_expense_with_group",
+      args(clientId, payload),
+    );
+    expect(error).toBeNull();
+    const ack = data as ExpenseAck;
+
+    expect(ack.groupId).toBeTruthy();
+    expect(ack.expenseId).toBeTruthy();
+
+    const row = await withPg((pg) =>
+      pg.query("select group_id, status from expenses where id = $1", [ack.expenseId]),
+    );
+    expect(row.rows[0].group_id).toBe(ack.groupId);
+    expect(row.rows[0].status).toBe("active");
+  });
+
+  it("leaves no group behind when the expense is invalid", async () => {
+    if (!isIntegrationTestReady) return;
+    const before = await withPg((pg) =>
+      pg.query("select count(*)::int as n from groups where creator_id = $1", [alice.id]),
+    );
+
+    // Shares that do not add up to the total: create_expense rejects this.
+    const badPayload = {
+      items: [],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "user", userId: bruno.id },
+      ],
+      shares: [4000, 4000],
+      payers: [{ participantIndex: 0, amountCents: 10000 }],
+      itemAssignments: null,
+    };
+
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense_with_group", args(crypto.randomUUID(), badPayload)),
+      ),
+    ).toBe("share_total_mismatch");
+
+    const after = await withPg((pg) =>
+      pg.query("select count(*)::int as n from groups where creator_id = $1", [alice.id]),
+    );
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+
+  it("returns the original pair when the same client id is replayed", async () => {
+    if (!isIntegrationTestReady) return;
+    const clientId = crypto.randomUUID();
+    const payload = equalSplitPayload([alice.id, bruno.id], 10000);
+
+    const first = (
+      await callRpc(aliceClient, "create_expense_with_group", args(clientId, payload))
+    ).data as ExpenseAck;
+    const replay = (
+      await callRpc(aliceClient, "create_expense_with_group", args(clientId, payload))
+    ).data as ExpenseAck;
+
+    expect(replay.expenseId).toBe(first.expenseId);
+    expect(replay.groupId).toBe(first.groupId);
+
+    const groups = await withPg((pg) =>
+      pg.query("select count(*)::int as n from groups where id = $1", [first.groupId]),
+    );
+    expect(groups.rows[0].n).toBe(1);
+  });
+
+  it("refuses to replay another member's expense", async () => {
+    if (!isIntegrationTestReady) return;
+    const clientId = crypto.randomUUID();
+    const payload = equalSplitPayload([alice.id, bruno.id], 10000);
+    await callRpc(aliceClient, "create_expense_with_group", args(clientId, payload));
+
+    // The outsider holds the same client id but no membership.
+    expect(
+      await expectRpcError(
+        callRpc(
+          authenticateAs(outsider),
+          "create_expense_with_group",
+          args(clientId, equalSplitPayload([outsider.id], 10000), {
+            p_member_ids: [],
+            p_payload: equalSplitPayload([outsider.id], 10000),
+          }),
+        ),
+      ),
+    ).toBe("not_a_member");
+  });
+});
+
