@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { pickNativeContact } from "./contacts";
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.doUnmock("@capacitor-community/contacts");
+  vi.resetModules();
+});
+
 interface ContactsPlugin {
   checkPermissions: () => Promise<{ contacts: string }>;
   requestPermissions?: () => Promise<{ contacts: string }>;
@@ -52,6 +58,22 @@ describe("pickNativeContact", () => {
     };
 
     await expect(pickNativeContact()).resolves.toEqual({ status: "cancelled" });
+  });
+
+  it("returns cancelled when the native picker never settles", async () => {
+    vi.doMock("@capacitor-community/contacts", () => ({
+      Contacts: {
+        checkPermissions: async () => ({ contacts: "granted" }),
+        pickContact: () => Promise.withResolvers<never>().promise,
+      },
+    }));
+
+    const pickNativeContact = await loadPickNativeContact();
+    vi.useFakeTimers();
+    const pending = pickNativeContact();
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(await pending).toEqual({ status: "cancelled" });
   });
 
   it("returns the picked contact display name and first phone", async () => {
