@@ -11,7 +11,7 @@ import {
   Users,
   BellRing,
 } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
@@ -263,6 +263,15 @@ function NotificationPreferencesSection() {
     emptyCategoryRecord(0),
   );
 
+  // Each category shows its own state: the switch moves immediately, but the
+  // row says so until the write lands, and says so louder if it fails.
+  const [saving, setSaving] = useState<Record<NotificationCategory, boolean>>(() =>
+    emptyCategoryRecord(false),
+  );
+  const [failed, setFailed] = useState<Record<NotificationCategory, boolean>>(() =>
+    emptyCategoryRecord(false),
+  );
+
   const toggleCategory = (category: NotificationCategory) => {
     const currentMe = useAppStore.getState().me;
     if (!currentMe) return;
@@ -274,6 +283,8 @@ function NotificationPreferencesSection() {
     const generation = generationsRef.current[category];
     intentsRef.current[category] = intent;
     pendingRef.current[category] += 1;
+    setSaving((prev) => ({ ...prev, [category]: true }));
+    setFailed((prev) => (prev[category] ? { ...prev, [category]: false } : prev));
 
     useAppStore.getState().patch((s) => {
       if (!s.me) return {};
@@ -304,10 +315,16 @@ function NotificationPreferencesSection() {
               },
             };
           });
+          setFailed((prev) => ({ ...prev, [category]: true }));
           toast.error(ledgerErrorMessage(err));
         }
       } finally {
         pendingRef.current[category] -= 1;
+        // Only the newest write for this category clears the indicator; an
+        // older one finishing late says nothing about the current intent.
+        if (generationsRef.current[category] === generation) {
+          setSaving((prev) => ({ ...prev, [category]: false }));
+        }
         const queued = CATEGORY_KEYS.filter((key) => pendingRef.current[key] > 0);
         if (queued.length > 0) {
           useAppStore.getState().patch((s) => {
@@ -327,6 +344,8 @@ function NotificationPreferencesSection() {
       {CATEGORIES.map((cat, i) => {
         const Icon = cat.icon;
         const enabled = prefs[cat.key] !== false;
+        const isSaving = saving[cat.key];
+        const hasFailed = failed[cat.key];
         return (
           <div key={cat.key}>
             {i > 0 && <Separator />}
@@ -335,14 +354,25 @@ function NotificationPreferencesSection() {
                 <Icon className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">{cat.label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {cat.description}
-                  </p>
+                  {hasFailed ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(cat.key)}
+                      className="text-xs font-medium text-destructive underline"
+                    >
+                      Não salvou. Tentar novamente
+                    </button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {isSaving ? "Salvando..." : cat.description}
+                    </p>
+                  )}
                 </div>
               </div>
               <Switch
                 checked={enabled}
                 onCheckedChange={() => toggleCategory(cat.key)}
+                aria-label={cat.label}
               />
             </div>
           </div>
