@@ -3,7 +3,7 @@
 import type { RefObject } from "react";
 import type { AccountSectionProps } from "@/components/bill/itemized/account-section";
 import type { ParticipantsStepProps } from "@/components/bill/wizard/participants-step";
-import { ParticipantsSheet } from "@/components/bill/itemized/participants-sheet";
+import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
 import { SectionContent, type SectionContentProps } from "@/components/bill/itemized/section-content";
 import { SectionFooter } from "@/components/bill/itemized/section-footer";
 import { SectionTabs } from "@/components/bill/itemized/section-tabs";
@@ -147,9 +147,10 @@ export function ItemizedWorkspace({
         onSetPayerAmount={store.setPayerAmount}
         onRemovePayerEntry={store.removePayerEntry}
       />
-      <ParticipantsSheet
+      <ParticipantsDialog
         open={participantsOpen}
         onOpenChange={onParticipantsOpenChange}
+        description="Escolha quem divide esta conta."
         participants={participants}
       />
       <SectionFooter

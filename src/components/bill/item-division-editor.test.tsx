@@ -93,12 +93,70 @@ describe("ItemDivisionEditor", () => {
       ],
     });
     expect(screen.getByRole("radio", { name: "Fixo" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByLabelText("Incluir Ana em Picanha")).toBeChecked();
-    expect(screen.getByLabelText("Incluir Bruno em Picanha")).not.toBeChecked();
-    expect(screen.getByLabelText("Incluir Maria em Picanha")).toBeChecked();
     expect((screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement).value).toBe("100,00");
+    expect((screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement).value).toBe("0,00");
     expect((screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement).value).toBe("29,00");
     expect(screen.getByRole("button", { name: "Salvar" })).toBeEnabled();
+  });
+
+  it("re-includes a participant when their percent slider leaves zero", () => {
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+
+    const mariaInput = screen.getByLabelText("Percentual de Maria em Picanha") as HTMLInputElement;
+    expect(mariaInput.value).toBe("33,00");
+    fireEvent.change(mariaInput, { target: { value: "0" } });
+
+    const mariaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Maria em Picanha" });
+    expect(mariaSlider).toHaveValue("0");
+    fireEvent.change(mariaSlider, { target: { value: "30" } });
+
+    const brunoInput = screen.getByLabelText("Percentual de Bruno em Picanha") as HTMLInputElement;
+    fireEvent.change(brunoInput, { target: { value: "36" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(onSave).toHaveBeenCalledWith({
+      mode: "percent",
+      shares: [
+        { participantId: "u1", cents: 4386, basisPoints: 3400 },
+        { participantId: "u2", cents: 4644, basisPoints: 3600 },
+        { participantId: "g1", cents: 3870, basisPoints: 3000 },
+      ],
+    });
+  });
+
+  it("drops a participant when their fixed value is zeroed", () => {
+    const { onSave } = renderEditor();
+    fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
+
+    const brunoInput = screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement;
+    expect(brunoInput.value).toBe("43,00");
+    fireEvent.change(brunoInput, { target: { value: "0" } });
+
+    const anaInput = screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement;
+    fireEvent.change(anaInput, { target: { value: "64,50" } });
+    const mariaInput = screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement;
+    fireEvent.change(mariaInput, { target: { value: "64,50" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(onSave).toHaveBeenCalledWith({
+      mode: "fixed",
+      shares: [
+        { participantId: "u1", cents: 6450 },
+        { participantId: "g1", cents: 6450 },
+      ],
+    });
+  });
+
+  it("zeroes the fixed value texts when clearing the selection", () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Nenhum" }));
+
+    expect((screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement).value).toBe("0,00");
+    expect((screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement).value).toBe("0,00");
+    expect((screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement).value).toBe("0,00");
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
   });
 
   it("calls onCancel without saving", () => {
@@ -155,16 +213,24 @@ describe("ItemDivisionEditor", () => {
     });
   });
 
-  it("bounds the fixed slider by the amount still unassigned for that person", () => {
+  it("lets a zeroed participant be dragged back in once the others free room", () => {
     const { onSave } = renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Todos" }));
     fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
-    const anaSlider = screen.getByRole("slider", { name: "Valor deslizante de Ana em Picanha" });
-    expect(anaSlider).toHaveAttribute("max", "4300");
-    fireEvent.change(anaSlider, { target: { value: "999999" } });
 
-    expect(anaSlider).toHaveValue("4300");
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeEnabled();
+    const brunoInput = screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement;
+    fireEvent.change(brunoInput, { target: { value: "0" } });
+    const anaInput = screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement;
+    fireEvent.change(anaInput, { target: { value: "64,50" } });
+    const mariaInput = screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement;
+    fireEvent.change(mariaInput, { target: { value: "64,50" } });
+
+    const brunoSlider = screen.getByRole("slider", {
+      name: "Valor deslizante de Bruno em Picanha",
+    });
+    fireEvent.change(brunoSlider, { target: { value: "4300" } });
+    fireEvent.change(anaInput, { target: { value: "43,00" } });
+    fireEvent.change(mariaInput, { target: { value: "43,00" } });
+
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "fixed",
@@ -174,6 +240,18 @@ describe("ItemDivisionEditor", () => {
         { participantId: "g1", cents: 4300 },
       ],
     });
+  });
+
+  it("keeps a typed value that does not parse yet instead of reverting it", () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
+
+    const brunoInput = screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement;
+    fireEvent.change(brunoInput, { target: { value: "0" } });
+    fireEvent.change(brunoInput, { target: { value: "0,005" } });
+
+    expect(brunoInput.value).toBe("0,005");
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
   });
 });
 

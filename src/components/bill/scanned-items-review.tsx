@@ -1,12 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Users } from "lucide-react";
+import { Equal, Users } from "lucide-react";
 import { useState } from "react";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
-import { ReceiptBatchDialog } from "@/components/bill/receipt/receipt-batch-dialog";
-import { ReceiptItemRow } from "@/components/bill/receipt/receipt-item-row";
+import { ReceiptItemRow, type ReceiptItemPanel } from "@/components/bill/receipt/receipt-item-row";
 import { AvatarStack } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
@@ -109,10 +108,8 @@ export function ScannedItemsReview({
     return parsed.ok ? formatServiceFeeBasisPoints(parsed.value).replace("%", "") : "0";
   });
   const [divisions, setDivisions] = useState<Record<number, ItemDivisionValue>>({});
-  const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(() => new Set());
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const [batchOpen, setBatchOpen] = useState(false);
-  useBackHandler(expandedIndex !== null && !batchOpen, () => setExpandedIndex(null));
+  const [panel, setPanel] = useState<{ index: number; panel: ReceiptItemPanel } | null>(null);
+  useBackHandler(panel !== null, () => setPanel(null));
 
   const subtotalCents = items.reduce((sum, item) => sum + item.totalCents, 0);
   const serviceFeeResult = parseServiceFeeBasisPointsText(serviceFee || "0");
@@ -121,10 +118,16 @@ export function ScannedItemsReview({
     : null;
   const serviceFeeCents = serviceFeeCentsResult?.ok ? serviceFeeCentsResult.value : 0;
   const totalCents = subtotalCents + serviceFeeCents + result.fixedFeesCents;
-  const pendingCount = items.reduce((count, item, index) => {
+  const participantIds = new Set(participants.map((person) => person.id));
+  const isAssigned = (index: number, item: ReceiptItem): boolean => {
     const division = divisions[index];
-    return division && isDivisionValid(division, item.totalCents) ? count : count + 1;
-  }, 0);
+    if (!division || !isDivisionValid(division, item.totalCents)) return false;
+    return division.shares.every((share) => participantIds.has(share.participantId));
+  };
+  const pendingCount = items.reduce(
+    (count, item, index) => (isAssigned(index, item) ? count : count + 1),
+    0,
+  );
   const amountsValid = items.every((item, index) =>
     isAmountValid(item, amountTexts[index] ?? ""),
   );
@@ -169,35 +172,30 @@ export function ScannedItemsReview({
 
   const handleSaveDivision = (index: number, value: ItemDivisionValue) => {
     setDivisions((current) => ({ ...current, [index]: value }));
-    setExpandedIndex(null);
+    setPanel(null);
   };
 
-  const toggleSelected = (index: number) => {
-    setSelectedIndexes((current) => {
-      const next = new Set(current);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
+  const togglePanel = (index: number, next: ReceiptItemPanel) => {
+    setPanel((current) =>
+      current && current.index === index && current.panel === next ? null : { index, panel: next },
+    );
   };
 
-  const applyBatch = (participantIds: string[]) => {
-    setDivisions((current) => {
-      const next = { ...current };
-      for (const index of selectedIndexes) {
-        const item = items[index];
-        if (!item) continue;
+  const handleSplitAllEqually = () => {
+    const participantIds = participants.map((person) => person.id);
+    setDivisions(() => {
+      const next: Record<number, ItemDivisionValue> = {};
+      items.forEach((item, index) => {
         const division = equalDivision(participantIds, item.totalCents);
         if (division) next[index] = division;
-      }
+      });
       return next;
     });
-    setBatchOpen(false);
+    setPanel(null);
   };
 
   const handleContinue = () => {
     if (!canConfirm || !serviceFeeResult.ok) return;
-    setSelectedIndexes(new Set());
     onConfirm(
       {
         ...result,
@@ -206,7 +204,11 @@ export function ScannedItemsReview({
         serviceFeeBasisPoints: serviceFeeResult.value,
         totalCents,
       },
-      divisions,
+      Object.fromEntries(
+        items.flatMap((item, index) =>
+          isAssigned(index, item) ? [[index, divisions[index]] as const] : [],
+        ),
+      ),
       occurredOn,
     );
   };
@@ -240,10 +242,21 @@ export function ScannedItemsReview({
                 </p>
               )}
             </div>
-            <Badge variant="secondary" className="shrink-0">
-              {pendingCount} {pendingCount === 1 ? "pendente" : "pendentes"}
-            </Badge>
+            {pendingCount > 0 && (
+              <Badge variant="secondary" className="shrink-0">
+                {pendingCount} {pendingCount === 1 ? "pendente" : "pendentes"}
+              </Badge>
+            )}
           </div>
+          <button
+            type="button"
+            onClick={handleSplitAllEqually}
+            disabled={participants.length === 0 || items.length === 0}
+            className="flex min-h-12 w-full items-center gap-2 border-t px-4 text-left text-sm font-semibold transition-colors hover:bg-muted/40 disabled:opacity-50"
+          >
+            <Equal className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            Dividir tudo igualmente
+          </button>
           <button
             type="button"
             onClick={onManageParticipants}
@@ -274,18 +287,14 @@ export function ScannedItemsReview({
                 amountText={amountTexts[index] ?? centsText(item.totalCents)}
                 amountInvalid={!isAmountValid(item, amountTexts[index] ?? centsText(item.totalCents))}
                 nameInvalid={!isDescriptionValid(item.description)}
-                selected={selectedIndexes.has(index)}
-                expanded={expandedIndex === index}
+                panel={panel?.index === index ? panel.panel : null}
                 division={divisions[index]}
                 participants={participants}
-                onToggleSelected={toggleSelected}
-                onToggleExpanded={(itemIndex) =>
-                  setExpandedIndex((current) => (current === itemIndex ? null : itemIndex))
-                }
+                onTogglePanel={togglePanel}
                 onNameChange={handleNameChange}
                 onAmountChange={handleAmountChange}
                 onSaveDivision={handleSaveDivision}
-                onCancelDivision={() => setExpandedIndex(null)}
+                onCancelDivision={() => setPanel(null)}
               />
             ))}
             <div className="flex min-h-14 items-center gap-3 px-4 py-2">
@@ -322,35 +331,10 @@ export function ScannedItemsReview({
         </div>
       </div>
       <footer className="sticky bottom-0 border-t bg-background/95 px-4 py-3 backdrop-blur safe-bottom">
-        {selectedIndexes.size === 0 ? (
-          <Button className="min-h-11 w-full text-base font-bold" onClick={handleContinue} disabled={!canConfirm}>
-            Continuar para divisão
-          </Button>
-        ) : (
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              className="min-h-11"
-              onClick={() => setSelectedIndexes(new Set())}
-            >
-              Limpar
-            </Button>
-            <Button
-              className="min-h-11 flex-1 text-base font-bold"
-              onClick={() => setBatchOpen(true)}
-            >
-              Atribuir · {selectedIndexes.size}
-            </Button>
-          </div>
-        )}
+        <Button className="min-h-11 w-full text-base font-bold" onClick={handleContinue} disabled={!canConfirm}>
+          Continuar para divisão
+        </Button>
       </footer>
-      <ReceiptBatchDialog
-        open={batchOpen}
-        selectedCount={selectedIndexes.size}
-        participants={participants}
-        onOpenChange={setBatchOpen}
-        onApply={applyBatch}
-      />
     </motion.div>
   );
 }

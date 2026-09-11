@@ -49,10 +49,19 @@ test.describe("Receipt review participants", () => {
     await page.getByPlaceholder("handle do usuario").fill(bob.handle);
     await page.getByRole("button", { name: "Buscar handle" }).click();
     await page.getByRole("button", { name: "Adicionar" }).click();
-    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Concluir" }).click();
 
     await expect(participantsRow).toHaveAccessibleName(/Alice, Bob$/);
     await page.getByRole("button", { name: "Dividir Pão de queijo" }).click();
     await expect(page.getByLabel("Incluir Bob Recibo em Pão de queijo")).toBeVisible();
+    await page.getByRole("button", { name: "Cancelar" }).click();
+
+    await page.getByRole("button", { name: "Dividir tudo igualmente" }).click();
+    await expect(page.getByText(/pendente/)).toHaveCount(0);
+
+    const proceed = page.getByRole("button", { name: "Continuar para divisão" });
+    await expect(proceed).toBeEnabled();
+    await proceed.click();
+    await expect(page.getByRole("button", { name: /^Participantes:/ })).toHaveCount(0);
   });
 });

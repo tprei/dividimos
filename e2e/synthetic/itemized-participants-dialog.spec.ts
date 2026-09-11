@@ -1,6 +1,6 @@
 import { test, expect } from "../fixtures";
 
-test.describe("Itemized participants sheet", () => {
+test.describe("Itemized participants dialog", () => {
   test("shows people controls only, since the Conta section owns the group", async ({
     page,
     seed,
@@ -19,12 +19,16 @@ test.describe("Itemized participants sheet", () => {
     await expect(page.getByRole("combobox", { name: "Grupo" })).toBeVisible();
     await page.getByRole("button", { name: /Participantes/ }).click();
 
-    const sheet = page.getByRole("dialog", { name: "Participantes" });
-    await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("button", { name: "Por @handle" })).toBeVisible();
-    await expect(sheet.getByRole("button", { name: "Adicionar convidado" })).toBeVisible();
-    await expect(sheet.getByText("Grupo Itens A")).toHaveCount(0);
-    await expect(sheet.getByText("Grupo Itens B")).toHaveCount(0);
-    await expect(sheet.getByText("Criar grupo com essas pessoas")).toHaveCount(0);
+    const dialog = page.getByRole("dialog", { name: "Participantes" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Por @handle" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Adicionar convidado" })).toBeVisible();
+    await expect(dialog.getByText("Grupo Itens A")).toHaveCount(0);
+    await expect(dialog.getByText("Grupo Itens B")).toHaveCount(0);
+    await expect(dialog.getByText("Criar grupo com essas pessoas")).toHaveCount(0);
+
+    const done = dialog.getByRole("button", { name: "Concluir" });
+    await expect(done).toBeVisible();
+    await expect(done).toBeInViewport();
   });
 });
