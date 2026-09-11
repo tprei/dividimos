@@ -22,5 +22,3 @@ BEGIN
 END;
 $function$
 ;
-
-
