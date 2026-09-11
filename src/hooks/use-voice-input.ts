@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isNativeSpeechAvailable,
+  isNativeSpeechSupported,
   startNativeListening,
 } from "@/lib/capacitor/speech";
 
@@ -76,8 +77,23 @@ export function useVoiceInput(): UseVoiceInputReturn {
   const isStoppingRef = useRef(false);
   const instanceCounterRef = useRef(0);
 
+  // Running in the native shell is not the same as having a recognizer, so
+  // the native answer is asked of the plugin and assumed absent until it
+  // replies. The web path stays synchronous.
+  const [nativeSupported, setNativeSupported] = useState(false);
+  useEffect(() => {
+    if (!isNativeSpeechAvailable()) return;
+    let cancelled = false;
+    void isNativeSpeechSupported().then((supported) => {
+      if (!cancelled) setNativeSupported(supported);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const isSupported =
-    isNativeSpeechAvailable() ||
+    nativeSupported ||
     (typeof window !== "undefined" && getSpeechRecognitionConstructor() !== null);
 
   const clearSilenceTimer = useCallback(() => {
@@ -120,7 +136,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
     isStoppingRef.current = false;
 
     if (isNativeSpeechAvailable()) {
-      startNativeListening(
+      void startNativeListening(
         (text) => {
           setInterimTranscript(text);
           resetSilenceTimer();
@@ -139,15 +155,26 @@ export function useVoiceInput(): UseVoiceInputReturn {
           isStoppingRef.current = false;
           nativeStopRef.current = null;
         },
-      )
-        .then((handle) => {
-          nativeStopRef.current = handle;
+      ).then((outcome) => {
+        // Listening is shown only for a microphone that actually opened.
+        if (outcome.kind === "started") {
+          nativeStopRef.current = { stop: outcome.stop };
           setIsListening(true);
           resetSilenceTimer();
-        })
-        .catch(() => {
-          setError("Erro ao iniciar reconhecimento de voz.");
-        });
+          return;
+        }
+
+        nativeStopRef.current = null;
+        setIsListening(false);
+        clearSilenceTimer();
+        if (outcome.kind === "permission_denied") {
+          setError("Permissão do microfone negada. Verifique as configurações.");
+        } else if (outcome.kind === "unavailable") {
+          setError("Este aparelho não reconhece voz.");
+        } else {
+          setError(outcome.message || "Erro ao iniciar reconhecimento de voz.");
+        }
+      });
       return;
     }
 

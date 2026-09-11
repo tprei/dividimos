@@ -53,7 +53,7 @@ describe("isNativeSpeechAvailable", () => {
 
 describe("startNativeListening", () => {
   describe("permission denied", () => {
-    it("calls onError and onEnd, returns no-op stop", async () => {
+    it("reports denial as an outcome and installs nothing", async () => {
       mockRequestPermissions.mockResolvedValue({
         speechRecognition: "denied",
       });
@@ -65,16 +65,13 @@ describe("startNativeListening", () => {
       const { startNativeListening } = await loadModule();
       const result = await startNativeListening(onPartial, onError, onEnd);
 
-      expect(onError).toHaveBeenCalledWith(
-        expect.stringContaining("Permissão"),
-      );
-      expect(onEnd).toHaveBeenCalledTimes(1);
+      // A denial that resolved a no-op handle let the UI claim it was
+      // listening to a microphone that never opened.
+      expect(result.kind).toBe("permission_denied");
+      expect(onError).not.toHaveBeenCalled();
+      expect(onEnd).not.toHaveBeenCalled();
       expect(mockAddListener).not.toHaveBeenCalled();
       expect(mockStart).not.toHaveBeenCalled();
-
-      // stop is a no-op — should not throw
-      await result.stop();
-      expect(mockStop).not.toHaveBeenCalled();
     });
 
     it("handles prompt-denied permission", async () => {
@@ -86,10 +83,11 @@ describe("startNativeListening", () => {
       const onEnd = vi.fn();
 
       const { startNativeListening } = await loadModule();
-      await startNativeListening(vi.fn(), onError, onEnd);
+      const outcome = await startNativeListening(vi.fn(), onError, onEnd);
 
-      expect(onError).toHaveBeenCalled();
-      expect(onEnd).toHaveBeenCalled();
+      expect(outcome.kind).toBe("permission_denied");
+      expect(onError).not.toHaveBeenCalled();
+      expect(onEnd).not.toHaveBeenCalled();
     });
   });
 
@@ -261,14 +259,39 @@ describe("startNativeListening", () => {
 
       const { startNativeListening } = await loadModule();
       const result = await startNativeListening(vi.fn(), vi.fn(), vi.fn());
+      if (result.kind !== "started") throw new Error("expected a started outcome");
 
       await result.stop();
 
       expect(mockStop).toHaveBeenCalledTimes(1);
-      // Listeners are now removed in the "stopped" event handler, not in stop()
-      expect(removePartial).toHaveBeenCalledTimes(0);
-      expect(removeState).toHaveBeenCalledTimes(0);
-      expect(removeError).toHaveBeenCalledTimes(0);
+      // Stopping releases the handles itself, so a session that ends without
+      // a "stopped" event still leaves nothing installed.
+      expect(removePartial).toHaveBeenCalledTimes(1);
+      expect(removeState).toHaveBeenCalledTimes(1);
+      expect(removeError).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("failed start", () => {
+    it("removes its listeners so retries do not accumulate handles", async () => {
+      const removes: ReturnType<typeof vi.fn>[] = [];
+      mockAddListener.mockImplementation(() => {
+        const remove = vi.fn();
+        removes.push(remove);
+        return Promise.resolve({ remove });
+      });
+      mockStart.mockRejectedValue(new Error("recognizer busy"));
+
+      const { startNativeListening } = await loadModule();
+      const first = await startNativeListening(vi.fn(), vi.fn(), vi.fn());
+      const second = await startNativeListening(vi.fn(), vi.fn(), vi.fn());
+
+      expect(first.kind).toBe("error");
+      expect(second.kind).toBe("error");
+      // Every listener installed by a failed attempt is released; otherwise
+      // each retry stacks another set on the plugin.
+      expect(removes).toHaveLength(6);
+      for (const remove of removes) expect(remove).toHaveBeenCalledTimes(1);
     });
   });
 });
