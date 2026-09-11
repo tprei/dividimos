@@ -283,6 +283,8 @@ npm run test:watch           # Run unit tests in watch mode
 npm run test:integration     # Run integration tests (requires supabase start)
 npm run test:all             # Run unit + integration tests
 npm run test:synthetic       # Run Playwright synthetic E2E tests
+npm run test:soak            # Unit tests with the properties at 5,000 runs
+npm run test:soak:integration # Integration tests with the properties at 150 runs
 ./scripts/dev-setup.sh       # One-command local setup
 ./scripts/build-baseline.sh # Regenerate the SQL baseline from supabase/schemas/
 supabase db push --linked    # Apply the baseline to a linked remote database
@@ -295,6 +297,7 @@ CI runs on every pull request and on push to `main` across several workflows in 
 - `integration.yml` — `npm run test:integration` against a fresh local Supabase instance.
 - `synthetic.yml` — `npm run test:synthetic` (Playwright) against local Supabase + the dev server, sharded.
 - `migrations.yml` — replays the baseline on a fresh database, fails if the baseline is stale relative to `supabase/schemas/`, and rejects renamed or deleted migration files. Triggered when `supabase/schemas/**`, `supabase/migrations/**`, or `scripts/build-baseline.sh` changes.
+- `soak.yml` — nightly, replays the property-based ledger tests at high run counts with a fresh seed and opens a `soak-failure` issue carrying the seed when they break.
 - `android.yml` — signed Android release AAB via Capacitor, on push to `main`.
 
 ### Android build secrets (`.github/workflows/android.yml`)

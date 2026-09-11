@@ -37,6 +37,7 @@ CI currently runs:
 - `npm run test:integration` — integration tests against a fresh local Supabase instance, verifying the ledger RPC layer: membership checks, balance recomputation, and constraints (`.github/workflows/integration.yml`).
 - `npm run test:synthetic` — Playwright synthetic E2E tests against local Supabase + the dev server, sharded (`.github/workflows/synthetic.yml`).
 - Baseline replay on a fresh database, a baseline-freshness check (`./scripts/build-baseline.sh` must produce no diff), and a filename-immutability check, triggered when `supabase/schemas/**`, `supabase/migrations/**`, or the script changes (`.github/workflows/migrations.yml`).
+- Nightly, `npm run test:soak` and `npm run test:soak:integration` replay the property-based ledger tests at high run counts with the run id as the fast-check seed, and a failure opens a `soak-failure` issue carrying that seed (`.github/workflows/soak.yml`). Pull requests run the same properties at a fixed seed and low run count, so they stay deterministic.
 - Signed Android release AAB via Capacitor, on push to `main` (`.github/workflows/android.yml`).
 
 Do not merge failing CI because "it is probably unrelated" without a clear human decision recorded on the PR.

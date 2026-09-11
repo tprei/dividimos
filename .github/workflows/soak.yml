@@ -1,0 +1,120 @@
+name: Ledger Soak
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ledger-soak
+  cancel-in-progress: false
+
+jobs:
+  soak-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Run unit soak
+        run: npm run test:soak
+        env:
+          PROPERTY_SEED: ${{ github.run_id }}
+
+  soak-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+
+      - run: npm ci --ignore-scripts
+
+      - name: Start Supabase
+        id: supabase
+        run: |
+          for attempt in 1 2 3; do
+            if supabase start; then
+              break
+            fi
+            echo "supabase start failed (attempt $attempt/3), retrying..."
+            if ! supabase stop --no-backup >/dev/null 2>&1; then
+              echo "no running stack to stop"
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "supabase start failed after 3 attempts" && exit 1
+            fi
+          done
+          ANON_KEY=$(supabase status --output json | jq -r '.ANON_KEY')
+          SERVICE_ROLE_KEY=$(supabase status --output json | jq -r '.SERVICE_ROLE_KEY')
+          DB_URL=$(supabase status --output json | jq -r '.DB_URL')
+          echo "anon_key=${ANON_KEY}" >> $GITHUB_OUTPUT
+          echo "service_role_key=${SERVICE_ROLE_KEY}" >> $GITHUB_OUTPUT
+          echo "db_url=${DB_URL}" >> $GITHUB_OUTPUT
+
+      - name: Run integration soak
+        run: npm run test:soak:integration
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
+          PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          SUPABASE_DB_URL: ${{ steps.supabase.outputs.db_url }}
+          RATE_LIMIT_DISABLED: "0"
+          PROPERTY_SEED: ${{ github.run_id }}
+
+  report-failure:
+    runs-on: ubuntu-latest
+    needs: [soak-unit, soak-integration]
+    if: failure()
+
+    permissions:
+      issues: write
+
+    steps:
+      - name: Open or update the soak failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PROPERTY_SEED: ${{ github.run_id }}
+        run: |
+          gh label create soak-failure \
+            --description "Nightly ledger soak found a counterexample" \
+            --color B60205 \
+            --force
+          BODY=$(printf '%s\n' \
+            "The nightly ledger soak failed." \
+            "" \
+            "- Run: ${RUN_URL}" \
+            "- Seed: \`PROPERTY_SEED=${PROPERTY_SEED}\`" \
+            "" \
+            "Reproduce locally with the seed above, then pin the shrunk counterexample as an ordinary test case next to the property it broke.")
+          EXISTING=$(gh issue list --label soak-failure --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "${EXISTING}" ]; then
+            gh issue comment "${EXISTING}" --body "${BODY}"
+          else
+            gh issue create --title "Nightly ledger soak failed" --label soak-failure --body "${BODY}"
+          fi

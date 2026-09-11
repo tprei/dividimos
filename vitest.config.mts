@@ -10,5 +10,7 @@ export default defineConfig({
     environment: "happy-dom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    exclude: ["src/**/*.integration.test.ts", "node_modules/**"],
+    testTimeout: 120_000,
   },
 });
