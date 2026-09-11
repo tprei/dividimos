@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ParticipantsStep } from "./participants-step";
 import type { Me, GroupSnapshot } from "@/types/ledger";
@@ -11,6 +11,11 @@ vi.mock("@/components/bill/add-participant-by-handle", () => ({
       <button onClick={onCancel}>Cancelar</button>
     </div>
   ),
+}));
+
+const toastError = vi.hoisted(() => vi.fn());
+vi.mock("react-hot-toast", () => ({
+  default: { error: toastError, success: vi.fn() },
 }));
 
 beforeEach(() => {
@@ -280,5 +285,39 @@ describe("ParticipantsStep", () => {
     render(<ParticipantsStep {...baseProps} hasContactPicker={false} />);
 
     expect(screen.queryByText("Dos contatos do celular")).not.toBeInTheDocument();
+  });
+
+  it("surfaces a toast when onPickContacts rejects", async () => {
+    const onPickContacts = vi.fn().mockRejectedValue(new Error("plugin bridge missing"));
+    const user = userEvent.setup();
+    render(
+      <ParticipantsStep {...baseProps} hasContactPicker={true} onPickContacts={onPickContacts} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Dos contatos do celular" }));
+
+    expect(toastError).toHaveBeenCalledWith("Não foi possível abrir os contatos. Tente novamente.");
+  });
+
+  it("disables the contact picker button while a pick is in flight", async () => {
+    let resolvePick: (() => void) | undefined;
+    const onPickContacts = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePick = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(
+      <ParticipantsStep {...baseProps} hasContactPicker={true} onPickContacts={onPickContacts} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Dos contatos do celular" }));
+    expect(screen.getByRole("button", { name: "Dos contatos do celular" })).toBeDisabled();
+
+    resolvePick?.();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Dos contatos do celular" })).toBeEnabled(),
+    );
   });
 });

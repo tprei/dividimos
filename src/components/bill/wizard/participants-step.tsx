@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Plus, UserPlus, Users, Users2, X } from "lucide-react";
 import { useState } from "react";
+import toast from "react-hot-toast";
 import { AddParticipantByHandle } from "@/components/bill/add-participant-by-handle";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,19 @@ export function ParticipantsStep({
   const [showAddParticipant, setShowAddParticipant] = useState(false);
   const [showAddGuest, setShowAddGuest] = useState(false);
   const [guestNameInput, setGuestNameInput] = useState("");
+  const [pickingContacts, setPickingContacts] = useState(false);
+
+  const handlePickContacts = async () => {
+    setPickingContacts(true);
+    try {
+      await onPickContacts();
+    } catch (err) {
+      console.error("Contact picker failed:", err);
+      toast.error("Não foi possível abrir os contatos. Tente novamente.");
+    } finally {
+      setPickingContacts(false);
+    }
+  };
 
   const selectedGroup = groups.find((g) => g.group.id === selectedGroupId) ?? null;
   const memberRows = selectedGroup
@@ -233,8 +247,8 @@ export function ParticipantsStep({
                 autoFocus
                 className="flex-1"
               />
-              <Button type="submit" size="sm" disabled={!guestNameInput.trim()}>
-                <Plus className="h-4 w-4" />
+              <Button type="submit" size="sm" aria-label="Adicionar" disabled={!guestNameInput.trim()}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
               </Button>
             </form>
             <p className="mt-2 text-xs text-muted-foreground">
@@ -264,7 +278,12 @@ export function ParticipantsStep({
             Por @handle
           </Button>
           {hasContactPicker && (
-            <Button variant="outline" className="w-full gap-2" onClick={() => void onPickContacts()}>
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={handlePickContacts}
+              disabled={pickingContacts}
+            >
               <Users2 className="h-4 w-4" />
               Dos contatos do celular
             </Button>
