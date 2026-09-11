@@ -167,7 +167,7 @@ export function SingleBillForm({
           onPickContacts={onPickContacts}
         />
       ) : (
-        <div className="space-y-5 px-4 pb-4">
+        <div className="space-y-6 px-4 pb-4 pt-4">
           <SingleBillPayerSection
             participants={store.participants}
             payers={store.payers}
