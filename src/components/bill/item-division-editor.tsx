@@ -136,40 +136,54 @@ export function ItemDivisionEditor({
     return texts;
   });
 
+  const seedBase = selectedIds.length > 0 ? selectedIds : participantIds;
+  const seededPercentTexts: Record<string, string> = {};
+  const percentSeed = allocateEvenly(FULL_PERCENT_BASIS_POINTS / 100, seedBase.length);
+  if (percentSeed.ok) {
+    seedBase.forEach((id, index) => {
+      seededPercentTexts[id] = percentText(percentSeed.value[index] * 100);
+    });
+  }
+  const seededFixedTexts: Record<string, string> = {};
+  const fixedSeed = allocateEvenly(itemCents, seedBase.length);
+  if (fixedSeed.ok) {
+    seedBase.forEach((id, index) => {
+      seededFixedTexts[id] = centsText(fixedSeed.value[index]);
+    });
+  }
   const percentValues: Record<string, string> = {};
-  if (mode === "percent" && selectedIds.length > 0) {
-    const seeded = allocateEvenly(FULL_PERCENT_BASIS_POINTS / 100, selectedIds.length);
-    if (seeded.ok) {
-      selectedIds.forEach((id, index) => {
-        percentValues[id] = percentTexts[id] ?? percentText(seeded.value[index] * 100);
-      });
-    }
-  }
   const fixedValues: Record<string, string> = {};
-  if (mode === "fixed" && selectedIds.length > 0) {
-    const seeded = allocateEvenly(itemCents, selectedIds.length);
-    if (seeded.ok) {
-      selectedIds.forEach((id, index) => {
-        fixedValues[id] = fixedTexts[id] ?? centsText(seeded.value[index]);
-      });
+  for (const id of participantIds) {
+    percentValues[id] = percentTexts[id] ?? seededPercentTexts[id] ?? percentText(0);
+    fixedValues[id] = fixedTexts[id] ?? seededFixedTexts[id] ?? centsText(0);
+  }
+
+  const contributes = (id: string): boolean => {
+    if (mode === "percent") {
+      const parsed = parseAllocationPercentText(percentValues[id]);
+      return !parsed.ok || parsed.value > 0;
     }
-  }
-  const division = computeDivision(itemCents, mode, selectedIds, percentValues, fixedValues);
+    const parsed = parseExpenseCentsText(fixedValues[id], {
+      format: "plain_decimal",
+      zeroPolicy: "allow",
+    });
+    return !parsed.ok || parsed.value > 0;
+  };
+  const includedIds =
+    mode === "equal" ? selectedIds : participantIds.filter((id) => contributes(id));
+
+  const division = computeDivision(itemCents, mode, includedIds, percentValues, fixedValues);
   const percentSliderValues: Record<string, number> = {};
-  for (const id of selectedIds) percentSliderValues[id] = percentSliderValue(percentValues[id] ?? "");
+  for (const id of participantIds) percentSliderValues[id] = percentSliderValue(percentValues[id]);
   const fixedSliderValues: Record<string, number> = {};
-  for (const id of selectedIds) fixedSliderValues[id] = fixedSliderValue(fixedValues[id] ?? "");
+  for (const id of participantIds) fixedSliderValues[id] = fixedSliderValue(fixedValues[id]);
   let fixedSum = 0;
-  for (const id of selectedIds) fixedSum += fixedSliderValues[id] ?? 0;
-  const fixedRemainingById: Record<string, number> = {};
-  for (const id of selectedIds) {
-    fixedRemainingById[id] = Math.max(0, itemCents - (fixedSum - (fixedSliderValues[id] ?? 0)));
-  }
+  for (const id of participantIds) fixedSum += fixedSliderValues[id];
   const chipTargetId =
-    lastFixedId !== null && selectedIds.includes(lastFixedId)
+    lastFixedId !== null && participantIds.includes(lastFixedId)
       ? lastFixedId
-      : selectedIds.length > 0
-        ? selectedIds[0]
+      : participantIds.length > 0
+        ? participantIds[0]
         : null;
 
   const toggleParticipant = (id: string) =>
@@ -179,11 +193,45 @@ export function ItemDivisionEditor({
         : participantIds.filter((member) => member === id || ids.includes(member)),
     );
 
+  const seedEvenly = (targetMode: ItemDivisionMode, ids: readonly string[]) => {
+    if (targetMode === "percent") {
+      const seeded = allocateEvenly(FULL_PERCENT_BASIS_POINTS / 100, ids.length);
+      setPercentTexts(() => {
+        const next: Record<string, string> = {};
+        for (const id of participantIds) next[id] = percentText(0);
+        if (seeded.ok) ids.forEach((id, index) => {
+          next[id] = percentText(seeded.value[index] * 100);
+        });
+        return next;
+      });
+      return;
+    }
+    const seeded = allocateEvenly(itemCents, ids.length);
+    setFixedTexts(() => {
+      const next: Record<string, string> = {};
+      for (const id of participantIds) next[id] = centsText(0);
+      if (seeded.ok) ids.forEach((id, index) => {
+        next[id] = centsText(seeded.value[index]);
+      });
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    setSelectedIds([...participantIds]);
+    if (mode !== "equal") seedEvenly(mode, participantIds);
+  };
+
+  const handleSelectNone = () => {
+    setSelectedIds([]);
+    if (mode !== "equal") seedEvenly(mode, []);
+  };
+
   const handleSave = () => {
     if (!division.ok) return;
     onSave({
       mode,
-      shares: selectedIds.map((id) => ({
+      shares: includedIds.map((id) => ({
         participantId: id,
         cents: division.centsById[id],
         ...(division.basisPointsById ? { basisPoints: division.basisPointsById[id] } : {}),
@@ -226,28 +274,20 @@ export function ItemDivisionEditor({
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Pessoas</p>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setSelectedIds([...participantIds])}>
+          <Button variant="ghost" size="sm" className="min-h-11" onClick={handleSelectAll}>
             Todos
           </Button>
-          <Button variant="ghost" size="sm" className="min-h-11" onClick={() => setSelectedIds([])}>
+          <Button variant="ghost" size="sm" className="min-h-11" onClick={handleSelectNone}>
             Nenhum
           </Button>
         </div>
       </div>
       <div className="divide-y divide-border overflow-hidden rounded-2xl border border-input bg-card">
         {participants.map((participant) => {
-          const selected = selectedIds.includes(participant.id);
-          return (
-            <div key={participant.id} className="flex min-h-12 min-w-0 flex-wrap items-center gap-3 px-3 py-2">
-              <label className="flex min-h-11 min-w-11 shrink-0 items-center justify-center">
-                <input
-                  type="checkbox"
-                  className="size-5 accent-primary"
-                  checked={selected}
-                  onChange={() => toggleParticipant(participant.id)}
-                  aria-label={`Incluir ${participant.name} em ${itemName}`}
-                />
-              </label>
+          const selected = includedIds.includes(participant.id);
+          const shareId = `${itemId}-share-${participant.id}`;
+          const identity = (
+            <>
               {participant.isGuest ? (
                 <GuestAvatar size="sm" />
               ) : (
@@ -259,54 +299,82 @@ export function ItemDivisionEditor({
                   Convite pendente
                 </Badge>
               )}
+            </>
+          );
+          const shareCell = (
+            <span id={shareId}>
               <ShareCell
                 shareCents={selected && division.ok ? division.centsById[participant.id] : null}
-                percentInput={mode === "percent" && selected ? percentValues[participant.id] ?? "" : null}
-                fixedInput={mode === "fixed" && selected ? fixedValues[participant.id] ?? "" : null}
+                percentInput={mode === "percent" ? percentValues[participant.id] : null}
+                fixedInput={mode === "fixed" ? fixedValues[participant.id] : null}
                 inputLabel={
                   mode === "percent"
                     ? `Percentual de ${participant.name} em ${itemName}`
                     : `Valor fixo de ${participant.name} em ${itemName}`
                 }
                 onFocus={() => setLastFixedId(participant.id)}
-                onPercentChange={(next) => setPercentTexts((prev) => ({ ...prev, [participant.id]: next }))}
-                onFixedChange={(next) => setFixedTexts((prev) => ({ ...prev, [participant.id]: next }))}
+                onPercentChange={(next) =>
+                  setPercentTexts((prev) => ({ ...prev, [participant.id]: next }))
+                }
+                onFixedChange={(next) =>
+                  setFixedTexts((prev) => ({ ...prev, [participant.id]: next }))
+                }
               />
-              {selected && mode !== "equal" && (
-                <DivisionSlider
-                  ariaLabel={
-                    mode === "percent"
-                      ? `Percentual deslizante de ${participant.name} em ${itemName}`
-                      : `Valor deslizante de ${participant.name} em ${itemName}`
+            </span>
+          );
+          if (mode === "equal") {
+            return (
+              <button
+                key={participant.id}
+                type="button"
+                role="switch"
+                aria-checked={selected}
+                aria-label={`Incluir ${participant.name} em ${itemName}`}
+                aria-describedby={shareId}
+                onClick={() => toggleParticipant(participant.id)}
+                className={cn(
+                  "flex min-h-12 w-full min-w-0 items-center gap-3 px-3 py-2 text-left transition-colors",
+                  selected ? "bg-primary/10" : "opacity-60",
+                )}
+              >
+                {identity}
+                {shareCell}
+              </button>
+            );
+          }
+          return (
+            <div key={participant.id} className="flex min-h-12 min-w-0 flex-wrap items-center gap-3 px-3 py-2">
+              {identity}
+              {shareCell}
+              <DivisionSlider
+                ariaLabel={
+                  mode === "percent"
+                    ? `Percentual deslizante de ${participant.name} em ${itemName}`
+                    : `Valor deslizante de ${participant.name} em ${itemName}`
+                }
+                className="basis-full"
+                min={0}
+                max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS / 100 : itemCents}
+                step={mode === "percent" ? 1 : "any"}
+                snap={mode === "percent" ? { step: 5, threshold: 2 } : undefined}
+                value={mode === "percent" ? percentSliderValues[participant.id] : fixedSliderValues[participant.id]}
+                onChange={(next) => {
+                  if (mode === "percent") {
+                    setPercentTexts((prev) => ({ ...prev, [participant.id]: percentText(next * 100) }));
+                    return;
                   }
-                  className="basis-full"
-                  min={0}
-                  max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS / 100 : fixedRemainingById[participant.id] ?? 0}
-                  step={mode === "percent" ? 1 : "any"}
-                  snap={mode === "percent" ? { step: 5, threshold: 2 } : undefined}
-                  value={
-                    mode === "percent"
-                      ? percentSliderValues[participant.id] ?? 0
-                      : fixedSliderValues[participant.id] ?? 0
-                  }
-                  onChange={(next) => {
-                    if (mode === "percent") {
-                      setPercentTexts((prev) => ({ ...prev, [participant.id]: percentText(next * 100) }));
-                    } else {
-                      setLastFixedId(participant.id);
-                      setFixedTexts((prev) => ({ ...prev, [participant.id]: centsText(next) }));
-                    }
-                  }}
-                />
-              )}
-              {mode === "fixed" && selected && participant.id === chipTargetId && (
+                  setLastFixedId(participant.id);
+                  setFixedTexts((prev) => ({ ...prev, [participant.id]: centsText(next) }));
+                }}
+              />
+              {mode === "fixed" && participant.id === chipTargetId && (
                 <div className="basis-full">
                   <FixedAmountHelpers
                     totalCents={itemCents}
                     remainingCents={Math.max(0, itemCents - fixedSum)}
                     onAdd={(deltaCents) => {
                       if (chipTargetId === null) return;
-                      const current = fixedSliderValues[chipTargetId] ?? 0;
+                      const current = fixedSliderValues[chipTargetId];
                       setFixedTexts((prev) => ({ ...prev, [chipTargetId]: centsText(current + deltaCents) }));
                     }}
                   />
