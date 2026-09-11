@@ -45,6 +45,7 @@ type ExpenseVersionJson = {
       participantIndex: number;
       amountCents: number;
     }> | null;
+    splitMethod?: string | null;
   };
 };
 
@@ -1096,5 +1097,55 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(guestParticipant?.guest?.claimedBy).toBeNull();
     expect(guestParticipant?.guest?.claimLinkGeneration).toBe(0);
     expect(typeof detail.current.payload.participants[1]?.guestId).toBe("string");
+  });
+});
+
+describe("authored split method", () => {
+  it("round-trips the method the author chose", async () => {
+    if (!isIntegrationTestReady) return;
+    const groupId = await createGroupWithMembers(alice, [bruno], "Método");
+    const payload = equalSplitPayload([alice.id, bruno.id], 10000) as Record<string, unknown>;
+
+    const ack = await createExpense(alice, {
+      groupId,
+      totalCents: 10000,
+      occurredOn: OCCURRED_ON,
+      payload: { ...payload, splitMethod: "percentage" },
+    });
+
+    const detail = (await authenticateAs(alice).rpc("get_expense", {
+      p_expense_id: ack.expenseId,
+    })) as { data: ExpenseDetail | null };
+    expect(detail.data?.current.payload.splitMethod).toBe("percentage");
+  });
+
+  it("accepts a payload written before the method existed", async () => {
+    if (!isIntegrationTestReady) return;
+    const groupId = await createGroupWithMembers(alice, [bruno], "Sem método");
+
+    const ack = await createExpense(alice, {
+      groupId,
+      totalCents: 8000,
+      occurredOn: OCCURRED_ON,
+      payload: equalSplitPayload([alice.id, bruno.id], 8000),
+    });
+
+    const detail = (await authenticateAs(alice).rpc("get_expense", {
+      p_expense_id: ack.expenseId,
+    })) as { data: ExpenseDetail | null };
+    expect(detail.data?.current.payload.splitMethod ?? null).toBeNull();
+  });
+
+  it("rejects a method the division controls cannot produce", async () => {
+    if (!isIntegrationTestReady) return;
+    const payload = {
+      ...(equalSplitPayload([alice.id], 1000) as Record<string, unknown>),
+      splitMethod: "weighted",
+    };
+    expect(
+      await expectRpcError(
+        callRpc(aliceClient, "create_expense", createArgs(validationGroupId, 1000, payload)),
+      ),
+    ).toBe("invalid_payload");
   });
 });
