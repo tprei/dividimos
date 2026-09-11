@@ -498,6 +498,36 @@ function detailToWizardState(
   };
 }
 
+/**
+ * Writes bill splits only when they actually differ.
+ *
+ * The division UI recomputes an allocation on every render and hands it back
+ * to the store. Without this guard a mount, or a re-render triggered by
+ * something else entirely, republishes an identical array and wakes every
+ * subscriber; worse, it marks a hydrated custom split as freshly authored.
+ */
+function sameBillSplits(a: AmountSplit[], b: AmountSplit[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((split, index) => {
+    const other = b[index];
+    return (
+      split.userId === other.userId &&
+      split.splitType === other.splitType &&
+      split.value === other.value &&
+      split.computedAmountCents === other.computedAmountCents
+    );
+  });
+}
+
+function commitBillSplits(
+  set: (partial: Partial<ExpenseState>) => void,
+  get: () => ExpenseState,
+  billSplits: AmountSplit[],
+): void {
+  if (sameBillSplits(get().billSplits, billSplits)) return;
+  set({ billSplits });
+}
+
 export const useBillStore = create<ExpenseState>()(
   persist(
     (set, get) => ({
@@ -951,7 +981,7 @@ export const useBillStore = create<ExpenseState>()(
       value: 100 / userIds.length,
       computedAmountCents: perPerson + (idx < remainder ? 1 : 0),
     }));
-    set({ billSplits });
+    commitBillSplits(set, get, billSplits);
   },
 
   splitBillByBasisPoints: (assignments) => {
@@ -966,7 +996,7 @@ export const useBillStore = create<ExpenseState>()(
       value: assignment.basisPoints / 100,
       computedAmountCents: allocation.value[index],
     }));
-    set({ billSplits });
+    commitBillSplits(set, get, billSplits);
   },
 
   splitBillByFixed: (assignments) => {
@@ -976,7 +1006,7 @@ export const useBillStore = create<ExpenseState>()(
       value: a.amountCents,
       computedAmountCents: a.amountCents,
     }));
-    set({ billSplits });
+    commitBillSplits(set, get, billSplits);
   },
 
   getGrandTotal: () => {

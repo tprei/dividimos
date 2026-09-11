@@ -27,7 +27,7 @@ import { meToLegacyUser } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
 import type { GroupSnapshot, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
-import { useWizardInit } from "./use-wizard-init";
+import { selectDraftForType, useWizardInit } from "./use-wizard-init";
 import { parseWizardModes, type Step } from "./wizard-modes";
 import { todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
 
@@ -187,15 +187,10 @@ function NewBillPageContent() {
 
   const handleTypeSelect = useCallback((type: ExpenseType) => {
     setBillType(type);
-    if (type === "single_amount" && me) {
+    if (me) {
       const billStore = useBillStore.getState();
       billStore.setCurrentUser(meToLegacyUser(me));
-      billStore.createExpense("", "single_amount");
-    }
-    if (type === "itemized" && me) {
-      const billStore = useBillStore.getState();
-      billStore.setCurrentUser(meToLegacyUser(me));
-      billStore.createExpense("Nova conta", "itemized", undefined, selectedGroupId ?? undefined);
+      selectDraftForType(billStore, type, selectedGroupId);
     }
     setStep("info");
   }, [me, selectedGroupId]);

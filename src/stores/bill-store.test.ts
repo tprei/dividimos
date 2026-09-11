@@ -298,6 +298,56 @@ describe("splitBillEqually", () => {
   });
 });
 
+describe("split writes are idempotent", () => {
+  it("keeps a saved custom split untouched when the same values are re-applied", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.addParticipant(userBob);
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 7000 },
+      { userId: "user-bob", amountCents: 3000 },
+    ]);
+
+    const saved = useBillStore.getState().billSplits;
+    let notifications = 0;
+    const unsubscribe = useBillStore.subscribe(() => {
+      notifications += 1;
+    });
+
+    // What the division UI does on mount: recompute and hand back the same
+    // allocation it just read.
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 7000 },
+      { userId: "user-bob", amountCents: 3000 },
+    ]);
+    unsubscribe();
+
+    expect(notifications).toBe(0);
+    expect(useBillStore.getState().billSplits).toBe(saved);
+  });
+
+  it("still writes when an amount actually changes", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.addParticipant(userBob);
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 7000 },
+      { userId: "user-bob", amountCents: 3000 },
+    ]);
+
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 6000 },
+      { userId: "user-bob", amountCents: 4000 },
+    ]);
+
+    expect(
+      useBillStore.getState().billSplits.map((split) => split.computedAmountCents),
+    ).toEqual([6000, 4000]);
+  });
+});
+
 describe("splitBillByBasisPoints", () => {
   function setupSingleAmountExpense(totalAmountInput = 10000) {
     const s = setup();
