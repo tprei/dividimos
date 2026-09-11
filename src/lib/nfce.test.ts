@@ -331,6 +331,57 @@ describe("parseSefazPage", () => {
   });
 });
 
+describe("printed unit rates", () => {
+  function weighedPage(quantity: string, unitRate: string, lineTotal: string): string {
+    return `
+      <html><body>
+        <div class="txtTopo">MERCADO TESTE</div>
+        <table class="toggable">
+          <tr><td>Descrição</td><td>Qtde</td><td>Vl. Unit</td><td>Vl. Total</td></tr>
+          <tr>
+            <td>Banana Prata</td>
+            <td>${quantity}</td>
+            <td>${unitRate}</td>
+            <td>${lineTotal}</td>
+          </tr>
+        </table>
+        <div id="linhaTotal"><span class="txtMax">${lineTotal}</span></div>
+      </body></html>
+    `;
+  }
+
+  it("keeps a sub-centavo unit rate that reproduces the printed line total", () => {
+    // 0,586 kg at R$ 12,895/kg prints as R$ 7,56.
+    const result = parseBoundPage(weighedPage("0,586", "12,895", "7,56"));
+
+    expect(result).not.toBeNull();
+    const [item] = result!.items;
+    expect(item.quantity).toBe(0.586);
+    expect(item.totalCents).toBe(756);
+    // The stored centavo rate must reproduce the printed total exactly, since
+    // that total is what the customer actually paid.
+    expect(Math.round((item.quantity * item.unitPriceCents * 1000) / 1000)).toBe(756);
+  });
+
+  it("drops a row whose printed rate and quantity contradict its total", () => {
+    // 2 x R$ 10,00 cannot print as R$ 25,00; the source cannot be trusted.
+    expect(parseBoundPage(weighedPage("2,000", "10,00", "25,00"))).toBeNull();
+  });
+
+  it("drops a row whose quantity is finer than milliunits", () => {
+    expect(parseBoundPage(weighedPage("0,0001", "12,00", "0,01"))).toBeNull();
+  });
+
+  it("reads money without floating point drift", () => {
+    // parseFloat("0.07") * 100 is 7.000000000000001.
+    expect(parseBrlToCents("0,07")).toBe(7);
+    expect(parseBrlToCents("1.234,56")).toBe(123456);
+    expect(parseBrlToCents("1.234")).toBe(123400);
+    // More precision than a centavo is not a centavo amount.
+    expect(parseBrlToCents("12,895")).toBe(0);
+  });
+});
+
 describe("isAllowedSefazUrl", () => {
   it("accepts standard state SEFAZ portals", () => {
     expect(

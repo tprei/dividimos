@@ -15,6 +15,7 @@
  */
 import * as cheerio from "cheerio";
 import type { ReceiptItem, ReceiptOcrResult } from "./receipt-ocr";
+import { unitPriceCentsForLineTotal } from "./expense-quantity";
 
 /** Result of a SEFAZ page fetch attempt. */
 export interface SefazFetchResult {
@@ -270,59 +271,131 @@ export function extractSefazAccessKeys(html: string): string[] {
   return [...found];
 }
 
+/** Centavos: two decimals. */
+const CENTS_SCALE = 2;
+
+/** Quantities are milliunits, matching `parseExpenseQuantity`. */
+const QUANTITY_SCALE = 3;
+
+/** Printed unit rates are kept to six decimals (micro-centavos). */
+const UNIT_RATE_SCALE = 6;
+
+/** Micro-centavos in one centavo. */
+const MICRO_CENTS_PER_CENT = 10_000;
+
+/** Milliunits in one unit. */
+const MILLIUNITS_PER_UNIT = 1000;
+
 /**
- * Parse a Brazilian currency string into integer centavos.
- * Handles formats like "12,50", "1.234,56", "12.50" (dot as decimal).
- * Returns 0 if the string cannot be parsed.
+ * Builds a receipt row whose arithmetic the ledger will accept, or rejects it.
+ *
+ * The printed line total is what the customer paid, so it is authoritative.
+ * A unit rate finer than a centavo cannot be stored as one, so the row keeps
+ * the centavo rate that reproduces the printed total exactly. When no such
+ * rate exists, or when the printed rate and quantity do not produce the
+ * printed total, the row is dropped rather than silently repaired.
  */
-export function parseBrlToCents(raw: string): number {
-  const cleaned = raw.trim().replace(/R\$\s*/i, "");
-  if (!cleaned) return 0;
+function reconcileRow(input: {
+  description: string;
+  quantityMilliunits: number;
+  unitRateMicroCents: number;
+  totalCents: number;
+}): ReceiptItem | null {
+  const { description, quantityMilliunits, unitRateMicroCents, totalCents } = input;
+  if (quantityMilliunits <= 0 || unitRateMicroCents <= 0 || totalCents <= 0) return null;
 
-  // Determine if comma or dot is the decimal separator
-  // Brazilian format: 1.234,56 (dot=thousands, comma=decimal)
-  // Some states use: 1234.56 (dot=decimal, no thousands separator)
-  const lastComma = cleaned.lastIndexOf(",");
-  const lastDot = cleaned.lastIndexOf(".");
+  // One rounding, at the line total: micro-centavos x milliunits / 10^9.
+  const scaled =
+    BigInt(quantityMilliunits) * BigInt(unitRateMicroCents);
+  const divisor = BigInt(MICRO_CENTS_PER_CENT) * BigInt(MILLIUNITS_PER_UNIT);
+  const derivedTotal = Number((scaled + divisor / BigInt(2)) / divisor);
+  if (derivedTotal !== totalCents) return null;
 
-  let normalized: string;
+  const unitPriceCents = unitPriceCentsForLineTotal(quantityMilliunits, totalCents);
+  if (unitPriceCents === null) return null;
 
-  if (lastComma > lastDot) {
-    // Comma is the decimal separator (Brazilian standard): "1.234,56" → "1234.56"
-    normalized = cleaned.replace(/\./g, "").replace(",", ".");
-  } else if (lastDot > lastComma && lastComma === -1) {
-    // Only dots present — check if it looks like thousands separator
-    // "1.234" with no comma is ambiguous, but in NFC-e context
-    // values after the dot with exactly 3 digits are thousands separators
-    const afterDot = cleaned.slice(lastDot + 1);
-    if (afterDot.length === 3 && cleaned.indexOf(".") === lastDot) {
-      // Single dot with 3 digits after = thousands: "1.234" → "1234"
-      normalized = cleaned.replace(/\./g, "");
-    } else {
-      // Dot is decimal separator: "12.50" → "12.50"
-      normalized = cleaned.replace(/,/g, "");
-    }
-  } else if (lastDot > lastComma) {
-    // Both present, dot is last = dot is decimal: "1,234.56" → "1234.56"
-    normalized = cleaned.replace(/,/g, "");
-  } else {
-    // No separators
-    normalized = cleaned;
-  }
-
-  const value = parseFloat(normalized);
-  if (isNaN(value)) return 0;
-  return Math.round(value * 100);
+  return {
+    description: cleanDescription(description),
+    quantity: quantityMilliunits / MILLIUNITS_PER_UNIT,
+    unitPriceCents: unitPriceCents as number,
+    totalCents,
+  };
 }
 
 /**
- * Parse a quantity string that may use comma as decimal separator.
- * Handles "1", "2,000", "0,500" etc.
+ * Reads a printed decimal into an integer scaled by `10^scale`, exactly.
+ *
+ * Printed money is a decimal string, so float arithmetic has no business
+ * here: `parseFloat("0.07") * 100` is 7.000000000000001, and a receipt that
+ * rounds the wrong way is a receipt the ledger refuses.
+ *
+ * @returns The scaled integer, or `null` when the text is not a single
+ * decimal or carries more precision than `scale` holds.
  */
-function parseQuantity(raw: string): number {
-  const cleaned = raw.trim().replace(",", ".");
-  const value = parseFloat(cleaned);
-  return isNaN(value) || value <= 0 ? 1 : value;
+function parseDecimalScaled(raw: string, scale: number): number | null {
+  const cleaned = raw.trim().replace(/R\$\s*/i, "").replace(/\s/g, "");
+  if (!cleaned) return null;
+
+  const lastComma = cleaned.lastIndexOf(",");
+  const lastDot = cleaned.lastIndexOf(".");
+
+  let digits: string;
+  if (lastComma > lastDot) {
+    // Brazilian standard: dots group thousands, the comma is the decimal.
+    digits = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot > lastComma && lastComma === -1) {
+    const afterDot = cleaned.slice(lastDot + 1);
+    // A single dot with exactly three digits after it is a thousands
+    // separator, not a decimal: "1.234" is 1234, never 1.234.
+    digits =
+      afterDot.length === 3 && cleaned.indexOf(".") === lastDot
+        ? cleaned.replace(/\./g, "")
+        : cleaned;
+  } else if (lastDot > lastComma) {
+    digits = cleaned.replace(/,/g, "");
+  } else {
+    digits = cleaned;
+  }
+
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(digits);
+  if (!match) return null;
+
+  const fractional = match[2] ?? "";
+  if (fractional.length > scale) return null;
+
+  const scaled = Number(match[1] + fractional.padEnd(scale, "0"));
+  return Number.isSafeInteger(scaled) ? scaled : null;
+}
+
+/**
+ * Parse a Brazilian currency string into integer centavos.
+ * Handles formats like "12,50", "1.234,56", "12.50" (dot as decimal).
+ * Returns 0 when the string is not a currency amount in centavos.
+ */
+export function parseBrlToCents(raw: string): number {
+  return parseDecimalScaled(raw, CENTS_SCALE) ?? 0;
+}
+
+/**
+ * Printed unit rates can carry more precision than a centavo: weighed goods
+ * are priced at three or four decimals. Reading them as micro-centavos keeps
+ * the printed rate intact so the line total rounds exactly once.
+ */
+function parseUnitRateMicroCents(raw: string): number | null {
+  return parseDecimalScaled(raw, UNIT_RATE_SCALE);
+}
+
+/**
+ * Parse a printed quantity into milliunits, the ledger's own precision.
+ *
+ * @returns The quantity in milliunits, or `null` when it is absent, not a
+ * number, zero, or finer than milliunits. A quantity we cannot read exactly
+ * is never guessed as 1: that would invent a line the receipt never printed.
+ */
+function parseQuantityMilliunits(raw: string): number | null {
+  const milliunits = parseDecimalScaled(raw, QUANTITY_SCALE);
+  if (milliunits === null || milliunits <= 0) return null;
+  return milliunits;
 }
 
 /**
@@ -539,20 +612,21 @@ function extractFromDivs(
       );
 
       if (description && qtyMatch && unitMatch && totalMatch) {
-        const quantity = parseQuantity(qtyMatch[1]);
-        const unitPriceCents = parseBrlToCents(unitMatch[1]);
+        const quantityMilliunits = parseQuantityMilliunits(qtyMatch[1]);
+        const unitRateMicroCents = parseUnitRateMicroCents(unitMatch[1]);
         const totalCents = parseBrlToCents(totalMatch[1]);
 
         // Never derive a missing unit price or total from the other value
-        // (issue #477): only push the item when both were explicitly
-        // matched and parsed to a positive value.
-        if (unitPriceCents > 0 && totalCents > 0) {
-          items.push({
-            description: cleanDescription(description),
-            quantity,
-            unitPriceCents,
+        // (issue #477): the row is only kept when the printed quantity, rate
+        // and total are all present and reconcile exactly.
+        if (quantityMilliunits !== null && unitRateMicroCents !== null) {
+          const row = reconcileRow({
+            description,
+            quantityMilliunits,
+            unitRateMicroCents,
             totalCents,
           });
+          if (row) items.push(row);
         }
       }
     });
@@ -583,17 +657,18 @@ function extractFromText(
 
   while ((match = linePattern.exec(bodyText)) !== null) {
     const description = match[2].trim();
-    const quantity = parseQuantity(match[3]);
-    const unitPriceCents = parseBrlToCents(match[4]);
+    const quantityMilliunits = parseQuantityMilliunits(match[3]);
+    const unitRateMicroCents = parseUnitRateMicroCents(match[4]);
     const totalCents = parseBrlToCents(match[5]);
 
-    if (description && unitPriceCents > 0 && totalCents > 0) {
-      items.push({
-        description: cleanDescription(description),
-        quantity,
-        unitPriceCents,
+    if (description && quantityMilliunits !== null && unitRateMicroCents !== null) {
+      const row = reconcileRow({
+        description,
+        quantityMilliunits,
+        unitRateMicroCents,
         totalCents,
       });
+      if (row) items.push(row);
     }
   }
 
@@ -605,17 +680,18 @@ function extractFromText(
 
   while ((match = simplePattern.exec(bodyText)) !== null) {
     const description = match[1].trim();
-    const quantity = parseQuantity(match[2]);
-    const unitPriceCents = parseBrlToCents(match[3]);
+    const quantityMilliunits = parseQuantityMilliunits(match[2]);
+    const unitRateMicroCents = parseUnitRateMicroCents(match[3]);
     const totalCents = parseBrlToCents(match[4]);
 
-    if (description && unitPriceCents > 0 && totalCents > 0) {
-      items.push({
-        description: cleanDescription(description),
-        quantity,
-        unitPriceCents,
+    if (description && quantityMilliunits !== null && unitRateMicroCents !== null) {
+      const row = reconcileRow({
+        description,
+        quantityMilliunits,
+        unitRateMicroCents,
         totalCents,
       });
+      if (row) items.push(row);
     }
   }
 
@@ -655,11 +731,16 @@ function parseItemFromTexts(texts: string[]): ReceiptItem | null {
   // total were explicitly present and parsed (issue #477: never solve the
   // inverse `totalCents / quantity` when unitPrice failed to parse).
   if (numbers.length >= 3) {
-    const quantity = parseQuantity(numbers[0].value);
-    const unitPriceCents = parseBrlToCents(numbers[1].value);
+    const quantityMilliunits = parseQuantityMilliunits(numbers[0].value);
+    const unitRateMicroCents = parseUnitRateMicroCents(numbers[1].value);
     const totalCents = parseBrlToCents(numbers[2].value);
-    if (unitPriceCents > 0 && totalCents > 0) {
-      return { description, quantity, unitPriceCents, totalCents };
+    if (quantityMilliunits !== null && unitRateMicroCents !== null) {
+      return reconcileRow({
+        description,
+        quantityMilliunits,
+        unitRateMicroCents,
+        totalCents,
+      });
     }
   }
 
