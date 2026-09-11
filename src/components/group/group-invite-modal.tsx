@@ -135,8 +135,14 @@ export function GroupInviteModal({
 
   const handlePickContacts = useCallback(async () => {
     setPicking(true);
-    const result = await pickContacts();
-    setPicking(false);
+    let result;
+    try {
+      result = await pickContacts();
+    } finally {
+      // The button must come back even when picking threw, or the only way
+      // to invite from contacts is to close and reopen the modal.
+      setPicking(false);
+    }
 
     if (result.status === "cancelled") return;
     if (result.status === "unsupported") {
