@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import QRCode from "qrcode";
 import toast from "react-hot-toast";
+import { runBackHandlers } from "@/lib/capacitor/back-handler";
 import { GroupInviteModal } from "./group-invite-modal";
 import {
   createInviteLink,
@@ -288,5 +289,36 @@ describe("GroupInviteModal", () => {
     );
     expect(screen.getByText("Aberto")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enviar" })).toBeInTheDocument();
+  });
+
+  it("closes on hardware Back instead of navigating away", async () => {
+    const onClose = vi.fn();
+    vi.mocked(createInviteLink).mockResolvedValue(readyLink);
+
+    const { rerender, unmount } = render(
+      <GroupInviteModal open={true} onClose={onClose} groupId={groupId} groupName={groupName} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Desativar link")).toBeInTheDocument();
+    });
+
+    // true means the app consumed Back; false would let it navigate.
+    expect(runBackHandlers()).toBe(true);
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    // A closed modal leaves nothing registered.
+    rerender(
+      <GroupInviteModal open={false} onClose={onClose} groupId={groupId} groupName={groupName} />,
+    );
+    expect(runBackHandlers()).toBe(false);
+
+    rerender(
+      <GroupInviteModal open={true} onClose={onClose} groupId={groupId} groupName={groupName} />,
+    );
+    expect(runBackHandlers()).toBe(true);
+
+    unmount();
+    expect(runBackHandlers()).toBe(false);
   });
 });
