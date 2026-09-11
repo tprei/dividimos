@@ -510,6 +510,65 @@ function extractTotal($: cheerio.CheerioAPI): number {
   return 0;
 }
 
+/** Where each meaningful value sits in a labelled item table. */
+interface ColumnMap {
+  description: number;
+  quantity: number;
+  unitRate: number;
+  total: number;
+}
+
+const DESCRIPTION_LABEL = /descri[çc][aã]o|produto|item/i;
+const QUANTITY_LABEL = /qtd|quant/i;
+const UNIT_LABEL = /unit|unit[áa]rio/i;
+const TOTAL_LABEL = /total|valor/i;
+
+/**
+ * Reads column meaning from a header row.
+ *
+ * @returns The mapping, or `null` when the header does not name all four
+ * values: guessing by position is what imported the wrong number.
+ */
+function columnMapFrom(headerTexts: readonly string[]): ColumnMap | null {
+  const find = (pattern: RegExp, exclude?: RegExp): number =>
+    headerTexts.findIndex((text) => {
+      const value = text.trim();
+      if (!pattern.test(value)) return false;
+      return exclude === undefined || !exclude.test(value);
+    });
+
+  const description = find(DESCRIPTION_LABEL);
+  const quantity = find(QUANTITY_LABEL);
+  // "Vl. Unit" and "Vl. Total" both match a bare total/valor pattern, so the
+  // unit column is excluded from the total lookup explicitly.
+  const unitRate = find(UNIT_LABEL);
+  const total = find(TOTAL_LABEL, UNIT_LABEL);
+
+  if (description < 0 || quantity < 0 || unitRate < 0 || total < 0) return null;
+  return { description, quantity, unitRate, total };
+}
+
+/** Builds a row from labelled columns, rejecting anything that cannot be read. */
+function parseItemFromColumns(
+  texts: readonly string[],
+  columns: ColumnMap,
+): ReceiptItem | null {
+  const description = texts[columns.description]?.trim() ?? "";
+  if (!description) return null;
+
+  const quantityMilliunits = parseQuantityMilliunits(texts[columns.quantity] ?? "");
+  const unitRateMicroCents = parseUnitRateMicroCents(texts[columns.unitRate] ?? "");
+  const totalCents = parseBrlToCents(texts[columns.total] ?? "");
+  if (quantityMilliunits === null || unitRateMicroCents === null) return null;
+
+  return reconcileRow({
+    description,
+    quantityMilliunits,
+    unitRateMicroCents,
+    totalCents,
+  });
+}
+
 /**
  * Primary extraction strategy: table-based layouts.
  * Many SEFAZ pages render items in a <table> with structured columns.
@@ -534,14 +593,21 @@ function extractFromTable(
 
     tables.each((_, table) => {
       const rows = $(table).find("tr");
+      // Column meaning comes from the header when the table has one, so a
+      // layout that prints code, description, quantity, unit and total is
+      // read by label instead of by "the first three numbers".
+      let columns: ColumnMap | null = null;
+
       rows.each((__, row) => {
         const cells = $(row).find("td");
+        const headerCells = $(row).find("th");
+        if (headerCells.length >= 3 && columns === null) {
+          columns = columnMapFrom(headerCells.map((___, cell) => $(cell).text()).get());
+          return;
+        }
         if (cells.length < 3) return;
 
-        // Try to identify columns by header text or position
-        const texts = cells
-          .map((___, cell) => $(cell).text().trim())
-          .get();
+        const texts = cells.map((___, cell) => $(cell).text().trim()).get();
 
         // Skip header rows
         if (
@@ -550,11 +616,13 @@ function extractFromTable(
               /^(Descri[çc][aã]o|Produto|Item|C[oó]d|Qtd|#)$/i.test(t),
           )
         ) {
+          if (columns === null) columns = columnMapFrom(texts);
           return;
         }
 
-        // Find description (longest text), quantity, unit price, total
-        const item = parseItemFromTexts(texts);
+        const item = columns
+          ? parseItemFromColumns(texts, columns)
+          : parseItemFromTexts(texts);
         if (item) items.push(item);
       });
     });
@@ -582,20 +650,29 @@ function extractFromDivs(
   ];
 
   for (const sel of containerSelectors) {
-    const containers = $(sel);
-    if (!containers.length) continue;
+    const matched = $(sel).toArray();
+    if (matched.length === 0) continue;
+
+    // A selector like [class*="Prod"] matches a wrapper and the row inside
+    // it, which imported the same item twice. Only the innermost match is a
+    // row, so any element that contains another match is dropped.
+    const containers = matched.filter(
+      (candidate) =>
+        !matched.some(
+          (other) => other !== candidate && $.contains(candidate, other),
+        ),
+    );
 
     const items: ReceiptItem[] = [];
 
-    containers.each((_, container) => {
+    for (const container of containers) {
       const el = $(container);
 
-      // Extract text spans/elements within the container
-      const descEl =
-        el.find('[class*="txtTit"]').first() ||
-        el.find('[class*="desc"]').first();
-      const description =
-        descEl.length > 0 ? descEl.text().trim() : "";
+      // An empty Cheerio selection is still truthy, so the `desc` fallback
+      // never ran and rows titled only by `.desc` were dropped.
+      const titleEl = el.find('[class*="txtTit"]').first();
+      const descEl = titleEl.length > 0 ? titleEl : el.find('[class*="desc"]').first();
+      const description = descEl.length > 0 ? descEl.text().trim() : "";
 
       // Look for quantity, unit price, total in child elements
       const allText = el.text();
@@ -629,7 +706,7 @@ function extractFromDivs(
           if (row) items.push(row);
         }
       }
-    });
+    }
 
     if (items.length > 0) return items;
   }

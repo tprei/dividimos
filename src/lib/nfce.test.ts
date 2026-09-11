@@ -331,6 +331,87 @@ describe("parseSefazPage", () => {
   });
 });
 
+describe("row identity", () => {
+  it("imports a nested layout once per item, not once per wrapper", () => {
+    const html = `
+      <html><body>
+        <div class="txtTopo">MERCADO TESTE</div>
+        <div class="Prod">
+          <div class="Prod">
+            <span class="txtTit">Arroz 5kg</span>
+            <span>Qtde.: 1,000</span>
+            <span>Vl. Unit.: 24,90</span>
+            <span>Vl. Total: 24,90</span>
+          </div>
+        </div>
+        <div id="linhaTotal"><span class="txtMax">24,90</span></div>
+      </body></html>
+    `;
+
+    const result = parseBoundPage(html);
+    expect(result).not.toBeNull();
+    // The wrapper and the row both match [class*="Prod"]; only the row is one.
+    expect(result!.items).toHaveLength(1);
+    expect(result!.items[0].description).toBe("Arroz 5kg");
+  });
+
+  it("reads a row whose description lives in a desc element", () => {
+    const html = `
+      <html><body>
+        <div class="txtTopo">MERCADO TESTE</div>
+        <div class="det">
+          <span class="desc">Feijão Carioca</span>
+          <span>Qtde.: 2,000</span>
+          <span>Vl. Unit.: 8,50</span>
+          <span>Vl. Total: 17,00</span>
+        </div>
+        <div id="linhaTotal"><span class="txtMax">17,00</span></div>
+      </body></html>
+    `;
+
+    const result = parseBoundPage(html);
+    expect(result).not.toBeNull();
+    expect(result!.items).toHaveLength(1);
+    expect(result!.items[0]).toEqual({
+      description: "Feijão Carioca",
+      quantity: 2,
+      unitPriceCents: 850,
+      totalCents: 1700,
+    });
+  });
+
+  it("maps labelled columns instead of taking the first three numbers", () => {
+    const html = `
+      <html><body>
+        <div class="txtTopo">MERCADO TESTE</div>
+        <table class="toggable">
+          <tr>
+            <th>Código</th><th>Descrição</th><th>Qtde</th><th>Vl. Unit</th><th>Vl. Total</th>
+          </tr>
+          <tr>
+            <td>7891234567895</td>
+            <td>Café Torrado</td>
+            <td>3,000</td>
+            <td>19,90</td>
+            <td>59,70</td>
+          </tr>
+        </table>
+        <div id="linhaTotal"><span class="txtMax">59,70</span></div>
+      </body></html>
+    `;
+
+    const result = parseBoundPage(html);
+    expect(result).not.toBeNull();
+    // Positionally the first three numbers are the barcode, quantity and rate.
+    expect(result!.items[0]).toEqual({
+      description: "Café Torrado",
+      quantity: 3,
+      unitPriceCents: 1990,
+      totalCents: 5970,
+    });
+  });
+});
+
 describe("printed unit rates", () => {
   function weighedPage(quantity: string, unitRate: string, lineTotal: string): string {
     return `
