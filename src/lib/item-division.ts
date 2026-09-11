@@ -143,14 +143,22 @@ export function divisionForItem(
   return isDivisionValid(value, item.totalPriceCents) ? value : null;
 }
 
+export function assignedDivisionForItem(
+  item: Pick<ExpenseItem, "id" | "totalPriceCents">,
+  splits: readonly ItemDivisionSplit[],
+  peopleIds: ReadonlySet<string>,
+): ItemDivisionValue | null {
+  const division = divisionForItem(item, splits);
+  if (!division) return null;
+  return division.shares.every((share) => peopleIds.has(share.participantId)) ? division : null;
+}
+
 export function isItemAssigned(
   item: Pick<ExpenseItem, "id" | "totalPriceCents">,
   splits: readonly ItemDivisionSplit[],
   peopleIds: ReadonlySet<string>,
 ): boolean {
-  const division = divisionForItem(item, splits);
-  if (!division) return false;
-  return division.shares.every((share) => peopleIds.has(share.participantId));
+  return assignedDivisionForItem(item, splits, peopleIds) !== null;
 }
 
 export function recomputeDivisionShares(value: ItemDivisionValue, cents: number): ItemDivisionValue {

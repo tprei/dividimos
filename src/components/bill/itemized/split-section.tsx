@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
+import { Equal } from "lucide-react";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
 import { Badge } from "@/components/ui/badge";
@@ -82,10 +83,12 @@ export function SplitSection({
       <h2 className="text-sm leading-5 font-semibold">Quem consumiu</h2>
       <Button
         type="button"
+        variant="outline"
         onClick={divideAllEqually}
         disabled={people.length === 0 || items.length === 0}
         className="mt-2 min-h-11 w-full"
       >
+        <Equal className="size-4 shrink-0" aria-hidden="true" />
         Dividir tudo igualmente
       </Button>
       {unassignedCount > 0 && (

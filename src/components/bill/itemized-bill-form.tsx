@@ -8,7 +8,7 @@ import { useItemizedIssues } from "@/components/bill/itemized/use-itemized-issue
 import { useBackHandler } from "@/hooks/use-back-handler";
 import { computeServiceFeeCents, parseExpenseCentsText, parseServiceFeeBasisPointsText } from "@/lib/expense-money";
 import { unitPriceCentsForLineTotal } from "@/lib/expense-quantity";
-import { divisionForItem, isItemAssigned } from "@/lib/item-division";
+import { assignedDivisionForItem } from "@/lib/item-division";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import { useShallow } from "zustand/react/shallow";
@@ -115,11 +115,16 @@ export function ItemizedBillForm({
     ...store.participants.map((participant) => participant.id),
     ...store.guests.map((guest) => guest.id),
   ]);
-  const unresolvedItems = store.items.filter((item) => !isItemAssigned(item, store.splits, billPeopleIds));
-  const assignedItemCents = store.items.reduce((sum, item) => {
-    const division = divisionForItem(item, store.splits);
-    return sum + (division?.shares.reduce((itemSum, share) => itemSum + share.cents, 0) ?? 0);
-  }, 0);
+  const unresolvedItems: typeof store.items = [];
+  let assignedItemCents = 0;
+  for (const item of store.items) {
+    const division = assignedDivisionForItem(item, store.splits, billPeopleIds);
+    if (!division) {
+      unresolvedItems.push(item);
+      continue;
+    }
+    assignedItemCents += division.shares.reduce((sum, share) => sum + share.cents, 0);
+  }
   const partial = unresolvedItems.length > 0;
   const remainingCents = partial ? Math.max(0, itemsTotal - assignedItemCents) : 0;
   const paidTotal = store.payers.reduce((sum, payer) => sum + payer.amountCents, 0);

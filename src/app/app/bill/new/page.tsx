@@ -213,11 +213,7 @@ function NewBillPageContent() {
     setStep("info");
   }, [me, selectedGroupId]);
 
-  const handleScanConfirm = useCallback((
-    result: ReceiptOcrResult,
-    _chaveAcesso: string | null,
-    occurredOn: string,
-  ) => {
+  const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     setBillType("itemized");
     const billStore = useBillStore.getState();
     if (scanGroup) setSelectedGroupId(scanGroup.group.id);

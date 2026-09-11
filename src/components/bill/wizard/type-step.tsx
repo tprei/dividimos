@@ -24,11 +24,7 @@ export interface TypeStepProps {
   participants: ItemDivisionParticipant[];
   occurredOn: string;
   onTypeSelect: (type: ExpenseType) => void;
-  onScanConfirm: (
-    result: ReceiptOcrResult,
-    chaveAcesso: string | null,
-    occurredOn: string,
-  ) => void;
+  onScanConfirm: (result: ReceiptOcrResult, occurredOn: string) => void;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
   onReviewingChange: (reviewing: boolean) => void;
   onManageParticipants: () => void;
@@ -153,11 +149,7 @@ export function TypeStep({
     }
   }, []);
 
-  const handleScanConfirm = useCallback((
-    result: ReceiptOcrResult,
-    _chaveAcesso: string | null,
-    occurredOn: string,
-  ) => {
+  const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     const chaveAcesso = lastQrResultRef.current?.chaveAcesso ?? null;
     if (chaveAcesso) {
       markReceiptScanned(chaveAcesso);
@@ -165,7 +157,7 @@ export function TypeStep({
     }
     setScanResult(null);
     setDuplicateWarning(null);
-    onScanConfirm(result, chaveAcesso, occurredOn);
+    onScanConfirm(result, occurredOn);
   }, [onScanConfirm]);
 
   const handleScanCancel = useCallback(() => {
