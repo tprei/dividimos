@@ -1,6 +1,7 @@
 "use client";
 
 import { Users } from "lucide-react";
+import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { GroupSelect } from "@/components/bill/group-select";
 import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
@@ -45,8 +46,8 @@ export interface SingleBillDetailsProps {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-xs font-bold">{label}</span>
+    <label className="flex min-w-0 flex-col gap-2">
+      <span className="text-sm leading-5 font-semibold">{label}</span>
       {children}
     </label>
   );
@@ -110,37 +111,44 @@ export function SingleBillDetails({
 
   return (
     <>
-      <div className="px-4 pb-2">
-        <label className="flex items-center justify-center rounded-xl border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-          <span className="sr-only">Valor total</span>
-          <span className="pl-3 text-lg font-bold text-muted-foreground">R$</span>
-          <CurrencyInput
-            valueCents={totalCents}
-            onChangeCents={onTotalChange}
-            className="h-14 min-w-0 flex-1 text-4xl font-semibold"
-          />
-        </label>
-        {totalCents <= 0 && <p className="pt-1 text-xs text-destructive">Informe o valor da conta.</p>}
-      </div>
-      <div className="space-y-5 px-4 pb-4">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Nome">
-            <Input
-              aria-label="Nome"
-              value={title}
-              onChange={(event) => onTitleChange(event.target.value)}
-              className="h-11 rounded-xl"
+      <div className="flex flex-col gap-6 px-4 pb-4">
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center justify-center rounded-xl border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+            <span className="sr-only">Valor total</span>
+            <span className="pl-4 text-lg font-bold text-muted-foreground">R$</span>
+            <CurrencyInput
+              valueCents={totalCents}
+              onChangeCents={onTotalChange}
+              className="h-14 min-w-0 flex-1 text-4xl font-semibold font-mono tabular-nums"
             />
-          </Field>
-          <Field label="Data">
-            <DateField
-              label="Data"
-              value={occurredOn}
-              onChange={onOccurredOnChange}
-            />
-          </Field>
+          </label>
+          <AmountQuickAdd valueCents={totalCents} onChangeCents={onTotalChange} />
+          {totalCents <= 0 && (
+            <p className="text-xs leading-4 text-destructive">Informe o valor da conta.</p>
+          )}
         </div>
-        {!title.trim() && <p className="text-xs text-destructive">Informe o nome da conta.</p>}
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Nome">
+              <Input
+                aria-label="Nome"
+                value={title}
+                onChange={(event) => onTitleChange(event.target.value)}
+                className="h-11 rounded-xl"
+              />
+            </Field>
+            <Field label="Data">
+              <DateField
+                label="Data"
+                value={occurredOn}
+                onChange={onOccurredOnChange}
+              />
+            </Field>
+          </div>
+          {!title.trim() && (
+            <p className="text-xs leading-4 text-destructive">Informe o nome da conta.</p>
+          )}
+        </div>
         <Field label="Grupo">
           <GroupSelect
             value={groupSelection}
@@ -175,9 +183,9 @@ export function SingleBillDetails({
           </Button>
           <div className="min-h-5 pt-1">
             {participantCount < 2 ? (
-              <p className="text-xs text-destructive">Adicione pelo menos uma pessoa.</p>
+              <p className="text-xs leading-4 text-destructive">Adicione pelo menos uma pessoa.</p>
             ) : inviteeNames.length > 0 ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs leading-4 text-muted-foreground">
                 {inviteeNames.join(", ")} {inviteeNames.length > 1 ? "serão convidados" : "será convidado"} ao grupo.
               </p>
             ) : null}
