@@ -38,6 +38,20 @@ export function unregisterTestUser(userId: string): void {
   testUserIds.delete(userId);
 }
 
+const exemptGroupIds = new Set<string>();
+
+/**
+ * Exempt a group from the ledger invariant sweep. Only for tests that
+ * deliberately desynchronize the projection by writing around the RPCs.
+ */
+export function untrackTestGroup(groupId: string): void {
+  exemptGroupIds.add(groupId);
+}
+
+export function isTestGroupExempt(groupId: string): boolean {
+  return exemptGroupIds.has(groupId);
+}
+
 beforeAll(async () => {
   if (!hasRequiredEnv) return;
 

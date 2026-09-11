@@ -14,6 +14,9 @@ import {
   expectRpcError,
   type TestUser,
 } from "@/test/integration-helpers";
+import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
+
+assertLedgerInvariantsAfterEach();
 
 interface UserProfile {
   id: string;

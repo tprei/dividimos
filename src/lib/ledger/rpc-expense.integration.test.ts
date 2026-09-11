@@ -12,6 +12,9 @@ import {
   type TestUser,
 } from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
+import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
+
+assertLedgerInvariantsAfterEach();
 
 type ExpenseAck = {
   expenseId: string;

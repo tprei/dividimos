@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isIntegrationTestReady } from "@/test/integration-setup";
+import { isIntegrationTestReady, untrackTestGroup } from "@/test/integration-setup";
 import {
   authenticateAs,
   createExpense,
@@ -12,6 +12,9 @@ import {
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
+import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
+
+assertLedgerInvariantsAfterEach();
 
 interface SettlementAck {
   settlementId: string;
@@ -662,6 +665,9 @@ describe.skipIf(!isIntegrationTestReady)(
           settledGroupId,
         ]),
       );
+      // Writing around delete_expense leaves the projection stale on purpose,
+      // so the invariant sweep would otherwise fail on this fixture.
+      untrackTestGroup(settledGroupId);
       await expect(
         rpcErrorCode(clientGroupCreator, "delete_group", {
           p_group_id: settledGroupId,
