@@ -186,6 +186,54 @@ describe("SearchContent", () => {
     expect(link).toHaveAttribute("href", "/app/conversations/user-dan");
   });
 
+  it("says the lookup failed instead of claiming nobody matched", async () => {
+    vi.useFakeTimers();
+    useAppStore.setState({ me });
+    vi.mocked(lookupUserByHandle).mockRejectedValueOnce(new Error("offline"));
+
+    render(<SearchContent />);
+    const input = screen.getByPlaceholderText("Buscar grupos, contas, pessoas...");
+    fireEvent.change(input, { target: { value: "@danielsantos" } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(screen.getByText("Não foi possível buscar esse @handle")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Nenhum resultado encontrado")).not.toBeInTheDocument();
+  });
+
+  it("keeps the failure tied to the query that produced it", async () => {
+    vi.useFakeTimers();
+    useAppStore.setState({ me });
+    vi.mocked(lookupUserByHandle).mockRejectedValueOnce(new Error("offline"));
+
+    render(<SearchContent />);
+    const input = screen.getByPlaceholderText("Buscar grupos, contas, pessoas...");
+    fireEvent.change(input, { target: { value: "@danielsantos" } });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+
+    // A new query must not inherit the previous failure.
+    vi.mocked(lookupUserByHandle).mockResolvedValueOnce(null);
+    fireEvent.change(input, { target: { value: "@outrapessoa" } });
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(screen.getByText("Nenhum resultado encontrado")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText("Não foi possível buscar esse @handle"),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows empty state when no results match", () => {
     render(<SearchContent />);
     const input = screen.getByPlaceholderText("Buscar grupos, contas, pessoas...");
