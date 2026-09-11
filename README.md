@@ -314,7 +314,7 @@ Triggers on push to `main`. Builds a signed release AAB using Capacitor's native
 
 ## Testing
 
-Dividimos has three test layers: **unit**, **integration**, and **synthetic (E2E)**. `TESTING.md` is the detailed guide for all three. Summary of configuration and conventions:
+Dividimos has three test layers: **unit**, **integration**, and **synthetic (E2E)**. `TESTING.md` is the detailed guide for all three. UI changes additionally require in-browser visual verification; agents follow `agent-guidance/VISUAL_CHANGES.md`. Summary of configuration and conventions:
 
 Unit tests use Vitest with React Testing Library. Tests are colocated with source files using `.test.ts`/`.test.tsx` suffix.
 
