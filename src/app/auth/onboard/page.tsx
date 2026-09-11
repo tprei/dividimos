@@ -9,6 +9,7 @@ import { Logo } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { PixKeyType } from "@/types";
+import { PIX_KEY_ERRORS, validatePixKey } from "@/lib/pix";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { completeOnboarding } from "./actions";
 
@@ -158,8 +159,9 @@ function OnboardPageContent() {
   };
 
   const handlePhonePixInput = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 11);
-    setCustomPixInput(formatPhoneInput(digits));
+    const digits = value.replace(/\D/g, "");
+    const local = digits.length > 11 && digits.startsWith("55") ? digits.slice(2) : digits;
+    setCustomPixInput(formatPhoneInput(local.slice(0, 11)));
     setPixError("");
   };
 
@@ -210,6 +212,10 @@ function OnboardPageContent() {
 
   const handleSubmit = () => {
     const pixKeyValue = toPixKeyValue(pixKeyType, pixKeyDisplay);
+    if (!validatePixKey(pixKeyValue, pixKeyType)) {
+      setPixError(PIX_KEY_ERRORS[pixKeyType]);
+      return;
+    }
     const formData = new FormData();
     formData.set("handle", handle);
     formData.set("pixKey", pixKeyValue);

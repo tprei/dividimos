@@ -100,17 +100,46 @@ describe("PixKeyDialog", () => {
     const { onSaved } = setup();
     updatePixKeyMock.mockResolvedValueOnce({
       pixKeyType: "cpf",
-      pixKeyHint: "***.***.*89*-01",
+      pixKeyHint: "***.***.*47*-25",
     });
     await user.click(screen.getByRole("radio", { name: "CPF" }));
-    await user.type(screen.getByPlaceholderText("000.000.000-00"), "12345678901");
-    expect(screen.getByLabelText("Chave")).toHaveValue("123.456.789-01");
+    await user.type(screen.getByPlaceholderText("000.000.000-00"), "52998224725");
+    expect(screen.getByLabelText("Chave")).toHaveValue("529.982.247-25");
 
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     const formData = updatePixKeyMock.mock.calls[0][1] as FormData;
-    expect(formData.get("pixKey")).toBe("12345678901");
+    expect(formData.get("pixKey")).toBe("52998224725");
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it("rejects a CPF with wrong check digits without calling the server", async () => {
+    const user = userEvent.setup();
+    const { onSaved } = setup();
+    await user.click(screen.getByRole("radio", { name: "CPF" }));
+    await user.type(screen.getByPlaceholderText("000.000.000-00"), "12345678901");
+
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "CPF inválido. Confira os números.",
+    );
+    expect(updatePixKeyMock).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("strips a pasted country code from a phone key", async () => {
+    const user = userEvent.setup();
+    setup();
+    updatePixKeyMock.mockResolvedValueOnce({ pixKeyType: "phone", pixKeyHint: "***8888" });
+    await user.click(screen.getByRole("radio", { name: "Telefone" }));
+    await user.type(screen.getByPlaceholderText("(11) 99999-9999"), "+5511999998888");
+    expect(screen.getByLabelText("Chave")).toHaveValue("(11) 99999-8888");
+
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    const formData = updatePixKeyMock.mock.calls[0][1] as FormData;
+    expect(formData.get("pixKey")).toBe("+5511999998888");
   });
 
   it("keeps only uuid characters for a random key", async () => {
@@ -132,13 +161,13 @@ describe("PixKeyDialog", () => {
       error: "Chave Pix invalida para o tipo selecionado",
     });
 
-    await user.type(screen.getByLabelText("Chave"), "not-an-email");
+    await user.type(screen.getByLabelText("Chave"), "valid@example.com");
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(
       await screen.findByRole("alert"),
     ).toHaveTextContent("Chave Pix invalida para o tipo selecionado");
-    expect(screen.getByLabelText("Chave")).toHaveValue("not-an-email");
+    expect(screen.getByLabelText("Chave")).toHaveValue("valid@example.com");
     expect(onSaved).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });

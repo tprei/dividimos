@@ -288,13 +288,13 @@ describe("ProfilePage Pix key card", () => {
 
     await user.click(screen.getByRole("button", { name: "Alterar chave" }));
     await user.click(screen.getByRole("radio", { name: "CPF" }));
-    await user.type(screen.getByLabelText("Chave"), "123");
+    await user.type(screen.getByLabelText("Chave"), "52998224725");
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(
       await screen.findByRole("alert"),
     ).toHaveTextContent("Chave Pix invalida para o tipo selecionado");
-    expect(screen.getByLabelText("Chave")).toHaveValue("123");
+    expect(screen.getByLabelText("Chave")).toHaveValue("529.982.247-25");
     expect(useAppStore.getState().me?.pixKeyType).toBe("email");
     expect(toastSuccessMock).not.toHaveBeenCalled();
   });

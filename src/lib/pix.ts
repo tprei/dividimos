@@ -72,6 +72,32 @@ export function generatePixCopiaECola(payload: PixPayload): string {
   return pixString + checksum;
 }
 
+/** Mod-11 check digits, plus the repdigit rejection every CPF validator needs. */
+export function isValidCpf(digits: string): boolean {
+  if (!/^\d{11}$/.test(digits)) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  for (const [length, position] of [
+    [9, 9],
+    [10, 10],
+  ] as const) {
+    let sum = 0;
+    for (let i = 0; i < length; i += 1) {
+      sum += Number(digits[i]) * (length + 1 - i);
+    }
+    const remainder = (sum * 10) % 11;
+    const expected = remainder === 10 ? 0 : remainder;
+    if (expected !== Number(digits[position])) return false;
+  }
+  return true;
+}
+
+export const PIX_KEY_ERRORS: Record<PixKeyType, string> = {
+  cpf: "CPF inválido. Confira os números.",
+  phone: "Telefone inválido. Use DDD + número.",
+  email: "E-mail inválido.",
+  random: "Chave aleatória inválida. Cole a chave do seu banco.",
+};
+
 export function validatePixKey(key: string, type: PixKeyType): boolean {
   switch (type) {
     case "phone":
@@ -79,7 +105,7 @@ export function validatePixKey(key: string, type: PixKeyType): boolean {
         encoder.encode(key).length <= 77 && /^\+55\d{10,11}$/.test(key)
       );
     case "cpf":
-      return /^\d{11}$/.test(key);
+      return isValidCpf(key);
     case "email":
       return (
         encoder.encode(key).length <= 77 &&
