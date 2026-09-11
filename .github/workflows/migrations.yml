@@ -64,6 +64,20 @@ jobs:
       - name: Reset and replay migrations
         run: supabase db reset --local
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      # Reads the effective schema the migrations just produced, rather than
+      # trusting what the SQL says it did.
+      - name: Assert database security invariants
+        run: |
+          DB_URL=$(supabase status --output json | jq -r '.DB_URL')
+          node scripts/check-database-invariants.mjs "$DB_URL"
+
   declaration-parity:
     name: Declared schemas match forward migrations
     needs: changes
