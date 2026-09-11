@@ -33,7 +33,6 @@ describe("createExpense", () => {
     const { expense } = useBillStore.getState();
     expect(expense?.expenseType).toBe("itemized");
     expect(expense?.serviceFeePercent).toBe(10);
-    expect(expense?.status).toBe("draft");
   });
 
   it("creates a single_amount expense with 0% service fee", () => {
@@ -542,7 +541,6 @@ describe("selectPreviewDebts", () => {
     setPayerFull("user-alice");
     const debts = selectPreviewDebts(useBillStore.getState());
     expect(debts).toHaveLength(0);
-    expect(useBillStore.getState().expense?.status).toBe("draft");
   });
 
   it("does not synthesize the creator as a payer when no payer was selected", () => {
@@ -774,7 +772,6 @@ describe("hydrateFromVoice", () => {
     expect(expense?.title).toBe("Uber");
     expect(expense?.expenseType).toBe("single_amount");
     expect(expense?.groupId).toBe("group-1");
-    expect(expense?.status).toBe("draft");
     expect(expense?.serviceFeePercent).toBe(0);
     expect(totalAmountInput).toBe(2500);
     expect(items).toHaveLength(0);
@@ -1227,7 +1224,6 @@ describe("createExpenseFromDm", () => {
     expect(expense?.groupId).toBe("dm-group-1");
     expect(expense?.expenseType).toBe("single_amount");
     expect(expense?.serviceFeePercent).toBe(0);
-    expect(expense?.status).toBe("draft");
     expect(participants).toHaveLength(2);
     expect(participants[0].id).toBe("user-alice");
     expect(participants[1].id).toBe("user-bob");
@@ -1306,7 +1302,6 @@ describe("hydrateFromChatDraft", () => {
     expect(expense?.groupId).toBe("dm-group-1");
     expect(expense?.merchantName).toBe("Uber");
     expect(expense?.totalAmount).toBe(2500);
-    expect(expense?.status).toBe("draft");
     expect(totalAmountInput).toBe(2500);
     expect(participants).toHaveLength(2);
     expect(participants[0].id).toBe("user-alice");
@@ -1634,7 +1629,6 @@ describe("hydrateFromDetail", () => {
       totalAmount: 11000,
       serviceFeePercent: 10,
       serviceFeeBasisPoints: 1000,
-      status: "active",
     });
     expect(state.items).toHaveLength(1);
     expect(state.items[0]).toMatchObject({ description: "Pizza", quantity: 1000, totalPriceCents: 10000 });

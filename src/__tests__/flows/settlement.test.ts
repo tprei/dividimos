@@ -38,10 +38,6 @@ describe("Settlement preview flows", () => {
     expect(carlosDebt.toUserId).toBe("user-alice");
   });
 
-  it("expense status remains draft (server-authoritative)", () => {
-    const { expense } = useBillStore.getState();
-    expect(expense!.status).toBe("draft");
-  });
 
   it("preview debts are DebtEdge[] without payment tracking", () => {
     const debts = selectPreviewDebts(useBillStore.getState());

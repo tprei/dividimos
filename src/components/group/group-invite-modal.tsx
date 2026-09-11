@@ -169,10 +169,16 @@ export function GroupInviteModal({
   const handleSendToContact = useCallback(
     (phone: string) => {
       const url = buildWhatsAppLink(`${inviteMessage}\n${joinUrl}`, phone);
-      window.open(url, "_blank");
+      const composer = window.open(url, "_blank");
+      if (!composer) {
+        // Popup blocked: nothing opened, keep the contact retryable.
+        toast.error("Não foi possível abrir o WhatsApp. Tente novamente.");
+        return false;
+      }
       setContacts((prev) =>
         prev.map((c) => (c.phone === phone ? { ...c, sent: true } : c)),
       );
+      return true;
     },
     [inviteMessage, joinUrl],
   );
