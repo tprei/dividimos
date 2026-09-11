@@ -183,12 +183,16 @@ describe("ItemizedBillForm batch assignment", () => {
   it("announces which people the batch will include", () => {
     prepareStore("Churrasco", true);
     act(() => {
-      useBillStore.getState().addItem({
-        description: "Picanha",
-        quantity: 1000,
-        unitPriceCents: 10000,
-        totalPriceCents: 10000,
-      });
+      const store = useBillStore.getState();
+      // Batch controls appear once a receipt is long enough to need them.
+      for (let index = 0; index < 8; index += 1) {
+        store.addItem({
+          description: index === 0 ? "Picanha" : `Item ${index}`,
+          quantity: 1000,
+          unitPriceCents: 10000,
+          totalPriceCents: 10000,
+        });
+      }
     });
 
     renderForm("split");
@@ -230,5 +234,27 @@ describe("ItemizedBillForm batch assignment", () => {
 
     expect(writes).toBe(1);
   });
-});
 
+  it("keeps a short receipt free of batch controls", () => {
+    prepareStore("Churrasco", true);
+    act(() => {
+      const store = useBillStore.getState();
+      for (let index = 0; index < 3; index += 1) {
+        store.addItem({
+          description: `Item ${index + 1}`,
+          quantity: 1000,
+          unitPriceCents: 1000,
+          totalPriceCents: 1000,
+        });
+      }
+    });
+
+    renderForm("split");
+
+    expect(screen.queryByLabelText("Selecionar todos")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Selecionar Item 1")).not.toBeInTheDocument();
+    // The per-item editor is still the way to divide a short receipt.
+    fireEvent.click(screen.getByRole("button", { name: /Item 1/ }));
+    expect(screen.getByText("Pessoas")).toBeInTheDocument();
+  });
+});

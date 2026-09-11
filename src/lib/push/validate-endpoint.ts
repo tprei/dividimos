@@ -296,4 +296,3 @@ export function createRebindingSafeAgent(hostname: string): https.Agent {
   });
   return agent;
 }
-

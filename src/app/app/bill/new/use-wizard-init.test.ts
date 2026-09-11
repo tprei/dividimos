@@ -228,4 +228,3 @@ describe("selectDraftForType", () => {
     expect(useBillStore.getState().expense?.groupId).toBe("group-1");
   });
 });
-
