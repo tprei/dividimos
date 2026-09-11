@@ -11,6 +11,7 @@ import { safeRedirect } from "@/lib/safe-redirect";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import toast from "react-hot-toast";
 import { parseClaimQrCode } from "@/lib/claim-qr";
+import { parseJoinQrCode } from "@/lib/join-qr";
 
 type AuthMode = "choose" | "scan";
 
@@ -21,12 +22,23 @@ function AuthPageContent() {
   const supabase = createClient();
   const [mode, setMode] = useState<AuthMode>("choose");
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [scanPaused, setScanPaused] = useState(false);
 
   const handleScanDecode = useCallback(
     (data: string) => {
       const claim = parseClaimQrCode(data);
       if (claim) {
+        // Stop scanning on a recognized payload: a second decode of the same
+        // frame would push the same route twice.
+        setScanPaused(true);
         router.push(`/claim#${claim.token}`);
+        return;
+      }
+
+      const join = parseJoinQrCode(data);
+      if (join) {
+        setScanPaused(true);
+        router.push(join.url);
       }
     },
     [router],
@@ -166,7 +178,7 @@ function AuthPageContent() {
                   </p>
 
                   <div className="mt-6">
-                    <QrScannerView onDecode={handleScanDecode} />
+                    <QrScannerView onDecode={handleScanDecode} paused={scanPaused} />
                     <p className="mt-3 text-center text-xs text-muted-foreground">
                       Posicione o QR code do convite dentro do quadrado
                     </p>
