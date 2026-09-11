@@ -15,6 +15,11 @@ const participants: ItemDivisionParticipant[] = [
   { id: "user-bob", name: "Bob", avatarUrl: null, isGuest: false },
 ];
 
+type SavedDivisions = Record<
+  number,
+  { mode: string; shares: { participantId: string; cents: number }[] }
+>;
+
 const makeResult = (overrides?: Partial<ReceiptOcrResult>): ReceiptOcrResult => ({
   merchant: "Bar do Zé",
   items: [
@@ -64,8 +69,8 @@ describe("ScannedItemsReview", () => {
     expect(screen.getByRole("button", { name: "Data do recibo" })).toHaveTextContent(
       `${day}/${month}/${year}`,
     );
-    expect(screen.getByDisplayValue("24,00")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("45,00")).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s*24,00/)).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s*45,00/)).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*75,90/)).toBeInTheDocument();
   });
 
@@ -92,58 +97,84 @@ describe("ScannedItemsReview", () => {
     );
   });
 
-  it("applies batch assignment only to selected rows", async () => {
+  it("keeps continue reachable after assigning an item", async () => {
     const user = userEvent.setup();
     const { onConfirm } = renderReview();
 
-    await user.click(screen.getByLabelText("Selecionar Cerveja Brahma 600ml"));
-    await user.click(screen.getByRole("button", { name: "Atribuir · 1" }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    await user.click(screen.getByLabelText("Atribuir a Alice"));
-    await user.click(screen.getByRole("button", { name: "Aplicar em 1 item" }));
-    await user.click(screen.getByRole("button", { name: "Limpar" }));
-    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
+    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
+    await user.click(screen.getByLabelText("Incluir Alice em Cerveja Brahma 600ml"));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
 
-    const divisions = onConfirm.mock.calls[0][1] as Record<number, { mode: string; shares: { participantId: string }[] }>;
-    expect(divisions[0].mode).toBe("equal");
-    expect(divisions[0].shares.map((share) => share.participantId)).toEqual(["user-bob"]);
-    expect(divisions[1]).toBeUndefined();
+    const proceed = screen.getByRole("button", { name: "Continuar para divisão" });
+    expect(proceed).toBeEnabled();
+    await user.click(proceed);
+
+    const divisions = onConfirm.mock.calls[0][1] as SavedDivisions;
+    expect(divisions[0].shares.map((share) => share.participantId)).toEqual(["user-alice"]);
   });
 
-  it("keeps item selection while expanding and collapsing a row", async () => {
+  it("splits every item equally in one tap", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderReview();
+
+    await user.click(screen.getByRole("button", { name: "Dividir tudo igualmente" }));
+    expect(screen.queryByText(/pendente/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
+    const divisions = onConfirm.mock.calls[0][1] as SavedDivisions;
+    expect(divisions[0].shares.reduce((sum, share) => sum + share.cents, 0)).toBe(2400);
+    expect(divisions[1].shares.reduce((sum, share) => sum + share.cents, 0)).toBe(4500);
+  });
+
+  it("re-baselines items that were already assigned to fewer people", async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderReview();
+
+    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
+    await user.click(screen.getByLabelText("Incluir Alice em Cerveja Brahma 600ml"));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    await user.click(screen.getByRole("button", { name: "Dividir tudo igualmente" }));
+    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
+
+    const divisions = onConfirm.mock.calls[0][1] as SavedDivisions;
+    expect(divisions[0].shares.map((share) => share.participantId)).toEqual([
+      "user-alice",
+      "user-bob",
+    ]);
+    expect(divisions[1].shares).toHaveLength(2);
+  });
+
+  it("opens only one row panel at a time", async () => {
     const user = userEvent.setup();
     renderReview();
 
-    await user.click(screen.getByLabelText("Selecionar Cerveja Brahma 600ml"));
-    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
-    expect(screen.getByRole("button", { name: "Atribuir · 1" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
-    expect(screen.getByRole("button", { name: "Atribuir · 1" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja Brahma 600ml" }));
+    expect(screen.getByLabelText("Nome de Cerveja Brahma 600ml")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Dividir Picanha 400g" }));
+    expect(screen.queryByLabelText("Nome de Cerveja Brahma 600ml")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Incluir Alice em Picanha 400g")).toBeInTheDocument();
   });
 
-  it("continues with edited items, divisions, and date", async () => {
+  it("continues with details edited inside the row panel", async () => {
     const user = userEvent.setup();
     const { onConfirm } = renderReview();
 
-    fireEvent.change(screen.getByLabelText("Nome do estabelecimento"), { target: { value: "Mercado" } });
-    const nameInput = screen.getByRole("textbox", { name: "Nome de Cerveja Brahma 600ml" });
-    fireEvent.change(nameInput, { target: { value: "Cerveja" } });
-    const amountInput = screen.getByDisplayValue("24,00");
-    fireEvent.change(amountInput, { target: { value: "30,00" } });
+    fireEvent.change(screen.getByLabelText("Nome do estabelecimento"), {
+      target: { value: "Mercado" },
+    });
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja Brahma 600ml" }));
+    fireEvent.change(screen.getByLabelText("Nome de Cerveja Brahma 600ml"), {
+      target: { value: "Cerveja" },
+    });
+    fireEvent.change(screen.getByLabelText("Valor de Cerveja"), { target: { value: "30,00" } });
+    await user.click(screen.getByRole("button", { name: "Pronto" }));
     await user.click(screen.getByRole("button", { name: "Data do recibo" }));
     await user.click(screen.getByRole("button", { name: "9 de setembro de 2026" }));
-    await user.click(screen.getByLabelText("Selecionar Cerveja"));
-    await user.click(screen.getByRole("button", { name: "Atribuir · 1" }));
-    await user.click(screen.getByRole("button", { name: "Aplicar em 1 item" }));
-    await user.click(screen.getByRole("button", { name: "Limpar" }));
     await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
 
     expect(onConfirm).toHaveBeenCalledOnce();
-    const [draft, divisions, occurredOn] = onConfirm.mock.calls[0] as [
-      ReceiptOcrResult,
-      Record<number, { mode: string; shares: { participantId: string; cents: number }[] }>,
-      string,
-    ];
+    const [draft, , occurredOn] = onConfirm.mock.calls[0] as [ReceiptOcrResult, SavedDivisions, string];
     expect(draft.merchant).toBe("Mercado");
     expect(draft.items[0]).toMatchObject({
       description: "Cerveja",
@@ -151,16 +182,75 @@ describe("ScannedItemsReview", () => {
       quantity: 2000,
     });
     expect(draft.totalCents).toBe(8250);
-    expect(divisions[0].shares).toHaveLength(2);
-    expect(divisions[0].shares.reduce((sum, share) => sum + share.cents, 0)).toBe(3000);
     expect(occurredOn).toBe("2026-09-09");
+  });
+
+  it("blocks continue and names the broken row when a name is cleared", async () => {
+    const user = userEvent.setup();
+    renderReview();
+
+    await user.click(screen.getByRole("button", { name: "Editar Cerveja Brahma 600ml" }));
+    fireEvent.change(screen.getByLabelText("Nome de Cerveja Brahma 600ml"), {
+      target: { value: "   " },
+    });
+
+    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.getByText("Informe o nome do item.")).toBeInTheDocument();
+  });
+
+  it("explains an unsatisfiable amount without opening a panel", () => {
+    renderReview(
+      makeResult({
+        items: [{ description: "Cerveja", quantity: 3, unitPriceCents: 334, totalCents: 1000 }],
+        totalCents: 1000,
+      }),
+    );
+
+    expect(screen.getByText("Valor incompatível com a quantidade.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(screen.queryByLabelText("Valor de Cerveja")).not.toBeInTheDocument();
+  });
+
+  it("drops an assignment that names someone no longer on the bill", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn();
+    const result = makeResult();
+    const { rerender } = render(
+      <ScannedItemsReview
+        result={result}
+        participants={participants}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        onManageParticipants={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
+    await user.click(screen.getByLabelText("Incluir Bob em Cerveja Brahma 600ml"));
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+
+    rerender(
+      <ScannedItemsReview
+        result={result}
+        participants={[participants[0]]}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        onManageParticipants={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2 pendentes")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
+    expect(onConfirm.mock.calls[0][1]).toEqual({});
   });
 
   it("shows the empty receipt state and disables continue", () => {
     renderReview(makeResult({ items: [], totalCents: 0 }));
 
-    expect(screen.getByText("Nenhum item. Tente escanear novamente ou adicione manualmente.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Nenhum item. Tente escanear novamente ou adicione manualmente."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
-    expect(screen.getByText("0 pendentes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dividir tudo igualmente" })).toBeDisabled();
   });
 });
