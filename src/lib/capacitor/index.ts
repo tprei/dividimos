@@ -2,15 +2,15 @@ import { Capacitor } from "@capacitor/core";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { App } from "@capacitor/app";
 import { configureStatusBar } from "./status-bar";
-import { resolveDeepLinkTarget } from "./deep-link";
+import { isSingleUseTarget, resolveDeepLinkTarget } from "./deep-link";
 import { runBackHandlers } from "./back-handler";
 
-// SHA-256 digest of a claim target's canonical path. Stored (never the
-// credential itself) so a cold-start claim navigates exactly once and a reload
-// does not re-trigger it.
+// SHA-256 digest of a single-use target's canonical path. Stored (never the
+// credential or token itself) so a cold-start claim or invite navigates
+// exactly once and a reload does not re-trigger it.
 const CONSUMED_KEY = "dividimos.claim.consumed";
 
-async function fingerprintClaimTarget(target: string): Promise<string> {
+async function fingerprintTarget(target: string): Promise<string> {
   const data = new TextEncoder().encode(target);
   const digest = await crypto.subtle.digest("SHA-256", data);
   const bytes = new Uint8Array(digest);
@@ -66,23 +66,31 @@ export async function initCapacitor(
     const target = resolveDeepLinkTarget(url);
     if (!target) return;
     // A warm tap always navigates and refreshes the consumed marker.
-    if (target.startsWith("/claim#")) {
-      void fingerprintClaimTarget(target).then(writeConsumed);
+    if (isSingleUseTarget(target)) {
+      void fingerprintTarget(target).then(writeConsumed);
     }
     replace(target);
   });
 
-  // Cold start: the app was launched from a claim deep link while closed.
-  // Navigate exactly once per distinct claim target; on a later init/reload
-  // the stored digest matches and we skip. Only a SHA-256 digest is stored.
+  // Cold start: the app was launched from a deep link while closed. A
+  // force-stopped app never sees appUrlOpen, so every resolvable target has
+  // to navigate from here, not just claims.
   const launch = await App.getLaunchUrl();
   const launchTarget = launch?.url ? resolveDeepLinkTarget(launch.url) : null;
-  if (launchTarget?.startsWith("/claim#")) {
-    const digest = await fingerprintClaimTarget(launchTarget);
-    if (readConsumed() !== digest) {
-      writeConsumed(digest);
-      replace(launchTarget);
-    }
+  if (launchTarget === null) return;
+
+  if (!isSingleUseTarget(launchTarget)) {
+    replace(launchTarget);
+    return;
+  }
+
+  // Navigate exactly once per distinct credential-bearing target; on a later
+  // init or reload the stored digest matches and we skip. Only a SHA-256
+  // digest is stored, never the credential.
+  const digest = await fingerprintTarget(launchTarget);
+  if (readConsumed() !== digest) {
+    writeConsumed(digest);
+    replace(launchTarget);
   }
 }
 

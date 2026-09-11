@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
 import { parseClaimQrCode } from "@/lib/claim-qr";
+import { parseJoinQrCode } from "@/lib/join-qr";
 import { parseNfceQrCode } from "@/lib/nfce-qr";
 
 export default function ScanInvitePage() {
@@ -19,6 +20,15 @@ export default function ScanInvitePage() {
       if (claim) {
         setPaused(true);
         router.push(`/claim#${claim.token}`);
+        return;
+      }
+
+      // The invite modal advertises this exact payload, so the app's own QR
+      // has to open the join page.
+      const join = parseJoinQrCode(data);
+      if (join) {
+        setPaused(true);
+        router.push(join.url);
         return;
       }
 
