@@ -307,6 +307,57 @@ describe("SettingsPage account", () => {
     useAppStore.getState().reset();
   });
 
+  it("says which category is saving until the write lands", async () => {
+    const pending = deferred<Me>();
+    updateProfileMock.mockImplementationOnce(() => pending.promise);
+
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Salvando...")).toBeInTheDocument();
+    });
+    // Only the toggled row reports work in flight.
+    expect(screen.getAllByText("Salvando...")).toHaveLength(1);
+
+    pending.resolve(makeMe("user-a", { expenses: false }));
+    await waitFor(() => {
+      expect(screen.queryByText("Salvando...")).not.toBeInTheDocument();
+    });
+  });
+
+  it("offers a retry on the row whose save failed", async () => {
+    updateProfileMock.mockRejectedValueOnce(new Error("offline"));
+    updateProfileMock.mockImplementation(makeServerMerge());
+
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getAllByRole("switch")[0]);
+
+    const retry = await screen.findByRole("button", {
+      name: "Não salvou. Tentar novamente",
+    });
+    // The failed category reverted, so the switch shows the old value again.
+    expect(screen.getAllByRole("switch")[0]).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(retry);
+
+    await waitFor(() => {
+      expect(updateProfileMock).toHaveBeenCalledTimes(2);
+    });
+    expect(updateProfileMock.mock.calls[1][0]).toEqual({
+      notificationPreferences: { expenses: false },
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Não salvou. Tentar novamente" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("handles sign out by signing out, resetting store, and redirecting", async () => {
     useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
     render(<SettingsPage />);
