@@ -147,7 +147,7 @@ export function DashboardContent() {
       />
 
       <div className="flex items-start gap-4 px-4 pt-4">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1" data-tour="balance-card">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
             Saldo geral
           </p>
@@ -172,7 +172,7 @@ export function DashboardContent() {
             </div>
           </div>
         </div>
-        <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex shrink-0 flex-col gap-2" data-tour="quick-actions">
           <Link
             href="/app/bill/new?scan=true"
             className={cn(
@@ -207,7 +207,7 @@ export function DashboardContent() {
         </div>
       </div>
 
-      <div className="space-y-6 px-4 pt-7">
+      <div className="space-y-6 px-4 pt-7" data-tour="debt-lists">
         <section>
           <SectionHeading
             title="A pagar"

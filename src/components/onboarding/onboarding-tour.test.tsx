@@ -15,7 +15,7 @@ function setupTourTargets() {
   const targets = [
     { attr: "balance-card", text: "Balance" },
     { attr: "quick-actions", text: "Actions" },
-    { attr: "debt-tabs", text: "Tabs" },
+    { attr: "debt-lists", text: "Listas" },
     { attr: "nav-bar", text: "Nav" },
   ];
   const elements: HTMLDivElement[] = [];
@@ -77,9 +77,7 @@ describe("OnboardingTour", () => {
 
     expect(screen.getByText("Seu saldo")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Aqui você vê quanto deve ou tem a receber. Toque no olho para esconder o valor.",
-      ),
+      screen.getByText("Seu saldo geral, mais quanto você tem a pagar e a receber."),
     ).toBeInTheDocument();
   });
 
@@ -198,5 +196,47 @@ describe("OnboardingTour", () => {
     // First step shows "Próximo", not "Concluir"
     expect(screen.getByText("Próximo")).toBeInTheDocument();
     expect(screen.queryByText("Concluir")).not.toBeInTheDocument();
+  });
+
+  it("skips a step whose anchor is missing instead of painting a blank overlay", async () => {
+    mockUseOnboardingTour.mockReturnValue({
+      shouldShow: true,
+      completeTour: mockCompleteTour,
+      resetTour: vi.fn(),
+    });
+    for (const el of tourElements) {
+      if (el.getAttribute("data-tour") !== "nav-bar") el.remove();
+    }
+
+    render(<OnboardingTour userId="user-1" />);
+
+    for (let i = 0; i < 4; i++) {
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+    }
+
+    expect(screen.getByText("Navegação")).toBeInTheDocument();
+    expect(screen.queryByText("Seu saldo")).not.toBeInTheDocument();
+  });
+
+  it("completes the tour when no anchor is on the page", async () => {
+    mockUseOnboardingTour.mockReturnValue({
+      shouldShow: true,
+      completeTour: mockCompleteTour,
+      resetTour: vi.fn(),
+    });
+    for (const el of tourElements) el.remove();
+
+    render(<OnboardingTour userId="user-1" />);
+
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+    }
+
+    expect(screen.queryByText("Navegação")).not.toBeInTheDocument();
+    expect(mockCompleteTour).toHaveBeenCalled();
   });
 });
