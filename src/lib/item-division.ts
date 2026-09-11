@@ -143,6 +143,16 @@ export function divisionForItem(
   return isDivisionValid(value, item.totalPriceCents) ? value : null;
 }
 
+export function isItemAssigned(
+  item: Pick<ExpenseItem, "id" | "totalPriceCents">,
+  splits: readonly ItemDivisionSplit[],
+  peopleIds: ReadonlySet<string>,
+): boolean {
+  const division = divisionForItem(item, splits);
+  if (!division) return false;
+  return division.shares.every((share) => peopleIds.has(share.participantId));
+}
+
 export function recomputeDivisionShares(value: ItemDivisionValue, cents: number): ItemDivisionValue {
   const participantIds = value.shares.map((share) => share.participantId);
   if (participantIds.length === 0 || value.mode === "fixed") return value;

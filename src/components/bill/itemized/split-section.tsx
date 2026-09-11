@@ -4,9 +4,10 @@ import { Fragment } from "react";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ItemDivisionEditor } from "@/components/bill/item-division-editor";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
-import { divisionForItem, type ItemDivisionValue } from "@/lib/item-division";
+import { divisionForItem, equalDivision, isItemAssigned, type ItemDivisionValue } from "@/lib/item-division";
 import type { ExpenseSplit, Guest } from "@/stores/bill-store";
 import type { ExpenseItem, User } from "@/types";
 export interface SplitSectionProps {
@@ -66,10 +67,33 @@ export function SplitSection({
   onCancelDivision,
 }: SplitSectionProps) {
   const people = participantEntries(participants, guests);
+  const peopleIds = new Set(people.map((person) => person.id));
+  const unassignedCount = items.filter((item) => !isItemAssigned(item, splits, peopleIds)).length;
+
+  function divideAllEqually() {
+    for (const item of items) {
+      const division = equalDivision(people.map((person) => person.id), item.totalPriceCents);
+      if (division) onSaveDivision(item.id, division);
+    }
+  }
 
   return (
-    <div className="space-y-3 px-4 py-3">
-      <div className="divide-y divide-border rounded-2xl border bg-card">
+    <div className="px-4 py-3">
+      <h2 className="text-sm leading-5 font-semibold">Quem consumiu</h2>
+      <Button
+        type="button"
+        onClick={divideAllEqually}
+        disabled={people.length === 0 || items.length === 0}
+        className="mt-2 min-h-11 w-full"
+      >
+        Dividir tudo igualmente
+      </Button>
+      {unassignedCount > 0 && (
+        <p className="mt-2 text-xs leading-4 text-muted-foreground">
+          {unassignedCount === 1 ? "1 item sem divisão" : `${unassignedCount} de ${items.length} itens sem divisão`}
+        </p>
+      )}
+      <div className="mt-4 divide-y divide-border rounded-2xl border bg-card">
         {items.map((item) => {
           const expanded = expandedId === item.id;
           const division = divisionForItem(item, splits);
@@ -82,11 +106,11 @@ export function SplitSection({
                 onClick={() => onToggleItem(item.id)}
                 className="flex min-h-14 w-full min-w-0 items-center gap-3 px-4 py-2 text-left"
               >
-                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">
+                <span className="min-w-0 flex-1 text-[15px] font-semibold">
                   {item.description || "Item sem nome"}
                 </span>
                 <Money cents={item.totalPriceCents} className="shrink-0 text-sm" />
-                {division && assignees.length > 0 ? (
+                {isItemAssigned(item, splits, peopleIds) ? (
                   <AvatarStack people={assignees} />
                 ) : (
                   <Badge variant="secondary" className="shrink-0">

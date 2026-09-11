@@ -83,10 +83,10 @@ describe("ItemizedBillForm Conta section", () => {
     expect(screen.getByRole("tab", { name: "Itens" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("keeps the scan handoff on Divisão without the participants disclosure", () => {
+  it("keeps the scan handoff on Quem consumiu without the participants disclosure", () => {
     useBillStore.getState().addItem({ description: "Pizza", quantity: 1000, unitPriceCents: 5000, totalPriceCents: 5000 });
     renderForm("split");
-    expect(screen.getByRole("tab", { name: "Divisão" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Quem consumiu" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("button", { name: /Participantes/ })).not.toBeInTheDocument();
   });
 

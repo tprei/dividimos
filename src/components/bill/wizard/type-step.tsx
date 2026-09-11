@@ -15,7 +15,6 @@ import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib
 import type { NfceQrResult } from "@/lib/nfce-qr";
 import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
-import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import type { ExpenseType, UserProfile } from "@/types";
@@ -28,7 +27,6 @@ export interface TypeStepProps {
   onScanConfirm: (
     result: ReceiptOcrResult,
     chaveAcesso: string | null,
-    divisions: Record<number, ItemDivisionValue>,
     occurredOn: string,
   ) => void;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
@@ -157,7 +155,7 @@ export function TypeStep({
 
   const handleScanConfirm = useCallback((
     result: ReceiptOcrResult,
-    divisions: Record<number, ItemDivisionValue>,
+    _chaveAcesso: string | null,
     occurredOn: string,
   ) => {
     const chaveAcesso = lastQrResultRef.current?.chaveAcesso ?? null;
@@ -167,7 +165,7 @@ export function TypeStep({
     }
     setScanResult(null);
     setDuplicateWarning(null);
-    onScanConfirm(result, chaveAcesso, divisions, occurredOn);
+    onScanConfirm(result, chaveAcesso, occurredOn);
   }, [onScanConfirm]);
 
   const handleScanCancel = useCallback(() => {

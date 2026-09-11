@@ -15,11 +15,6 @@ const participants: ItemDivisionParticipant[] = [
   { id: "user-bob", name: "Bob", avatarUrl: null, isGuest: false },
 ];
 
-type SavedDivisions = Record<
-  number,
-  { mode: string; shares: { participantId: string; cents: number }[] }
->;
-
 const makeResult = (overrides?: Partial<ReceiptOcrResult>): ReceiptOcrResult => ({
   merchant: "Bar do Zé",
   items: [
@@ -71,6 +66,7 @@ describe("ScannedItemsReview", () => {
     );
     expect(screen.getByText(/R\$\s*24,00/)).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*45,00/)).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s*69,00/)).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*75,90/)).toBeInTheDocument();
   });
 
@@ -82,66 +78,38 @@ describe("ScannedItemsReview", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("updates pending count after saving an inline division", async () => {
-    const user = userEvent.setup();
-    renderReview();
-
-    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
-    await user.click(screen.getByLabelText("Incluir Alice em Cerveja Brahma 600ml"));
-    await user.click(screen.getByRole("button", { name: "Salvar" }));
-
-    expect(screen.getByText("1 pendente")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
+  it("disables continue with a single participant and enables it once a second is added", () => {
+    const onConfirm = vi.fn();
+    const result = makeResult();
+    const { rerender } = render(
+      <ScannedItemsReview
+        result={result}
+        participants={[participants[0]]}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        onManageParticipants={vi.fn()}
+      />,
     );
-  });
 
-  it("keeps continue reachable after assigning an item", async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderReview();
+    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
+    expect(
+      screen.getByText("Adicione pelo menos uma pessoa além de você."),
+    ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
-    await user.click(screen.getByLabelText("Incluir Alice em Cerveja Brahma 600ml"));
-    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    rerender(
+      <ScannedItemsReview
+        result={result}
+        participants={participants}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        onManageParticipants={vi.fn()}
+      />,
+    );
 
-    const proceed = screen.getByRole("button", { name: "Continuar para divisão" });
-    expect(proceed).toBeEnabled();
-    await user.click(proceed);
-
-    const divisions = onConfirm.mock.calls[0][1] as SavedDivisions;
-    expect(divisions[0].shares.map((share) => share.participantId)).toEqual(["user-alice"]);
-  });
-
-  it("splits every item equally in one tap", async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderReview();
-
-    await user.click(screen.getByRole("button", { name: "Dividir tudo igualmente" }));
-    expect(screen.queryByText(/pendente/)).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
-    const divisions = onConfirm.mock.calls[0][1] as SavedDivisions;
-    expect(divisions[0].shares.reduce((sum, share) => sum + share.cents, 0)).toBe(2400);
-    expect(divisions[1].shares.reduce((sum, share) => sum + share.cents, 0)).toBe(4500);
-  });
-
-  it("re-baselines items that were already assigned to fewer people", async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderReview();
-
-    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
-    await user.click(screen.getByLabelText("Incluir Alice em Cerveja Brahma 600ml"));
-    await user.click(screen.getByRole("button", { name: "Salvar" }));
-    await user.click(screen.getByRole("button", { name: "Dividir tudo igualmente" }));
-    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
-
-    const divisions = onConfirm.mock.calls[0][1] as SavedDivisions;
-    expect(divisions[0].shares.map((share) => share.participantId)).toEqual([
-      "user-alice",
-      "user-bob",
-    ]);
-    expect(divisions[1].shares).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeEnabled();
+    expect(
+      screen.queryByText("Adicione pelo menos uma pessoa além de você."),
+    ).not.toBeInTheDocument();
   });
 
   it("opens only one row panel at a time", async () => {
@@ -151,9 +119,9 @@ describe("ScannedItemsReview", () => {
     await user.click(screen.getByRole("button", { name: "Editar Cerveja Brahma 600ml" }));
     expect(screen.getByLabelText("Nome de Cerveja Brahma 600ml")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Dividir Picanha 400g" }));
+    await user.click(screen.getByRole("button", { name: "Editar Picanha 400g" }));
     expect(screen.queryByLabelText("Nome de Cerveja Brahma 600ml")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Incluir Alice em Picanha 400g")).toBeInTheDocument();
+    expect(screen.getByLabelText("Nome de Picanha 400g")).toBeInTheDocument();
   });
 
   it("continues with details edited inside the row panel", async () => {
@@ -174,7 +142,11 @@ describe("ScannedItemsReview", () => {
     await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
 
     expect(onConfirm).toHaveBeenCalledOnce();
-    const [draft, , occurredOn] = onConfirm.mock.calls[0] as [ReceiptOcrResult, SavedDivisions, string];
+    const [draft, , occurredOn] = onConfirm.mock.calls[0] as [
+      ReceiptOcrResult,
+      string | null,
+      string,
+    ];
     expect(draft.merchant).toBe("Mercado");
     expect(draft.items[0]).toMatchObject({
       description: "Cerveja",
@@ -211,39 +183,6 @@ describe("ScannedItemsReview", () => {
     expect(screen.queryByLabelText("Valor de Cerveja")).not.toBeInTheDocument();
   });
 
-  it("drops an assignment that names someone no longer on the bill", async () => {
-    const user = userEvent.setup();
-    const onConfirm = vi.fn();
-    const result = makeResult();
-    const { rerender } = render(
-      <ScannedItemsReview
-        result={result}
-        participants={participants}
-        onConfirm={onConfirm}
-        onCancel={vi.fn()}
-        onManageParticipants={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Dividir Cerveja Brahma 600ml" }));
-    await user.click(screen.getByLabelText("Incluir Bob em Cerveja Brahma 600ml"));
-    await user.click(screen.getByRole("button", { name: "Salvar" }));
-
-    rerender(
-      <ScannedItemsReview
-        result={result}
-        participants={[participants[0]]}
-        onConfirm={onConfirm}
-        onCancel={vi.fn()}
-        onManageParticipants={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("2 pendentes")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Continuar para divisão" }));
-    expect(onConfirm.mock.calls[0][1]).toEqual({});
-  });
-
   it("shows the empty receipt state and disables continue", () => {
     renderReview(makeResult({ items: [], totalCents: 0 }));
 
@@ -251,6 +190,5 @@ describe("ScannedItemsReview", () => {
       screen.getByText("Nenhum item. Tente escanear novamente ou adicione manualmente."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Dividir tudo igualmente" })).toBeDisabled();
   });
 });
