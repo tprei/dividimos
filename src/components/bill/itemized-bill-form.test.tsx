@@ -148,3 +148,87 @@ describe("ItemizedBillForm Divisão gate", () => {
   });
 });
 
+describe("ItemizedBillForm batch assignment", () => {
+  it("assigns a fifty-item receipt without opening a single item", () => {
+    prepareStore("Churrascão", true);
+    act(() => {
+      const store = useBillStore.getState();
+      for (let index = 0; index < 50; index += 1) {
+        store.addItem({
+          description: `Item ${index + 1}`,
+          quantity: 1000,
+          unitPriceCents: 1000,
+          totalPriceCents: 1000,
+        });
+      }
+    });
+
+    renderForm("split");
+
+    fireEvent.click(screen.getByLabelText("Selecionar todos"));
+    expect(screen.getByText("50 de 50 selecionados")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Alice/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Bob/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Dividir 50 itens igualmente" }));
+
+    // Every item is now fully assigned, so nothing blocks the next step.
+    const splits = useBillStore.getState().splits;
+    expect(new Set(splits.map((split) => split.itemId)).size).toBe(50);
+    expect(splits).toHaveLength(100);
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeEnabled();
+    expect(screen.queryByText("Pendente")).not.toBeInTheDocument();
+  });
+
+  it("announces which people the batch will include", () => {
+    prepareStore("Churrasco", true);
+    act(() => {
+      useBillStore.getState().addItem({
+        description: "Picanha",
+        quantity: 1000,
+        unitPriceCents: 10000,
+        totalPriceCents: 10000,
+      });
+    });
+
+    renderForm("split");
+    fireEvent.click(screen.getByLabelText("Selecionar Picanha"));
+
+    const alice = screen.getByRole("button", { name: /^Alice/ });
+    expect(alice).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(alice);
+    expect(screen.getByRole("button", { name: /^Alice/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("writes the whole batch in a single store update", () => {
+    prepareStore("Churrasco", true);
+    act(() => {
+      const store = useBillStore.getState();
+      for (let index = 0; index < 10; index += 1) {
+        store.addItem({
+          description: `Item ${index + 1}`,
+          quantity: 1000,
+          unitPriceCents: 500,
+          totalPriceCents: 500,
+        });
+      }
+    });
+
+    let writes = 0;
+    const unsubscribe = useBillStore.subscribe(() => {
+      writes += 1;
+    });
+    act(() => {
+      useBillStore
+        .getState()
+        .assignItemsEqually(
+          useBillStore.getState().items.map((item) => item.id),
+          [userAlice.id, userBob.id],
+        );
+    });
+    unsubscribe();
+
+    expect(writes).toBe(1);
+  });
+});
+

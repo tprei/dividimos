@@ -90,6 +90,8 @@ export interface ExpenseState {
   assignItem: (itemId: string, userId: string, splitType: SplitType, value: number) => void;
   unassignItem: (itemId: string, userId: string) => void;
   splitItemEqually: (itemId: string, userIds: string[]) => void;
+  /** Splits several items equally among the same people, in one write. */
+  assignItemsEqually: (itemIds: string[], userIds: string[]) => void;
   setItemDivision: (itemId: string, value: ItemDivisionValue) => void;
 
   setPayerFull: (userId: string) => PayerMutationResult;
@@ -874,6 +876,33 @@ export const useBillStore = create<ExpenseState>()(
 
     set({ splits: [...existingOther, ...newSplits] });
   },
+  assignItemsEqually: (itemIds, userIds) => {
+    if (itemIds.length === 0 || userIds.length === 0) return;
+    const targeted = new Set(itemIds);
+    const known = get().items.filter((item) => targeted.has(item.id));
+    if (known.length === 0) return;
+
+    const keptSplits = get().splits.filter((split) => !targeted.has(split.itemId));
+    const created: ExpenseSplit[] = [];
+    for (const item of known) {
+      const perPerson = Math.floor(item.totalPriceCents / userIds.length);
+      const remainder = item.totalPriceCents - perPerson * userIds.length;
+      userIds.forEach((userId, index) => {
+        created.push({
+          id: generateId(),
+          itemId: item.id,
+          userId,
+          splitType: "equal" as SplitType,
+          value: 100 / userIds.length,
+          computedAmountCents: perPerson + (index < remainder ? 1 : 0),
+        });
+      });
+    }
+
+    // One write for the whole batch: assigning fifty rows should not wake
+    // every subscriber fifty times.
+    set({ splits: [...keptSplits, ...created] });
+  },
   setItemDivision: (itemId, value) => {
     set((state) => {
       if (!state.items.some((item) => item.id === itemId) || value.shares.length === 0) {
@@ -883,6 +912,7 @@ export const useBillStore = create<ExpenseState>()(
         ...state.participants.map((participant) => participant.id),
         ...state.guests.map((guest) => guest.id),
       ]);
+
       if (value.shares.some((share) => !memberIds.has(share.participantId))) {
         return {};
       }
