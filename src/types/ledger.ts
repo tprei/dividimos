@@ -95,12 +95,24 @@ export type ExpenseItemAssignmentPayload = {
   amountCents: number;
 };
 
+/**
+ * How the author described a single-amount division.
+ *
+ * The cents in `shares` stay authoritative. This records which control the
+ * author used so reopening the expense shows that control instead of
+ * inferring one from the amounts, which cannot tell an even split from a
+ * custom one that happens to be even.
+ */
+export type ExpenseSplitMethod = "equal" | "percentage" | "fixed";
+
 export type ExpensePayload = {
   items: ExpenseItemPayload[];
   participants: ParticipantRef[];
   shares: number[];
   payers: ExpensePayerPayload[];
   itemAssignments: ExpenseItemAssignmentPayload[] | null;
+  /** Absent on versions written before this was recorded. */
+  splitMethod?: ExpenseSplitMethod | null;
 };
 
 export interface ExpenseHeader {

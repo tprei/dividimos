@@ -401,6 +401,7 @@ DECLARE
   v_items jsonb;
   v_participants jsonb;
   v_shares jsonb;
+  v_split_method text;
   v_payers jsonb;
   v_item_assignments jsonb;
   v_n integer;
@@ -573,6 +574,21 @@ BEGIN
   END LOOP;
   IF v_share_sum <> p_total THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'share_total_mismatch';
+  END IF;
+
+  -- How the author described the division ('equal', 'percentage', 'fixed').
+  -- Cents remain authoritative; this only lets an edit reopen the control the
+  -- author used instead of guessing from the amounts. Older versions have no
+  -- such key and stay valid.
+  IF p ? 'splitMethod' AND jsonb_typeof(p->'splitMethod') <> 'null' THEN
+    IF jsonb_typeof(p->'splitMethod') <> 'string'
+       OR (p->>'splitMethod') NOT IN ('equal', 'percentage', 'fixed')
+    THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    v_split_method := p->>'splitMethod';
+  ELSE
+    v_split_method := NULL;
   END IF;
 
   IF p ? 'payers' THEN v_payers := p->'payers'; ELSE v_payers := NULL; END IF;
@@ -785,7 +801,8 @@ BEGIN
         'amountCents', (x->>'amountCents')::integer
       ) ORDER BY ord), '[]'::jsonb)
       FROM jsonb_array_elements(v_item_assignments) WITH ORDINALITY AS t(x, ord)
-    ) END
+    ) END,
+    'splitMethod', to_jsonb(v_split_method)
   );
 END;
 $$;
