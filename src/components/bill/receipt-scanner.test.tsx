@@ -268,7 +268,7 @@ describe("ReceiptScanner", () => {
 
     it("calls takeNativePhoto when Camera is clicked on Android", async () => {
       const mockFile = createMockFile();
-      mockTakeNativePhoto.mockResolvedValue(mockFile);
+      mockTakeNativePhoto.mockResolvedValue({ kind: "captured", file: mockFile });
 
       render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
 
@@ -282,7 +282,7 @@ describe("ReceiptScanner", () => {
 
     it("calls pickNativeGalleryPhoto when Galeria is clicked on Android", async () => {
       const mockFile = createMockFile();
-      mockPickNativeGalleryPhoto.mockResolvedValue(mockFile);
+      mockPickNativeGalleryPhoto.mockResolvedValue({ kind: "captured", file: mockFile });
 
       render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
 
@@ -296,7 +296,7 @@ describe("ReceiptScanner", () => {
 
     it("shows preview after native capture", async () => {
       const mockFile = createMockFile();
-      mockTakeNativePhoto.mockResolvedValue(mockFile);
+      mockTakeNativePhoto.mockResolvedValue({ kind: "captured", file: mockFile });
 
       render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
 
@@ -376,6 +376,34 @@ describe("ReceiptScanner", () => {
       );
       // While paused the surface stays visibly busy instead of freezing silently.
       expect(screen.getByText("Consultando nota fiscal...")).toBeInTheDocument();
+    });
+  });
+
+  describe("capture failures", () => {
+    beforeEach(() => {
+      mockGetPlatform.mockReturnValue("android");
+    });
+
+    it("stays silent when the user backs out", async () => {
+      mockTakeNativePhoto.mockResolvedValue({ kind: "cancelled" });
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      await user.click(screen.getByText("Camera").closest("button")!);
+
+      expect(mockTakeNativePhoto).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("explains a refused camera permission instead of doing nothing", async () => {
+      mockTakeNativePhoto.mockResolvedValue({ kind: "permission_denied" });
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      await user.click(screen.getByText("Camera").closest("button")!);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toMatch(/configura/i);
     });
   });
 });
