@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me } from "@/types/ledger";
-import { useWizardInit } from "./use-wizard-init";
+import { selectDraftForType, useWizardInit } from "./use-wizard-init";
 
 vi.mock("react-hot-toast", () => ({ default: { error: vi.fn() } }));
 vi.mock("@/lib/sync/refresh", () => ({ refreshExpense: vi.fn() }));
@@ -165,3 +165,67 @@ describe("useWizardInit chat actors", () => {
     expect(useBillStore.getState().expense).not.toBeNull();
   });
 });
+
+describe("selectDraftForType", () => {
+  beforeEach(() => {
+    useBillStore.getState().reset();
+    useBillStore.getState().setCurrentUser({
+      id: "user-alice",
+      email: "alice@example.com",
+      handle: "alice",
+      name: "Alice",
+      pixKeyType: "email",
+      pixKeyHint: "",
+      onboarded: true,
+      createdAt: "",
+    });
+  });
+
+  it("keeps the work already in the draft when the same type is picked again", () => {
+    const store = useBillStore.getState();
+    selectDraftForType(store, "itemized", null);
+
+    const started = useBillStore.getState();
+    started.addItem({
+      description: "Picanha",
+      quantity: 1,
+      unitPriceCents: 9000,
+      totalPriceCents: 9000,
+    });
+    started.addGuest("Bia");
+    const draftId = useBillStore.getState().expense?.id;
+    const draftKey = useBillStore.getState().draftKey;
+
+    // Back to the type step, then forward again on the same type.
+    selectDraftForType(useBillStore.getState(), "itemized", null);
+
+    const after = useBillStore.getState();
+    expect(after.expense?.id).toBe(draftId);
+    expect(after.draftKey).toBe(draftKey);
+    expect(after.items).toHaveLength(1);
+    expect(after.guests).toHaveLength(1);
+  });
+
+  it("starts a fresh draft when the user switches to the other type", () => {
+    selectDraftForType(useBillStore.getState(), "itemized", null);
+    useBillStore.getState().addItem({
+      description: "Picanha",
+      quantity: 1,
+      unitPriceCents: 9000,
+      totalPriceCents: 9000,
+    });
+
+    selectDraftForType(useBillStore.getState(), "single_amount", null);
+
+    const after = useBillStore.getState();
+    expect(after.expense?.expenseType).toBe("single_amount");
+    expect(after.items).toHaveLength(0);
+  });
+
+  it("attaches a group chosen after the draft started", () => {
+    selectDraftForType(useBillStore.getState(), "itemized", null);
+    selectDraftForType(useBillStore.getState(), "itemized", "group-1");
+    expect(useBillStore.getState().expense?.groupId).toBe("group-1");
+  });
+});
+
