@@ -234,6 +234,7 @@ BEGIN
       JOIN expense_versions ev
         ON ev.expense_id = d.id AND ev.version_no = d.current_version_no
     LOOP
+      DELETE FROM expense_participants WHERE expense_id = v_expense_id;
       v_event_id := emit_event(
         p_group_id, 'expense_deleted', v_actor, v_expense_id,
         NULL, NULL, jsonb_build_object('title', v_title, 'totalCents', v_total_cents)

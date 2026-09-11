@@ -899,6 +899,21 @@ describe.skipIf(!isIntegrationTestReady)(
         const balances = await getBalances(groupId);
         expect(balances.some((row) => row.participant_id === invitee.id)).toBe(false);
         expect(balances.find((row) => row.participant_id === other.id)?.net_cents).toBe(-3000);
+
+        const invalidated = await rpc<{ participants: unknown[] }>(
+          authenticateAs(creator),
+          "get_expense",
+          { p_expense_id: withInvitee.expenseId },
+        );
+        expect(invalidated.participants).toEqual([]);
+
+        const snapshot = await rpc<{ recentExpenses: Array<{ id: string; myShareCents: number }> }>(
+          authenticateAs(creator),
+          "get_group",
+          { p_group_id: groupId },
+        );
+        const summary = snapshot.recentExpenses.find((row) => row.id === withInvitee.expenseId);
+        expect(summary?.myShareCents).toBe(0);
       });
     });
   },
