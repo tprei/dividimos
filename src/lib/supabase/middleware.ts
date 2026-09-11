@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { safeRedirect } from "@/lib/safe-redirect";
 import { evaluateServerFinancialGate } from "@/lib/financial-compatibility";
 
-const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u", "/manutencao"];
+const PUBLIC_PATHS = ["/", "/demo", "/auth", "/auth/callback", "/api/dev/login", "/claim", "/join", "/.well-known", "/u", "/manutencao", "/terms", "/privacy"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
