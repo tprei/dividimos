@@ -108,3 +108,43 @@ describe("ItemizedBillForm Conta section", () => {
     await waitFor(() => expect(screen.getByRole("textbox", { name: "Nome" })).toHaveFocus());
   });
 });
+
+describe("ItemizedBillForm Divisão gate", () => {
+  it("blocks Continuar while an item is only partly assigned, and says what is missing", () => {
+    prepareStore("Churrasco", true);
+    act(() => {
+      useBillStore.getState().addItem({
+        description: "Picanha",
+        quantity: 1000,
+        unitPriceCents: 10000,
+        totalPriceCents: 10000,
+      });
+    });
+
+    renderForm("split");
+
+    const continuar = screen.getByRole("button", { name: "Continuar" });
+    expect(continuar).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Faltam R$ 100,00");
+  });
+
+  it("lets the user continue once every item is assigned", () => {
+    prepareStore("Churrasco", true);
+    act(() => {
+      const store = useBillStore.getState();
+      store.addItem({
+        description: "Picanha",
+        quantity: 1000,
+        unitPriceCents: 10000,
+        totalPriceCents: 10000,
+      });
+      const item = useBillStore.getState().items[0];
+      store.splitItemEqually(item.id, [userAlice.id, userBob.id]);
+    });
+
+    renderForm("split");
+
+    expect(screen.getByRole("button", { name: "Continuar" })).toBeEnabled();
+  });
+});
+
