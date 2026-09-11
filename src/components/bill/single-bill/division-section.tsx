@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DivisionModePills } from "@/components/bill/division-mode-pills";
 import { DivisionSlider } from "@/components/bill/division-slider";
 import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
-import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
+import { PercentHelpers } from "@/components/bill/percent-helpers";
+import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -38,12 +40,6 @@ export interface SingleBillDivisionProps {
   fixedTexts: Record<string, string>;
   onFixedTextChange: (userId: string, value: string) => void;
 }
-
-const MODE_OPTIONS: { key: ItemDivisionMode; label: string }[] = [
-  { key: "equal", label: "Igual" },
-  { key: "percent", label: "Percentual" },
-  { key: "fixed", label: "Fixo" },
-];
 
 interface DivisionPerson {
   id: string;
@@ -137,6 +133,11 @@ export function SingleBillDivision({
     for (const id of ids) values[id] = percentSliderValue(percentValues[id]);
     return values;
   }, [ids, percentValues]);
+  const percentRemainingBasisPoints = useMemo(() => {
+    let sum = 0;
+    for (const id of ids) sum += percentSliderValues[id] ?? 0;
+    return Math.max(0, FULL_PERCENT_BASIS_POINTS - sum * 100);
+  }, [ids, percentSliderValues]);
   const fixedSliderValues = useMemo(() => {
     const values: Record<string, number> = {};
     for (const id of ids) values[id] = fixedSliderValue(fixedValues[id]);
@@ -151,9 +152,9 @@ export function SingleBillDivision({
     }
     return { byId, total: Math.max(0, totalCents - sum) };
   }, [fixedSliderValues, ids, totalCents]);
-  const [lastFixedId, setLastFixedId] = useState<string | null>(null);
-  const chipTargetId =
-    lastFixedId !== null && ids.includes(lastFixedId) ? lastFixedId : ids.length > 0 ? ids[0] : null;
+  const [lastTouchedId, setLastTouchedId] = useState<string | null>(null);
+  const helpersTargetId =
+    lastTouchedId !== null && ids.includes(lastTouchedId) ? lastTouchedId : ids.length > 0 ? ids[0] : null;
   const division = useMemo(
     () => computeDivision(totalCents, mode, ids, percentValues, fixedValues),
     [fixedValues, ids, mode, percentValues, totalCents],
@@ -188,29 +189,14 @@ export function SingleBillDivision({
   return (
     <section>
       <SectionHeading
-        title="Divisão"
+        title="Quem consumiu"
         trailing={
-          <div className="flex flex-wrap justify-end gap-1.5" role="radiogroup" aria-label="Modo de divisão">
-            {MODE_OPTIONS.map((option) => {
-              const selected = option.key === mode;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => onModeChange(option.key)}
-                  className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
-                    selected
-                      ? "border-primary/40 bg-primary/15 text-primary"
-                      : "border-border bg-card text-foreground"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+          <DivisionModePills
+            value={mode}
+            onChange={onModeChange}
+            groupLabel="Modo de divisão"
+            idPrefix="single-bill-division-mode"
+          />
         }
       />
       <div className="overflow-hidden rounded-2xl border bg-card">
@@ -218,15 +204,15 @@ export function SingleBillDivision({
           {people.map((person) => {
             const shareCents = division.ok ? division.centsById[person.id] : null;
             return (
-              <div key={person.id} className="flex min-h-14 min-w-0 flex-wrap items-center gap-3 px-3 py-2 sm:px-4">
+              <div key={person.id} className="flex min-h-14 min-w-0 flex-wrap items-center gap-3 px-4 py-2">
                 {person.isGuest ? (
                   <GuestAvatar size="sm" />
                 ) : (
                   <UserAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[15px] font-semibold">{person.name.split(" ")[0]}</p>
-                  {person.isGuest && <GuestBadge />}
+                  <p className="truncate text-sm leading-5 font-semibold">{person.name.split(" ")[0]}</p>
+                  {person.isGuest && <Badge variant="secondary">Convidado</Badge>}
                   {!person.isGuest && invitedUserIds.has(person.id) && (
                     <Badge variant="secondary" className="shrink-0">
                       Convite pendente
@@ -246,10 +232,10 @@ export function SingleBillDivision({
                           onFixedTextChange(person.id, event.target.value);
                         }
                       }}
-                      onFocus={() => setLastFixedId(person.id)}
+                      onFocus={() => setLastTouchedId(person.id)}
                       inputMode={mode === "percent" ? "numeric" : "decimal"}
                       aria-label={mode === "percent" ? `Percentual de ${person.name}` : `Valor de ${person.name}`}
-                      className="h-9 w-24 rounded-lg bg-card text-right font-mono"
+                      className="h-11 w-24 rounded-lg bg-card text-right font-mono tabular-nums"
                       placeholder={mode === "percent" ? "0" : "0,00"}
                     />
                     {shareCents === null ? (
@@ -277,24 +263,39 @@ export function SingleBillDivision({
                         : fixedSliderValues[person.id] ?? 0
                     }
                     onChange={(next) => {
+                      setLastTouchedId(person.id);
                       if (mode === "percent") {
                         onPercentTextChange(person.id, percentText(next * 100));
                       } else {
-                        setLastFixedId(person.id);
                         onFixedTextChange(person.id, centsText(next));
                       }
                     }}
                   />
                 )}
-                {mode === "fixed" && person.id === chipTargetId && (
+                {mode === "fixed" && person.id === helpersTargetId && (
                   <div className="basis-full">
                     <FixedAmountHelpers
                       totalCents={totalCents}
                       remainingCents={fixedRemaining.total}
                       onAdd={(deltaCents) => {
-                        if (chipTargetId === null) return;
-                        const current = fixedSliderValues[chipTargetId] ?? 0;
-                        onFixedTextChange(chipTargetId, centsText(current + deltaCents));
+                        if (helpersTargetId === null) return;
+                        const current = fixedSliderValues[helpersTargetId] ?? 0;
+                        onFixedTextChange(helpersTargetId, centsText(current + deltaCents));
+                      }}
+                    />
+                  </div>
+                )}
+                {mode === "percent" && person.id === helpersTargetId && (
+                  <div className="basis-full">
+                    <PercentHelpers
+                      remainingBasisPoints={percentRemainingBasisPoints}
+                      onAdd={(deltaBasisPoints) => {
+                        if (helpersTargetId === null) return;
+                        const current = (percentSliderValues[helpersTargetId] ?? 0) * 100;
+                        onPercentTextChange(
+                          helpersTargetId,
+                          percentText(Math.min(FULL_PERCENT_BASIS_POINTS, current + deltaBasisPoints)),
+                        );
                       }}
                     />
                   </div>

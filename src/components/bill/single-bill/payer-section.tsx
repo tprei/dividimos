@@ -16,7 +16,7 @@ export function SingleBillPayerSection({
 }) {
   return (
     <section className="space-y-2">
-      <h2 className="text-xs font-bold">Quem pagou</h2>
+      <h2 className="text-sm leading-5 font-semibold">Quem pagou</h2>
       <div className="flex flex-wrap gap-2">
         {participants.map((participant) => {
           const selected = payers.some((payer) => payer.userId === participant.id && payer.amountCents > 0);

@@ -61,7 +61,7 @@ function renderForm(submit = vi.fn().mockResolvedValue(false)) {
 }
 
 function goToDivision() {
-  fireEvent.click(screen.getByRole("tab", { name: "Divisão" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Quem consumiu" }));
 }
 
 beforeEach(() => {
@@ -199,7 +199,7 @@ describe("SingleBillForm division", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "Conta" }));
     expect(screen.getByRole("combobox", { name: "Grupo" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Divisão" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Quem consumiu" }));
     expect(screen.getByRole("radio", { name: "Percentual" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("textbox", { name: "Percentual de Alice Silva" })).toHaveValue("33");
   });

@@ -4,7 +4,7 @@ export type SingleBillStage = "conta" | "divisao";
 
 const STAGE_TABS: { key: SingleBillStage; label: string }[] = [
   { key: "conta", label: "Conta" },
-  { key: "divisao", label: "Divisão" },
+  { key: "divisao", label: "Quem consumiu" },
 ];
 
 export function SingleBillStageTabs({

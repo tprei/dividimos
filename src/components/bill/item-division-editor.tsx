@@ -1,9 +1,10 @@
 "use client";
 
-import { Coins, Equal, Percent, type LucideIcon } from "lucide-react";
 import { useState } from "react";
+import { DivisionModePills } from "@/components/bill/division-mode-pills";
 import { DivisionSlider } from "@/components/bill/division-slider";
 import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
+import { PercentHelpers } from "@/components/bill/percent-helpers";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -39,12 +40,6 @@ export interface ItemDivisionEditorProps {
   onSave: (value: ItemDivisionValue) => void;
   onCancel: () => void;
 }
-
-const MODE_OPTIONS: { key: ItemDivisionMode; label: string; name: string; icon: LucideIcon }[] = [
-  { key: "equal", label: "Igual", name: "Igual", icon: Equal },
-  { key: "percent", label: "%", name: "Percentual", icon: Percent },
-  { key: "fixed", label: "R$", name: "Fixo", icon: Coins },
-];
 
 function ShareCell({
   shareCents,
@@ -120,7 +115,7 @@ export function ItemDivisionEditor({
     return participantIds.filter((id) => saved.has(id));
   });
   const selectedIds = rawSelectedIds.filter((id) => participantIds.includes(id));
-  const [lastFixedId, setLastFixedId] = useState<string | null>(null);
+  const [lastTouchedId, setLastTouchedId] = useState<string | null>(null);
   const [percentTexts, setPercentTexts] = useState<Record<string, string>>(() => {
     const texts: Record<string, string> = {};
     for (const share of value?.shares ?? []) {
@@ -179,9 +174,12 @@ export function ItemDivisionEditor({
   for (const id of participantIds) fixedSliderValues[id] = fixedSliderValue(fixedValues[id]);
   let fixedSum = 0;
   for (const id of participantIds) fixedSum += fixedSliderValues[id];
-  const chipTargetId =
-    lastFixedId !== null && participantIds.includes(lastFixedId)
-      ? lastFixedId
+  let percentSum = 0;
+  for (const id of participantIds) percentSum += percentSliderValues[id];
+  const percentRemainingBasisPoints = Math.max(0, FULL_PERCENT_BASIS_POINTS - percentSum * 100);
+  const helpersTargetId =
+    lastTouchedId !== null && participantIds.includes(lastTouchedId)
+      ? lastTouchedId
       : participantIds.length > 0
         ? participantIds[0]
         : null;
@@ -244,33 +242,12 @@ export function ItemDivisionEditor({
 
   return (
     <div className="space-y-3 border-t border-dashed border-border bg-muted/30 px-4 pt-3 pb-4">
-      <div
-        role="radiogroup"
-        id={`modo-divisao-${itemId}`}
-        aria-label={`Modo de divisão de ${itemName}`}
-        className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
-      >
-        {MODE_OPTIONS.map((option) => {
-          const active = mode === option.key;
-          return (
-            <button
-              key={option.key}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              aria-label={option.name}
-              onClick={() => setMode(option.key)}
-              className={cn(
-                "flex min-h-10 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition-colors",
-                active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
-              )}
-            >
-              <option.icon className="size-4" aria-hidden="true" />
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
+      <DivisionModePills
+        value={mode}
+        onChange={setMode}
+        groupLabel={`Modo de divisão de ${itemName}`}
+        idPrefix={`modo-divisao-${itemId}`}
+      />
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold">Pessoas</p>
         <div className="flex gap-1">
@@ -312,7 +289,7 @@ export function ItemDivisionEditor({
                     ? `Percentual de ${participant.name} em ${itemName}`
                     : `Valor fixo de ${participant.name} em ${itemName}`
                 }
-                onFocus={() => setLastFixedId(participant.id)}
+                onFocus={() => setLastTouchedId(participant.id)}
                 onPercentChange={(next) =>
                   setPercentTexts((prev) => ({ ...prev, [participant.id]: next }))
                 }
@@ -359,23 +336,38 @@ export function ItemDivisionEditor({
                 snap={mode === "percent" ? { step: 5, threshold: 2 } : undefined}
                 value={mode === "percent" ? percentSliderValues[participant.id] : fixedSliderValues[participant.id]}
                 onChange={(next) => {
+                  setLastTouchedId(participant.id);
                   if (mode === "percent") {
                     setPercentTexts((prev) => ({ ...prev, [participant.id]: percentText(next * 100) }));
                     return;
                   }
-                  setLastFixedId(participant.id);
                   setFixedTexts((prev) => ({ ...prev, [participant.id]: centsText(next) }));
                 }}
               />
-              {mode === "fixed" && participant.id === chipTargetId && (
+              {mode === "fixed" && participant.id === helpersTargetId && (
                 <div className="basis-full">
                   <FixedAmountHelpers
                     totalCents={itemCents}
                     remainingCents={Math.max(0, itemCents - fixedSum)}
                     onAdd={(deltaCents) => {
-                      if (chipTargetId === null) return;
-                      const current = fixedSliderValues[chipTargetId];
-                      setFixedTexts((prev) => ({ ...prev, [chipTargetId]: centsText(current + deltaCents) }));
+                      if (helpersTargetId === null) return;
+                      const current = fixedSliderValues[helpersTargetId];
+                      setFixedTexts((prev) => ({ ...prev, [helpersTargetId]: centsText(current + deltaCents) }));
+                    }}
+                  />
+                </div>
+              )}
+              {mode === "percent" && participant.id === helpersTargetId && (
+                <div className="basis-full">
+                  <PercentHelpers
+                    remainingBasisPoints={percentRemainingBasisPoints}
+                    onAdd={(deltaBasisPoints) => {
+                      if (helpersTargetId === null) return;
+                      const current = percentSliderValues[helpersTargetId] * 100;
+                      setPercentTexts((prev) => ({
+                        ...prev,
+                        [helpersTargetId]: percentText(Math.min(FULL_PERCENT_BASIS_POINTS, current + deltaBasisPoints)),
+                      }));
                     }}
                   />
                 </div>
