@@ -20,6 +20,13 @@ interface PayerStepProps {
   onRemovePayerEntry: (userId: string) => void;
 }
 
+/** Shows whole percentages plainly and small gaps at the precision they exist. */
+function formatPercent(value: number): string {
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) < 0.005) return String(rounded);
+  return value.toFixed(2).replace(/0$/, "");
+}
+
 export function PayerStep({
   participants,
   payers,
@@ -266,9 +273,11 @@ export function PayerStep({
                   <Users className="h-4 w-4" />
                   Dividir igualmente
                 </Button>
-                {Math.abs(totalPct - 100) > 0.1 && totalPct > 0 && (
+                {totalPct !== 100 && totalPct > 0 && (
                   <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                    Total: {totalPct.toFixed(0)}% — faltam {(100 - totalPct).toFixed(0)}% para completar 100%
+                    {/* Never rounds the gap away to "faltam 0%": a fraction of
+                        a percent is still a cent the server will reject. */}
+                    Total: {formatPercent(totalPct)}% — faltam {formatPercent(100 - totalPct)}% para completar 100%
                   </div>
                 )}
               </div>
@@ -365,7 +374,9 @@ export function PayerStep({
             </Button>
 
             <AnimatePresence>
-              {Math.abs(remaining) > 1 && totalPaid > 0 && (
+              {/* A one-cent gap still blocks submission, so it has to be
+                  visible where the user can fix it. */}
+              {remaining !== 0 && totalPaid > 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}

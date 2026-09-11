@@ -9,6 +9,7 @@ import { SectionFooter } from "@/components/bill/itemized/section-footer";
 import { SectionTabs } from "@/components/bill/itemized/section-tabs";
 import type { ReviewIssue } from "@/components/bill/itemized/review-section";
 import type { ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
+import { formatBRL } from "@/lib/currency";
 import type { ExpenseState } from "@/stores/bill-store";
 import type { Expense } from "@/types";
 
@@ -94,6 +95,26 @@ export function ItemizedWorkspace({
   submitting,
 }: ItemizedWorkspaceProps) {
   const participantCount = participants.participants.length + participants.guests.length;
+
+  // The submit contract is exact: every item fully assigned and the payments
+  // summing to the grand total. Letting someone walk to the end and fail at
+  // "Criar conta" hides which step was wrong, so each section states its own
+  // blocker where it can be fixed.
+  const blocked = ((): string | null => {
+    if (section === "account" && !accountReady) {
+      return "Dê um nome à conta e inclua pelo menos duas pessoas.";
+    }
+    if (section === "items" && store.items.length === 0) {
+      return "Adicione pelo menos um item.";
+    }
+    if (section === "split" && partial) {
+      return remainingCents > 0
+        ? `Faltam ${formatBRL(remainingCents)} para dividir entre os itens.`
+        : "Há itens com divisão incompleta.";
+    }
+    if (section === "review" && issues.length > 0) return issues[0].message;
+    return null;
+  })();
   const account: AccountSectionProps = {
     title: expense?.title ?? "",
     occurredOn,
@@ -154,12 +175,8 @@ export function ItemizedWorkspace({
       />
       <SectionFooter
         label={section === "review" ? (isEditing ? "Salvar" : "Criar conta") : "Continuar"}
-        disabled={
-          submitting ||
-          (section === "review" && issues.length > 0) ||
-          (section === "account" && !accountReady) ||
-          (section === "items" && store.items.length === 0)
-        }
+        disabled={blocked !== null || submitting}
+        reason={blocked}
         onClick={onFooter}
       />
     </>
