@@ -493,7 +493,6 @@ function detailToWizardState(
       serviceFeePercent: current.serviceFeeBasisPoints / 100,
       serviceFeeBasisPoints: current.serviceFeeBasisPoints,
       fixedFees: current.fixedFeeCents,
-      status: "active",
       createdAt: record.createdAt,
       updatedAt: current.createdAt,
     },
@@ -570,7 +569,6 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: expenseType === "itemized" ? 10 : 0,
       serviceFeeBasisPoints: expenseType === "itemized" ? 1000 : 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
@@ -1096,7 +1094,6 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: 0,
       serviceFeeBasisPoints: 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
@@ -1139,7 +1136,6 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: 0,
       serviceFeeBasisPoints: 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
@@ -1176,7 +1172,6 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: 0,
       serviceFeeBasisPoints: 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };

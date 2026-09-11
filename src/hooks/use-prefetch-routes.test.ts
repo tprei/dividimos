@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { usePrefetchRoutes, resetPrefetchCache } from "./use-prefetch-routes";
+import { useAppStore } from "@/stores/app-store";
+import { usePrefetchRoutes } from "./use-prefetch-routes";
 
 const mockPrefetch = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -14,10 +15,26 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+function signIn(id: string): void {
+  useAppStore.setState({
+    me: {
+      id,
+      handle: id,
+      name: id,
+      email: `${id}@example.com`,
+      avatarUrl: null,
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+    },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
-  resetPrefetchCache();
+  signIn("user-alice");
 });
 
 describe("usePrefetchRoutes", () => {
@@ -82,5 +99,40 @@ describe("usePrefetchRoutes", () => {
     vi.runAllTimers();
     // Only the first call that already fired should remain
     expect(mockPrefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a route whose prefetch failed", () => {
+    mockPrefetch.mockReturnValueOnce(Promise.reject(new Error("offline")));
+
+    const { rerender } = renderHook(({ routes }) => usePrefetchRoutes(routes), {
+      initialProps: { routes: ["/app/groups/1"] },
+    });
+
+    vi.runAllTimers();
+    expect(mockPrefetch).toHaveBeenCalledTimes(1);
+
+    // Let the rejection settle so the mark is dropped.
+    return Promise.resolve().then(() => {
+      mockPrefetch.mockClear();
+      rerender({ routes: ["/app/groups/1"] });
+      vi.runAllTimers();
+      expect(mockPrefetch).toHaveBeenCalledWith("/app/groups/1");
+    });
+  });
+
+  it("starts with a clean cache after an account switch", () => {
+    const { rerender } = renderHook(({ routes }) => usePrefetchRoutes(routes), {
+      initialProps: { routes: ["/app/groups/1"] },
+    });
+
+    vi.runAllTimers();
+    expect(mockPrefetch).toHaveBeenCalledTimes(1);
+
+    mockPrefetch.mockClear();
+    signIn("user-bruno");
+    rerender({ routes: ["/app/groups/1"] });
+    vi.runAllTimers();
+
+    expect(mockPrefetch).toHaveBeenCalledWith("/app/groups/1");
   });
 });
