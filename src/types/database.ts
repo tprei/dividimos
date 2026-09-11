@@ -877,6 +877,23 @@ export type Database = {
         }
         Returns: Json
       }
+      create_expense_with_group: {
+        Args: {
+          p_chave_acesso?: string | null
+          p_client_id: string
+          p_expense_type: Database["public"]["Enums"]["expense_type"]
+          p_fixed_fee_cents: number
+          p_group_name: string
+          p_member_ids: string[]
+          p_merchant_name: string
+          p_occurred_on: string
+          p_payload: Json
+          p_service_fee_bps: number
+          p_title: string
+          p_total_cents: number
+        }
+        Returns: Json
+      }
       create_group: {
         Args: { p_member_ids: string[]; p_name: string }
         Returns: Json
