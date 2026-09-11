@@ -36,8 +36,11 @@ CI currently runs:
 - `npx tsc --noEmit` — type check (`.github/workflows/ci.yml`).
 - `npm run test:integration` — integration tests against a fresh local Supabase instance, verifying the ledger RPC layer: membership checks, balance recomputation, and constraints (`.github/workflows/integration.yml`).
 - `npm run test:synthetic` — Playwright synthetic E2E tests against local Supabase + the dev server, sharded (`.github/workflows/synthetic.yml`).
-- Declaration and migration checks on a fresh database: replay committed migrations, verify that `./scripts/build-baseline.sh` produces no diff in `supabase/schema.sql`, compare declarations with forward migrations, and enforce migration filename immutability. These checks run when `supabase/schemas/**`, `supabase/schema.sql`, `supabase/migrations/**`, or the script changes (`.github/workflows/migrations.yml`).
-- Signed Android release AAB via Capacitor, on push to `main` (`.github/workflows/android.yml`).
+- Declaration and migration checks on a fresh database: replay committed migrations, verify that `./scripts/build-baseline.sh` produces no diff in `supabase/schema.sql`, and compare declarations with forward migrations (`.github/workflows/migrations.yml`). Every PR reports these contexts; the database-backed jobs skip themselves when no SQL changed.
+- Migration history (`.github/workflows/migration-history.yml`): any migration already present on the base branch is frozen, so editing, deleting, renaming or chmod-ing one fails, as does adding a filename that already exists there. New timestamps are free, including further edits to them in the same PR. The job runs the base branch's copy of the workflow and checker and reads the PR head as data, so a PR cannot alter the gate that judges it.
+- A PR that changes `.github/workflows/`, `scripts/check-migration-history.mjs`, or `supabase/config.toml` fails that gate until a maintainer reviews it and adds the `trusted-ci-change` label.
+- `npm run build` — production build on every PR, since `tsc` accepts code the build rejects (`.github/workflows/ci.yml`).
+- Android compile on PRs touching `android/`, `capacitor.config.ts` or the dependency manifests: `cap sync android` plus a debug assemble, with no signing secrets. The signed release AAB still builds on push to `main` (`.github/workflows/android.yml`).
 
 Do not merge failing CI because "it is probably unrelated" without a clear human decision recorded on the PR.
 
