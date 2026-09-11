@@ -64,7 +64,7 @@ The core verification loop. One tab, every route, three phone sizes, overflow an
 
 ```js
 display(await tab.run(async ({ page }) => {
-  const routes = ["home", "groups", "bill-single", "bill-itemized", "settlement"];
+  const routes = ["", "groups", "bills", "charges", "conversations", "activity", "profile", "settings", "bill/new"];
   const sizes = [{ width: 360, height: 740 }, { width: 390, height: 844 }, { width: 430, height: 932 }];
   const results = [];
   for (const size of sizes) {
