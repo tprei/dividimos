@@ -36,9 +36,12 @@ CI currently runs:
 - `npx tsc --noEmit` — type check (`.github/workflows/ci.yml`).
 - `npm run test:integration` — integration tests against a fresh local Supabase instance, verifying the ledger RPC layer: membership checks, balance recomputation, and constraints (`.github/workflows/integration.yml`).
 - `npm run test:synthetic` — Playwright synthetic E2E tests against local Supabase + the dev server, sharded (`.github/workflows/synthetic.yml`).
-- Baseline replay on a fresh database, a baseline-freshness check (`./scripts/build-baseline.sh` must produce no diff), declaration parity, and a filename-immutability check, triggered when `supabase/schemas/**`, `supabase/migrations/**`, or the script changes (`.github/workflows/migrations.yml`).
+- Baseline replay on a fresh database, a baseline-freshness check (`./scripts/build-baseline.sh` must produce no diff in `supabase/schema.sql`), declaration parity, and a filename-immutability check, triggered when `supabase/schemas/**`, `supabase/schema.sql`, `supabase/migrations/**`, or the script changes (`.github/workflows/migrations.yml`).
 - Nightly, `npm run test:soak` and `npm run test:soak:integration` replay the property-based ledger tests at high run counts with the run id as the fast-check seed, and a failure opens a `soak-failure` issue carrying that seed (`.github/workflows/soak.yml`). Pull requests run the same properties at a fixed seed and low run count, so they stay deterministic.
-- Signed Android release AAB via Capacitor, on push to `main` (`.github/workflows/android.yml`).
+- Migration history (`.github/workflows/migration-history.yml`): any migration already present on the base branch is frozen, so editing, deleting, renaming or chmod-ing one fails, as does adding a filename that already exists there. New timestamps are free, including further edits to them in the same PR. The job runs the base branch's copy of the workflow and checker and reads the PR head as data, so a PR cannot alter the gate that judges it.
+- A PR that changes `.github/workflows/`, `scripts/check-migration-history.mjs`, or `supabase/config.toml` fails that gate until a maintainer reviews it and adds the `trusted-ci-change` label.
+- `npm run build` — production build on every PR, since `tsc` accepts code the build rejects (`.github/workflows/ci.yml`).
+- Android compile on PRs touching `android/`, `capacitor.config.ts` or the dependency manifests: `cap sync android` plus a debug assemble, with no signing secrets. The signed release AAB still builds on push to `main` (`.github/workflows/android.yml`).
 
 Do not merge failing CI because "it is probably unrelated" without a clear human decision recorded on the PR.
 
