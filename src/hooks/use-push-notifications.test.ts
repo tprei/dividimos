@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 
 // ---------- Capacitor mocks (must be before importing the hook) ----------
 const mockCheckPermissions = vi.fn();
@@ -45,6 +45,31 @@ vi.mock("@capacitor/push-notifications", () => ({
 }));
 
 import { usePushNotifications } from "./use-push-notifications";
+import { useAppStore } from "@/stores/app-store";
+import {
+  __resetNativePushConsentForTests,
+  setNativePushConsent,
+} from "@/lib/push/native-consent";
+
+const ACCOUNT_ID = "user-native-1";
+
+/** The device remembers this account asked for push. */
+function optInOnThisDevice(): void {
+  useAppStore.setState({
+    me: {
+      id: ACCOUNT_ID,
+      handle: "native",
+      email: "native@example.com",
+      name: "Native",
+      avatarUrl: null,
+      onboarded: true,
+      pixKeyHint: null,
+      pixKeyType: null,
+      notificationPreferences: {},
+    },
+  });
+  setNativePushConsent(ACCOUNT_ID, true);
+}
 import { __resetNativeRegistrationForTests } from "@/lib/push/native-registration";
 import { __resetServiceWorkerForTests } from "@/lib/push/service-worker";
 
@@ -353,8 +378,9 @@ describe("usePushNotifications", () => {
       });
     });
 
-    it("re-registers FCM token on startup when permission is already granted", async () => {
+    it("re-registers FCM token on startup for an account that opted in", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "granted" });
+      optInOnThisDevice();
 
       const { result } = renderHook(() => usePushNotifications());
 
@@ -470,6 +496,7 @@ describe("usePushNotifications", () => {
 
     it("native unsubscribe POSTs token and calls PushNotifications.unregister", async () => {
       mockCheckPermissions.mockResolvedValue({ receive: "granted" });
+      optInOnThisDevice();
 
       const { result } = renderHook(() => usePushNotifications());
 
@@ -516,6 +543,44 @@ describe("usePushNotifications", () => {
       await subscribePromise;
 
       expect(mockPushManager.subscribe).not.toHaveBeenCalled();
+    });
+
+    it("keeps an opt-out across a restart even though the OS stays granted", async () => {
+      mockCheckPermissions.mockResolvedValue({ receive: "granted" });
+      optInOnThisDevice();
+
+      const first = renderHook(() => usePushNotifications());
+      await act(async () => {
+        await fireRegistration("token-1");
+      });
+      await waitFor(() => expect(first.result.current.isSubscribed).toBe(true));
+
+      await act(async () => {
+        await first.result.current.unsubscribe();
+      });
+      first.unmount();
+
+      // Restart: permission is still granted, but the account said no.
+      mockRegister.mockClear();
+      const second = renderHook(() => usePushNotifications());
+      await waitFor(() =>
+        expect(second.result.current.isInitializing).toBe(false),
+      );
+
+      expect(second.result.current.isSubscribed).toBe(false);
+      expect(mockRegister).not.toHaveBeenCalled();
+    });
+
+    it("does not enroll an account that never opted in, however the OS reports", async () => {
+      // Pre-Android-13 devices report granted without ever asking.
+      mockCheckPermissions.mockResolvedValue({ receive: "granted" });
+      __resetNativePushConsentForTests();
+
+      const { result } = renderHook(() => usePushNotifications());
+      await waitFor(() => expect(result.current.isInitializing).toBe(false));
+
+      expect(result.current.isSubscribed).toBe(false);
+      expect(mockRegister).not.toHaveBeenCalled();
     });
   });
 });

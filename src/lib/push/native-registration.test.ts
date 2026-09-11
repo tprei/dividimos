@@ -120,6 +120,22 @@ describe("native-registration", () => {
 
     await expect(resultPromise).rejects.toThrow(/500/);
   });
+  it("does not publish a token when auth changes during server registration", async () => {
+    const { promise, resolve } = Promise.withResolvers<{ ok: boolean; status: number }>();
+    globalThis.fetch = vi.fn().mockReturnValue(promise);
+
+    const resultPromise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    const registration = registrationHandler!({ value: "stale-token" });
+
+    const { advanceAuthGeneration } = await import("@/lib/sync/client");
+    advanceAuthGeneration();
+    resolve({ ok: true, status: 200 });
+
+    await registration;
+    await expect(resultPromise).rejects.toThrow("expired");
+    expect(getCachedFcmToken()).toBeNull();
+  });
 
   it("reuses attached listeners across multiple register calls", async () => {
     const firstPromise = registerNativePushToken();
@@ -219,5 +235,61 @@ describe("native-registration", () => {
     await expect(unregisterNativePushToken()).rejects.toThrow("network");
     expect(mockUnregister).toHaveBeenCalled();
     expect(getCachedFcmToken()).toBeNull();
+  });
+  it("clears local state after the server detaches despite a bridge failure", async () => {
+    const promise = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    await registrationHandler!({ value: "token-bridge-failure" });
+    await promise;
+
+    mockUnregister.mockRejectedValueOnce(new Error("bridge unavailable"));
+    await expect(unregisterNativePushToken()).resolves.toBeUndefined();
+    expect(getCachedFcmToken()).toBeNull();
+  });
+
+  it("recovers from a failed listener attach without duplicating listeners", async () => {
+    // Counts listeners that are actually live on the plugin, so a retry that
+    // leaves an orphan behind shows up here.
+    const live: string[] = [];
+    let failFirst = true;
+    mockAddListener.mockImplementation((event, handler) => {
+      if (failFirst) {
+        failFirst = false;
+        return Promise.reject(new Error("bridge unavailable"));
+      }
+      if (event === "registration") {
+        registrationHandler = handler as RegistrationHandler;
+      } else {
+        registrationErrorHandler = handler as RegistrationErrorHandler;
+      }
+      live.push(event);
+      return Promise.resolve({
+        remove: vi.fn().mockImplementation(() => {
+          live.splice(live.indexOf(event), 1);
+          return Promise.resolve();
+        }),
+      });
+    });
+
+    await expect(registerNativePushToken()).rejects.toThrow("bridge unavailable");
+
+    const retry = registerNativePushToken();
+    await vi.waitFor(() => expect(registrationHandler).not.toBeNull());
+    registrationHandler?.({ value: "token-after-retry" });
+    await expect(retry).resolves.toBe("token-after-retry");
+
+    expect(live.filter((e) => e === "registration")).toHaveLength(1);
+    expect(live.filter((e) => e === "registrationError")).toHaveLength(1);
+  });
+
+  it("removes an already-attached listener when a later attach fails", async () => {
+    const removeFirst = vi.fn().mockResolvedValue(undefined);
+    mockAddListener
+      .mockImplementationOnce(() => Promise.resolve({ remove: removeFirst }))
+      .mockImplementationOnce(() => Promise.reject(new Error("second failed")));
+
+    await expect(registerNativePushToken()).rejects.toThrow("second failed");
+
+    await vi.waitFor(() => expect(removeFirst).toHaveBeenCalledTimes(1));
   });
 });
