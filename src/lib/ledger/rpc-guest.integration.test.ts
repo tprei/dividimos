@@ -12,6 +12,9 @@ import {
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
+import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
+
+assertLedgerInvariantsAfterEach();
 
 interface GuestClaimResolve {
   guestId: string | null;
