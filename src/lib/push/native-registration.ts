@@ -74,33 +74,49 @@ async function ensureListenersAttached(): Promise<void> {
   if (attachPromise) return attachPromise;
 
   attachPromise = (async () => {
-    const { PushNotifications } = await import("@capacitor/push-notifications");
+    // Handles are tracked as they attach so a failure partway through can
+    // release what it already installed; otherwise a retry would add a
+    // second registration listener beside the orphaned first.
+    const attached: { remove: () => Promise<void> }[] = [];
+    try {
+      const { PushNotifications } = await import("@capacitor/push-notifications");
 
-    await PushNotifications.addListener("registration", async (token) => {
-      cachedToken = token.value;
-      notifySubscribers(cachedToken);
-      try {
-        if (lastPostedToken !== token.value) {
-          await postSubscribe(token.value);
-          lastPostedToken = token.value;
-        }
-        resolvePending(token.value);
-      } catch (error) {
-        rejectPending(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-    });
+      attached.push(
+        await PushNotifications.addListener("registration", async (token) => {
+          cachedToken = token.value;
+          notifySubscribers(cachedToken);
+          try {
+            if (lastPostedToken !== token.value) {
+              await postSubscribe(token.value);
+              lastPostedToken = token.value;
+            }
+            resolvePending(token.value);
+          } catch (error) {
+            rejectPending(
+              error instanceof Error ? error : new Error(String(error)),
+            );
+          }
+        }),
+      );
 
-    await PushNotifications.addListener("registrationError", (err) => {
-      const message =
-        err && typeof err.error === "string"
-          ? err.error
-          : "FCM registration failed";
-      rejectPending(new Error(message));
-    });
+      attached.push(
+        await PushNotifications.addListener("registrationError", (err) => {
+          const message =
+            err && typeof err.error === "string"
+              ? err.error
+              : "FCM registration failed";
+          rejectPending(new Error(message));
+        }),
+      );
 
-    listenersAttached = true;
+      listenersAttached = true;
+    } catch (error) {
+      for (const handle of attached) void handle.remove();
+      // A transient failure must not disable opt-in for the whole session:
+      // clearing the cached promise lets the next caller retry cleanly.
+      attachPromise = null;
+      throw error;
+    }
   })();
 
   return attachPromise;

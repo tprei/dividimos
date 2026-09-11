@@ -7,6 +7,7 @@ import {
   unregisterNativePushToken,
 } from "@/lib/push/native-registration";
 import { PushFailure } from "@/lib/push/failures";
+import { hasNativePushConsent, setNativePushConsent } from "@/lib/push/native-consent";
 import { serviceWorkerReady } from "@/lib/push/service-worker";
 import { useAppStore } from "@/stores/app-store";
 
@@ -128,7 +129,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         const mapped = mapNativePermission(result.receive);
         setPermission(mapped);
 
-        if (mapped !== "granted") {
+        // OS permission is not consent: it outlives an in-app opt-out and
+        // older Android reports it granted without ever asking. Only this
+        // account's own recorded choice enrolls the device.
+        if (mapped !== "granted" || !hasNativePushConsent(accountId)) {
           setIsSubscribed(false);
           return;
         }
@@ -202,7 +206,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsInitializing(false);
     }
-  }, [native]);
+  }, [native, accountId]);
 
   // Re-runs on account change: the previous account's subscription state says
   // nothing about this one.
@@ -229,6 +233,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         }
 
         await registerNativePushToken();
+        setNativePushConsent(accountId, true);
         setIsSubscribed(true);
       } catch (cause) {
         setIsSubscribed(false);
@@ -279,7 +284,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [native]);
+  }, [native, accountId]);
 
   const unsubscribe = useCallback(async () => {
     setIsLoading(true);
@@ -288,6 +293,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     if (native) {
       try {
         await unregisterNativePushToken();
+        // Recorded before anything else so the choice survives a restart
+        // even though OS permission stays granted.
+        setNativePushConsent(accountId, false);
         setIsSubscribed(false);
       } catch (cause) {
         setError(new PushFailure("native", cause));
@@ -328,7 +336,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [native]);
+  }, [native, accountId]);
 
   return {
     permission,
