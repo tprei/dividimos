@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 
+import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
 import { SingleBillDetails } from "@/components/bill/single-bill/details-section";
 import {
   initialFixedTexts,
@@ -34,7 +35,7 @@ export interface SingleBillFormProps {
   hasContactPicker: boolean;
   onPickContacts: () => Promise<void>;
   onBack: () => void;
-  submit: (resolveGroupId: () => Promise<string | null | undefined>) => Promise<boolean>;
+  submit: (planGroup: () => Promise<GroupPlan>) => Promise<boolean>;
   submitting: boolean;
 }
 
@@ -88,7 +89,7 @@ export function SingleBillForm({
     setCreateGroupName,
     setCreateGroupEnabled,
     handleGroupSelect,
-    resolveGroup,
+    planGroup,
   } = useGroupResolution({ me, groups, initialGroupId, isDmMode });
 
   const allPeople = useMemo(
@@ -124,8 +125,8 @@ export function SingleBillForm({
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
-    await submit(() => resolveGroup(defaultGroupName));
-  }, [canSubmit, defaultGroupName, resolveGroup, submit]);
+    await submit(() => planGroup(defaultGroupName));
+  }, [canSubmit, defaultGroupName, planGroup, submit]);
 
   return (
     <div className="mx-auto max-w-lg">
