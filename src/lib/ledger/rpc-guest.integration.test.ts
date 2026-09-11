@@ -4,6 +4,7 @@ import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
   createTestUsers,
   authenticateAs,
+  createGroup,
   createGroupWithMembers,
   createExpense,
   getBalances,
@@ -545,6 +546,60 @@ describe.skipIf(!isIntegrationTestReady)(
 
       const balances = await getBalances(groupId);
       expect(balances.filter((row) => row.kind === "guest")).toHaveLength(0);
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "a guest on an expense invalidated by a decline",
+  () => {
+    it("cannot be claimed once the decline clears the expense participants", async () => {
+      const [payer, invitee, stranger] = await createTestUsers(3);
+      const payerClient = authenticateAs(payer);
+      const { groupId } = await createGroup(payer, "Recusa com convidado", [invitee.id]);
+
+      const created = await createExpense(payer, {
+        groupId,
+        title: "Rodízio",
+        totalCents: 6000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: payer.id },
+            { kind: "user", userId: invitee.id },
+            { kind: "guest", guestId: null, displayName: "Convidada" },
+          ],
+          shares: [2000, 2000, 2000],
+          payers: [{ participantIndex: 0, amountCents: 6000 }],
+          itemAssignments: null,
+        },
+      });
+
+      const detail = await getExpenseDetail(payerClient, created.expenseId);
+      const guest = detail.current.payload.participants[2];
+      if (guest.kind !== "guest" || !guest.guestId) {
+        throw new Error("Fixture failure: guest was not materialized");
+      }
+      const token = await rpc<string>(payerClient, "issue_guest_claim_token", {
+        p_guest_id: guest.guestId,
+      });
+
+      await rpc(authenticateAs(invitee), "decline_invitation", { p_group_id: groupId });
+
+      const code = await expectRpcError(
+        Promise.resolve(authenticateAs(stranger).rpc("claim_guest", { p_token: token })),
+      );
+      expect(code).toBe("expense_deleted");
+
+      const memberCount = await withPg(async (client) => {
+        const rows = await client.query<{ count: number }>(
+          "select count(*)::int as count from public.group_members " +
+            "where group_id = $1 and user_id = $2",
+          [groupId, stranger.id],
+        );
+        return rows.rows[0]?.count ?? 0;
+      });
+      expect(memberCount).toBe(0);
     });
   },
 );
