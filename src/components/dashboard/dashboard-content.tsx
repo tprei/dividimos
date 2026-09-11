@@ -17,6 +17,7 @@ import {
   ModalLoadingSkeleton,
 } from "@/components/shared/skeleton";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { formatBRL } from "@/lib/currency";
 import { selectDebtRows, type DebtRow } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage, LedgerError } from "@/lib/sync/errors";
@@ -114,14 +115,16 @@ export function DashboardContent() {
         action={
           <div className="flex items-center gap-1">
             <InstallPrompt />
-            <Button
-              variant="ghost"
-              size="icon-lg"
-              className="min-h-11 min-w-11 rounded-full"
-              render={<Link href="/app/search" aria-label="Buscar" />}
+            <Link
+              href="/app/search"
+              aria-label="Buscar"
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon-lg" }),
+                "min-h-11 min-w-11 rounded-full",
+              )}
             >
               <Search className="size-5" aria-hidden="true" />
-            </Button>
+            </Link>
             <Button
               variant="ghost"
               size="icon-lg"
@@ -143,60 +146,63 @@ export function DashboardContent() {
         }
       />
 
-      <div className="px-4 pt-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-          Saldo geral
-        </p>
-        <Money
-          cents={net}
-          signed
-          className="text-4xl"
-          label={`Saldo geral ${formatBRL(net)}`}
-        />
-        <div className="mt-3 flex gap-8">
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              A pagar
-            </p>
-            <Money cents={owesTotal} className="text-destructive" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              A receber
-            </p>
-            <Money cents={owedTotal} className="text-success" />
+      <div className="flex items-start gap-4 px-4 pt-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            Saldo geral
+          </p>
+          <Money
+            cents={net}
+            signed
+            className="text-4xl"
+            label={`Saldo geral ${formatBRL(net)}`}
+          />
+          <div className="mt-4 flex gap-8">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                A pagar
+              </p>
+              <Money cents={owesTotal} className="text-destructive" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                A receber
+              </p>
+              <Money cents={owedTotal} className="text-success" />
+            </div>
           </div>
         </div>
-        <div className="mt-4 flex gap-2">
+        <div className="flex shrink-0 flex-col gap-2">
           <Link
             href="/app/bill/new?scan=true"
-            className={buttonVariants({
-              variant: "outline",
-              className: "h-11 min-w-0 flex-1",
-            })}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "min-h-11 justify-start px-3 text-xs",
+            )}
           >
             <ScanLine className="size-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">Escanear nota</span>
+            Escanear nota
           </Link>
           <Link
             href="/app/bill/new"
-            className={buttonVariants({
-              variant: "outline",
-              className: "h-11 min-w-0 flex-1",
-            })}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "min-h-11 justify-start px-3 text-xs",
+            )}
           >
             <Plus className="size-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">Nova conta</span>
+            Nova conta
           </Link>
           <Button
             variant="outline"
-            className="h-11 min-w-0 flex-1"
+            size="sm"
+            className="min-h-11 justify-start px-3 text-xs"
             onClick={openQuickCharge}
             disabled={!me.pixKeyHint}
             title={me.pixKeyHint ? undefined : "Cadastre uma chave Pix no perfil"}
           >
             <Zap className="size-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">Cobrar rápido</span>
+            Cobrar rápido
           </Button>
         </div>
       </div>
