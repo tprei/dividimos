@@ -14,10 +14,11 @@ import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
-import { createGroup, getOrCreateDm } from "@/lib/sync/mutations-group";
+import { getOrCreateDm } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
 import { useBillStore } from "@/stores/bill-store";
 import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
@@ -314,53 +315,41 @@ function NewBillPageContent() {
     [me],
   );
 
-  const resolveGroup = useCallback(async (): Promise<string | null> => {
-    if (selectedGroupId || !me) return selectedGroupId;
+  const planGroup = useCallback(async (): Promise<GroupPlan> => {
+    if (selectedGroupId) return { kind: "existing", groupId: selectedGroupId };
+    if (!me) return { kind: "invalid" };
     const state = useBillStore.getState();
     const otherParticipants = state.participants.filter((participant) => participant.id !== me.id);
     const hasGuests = state.guests.length > 0;
     const needsGroup = otherParticipants.length > 0 || hasGuests;
-    if (!needsGroup) return null;
+    if (!needsGroup) return { kind: "none" };
     if (otherParticipants.length === 1 && !hasGuests) {
       try {
         const dm = await getOrCreateDm(otherParticipants[0].id);
         setSelectedGroupId(dm.groupId);
         useBillStore.getState().updateExpense({ groupId: dm.groupId });
-        return dm.groupId;
+        return { kind: "existing", groupId: dm.groupId };
       } catch (error) {
         toast.error(ledgerErrorMessage(error));
-        return null;
+        return { kind: "invalid" };
       }
     }
     if (!createGroupEnabled) {
       toast.error("Escolha um grupo existente ou deixe \"Criar grupo\" marcado.");
-      return null;
+      return { kind: "invalid" };
     }
-    try {
-      const ack = await createGroup(
-        createGroupName.trim() || defaultGroupName || "Novo grupo",
-        otherParticipants.map((participant) => participant.id),
-      );
-      setSelectedGroupId(ack.groupId);
-      useBillStore.getState().updateExpense({ groupId: ack.groupId });
-      return ack.groupId;
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-      return null;
-    }
+    // Described, not created: the submit writes the group with the bill.
+    return {
+      kind: "create",
+      name: createGroupName.trim() || defaultGroupName || "Novo grupo",
+      memberIds: otherParticipants.map((participant) => participant.id),
+    };
   }, [selectedGroupId, me, createGroupEnabled, createGroupName, defaultGroupName]);
 
   const submitItemized = useCallback(async (): Promise<boolean> => {
     if (!me) return false;
-    return submit(async () => {
-      const state = useBillStore.getState();
-      const otherParticipants = state.participants.filter((participant) => participant.id !== me.id);
-      const needsGroup = otherParticipants.length > 0 || state.guests.length > 0;
-      const groupId = await resolveGroup();
-      if (needsGroup && !groupId) return undefined;
-      return groupId;
-    });
-  }, [me, resolveGroup, submit]);
+    return submit(planGroup);
+  }, [me, planGroup, submit]);
 
   const goBack = () => {
     if (isDmMode && modes.dm) {

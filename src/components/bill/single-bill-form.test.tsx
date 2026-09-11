@@ -125,7 +125,7 @@ describe("SingleBillForm division", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
     await waitFor(() => expect(submit).toHaveBeenCalled());
-    await expect(submit.mock.calls[0][0]()).resolves.toBe("dm-1");
+    await expect(submit.mock.calls[0][0]()).resolves.toEqual({ kind: "existing", groupId: "dm-1" });
     expect(screen.getByRole("radio", { name: "Percentual" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("textbox", { name: "Percentual de Alice Silva" })).toHaveValue("60");
     expect(screen.getByRole("textbox", { name: "Percentual de Bob Santos" })).toHaveValue("40");
@@ -185,7 +185,7 @@ describe("SingleBillForm division", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Criar conta" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Criar conta" }));
     await waitFor(() => expect(submit).toHaveBeenCalled());
-    await expect(submit.mock.calls[0][0]()).resolves.toBe("g-late");
+    await expect(submit.mock.calls[0][0]()).resolves.toEqual({ kind: "existing", groupId: "g-late" });
     expect(getOrCreateDmMock).not.toHaveBeenCalled();
     expect(createGroupMock).not.toHaveBeenCalled();
   });
