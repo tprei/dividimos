@@ -11,15 +11,16 @@ export type NativePickResult =
   | { status: "error"; error: Error };
 
 export async function pickNativeContact(): Promise<NativePickResult> {
-  const { Contacts } = await import("@capacitor-community/contacts");
-
-  const perm = await Contacts.checkPermissions();
-  if (perm.contacts !== "granted") {
-    const req = await Contacts.requestPermissions();
-    if (req.contacts !== "granted") return { status: "permission_denied" };
-  }
-
   try {
+    // Native-only plugin: a static import would pull it into the web bundle.
+    const { Contacts } = await import("@capacitor-community/contacts");
+
+    const perm = await Contacts.checkPermissions();
+    if (perm.contacts !== "granted") {
+      const req = await Contacts.requestPermissions();
+      if (req.contacts !== "granted") return { status: "permission_denied" };
+    }
+
     const { contact } = await Contacts.pickContact({
       projection: { name: true, phones: true },
     });
