@@ -475,6 +475,27 @@ function extractServiceFeeBasisPoints($: cheerio.CheerioAPI): number {
 }
 
 /**
+ * A service fee printed as an amount rather than a rate.
+ *
+ * Several portals print "Taxa de serviço: R$ 10,00" with no percentage, and
+ * reading only percentages left the fee out of the receipt entirely: the
+ * items summed to less than the printed total and the whole receipt was
+ * rejected as unreconciled.
+ *
+ * @returns The fee in centavos, or 0 when the page prints none.
+ */
+function extractFixedFeeCents($: cheerio.CheerioAPI): number {
+  const bodyText = $("body").text();
+  const amountMatch = bodyText.match(
+    /(?:taxa\s*(?:de\s*)?servi[çc]o|servi[çc]o|acr[ée]scimo[s]?)\s*[:(]?\s*R?\$?\s*([\d.,]+)/i,
+  );
+  if (!amountMatch) return 0;
+
+  const cents = parseBrlToCents(amountMatch[1]);
+  return cents > 0 ? cents : 0;
+}
+
+/**
  * Try to extract the total value from the SEFAZ page.
  */
 function extractTotal($: cheerio.CheerioAPI): number {
@@ -890,12 +911,22 @@ export function parseSefazPage(
   if (extractedTotal <= 0) return null;
 
   const serviceFeeBasisPoints = extractServiceFeeBasisPoints($);
+  const itemsSubtotal = items.reduce((sum, item) => sum + item.totalCents, 0);
+  // Same half-up rate the ledger and SQL apply, so the parser's arithmetic
+  // and the decoder's agree to the centavo.
+  const rateFee = Math.floor((itemsSubtotal * serviceFeeBasisPoints + 5_000) / 10_000);
+
+  // A fee printed as an amount only counts when it closes the gap exactly.
+  // Guessing one would hand the review screen a total nobody printed.
+  const printedFee = extractFixedFeeCents($);
+  const gap = extractedTotal - itemsSubtotal - rateFee;
+  const fixedFeesCents = gap > 0 && printedFee === gap ? printedFee : 0;
 
   return {
     merchant,
     items,
     serviceFeeBasisPoints,
-    fixedFeesCents: 0,
+    fixedFeesCents,
     totalCents: extractedTotal,
   };
 }

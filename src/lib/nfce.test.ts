@@ -331,6 +331,51 @@ describe("parseSefazPage", () => {
   });
 });
 
+describe("printed fees", () => {
+  function feePage(feeLine: string, total: string): string {
+    return `
+      <html><body>
+        <div class="txtTopo">BAR TESTE</div>
+        <table class="toggable">
+          <tr><td>Descrição</td><td>Qtde</td><td>Vl. Unit</td><td>Vl. Total</td></tr>
+          <tr><td>Cerveja</td><td>4,000</td><td>20,00</td><td>80,00</td></tr>
+        </table>
+        <div>${feeLine}</div>
+        <div id="linhaTotal"><span class="txtMax">${total}</span></div>
+      </body></html>
+    `;
+  }
+
+  it("carries a fee printed as an amount so 80 + 10 = 90 imports", () => {
+    const result = parseBoundPage(feePage("Taxa de serviço: R$ 10,00", "90,00"));
+
+    expect(result).not.toBeNull();
+    expect(result!.fixedFeesCents).toBe(1000);
+    expect(result!.serviceFeeBasisPoints).toBe(0);
+    // Items plus the printed fee reconcile against the printed total, which
+    // is the arithmetic the ledger's decoder will redo.
+    const subtotal = result!.items.reduce((sum, item) => sum + item.totalCents, 0);
+    expect(subtotal + result!.fixedFeesCents).toBe(result!.totalCents);
+  });
+
+  it("ignores a printed amount that does not close the gap", () => {
+    // The page says the fee is R$ 5,00 but the total implies R$ 10,00; the
+    // parser must not invent a reconciliation.
+    const result = parseBoundPage(feePage("Taxa de serviço: R$ 5,00", "90,00"));
+
+    expect(result).not.toBeNull();
+    expect(result!.fixedFeesCents).toBe(0);
+  });
+
+  it("keeps using the printed rate when the fee is a percentage", () => {
+    const result = parseBoundPage(feePage("Taxa de serviço (10%)", "88,00"));
+
+    expect(result).not.toBeNull();
+    expect(result!.serviceFeeBasisPoints).toBe(1000);
+    expect(result!.fixedFeesCents).toBe(0);
+  });
+});
+
 describe("row identity", () => {
   it("imports a nested layout once per item, not once per wrapper", () => {
     const html = `
