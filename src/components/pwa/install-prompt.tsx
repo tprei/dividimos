@@ -76,16 +76,23 @@ export function InstallPrompt() {
 
   async function handleClick() {
     const prompt = deferredPrompt.current;
-    if (prompt) {
-      await prompt.prompt();
-      const { outcome } = await prompt.userChoice;
-      if (outcome === "accepted") {
-        deferredPrompt.current = null;
-        setVisible(false);
-      }
+    if (!prompt) {
+      setShowGuide(true);
       return;
     }
-    setShowGuide(true);
+
+    // The browser allows one prompt() per event. Clearing it first means a
+    // dismissal, or a rejected prompt, leaves the button on the manual guide
+    // instead of calling a consumed event a second time.
+    deferredPrompt.current = null;
+    try {
+      await prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      if (outcome === "accepted") setVisible(false);
+    } catch {
+      // A refused prompt is not an error the user can act on; the guide is
+      // the next thing they see if they click again.
+    }
   }
 
   if (!visible) return null;

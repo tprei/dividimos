@@ -212,12 +212,15 @@ describe("Service Worker", () => {
       opts: { method?: string; mode?: string; destination?: string } = {}
     ) {
       let response: unknown;
+      const pending: Promise<unknown>[] = [];
       return {
         request: new MockRequest(url, opts),
         respondWith: (p: Promise<unknown> | unknown) => {
           response = p;
         },
+        waitUntil: (p: Promise<unknown>) => { pending.push(p); },
         get _response() { return response; },
+        get _pending() { return pending; },
       };
     }
 
@@ -292,6 +295,76 @@ describe("Service Worker", () => {
       const response = await event._response;
 
       expect(response).toBe(cachedRes);
+    });
+
+    it.each([502, 503, 504])(
+      "serves the offline page when a navigation gets %i",
+      async (status) => {
+        const staticCache = await env.cacheStorage.open("dividimos-static-v4");
+        const offline = new MockResponse("offline page", { status: 200 });
+        await staticCache.put("/offline.html", offline);
+        (env.env.fetch as Mock).mockResolvedValue(
+          new MockResponse("gateway", { status }),
+        );
+
+        const event = makeFetchEvent("https://dividimos.app/sobre", {
+          mode: "navigate",
+        });
+        env.listeners["fetch"]![0]!(event);
+
+        expect(await event._response).toBe(offline);
+      },
+    );
+
+    it.each([200, 404, 500, 302])(
+      "passes a %i navigation through untouched",
+      async (status) => {
+        const real = new MockResponse("app said so", { status });
+        (env.env.fetch as Mock).mockResolvedValue(real);
+
+        const event = makeFetchEvent("https://dividimos.app/sobre", {
+          mode: "navigate",
+        });
+        env.listeners["fetch"]![0]!(event);
+
+        expect(await event._response).toBe(real);
+      },
+    );
+
+    it("serves the offline page when a navigation never settles", async () => {
+      vi.useFakeTimers();
+      try {
+        const staticCache = await env.cacheStorage.open("dividimos-static-v4");
+        const offline = new MockResponse("offline page", { status: 200 });
+        await staticCache.put("/offline.html", offline);
+        (env.env.fetch as Mock).mockReturnValue(new Promise(() => {}));
+
+        const event = makeFetchEvent("https://dividimos.app/sobre", {
+          mode: "navigate",
+        });
+        env.listeners["fetch"]![0]!(event);
+
+        await vi.advanceTimersByTimeAsync(8000);
+        expect(await event._response).toBe(offline);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the fetch event alive until the asset cache write settles", async () => {
+      (env.env.fetch as Mock).mockResolvedValue(
+        new MockResponse("body", { status: 200 }),
+      );
+
+      const event = makeFetchEvent("https://dividimos.app/_next/static/chunk.js");
+      env.listeners["fetch"]![0]!(event);
+      await event._response;
+
+      expect(event._pending).toHaveLength(1);
+      await Promise.all(event._pending);
+
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v4");
+      expect(runtimeCache.put).toHaveBeenCalled();
     });
 
     it("never caches RSC payload requests", () => {
