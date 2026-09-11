@@ -11,6 +11,8 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:all": "npm run test && npm run test:integration",
+    "test:soak": "PROPERTY_RUNS=5000 vitest run",
+    "test:soak:integration": "PROPERTY_RUNS=150 vitest run --config vitest.integration.config.mts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
