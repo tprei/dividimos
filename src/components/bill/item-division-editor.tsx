@@ -16,6 +16,7 @@ import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } fro
 import {
   FULL_PERCENT_BASIS_POINTS,
   centsText,
+  clampPercentDigits,
   computeDivision,
   divisionStatusText,
   percentText,
@@ -62,7 +63,7 @@ function ShareCell({
     return (
       <Input
         value={percentInput}
-        onChange={(event) => onPercentChange(event.target.value.replace(/\D/g, ""))}
+        onChange={(event) => onPercentChange(clampPercentDigits(event.target.value.replace(/\D/g, "")))}
         onFocus={onFocus}
         inputMode="numeric"
         aria-label={inputLabel}

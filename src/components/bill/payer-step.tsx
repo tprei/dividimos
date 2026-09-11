@@ -8,7 +8,22 @@ import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { haptics } from "@/hooks/use-haptics";
 import { formatBRL } from "@/lib/currency";
+import {
+  allocateByBasisPoints,
+  allocateEvenly,
+  parseAllocationPercentText,
+} from "@/lib/expense-money";
+import { FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
 import type { UserProfile } from "@/types";
+
+function percentBasisPoints(text: string | undefined): number {
+  const parsed = parseAllocationPercentText(text ?? "");
+  return parsed.ok ? parsed.value : 0;
+}
+
+function percentLabel(basisPoints: number): string {
+  return basisPoints % 100 === 0 ? String(basisPoints / 100) : percentText(basisPoints);
+}
 
 interface PayerStepProps {
   participants: UserProfile[];
@@ -71,6 +86,34 @@ export function PayerStep({
       setLocalAmounts(next);
       onSetPayerAmount(userId, remaining);
     }
+  };
+
+  // Percentages only produce payer amounts when they sum to exactly 100%; while
+  // they do not, the store must hold no payer set rather than a stale one.
+  const applyPercentages = (next: Map<string, string>) => {
+    setLocalPercentages(next);
+    const weights = participants.map((p) => percentBasisPoints(next.get(p.id)));
+    const allocated = allocateByBasisPoints(grandTotal, weights);
+    startTransition(() => {
+      if (!allocated.ok) {
+        participants.forEach((p) => onRemovePayerEntry(p.id));
+        return;
+      }
+      participants.forEach((p, index) => {
+        const cents = allocated.value[index];
+        if (cents > 0) {
+          onSetPayerAmount(p.id, cents);
+        } else {
+          onRemovePayerEntry(p.id);
+        }
+      });
+    });
+  };
+
+  const setPercentage = (userId: string, text: string) => {
+    const next = new Map(localPercentages);
+    next.set(userId, text);
+    applyPercentages(next);
   };
 
   return (
@@ -188,21 +231,24 @@ export function PayerStep({
           </div>
 
           {paymentInputMode === "percentage" && (() => {
-            const totalPct = Array.from(localPercentages.values()).reduce(
-              (s, v) => s + (parseFloat(v.replace(",", ".")) || 0), 0,
+            const basisPointsByUser = participants.map((user) =>
+              percentBasisPoints(localPercentages.get(user.id)),
             );
+            const totalBasisPoints = basisPointsByUser.reduce((sum, bp) => sum + bp, 0);
+            const remainingBasisPoints = FULL_PERCENT_BASIS_POINTS - totalBasisPoints;
+            const allocated = allocateByBasisPoints(grandTotal, basisPointsByUser);
+            const amounts = allocated.ok ? allocated.value : null;
             return (
               <div className="space-y-3">
-                {participants.map((user) => {
-                  const pct = parseFloat(localPercentages.get(user.id)?.replace(",", ".") || "0") || 0;
-                  const amountForUser = Math.round((grandTotal * pct) / 100);
-                  const remainingPct = 100 - totalPct;
-                  const showFillRemaining = pct === 0 && remainingPct > 0 && totalPct > 0;
+                {participants.map((user, index) => {
+                  const basisPoints = basisPointsByUser[index];
+                  const showFillRemaining =
+                    basisPoints === 0 && remainingBasisPoints > 0 && totalBasisPoints > 0;
                   return (
                     <div
                       key={user.id}
                       className={`rounded-xl border p-3 transition-all ${
-                        pct > 0 ? "border-primary/30 bg-primary/5" : "bg-card"
+                        basisPoints > 0 ? "border-primary/30 bg-primary/5" : "bg-card"
                       }`}
                     >
                       <div className="flex items-center justify-between">
@@ -213,8 +259,12 @@ export function PayerStep({
                           <span className="text-sm font-medium">{user.name.split(" ")[0]}</span>
                         </div>
                         <div className="text-right">
-                          <span className="text-sm font-bold tabular-nums text-primary">{pct.toFixed(0)}%</span>
-                          <span className="ml-2 text-xs text-muted-foreground tabular-nums">{formatBRL(amountForUser)}</span>
+                          <span className="text-sm font-bold tabular-nums text-primary">
+                            {percentLabel(basisPoints)}%
+                          </span>
+                          <span className="ml-2 text-xs text-muted-foreground tabular-nums">
+                            {amounts ? formatBRL(amounts[index]) : "—"}
+                          </span>
                         </div>
                       </div>
                       <input
@@ -222,30 +272,21 @@ export function PayerStep({
                         min="0"
                         max="100"
                         step="1"
-                        value={pct}
+                        value={Math.round(basisPoints / 100)}
+                        aria-label={`Percentual pago por ${user.name}`}
                         onChange={(e) => {
-                          const next = new Map(localPercentages);
-                          next.set(user.id, e.target.value);
-                          setLocalPercentages(next);
-                          const cents = Math.round((grandTotal * parseFloat(e.target.value)) / 100);
-                          startTransition(() => {
-                            onSetPayerAmount(user.id, cents);
-                          });
+                          setPercentage(user.id, percentText(Number(e.target.value) * 100));
                         }}
                         className="mt-2 w-full"
                       />
                       {showFillRemaining && (
                         <button
                           onClick={() => {
-                            const next = new Map(localPercentages);
-                            next.set(user.id, remainingPct.toFixed(1));
-                            setLocalPercentages(next);
-                            const cents = Math.round((grandTotal * remainingPct) / 100);
-                            onSetPayerAmount(user.id, cents);
+                            setPercentage(user.id, percentText(remainingBasisPoints));
                           }}
                           className="mt-1.5 text-xs font-medium text-primary"
                         >
-                          Preencher restante ({remainingPct.toFixed(0)}%)
+                          Preencher restante ({percentLabel(remainingBasisPoints)}%)
                         </button>
                       )}
                     </div>
@@ -256,19 +297,22 @@ export function PayerStep({
                   size="sm"
                   className="w-full gap-2"
                   onClick={() => {
-                    const eq = (100 / participants.length).toFixed(1);
+                    const even = allocateEvenly(FULL_PERCENT_BASIS_POINTS, participants.length);
+                    if (!even.ok) return;
                     const next = new Map<string, string>();
-                    participants.forEach((p) => next.set(p.id, eq));
-                    setLocalPercentages(next);
-                    onSplitPaymentEqually(participants.map((p) => p.id));
+                    participants.forEach((p, i) => next.set(p.id, percentText(even.value[i])));
+                    applyPercentages(next);
                   }}
                 >
                   <Users className="h-4 w-4" />
                   Dividir igualmente
                 </Button>
-                {Math.abs(totalPct - 100) > 0.1 && totalPct > 0 && (
+                {totalBasisPoints > 0 && remainingBasisPoints !== 0 && (
                   <div className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-                    Total: {totalPct.toFixed(0)}% — faltam {(100 - totalPct).toFixed(0)}% para completar 100%
+                    Total: {percentLabel(totalBasisPoints)}% —{" "}
+                    {remainingBasisPoints > 0
+                      ? `faltam ${percentLabel(remainingBasisPoints)}% para completar 100%`
+                      : `excede 100% em ${percentLabel(-remainingBasisPoints)}%`}
                   </div>
                 )}
               </div>
@@ -365,7 +409,7 @@ export function PayerStep({
             </Button>
 
             <AnimatePresence>
-              {Math.abs(remaining) > 1 && totalPaid > 0 && (
+              {remaining !== 0 && totalPaid > 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
