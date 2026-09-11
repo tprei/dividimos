@@ -1,0 +1,18 @@
+{
+  "$comment": [
+    "Reviewed exceptions to the deny-all database contract, checked by",
+    "scripts/check-database-invariants.mjs. Every entry names a real object and",
+    "says why it is safe. Removing this file fails the gate."
+  ],
+  "policies": [
+    "realtime.messages.group_broadcast_authz"
+  ],
+  "policyNotes": {
+    "realtime.messages.group_broadcast_authz": "Realtime is broadcast-only. This policy authorizes a member to read the private group:<id> and chat:<id> topics; no application table is exposed."
+  },
+  "grants": [],
+  "definerOwners": [
+    "postgres"
+  ],
+  "tablesWithoutRls": []
+}
