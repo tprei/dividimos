@@ -1,4 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
+import {
+  parseExpenseCents,
+  parseServiceFeeBasisPoints,
+} from "@/lib/expense-money";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -64,12 +68,23 @@ const RECEIPT_SCHEMA = {
       description:
         "Taxa de serviço em pontos-base (1 ponto-base = 0,01%; 10% = 1000). 0 se não houver.",
     },
+    fixedFeesCents: {
+      type: "integer",
+      description:
+        "Taxas fixas da nota em centavos, como couvert ou entrega. 0 se não houver.",
+    },
     totalCents: {
       type: "integer",
       description: "Valor total da nota em centavos",
     },
   },
-  required: ["merchant", "items", "serviceFeeBasisPoints", "totalCents"],
+  required: [
+    "merchant",
+    "items",
+    "serviceFeeBasisPoints",
+    "fixedFeesCents",
+    "totalCents",
+  ],
 } as const;
 
 const SYSTEM_PROMPT = `Você é um parser de notas fiscais brasileiras (NFC-e / cupom fiscal).
@@ -78,8 +93,8 @@ Extraia os dados estruturados da imagem. Regras:
 - quantity deve refletir a quantidade real do item.
 - unitPriceCents é o preço de UMA unidade em centavos, como impresso na nota.
 - totalCents de cada item é o valor total da linha como impresso na nota (última coluna de valor). NÃO multiplique quantity × unitPriceCents — o valor já está multiplicado na nota.
-- Cada item DEVE ter tanto unitPriceCents quanto totalCents lidos diretamente da nota. Se a nota mostrar apenas um dos dois valores para um item (ex: só a quantidade e o total, sem preço unitário impresso), OMITA esse item da lista por completo — não calcule o valor que falta.
 - serviceFeeBasisPoints: se houver "taxa de serviço" ou "serviço" na nota como um percentual explícito, converta para pontos-base (10% = 1000, 12,5% = 1250). Caso contrário, 0. NUNCA calcule o percentual dividindo um valor monetário de taxa pelo subtotal — se só houver um valor em R$ sem percentual impresso, informe 0.
+- fixedFeesCents: some todas as taxas fixas impressas separadamente, como couvert ou entrega, em centavos. Se não houver taxa fixa, informe 0. Não inclua a taxa de serviço percentual neste campo.
 - totalCents (raiz): valor total da nota fiscal impresso, incluindo taxas. NUNCA calcule somando os itens — se o total da nota não estiver legível, retorne 0.
 - Se o texto estiver parcialmente ilegível, omita os itens ou valores ilegíveis em vez de adivinhar.
 - Não invente itens que não existem na imagem.`;
@@ -136,6 +151,7 @@ export async function parseReceiptImage(
     merchant: unknown;
     items: unknown;
     serviceFeeBasisPoints: unknown;
+    fixedFeesCents: unknown;
     totalCents: unknown;
   };
 
@@ -149,18 +165,37 @@ export async function parseReceiptImage(
     if (typeof raw !== "object" || raw === null) continue;
     const r = raw as Record<string, unknown>;
     const description = typeof r.description === "string" ? r.description.trim() : "";
-    const quantity = typeof r.quantity === "number" && Number.isFinite(r.quantity) && r.quantity > 0 ? r.quantity : 0;
-    const unitPriceCents = Number.isInteger(r.unitPriceCents) && (r.unitPriceCents as number) > 0 ? (r.unitPriceCents as number) : 0;
-    const totalCents = Number.isInteger(r.totalCents) && (r.totalCents as number) > 0 ? (r.totalCents as number) : 0;
-    if (!description || !quantity || !unitPriceCents || !totalCents) continue;
-    items.push({ description, quantity, unitPriceCents, totalCents });
+    const quantity =
+      typeof r.quantity === "number" && Number.isFinite(r.quantity) && r.quantity > 0
+        ? r.quantity
+        : 0;
+    const unitPrice = parseExpenseCents(r.unitPriceCents, "positive");
+    const lineTotal = parseExpenseCents(r.totalCents, "positive");
+    if (!description || quantity === 0 || !unitPrice.ok || !lineTotal.ok) {
+      continue;
+    }
+    items.push({
+      description,
+      quantity,
+      unitPriceCents: unitPrice.value,
+      totalCents: lineTotal.value,
+    });
   }
 
-  const serviceFeeBasisPoints =
-    Number.isInteger(parsed.serviceFeeBasisPoints) && (parsed.serviceFeeBasisPoints as number) > 0
-      ? (parsed.serviceFeeBasisPoints as number)
-      : 0;
-  const totalCents = Number.isInteger(parsed.totalCents) && (parsed.totalCents as number) > 0 ? (parsed.totalCents as number) : 0;
+  const serviceFee = parseServiceFeeBasisPoints(
+    parsed.serviceFeeBasisPoints ?? 0,
+  );
+  const fixedFees = parseExpenseCents(parsed.fixedFeesCents ?? 0, "allow");
+  const total = parseExpenseCents(parsed.totalCents ?? 0, "allow");
+  if (!serviceFee.ok || !fixedFees.ok || !total.ok) {
+    throw new Error("Gemini returned invalid receipt money");
+  }
 
-  return { merchant, items, serviceFeeBasisPoints, fixedFeesCents: 0, totalCents };
+  return {
+    merchant,
+    items,
+    serviceFeeBasisPoints: serviceFee.value,
+    fixedFeesCents: fixedFees.value,
+    totalCents: total.value,
+  };
 }

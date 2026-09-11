@@ -53,6 +53,22 @@ describe("parseReceiptImage", () => {
 
     expect(result).toEqual(validResult);
   });
+  it("preserves fixed fees reported separately from the service percentage", async () => {
+    const receiptWithFixedFee = {
+      ...validResult,
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 1000,
+      totalCents: 9000,
+    };
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify(receiptWithFixedFee),
+    });
+
+    const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
+
+    expect(result.fixedFeesCents).toBe(1000);
+    expect(result.totalCents).toBe(9000);
+  });
 
   it("passes the image as inline data to Gemini", async () => {
     mockGenerateContent.mockResolvedValue({
