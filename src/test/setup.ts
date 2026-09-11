@@ -36,10 +36,14 @@ vi.mock("framer-motion", async () => {
     "layout", "layoutId", "onAnimationStart", "onAnimationComplete",
   ]);
 
+  const motionStubs = new Map<string, React.ComponentType<Record<string, unknown>>>();
+
   const motion = new Proxy(
     {},
     {
       get: (_target, prop: string) => {
+        const cached = motionStubs.get(prop);
+        if (cached) return cached;
         const MotionStub = React.forwardRef((props: Record<string, unknown>, ref) => {
           const rest: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(props)) {
@@ -48,6 +52,7 @@ vi.mock("framer-motion", async () => {
           return React.createElement(prop, { ...rest, ref });
         });
         MotionStub.displayName = `motion.${prop}`;
+        motionStubs.set(prop, MotionStub as React.ComponentType<Record<string, unknown>>);
         return MotionStub;
       },
     },
