@@ -183,6 +183,10 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'share_total_mismatch';
   END IF;
 
+  -- How the author described the division ('equal', 'percentage', 'fixed').
+  -- Cents remain authoritative; this only lets an edit reopen the control the
+  -- author used instead of guessing from the amounts. Older versions have no
+  -- such key and stay valid.
   IF p ? 'splitMethod' AND jsonb_typeof(p->'splitMethod') <> 'null' THEN
     IF jsonb_typeof(p->'splitMethod') <> 'string'
        OR (p->>'splitMethod') NOT IN ('equal', 'percentage', 'fixed')
@@ -258,6 +262,8 @@ BEGIN
     IF jsonb_typeof(v_item_assignments) <> 'array' THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
+    -- 100 items x 50 participants is the structural maximum; without a cap the
+    -- reconciliation below runs while lock_group is held.
     IF jsonb_array_length(v_item_assignments) > 5000 THEN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
     END IF;
