@@ -16,7 +16,9 @@ import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } fro
 import { formatBRL } from "@/lib/currency";
 import {
   centsText,
+  clampPercentDigits,
   computeDivision,
+  divisionInvalidInputText,
   FULL_PERCENT_BASIS_POINTS,
   percentText,
   type DivisionComputation,
@@ -53,7 +55,8 @@ function statusText(
   mode: ItemDivisionMode,
 ): string {
   if (division.ok) return "";
-  if (division.reason !== "total") return "Preencha os valores";
+  if (division.reason === "empty") return "Escolha quem divide a conta";
+  if (division.reason === "invalid_input") return divisionInvalidInputText(mode);
   if (mode === "percent") {
     return division.remainder > 0
       ? `falta ${percentText(division.remainder)}%`
@@ -227,7 +230,7 @@ export function SingleBillDivision({
                       value={mode === "percent" ? percentValues[person.id] : fixedValues[person.id]}
                       onChange={(event) => {
                         if (mode === "percent") {
-                          onPercentTextChange(person.id, event.target.value.replace(/\D/g, ""));
+                          onPercentTextChange(person.id, clampPercentDigits(event.target.value.replace(/\D/g, "")));
                         } else {
                           onFixedTextChange(person.id, event.target.value);
                         }

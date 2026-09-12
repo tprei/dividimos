@@ -186,14 +186,22 @@ export function recomputeDivisionShares(value: ItemDivisionValue, cents: number)
   };
 }
 
+export function divisionInvalidInputText(mode: ItemDivisionMode): string {
+  return mode === "percent"
+    ? "Informe percentuais inteiros de 0 a 100."
+    : "Informe valores em reais com até duas casas decimais.";
+}
+
+export function clampPercentDigits(digits: string): string {
+  if (digits === "") return "";
+  const value = Number(digits);
+  return value > 100 ? "100" : String(value);
+}
+
 export function divisionStatusText(division: DivisionComputation, mode: ItemDivisionMode): string {
   if (division.ok) return "Totais conferem com o valor do item.";
   if (division.reason === "empty") return "Selecione quem divide este item.";
-  if (division.reason === "invalid_input") {
-    return mode === "percent"
-      ? "Informe percentuais inteiros de 0 a 100."
-      : "Informe valores em reais com até duas casas decimais.";
-  }
+  if (division.reason === "invalid_input") return divisionInvalidInputText(mode);
   if (mode === "percent") {
     const text = percentText(Math.abs(division.remainder));
     return division.remainder > 0 ? `Faltam ${text}% para fechar 100%.` : `Excede ${text}% do valor do item.`;
