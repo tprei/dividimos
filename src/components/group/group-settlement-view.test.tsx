@@ -53,11 +53,16 @@ const me: Me = {
 const groupId = "g1";
 const NBSP = "\u00a0";
 
-function member(userId: string, handle: string, name: string) {
+function member(
+  userId: string,
+  handle: string,
+  name: string,
+  status: "accepted" | "invited" = "accepted",
+) {
   return {
     groupId,
     userId,
-    status: "accepted" as const,
+    status,
     invitedBy: null,
     acceptedAt: null,
     user: { id: userId, handle, name, avatarUrl: null },
@@ -296,6 +301,75 @@ describe("GroupSettlementView", () => {
     ).toBeInTheDocument();
     const row = container.querySelector("#transfer-user-4-user-3");
     expect(row?.className).toContain("bg-primary/5");
+  });
+
+  it("keeps a row inert while the counterparty has not accepted the invitation", () => {
+    const pending = snapshot({
+      members: [
+        member("user-1", "tiago", "Tiago Silva"),
+        member("user-2", "bia", "Bia Costa", "invited"),
+      ],
+      balances: [
+        { kind: "user", participantId: "user-1", netCents: -3000 },
+        { kind: "user", participantId: "user-2", netCents: 3000 },
+      ],
+      pairwiseEdges: [
+        { fromKind: "user", fromId: "user-1", toId: "user-2", amountCents: 3000 },
+      ],
+    });
+    seed(pending);
+
+    render(<GroupSettlementView groupId={groupId} snapshot={pending} meId="user-1" />);
+
+    const row = screen.getByLabelText(
+      "Aguardando o convite: Tiago Silva paga R$ 30,00 para Bia Costa",
+    );
+    expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByText("Convite pendente")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Você paga/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps a collectable row inert while the debtor has not accepted", () => {
+    const pending = snapshot({
+      members: [
+        member("user-1", "tiago", "Tiago Silva"),
+        member("user-2", "bia", "Bia Costa", "invited"),
+      ],
+      balances: [
+        { kind: "user", participantId: "user-1", netCents: 3000 },
+        { kind: "user", participantId: "user-2", netCents: -3000 },
+      ],
+      pairwiseEdges: [
+        { fromKind: "user", fromId: "user-2", toId: "user-1", amountCents: 3000 },
+      ],
+    });
+    seed(pending);
+
+    render(<GroupSettlementView groupId={groupId} snapshot={pending} meId="user-1" />);
+
+    expect(screen.queryByRole("button", { name: /^Cobrar/ })).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Aguardando o convite: Bia Costa paga R$ 30,00 para Tiago Silva"),
+    ).toBeInTheDocument();
+  });
+
+  it("offers both directions once the counterparty has accepted", () => {
+    const accepted = snapshot({
+      members: [member("user-1", "tiago", "Tiago Silva"), member("user-2", "bia", "Bia Costa")],
+      balances: [
+        { kind: "user", participantId: "user-1", netCents: -3000 },
+        { kind: "user", participantId: "user-2", netCents: 3000 },
+      ],
+      pairwiseEdges: [
+        { fromKind: "user", fromId: "user-1", toId: "user-2", amountCents: 3000 },
+      ],
+    });
+    seed(accepted);
+
+    render(<GroupSettlementView groupId={groupId} snapshot={accepted} meId="user-1" />);
+
+    expect(screen.getByRole("button", { name: /^Você paga/ })).toBeInTheDocument();
+    expect(screen.queryByText("Convite pendente")).not.toBeInTheDocument();
   });
 
   it("shows only the settled state when every balance is zero", () => {

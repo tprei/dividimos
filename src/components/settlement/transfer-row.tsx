@@ -4,6 +4,7 @@ import { ArrowRight, ChevronRight } from "lucide-react";
 import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import type { Transfer } from "@/types/ledger";
@@ -28,10 +29,15 @@ export function TransferRow({
   onPay,
   onCollect,
 }: TransferRowProps) {
-  const iPay = transfer.fromId === meId;
-  const iReceive = transfer.toId === meId && transfer.fromKind === "user";
+  const pendingCounterparty =
+    (transfer.fromId === meId && to.isPending) || (transfer.toId === meId && from.isPending);
+  const iPay = transfer.fromId === meId && !to.isPending;
+  const iReceive = transfer.toId === meId && transfer.fromKind === "user" && !from.isPending;
   const actionable = iPay || iReceive;
-  const statusLabel = iPay ? "Você paga" : iReceive ? "Cobrar" : "Outro acerto";
+  let statusLabel = "Outro acerto";
+  if (iPay) statusLabel = "Você paga";
+  else if (iReceive) statusLabel = "Cobrar";
+  else if (pendingCounterparty) statusLabel = "Aguardando o convite";
   const rowLabel = `${statusLabel}: ${from.name} paga ${formatBRL(transfer.amountCents)} para ${to.name}`;
   const content = (
     <>
@@ -54,6 +60,11 @@ export function TransferRow({
             {from.name.split(" ")[0]} → {to.name.split(" ")[0]}
           </span>
           {(from.isGuest || to.isGuest) && <GuestBadge />}
+          {(from.isPending || to.isPending) && (
+            <Badge variant="secondary" className="shrink-0">
+              Convite pendente
+            </Badge>
+          )}
         </span>
         <span className="block text-xs text-muted-foreground">{statusLabel}</span>
       </span>
