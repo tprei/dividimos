@@ -6,13 +6,15 @@ import { userAlice, userBob } from "@/test/fixtures";
 import { LedgerError } from "@/lib/sync/errors";
 import { useWizardSubmit } from "./use-wizard-submit";
 
-const { mockCreateExpense, mockEditExpense } = vi.hoisted(() => ({
+const { mockCreateExpense, mockCreateExpenseWithGroup, mockEditExpense } = vi.hoisted(() => ({
   mockCreateExpense: vi.fn(),
+  mockCreateExpenseWithGroup: vi.fn(),
   mockEditExpense: vi.fn(),
 }));
 
 vi.mock("@/lib/sync/mutations", () => ({
   createExpense: mockCreateExpense,
+  createExpenseWithGroup: mockCreateExpenseWithGroup,
   editExpense: mockEditExpense,
 }));
 
@@ -68,7 +70,7 @@ describe("useWizardSubmit", () => {
 
     let ok = false;
     await act(async () => {
-      ok = await result.current.submit(async () => "group-1");
+      ok = await result.current.submit(async () => ({ kind: "existing", groupId: "group-1" }));
     });
 
     expect(ok).toBe(true);
@@ -111,7 +113,7 @@ describe("useWizardSubmit", () => {
 
     let ok = false;
     await act(async () => {
-      ok = await result.current.submit(async () => "group-1");
+      ok = await result.current.submit(async () => ({ kind: "existing", groupId: "group-1" }));
     });
 
     expect(ok).toBe(true);
@@ -139,7 +141,7 @@ describe("useWizardSubmit", () => {
 
     let ok = true;
     await act(async () => {
-      ok = await result.current.submit(async () => "group-1");
+      ok = await result.current.submit(async () => ({ kind: "existing", groupId: "group-1" }));
     });
 
     expect(ok).toBe(false);
@@ -185,7 +187,7 @@ describe("useWizardSubmit", () => {
 
     let ok = true;
     await act(async () => {
-      ok = await result.current.submit(async () => "group-1");
+      ok = await result.current.submit(async () => ({ kind: "existing", groupId: "group-1" }));
     });
 
     expect(ok).toBe(false);
@@ -209,7 +211,7 @@ describe("useWizardSubmit", () => {
 
     let ok = true;
     await act(async () => {
-      ok = await result.current.submit(async () => null);
+      ok = await result.current.submit(async () => ({ kind: "none" }));
     });
 
     expect(ok).toBe(false);
@@ -240,9 +242,9 @@ describe("useWizardSubmit", () => {
     const results: boolean[] = [];
     await act(async () => {
       const attempts = [
-        result.current.submit(async () => "group-1"),
-        result.current.submit(async () => "group-1"),
-        result.current.submit(async () => "group-1"),
+        result.current.submit(async () => ({ kind: "existing", groupId: "group-1" })),
+        result.current.submit(async () => ({ kind: "existing", groupId: "group-1" })),
+        result.current.submit(async () => ({ kind: "existing", groupId: "group-1" })),
       ];
       release?.();
       results.push(...(await Promise.all(attempts)));
@@ -273,14 +275,77 @@ describe("useWizardSubmit", () => {
     );
 
     await act(async () => {
-      await result.current.submit(async () => "group-1");
+      await result.current.submit(async () => ({ kind: "existing", groupId: "group-1" }));
     });
     await act(async () => {
-      await result.current.submit(async () => "group-1");
+      await result.current.submit(async () => ({ kind: "existing", groupId: "group-1" }));
     });
 
     expect(draftKey).toBeTruthy();
     expect(mockCreateExpense.mock.calls[0][0].clientId).toBe(draftKey);
     expect(mockCreateExpense.mock.calls[1][0].clientId).toBe(draftKey);
+  });
+
+  it("writes a new group and its bill in one call", async () => {
+    setupValidSingleExpense();
+    mockCreateExpenseWithGroup.mockResolvedValue({ expenseId: "exp-1", groupId: "g-new" });
+
+    const { result } = renderHook(() =>
+      useWizardSubmit({
+        router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
+        editExpenseId: null,
+        expectedVersionNo: null,
+        onStaleReload,
+      }),
+    );
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.submit(async () => ({
+        kind: "create",
+        name: "Viagem",
+        memberIds: ["user-bob"],
+      }));
+    });
+
+    expect(ok).toBe(true);
+    // One call, so there is no window in which a group exists without a bill.
+    expect(mockCreateExpense).not.toHaveBeenCalled();
+    expect(mockCreateExpenseWithGroup).toHaveBeenCalledOnce();
+    expect(mockCreateExpenseWithGroup.mock.calls[0][0]).toMatchObject({
+      groupName: "Viagem",
+      memberIds: ["user-bob"],
+    });
+    expect(router.push).toHaveBeenCalledWith("/app/bill/exp-1");
+  });
+
+  it("keeps the draft and creates nothing when the combined write fails", async () => {
+    setupValidSingleExpense();
+    const draftKey = useBillStore.getState().draftKey;
+    mockCreateExpenseWithGroup.mockRejectedValue(new LedgerError("unknown"));
+
+    const { result } = renderHook(() =>
+      useWizardSubmit({
+        router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
+        editExpenseId: null,
+        expectedVersionNo: null,
+        onStaleReload,
+      }),
+    );
+
+    let ok = true;
+    await act(async () => {
+      ok = await result.current.submit(async () => ({
+        kind: "create",
+        name: "Viagem",
+        memberIds: ["user-bob"],
+      }));
+    });
+
+    expect(ok).toBe(false);
+    expect(router.push).not.toHaveBeenCalled();
+    // The draft survives with its client id, so a retry is the same write.
+    expect(useBillStore.getState().draftKey).toBe(draftKey);
+    expect(useBillStore.getState().expense?.title).toBe("Jantar");
   });
 });

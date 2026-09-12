@@ -3,10 +3,11 @@
 import { createElement, useCallback, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { buildExpensePayload } from "@/lib/ledger/payload";
-import { createExpense, editExpense } from "@/lib/sync/mutations";
+import { createExpense, createExpenseWithGroup, editExpense } from "@/lib/sync/mutations";
 import { inviteMember } from "@/lib/sync/mutations-group";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
+import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
 import { useBillStore } from "@/stores/bill-store";
 import type { User } from "@/types";
 
@@ -60,7 +61,7 @@ export function useWizardSubmit({
   const inFlight = useRef(false);
 
   const submit = useCallback(
-    async (resolveGroupId: () => Promise<string | null | undefined>): Promise<boolean> => {
+    async (planGroup: () => Promise<GroupPlan>): Promise<boolean> => {
       if (inFlight.current) return false;
 
       const state = useBillStore.getState();
@@ -74,13 +75,6 @@ export function useWizardSubmit({
       inFlight.current = true;
       setSubmitting(true);
       try {
-        const groupId = editExpenseId ? null : await resolveGroupId();
-        if (!editExpenseId && groupId === undefined) return false;
-        if (!editExpenseId && !groupId) {
-          toast.error("Escolha um grupo para dividir a conta.");
-          return false;
-        }
-
         const { header, payload } = result.value;
         if (editExpenseId) {
           await editExpense({
@@ -93,13 +87,35 @@ export function useWizardSubmit({
           router.push(`/app/bill/${editExpenseId}`);
           return true;
         }
-        await inviteMissingMembers(groupId ?? "", state.participants);
-        const ack = await createExpense({
-          groupId: groupId ?? "",
-          clientId: state.draftKey,
-          header,
-          payload,
-        });
+
+        const plan = await planGroup();
+        if (plan.kind === "invalid") return false;
+        if (plan.kind === "none") {
+          toast.error("Escolha um grupo para dividir a conta.");
+          return false;
+        }
+
+        // A brand-new group is written together with the bill, so a failure
+        // here cannot leave behind a group nobody asked for.
+        let ack;
+        if (plan.kind === "create") {
+          ack = await createExpenseWithGroup({
+            groupName: plan.name,
+            memberIds: plan.memberIds,
+            clientId: state.draftKey,
+            header,
+            payload,
+          });
+        } else {
+          await inviteMissingMembers(plan.groupId, state.participants);
+          ack = await createExpense({
+            groupId: plan.groupId,
+            clientId: state.draftKey,
+            header,
+            payload,
+          });
+        }
+
         useBillStore.getState().reset();
         router.push(`/app/bill/${ack.expenseId ?? ""}`);
         return true;
