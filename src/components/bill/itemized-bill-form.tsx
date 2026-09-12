@@ -79,6 +79,7 @@ export function ItemizedBillForm({
       removeItem: state.removeItem,
       addItem: state.addItem,
       setItemDivision: state.setItemDivision,
+      assignItemsEqually: state.assignItemsEqually,
       setPayerFull: state.setPayerFull,
       splitPaymentEqually: state.splitPaymentEqually,
       setPayerAmount: state.setPayerAmount,
@@ -236,8 +237,15 @@ export function ItemizedBillForm({
         onAmountChange={handleAmountChange}
         onServiceFeeChange={handleServiceFeeChange}
         onToggleItem={(itemId) => setExpandedId((current) => (current === itemId ? null : itemId))}
-        onSaveDivision={(itemId, value) => store.setItemDivision(itemId, value)}
+        onSaveDivision={(itemId, value) => {
+          store.setItemDivision(itemId, value);
+          setExpandedId(null);
+        }}
         onCloseDivision={() => setExpandedId(null)}
+        onAssignSelected={(itemIds, personIds) => {
+          store.assignItemsEqually(itemIds, personIds);
+          setExpandedId(null);
+        }}
         onFooter={() => void handleFooter()}
         isEditing={isEditing}
         submitting={submitting}
