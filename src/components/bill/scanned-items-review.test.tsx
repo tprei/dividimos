@@ -11,8 +11,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 const participants: ItemDivisionParticipant[] = [
-  { id: "user-alice", name: "Alice", avatarUrl: null, isGuest: false },
-  { id: "user-bob", name: "Bob", avatarUrl: null, isGuest: false },
+  { id: "user-alice", name: "Alice", handle: "alice", avatarUrl: null, isGuest: false },
+  { id: "user-bob", name: "Bob", handle: "bob", avatarUrl: null, isGuest: false },
 ];
 
 const makeResult = (overrides?: Partial<ReceiptOcrResult>): ReceiptOcrResult => ({

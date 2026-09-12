@@ -976,6 +976,7 @@ export type Database = {
           p_group_id: string
           p_operation_id: string
           p_to_user_id: string
+          p_allow_overpay?: boolean
         }
         Returns: Json
       }

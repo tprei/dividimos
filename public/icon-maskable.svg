@@ -1,13 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" fill="#FEA101"/>
-  <g transform="translate(256,220) scale(6.5) translate(-18,-18)">
+  <g transform="translate(256,256) scale(13) translate(-18,-18)">
     <circle cx="10" cy="18" r="3" fill="white"/>
     <rect x="15.5" y="10" width="5" height="16" rx="2.5" fill="white"/>
     <circle cx="26" cy="18" r="3" fill="white"/>
-  </g>
-  <g transform="translate(256,0) scale(0.82,0.82)">
-    <rect x="-60" y="410" width="120" height="26" rx="8" fill="#E08E00"/>
-    <rect x="-48" y="436" width="96" height="22" rx="8" fill="#C87E00"/>
-    <rect x="-36" y="458" width="72" height="22" rx="11" fill="#B07000"/>
   </g>
 </svg>

@@ -697,3 +697,105 @@ describe.skipIf(!isIntegrationTestReady)(
     });
   },
 );
+
+describe.skipIf(!isIntegrationTestReady)(
+  "settlement RPCs — overpay override (p_allow_overpay)",
+  () => {
+    let debtor: TestUser;
+    let creditor: TestUser;
+    let clientDebtor: SupabaseClient;
+    let debtGroupId: string;
+    let zeroGroupId: string;
+
+    beforeAll(async () => {
+      [debtor, creditor] = await createTestUsers(2);
+      clientDebtor = authenticateAs(debtor);
+
+      debtGroupId = await createGroupWithMembers(creditor, [debtor], "Overpay");
+      await createExpense(creditor, {
+        groupId: debtGroupId,
+        title: "Almoço",
+        totalCents: 6000,
+        payload: equalSplitPayload([debtor.id, creditor.id], 6000, 1),
+      });
+
+      zeroGroupId = await createGroupWithMembers(creditor, [debtor], "Zerado");
+    });
+
+    async function readBalances(groupId: string) {
+      const rows = await getBalances(groupId);
+      return rows.sort((x, y) => x.participant_id.localeCompare(y.participant_id));
+    }
+
+    it("accepts an overpayment and crosses balances past zero", async () => {
+      const ack = await rpcOk<SettlementAck>(clientDebtor, "record_settlement", {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: debtGroupId,
+        p_from_user_id: debtor.id,
+        p_to_user_id: creditor.id,
+        p_amount_cents: 4000,
+        p_allow_overpay: true,
+      });
+      expect(ack.settlementId).toBeTruthy();
+
+      const balances = await readBalances(debtGroupId);
+      const sorted = [
+        { kind: "user", participant_id: creditor.id, net_cents: -1000 },
+        { kind: "user", participant_id: debtor.id, net_cents: 1000 },
+      ].sort((x, y) => x.participant_id.localeCompare(y.participant_id));
+      expect(balances).toEqual(sorted);
+    });
+
+    it("rejects a zero-balance settlement by default and accepts it with override", async () => {
+      await expect(
+        rpcErrorCode(clientDebtor, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: zeroGroupId,
+          p_from_user_id: debtor.id,
+          p_to_user_id: creditor.id,
+          p_amount_cents: 1000,
+        }),
+      ).resolves.toBe("amount_exceeds_debt");
+
+      const ack = await rpcOk<SettlementAck>(clientDebtor, "record_settlement", {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: zeroGroupId,
+        p_from_user_id: debtor.id,
+        p_to_user_id: creditor.id,
+        p_amount_cents: 1000,
+        p_allow_overpay: true,
+      });
+      expect(ack.settlementId).toBeTruthy();
+    });
+
+    it("still rejects a zero amount even with override", async () => {
+      await expect(
+        rpcErrorCode(clientDebtor, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: debtGroupId,
+          p_from_user_id: debtor.id,
+          p_to_user_id: creditor.id,
+          p_amount_cents: 0,
+          p_allow_overpay: true,
+        }),
+      ).resolves.toBe("invalid_argument");
+    });
+
+    it("still rejects a non-member actor even with override", async () => {
+      await rpcOk<{ groupId: string }>(clientDebtor, "leave_group", {
+        p_group_id: debtGroupId,
+      });
+
+      await expect(
+        rpcErrorCode(clientDebtor, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: debtGroupId,
+          p_from_user_id: debtor.id,
+          p_to_user_id: creditor.id,
+          p_amount_cents: 1000,
+          p_allow_overpay: true,
+        }),
+      ).resolves.toBe("not_a_member");
+    });
+  },
+);

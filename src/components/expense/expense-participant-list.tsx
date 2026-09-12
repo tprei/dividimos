@@ -21,8 +21,15 @@ export function ExpenseParticipantList({
   onInviteGuest,
 }: ExpenseParticipantListProps) {
   return (
-    <section className="mt-2">
-      <ul aria-label="Participantes" className="divide-y divide-border">
+    <section className="mt-5">
+      <h2 className="mb-1 text-sm font-semibold">Resumo por pessoa</h2>
+      <p className="mb-2 text-xs text-muted-foreground">
+        Consumo, pagamento e o saldo de cada um nessa conta.
+      </p>
+      <ul
+        aria-label="Participantes"
+        className="divide-y divide-border overflow-hidden rounded-2xl border bg-card"
+      >
         {participants.map((participant) => {
           const isMe = participant.user !== null && participant.user.id === meId;
 
@@ -41,7 +48,13 @@ export function ExpenseParticipantList({
                     <GuestBadge />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    <Money cents={participant.shareCents} />
+                    Consumiu <Money cents={participant.shareCents} className="text-xs" />
+                    {participant.paidCents > 0 && (
+                      <>
+                        {" · Pagou "}
+                        <Money cents={participant.paidCents} className="text-xs" />
+                      </>
+                    )}
                   </p>
                 </div>
                 {participant.guest.claimedBy === null && (
@@ -55,6 +68,12 @@ export function ExpenseParticipantList({
                     Convidar
                   </Button>
                 )}
+                <Money
+                  cents={participant.paidCents - participant.shareCents}
+                  signed
+                  className="shrink-0 text-sm font-semibold"
+                  label={`Saldo de ${participant.guest.displayName} nessa conta`}
+                />
               </li>
             );
           }
@@ -83,15 +102,21 @@ export function ExpenseParticipantList({
                     </Badge>
                   )}
                 </div>
-                {isMe && participant.paidCents > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Pagou <Money cents={participant.paidCents} />
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Consumiu <Money cents={participant.shareCents} className="text-xs" />
+                  {participant.paidCents > 0 && (
+                    <>
+                      {" · Pagou "}
+                      <Money cents={participant.paidCents} className="text-xs" />
+                    </>
+                  )}
+                </p>
               </div>
               <Money
-                cents={participant.shareCents}
-                className="text-sm font-semibold"
+                cents={participant.paidCents - participant.shareCents}
+                signed
+                className="shrink-0 text-sm font-semibold"
+                label={`Saldo de ${name} nessa conta`}
               />
             </li>
           );

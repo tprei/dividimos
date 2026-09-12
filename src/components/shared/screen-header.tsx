@@ -10,10 +10,11 @@ export interface ScreenHeaderProps {
   eyebrow?: string;
   back?: boolean;
   onBack?: () => void;
+  leading?: ReactNode;
   action?: ReactNode;
 }
 
-export function ScreenHeader({ title, eyebrow, back = false, onBack, action }: ScreenHeaderProps) {
+export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, action }: ScreenHeaderProps) {
   const router = useRouter();
   return (
     <header className="flex items-center gap-2 px-4 pt-5 pb-3">
@@ -28,6 +29,7 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, action }: S
           <ArrowLeft className="size-5" />
         </Button>
       )}
+      {leading}
       <div className="min-w-0 flex-1">
         {eyebrow && (
           <p className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">

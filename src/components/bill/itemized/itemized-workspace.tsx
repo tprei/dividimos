@@ -56,7 +56,7 @@ export interface ItemizedWorkspaceProps {
   onServiceFeeChange: (text: string) => void;
   onToggleItem: (itemId: string) => void;
   onSaveDivision: SectionContentProps["onSaveDivision"];
-  onCancelDivision: SectionContentProps["onCancelDivision"];
+  onCloseDivision: SectionContentProps["onCloseDivision"];
   onFooter: () => void;
   isEditing: boolean;
   submitting: boolean;
@@ -88,7 +88,7 @@ export function ItemizedWorkspace({
   onServiceFeeChange,
   onToggleItem,
   onSaveDivision,
-  onCancelDivision,
+  onCloseDivision,
   onFooter,
   isEditing,
   submitting,
@@ -141,7 +141,7 @@ export function ItemizedWorkspace({
         onAddItem={store.addItem}
         onToggleItem={onToggleItem}
         onSaveDivision={onSaveDivision}
-        onCancelDivision={onCancelDivision}
+        onCloseDivision={onCloseDivision}
         onSetPayerFull={store.setPayerFull}
         onSplitPaymentEqually={store.splitPaymentEqually}
         onSetPayerAmount={store.setPayerAmount}

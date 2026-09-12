@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
 import { startTransition, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { haptics } from "@/hooks/use-haptics";
@@ -158,7 +159,7 @@ export function PayerStep({
                   {isSelected ? <Check className="h-4 w-4" /> : user.name.charAt(0)}
                 </span>
                 <div className="flex-1">
-                  <p className="text-sm font-medium">{user.name}</p>
+                  <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
                   {isSelected && (
                     <motion.p
                       initial={{ opacity: 0 }}
@@ -256,7 +257,7 @@ export function PayerStep({
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                             {user.name.charAt(0)}
                           </span>
-                          <span className="text-sm font-medium">{user.name.split(" ")[0]}</span>
+                          <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
                         </div>
                         <div className="text-right">
                           <span className="text-sm font-bold tabular-nums text-primary">
@@ -341,9 +342,7 @@ export function PayerStep({
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                     {user.name.charAt(0)}
                   </span>
-                  <span className="flex-1 text-sm font-medium">
-                    {user.name.split(" ")[0]}
-                  </span>
+                  <PersonLabel name={user.name} handle={user.handle} className="flex-1" nameClassName="text-sm font-medium" />
                   {showFillRemaining ? (
                     <Button
                       size="sm"

@@ -358,8 +358,9 @@ export async function recordSettlement(input: {
   fromUserId: string;
   toUserId: string;
   amountCents: number;
+  allowOverpay?: boolean;
 }): Promise<MutationAck> {
-  const { groupId, operationId, fromUserId, toUserId, amountCents } = input;
+  const { groupId, operationId, fromUserId, toUserId, amountCents, allowOverpay } = input;
   const store = useAppStore.getState();
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
@@ -403,6 +404,7 @@ export async function recordSettlement(input: {
         p_from_user_id: fromUserId,
         p_to_user_id: toUserId,
         p_amount_cents: amountCents,
+        p_allow_overpay: allowOverpay ?? false,
       },
       decodeMutationAck,
     );

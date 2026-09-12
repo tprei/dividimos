@@ -3,7 +3,8 @@ CREATE FUNCTION public.record_settlement(
   p_group_id uuid,
   p_from_user_id uuid,
   p_to_user_id uuid,
-  p_amount_cents integer
+  p_amount_cents integer,
+  p_allow_overpay boolean DEFAULT false
 ) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -72,9 +73,11 @@ BEGIN
     WHERE group_id = p_group_id AND kind = 'user' AND participant_id = p_to_user_id
   ), 0) INTO v_to_net;
 
-  IF v_from_net >= 0 OR p_amount_cents > -v_from_net
-     OR v_to_net <= 0 OR p_amount_cents > v_to_net THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'amount_exceeds_debt';
+  IF NOT COALESCE(p_allow_overpay, false) THEN
+    IF v_from_net >= 0 OR p_amount_cents > -v_from_net
+       OR v_to_net <= 0 OR p_amount_cents > v_to_net THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'amount_exceeds_debt';
+    END IF;
   END IF;
 
   INSERT INTO settlements (operation_id, group_id, from_user_id, to_user_id, amount_cents, status, confirmed_at, created_by)
@@ -172,8 +175,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.record_settlement(uuid, uuid, uuid, uuid, integer) FROM public;
-GRANT EXECUTE ON FUNCTION public.record_settlement(uuid, uuid, uuid, uuid, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.record_settlement(uuid, uuid, uuid, uuid, integer, boolean) FROM public;
+GRANT EXECUTE ON FUNCTION public.record_settlement(uuid, uuid, uuid, uuid, integer, boolean) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.void_settlement(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.void_settlement(uuid) TO authenticated;

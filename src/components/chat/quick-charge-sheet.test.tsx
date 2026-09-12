@@ -30,8 +30,10 @@ describe("QuickChargeSheet", () => {
   it("renders payer toggle with both options", () => {
     renderSheet();
 
-    expect(screen.getByTestId("quick-charge-payer-self")).toHaveTextContent("Eu (@joao)");
+    expect(screen.getByTestId("quick-charge-payer-self")).toHaveTextContent("Eu");
+    expect(screen.getByTestId("quick-charge-payer-self")).toHaveTextContent("@joao");
     expect(screen.getByTestId("quick-charge-payer-other")).toHaveTextContent("Maria");
+    expect(screen.getByTestId("quick-charge-payer-other")).toHaveTextContent("@maria123");
   });
 
   it("defaults payer to self", () => {

@@ -167,9 +167,15 @@ describe("GroupSettlementView", () => {
 
     render(<GroupSettlementView groupId={groupId} snapshot={value} meId={me.id} />);
 
-    expect(screen.getByText("Dan → Carlos")).toBeInTheDocument();
-    expect(screen.getByText("Tiago → Carlos")).toBeInTheDocument();
-    expect(screen.getByText("Tiago → Bia")).toBeInTheDocument();
+    const danRow = document.getElementById("transfer-user-4-user-3")!;
+    expect(within(danRow).getByText("Dan Silva")).toBeInTheDocument();
+    expect(within(danRow).getByText("@dan")).toBeInTheDocument();
+    expect(within(danRow).getByText("Carlos Souza")).toBeInTheDocument();
+    expect(within(danRow).getByText("@carlos")).toBeInTheDocument();
+    const tiagoToCarlos = document.getElementById("transfer-user-1-user-3")!;
+    expect(within(tiagoToCarlos).getByText("@tiago")).toBeInTheDocument();
+    const tiagoToBia = document.getElementById("transfer-user-1-user-2")!;
+    expect(within(tiagoToBia).getByText("@bia")).toBeInTheDocument();
     expect(screen.getByText("Outro acerto")).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Grafo de dívidas" })).toBeInTheDocument();
     expect(screen.getByText("Simplificação · 4 → 3")).toBeInTheDocument();
@@ -275,7 +281,9 @@ describe("GroupSettlementView", () => {
       <GroupSettlementView groupId={groupId} snapshot={guestSnapshot} meId="user-3" />,
     );
 
-    expect(screen.getByText("Bruno → Carlos")).toBeInTheDocument();
+    const guestRow = document.getElementById("transfer-guest-1-user-3")!;
+    expect(within(guestRow).getByText("Bruno")).toBeInTheDocument();
+    expect(within(guestRow).queryByText("@bruno")).not.toBeInTheDocument();
     expect(screen.getByText("Convidado")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Cobrar/ })).not.toBeInTheDocument();
     expect(screen.getByText("Outro acerto")).toBeInTheDocument();

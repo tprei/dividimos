@@ -3,6 +3,7 @@
 import { ArrowRight, ChevronRight } from "lucide-react";
 import { GuestAvatar, GuestBadge } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
+import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { formatBRL } from "@/lib/currency";
@@ -54,11 +55,11 @@ export function TransferRow({
           <UserAvatar name={to.name} avatarUrl={to.avatarUrl} size="xs" />
         )}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          <span className="truncate text-[15px] font-semibold">
-            {from.name.split(" ")[0]} → {to.name.split(" ")[0]}
-          </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex min-w-0 items-start gap-1.5">
+          <PersonLabel name={from.name} handle={from.handle} nameClassName="text-[15px]" />
+          <ArrowRight className="mt-1 size-3 shrink-0 text-muted-foreground" />
+          <PersonLabel name={to.name} handle={to.handle} nameClassName="text-[15px]" />
           {(from.isGuest || to.isGuest) && <GuestBadge />}
           {(from.isPending || to.isPending) && (
             <Badge variant="secondary" className="shrink-0">

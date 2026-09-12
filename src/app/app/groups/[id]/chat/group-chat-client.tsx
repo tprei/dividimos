@@ -58,17 +58,23 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
     (userId: string) => nameById.get(userId) ?? "Alguém",
     [nameById],
   );
-  const paymentCounterparties = useMemo(
-    () =>
-      accepted
-        .filter((member) => member.userId !== me?.id)
-        .map((member) => ({
-          id: member.userId,
-          name: member.user.name,
-          handle: member.user.handle,
-        })),
-    [accepted, me?.id],
-  );
+  const paymentCounterparties = useMemo(() => {
+    const owedByMe = new Map<string, number>();
+    const owedToMe = new Map<string, number>();
+    for (const row of debtRows) {
+      if (row.counterpartyKind !== "user") continue;
+      (row.direction === "owes" ? owedByMe : owedToMe).set(row.counterpartyId, row.amountCents);
+    }
+    return accepted
+      .filter((member) => member.userId !== me?.id)
+      .map((member) => ({
+        id: member.userId,
+        name: member.user.name,
+        handle: member.user.handle,
+        owedByMeCents: owedByMe.get(member.userId) ?? 0,
+        owedToMeCents: owedToMe.get(member.userId) ?? 0,
+      }));
+  }, [accepted, debtRows, me?.id]);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<GroupPaymentStatus>("idle");
   const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
@@ -86,6 +92,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           fromUserId: result.payerIsSelf ? me.id : result.counterpartyId,
           toUserId: result.payerIsSelf ? result.counterpartyId : me.id,
           amountCents: result.amountCents,
+          allowOverpay: result.allowOverpay,
         });
         paymentKey.current = crypto.randomUUID();
         setPaymentStatus("confirmed");

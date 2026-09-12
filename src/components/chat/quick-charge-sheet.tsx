@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Check, DollarSign, Loader2, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { PersonLabel } from "@/components/shared/person-label";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
 import { useBackHandler } from "@/hooks/use-back-handler";
@@ -194,7 +195,7 @@ export function QuickChargeSheet({
             }`}
             data-testid="quick-charge-payer-self"
           >
-            Eu (@{currentUserHandle})
+            <PersonLabel name="Eu" handle={currentUserHandle} nameClassName="text-sm" />
           </button>
           <button
             type="button"
@@ -206,7 +207,7 @@ export function QuickChargeSheet({
             }`}
             data-testid="quick-charge-payer-other"
           >
-            {counterpartyName}
+            <PersonLabel name={counterpartyName} handle={counterpartyHandle} nameClassName="text-sm" />
           </button>
         </div>
       </div>

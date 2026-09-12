@@ -1,5 +1,6 @@
 "use client";
 
+import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import type { ExpensePayer, User } from "@/types";
 
@@ -33,7 +34,7 @@ export function SingleBillPayerSection({
               }`}
             >
               <UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} size="xs" />
-              <span className="max-w-28 truncate">{participant.name.split(" ")[0]}</span>
+              <PersonLabel name={participant.name} handle={participant.handle} nameClassName="text-sm" />
             </button>
           );
         })}

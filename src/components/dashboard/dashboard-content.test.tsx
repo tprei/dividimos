@@ -54,8 +54,8 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("next/link", () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({ children, href, ...rest }: { children: React.ReactNode; href: string } & React.ComponentProps<"a">) => (
+    <a href={href} {...rest}>{children}</a>
   ),
 }));
 
@@ -155,6 +155,7 @@ describe("DashboardContent", () => {
     render(<DashboardContent />);
 
     expect(screen.getByText("Oi, Alice")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Seu perfil" })).toHaveAttribute("href", "/app/profile");
     expect(screen.getByText("Saldo geral")).toBeInTheDocument();
     expect(screen.getByText(/20,00/)).toBeInTheDocument();
     expect(screen.getAllByText(/50,00/).length).toBeGreaterThan(0);
@@ -173,7 +174,7 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Carol, você deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, você deve/ }));
     fireEvent.click(screen.getByRole("button", { name: "Pagar via Pix" }));
 
     await waitFor(() => expect(pixProps.current).not.toBeNull());
@@ -204,7 +205,7 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, te deve/ }));
     fireEvent.click(screen.getByRole("button", { name: "Cobrar via Pix" }));
 
     await waitFor(() => expect(pixProps.current).not.toBeNull());
@@ -226,7 +227,7 @@ describe("DashboardContent", () => {
     ], meWithPixKey);
     render(<DashboardContent />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, te deve/ }));
     expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Lembrar" }));
     await waitFor(() => {
@@ -255,7 +256,7 @@ describe("DashboardContent", () => {
     render(<DashboardContent />);
 
     expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: /Carol, te deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, te deve/ }));
     expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lembrar" })).toBeInTheDocument();
   });
@@ -272,7 +273,7 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Bruno, você deve/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Bruno Convidado, você deve/ }));
     expect(screen.getAllByText("Convidado").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Pagar via Pix" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cobrar via Pix" })).not.toBeInTheDocument();

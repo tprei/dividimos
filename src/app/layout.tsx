@@ -27,6 +27,13 @@ export const metadata: Metadata = {
     "Split bills instantly. Scan your receipt, assign items, and settle via Pix in seconds.",
   keywords: ["pix", "split bill", "dividir conta", "nota fiscal"],
   authors: [{ name: "Dividimos" }],
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
