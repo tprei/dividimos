@@ -7,7 +7,7 @@ const features = [
   {
     icon: Receipt,
     title: "Nota na mão, itens no app",
-    desc: "Extrai os itens direto da NFC-e ou da foto do cupom. Sem digitar nada.",
+    desc: "Extrai os itens da foto do cupom. Sem digitar nada.",
   },
   {
     icon: Camera,

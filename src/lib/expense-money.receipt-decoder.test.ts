@@ -21,9 +21,6 @@ function decodeOcr(raw: unknown) {
   return decodeExpenseResult("ocr", "scan_review", raw);
 }
 
-function decodeSefaz(raw: unknown) {
-  return decodeExpenseResult("sefaz", "scan_review", raw);
-}
 
 function issueOf(r: { ok: false; issue: ExpenseDecodeIssue }): ExpenseDecodeIssue {
   return r.issue;
@@ -62,12 +59,6 @@ describe("decodeExpenseResult(ocr) — happy paths", () => {
     }
   });
 
-  it("decodes the sefaz source with the same shape", () => {
-    const r = decodeSefaz(baseReceiptResult());
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.source).toBe("sefaz");
-  });
 
   it("returns a recursively frozen result", () => {
     const r = decodeOcr(baseReceiptResult());

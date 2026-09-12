@@ -95,7 +95,7 @@ export function BillTypeSelector({
             <div>
               <p className="font-semibold">Escanear nota</p>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Foto do cupom ou QR Code NFC-e
+                Foto do cupom
               </p>
               <p className="mt-1.5 text-xs text-muted-foreground/70">
                 Restaurante, bar, mercado, padaria

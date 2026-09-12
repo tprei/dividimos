@@ -224,18 +224,6 @@ describe("enforceRateLimit", () => {
       });
     });
 
-    it("passes correct config for receipt.sefaz bucket (lower limit)", async () => {
-      mockRpc.mockResolvedValueOnce({ data: true, error: null });
-      const { enforceRateLimit } = await import("@/lib/rate-limit");
-      await enforceRateLimit("receipt.sefaz", "user-ghi");
-
-      expect(mockRpc).toHaveBeenCalledWith("increment_rate_limit", {
-        p_bucket:         "receipt.sefaz",
-        p_subject:        "user-ghi",
-        p_limit:          10,
-        p_window_seconds: 60,
-      });
-    });
 
     it("passes correct config for push.send-pair bucket", async () => {
       mockRpc.mockResolvedValueOnce({ data: true, error: null });

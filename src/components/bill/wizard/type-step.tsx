@@ -10,10 +10,7 @@ import { ScannedItemsReview } from "@/components/bill/scanned-items-review";
 import { VoiceExpenseButton } from "@/components/bill/voice-expense-button";
 import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import { Button } from "@/components/ui/button";
-import { useQrScannerPreload } from "@/hooks/use-qr-preload";
-import { processReceiptScan, fetchSefazReceipt, SefazFallbackError } from "@/lib/process-receipt-scan";
-import type { NfceQrResult } from "@/lib/nfce-qr";
-import { checkDuplicateReceipt, markReceiptScanned } from "@/lib/nfce-dedup";
+import { processReceiptScan } from "@/lib/process-receipt-scan";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
@@ -42,16 +39,11 @@ export function TypeStep({
 }: TypeStepProps) {
   const searchParams = useSearchParams();
 
-  useQrScannerPreload();
-
   const [showScanner, setShowScanner] = useState(false);
   const [scanProcessing, setScanProcessing] = useState(false);
   const [scanProcessingPhoto, setScanProcessingPhoto] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ReceiptOcrResult | null>(null);
-  const [sefazFallback, setSefazFallback] = useState(false);
-  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
-  const lastQrResultRef = useRef<NfceQrResult | null>(null);
   const [showVoiceInput, setShowVoiceInput] = useState(false);
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -72,7 +64,6 @@ export function TypeStep({
   }, [reviewing, onReviewingChange]);
 
   const handleScanProcess = useCallback(async (file: File) => {
-    lastQrResultRef.current = null;
     setScanProcessing(true);
     setScanProcessingPhoto(true);
     setScanError(null);
@@ -88,84 +79,16 @@ export function TypeStep({
     }
   }, []);
 
-  const handleQrDetected = useCallback(async (result: NfceQrResult) => {
-    setScanError(null);
-    setDuplicateWarning(null);
-    setScanProcessing(true);
-    lastQrResultRef.current = result;
-
-    const previousScan = checkDuplicateReceipt(result.chaveAcesso);
-    if (previousScan) {
-      const date = new Date(previousScan);
-      const formatted = date.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-      setDuplicateWarning(
-        `Esta nota já foi escaneada em ${formatted}. Deseja continuar mesmo assim?`,
-      );
-      setScanProcessing(false);
-      return;
-    }
-
-    try {
-      const receipt = await fetchSefazReceipt(result.url);
-      setScanResult(receipt);
-      setShowScanner(false);
-    } catch (err) {
-      if (err instanceof SefazFallbackError) {
-        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
-        setSefazFallback(true);
-        setShowScanner(true);
-      } else {
-        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
-      }
-    } finally {
-      setScanProcessing(false);
-    }
-  }, []);
-
-  const handleDuplicateContinue = useCallback(async () => {
-    const qrResult = lastQrResultRef.current;
-    if (!qrResult) return;
-    setDuplicateWarning(null);
-    setScanProcessing(true);
-    try {
-      const receipt = await fetchSefazReceipt(qrResult.url);
-      setScanResult(receipt);
-      setShowScanner(false);
-    } catch (err) {
-      if (err instanceof SefazFallbackError) {
-        setScanError("Não foi possível ler a nota online. Tente capturar a foto.");
-        setSefazFallback(true);
-        setShowScanner(true);
-      } else {
-        setScanError(err instanceof Error ? err.message : "Erro ao consultar SEFAZ");
-      }
-    } finally {
-      setScanProcessing(false);
-    }
-  }, []);
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
-    const chaveAcesso = lastQrResultRef.current?.chaveAcesso ?? null;
-    if (chaveAcesso) {
-      markReceiptScanned(chaveAcesso);
-      lastQrResultRef.current = null;
-    }
     setScanResult(null);
-    setDuplicateWarning(null);
     onScanConfirm(result, occurredOn);
   }, [onScanConfirm]);
 
   const handleScanCancel = useCallback(() => {
-    lastQrResultRef.current = null;
     setScanResult(null);
-    setDuplicateWarning(null);
-
   }, []);
+
   const handleVoiceResult = useCallback((result: VoiceExpenseResult) => {
     setVoiceResult(result);
     setShowVoiceInput(false);
@@ -202,16 +125,11 @@ export function TypeStep({
       <div className="space-y-3">
         <ReceiptScanner
           onProcess={handleScanProcess}
-          key={sefazFallback ? "fallback" : "default"}
           onBack={() => {
-            lastQrResultRef.current = null;
             setShowScanner(false);
             setScanError(null);
-            setSefazFallback(false);
-            setDuplicateWarning(null);
           }}
           processing={scanProcessing}
-          onQrDetected={handleQrDetected}
         />
         {scanError && (
           <motion.p
@@ -221,32 +139,6 @@ export function TypeStep({
           >
             {scanError}
           </motion.p>
-        )}
-        {duplicateWarning && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-center dark:border-yellow-700 dark:bg-yellow-950"
-          >
-            <p className="mb-2 text-sm text-yellow-800 dark:text-yellow-200">
-              {duplicateWarning}
-            </p>
-            <div className="flex justify-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { setDuplicateWarning(null); lastQrResultRef.current = null; }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleDuplicateContinue}
-              >
-                Continuar mesmo assim
-              </Button>
-            </div>
-          </motion.div>
         )}
       </div>
     );

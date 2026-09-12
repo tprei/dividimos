@@ -25,7 +25,6 @@ const nextConfig: NextConfig = {
       "framer-motion",
       "@supabase/supabase-js",
       "qrcode",
-      "cheerio",
     ],
     serverComponentsHmrCache: true,
   },

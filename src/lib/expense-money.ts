@@ -1802,12 +1802,12 @@ function isStringRecord(value: unknown): value is Record<string, unknown> {
 // ---------------------------------------------------------------------------
 // Issue #477 part 2 / #476: source decoders. `decodeExpenseResult` is the
 // sole unknown-root entrypoint for a chat/voice/OCR/SEFAZ provider result.
-// This slice implements the "chat" source; "voice"/"ocr"/"sefaz" are added
+// This slice implements the "chat" source; "voice"/"ocr" are added
 // in their own follow-up slices, so the exported signature is chat-only for
 // now and TypeScript rejects any other source at the call site.
 // ---------------------------------------------------------------------------
 
-export type ExpenseSource = "chat" | "voice" | "ocr" | "sefaz";
+export type ExpenseSource = "chat" | "voice" | "ocr";
 
 export type ExpenseSourceMemberContext = Readonly<{
   handle: string;
@@ -2304,7 +2304,7 @@ function decodeVoiceExpenseResult(
  * rejected here and never reaches `ScannedItemsReview` (issue #477).
  */
 export type DecodedReceiptExpense<
-  Source extends "ocr" | "sefaz",
+  Source extends "ocr",
   M extends CompleteExpenseMoney = CompleteExpenseMoney,
 > = Readonly<{
   source: Source;
@@ -2333,9 +2333,9 @@ const RECEIPT_ROOT_KEYS = [
  * canonical graph validator does for the persisted graph.
  */
 function decodeReceiptExpenseResult(
-  source: "ocr" | "sefaz",
+  source: "ocr",
   raw: unknown,
-): ValidationResult<DecodedReceiptExpense<"ocr" | "sefaz">, ExpenseDecodeIssue> {
+): ValidationResult<DecodedReceiptExpense<"ocr">, ExpenseDecodeIssue> {
   if (!isStringRecord(raw)) {
     return { ok: false, issue: structureIssue(source, [], "null") };
   }
@@ -2405,7 +2405,7 @@ function decodeReceiptExpenseResult(
     return { ok: false, issue: moneyResult.issue };
   }
 
-  const result: DecodedReceiptExpense<"ocr" | "sefaz"> = {
+  const result: DecodedReceiptExpense<"ocr"> = {
     source,
     merchantName,
     money: moneyResult.value,
@@ -2439,10 +2439,10 @@ export function decodeExpenseResult(
   context: ExpenseSourceDecodeContext,
 ): ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>;
 export function decodeExpenseResult(
-  source: "ocr" | "sefaz",
+  source: "ocr",
   mode: "scan_review",
   raw: unknown,
-): ValidationResult<DecodedReceiptExpense<"ocr" | "sefaz">, ExpenseDecodeIssue>;
+): ValidationResult<DecodedReceiptExpense<"ocr">, ExpenseDecodeIssue>;
 export function decodeExpenseResult(
   source: ExpenseSource,
   mode: "source_parse" | "scan_review",
@@ -2451,7 +2451,7 @@ export function decodeExpenseResult(
 ):
   | ValidationResult<DecodedChatExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>
   | ValidationResult<DecodedVoiceExpense<UntrustedParsedExpenseMoney>, ExpenseDecodeIssue>
-  | ValidationResult<DecodedReceiptExpense<"ocr" | "sefaz">, ExpenseDecodeIssue> {
+  | ValidationResult<DecodedReceiptExpense<"ocr">, ExpenseDecodeIssue> {
   void context;
   if (source === "chat") return decodeChatExpenseResult(raw);
   if (source === "voice") return decodeVoiceExpenseResult(raw);

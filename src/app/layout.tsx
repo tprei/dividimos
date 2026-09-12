@@ -25,7 +25,7 @@ export const metadata: Metadata = {
   },
   description:
     "Split bills instantly. Scan your receipt, assign items, and settle via Pix in seconds.",
-  keywords: ["pix", "split bill", "dividir conta", "nota fiscal", "NFC-e"],
+  keywords: ["pix", "split bill", "dividir conta", "nota fiscal"],
   authors: [{ name: "Dividimos" }],
 };
 
