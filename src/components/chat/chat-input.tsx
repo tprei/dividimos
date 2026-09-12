@@ -5,10 +5,11 @@ import { Send } from "lucide-react";
 
 interface ChatInputProps {
   onSend: (content: string) => Promise<void>;
+  onError?: (error: unknown) => void;
   disabled?: boolean;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, onError, disabled }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -34,11 +35,13 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
       }
+    } catch (error) {
+      onError?.(error);
     } finally {
       setSending(false);
       textareaRef.current?.focus();
     }
-  }, [value, sending, disabled, onSend]);
+  }, [value, sending, disabled, onSend, onError]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

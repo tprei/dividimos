@@ -5,7 +5,9 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { createIdbStorage } from "@/lib/idb-storage";
 import type {
   Bootstrap,
+  ChatCursor,
   ChatMessage,
+  ConversationReadWatermark,
   ExpenseDetail,
   ExpenseSummary,
   GroupEvent,
@@ -17,6 +19,8 @@ import type {
 import {
   appendPage,
   computeGroupOrder,
+  type ConversationMerge,
+  conversationState,
   listFromSeed,
   mergeActivity,
   mergeConversation,
@@ -32,10 +36,24 @@ export interface ExpenseListState {
   complete: boolean;
 }
 
+export interface ConversationReconcileState {
+  status: "idle" | "loading" | "ready" | "error";
+  /**
+   * Newest incoming message id such that every incoming message at or before
+   * it is known contiguously. Acknowledgement may never move past this.
+   */
+  readableThroughMessageId: string | null;
+}
+
 export interface ConversationState {
   messages: ChatMessage[];
   events: GroupEvent[];
-  oldestCursor: string | null;
+  messageCursor: ChatCursor | null;
+  messagesComplete: boolean;
+  eventCursor: ChatCursor | null;
+  eventsComplete: boolean;
+  readWatermark: ConversationReadWatermark | null;
+  reconcile: ConversationReconcileState;
 }
 
 export interface MyDebts {
@@ -66,11 +84,8 @@ export interface AppState extends AppStateData {
   applyExpenseDetail(d: ExpenseDetail): void;
   applyExpensePage(groupId: string, page: ExpenseSummary[], complete: boolean): void;
   applyActivity(items: GroupEvent[]): void;
-  applyConversation(
-    groupId: string,
-    c: { messages: ChatMessage[]; events: GroupEvent[] },
-    prepend: boolean,
-  ): void;
+  applyConversation(groupId: string, merge: ConversationMerge): void;
+  setConversationReconcile(groupId: string, status: ConversationReconcileState["status"]): void;
   upsertExpense(summary: ExpenseSummary): void;
   replaceExpenseId(oldId: string, newId: string): void;
   patch(fn: (state: AppState) => Partial<AppState>): void;
@@ -103,7 +118,33 @@ export function migrateAppState(persisted: unknown): AppStateData {
       pairwiseEdges: snapshot.pairwiseEdges ?? [],
     };
   }
-  return { ...initialData, ...legacy, groups };
+
+  // A conversation persisted before paired (created_at, id) cursors existed
+  // cannot express the strict boundary. Its rows stay as known-good data, but
+  // the history is marked incomplete so reconciliation reseeds it rather than
+  // trusting a subset.
+  const conversations: Record<string, ConversationState> = {};
+  for (const [groupId, persistedConversation] of Object.entries(
+    legacy.conversations ?? {},
+  )) {
+    const cached = persistedConversation as Partial<ConversationState>;
+    const paired =
+      cached.messagesComplete !== undefined && cached.eventsComplete !== undefined;
+    conversations[groupId] = paired
+      ? (cached as ConversationState)
+      : {
+          messages: cached.messages ?? [],
+          events: cached.events ?? [],
+          messageCursor: null,
+          messagesComplete: false,
+          eventCursor: null,
+          eventsComplete: false,
+          readWatermark: null,
+          reconcile: { status: "idle", readableThroughMessageId: null },
+        };
+  }
+
+  return { ...initialData, ...legacy, groups, conversations };
 }
 
 export const useAppStore = create<AppState>()(
@@ -125,7 +166,7 @@ export const useAppStore = create<AppState>()(
             const id = snapshot.group.id;
             groups[id] = snapshot;
             expenseLists[id] = listFromSeed(state.expenseLists[id], snapshot.recentExpenses, expenses);
-            conversations[id] = state.conversations[id] ?? { messages: [], events: [], oldestCursor: null };
+            conversations[id] = state.conversations[id] ?? conversationState();
           }
           return {
             me: b.me,
@@ -201,13 +242,29 @@ export const useAppStore = create<AppState>()(
       applyActivity: (items) =>
         set((state) => ({ activity: mergeActivity(state.activity.items, items) })),
 
-      applyConversation: (groupId, c, prepend) =>
+      applyConversation: (groupId, merge) =>
         set((state) => ({
           conversations: {
             ...state.conversations,
-            [groupId]: mergeConversation(state.conversations[groupId], c, prepend),
+            [groupId]: mergeConversation(
+              state.conversations[groupId],
+              merge,
+              state.me?.id ?? null,
+            ),
           },
         })),
+
+      setConversationReconcile: (groupId, status) =>
+        set((state) => {
+          const conversation = state.conversations[groupId];
+          if (conversation === undefined) return {};
+          return {
+            conversations: {
+              ...state.conversations,
+              [groupId]: { ...conversation, reconcile: { ...conversation.reconcile, status } },
+            },
+          };
+        }),
 
       upsertExpense: (summary) =>
         set((state) => {
