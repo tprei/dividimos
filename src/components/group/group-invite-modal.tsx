@@ -69,7 +69,9 @@ export function GroupInviteModal({
     if (!open || linkState !== "idle" || requestedRef.current) return;
     requestedRef.current = true;
     let active = true;
-    createInviteLink(groupId, null, null)
+    // A QR in a group photo or screenshot would otherwise be a permanent
+    // backdoor; two hours covers everyone scanning in the moment.
+    createInviteLink(groupId, new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), null)
       .then((link) => {
         if (!active) return;
         setToken(link.token);

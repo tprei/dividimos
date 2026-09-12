@@ -25,7 +25,7 @@ const WHITESPACE_RE = /\s/;
 const LOOPBACK_ORIGIN_RE =
   /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]):\d+$/;
 
-function isAcceptedOrigin(origin: string): boolean {
+export function isAcceptedAppOrigin(origin: string): boolean {
   if (origin === PRODUCTION_CLAIM_ORIGIN) return true;
   if (process.env.NODE_ENV === "production") return false;
   return LOOPBACK_ORIGIN_RE.test(origin);
@@ -68,7 +68,7 @@ export function parseClaimQrCode(data: string): ClaimQrResult | null {
 
   const token = parsed.hash.slice(1);
   if (!CLAIM_TOKEN_RE.test(token)) return null;
-  if (!isAcceptedOrigin(parsed.origin)) return null;
+  if (!isAcceptedAppOrigin(parsed.origin)) return null;
 
   return { token, url: `/claim#${token}` };
 }

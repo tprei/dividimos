@@ -87,7 +87,13 @@ describe("GroupInviteModal", () => {
     });
 
     await waitFor(() => {
-      expect(createInviteLink).toHaveBeenCalledWith(groupId, null, null);
+      expect(createInviteLink).toHaveBeenCalledWith(
+        groupId,
+        expect.any(String),
+        null,
+      );
+      const [, expiresAt] = vi.mocked(createInviteLink).mock.calls[0];
+      expect(Date.parse(expiresAt as string)).toBeGreaterThan(Date.now());
       expect(QRCode.toCanvas).toHaveBeenCalled();
     });
 
