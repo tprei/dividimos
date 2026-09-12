@@ -299,7 +299,7 @@ describe("GroupDetailContent", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
     await userEvent.click(
-      screen.getByRole("button", { name: "Compartilhar convite" }),
+      screen.getByRole("button", { name: "Compartilhar link e QR code do grupo" }),
     );
 
     expect(screen.getByTestId("invite-modal-stub")).toBeInTheDocument();
@@ -314,8 +314,7 @@ describe("GroupDetailContent", () => {
     render(<GroupDetailContent groupId={groupId} />);
 
     await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
-    await userEvent.click(screen.getByRole("button", { name: "Convidar" }));
-
+    await userEvent.click(screen.getByRole("button", { name: "Convidar por @handle" }));
     expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
   });
 });

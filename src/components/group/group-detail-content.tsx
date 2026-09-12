@@ -139,19 +139,19 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
                 variant="outline"
                 className="min-h-11 flex-1 gap-1.5"
                 onClick={() => setShowInviteModal(true)}
-                aria-label="Compartilhar convite"
+                aria-label="Compartilhar link e QR code do grupo"
               >
                 <Share2 className="size-4" />
-                Compartilhar
+                Link e QR
               </Button>
               <Button
                 variant="outline"
                 className="min-h-11 flex-1 gap-1.5"
                 onClick={() => setShowInvitePanel(!showInvitePanel)}
-                aria-label="Convidar"
+                aria-label="Convidar por @handle"
               >
                 <UserPlus className="size-4" />
-                Convidar
+                Por @handle
               </Button>
             </div>
           )}
