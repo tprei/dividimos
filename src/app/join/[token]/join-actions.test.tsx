@@ -44,49 +44,14 @@ const defaultProps = {
   token: "abc-123",
   isAuthenticated: true,
   isInvalid: false,
-  isExpired: false,
-  isExhausted: false,
-  isInactive: false,
 };
 
 describe("JoinActions", () => {
-  it("shows unavailable message when link is inactive", () => {
-    render(
-      <JoinActions
-        {...defaultProps}
-        isInvalid
-        isInactive
-      />,
-    );
+  it("shows one message for an invalid link, whatever the reason", () => {
+    render(<JoinActions {...defaultProps} isInvalid />);
 
     expect(screen.getByText("Convite indisponível")).toBeInTheDocument();
-    expect(screen.getByText("Este convite foi desativado.")).toBeInTheDocument();
-  });
-
-  it("shows expired message when link is expired", () => {
-    render(
-      <JoinActions
-        {...defaultProps}
-        isInvalid
-        isExpired
-      />,
-    );
-
-    expect(screen.getByText("Este convite expirou.")).toBeInTheDocument();
-  });
-
-  it("shows exhausted message when link reached max uses", () => {
-    render(
-      <JoinActions
-        {...defaultProps}
-        isInvalid
-        isExhausted
-      />,
-    );
-
-    expect(
-      screen.getByText("Este convite atingiu o limite de usos."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Este convite não é mais válido.")).toBeInTheDocument();
   });
 
   it("shows login button when not authenticated", () => {

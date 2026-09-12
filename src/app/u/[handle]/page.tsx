@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { decodeUserProfileOrNull } from "@/lib/ledger/decode";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { buttonVariants } from "@/components/ui/button-variants";
-import { SendMessageButton } from "./profile-actions";
+import { SendMessageButton, SplitBillButton } from "./profile-actions";
 
 export default async function PublicProfilePage({
   params,
@@ -69,10 +69,10 @@ export default async function PublicProfilePage({
         )}
 
         {callerId && !isSelf && (
-          <SendMessageButton
-            targetUserId={profile.id}
-            targetName={profile.name}
-          />
+          <>
+            <SplitBillButton targetUserId={profile.id} targetName={profile.name} />
+            <SendMessageButton targetUserId={profile.id} targetName={profile.name} />
+          </>
         )}
 
         {isSelf && (

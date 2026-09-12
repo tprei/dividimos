@@ -10,31 +10,15 @@ interface JoinActionsProps {
   token: string;
   isAuthenticated: boolean;
   isInvalid?: boolean;
-  isExpired?: boolean;
-  isExhausted?: boolean;
-  isInactive?: boolean;
 }
 
-export function JoinActions({
-  token,
-  isAuthenticated,
-  isInvalid,
-  isExpired,
-  isExhausted,
-  isInactive,
-}: JoinActionsProps) {
+export function JoinActions({ token, isAuthenticated, isInvalid }: JoinActionsProps) {
   const router = useRouter();
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (isInvalid) {
-    const reason = isInactive
-      ? "Este convite foi desativado."
-      : isExpired
-        ? "Este convite expirou."
-        : isExhausted
-          ? "Este convite atingiu o limite de usos."
-          : "Este convite não é mais válido.";
+    const reason = "Este convite não é mais válido.";
 
     return (
       <div className="flex flex-col items-center rounded-2xl border border-dashed bg-muted/30 p-6 text-center">

@@ -50,7 +50,7 @@ export function ConversationShareModal({
   }
 
   const appUrl =
-    typeof window !== "undefined" ? window.location.origin : "";
+    typeof window !== "undefined" ? `${window.location.origin}/u/${handle}` : "";
 
   const inviteMessage = `Me adicione no Dividimos! Meu usuário é @${handle}`;
 

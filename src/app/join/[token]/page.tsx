@@ -23,12 +23,14 @@ export default async function JoinPage({
     valid: boolean;
   } | null;
 
-  if (!preview || !preview.groupName) notFound();
+  // The RPC failed to return anything at all; only then is this a 404.
+  if (!preview) notFound();
+
+  const isInvalid = !preview.valid || !preview.groupName;
 
   const { data: claimsData } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(claimsData?.claims?.sub);
 
-  const creatorName = preview.creatorName ?? "Alguém";
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
@@ -43,27 +45,33 @@ export default async function JoinPage({
 
       <div className="mt-6 rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
         <p className="text-sm text-white/70">Convite para o grupo</p>
-        <p className="mt-2 text-3xl font-bold">{preview.groupName}</p>
-        <div className="mt-3 flex gap-4 text-sm text-white/70">
-          <span className="flex items-center gap-1">
-            <Users className="h-3.5 w-3.5" />
-            Convite de {creatorName}
-          </span>
-        </div>
+        <p className="mt-2 text-3xl font-bold">
+          {isInvalid ? "Convite indisponível" : preview.groupName}
+        </p>
+        {!isInvalid && (
+          <div className="mt-3 flex gap-4 text-sm text-white/70">
+            <span className="flex items-center gap-1">
+              <Users className="h-3.5 w-3.5" />
+              Convite de {preview.creatorName ?? "Alguém"}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="mt-5 rounded-2xl border bg-card p-5">
-        <div className="rounded-xl bg-muted/50 p-3">
-          <p className="text-sm">
-            Ao entrar, você poderá ver e criar despesas neste grupo.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Todos os membros podem dividir contas entre si.
-          </p>
-        </div>
+        {!isInvalid && (
+          <div className="rounded-xl bg-muted/50 p-3">
+            <p className="text-sm">
+              Ao entrar, você poderá ver e criar despesas neste grupo.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Todos os membros podem dividir contas entre si.
+            </p>
+          </div>
+        )}
       </div>
       <div className="mt-5">
-        <JoinActions token={token} isAuthenticated={isAuthenticated} />
+        <JoinActions token={token} isAuthenticated={isAuthenticated} isInvalid={isInvalid} />
       </div>
     </div>
   );
