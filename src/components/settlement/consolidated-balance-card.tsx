@@ -10,6 +10,7 @@ import type { BalanceRow } from "@/types/ledger";
 export interface SettlementPerson {
   id: string;
   name: string;
+  handle: string | null;
   avatarUrl: string | null;
   isGuest: boolean;
   /** Invited but has not accepted: `record_settlement` rejects them either way. */

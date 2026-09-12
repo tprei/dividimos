@@ -65,11 +65,10 @@ export function CurrencyInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
 
-  // #477: candidates outside [0, upper] are never committed via
-  // onChangeCents (no store mutation) — they are held here as a local,
-  // uncommitted display override so the user can see what they typed.
-  // A valid candidate clears the override and commits normally. No
-  // clamped maximum ever appears.
+  // Candidates outside [0, upper] are never committed via onChangeCents (no
+  // store mutation) — they are held here as a local, uncommitted display
+  // override so the user can see what they typed. A valid candidate clears the
+  // override and commits normally. No clamped maximum ever appears.
   const [rawOverride, setRawOverride] = useState<string | null>(null);
 
   // A prop-driven value change (hydration/reset/reload) always restores

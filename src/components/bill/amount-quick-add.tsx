@@ -8,6 +8,7 @@ interface AmountQuickAddCentsProps {
   increments?: number[];
   valueCents: number;
   onChangeCents: (cents: number) => void;
+  maxCents?: number;
   currentValue?: never;
   onChange?: never;
 }
@@ -60,7 +61,8 @@ export function AmountQuickAdd(props: AmountQuickAddProps) {
         const p = props as AmountQuickAddCentsProps;
         centsHistoryRef.current.push(p.valueCents);
         setCanUndo(true);
-        p.onChangeCents(p.valueCents + increment * 100);
+        const next = Math.min(p.valueCents + increment * 100, p.maxCents ?? Number.MAX_SAFE_INTEGER);
+        p.onChangeCents(next);
       } else {
         const p = props as AmountQuickAddStringProps;
         stringHistoryRef.current.push(p.currentValue);

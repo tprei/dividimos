@@ -261,7 +261,7 @@ describe("ExpenseDetail", () => {
       screen.getByText("Carol Souza mudou o nome de “Almoço” para “Jantar”"),
     ).toBeInTheDocument();
   });
-  it("shows the total, the Você paid and share row, and guest shares summing to the total", () => {
+  it("shows the total, per-person consumed/paid/balance rows, and guest shares summing to the total", () => {
     seedStore("active");
     render(<ExpenseDetail expenseId="e1" />);
 
@@ -271,13 +271,19 @@ describe("ExpenseDetail", () => {
     expect(
       screen.getByText(
         (_, element) =>
-          element?.textContent?.replace(/\s+/g, " ") === "Pagou R$ 120,00",
+          element?.textContent?.replace(/\s+/g, " ") ===
+          "Consumiu R$ 70,00 · Pagou R$ 120,00",
       ),
     ).toBeInTheDocument();
-    expect(within(rows[0]).getByText("R$ 70,00")).toBeInTheDocument();
+    expect(
+      within(rows[0]).getByLabelText("Saldo de Alice nessa conta").textContent,
+    ).toBe("+R$\u00a050,00");
     expect(within(rows[1]).getByText("Convidado")).toBeInTheDocument();
     expect(within(rows[1]).getByText("R$ 50,00")).toBeInTheDocument();
-    expect(screen.getAllByText("R$ 120,00")).toHaveLength(2);
+    expect(
+      within(rows[1]).getByLabelText("Saldo de Bruno nessa conta").textContent,
+    ).toBe("\u2212R$\u00a050,00");
+    expect(screen.getAllByText("R$ 120,00")).toHaveLength(3);
     expect(screen.queryByText(/depois de entrar/i)).not.toBeInTheDocument();
   });
 

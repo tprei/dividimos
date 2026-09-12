@@ -154,16 +154,18 @@ function NewBillPageContent() {
     if (!me) return [];
     const others = store.participants.filter((participant) => participant.id !== me.id);
     return [
-      { id: me.id, name: me.name, avatarUrl: me.avatarUrl ?? null, isGuest: false },
+      { id: me.id, name: me.name, handle: me.handle, avatarUrl: me.avatarUrl ?? null, isGuest: false },
       ...others.map((participant) => ({
         id: participant.id,
         name: participant.name,
+        handle: participant.handle,
         avatarUrl: participant.avatarUrl ?? null,
         isGuest: false,
       })),
       ...store.guests.map((guest) => ({
         id: guest.id,
         name: guest.name,
+        handle: null,
         avatarUrl: null,
         isGuest: true,
       })),

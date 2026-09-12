@@ -7,6 +7,7 @@ import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
 import { PercentHelpers } from "@/components/bill/percent-helpers";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
+import { PersonLabel } from "@/components/shared/person-label";
 import { SectionHeading } from "@/components/shared/section-heading";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,7 @@ export interface SingleBillDivisionProps {
 interface DivisionPerson {
   id: string;
   name: string;
+  handle: string | null;
   avatarUrl: string | null;
   isGuest: boolean;
 }
@@ -102,12 +104,14 @@ export function SingleBillDivision({
       ...participants.map((participant) => ({
         id: participant.id,
         name: participant.name,
+        handle: participant.handle,
         avatarUrl: participant.avatarUrl ?? null,
         isGuest: false,
       })),
       ...guests.map((guest) => ({
         id: guest.id,
         name: guest.name,
+        handle: null,
         avatarUrl: null,
         isGuest: true,
       })),
@@ -214,7 +218,7 @@ export function SingleBillDivision({
                   <UserAvatar name={person.name} avatarUrl={person.avatarUrl} size="sm" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm leading-5 font-semibold">{person.name.split(" ")[0]}</p>
+                  <PersonLabel name={person.name} handle={person.handle} nameClassName="text-sm leading-5" />
                   {person.isGuest && <Badge variant="secondary">Convidado</Badge>}
                   {!person.isGuest && invitedUserIds.has(person.id) && (
                     <Badge variant="secondary" className="shrink-0">

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import { Equal } from "lucide-react";
+import { ChevronDown, Equal } from "lucide-react";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ItemDivisionEditor } from "@/components/bill/item-division-editor";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { divisionForItem, equalDivision, isItemAssigned, type ItemDivisionValue } from "@/lib/item-division";
+import { cn } from "@/lib/utils";
 import type { ExpenseSplit, Guest } from "@/stores/bill-store";
 import type { ExpenseItem, User } from "@/types";
 export interface SplitSectionProps {
@@ -22,7 +23,7 @@ export interface SplitSectionProps {
   expandedId: string | null;
   onToggleItem: (itemId: string) => void;
   onSaveDivision: (itemId: string, value: ItemDivisionValue) => void;
-  onCancelDivision: () => void;
+  onCloseDivision: () => void;
 }
 
 function participantEntries(participants: User[], guests: Guest[]): ItemDivisionParticipant[] {
@@ -30,12 +31,14 @@ function participantEntries(participants: User[], guests: Guest[]): ItemDivision
     ...participants.map((participant) => ({
       id: participant.id,
       name: participant.name,
+      handle: participant.handle,
       avatarUrl: participant.avatarUrl ?? null,
       isGuest: false,
     })),
     ...guests.map((guest) => ({
       id: guest.id,
       name: guest.name,
+      handle: null,
       avatarUrl: null,
       isGuest: true,
     })),
@@ -65,7 +68,7 @@ export function SplitSection({
   expandedId,
   onToggleItem,
   onSaveDivision,
-  onCancelDivision,
+  onCloseDivision,
 }: SplitSectionProps) {
   const people = participantEntries(participants, guests);
   const peopleIds = new Set(people.map((person) => person.id));
@@ -120,6 +123,13 @@ export function SplitSection({
                     Pendente
                   </Badge>
                 )}
+                <ChevronDown
+                  aria-hidden="true"
+                  className={cn(
+                    "size-4 shrink-0 text-muted-foreground transition-transform",
+                    expanded && "rotate-180",
+                  )}
+                />
               </button>
               {expanded && (
                 <ItemDivisionEditor
@@ -129,7 +139,7 @@ export function SplitSection({
                   participants={people}
                   value={division}
                   onSave={(value) => onSaveDivision(item.id, value)}
-                  onCancel={onCancelDivision}
+                  onClose={onCloseDivision}
                 />
               )}
             </Fragment>

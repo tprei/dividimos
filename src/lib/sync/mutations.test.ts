@@ -847,6 +847,7 @@ describe("mutations", () => {
           p_from_user_id: ME.id,
           p_to_user_id: USER_2.id,
           p_amount_cents: 2000,
+          p_allow_overpay: false,
         },
         expect.any(Function),
       );

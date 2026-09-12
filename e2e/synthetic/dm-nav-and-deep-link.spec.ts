@@ -41,7 +41,7 @@ test.describe("DM navigation and deep links", () => {
     await loginAs(alice);
     await page.waitForLoadState("networkidle");
 
-    const debtRow = page.getByRole("button", { name: /^Bob, .*, Trip$/ });
+    const debtRow = page.getByRole("button", { name: /^Bob Deeplink, .*, Trip$/ });
     await expect(debtRow).toBeVisible({ timeout: 10000 });
     await debtRow.click();
 
@@ -92,7 +92,7 @@ test.describe("DM navigation and deep links", () => {
     await loginAs(alice);
     await page.waitForLoadState("networkidle");
 
-    const debtRow = page.getByRole("button", { name: /^Bob, .*, Conversa direta$/ });
+    const debtRow = page.getByRole("button", { name: /^Bob DM Direct, .*, Conversa direta$/ });
     await expect(debtRow).toBeVisible({ timeout: 10000 });
     await debtRow.click();
 

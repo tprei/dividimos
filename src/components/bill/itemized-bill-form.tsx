@@ -236,11 +236,8 @@ export function ItemizedBillForm({
         onAmountChange={handleAmountChange}
         onServiceFeeChange={handleServiceFeeChange}
         onToggleItem={(itemId) => setExpandedId((current) => (current === itemId ? null : itemId))}
-        onSaveDivision={(itemId, value) => {
-          store.setItemDivision(itemId, value);
-          setExpandedId(null);
-        }}
-        onCancelDivision={() => setExpandedId(null)}
+        onSaveDivision={(itemId, value) => store.setItemDivision(itemId, value)}
+        onCloseDivision={() => setExpandedId(null)}
         onFooter={() => void handleFooter()}
         isEditing={isEditing}
         submitting={submitting}

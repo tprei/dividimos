@@ -9,6 +9,7 @@ export interface DebtRow {
   counterpartyKind: ParticipantKind;
   counterpartyId: string;
   counterpartyName: string;
+  counterpartyHandle: string | null;
   counterpartyAvatarUrl: string | null;
   amountCents: number;
   direction: "owes" | "owed";
@@ -17,6 +18,7 @@ export interface DebtRow {
 interface Counterparty {
   kind: ParticipantKind;
   name: string;
+  handle: string | null;
   avatarUrl: string | null;
   status: MemberStatus | null;
 }
@@ -30,6 +32,7 @@ function resolveCounterparty(
       return {
         kind: "user",
         name: member.user.name,
+        handle: member.user.handle,
         avatarUrl: member.user.avatarUrl,
         status: member.status,
       };
@@ -37,7 +40,7 @@ function resolveCounterparty(
   }
   for (const guest of snapshot.guests) {
     if (guest.id === participantId) {
-      return { kind: "guest", name: guest.displayName, avatarUrl: null, status: null };
+      return { kind: "guest", name: guest.displayName, handle: null, avatarUrl: null, status: null };
     }
   }
   return null;
@@ -62,6 +65,7 @@ export function debtRowsForGroup(snapshot: GroupSnapshot, meId: string): DebtRow
       counterpartyKind: counterparty.kind,
       counterpartyId,
       counterpartyName: counterparty.name,
+      counterpartyHandle: counterparty.handle,
       counterpartyAvatarUrl: counterparty.avatarUrl,
       amountCents: transfer.amountCents,
       direction,

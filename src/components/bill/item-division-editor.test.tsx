@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot } from "@/types/ledger";
@@ -16,14 +16,14 @@ vi.mock("@/hooks/use-haptics", () => ({
 }));
 
 const PEOPLE: ItemDivisionParticipant[] = [
-  { id: "u1", name: "Ana", avatarUrl: null, isGuest: false },
-  { id: "u2", name: "Bruno", avatarUrl: null, isGuest: false },
-  { id: "g1", name: "Maria", avatarUrl: null, isGuest: true },
+  { id: "u1", name: "Ana", handle: "ana", avatarUrl: null, isGuest: false },
+  { id: "u2", name: "Bruno", handle: "bruno", avatarUrl: null, isGuest: false },
+  { id: "g1", name: "Maria", handle: null, avatarUrl: null, isGuest: true },
 ];
 
 function renderEditor(value: React.ComponentProps<typeof ItemDivisionEditor>["value"] = null) {
   const onSave = vi.fn();
-  const onCancel = vi.fn();
+  const onClose = vi.fn();
   render(
     <ItemDivisionEditor
       itemId="i1"
@@ -32,22 +32,21 @@ function renderEditor(value: React.ComponentProps<typeof ItemDivisionEditor>["va
       participants={PEOPLE}
       value={value}
       onSave={onSave}
-      onCancel={onCancel}
+      onClose={onClose}
     />,
   );
-  return { onSave, onCancel };
+  return { onSave, onClose };
 }
 
 describe("ItemDivisionEditor", () => {
-  it("keeps save disabled until somebody is selected, then saves equal shares", () => {
+  it("does not save until somebody is selected, then saves equal shares", () => {
     const { onSave } = renderEditor();
-    const save = screen.getByRole("button", { name: "Salvar" });
-    expect(save).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText("Selecione quem divide este item.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Todos" }));
-    expect(save).toBeEnabled();
-    fireEvent.click(save);
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "equal",
       shares: [
@@ -58,23 +57,47 @@ describe("ItemDivisionEditor", () => {
     });
   });
 
-  it("seeds percent inputs evenly and blocks save until they close 100%", () => {
+  it("commits the division after the debounce without any button press", async () => {
+    vi.useFakeTimers();
+    const onSave = vi.fn();
+    render(
+      <ItemDivisionEditor
+        itemId="i1"
+        itemName="Picanha"
+        itemCents={12900}
+        participants={PEOPLE}
+        value={null}
+        onSave={onSave}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Incluir Ana (@ana) em Picanha"));
+    expect(onSave).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("seeds percent inputs evenly and holds the commit until they close 100%", () => {
     const { onSave } = renderEditor();
-    fireEvent.click(screen.getByLabelText("Incluir Ana em Picanha"));
-    fireEvent.click(screen.getByLabelText("Incluir Bruno em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Ana (@ana) em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Bruno (@bruno) em Picanha"));
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
 
-    const ana = screen.getByLabelText("Percentual de Ana em Picanha") as HTMLInputElement;
-    const bruno = screen.getByLabelText("Percentual de Bruno em Picanha") as HTMLInputElement;
+    const ana = screen.getByLabelText("Percentual de Ana (@ana) em Picanha") as HTMLInputElement;
+    const bruno = screen.getByLabelText("Percentual de Bruno (@bruno) em Picanha") as HTMLInputElement;
     expect(ana.value).toBe("50,00");
     expect(bruno.value).toBe("50,00");
 
     fireEvent.change(ana, { target: { value: "49" } });
     expect(screen.getByText("Faltam 1,00% para fechar 100%.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    expect(onSave).not.toHaveBeenCalled();
 
     fireEvent.change(bruno, { target: { value: "51" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -85,7 +108,7 @@ describe("ItemDivisionEditor", () => {
   });
 
   it("restores a saved fixed division when reopened", () => {
-    renderEditor({
+    const { onSave } = renderEditor({
       mode: "fixed",
       shares: [
         { participantId: "u1", cents: 10000 },
@@ -93,10 +116,11 @@ describe("ItemDivisionEditor", () => {
       ],
     });
     expect(screen.getByRole("radio", { name: "Fixo" })).toHaveAttribute("aria-checked", "true");
-    expect((screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement).value).toBe("100,00");
-    expect((screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement).value).toBe("0,00");
+    expect((screen.getByLabelText("Valor fixo de Ana (@ana) em Picanha") as HTMLInputElement).value).toBe("100,00");
+    expect((screen.getByLabelText("Valor fixo de Bruno (@bruno) em Picanha") as HTMLInputElement).value).toBe("0,00");
     expect((screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement).value).toBe("29,00");
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeEnabled();
+    expect(screen.getByText("Salvo automaticamente")).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("re-includes a participant when their percent slider leaves zero", () => {
@@ -111,10 +135,10 @@ describe("ItemDivisionEditor", () => {
     expect(mariaSlider).toHaveValue("0");
     fireEvent.change(mariaSlider, { target: { value: "30" } });
 
-    const brunoInput = screen.getByLabelText("Percentual de Bruno em Picanha") as HTMLInputElement;
+    const brunoInput = screen.getByLabelText("Percentual de Bruno (@bruno) em Picanha") as HTMLInputElement;
     fireEvent.change(brunoInput, { target: { value: "36" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -129,16 +153,16 @@ describe("ItemDivisionEditor", () => {
     const { onSave } = renderEditor();
     fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
 
-    const brunoInput = screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement;
+    const brunoInput = screen.getByLabelText("Valor fixo de Bruno (@bruno) em Picanha") as HTMLInputElement;
     expect(brunoInput.value).toBe("43,00");
     fireEvent.change(brunoInput, { target: { value: "0" } });
 
-    const anaInput = screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement;
+    const anaInput = screen.getByLabelText("Valor fixo de Ana (@ana) em Picanha") as HTMLInputElement;
     fireEvent.change(anaInput, { target: { value: "64,50" } });
     const mariaInput = screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement;
     fireEvent.change(mariaInput, { target: { value: "64,50" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "fixed",
       shares: [
@@ -149,40 +173,34 @@ describe("ItemDivisionEditor", () => {
   });
 
   it("zeroes the fixed value texts when clearing the selection", () => {
-    renderEditor();
+    const { onSave } = renderEditor();
     fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
     fireEvent.click(screen.getByRole("button", { name: "Nenhum" }));
 
-    expect((screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement).value).toBe("0,00");
-    expect((screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement).value).toBe("0,00");
+    expect((screen.getByLabelText("Valor fixo de Ana (@ana) em Picanha") as HTMLInputElement).value).toBe("0,00");
+    expect((screen.getByLabelText("Valor fixo de Bruno (@bruno) em Picanha") as HTMLInputElement).value).toBe("0,00");
     expect((screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement).value).toBe("0,00");
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
-  });
-
-  it("calls onCancel without saving", () => {
-    const { onSave, onCancel } = renderEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
-    expect(onCancel).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).not.toHaveBeenCalled();
   });
 
   it("keeps percent slider drags and typed input on the same state", () => {
     const { onSave } = renderEditor();
-    fireEvent.click(screen.getByLabelText("Incluir Ana em Picanha"));
-    fireEvent.click(screen.getByLabelText("Incluir Bruno em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Ana (@ana) em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Bruno (@bruno) em Picanha"));
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
 
-    const anaInput = screen.getByLabelText("Percentual de Ana em Picanha") as HTMLInputElement;
-    const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana em Picanha" });
+    const anaInput = screen.getByLabelText("Percentual de Ana (@ana) em Picanha") as HTMLInputElement;
+    const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana (@ana) em Picanha" });
     fireEvent.change(anaSlider, { target: { value: "40.6" } });
     expect(anaInput.value).toBe("41,00");
 
     fireEvent.change(anaInput, { target: { value: "33" } });
     expect(anaSlider).toHaveValue("33");
 
-    const brunoSlider = screen.getByRole("slider", { name: "Percentual deslizante de Bruno em Picanha" });
+    const brunoSlider = screen.getByRole("slider", { name: "Percentual deslizante de Bruno (@bruno) em Picanha" });
     fireEvent.change(brunoSlider, { target: { value: "67" } });
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -194,16 +212,16 @@ describe("ItemDivisionEditor", () => {
 
   it("snaps a percent slider release to the nearest multiple of 5 within the window", () => {
     const { onSave } = renderEditor();
-    fireEvent.click(screen.getByLabelText("Incluir Ana em Picanha"));
-    fireEvent.click(screen.getByLabelText("Incluir Bruno em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Ana (@ana) em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Bruno (@bruno) em Picanha"));
     fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
 
-    const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana em Picanha" });
+    const anaSlider = screen.getByRole("slider", { name: "Percentual deslizante de Ana (@ana) em Picanha" });
     fireEvent.change(anaSlider, { target: { value: "48" } });
     fireEvent.pointerUp(anaSlider);
 
     expect(anaSlider).toHaveValue("50");
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "percent",
       shares: [
@@ -217,21 +235,21 @@ describe("ItemDivisionEditor", () => {
     const { onSave } = renderEditor();
     fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
 
-    const brunoInput = screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement;
+    const brunoInput = screen.getByLabelText("Valor fixo de Bruno (@bruno) em Picanha") as HTMLInputElement;
     fireEvent.change(brunoInput, { target: { value: "0" } });
-    const anaInput = screen.getByLabelText("Valor fixo de Ana em Picanha") as HTMLInputElement;
+    const anaInput = screen.getByLabelText("Valor fixo de Ana (@ana) em Picanha") as HTMLInputElement;
     fireEvent.change(anaInput, { target: { value: "64,50" } });
     const mariaInput = screen.getByLabelText("Valor fixo de Maria em Picanha") as HTMLInputElement;
     fireEvent.change(mariaInput, { target: { value: "64,50" } });
 
     const brunoSlider = screen.getByRole("slider", {
-      name: "Valor deslizante de Bruno em Picanha",
+      name: "Valor deslizante de Bruno (@bruno) em Picanha",
     });
     fireEvent.change(brunoSlider, { target: { value: "4300" } });
     fireEvent.change(anaInput, { target: { value: "43,00" } });
     fireEvent.change(mariaInput, { target: { value: "43,00" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).toHaveBeenCalledWith({
       mode: "fixed",
       shares: [
@@ -243,15 +261,16 @@ describe("ItemDivisionEditor", () => {
   });
 
   it("keeps a typed value that does not parse yet instead of reverting it", () => {
-    renderEditor();
+    const { onSave } = renderEditor();
     fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
 
-    const brunoInput = screen.getByLabelText("Valor fixo de Bruno em Picanha") as HTMLInputElement;
+    const brunoInput = screen.getByLabelText("Valor fixo de Bruno (@bruno) em Picanha") as HTMLInputElement;
     fireEvent.change(brunoInput, { target: { value: "0" } });
     fireEvent.change(brunoInput, { target: { value: "0,005" } });
 
     expect(brunoInput.value).toBe("0,005");
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
+    expect(onSave).not.toHaveBeenCalled();
   });
 });
 

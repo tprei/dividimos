@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Banknote, Check, Loader2, X } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
@@ -15,12 +16,15 @@ export interface GroupPaymentCounterparty {
   id: string;
   name: string;
   handle: string;
+  owedByMeCents: number;
+  owedToMeCents: number;
 }
 
 export interface GroupPaymentResult {
   counterpartyId: string;
   payerIsSelf: boolean;
   amountCents: number;
+  allowOverpay: boolean;
 }
 
 interface GroupRegisterPaymentSheetProps {
@@ -57,14 +61,32 @@ export function GroupRegisterPaymentSheet({
     [counterparties, selectedId],
   );
 
+  const [allowOverpay, setAllowOverpay] = useState(false);
+
+  const capCents = counterparty
+    ? payerIsSelf
+      ? counterparty.owedByMeCents
+      : counterparty.owedToMeCents
+    : 0;
+  const capped = !allowOverpay;
+
+  // Snap the amount down when the cap itself changes (direction flip,
+  // counterparty change, or locking the override back to the debt).
+  const capKey = capped ? String(capCents) : "unlocked";
+  const [prevCapKey, setPrevCapKey] = useState(capKey);
+  if (capKey !== prevCapKey) {
+    setPrevCapKey(capKey);
+    if (capped && amountCents > capCents) setAmountCents(capCents);
+  }
+
   const isConfirming = status === "confirming";
   const isConfirmed = status === "confirmed";
   const isDisabled = isConfirming || isConfirmed || amountCents <= 0 || !counterparty;
 
   const handleConfirm = useCallback(() => {
     if (!counterparty || amountCents <= 0 || isConfirming || isConfirmed) return;
-    onConfirm({ counterpartyId: counterparty.id, payerIsSelf, amountCents });
-  }, [amountCents, counterparty, isConfirmed, isConfirming, onConfirm, payerIsSelf]);
+    onConfirm({ counterpartyId: counterparty.id, payerIsSelf, amountCents, allowOverpay });
+  }, [amountCents, counterparty, isConfirmed, isConfirming, onConfirm, payerIsSelf, allowOverpay]);
 
   return (
     <motion.div
@@ -103,14 +125,14 @@ export function GroupRegisterPaymentSheet({
               key={member.id}
               type="button"
               onClick={() => setSelectedId(member.id)}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+              className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                 counterparty?.id === member.id
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border bg-background text-muted-foreground hover:border-primary/30"
               }`}
               data-testid={`group-payment-member-${member.id}`}
             >
-              {member.name}
+              <PersonLabel name={member.name} handle={member.handle} nameClassName="text-sm" />
             </button>
           ))}
         </div>
@@ -129,6 +151,7 @@ export function GroupRegisterPaymentSheet({
           <CurrencyInput
             valueCents={amountCents}
             onChangeCents={setAmountCents}
+            maxCents={capped ? capCents : undefined}
             className="w-32 text-3xl font-bold"
             autoFocus
             aria-label="Valor do pagamento"
@@ -136,18 +159,66 @@ export function GroupRegisterPaymentSheet({
           />
         </div>
         {amountCents > 0 && (
-          <div
-            className="mt-1 text-xs text-muted-foreground"
-            data-testid="group-payment-preview"
-          >
+          <div className="mt-1 text-xs text-muted-foreground" data-testid="group-payment-preview">
             {formatBRL(amountCents)}
+          </div>
+        )}
+        {capped && capCents > 0 && (
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-xs">
+            <span className="text-muted-foreground">
+              Dívida atual: {formatBRL(capCents)}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full px-3"
+              onClick={() => setAmountCents(capCents)}
+              data-testid="group-payment-settle-all"
+            >
+              Quitar tudo
+            </Button>
+          </div>
+        )}
+        {capped && capCents === 0 && (
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="group-payment-settled">
+            Vocês estão quitados nesse grupo.
+          </p>
+        )}
+        {capped ? (
+          <button
+            type="button"
+            onClick={() => setAllowOverpay(true)}
+            className="mt-2 text-xs font-semibold text-primary underline-offset-2 hover:underline"
+            data-testid="group-payment-allow-overpay"
+          >
+            {capCents === 0 ? "Registrar pagamento mesmo assim" : "Registrar outro valor"}
+          </button>
+        ) : (
+          <div className="mt-2 rounded-xl border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
+            <p className="font-semibold">Sem limite de dívida.</p>
+            <p>O que passar da dívida vira crédito pra quem recebeu.</p>
+            <button
+              type="button"
+              onClick={() => setAllowOverpay(false)}
+              className="mt-1 font-semibold text-primary underline-offset-2 hover:underline"
+              data-testid="group-payment-limit-to-debt"
+            >
+              Limitar à dívida
+            </button>
           </div>
         )}
       </div>
 
-      <div className="mb-3 flex justify-center">
-        <AmountQuickAdd valueCents={amountCents} onChangeCents={setAmountCents} />
-      </div>
+      {!(capped && capCents === 0) && (
+        <div className="mb-3 flex justify-center">
+          <AmountQuickAdd
+            valueCents={amountCents}
+            onChangeCents={setAmountCents}
+            maxCents={capped ? capCents : undefined}
+          />
+        </div>
+      )}
 
       <div className="mb-4">
         <div className="mb-1.5 text-xs text-muted-foreground">Quem pagou?</div>
@@ -155,27 +226,27 @@ export function GroupRegisterPaymentSheet({
           <button
             type="button"
             onClick={() => setPayerIsSelf(true)}
-            className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
               payerIsSelf
                 ? "border-primary bg-primary/10 text-primary"
                 : "border-border bg-background text-muted-foreground hover:border-primary/30"
             }`}
             data-testid="group-payment-payer-self"
           >
-            Eu (@{currentUserHandle})
+            <PersonLabel name="Eu" handle={currentUserHandle} nameClassName="text-sm" />
           </button>
           {counterparty && (
             <button
               type="button"
               onClick={() => setPayerIsSelf(false)}
-              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+              className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
                 !payerIsSelf
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border bg-background text-muted-foreground hover:border-primary/30"
               }`}
               data-testid="group-payment-payer-other"
             >
-              {counterparty.name}
+              <PersonLabel name={counterparty.name} handle={counterparty.handle} nameClassName="text-sm" />
             </button>
           )}
         </div>

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { ExpenseHistory } from "./expense-history";
 import { ExpenseItems } from "./expense-items";
+import { ExpensePayers } from "./expense-payers";
 import { ExpenseParticipantList } from "./expense-participant-list";
 import { GuestInviteDialog } from "./guest-invite-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -23,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useMe } from "@/hooks/use-me";
+import { attributePayers } from "@/lib/expense-attribution";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { deleteExpense, restoreExpense } from "@/lib/sync/mutations";
 import { refreshExpense } from "@/lib/sync/refresh";
@@ -110,6 +112,21 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     [payloadParticipants, nameOf],
   );
 
+  const participantAvatarUrl = useCallback(
+    (participantIndex: number): string | null => {
+      const ref = payloadParticipants?.[participantIndex];
+      if (!ref || ref.kind !== "user") return null;
+      return avatarUrlOf(ref.userId);
+    },
+    [payloadParticipants, avatarUrlOf],
+  );
+
+  const participantIsGuest = useCallback(
+    (participantIndex: number): boolean =>
+      payloadParticipants?.[participantIndex]?.kind === "guest",
+    [payloadParticipants],
+  );
+
   if (unavailable) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6">
@@ -142,6 +159,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   }
 
   const { expense, current } = detail;
+  const payers = attributePayers(current.payload.payers, current.totalCents);
   const isDeleted = expense.status === "deleted";
 
   async function handleDelete() {
@@ -240,6 +258,14 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
           )}
         </div>
       </div>
+      <div className="px-4">
+        <ExpensePayers
+          payers={payers}
+          participantName={participantName}
+          participantAvatarUrl={participantAvatarUrl}
+          participantIsGuest={participantIsGuest}
+        />
+      </div>
 
       <ExpenseParticipantList
         participants={detail.participants}
@@ -255,6 +281,9 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
               items={current.payload.items}
               itemAssignments={current.payload.itemAssignments}
               participantName={participantName}
+              payers={payers}
+              participantAvatarUrl={participantAvatarUrl}
+              participantIsGuest={participantIsGuest}
             />
           </div>
         )}

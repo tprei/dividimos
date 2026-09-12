@@ -30,7 +30,7 @@ test.describe("Home quick charge and Pix amount editing", () => {
     });
 
     await loginAs(alice);
-    await page.getByRole("button", { name: /^Bob, .*Grupo Pix$/ }).click();
+    await page.getByRole("button", { name: /^Bob Deve, .*Grupo Pix$/ }).click();
     await page.getByRole("button", { name: "Cobrar via Pix" }).click();
 
     const dialog = page.getByRole("dialog", { name: "Cobrar via Pix" });

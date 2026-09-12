@@ -61,6 +61,7 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
       ...snapshot.members.map((member) => ({
         id: member.userId,
         name: member.user.name,
+        handle: member.user.handle,
         avatarUrl: member.user.avatarUrl,
         isGuest: false,
         isPending: member.status === "invited",
@@ -68,6 +69,7 @@ export function GroupSettlementView({ groupId, snapshot, meId }: GroupSettlement
       ...snapshot.guests.map((guest) => ({
         id: guest.id,
         name: guest.displayName,
+        handle: null,
         avatarUrl: null,
         isGuest: true,
         isPending: false,

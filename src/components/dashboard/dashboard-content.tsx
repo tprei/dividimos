@@ -9,6 +9,7 @@ import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import { NotificationsSheet } from "@/components/dashboard/notifications-sheet";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { Logo } from "@/components/shared/logo";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { SectionHeading } from "@/components/shared/section-heading";
@@ -16,6 +17,7 @@ import {
   DashboardSkeleton,
   ModalLoadingSkeleton,
 } from "@/components/shared/skeleton";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatBRL } from "@/lib/currency";
@@ -110,43 +112,55 @@ export function DashboardContent() {
 
   return (
     <div className="mx-auto max-w-lg pb-8">
+      <div className="flex items-center justify-between px-4 pt-4">
+        <Logo size="sm" />
+        <div className="flex items-center gap-1">
+          <InstallPrompt />
+          <Link
+            href="/app/search"
+            aria-label="Buscar"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon-lg" }),
+              "min-h-11 min-w-11 rounded-full",
+            )}
+          >
+            <Search className="size-5" aria-hidden="true" />
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            className="relative min-h-11 min-w-11 rounded-full"
+            aria-label={`Notificações${invitations.length > 0 ? `, ${invitations.length} não lidas` : ""}`}
+            onClick={() => setNotificationsOpen(true)}
+          >
+            <Bell className="size-5" aria-hidden="true" />
+            {invitations.length > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white"
+              >
+                {invitations.length}
+              </span>
+            )}
+          </Button>
+        </div>
+      </div>
       <ScreenHeader
         title={`Oi, ${firstName}`}
-        action={
-          <div className="flex items-center gap-1">
-            <InstallPrompt />
-            <Link
-              href="/app/search"
-              aria-label="Buscar"
-              className={cn(
-                buttonVariants({ variant: "ghost", size: "icon-lg" }),
-                "min-h-11 min-w-11 rounded-full",
-              )}
-            >
-              <Search className="size-5" aria-hidden="true" />
-            </Link>
-            <Button
-              variant="ghost"
-              size="icon-lg"
-              className="relative min-h-11 min-w-11 rounded-full"
-              aria-label={`Notificações${invitations.length > 0 ? `, ${invitations.length} não lidas` : ""}`}
-              onClick={() => setNotificationsOpen(true)}
-            >
-              <Bell className="size-5" aria-hidden="true" />
-              {invitations.length > 0 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white"
-                >
-                  {invitations.length}
-                </span>
-              )}
-            </Button>
-          </div>
+        leading={
+          <Link
+            href="/app/profile"
+            aria-label="Seu perfil"
+            className="shrink-0 rounded-full ring-2 ring-primary/25 transition-shadow hover:ring-primary/50"
+          >
+            <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="md" priority />
+          </Link>
         }
       />
 
-      <div className="flex items-start gap-4 px-4 pt-4">
+      <div
+        className="gradient-mesh mx-4 mt-2 flex items-start gap-4 rounded-3xl border border-primary/15 p-4"
+      >
         <div className="min-w-0 flex-1" data-tour="balance-card">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
             Saldo geral
@@ -178,9 +192,10 @@ export function DashboardContent() {
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
               "min-h-11 justify-start px-3 text-xs",
+              "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
             )}
           >
-            <ScanLine className="size-4 shrink-0" aria-hidden="true" />
+            <ScanLine className="size-4 shrink-0 text-primary" aria-hidden="true" />
             Escanear nota
           </Link>
           <Link
@@ -188,15 +203,16 @@ export function DashboardContent() {
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
               "min-h-11 justify-start px-3 text-xs",
+              "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
             )}
           >
-            <Plus className="size-4 shrink-0" aria-hidden="true" />
+            <Plus className="size-4 shrink-0 text-primary" aria-hidden="true" />
             Nova conta
           </Link>
           <Button
             variant="outline"
             size="sm"
-            className="min-h-11 justify-start px-3 text-xs"
+            className="min-h-11 justify-start px-3 text-xs border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10"
             onClick={openQuickCharge}
             disabled={!me.pixKeyHint}
             title={me.pixKeyHint ? undefined : "Cadastre uma chave Pix no perfil"}

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DivisionModePills } from "@/components/bill/division-mode-pills";
 import { DivisionSlider } from "@/components/bill/division-slider";
 import { FixedAmountHelpers } from "@/components/bill/fixed-amount-helpers";
 import { PercentHelpers } from "@/components/bill/percent-helpers";
 import { GuestAvatar } from "@/components/shared/guest-avatar";
 import { Money } from "@/components/shared/money";
+import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import { cn } from "@/lib/utils";
 export interface ItemDivisionParticipant {
   id: string;
   name: string;
+  handle: string | null;
   avatarUrl: string | null;
   isGuest: boolean;
 }
@@ -39,7 +41,7 @@ export interface ItemDivisionEditorProps {
   participants: ItemDivisionParticipant[];
   value: ItemDivisionValue | null;
   onSave: (value: ItemDivisionValue) => void;
-  onCancel: () => void;
+  onClose: () => void;
 }
 
 function ShareCell({
@@ -98,6 +100,16 @@ function fixedSliderValue(text: string): number {
   const parsed = parseExpenseCentsText(text, { format: "plain_decimal", zeroPolicy: "allow" });
   return parsed.ok ? parsed.value : 0;
 }
+const AUTOSAVE_DELAY_MS = 400;
+
+function divisionKey(value: ItemDivisionValue | null): string {
+  if (!value) return "";
+  const shares = [...value.shares]
+    .sort((a, b) => (a.participantId < b.participantId ? -1 : 1))
+    .map((share) => `${share.participantId}:${share.cents}:${share.basisPoints ?? ""}`)
+    .join("|");
+  return `${value.mode}#${shares}`;
+}
 
 export function ItemDivisionEditor({
   itemId,
@@ -106,7 +118,7 @@ export function ItemDivisionEditor({
   participants,
   value,
   onSave,
-  onCancel,
+  onClose,
 }: ItemDivisionEditorProps) {
   const participantIds = participants.map((participant) => participant.id);
   const [mode, setMode] = useState<ItemDivisionMode>(value?.mode ?? "equal");
@@ -226,16 +238,59 @@ export function ItemDivisionEditor({
     if (mode !== "equal") seedEvenly(mode, []);
   };
 
-  const handleSave = () => {
-    if (!division.ok) return;
-    onSave({
-      mode,
-      shares: includedIds.map((id) => ({
-        participantId: id,
-        cents: division.centsById[id],
-        ...(division.basisPointsById ? { basisPoints: division.basisPointsById[id] } : {}),
-      })),
-    });
+  const draft: ItemDivisionValue | null = division.ok
+    ? {
+        mode,
+        shares: includedIds.map((id) => ({
+          participantId: id,
+          cents: division.centsById[id],
+          ...(division.basisPointsById ? { basisPoints: division.basisPointsById[id] } : {}),
+        })),
+      }
+    : null;
+  const draftKey = divisionKey(draft);
+
+  const onSaveRef = useRef(onSave);
+  const draftRef = useRef(draft);
+  const savedKeyRef = useRef(divisionKey(value));
+  const timerRef = useRef<number | null>(null);
+
+  const flush = () => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const pending = draftRef.current;
+    const pendingKey = divisionKey(pending);
+    if (pending !== null && pendingKey !== savedKeyRef.current) {
+      savedKeyRef.current = pendingKey;
+      onSaveRef.current(pending);
+    }
+  };
+  const flushRef = useRef(flush);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+    draftRef.current = draft;
+    flushRef.current = flush;
+  });
+
+  useEffect(() => {
+    if (draftKey === "" || draftKey === savedKeyRef.current) return;
+    timerRef.current = window.setTimeout(() => flushRef.current(), AUTOSAVE_DELAY_MS);
+    return () => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [draftKey]);
+
+  useEffect(() => () => flushRef.current(), []);
+
+  const handleDone = () => {
+    flush();
+    onClose();
   };
 
   const status = divisionStatusText(division, mode);
@@ -271,7 +326,12 @@ export function ItemDivisionEditor({
               ) : (
                 <UserAvatar name={participant.name} avatarUrl={participant.avatarUrl} size="sm" />
               )}
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{participant.name}</span>
+              <PersonLabel
+                name={participant.name}
+                handle={participant.handle}
+                className="flex-1"
+                nameClassName="text-sm"
+              />
               {!participant.isGuest && invitedUserIds.has(participant.id) && (
                 <Badge variant="secondary" className="shrink-0">
                   Convite pendente
@@ -287,8 +347,8 @@ export function ItemDivisionEditor({
                 fixedInput={mode === "fixed" ? fixedValues[participant.id] : null}
                 inputLabel={
                   mode === "percent"
-                    ? `Percentual de ${participant.name} em ${itemName}`
-                    : `Valor fixo de ${participant.name} em ${itemName}`
+                    ? `Percentual de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
+                    : `Valor fixo de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
                 }
                 onFocus={() => setLastTouchedId(participant.id)}
                 onPercentChange={(next) =>
@@ -307,7 +367,7 @@ export function ItemDivisionEditor({
                 type="button"
                 role="switch"
                 aria-checked={selected}
-                aria-label={`Incluir ${participant.name} em ${itemName}`}
+                aria-label={`Incluir ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`}
                 aria-describedby={shareId}
                 onClick={() => toggleParticipant(participant.id)}
                 className={cn(
@@ -327,8 +387,8 @@ export function ItemDivisionEditor({
               <DivisionSlider
                 ariaLabel={
                   mode === "percent"
-                    ? `Percentual deslizante de ${participant.name} em ${itemName}`
-                    : `Valor deslizante de ${participant.name} em ${itemName}`
+                    ? `Percentual deslizante de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
+                    : `Valor deslizante de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
                 }
                 className="basis-full"
                 min={0}
@@ -383,14 +443,12 @@ export function ItemDivisionEditor({
       >
         {status}
       </p>
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" className="h-11" onClick={onCancel}>
-          Cancelar
-        </Button>
-        <Button className="h-11 flex-1" disabled={!division.ok} onClick={handleSave}>
-          Salvar
-        </Button>
-      </div>
+      {division.ok && (
+        <p className="text-xs text-muted-foreground">Salvo automaticamente</p>
+      )}
+      <Button className="h-11 w-full" onClick={handleDone}>
+        Pronto
+      </Button>
     </div>
   );
 }

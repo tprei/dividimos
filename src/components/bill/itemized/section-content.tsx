@@ -35,7 +35,7 @@ export interface SectionContentProps {
   onAddItem: ItemsSectionProps["onAddItem"];
   onToggleItem: SplitSectionProps["onToggleItem"];
   onSaveDivision: SplitSectionProps["onSaveDivision"];
-  onCancelDivision: SplitSectionProps["onCancelDivision"];
+  onCloseDivision: SplitSectionProps["onCloseDivision"];
   onSetPayerFull: PaymentSectionProps["onSetPayerFull"];
   onSplitPaymentEqually: PaymentSectionProps["onSplitPaymentEqually"];
   onSetPayerAmount: PaymentSectionProps["onSetPayerAmount"];
@@ -68,7 +68,7 @@ export function SectionContent({
   onAddItem,
   onToggleItem,
   onSaveDivision,
-  onCancelDivision,
+  onCloseDivision,
   onSetPayerFull,
   onSplitPaymentEqually,
   onSetPayerAmount,
@@ -107,7 +107,7 @@ export function SectionContent({
         expandedId={expandedId}
         onToggleItem={onToggleItem}
         onSaveDivision={onSaveDivision}
-        onCancelDivision={onCancelDivision}
+        onCloseDivision={onCloseDivision}
       />
     );
   }
