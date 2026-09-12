@@ -18,8 +18,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: "[data-tour='balance-card']",
     title: "Seu saldo",
-    description:
-      "Aqui você vê quanto deve ou tem a receber. Toque no olho para esconder o valor.",
+    description: "Seu saldo geral, mais quanto você tem a pagar e a receber.",
     placement: "bottom",
   },
   {
@@ -30,10 +29,10 @@ const TOUR_STEPS: TourStep[] = [
     placement: "bottom",
   },
   {
-    target: "[data-tour='debt-tabs']",
+    target: "[data-tour='debt-lists']",
     title: "Quem deve o quê",
     description:
-      "Alterne entre o que você deve e o que te devem. Toque em uma dívida para gerar o Pix.",
+      "Quem você precisa pagar e quem precisa te pagar. Toque numa dívida pra gerar o Pix.",
     placement: "top",
   },
   {
@@ -67,6 +66,12 @@ function getTargetRect(selector: string): SpotlightRect | null {
   };
 }
 
+function stepRect(index: number): SpotlightRect | null {
+  const step = TOUR_STEPS[index];
+  if (!step) return null;
+  return getTargetRect(step.target);
+}
+
 function scrollToTarget(selector: string): void {
   const el = document.querySelector(selector);
   if (!el) return;
@@ -83,42 +88,8 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
   const [spotlight, setSpotlight] = useState<SpotlightRect | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const mounted = useMounted();
+
   const recalcTimer = useRef<ReturnType<typeof setTimeout>>(null);
-
-
-  const recalcSpotlight = useCallback(() => {
-    if (!shouldShow || showCelebration) return;
-    const step = TOUR_STEPS[currentStep];
-    if (!step) return;
-    const rect = getTargetRect(step.target);
-    if (rect) setSpotlight(rect);
-  }, [shouldShow, currentStep, showCelebration]);
-
-  useLayoutEffect(() => {
-    if (!shouldShow || showCelebration) return;
-    const step = TOUR_STEPS[currentStep];
-    if (!step) return;
-
-    scrollToTarget(step.target);
-
-    if (recalcTimer.current) clearTimeout(recalcTimer.current);
-    recalcTimer.current = setTimeout(recalcSpotlight, 350);
-
-    return () => {
-      if (recalcTimer.current) clearTimeout(recalcTimer.current);
-    };
-  }, [shouldShow, currentStep, recalcSpotlight, showCelebration]);
-
-  useEffect(() => {
-    if (!shouldShow) return;
-    const handler = () => recalcSpotlight();
-    window.addEventListener("resize", handler);
-    window.addEventListener("scroll", handler, { passive: true });
-    return () => {
-      window.removeEventListener("resize", handler);
-      window.removeEventListener("scroll", handler);
-    };
-  }, [shouldShow, recalcSpotlight]);
 
   const handleNext = useCallback(() => {
     if (currentStep < TOUR_STEPS.length - 1) {
@@ -131,6 +102,52 @@ export function OnboardingTour({ userId }: { userId: string | undefined }) {
       }, 2000);
     }
   }, [currentStep, completeTour]);
+
+  const recalcSpotlight = useCallback(() => {
+    if (!shouldShow || showCelebration) return;
+    const rect = stepRect(currentStep);
+    if (rect) setSpotlight(rect);
+  }, [shouldShow, currentStep, showCelebration]);
+
+  const resolveStep = useCallback(() => {
+    if (!shouldShow || showCelebration) return;
+    const rect = stepRect(currentStep);
+    if (rect) {
+      setSpotlight(rect);
+      return;
+    }
+    if (currentStep < TOUR_STEPS.length - 1) {
+      handleNext();
+    } else {
+      completeTour();
+    }
+  }, [shouldShow, currentStep, showCelebration, handleNext, completeTour]);
+
+  useLayoutEffect(() => {
+    if (!shouldShow || showCelebration) return;
+    const step = TOUR_STEPS[currentStep];
+    if (!step) return;
+
+    scrollToTarget(step.target);
+
+    clearTimeout(recalcTimer.current ?? undefined);
+    recalcTimer.current = setTimeout(resolveStep, 350);
+
+    return () => {
+      clearTimeout(recalcTimer.current ?? undefined);
+    };
+  }, [shouldShow, currentStep, resolveStep, showCelebration]);
+
+  useEffect(() => {
+    if (!shouldShow) return;
+    const handler = () => recalcSpotlight();
+    window.addEventListener("resize", handler);
+    window.addEventListener("scroll", handler, { passive: true });
+    return () => {
+      window.removeEventListener("resize", handler);
+      window.removeEventListener("scroll", handler);
+    };
+  }, [shouldShow, recalcSpotlight]);
 
   const handleSkip = useCallback(() => {
     completeTour();

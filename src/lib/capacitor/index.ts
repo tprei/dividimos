@@ -1,5 +1,4 @@
 import { Capacitor } from "@capacitor/core";
-import { SplashScreen } from "@capacitor/splash-screen";
 import { App } from "@capacitor/app";
 import { configureStatusBar } from "./status-bar";
 import { resolveDeepLinkTarget } from "./deep-link";
@@ -84,9 +83,4 @@ export async function initCapacitor(
       replace(launchTarget);
     }
   }
-}
-
-export async function hideSplash(): Promise<void> {
-  if (!isNativePlatform()) return;
-  await SplashScreen.hide({ fadeOutDuration: 300 });
 }
