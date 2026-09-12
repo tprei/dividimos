@@ -317,6 +317,22 @@ describe("SettingsPage account", () => {
       expect(mockRouterReplace).toHaveBeenCalledWith("/auth");
     });
   });
+  it("keeps the settings screen and retries after sign out failure", async () => {
+    const user = makeMe("user-a");
+    useAppStore.setState({ hydrated: true, me: user });
+    mockSignOut
+      .mockResolvedValueOnce({ error: new Error("denied") })
+      .mockResolvedValueOnce({ error: null });
+    render(<SettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /sair/i }));
+    const retryButton = await screen.findByRole("button", { name: /tentar novamente/i });
+    await waitFor(() => expect(retryButton).not.toBeDisabled());
+    fireEvent.click(retryButton);
+    await waitFor(() => {
+      expect(mockRouterReplace).toHaveBeenCalledWith("/auth");
+    });
+  });
 
   it("remounts on user change and seeds from new user preferences", () => {
     useAppStore.setState({

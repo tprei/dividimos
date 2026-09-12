@@ -111,6 +111,7 @@ const userWithoutPix: Me = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mockSignOut.mockResolvedValue({ error: null });
   useAppStore.getState().reset();
   useAppStore.setState({ hydrated: true, me: userA });
   updatePixKeyMock.mockResolvedValue({
@@ -360,6 +361,21 @@ describe("ProfilePage identity-keyed state", () => {
 
     await waitFor(() => {
       expect(mockSignOut).toHaveBeenCalledTimes(1);
+      expect(mockRouterReplace).toHaveBeenCalledWith("/auth");
+    });
+  });
+  it("keeps the profile open and retries after sign out failure", async () => {
+    const user = userEvent.setup();
+    mockSignOut
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce({ error: null });
+    render(<ProfilePage />);
+
+    await user.click(screen.getByRole("button", { name: /sair/i }));
+    const retryButton = await screen.findByRole("button", { name: /tentar novamente/i });
+    expect(retryButton).not.toBeDisabled();
+    await user.click(retryButton);
+    await waitFor(() => {
       expect(mockRouterReplace).toHaveBeenCalledWith("/auth");
     });
   });
