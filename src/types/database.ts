@@ -839,6 +839,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      claim_push_subscription: {
+        Args: {
+          p_user_id: string
+          p_channel: string
+          p_endpoint_digest: string
+          p_subscription_encrypted: string
+        }
+        Returns: Json
+      }
       claim_guest: { Args: { p_token: string }; Returns: Json }
       cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       confirm_vendor_charge: { Args: { p_charge_id: string }; Returns: Json }
