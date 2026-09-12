@@ -23,6 +23,7 @@ import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import { getAuthGeneration } from "@/lib/sync/client";
 import { createExpense, markRead, sendMessage } from "@/lib/sync/mutations";
 import {
   acceptInvitation,
@@ -31,9 +32,13 @@ import {
 } from "@/lib/sync/mutations-group";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
-import { loadConversation } from "@/lib/sync/refresh";
-import { findDmGroup } from "@/stores/app-selectors";
-import { conversationReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
+import { loadConversation, refreshGroup } from "@/lib/sync/refresh";
+import {
+  findDmGroup,
+  selectDmMembership,
+  type DmMembershipView,
+} from "@/stores/app-selectors";
+import { conversationReadKey, groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import type {
   ExpenseHeader,
   ExpensePayload,
@@ -102,9 +107,11 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const me = useAppStore((s) => s.me);
   const dm = useAppStore((s) => (me ? findDmGroup(s, me.id, counterpartyId) : null));
   const conversation = useAppStore((s) => (dm ? s.conversations[dm.group.id] : undefined));
+  const [resolveError, setResolveError] = useState<{
+    accountKey: string;
+    message: string;
+  } | null>(null);
 
-  const [resolveError, setResolveError] = useState<string | null>(null);
-  const resolving = !dm && !resolveError;
   const [chargeSheetOpen, setChargeSheetOpen] = useState(false);
   const [chargeStatus, setChargeStatus] = useState<QuickChargeStatus>("idle");
   const [chargeError, setChargeError] = useState<string | undefined>();
@@ -114,7 +121,19 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   // The store's boundary is what the server can prove is contiguous; the
   // thread confirms it actually rendered that far before we acknowledge it.
   const readableThroughId = conversation?.reconcile.readableThroughMessageId ?? null;
-  const [renderedThroughId, setRenderedThroughId] = useState<string | null>(null);
+  const renderedBoundaryKey = `${me?.id ?? ""}:${dm?.group.id ?? ""}`;
+  const [renderedBoundary, setRenderedBoundary] = useState<{
+    key: string;
+    id: string | null;
+  }>({ key: renderedBoundaryKey, id: null });
+  const renderedThroughId =
+    renderedBoundary.key === renderedBoundaryKey ? renderedBoundary.id : null;
+  const handleRenderedThrough = useCallback(
+    (messageId: string | null) => {
+      setRenderedBoundary({ key: renderedBoundaryKey, id: messageId });
+    },
+    [renderedBoundaryKey],
+  );
   const conversationRead = useAppStore((s) =>
     dm ? (s.reads[conversationReadKey(dm.group.id)] ?? IDLE_READ) : IDLE_READ,
   );
@@ -124,13 +143,28 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const chargeKey = useRef(crypto.randomUUID());
   const splitKey = useRef(crypto.randomUUID());
   const draftKey = useRef(crypto.randomUUID());
-  const requestedRef = useRef(false);
+  const requestedKeyRef = useRef<string | null>(null);
   const loadedRef = useRef<Set<string>>(new Set());
-
   const groupId = dm?.group.id ?? null;
+  const loadKey = me && groupId ? `${me.id}:${groupId}` : null;
+  const accountKey = me === null ? null : `${me.id}:${counterpartyId}`;
+  const activeResolveError =
+    !dm && resolveError?.accountKey === accountKey ? resolveError.message : null;
+  const resolving = accountKey !== null && !dm && activeResolveError === null;
   const counterpartyMember = dm?.members.find((m) => m.userId === counterpartyId);
   const counterparty: UserProfile | null = counterpartyMember?.user ?? null;
-  const myStatus = dm?.members.find((m) => m.userId === me?.id)?.status ?? "invited";
+  // Subscribe to stable references only: deriving the view inside the store
+  // selector would return a fresh object every render and loop forever.
+  const groupRead = useAppStore((s) =>
+    dm ? (s.reads[groupReadKey(dm.group.id)] ?? IDLE_READ) : IDLE_READ,
+  );
+  const membership: DmMembershipView = useMemo(
+    () =>
+      me
+        ? selectDmMembership(dm ?? undefined, me.id, groupRead)
+        : { status: "loading" },
+    [dm, me, groupRead],
+  );
   const isCounterpartyPending = counterpartyMember?.status === "invited";
 
   const debtRows = useMemo(
@@ -152,19 +186,40 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     [nameById],
   );
 
+  const requestDm = useCallback(
+    (key: string) => {
+      requestedKeyRef.current = key;
+      const authGeneration = getAuthGeneration();
+      void getOrCreateDm(counterpartyId).catch((error) => {
+        if (
+          getAuthGeneration() !== authGeneration ||
+          requestedKeyRef.current !== key
+        ) {
+          return;
+        }
+        requestedKeyRef.current = null;
+        setResolveError({
+          accountKey: key,
+          message: ledgerErrorMessage(error),
+        });
+      });
+    },
+    [counterpartyId],
+  );
+
   useEffect(() => {
-    if (!me) return;
-    if (dm) {
-      requestedRef.current = true;
+    if (accountKey === null) {
+      requestedKeyRef.current = null;
       return;
     }
-    if (requestedRef.current) return;
-    requestedRef.current = true;
-    getOrCreateDm(counterpartyId).catch((error) => {
-      requestedRef.current = false;
-      setResolveError(ledgerErrorMessage(error));
-    });
-  }, [me, dm, counterpartyId]);
+    if (dm) {
+      requestedKeyRef.current = accountKey;
+      return;
+    }
+    if (resolveError?.accountKey === accountKey) return;
+    if (requestedKeyRef.current === accountKey) return;
+    requestDm(accountKey);
+  }, [accountKey, dm, requestDm, resolveError]);
 
   useEffect(() => {
     return () => {
@@ -176,11 +231,11 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   useEffect(() => {
     if (!groupId) return;
     return subscribeChat(groupId);
-  }, [groupId]);
+  }, [groupId, me?.id]);
 
   const loadInitialConversation = useCallback(() => {
-    if (!groupId) return;
-    loadedRef.current.add(groupId);
+    if (!groupId || loadKey === null) return;
+    loadedRef.current.add(loadKey);
     loadConversation(groupId).catch((error) => {
       // With messages already on screen a toast is enough; with none, the
       // thread renders a retry from the recorded read state.
@@ -188,27 +243,33 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         toast.error(ledgerErrorMessage(error));
       }
     });
-  }, [groupId]);
+  }, [groupId, loadKey]);
 
   useEffect(() => {
-    if (!groupId || loadedRef.current.has(groupId)) return;
+    if (loadKey === null || loadedRef.current.has(loadKey)) return;
     loadInitialConversation();
-  }, [groupId, loadInitialConversation]);
+  }, [loadInitialConversation, loadKey]);
+
 
   useEffect(() => {
     if (!groupId || !dm || dm.unreadCount === 0) return;
     // Acknowledge no farther than the contiguous prefix the thread has
     // actually rendered: a boundary beyond it would mark unseen messages read.
     const boundary = renderedThroughId;
-    if (boundary === null) return;
+    if (boundary === null || boundary !== readableThroughId) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
     markRead(groupId, boundary).catch(() => {});
-  }, [dm, groupId, renderedThroughId]);
+  }, [dm, groupId, readableThroughId, renderedThroughId]);
 
   const handleRetryResolve = useCallback(() => {
+    if (accountKey === null) return;
     setResolveError(null);
-    requestedRef.current = false;
-  }, []);
+    requestDm(accountKey);
+  }, [accountKey, requestDm]);
+  const handleRetryMembership = useCallback(() => {
+    if (!groupId) return;
+    void refreshGroup(groupId).catch(() => {});
+  }, [groupId]);
 
   const handleLoadMore = useCallback(() => {
     if (!groupId) return;
@@ -239,22 +300,14 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   );
 
   const handleAccept = useCallback(async () => {
-    if (!groupId) return;
-    try {
-      await acceptInvitation(groupId);
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    }
+    if (!groupId) throw new LedgerError("unknown");
+    await acceptInvitation(groupId);
   }, [groupId]);
 
   const handleDecline = useCallback(async () => {
-    if (!groupId) return;
-    try {
-      await declineInvitation(groupId);
-      router.replace("/app/conversations");
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    }
+    if (!groupId) throw new LedgerError("unknown");
+    await declineInvitation(groupId);
+    router.replace("/app/conversations");
   }, [groupId, router]);
 
   const createDmExpense = useCallback(
@@ -426,10 +479,10 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     );
   }
 
-  if (resolveError) {
+  if (activeResolveError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-destructive">{resolveError}</p>
+        <p className="text-sm text-destructive">{activeResolveError}</p>
         <button onClick={handleRetryResolve} className="text-sm text-primary underline">
           Tentar novamente
         </button>
@@ -439,12 +492,47 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
 
   if (!dm || !counterparty) return null;
 
-  if (myStatus === "invited") {
+  if (membership.status === "error") {
+    return (
+      <div className="flex h-full flex-col">
+        <ScreenHeader back title={counterparty.name} />
+        <div className="flex-1">
+          <SyncErrorState
+            message={ledgerErrorMessage(new LedgerError(membership.code))}
+            onRetry={handleRetryMembership}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (membership.status === "absent") {
+    return (
+      <div className="flex h-full flex-col">
+        <ScreenHeader back title={counterparty.name} />
+        <div className="flex flex-1 items-center justify-center px-6 text-center">
+          <p role="alert" className="text-sm text-muted-foreground">
+            Essa conversa não está disponível para sua conta.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (membership.status === "loading") {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (membership.status === "invited") {
     return (
       <ConversationInviteScreen
         counterparty={counterparty}
-        onAccept={() => void handleAccept()}
-        onDecline={() => void handleDecline()}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
       />
     );
   }
@@ -510,7 +598,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           nameOf={nameOf}
           hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
           acknowledgeThroughId={readableThroughId}
-          onRenderedThrough={setRenderedThroughId}
+          onRenderedThrough={handleRenderedThrough}
           onLoadMore={handleLoadMore}
         />
       </div>
