@@ -844,6 +844,16 @@ export type Database = {
         }
         Returns: Json
       }
+      complete_onboarding: {
+        Args: {
+          p_handle: string
+          p_name: string
+          p_pix_key_encrypted: string
+          p_pix_key_hint: string
+          p_pix_key_type: Database["public"]["Enums"]["pix_key_type"]
+        }
+        Returns: Json
+      }
       create_group: {
         Args: { p_member_ids: string[]; p_name: string }
         Returns: Json

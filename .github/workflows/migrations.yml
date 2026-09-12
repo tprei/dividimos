@@ -5,6 +5,7 @@ on:
     paths:
       - 'supabase/migrations/**'
       - 'supabase/schemas/**'
+      - 'supabase/schema.sql'
       - 'scripts/build-baseline.sh'
       - 'scripts/check-migration-history.mjs'
       - '.github/workflows/migrations.yml'
@@ -39,39 +40,79 @@ jobs:
       - name: Reset and replay migrations
         run: supabase db reset --local
 
-  baseline-freshness:
-    name: Baseline matches supabase/schemas
+  declaration-parity:
+    name: Declared schemas match forward migrations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - name: Regenerate the baseline and diff it
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+
+      - name: Replay migrations before declaration parity
         run: |
-          BASELINE=supabase/migrations/20260906000000_ledger_baseline.sql
-          if ! git ls-files --error-unmatch "$BASELINE" >/dev/null 2>&1; then
-            echo "::error::$BASELINE is not tracked; the baseline must be committed."
+          for attempt in 1 2 3; do
+            if supabase start; then
+              break
+            fi
+            echo "supabase start failed (attempt $attempt/3), retrying..."
+            supabase stop --no-backup 2>/dev/null || true
+            if [ "$attempt" -eq 3 ]; then
+              echo "supabase start failed after 3 attempts" && exit 1
+            fi
+          done
+          supabase db reset --local
+
+      - name: Stop the database before comparing declarations
+        run: supabase stop --no-backup
+
+      - name: Require an empty declaration diff
+        run: |
+          set +e
+          supabase db diff > declaration-diff.sql 2> declaration-diff.stderr
+          status=$?
+          set -e
+          cat declaration-diff.stderr >&2
+          if [ "$status" -ne 0 ]; then
+            echo "::error::supabase db diff failed with status $status."
+            exit "$status"
+          fi
+          if [ -n "$(tr -d '[:space:]' < declaration-diff.sql)" ]; then
+            echo "::error::declared schemas differ from the applied forward migrations."
+            cat declaration-diff.sql
+            exit 1
+          fi
+          echo "OK: declared schemas match forward migrations."
+
+  baseline-freshness:
+    name: Schema snapshot matches supabase/schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Regenerate the schema snapshot and diff it
+        run: |
+          SNAPSHOT=supabase/schema.sql
+          if ! git ls-files --error-unmatch "$SNAPSHOT" >/dev/null 2>&1; then
+            echo "::error::$SNAPSHOT is not tracked; the schema snapshot must be committed."
             exit 1
           fi
           ./scripts/build-baseline.sh
-          if [ ! -f "$BASELINE" ]; then
-            echo "::error::the generator did not produce $BASELINE."
+          if [ ! -f "$SNAPSHOT" ]; then
+            echo "::error::the generator did not produce $SNAPSHOT."
             exit 1
           fi
-          UNTRACKED=$(git ls-files --others --exclude-standard -- supabase/migrations)
-          if ! git diff --quiet -- supabase/migrations || [ -n "$UNTRACKED" ]; then
-            echo "::error::supabase/migrations does not match supabase/schemas."
-            git diff --stat -- supabase/migrations
-            if [ -n "$UNTRACKED" ]; then
-              echo "Untracked generated migrations:"
-              echo "$UNTRACKED"
-            fi
+          if ! git diff --quiet -- "$SNAPSHOT"; then
+            echo "::error::$SNAPSHOT does not match supabase/schemas."
+            git diff --stat -- "$SNAPSHOT"
             echo ""
             echo "Fix: run ./scripts/build-baseline.sh and commit the result."
             exit 1
           fi
-          echo "OK: baseline matches supabase/schemas."
+          echo "OK: schema snapshot matches supabase/schemas."
 
   migration-history:
     name: No unauthorized renamed or deleted migrations
