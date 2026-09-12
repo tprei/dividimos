@@ -14,15 +14,27 @@ function decryptSubscription(encrypted: string): string {
 
 type SubscriptionChannel = "web" | "fcm";
 
+/** What one dispatch achieved. `failed` devices are worth retrying later. */
+export interface DispatchOutcome {
+  sent: number;
+  cleaned: number;
+  failed: number;
+}
+
+type DeviceOutcome = "sent" | "stale" | "failed";
+
 /**
  * Send a push notification to all of a user's registered devices.
  * Routes to Web Push or FCM based on the subscription's channel.
- * Automatically cleans up stale subscriptions (expired/unsubscribed).
+ *
+ * Every device settles independently: one rejecting provider can neither
+ * abort its siblings nor skip stale-row cleanup, and the returned counts
+ * always describe what actually happened.
  */
 export async function notifyUser(
   userId: string,
   payload: PushPayload,
-): Promise<{ sent: number; cleaned: number }> {
+): Promise<DispatchOutcome> {
   const admin = createAdminClient();
 
   const { data: rows, error } = await admin
@@ -30,62 +42,59 @@ export async function notifyUser(
     .select("id, subscription_encrypted, channel")
     .eq("user_id", userId);
 
-  if (error || !rows || rows.length === 0) {
-    return { sent: 0, cleaned: 0 };
-  }
+  if (error !== null) return { sent: 0, cleaned: 0, failed: 1 };
+  if (!rows || rows.length === 0) return { sent: 0, cleaned: 0, failed: 0 };
 
   // Defense-in-depth: cap concurrent sends even if the DB-level
   // subscription cap is somehow bypassed.
   const capped = rows.slice(0, 10);
 
-  let sent = 0;
-  let cleaned = 0;
-  const staleIds: string[] = [];
-
-  await Promise.all(
-    capped.map(async (row) => {
+  const settled = await Promise.allSettled(
+    capped.map(async (row): Promise<DeviceOutcome> => {
       const channel = (row.channel ?? "web") as SubscriptionChannel;
 
       let decrypted: string;
       try {
         decrypted = decryptSubscription(row.subscription_encrypted);
       } catch {
-        staleIds.push(row.id);
-        return;
+        // An undecryptable row can never be delivered to again.
+        return "stale";
       }
 
       if (channel === "fcm") {
-        if (!isFcmConfigured()) return;
-        try {
-          const delivered = await sendFcmNotification(decrypted, payload);
-          if (delivered) {
-            sent++;
-          } else {
-            staleIds.push(row.id);
-          }
-        } catch {
-          // Keep transient provider failures for a later retry.
-        }
-        return;
+        // No provider credentials is a dispatch failure, not a silent success.
+        if (!isFcmConfigured()) return "failed";
+        return (await sendFcmNotification(decrypted, payload)) ? "sent" : "stale";
       }
 
-      try {
-        const outcome = await sendPushNotification(decrypted, payload);
-        if (outcome.status === "accepted") {
-          sent++;
-        } else if (outcome.status === "stale") {
-          staleIds.push(row.id);
-        }
-      } catch {
-        // The web sender settles, but a defensive boundary keeps fan-out alive.
-      }
+      const outcome = await sendPushNotification(decrypted, payload);
+      if (outcome.status === "accepted") return "sent";
+      return outcome.status === "stale" ? "stale" : "failed";
     }),
   );
 
+  let sent = 0;
+  let failed = 0;
+  const staleIds: string[] = [];
+
+  settled.forEach((result, index) => {
+    if (result.status === "rejected") {
+      failed++;
+      return;
+    }
+    if (result.value === "sent") sent++;
+    else if (result.value === "failed") failed++;
+    else staleIds.push(capped[index]!.id);
+  });
+
+  let cleaned = 0;
   if (staleIds.length > 0) {
-    await admin.from("push_subscriptions").delete().in("id", staleIds);
-    cleaned = staleIds.length;
+    const { error: deleteError } = await admin
+      .from("push_subscriptions")
+      .delete()
+      .in("id", staleIds);
+    if (deleteError === null) cleaned = staleIds.length;
   }
 
-  return { sent, cleaned };
+  return { sent, cleaned, failed };
 }
