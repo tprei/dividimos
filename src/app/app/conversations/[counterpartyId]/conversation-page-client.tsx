@@ -22,7 +22,7 @@ import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { createExpense, markRead, sendMessage } from "@/lib/sync/mutations";
 import {
   acceptInvitation,
@@ -30,9 +30,10 @@ import {
   getOrCreateDm,
 } from "@/lib/sync/mutations-group";
 import { subscribeChat } from "@/lib/sync/realtime";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { loadConversation } from "@/lib/sync/refresh";
 import { findDmGroup } from "@/stores/app-selectors";
-import { useAppStore } from "@/stores/app-store";
+import { conversationReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import type {
   ExpenseHeader,
   ExpensePayload,
@@ -114,6 +115,9 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   // thread confirms it actually rendered that far before we acknowledge it.
   const readableThroughId = conversation?.reconcile.readableThroughMessageId ?? null;
   const [renderedThroughId, setRenderedThroughId] = useState<string | null>(null);
+  const conversationRead = useAppStore((s) =>
+    dm ? (s.reads[conversationReadKey(dm.group.id)] ?? IDLE_READ) : IDLE_READ,
+  );
 
   const chargeResetTimer = useRef<number | undefined>(undefined);
   const splitResetTimer = useRef<number | undefined>(undefined);
@@ -174,11 +178,22 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     return subscribeChat(groupId);
   }, [groupId]);
 
+  const loadInitialConversation = useCallback(() => {
+    if (!groupId) return;
+    loadedRef.current.add(groupId);
+    loadConversation(groupId).catch((error) => {
+      // With messages already on screen a toast is enough; with none, the
+      // thread renders a retry from the recorded read state.
+      if ((useAppStore.getState().conversations[groupId]?.messages.length ?? 0) > 0) {
+        toast.error(ledgerErrorMessage(error));
+      }
+    });
+  }, [groupId]);
+
   useEffect(() => {
     if (!groupId || loadedRef.current.has(groupId)) return;
-    loadedRef.current.add(groupId);
-    loadConversation(groupId).catch((error) => toast.error(ledgerErrorMessage(error)));
-  }, [groupId]);
+    loadInitialConversation();
+  }, [groupId, loadInitialConversation]);
 
   useEffect(() => {
     if (!groupId || !dm || dm.unreadCount === 0) return;
@@ -471,6 +486,16 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           </p>
         </div>
       )}
+      {conversationRead.status === "error" &&
+      (conversation?.messages.length ?? 0) === 0 &&
+      (conversation?.events.length ?? 0) === 0 ? (
+        <div className="flex-1">
+          <SyncErrorState
+            message={ledgerErrorMessage(new LedgerError(conversationRead.code))}
+            onRetry={loadInitialConversation}
+          />
+        </div>
+      ) : (
       <div className="flex min-h-0 flex-1 flex-col justify-center">
         <ChatThread
           groupId={dm.group.id}
@@ -485,6 +510,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           onLoadMore={handleLoadMore}
         />
       </div>
+      )}
       {!isCounterpartyPending && groupId && (
         <>
           <AnimatePresence>

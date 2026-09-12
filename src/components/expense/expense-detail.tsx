@@ -28,7 +28,8 @@ import { attributePayers } from "@/lib/expense-attribution";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { deleteExpense, restoreExpense } from "@/lib/sync/mutations";
 import { refreshExpense } from "@/lib/sync/refresh";
-import { useAppStore } from "@/stores/app-store";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 
 export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const router = useRouter();
@@ -47,24 +48,30 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
       ? null
       : detail?.participants.find((p) => p.participantIndex === inviteIndex) ?? null;
 
-  useEffect(() => {
-    let cancelled = false;
+  const read = useAppStore((s) => s.reads[expenseReadKey(expenseId)] ?? IDLE_READ);
+
+  const load = useCallback(() => {
     setUnavailable(false);
     refreshExpense(expenseId).catch((error: unknown) => {
-      if (cancelled) return;
       if (
         error instanceof LedgerError &&
         (error.code === "expense_not_found" || error.code === "not_a_member")
       ) {
+        // Authoritative absence, not a failed read.
         setUnavailable(true);
         return;
       }
-      toast.error(ledgerErrorMessage(error));
+      // Anything else is recorded as a failed read; only warn when there is
+      // already something on screen to keep.
+      if (useAppStore.getState().expenseDetails[expenseId] !== undefined) {
+        toast.error(ledgerErrorMessage(error));
+      }
     });
-    return () => {
-      cancelled = true;
-    };
   }, [expenseId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const members = snapshot?.members;
   const invitedUserIds = useMemo(() => {
@@ -141,6 +148,20 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
           description="Ela pode ter sido excluída ou você não tem mais acesso ao grupo."
           actionLabel="Voltar"
           onAction={() => router.push("/app")}
+        />
+      </div>
+    );
+  }
+
+  // A failed read is not a missing expense: never show the skeleton forever or
+  // claim the bill is gone.
+  if (!detail && read.status === "error") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <ScreenHeader back title="Despesa" />
+        <SyncErrorState
+          message={ledgerErrorMessage(new LedgerError(read.code))}
+          onRetry={load}
         />
       </div>
     );
