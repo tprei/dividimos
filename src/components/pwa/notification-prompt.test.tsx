@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { PushFailure } from "@/lib/push/failures";
 import { NotificationPrompt } from "./notification-prompt";
 
 const mockSubscribe = vi.fn();
@@ -14,6 +15,8 @@ vi.mock("@/hooks/use-push-notifications", () => ({
     isNative: false,
     subscribe: mockSubscribe,
     unsubscribe: mockUnsubscribe,
+    error: null,
+    retry: vi.fn(),
   })),
 }));
 
@@ -33,6 +36,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
   });
 
@@ -51,6 +56,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -66,6 +73,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -81,6 +90,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -96,6 +107,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     const { container } = render(<NotificationPrompt />);
@@ -109,6 +122,31 @@ describe("NotificationPrompt", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ativar" }));
 
     expect(mockSubscribe).toHaveBeenCalledOnce();
+  });
+  it("keeps the prompt visible when subscription activation fails", async () => {
+    mockSubscribe.mockImplementation(async () => {
+      mockUsePush.mockReturnValue({
+        permission: "default",
+        isSubscribed: false,
+        isLoading: false,
+        isInitializing: false,
+        isNative: false,
+        subscribe: mockSubscribe,
+        unsubscribe: mockUnsubscribe,
+        error: new PushFailure("server"),
+        retry: vi.fn(),
+      });
+    });
+
+    const { rerender } = render(<NotificationPrompt />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Ativar" }));
+    });
+    rerender(<NotificationPrompt />);
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
+    expect(sessionStorage.getItem("dividimos:notification-prompt-dismissed")).toBeNull();
   });
 
   it("dismisses and sets sessionStorage on close click", () => {
@@ -135,6 +173,8 @@ describe("NotificationPrompt", () => {
       isNative: false,
       subscribe: mockSubscribe,
       unsubscribe: mockUnsubscribe,
+      error: null,
+      retry: vi.fn(),
     });
 
     render(<NotificationPrompt />);
@@ -153,6 +193,8 @@ describe("NotificationPrompt", () => {
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
+        error: null,
+        retry: vi.fn(),
       });
     });
 
@@ -191,6 +233,8 @@ describe("NotificationPrompt", () => {
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
+        error: null,
+        retry: vi.fn(),
       });
 
       const { container } = render(<NotificationPrompt />);
@@ -206,6 +250,8 @@ describe("NotificationPrompt", () => {
         isNative: true,
         subscribe: mockSubscribe,
         unsubscribe: mockUnsubscribe,
+        error: null,
+        retry: vi.fn(),
       });
 
       const { container } = render(<NotificationPrompt />);
