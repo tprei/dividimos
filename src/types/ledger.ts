@@ -316,6 +316,17 @@ export interface ConversationReadWatermark {
   lastReadMessageId: string;
 }
 
+/** Envelope returned by the cursored charge history read. */
+export interface ChargePage {
+  charges: VendorCharge[];
+  nextCursor: PageCursor | null;
+  complete: boolean;
+  total: number;
+  receivedCount: number;
+  /** Sum of today's received charges in Sao Paulo local time. */
+  receivedTodayCents: number;
+}
+
 /** Envelope returned by every cursored expense history read. */
 export interface ExpensePage {
   expenses: ExpenseSummary[];

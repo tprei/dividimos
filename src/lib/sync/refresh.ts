@@ -4,7 +4,7 @@ import {
   decodeExpensePage,
   decodeGroupEvents,
   decodeGroupSnapshot,
-  decodeVendorCharges,
+  decodeChargePage,
 } from "@/lib/ledger/decode";
 import {
   CHARGES_READ_KEY,
@@ -23,6 +23,7 @@ import { LedgerError } from "./errors";
 const inFlightGroups = new Map<string, Promise<void>>();
 const pendingGroups = new Map<string, Promise<void>>();
 const inFlightExpensePages = new Map<string, Promise<void>>();
+const inFlightExpensePageOwners = new Map<string, symbol>();
 
 interface ReadAttempt {
   generation: number;
@@ -38,6 +39,7 @@ function setReadState(key: string, read: ResourceReadState): void {
     return;
   }
   useAppStore.getState().setResourceRead(key, read);
+
 }
 
 function beginRead(key: string): ReadAttempt {
@@ -65,6 +67,7 @@ export function invalidateSyncReads(): void {
   inFlightGroups.clear();
   pendingGroups.clear();
   inFlightExpensePages.clear();
+  inFlightExpensePageOwners.clear();
 }
 
 async function trackedRead<T>(
@@ -149,6 +152,7 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
 
 function runGroupRefresh(groupId: string): Promise<void> {
   const task = executeRefreshGroup(groupId).finally(() => {
+    if (inFlightGroups.get(groupId) !== task) return;
     inFlightGroups.delete(groupId);
     const followUp = pendingGroups.get(groupId);
     if (followUp) {
@@ -176,6 +180,7 @@ export function refreshGroup(groupId: string): Promise<void> {
   return followUp;
 }
 
+
 export async function refreshExpense(expenseId: string): Promise<void> {
   const key = expenseReadKey(expenseId);
   const attempt = beginRead(key);
@@ -199,11 +204,10 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
 
   const key = expensePageReadKey(groupId);
   const attempt = beginRead(key);
+  const owner = Symbol("expense_page");
 
   const task = (async () => {
     try {
-      // A failed older page must leave the cursor and loaded rows untouched so
-      // the user can retry the same page.
       await trackedRead(
         key,
         attempt,
@@ -221,11 +225,15 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
         (page) => useAppStore.getState().applyExpensePage(groupId, page),
       );
     } finally {
-      inFlightExpensePages.delete(groupId);
+      if (inFlightExpensePageOwners.get(groupId) === owner) {
+        inFlightExpensePages.delete(groupId);
+        inFlightExpensePageOwners.delete(groupId);
+      }
     }
   })();
 
   inFlightExpensePages.set(groupId, task);
+  inFlightExpensePageOwners.set(groupId, owner);
   await task;
 }
 
@@ -317,12 +325,21 @@ export async function loadConversation(
   );
 }
 
-export async function loadVendorCharges(limit = 50): Promise<void> {
+export async function loadVendorCharges(cursor?: PageCursor): Promise<void> {
   const attempt = beginRead(CHARGES_READ_KEY);
   await trackedRead(
     CHARGES_READ_KEY,
     attempt,
-    () => rpc("get_vendor_charges", { p_limit: limit }, decodeVendorCharges),
-    (charges) => useAppStore.getState().applyVendorCharges(charges),
+    () =>
+      rpc(
+        "get_vendor_charges",
+        {
+          p_before_created_at: cursor?.createdAt ?? null,
+          p_before_id: cursor?.id ?? null,
+          p_limit: 50,
+        },
+        decodeChargePage,
+      ),
+    (page) => useAppStore.getState().applyChargePage(page, cursor === undefined),
   );
 }
