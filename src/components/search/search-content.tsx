@@ -11,7 +11,13 @@ import type { GroupSnapshot, UserProfile } from "@/types/ledger";
 
 export function SearchContent() {
   const [query, setQuery] = useState("");
-  const [remoteResult, setRemoteResult] = useState<{ query: string; user: UserProfile | null } | null>(null);
+  // The query travels with its outcome, and a failed lookup is recorded as a
+  // failure: "we could not ask" is not "this person does not exist".
+  const [remoteResult, setRemoteResult] = useState<{
+    query: string;
+    user: UserProfile | null;
+    failed: boolean;
+  } | null>(null);
 
   const groups = useAppStore((state) => state.groups);
   const groupOrder = useAppStore((state) => state.groupOrder);
@@ -24,7 +30,9 @@ export function SearchContent() {
   const handleQuery = q.startsWith("@") ? q.slice(1) : q;
   const isHandleQuery =
     (q.startsWith("@") && handleQuery.length >= 3) || /^[a-z0-9_]{3,30}$/.test(q);
-  const remoteUser = isHandleQuery && remoteResult?.query === q ? remoteResult.user : null;
+  const current = isHandleQuery && remoteResult?.query === q ? remoteResult : null;
+  const remoteUser = current && !current.failed ? current.user : null;
+  const remoteFailed = current?.failed ?? false;
 
   useEffect(() => {
     if (!isHandleQuery) return;
@@ -32,9 +40,9 @@ export function SearchContent() {
     const timer = setTimeout(async () => {
       try {
         const user = await lookupUserByHandle(handleQuery);
-        if (!cancelled) setRemoteResult({ query: q, user });
+        if (!cancelled) setRemoteResult({ query: q, user, failed: false });
       } catch {
-        if (!cancelled) setRemoteResult({ query: q, user: null });
+        if (!cancelled) setRemoteResult({ query: q, user: null, failed: true });
       }
     }, 500);
     return () => {
@@ -149,12 +157,26 @@ export function SearchContent() {
         </div>
       ) : !hasResults ? (
         <div className="mt-12 text-center">
-          <p className="text-sm font-semibold text-foreground">
-            Nenhum resultado encontrado
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Não encontramos nada para &quot;{query}&quot;
-          </p>
+          {remoteFailed ? (
+            <>
+              {/* The local matches are real; only the handle lookup failed. */}
+              <p className="text-sm font-semibold text-foreground">
+                Não foi possível buscar esse @handle
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Verifique sua conexão e tente de novo.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-foreground">
+                Nenhum resultado encontrado
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Não encontramos nada para &quot;{query}&quot;
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="mt-6 space-y-6">
