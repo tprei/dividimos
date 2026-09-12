@@ -197,6 +197,7 @@ CREATE TABLE guest_credentials.claim_tokens (
   guest_id uuid PRIMARY KEY REFERENCES public.guests(id) ON DELETE CASCADE,
   token_digest bytea NOT NULL UNIQUE,
   generation integer NOT NULL DEFAULT 1,
+  expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 

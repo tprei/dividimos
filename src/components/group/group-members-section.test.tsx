@@ -30,14 +30,14 @@ vi.mock("@/lib/sync/mutations-group", () => ({
   deleteGroup: vi.fn(),
   lookupUserByHandle: vi.fn(),
   inviteMember: vi.fn(),
-  issueGuestClaimToken: vi.fn(),
+  createGuestClaimToken: vi.fn(),
 }));
 
 import toast from "react-hot-toast";
 import {
   deleteGroup,
   inviteMember,
-  issueGuestClaimToken,
+  createGuestClaimToken,
   leaveGroup,
   lookupUserByHandle,
   removeMember,
@@ -225,7 +225,10 @@ describe("GroupMembersSection", () => {
   });
 
   it("allows sharing an invite with a guest", async () => {
-    vi.mocked(issueGuestClaimToken).mockResolvedValue("claim_token_xyz");
+    vi.mocked(createGuestClaimToken).mockResolvedValue({
+      token: "gst1_claimtokenxyz",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    });
 
     render(
       <GroupMembersSection
@@ -241,7 +244,7 @@ describe("GroupMembersSection", () => {
     await userEvent.click(shareButton);
 
     await waitFor(() => {
-      expect(issueGuestClaimToken).toHaveBeenCalledWith("guest-1");
+      expect(createGuestClaimToken).toHaveBeenCalledWith("guest-1");
     });
   });
 });

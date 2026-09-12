@@ -3,9 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import toast from "react-hot-toast";
 import { GuestInviteDialog } from "./guest-invite-dialog";
-import { writeClaimToken } from "@/lib/claim-token-cache";
+import { readClaimToken, writeClaimToken } from "@/lib/claim-token-cache";
 import { LedgerError } from "@/lib/sync/errors";
-import { issueGuestClaimToken } from "@/lib/sync/mutations-group";
+import { createGuestClaimToken, revokeGuestClaimToken } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
 import type { GuestParticipant } from "@/types/ledger";
 
@@ -14,12 +14,15 @@ vi.mock("react-hot-toast", () => ({
 }));
 
 vi.mock("@/lib/sync/mutations-group", () => ({
-  issueGuestClaimToken: vi.fn(),
+  createGuestClaimToken: vi.fn(),
+  revokeGuestClaimToken: vi.fn(),
 }));
 
 vi.mock("@/lib/sync/refresh", () => ({
   refreshExpense: vi.fn().mockResolvedValue(undefined),
 }));
+
+const FUTURE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
 const guest: GuestParticipant = {
   id: "guest-1",
@@ -51,14 +54,18 @@ beforeEach(() => {
   window.localStorage.clear();
   vi.clearAllMocks();
   vi.mocked(refreshExpense).mockResolvedValue(undefined);
-  vi.mocked(issueGuestClaimToken).mockResolvedValue("gst1_newtoken");
+  vi.mocked(createGuestClaimToken).mockResolvedValue({
+    token: "gst1_newtoken",
+    expiresAt: FUTURE,
+  });
+  vi.mocked(revokeGuestClaimToken).mockResolvedValue(undefined);
   delete (navigator as { share?: unknown }).share;
   delete (navigator as { clipboard?: unknown }).clipboard;
 });
 
 describe("GuestInviteDialog", () => {
   it("shows no share button when navigator.share is unavailable", () => {
-    writeClaimToken(guest.id, "gst1_cachedtoken");
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
     renderDialog();
 
     expect(
@@ -74,7 +81,7 @@ describe("GuestInviteDialog", () => {
 
   it("toasts success after copying and keeps the failure visible when copy is denied", async () => {
     const user = userEvent.setup();
-    writeClaimToken(guest.id, "gst1_cachedtoken");
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
     stubClipboard(vi.fn().mockResolvedValue(undefined));
     renderDialog();
 
@@ -96,7 +103,7 @@ describe("GuestInviteDialog", () => {
     renderDialog({ claimLinkGeneration: 0 });
 
     await waitFor(() => {
-      expect(issueGuestClaimToken).toHaveBeenCalledWith("guest-1");
+      expect(createGuestClaimToken).toHaveBeenCalledWith("guest-1");
     });
     await waitFor(() => {
       expect(refreshExpense).toHaveBeenCalledWith("e1");
@@ -106,59 +113,75 @@ describe("GuestInviteDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("replaces the link after confirm and hides the action once generation reaches 2", async () => {
+  it("replaces the link after confirm and keeps replacing while the guest is unclaimed", async () => {
     const user = userEvent.setup();
-    writeClaimToken(guest.id, "gst1_cachedtoken");
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
     const { rerender, props } = renderDialog();
 
-    await user.click(
-      screen.getByRole("button", { name: "Substituir link" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Substituir link" }));
     expect(screen.getByText("Invalidar link atual?")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Substituir" }));
     await waitFor(() => {
-      expect(issueGuestClaimToken).toHaveBeenCalledWith("guest-1");
+      expect(createGuestClaimToken).toHaveBeenCalledWith("guest-1");
     });
     await waitFor(() => {
       expect(refreshExpense).toHaveBeenCalledWith("e1");
     });
 
     rerender(
-      <GuestInviteDialog
-        {...props}
-        guest={{ ...guest, claimLinkGeneration: 2 }}
-      />,
+      <GuestInviteDialog {...props} guest={{ ...guest, claimLinkGeneration: 3 }} />,
     );
+
+    expect(screen.getByRole("button", { name: "Substituir link" })).toBeInTheDocument();
+  });
+
+  it("hides the replace action once the guest has been claimed", () => {
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
+    renderDialog({ claimedBy: "user-9" });
 
     expect(
       screen.queryByRole("button", { name: "Substituir link" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("revokes the link and drops it from this device", async () => {
+    const user = userEvent.setup();
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
+    renderDialog();
+
+    await user.click(screen.getByRole("button", { name: "Revogar link" }));
+
+    await waitFor(() => {
+      expect(revokeGuestClaimToken).toHaveBeenCalledWith("guest-1");
+    });
+    expect(readClaimToken(guest.id)).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Copiar link" }),
+      await screen.findByRole("button", { name: "Gerar link" }),
     ).toBeInTheDocument();
+  });
+
+  it("ignores an expired cached token and offers to generate another", () => {
+    writeClaimToken(guest.id, "gst1_cachedtoken", new Date(Date.now() - 1000).toISOString());
+    renderDialog({ claimLinkGeneration: 1 });
+
+    expect(screen.getByRole("button", { name: "Gerar link" })).toBeInTheDocument();
+    expect(screen.queryByText(/gst1_cachedtoken/)).not.toBeInTheDocument();
+    expect(createGuestClaimToken).not.toHaveBeenCalled();
   });
 
   it("toasts the ledger error and keeps the dialog when the replacement fails", async () => {
     const user = userEvent.setup();
-    vi.mocked(issueGuestClaimToken).mockRejectedValue(
-      new LedgerError("guest_link_replacement_limit"),
-    );
-    writeClaimToken(guest.id, "gst1_cachedtoken");
+    vi.mocked(createGuestClaimToken).mockRejectedValue(new LedgerError("guest_not_found"));
+    writeClaimToken(guest.id, "gst1_cachedtoken", FUTURE);
     renderDialog();
 
-    await user.click(
-      screen.getByRole("button", { name: "Substituir link" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Substituir link" }));
     await user.click(screen.getByRole("button", { name: "Substituir" }));
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        "Este link já foi substituído uma vez.",
-      );
+      expect(toast.error).toHaveBeenCalledWith("Não achamos esse convidado.");
     });
-    expect(
-      screen.getByRole("button", { name: "Copiar link" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copiar link" })).toBeInTheDocument();
   });
 });

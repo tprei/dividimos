@@ -7,6 +7,7 @@ import {
   decodeVendorCharge,
   decodeVendorCharges,
 } from "@/lib/ledger/decode";
+import { CLAIM_TOKEN_RE } from "@/lib/claim-qr";
 import { rpc } from "@/lib/sync/client";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
@@ -21,6 +22,11 @@ import type {
 } from "@/types/ledger";
 import { notify } from "./mutations";
 
+export interface GuestClaimToken {
+  token: string;
+  expiresAt: string;
+}
+
 function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val);
 }
@@ -32,11 +38,24 @@ function decodeGroupId(raw: unknown): ValidationResult<{ groupId: string }, Wire
   return { ok: false, issue: { code: "invalid_wire", path: ["groupId"] } };
 }
 
-function decodeToken(raw: unknown): ValidationResult<string, WireIssue> {
-  if (typeof raw === "string") {
-    return { ok: true, value: raw };
+function decodeGuestClaimToken(raw: unknown): ValidationResult<GuestClaimToken, WireIssue> {
+  if (
+    isObject(raw) &&
+    typeof raw.token === "string" &&
+    CLAIM_TOKEN_RE.test(raw.token) &&
+    typeof raw.expiresAt === "string" &&
+    raw.expiresAt.length > 0
+  ) {
+    return { ok: true, value: { token: raw.token, expiresAt: raw.expiresAt } };
   }
-  return { ok: false, issue: { code: "invalid_wire", path: [] } };
+  return { ok: false, issue: { code: "invalid_wire", path: ["token"] } };
+}
+
+function decodeGuestId(raw: unknown): ValidationResult<{ guestId: string }, WireIssue> {
+  if (isObject(raw) && typeof raw.guestId === "string") {
+    return { ok: true, value: { guestId: raw.guestId } };
+  }
+  return { ok: false, issue: { code: "invalid_wire", path: ["guestId"] } };
 }
 
 function decodeUserProfileOrNull(raw: unknown): ValidationResult<UserProfile | null, WireIssue> {
@@ -150,8 +169,12 @@ export async function lookupUserByHandle(handle: string): Promise<UserProfile | 
   return await rpc("lookup_user_by_handle", { p_handle: handle }, decodeUserProfileOrNull);
 }
 
-export async function issueGuestClaimToken(guestId: string): Promise<string> {
-  return await rpc("issue_guest_claim_token", { p_guest_id: guestId }, decodeToken);
+export async function createGuestClaimToken(guestId: string): Promise<GuestClaimToken> {
+  return await rpc("create_guest_claim_token", { p_guest_id: guestId }, decodeGuestClaimToken);
+}
+
+export async function revokeGuestClaimToken(guestId: string): Promise<void> {
+  await rpc("revoke_guest_claim_token", { p_guest_id: guestId }, decodeGuestId);
 }
 
 export async function claimGuest(token: string): Promise<MutationAck> {
