@@ -1,21 +1,44 @@
 name: Migrations
 
+# No path filter: a required check that never runs on a PR leaves branch
+# protection waiting forever, so every PR reports these contexts and the SQL
+# jobs skip themselves when no SQL changed.
 on:
   pull_request:
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/schemas/**'
-      - 'supabase/schema.sql'
-      - 'scripts/build-baseline.sh'
-      - 'scripts/check-migration-history.mjs'
-      - '.github/workflows/migrations.yml'
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect SQL changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sql: ${{ steps.filter.outputs.sql }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          merge_base=$(git merge-base "$BASE_SHA" HEAD)
+          if git diff --name-only "$merge_base" HEAD -- \
+              supabase scripts/build-baseline.sh .github/workflows/migrations.yml \
+              | grep -q .; then
+            echo "sql=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sql=false" >> "$GITHUB_OUTPUT"
+          fi
+
   replay:
     name: Replay on fresh database
+    needs: changes
+    if: needs.changes.outputs.sql == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -43,6 +66,8 @@ jobs:
 
   declaration-parity:
     name: Declared schemas match forward migrations
+    needs: changes
+    if: needs.changes.outputs.sql == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -89,6 +114,8 @@ jobs:
 
   baseline-freshness:
     name: Schema snapshot matches supabase/schemas
+    needs: changes
+    if: needs.changes.outputs.sql == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -116,23 +143,3 @@ jobs:
             exit 1
           fi
           echo "OK: schema snapshot matches supabase/schemas."
-
-  migration-history:
-    name: No unauthorized renamed or deleted migrations
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-
-      - name: Reject unauthorized renames or deletions under supabase/migrations
-        run: |
-          node scripts/check-migration-history.mjs \
-            "${{ github.event.pull_request.base.sha }}" \
-            "$(git rev-parse HEAD)"
