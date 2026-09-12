@@ -32,7 +32,6 @@ test.describe("Receipt review participants", () => {
     await page.goto("/app/bill/new?scan=true");
     await page.waitForLoadState("networkidle");
 
-    await page.getByRole("button", { name: "Galeria", exact: true }).click();
     await page.locator('input[type="file"]:not([capture])').setInputFiles({
       name: "recibo.png",
       mimeType: "image/png",

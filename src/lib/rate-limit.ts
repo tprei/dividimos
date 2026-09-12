@@ -9,7 +9,6 @@ export type RateLimitBucket =
   | "voice.parse"
   | "chat.parse"
   | "receipt.ocr"
-  | "receipt.sefaz"
   | "push.send"
   | "push.send-pair";
 
@@ -25,7 +24,6 @@ const CONFIGS: Record<RateLimitBucket, RateLimitConfig> = {
   "voice.parse":        { limit: 30,  windowSeconds: 60 },
   "chat.parse":         { limit: 30,  windowSeconds: 60 },
   "receipt.ocr":        { limit: 30,  windowSeconds: 60 },
-  "receipt.sefaz":      { limit: 10,  windowSeconds: 60 },
   "push.send":          { limit: 60,  windowSeconds: 60 },
   "push.send-pair":     { limit: 5,   windowSeconds: 60 },
 };

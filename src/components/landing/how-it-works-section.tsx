@@ -105,7 +105,7 @@ function QrPhoneIllustration() {
 const steps = [
   {
     title: "Escaneie",
-    desc: "Aponta pro QR code da nota ou tira uma foto. Os itens aparecem na hora.",
+    desc: "Tira uma foto do cupom. Os itens aparecem na hora.",
     illustration: NfeIllustration,
     accent: "text-primary",
     bg: "bg-primary/5",
