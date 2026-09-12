@@ -41,6 +41,7 @@ function renderSplitSection(props: Partial<ComponentProps<typeof SplitSection>> 
       onToggleItem={vi.fn()}
       onSaveDivision={onSaveDivision}
       onCloseDivision={vi.fn()}
+      onAssignSelected={vi.fn()}
       {...props}
     />,
   );
@@ -107,6 +108,7 @@ describe("SplitSection", () => {
         onToggleItem={vi.fn()}
         onSaveDivision={vi.fn()}
         onCloseDivision={vi.fn()}
+        onAssignSelected={vi.fn()}
       />,
     );
 
@@ -128,6 +130,7 @@ describe("SplitSection", () => {
         onToggleItem={vi.fn()}
         onSaveDivision={vi.fn()}
         onCloseDivision={vi.fn()}
+        onAssignSelected={vi.fn()}
       />,
     );
 
@@ -153,6 +156,7 @@ describe("SplitSection", () => {
         onToggleItem={vi.fn()}
         onSaveDivision={vi.fn()}
         onCloseDivision={vi.fn()}
+        onAssignSelected={vi.fn()}
       />,
     );
 
