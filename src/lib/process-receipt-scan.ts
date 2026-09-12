@@ -61,11 +61,16 @@ function assertReconciledReceipt(result: ReceiptOcrResult): ReceiptOcrResult {
   }
   return result;
 }
+
 /**
  * Compress an image file and send it to the OCR API route.
- * Returns the parsed receipt result on success.
+ * Returns the parsed receipt result on success. An optional `signal` lets the
+ * caller abort the upload when the scan attempt is invalidated.
  */
-export async function processReceiptScan(file: File): Promise<ReceiptOcrResult> {
+export async function processReceiptScan(
+  file: File,
+  signal?: AbortSignal,
+): Promise<ReceiptOcrResult> {
   const compressed = await compressImage(file);
   const buffer = await compressed.arrayBuffer();
   const base64 = btoa(
@@ -79,6 +84,7 @@ export async function processReceiptScan(file: File): Promise<ReceiptOcrResult> 
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image: base64, mimeType: compressed.type }),
+    signal,
   });
 
   if (!res.ok) {
