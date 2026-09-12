@@ -459,9 +459,12 @@ describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contenti
       );
       return rows.rows[0].guest_id;
     });
-    const token = await rpcOk<string>(aliceClient, "issue_guest_claim_token", {
-      p_guest_id: guestId,
-    });
+    const issued = await rpcOk<{ token: string }>(
+      aliceClient,
+      "create_guest_claim_token",
+      { p_guest_id: guestId },
+    );
+    const token = issued.token;
 
     const { result, contention } = await forceLockContentionRace(
       databaseUrl,

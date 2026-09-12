@@ -674,9 +674,10 @@ describe.skipIf(!isIntegrationTestReady)(
       if (guest.kind !== "guest" || !guest.guestId) {
         throw new Error("Fixture failure: guest was not materialized");
       }
-      const token = await rpc<string>(payerClient, "issue_guest_claim_token", {
+      const issued = await rpc<IssuedToken>(payerClient, "create_guest_claim_token", {
         p_guest_id: guest.guestId,
       });
+      const token = issued.token;
 
       await rpc(authenticateAs(invitee), "decline_invitation", { p_group_id: groupId });
 
