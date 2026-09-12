@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { createIdbStorage } from "@/lib/idb-storage";
+import type { LedgerErrorCode } from "@/lib/sync/errors";
 import type {
   Bootstrap,
   ChatCursor,
@@ -74,11 +75,21 @@ interface AppStateData {
   conversations: Record<string, ConversationState>;
   vendorCharges: VendorCharge[];
   lastBootstrapAt: string | null;
+  /** Lifecycle of the bootstrap read for the currently authenticated account. */
+  bootstrapStatus: "idle" | "loading" | "ready" | "error";
+  bootstrapErrorCode: LedgerErrorCode | null;
+  /**
+   * Account whose bootstrap last committed. Persisted so a reload can tell
+   * "known-good data for this account" from "some account's stale cache".
+   */
+  lastBootstrappedAccountId: string | null;
 }
 
 export interface AppState extends AppStateData {
   setHydrated(): void;
-  applyBootstrap(b: Bootstrap): void;
+  applyBootstrap(b: Bootstrap, knownGroupIds?: readonly string[]): void;
+  setBootstrapLoading(): void;
+  setBootstrapError(code: LedgerErrorCode): void;
   applyGroup(s: GroupSnapshot): void;
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
@@ -106,6 +117,9 @@ const initialData: AppStateData = {
   conversations: {},
   vendorCharges: [],
   lastBootstrapAt: null,
+  bootstrapStatus: "idle",
+  bootstrapErrorCode: null,
+  lastBootstrappedAccountId: null,
 };
 
 export function migrateAppState(persisted: unknown): AppStateData {
@@ -153,21 +167,61 @@ export const useAppStore = create<AppState>()(
       ...initialData,
       setHydrated: () => set({ hydrated: true }),
 
-      applyBootstrap: (b) =>
+      applyBootstrap: (b, knownGroupIds) =>
         set((state) => {
           const groups: Record<string, GroupSnapshot> = {};
           const expenseLists: Record<string, ExpenseListState> = {};
           const conversations: Record<string, ConversationState> = {};
-          const expenses = upsertSummaries(
-            state.expenses,
-            b.groups.flatMap((snapshot) => snapshot.recentExpenses),
-          );
+          // Only groups the response actually won are allowed to contribute
+          // expense summaries, so a stale snapshot cannot seed the map with
+          // rows this store already superseded.
+          let expenses = state.expenses;
+
+          // Groups the caller had before the request started. Anything created
+          // locally afterwards is newer than the response and is preserved;
+          // anything removed afterwards must not be resurrected.
+          const atRequestStart = knownGroupIds === undefined ? null : new Set(knownGroupIds);
+
           for (const snapshot of b.groups) {
             const id = snapshot.group.id;
+            const current = state.groups[id];
+
+            if (atRequestStart !== null && atRequestStart.has(id) && current === undefined) {
+              // It existed when the request left and is gone now, so it was
+              // removed locally afterwards: this response predates that.
+              continue;
+            }
+
+            if (current !== undefined && snapshot.group.ledgerVersion < current.group.ledgerVersion) {
+              // The response is older than what this store already holds, so
+              // every slice derived from it stays as-is.
+              groups[id] = current;
+              const currentList = state.expenseLists[id];
+              if (currentList !== undefined) expenseLists[id] = currentList;
+              const currentConversation = state.conversations[id];
+              if (currentConversation !== undefined) conversations[id] = currentConversation;
+              continue;
+            }
+
+            expenses = upsertSummaries(expenses, snapshot.recentExpenses);
             groups[id] = snapshot;
             expenseLists[id] = listFromSeed(state.expenseLists[id], snapshot.recentExpenses, expenses);
             conversations[id] = state.conversations[id] ?? conversationState();
           }
+
+          // Groups created locally after the request started are not in the
+          // response yet, but they are newer than it.
+          if (atRequestStart !== null) {
+            for (const [id, snapshot] of Object.entries(state.groups)) {
+              if (groups[id] !== undefined || atRequestStart.has(id)) continue;
+              groups[id] = snapshot;
+              const currentList = state.expenseLists[id];
+              if (currentList !== undefined) expenseLists[id] = currentList;
+              const currentConversation = state.conversations[id];
+              if (currentConversation !== undefined) conversations[id] = currentConversation;
+            }
+          }
+
           return {
             me: b.me,
             groups,
@@ -176,8 +230,22 @@ export const useAppStore = create<AppState>()(
             conversations,
             expenses,
             lastBootstrapAt: new Date().toISOString(),
+            bootstrapStatus: "ready" as const,
+            bootstrapErrorCode: null,
+            lastBootstrappedAccountId: b.me.id,
           };
         }),
+
+      setBootstrapLoading: () =>
+        set((state) => ({
+          bootstrapStatus: "loading" as const,
+          bootstrapErrorCode: state.bootstrapStatus === "error" ? null : state.bootstrapErrorCode,
+        })),
+
+      // Failure records why without clearing projections: known-good data
+      // stays on screen behind a retryable warning.
+      setBootstrapError: (code) =>
+        set({ bootstrapStatus: "error" as const, bootstrapErrorCode: code }),
 
       applyGroup: (s) =>
         set((state) => {
@@ -338,6 +406,7 @@ export const useAppStore = create<AppState>()(
         conversations: state.conversations,
         vendorCharges: state.vendorCharges,
         lastBootstrapAt: state.lastBootstrapAt,
+        lastBootstrappedAccountId: state.lastBootstrappedAccountId,
       }),
       onRehydrateStorage: () => () => {
         useAppStore.setState({ hydrated: true });
