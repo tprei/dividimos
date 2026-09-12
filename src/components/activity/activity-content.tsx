@@ -7,11 +7,12 @@ import toast from "react-hot-toast";
 import { useShallow } from "zustand/react/shallow";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ActivityCardSkeleton } from "@/components/shared/skeleton";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
-import { markActivityViewed } from "@/lib/activity-badge";
+import { newestActivityAt } from "@/lib/activity-badge";
 import { describeEvent } from "@/lib/ledger/event-copy";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { loadActivity } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
@@ -193,15 +194,32 @@ export function ActivityContent() {
   const hydrated = useAppStore((s) => s.hydrated);
   const items = useAppStore(useShallow((s) => s.activity.items));
   const oldestId = useAppStore((s) => s.activity.oldestId);
+  const complete = useAppStore((s) => s.activity.complete);
+  const read = useAppStore(useShallow((s) => s.activity.read));
   const groups = useAppStore(useShallow((s) => s.groups));
   const me = useAppStore((s) => s.me);
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  useEffect(() => {
-    markActivityViewed();
-    void loadActivity().catch(() => {});
+  const load = useCallback(() => {
+    void loadActivity().catch(() => {
+      // The store already carries the failure; the retry control renders it.
+    });
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const newestAt = useMemo(() => newestActivityAt(groups), [groups]);
+  const accountId = me?.id ?? null;
+
+  useEffect(() => {
+    // Viewed is recorded only once this account's activity read succeeded and
+    // these rows rendered: a failed or pending load has not been seen.
+    if (read.status !== "ready" || accountId === null || newestAt === null) return;
+    useAppStore.getState().markActivityViewed(accountId, newestAt);
+  }, [read.status, accountId, newestAt]);
 
   const handleLoadMore = useCallback(async () => {
     if (oldestId === null || isLoadingMore) return;
@@ -215,7 +233,10 @@ export function ActivityContent() {
     }
   }, [oldestId, isLoadingMore]);
 
-  if (!hydrated) {
+  if (
+    !hydrated ||
+    (items.length === 0 && (read.status === "idle" || read.status === "loading"))
+  ) {
     return (
       <div className="mx-auto max-w-lg space-y-4 px-4 py-4">
         <div className="space-y-3">
@@ -223,6 +244,18 @@ export function ActivityContent() {
             <ActivityCardSkeleton key={i} />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  // A failed first read is not an empty history.
+  if (items.length === 0 && read.status === "error") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-4">
+        <SyncErrorState
+          message={ledgerErrorMessage(new LedgerError(read.code))}
+          onRetry={load}
+        />
       </div>
     );
   }
@@ -252,7 +285,7 @@ export function ActivityContent() {
         ))}
       </div>
 
-      {oldestId !== null && (
+      {oldestId !== null && !complete && (
         <div className="pt-2 text-center">
           <Button
             variant="outline"
