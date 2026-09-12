@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { safeRedirect } from "@/lib/safe-redirect";
-import { decodeMe } from "@/lib/ledger/decode";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -9,21 +8,16 @@ export async function GET(request: Request) {
   const next = safeRedirect(searchParams.get("next"));
 
   if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
-      if (!claimsError && claimsData) {
-        const { data: profile } = await supabase.rpc("get_my_profile");
-        const decoded = decodeMe(profile);
-        if (!decoded.ok || !decoded.value.onboarded) {
-          const onboardUrl = new URL(`${origin}/auth/onboard`);
-          if (next !== "/app") onboardUrl.searchParams.set("next", next);
-          return NextResponse.redirect(onboardUrl.toString());
-        }
+    try {
+      const supabase = await createClient();
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error) {
+        const continueUrl = new URL(`${origin}/auth/continue`);
+        continueUrl.searchParams.set("next", next);
+        return NextResponse.redirect(continueUrl.toString());
       }
-
-      return NextResponse.redirect(`${origin}${next}`);
+    } catch {
+      // Keep code exchange failures separate from profile resolution failures.
     }
   }
 
