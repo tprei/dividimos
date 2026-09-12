@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { registerServiceWorker } from "@/lib/push/service-worker";
 import { useEffect } from "react";
 
 function isNativeWebView(): boolean {
@@ -32,9 +33,10 @@ export function RegisterSW() {
     }
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js", {
-        scope: "/",
-        updateViaCache: "none",
+      // Registration is owned by the push module so activation failures reach
+      // the controls that depend on them instead of vanishing.
+      registerServiceWorker().catch((error: unknown) => {
+        console.error("[pwa] service worker registration failed:", error);
       });
     }
   }, [router]);
