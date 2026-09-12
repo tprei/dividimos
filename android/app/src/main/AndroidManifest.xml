@@ -85,6 +85,9 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- The plugin's "contacts" permission alias covers READ and WRITE, and Capacitor rejects the
+         request when any string in an alias is undeclared. The app never writes contacts. -->
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
     <!-- Required for push notifications on Android 13+ (API 33) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

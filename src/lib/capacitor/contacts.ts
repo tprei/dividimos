@@ -4,6 +4,13 @@ export function isNativeContactsAvailable(): boolean {
   return Capacitor.getPlatform() === "android";
 }
 
+/**
+ * The Android plugin never settles `pickContact` when the chooser is dismissed, so a dismissal is
+ * indistinguishable from a very slow pick. Long enough that a real pick is never misreported.
+ */
+const PICK_TIMEOUT_MS = 120_000;
+const PICK_TIMED_OUT = Symbol("pick_timed_out");
+
 export type NativePickResult =
   | { status: "ok"; name: string; phone: string | null }
   | { status: "cancelled" }
@@ -21,9 +28,18 @@ export async function pickNativeContact(): Promise<NativePickResult> {
       if (req.contacts !== "granted") return { status: "permission_denied" };
     }
 
-    const { contact } = await Contacts.pickContact({
-      projection: { name: true, phones: true },
-    });
+    const { promise: timeout, resolve: onTimeout } =
+      Promise.withResolvers<typeof PICK_TIMED_OUT>();
+    const timer = setTimeout(() => onTimeout(PICK_TIMED_OUT), PICK_TIMEOUT_MS);
+
+    const picked = await Promise.race([
+      Contacts.pickContact({ projection: { name: true, phones: true } }),
+      timeout,
+    ]).finally(() => clearTimeout(timer));
+
+    if (picked === PICK_TIMED_OUT) return { status: "cancelled" };
+
+    const { contact } = picked;
     if (!contact) return { status: "cancelled" };
 
     const phone = contact.phones?.find((p) => p.number)?.number ?? null;

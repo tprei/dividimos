@@ -1,31 +1,43 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { pickNativeContact } from "./contacts";
-
-interface ContactsPlugin {
-  checkPermissions: () => Promise<{ contacts: string }>;
-  requestPermissions?: () => Promise<{ contacts: string }>;
-  pickContact?: () => Promise<unknown>;
-}
-
-const plugin: { impl: ContactsPlugin | null } = { impl: null };
-
-// A hoisted mock with a mutable implementation, because vi.doMock plus
-// resetModules between tests loses races against the dynamic import inside
-// pickNativeContact and leaks one test's plugin into the next.
-vi.mock("@capacitor-community/contacts", () => ({
-  get Contacts(): ContactsPlugin {
-    if (!plugin.impl) throw new Error("Plugin not implemented on android");
-    return plugin.impl;
+const { plugin } = vi.hoisted(() => ({
+  plugin: {
+    failImport: false,
+    checkPermissions: vi.fn(),
+    requestPermissions: vi.fn(),
+    pickContact: vi.fn(),
   },
 }));
 
-describe("pickNativeContact", () => {
-  beforeEach(() => {
-    plugin.impl = null;
-  });
+vi.mock("@capacitor-community/contacts", () => {
+  if (plugin.failImport) throw new Error("Plugin not implemented on android");
+  return { Contacts: plugin };
+});
 
-  it("returns an error result when the plugin is unavailable", async () => {
+beforeEach(() => {
+  plugin.failImport = false;
+  plugin.checkPermissions.mockResolvedValue({ contacts: "granted" });
+  plugin.requestPermissions.mockResolvedValue({ contacts: "granted" });
+  plugin.pickContact.mockReset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.resetModules();
+});
+
+// Re-imported per test: `pickNativeContact` loads the plugin through a dynamic
+// import, so each case needs a module registry that was reset first.
+async function loadPickNativeContact() {
+  const mod = await import("./contacts");
+  return mod.pickNativeContact;
+}
+
+describe("pickNativeContact", () => {
+  it("returns an error result when the plugin module fails to load", async () => {
+    plugin.failImport = true;
+
+    const pickNativeContact = await loadPickNativeContact();
     const result = await pickNativeContact();
 
     if (result.status !== "error") {
@@ -35,40 +47,62 @@ describe("pickNativeContact", () => {
   });
 
   it("returns permission_denied when the permission request is refused", async () => {
-    plugin.impl = {
-      checkPermissions: async () => ({ contacts: "prompt" }),
-      requestPermissions: async () => ({ contacts: "denied" }),
-    };
+    plugin.checkPermissions.mockResolvedValue({ contacts: "prompt" });
+    plugin.requestPermissions.mockResolvedValue({ contacts: "denied" });
 
-    await expect(pickNativeContact()).resolves.toEqual({ status: "permission_denied" });
+    const pickNativeContact = await loadPickNativeContact();
+    const result = await pickNativeContact();
+
+    expect(result).toEqual({ status: "permission_denied" });
+    expect(plugin.pickContact).not.toHaveBeenCalled();
   });
 
   it("returns cancelled when the native picker rejects with a cancellation", async () => {
-    plugin.impl = {
-      checkPermissions: async () => ({ contacts: "granted" }),
-      pickContact: async () => {
-        throw new Error("User cancelled contacts picker");
-      },
-    };
+    plugin.pickContact.mockRejectedValue(new Error("User cancelled contacts picker"));
 
-    await expect(pickNativeContact()).resolves.toEqual({ status: "cancelled" });
+    const pickNativeContact = await loadPickNativeContact();
+    const result = await pickNativeContact();
+
+    expect(result).toEqual({ status: "cancelled" });
+  });
+
+  it("returns cancelled when the native picker never settles", async () => {
+    plugin.pickContact.mockReturnValue(Promise.withResolvers<never>().promise);
+
+    const pickNativeContact = await loadPickNativeContact();
+    vi.useFakeTimers();
+    const pending = pickNativeContact();
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(await pending).toEqual({ status: "cancelled" });
   });
 
   it("returns the picked contact display name and first phone", async () => {
-    plugin.impl = {
-      checkPermissions: async () => ({ contacts: "granted" }),
-      pickContact: async () => ({
-        contact: {
-          name: { display: "Bob Silva", given: "Bob", family: "Silva" },
-          phones: [{ number: "+55 11 91234-5678" }, { number: "+55 11 99999-0000" }],
-        },
-      }),
-    };
+    plugin.pickContact.mockResolvedValue({
+      contact: {
+        name: { display: "Bob Silva", given: "Bob", family: "Silva" },
+        phones: [{ number: "+55 11 91234-5678" }, { number: "+55 11 99999-0000" }],
+      },
+    });
 
-    await expect(pickNativeContact()).resolves.toEqual({
+    const pickNativeContact = await loadPickNativeContact();
+    const result = await pickNativeContact();
+
+    expect(result).toEqual({
       status: "ok",
       name: "Bob Silva",
       phone: "+55 11 91234-5678",
     });
+  });
+
+  it("composes the name from given and family when there is no display name", async () => {
+    plugin.pickContact.mockResolvedValue({
+      contact: { name: { given: "Ana", family: "Lima" }, phones: [] },
+    });
+
+    const pickNativeContact = await loadPickNativeContact();
+    const result = await pickNativeContact();
+
+    expect(result).toEqual({ status: "ok", name: "Ana Lima", phone: null });
   });
 });

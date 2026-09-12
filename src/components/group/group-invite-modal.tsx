@@ -135,8 +135,7 @@ export function GroupInviteModal({
 
   const handlePickContacts = useCallback(async () => {
     setPicking(true);
-    const result = await pickContacts();
-    setPicking(false);
+    const result = await pickContacts().finally(() => setPicking(false));
 
     if (result.status === "cancelled") return;
     if (result.status === "unsupported") {
