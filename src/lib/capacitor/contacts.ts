@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import { App } from "@capacitor/app";
 
 export function isNativeContactsAvailable(): boolean {
   return Capacitor.getPlatform() === "android";
@@ -17,9 +18,35 @@ export type NativePickResult =
   | { status: "permission_denied" }
   | { status: "error"; error: Error };
 
+function cancelledOnResume(): { promise: Promise<"cancelled">; dispose: () => void } {
+  let removeListener: (() => void) | null = null;
+  let settled = false;
+
+  const promise = new Promise<"cancelled">((resolve) => {
+    void App.addListener("appStateChange", ({ isActive }) => {
+      if (isActive && !settled) resolve("cancelled");
+    }).then((handle) => {
+      if (settled) {
+        void handle.remove();
+        return;
+      }
+      removeListener = () => {
+        void handle.remove();
+      };
+    });
+  });
+
+  return {
+    promise,
+    dispose: () => {
+      settled = true;
+      removeListener?.();
+    },
+  };
+}
+
 export async function pickNativeContact(): Promise<NativePickResult> {
   try {
-    // Native-only plugin: a static import would pull it into the web bundle.
     const { Contacts } = await import("@capacitor-community/contacts");
 
     const perm = await Contacts.checkPermissions();
@@ -28,16 +55,26 @@ export async function pickNativeContact(): Promise<NativePickResult> {
       if (req.contacts !== "granted") return { status: "permission_denied" };
     }
 
+    const backOut = cancelledOnResume();
     const { promise: timeout, resolve: onTimeout } =
       Promise.withResolvers<typeof PICK_TIMED_OUT>();
     const timer = setTimeout(() => onTimeout(PICK_TIMED_OUT), PICK_TIMEOUT_MS);
 
-    const picked = await Promise.race([
-      Contacts.pickContact({ projection: { name: true, phones: true } }),
-      timeout,
-    ]).finally(() => clearTimeout(timer));
+    let picked;
+    try {
+      picked = await Promise.race([
+        Contacts.pickContact({ projection: { name: true, phones: true } }),
+        backOut.promise,
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer);
+      backOut.dispose();
+    }
 
-    if (picked === PICK_TIMED_OUT) return { status: "cancelled" };
+    if (picked === "cancelled" || picked === PICK_TIMED_OUT) {
+      return { status: "cancelled" };
+    }
 
     const { contact } = picked;
     if (!contact) return { status: "cancelled" };
