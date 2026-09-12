@@ -704,12 +704,13 @@ describe.skipIf(!isIntegrationTestReady)(
     let debtor: TestUser;
     let creditor: TestUser;
     let clientDebtor: SupabaseClient;
+    let clientCreditor: SupabaseClient;
     let debtGroupId: string;
     let zeroGroupId: string;
-
     beforeAll(async () => {
       [debtor, creditor] = await createTestUsers(2);
       clientDebtor = authenticateAs(debtor);
+      clientCreditor = authenticateAs(creditor);
 
       debtGroupId = await createGroupWithMembers(creditor, [debtor], "Overpay");
       await createExpense(creditor, {
@@ -782,6 +783,19 @@ describe.skipIf(!isIntegrationTestReady)(
     });
 
     it("still rejects a non-member actor even with override", async () => {
+      // leave_group refuses while a balance is outstanding. The overpay
+      // crossed the pair past zero, so settle the credit back down to zero
+      // first — itself only possible with the override, since the receiver
+      // now holds a positive net.
+      await rpcOk<SettlementAck>(clientCreditor, "record_settlement", {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: debtGroupId,
+        p_from_user_id: creditor.id,
+        p_to_user_id: debtor.id,
+        p_amount_cents: 1000,
+        p_allow_overpay: true,
+      });
+
       await rpcOk<{ groupId: string }>(clientDebtor, "leave_group", {
         p_group_id: debtGroupId,
       });
