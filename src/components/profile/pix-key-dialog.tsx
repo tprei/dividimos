@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PIX_KEY_ERRORS, validatePixKey } from "@/lib/pix";
 import type { PixKeyType } from "@/types";
 import type { Me } from "@/types/ledger";
 
@@ -49,8 +50,15 @@ function toPixKeyValue(type: PixKeyType, display: string): string {
   return display;
 }
 
+function phoneDigits(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  // A pasted +55 11 99999-8888 arrives with the country code already on it.
+  const local = digits.length > 11 && digits.startsWith("55") ? digits.slice(2) : digits;
+  return local.slice(0, 11);
+}
+
 function constrainInput(type: PixKeyType, value: string): string {
-  if (type === "phone") return formatPhoneInput(value.replace(/\D/g, "").slice(0, 11));
+  if (type === "phone") return formatPhoneInput(phoneDigits(value));
   if (type === "cpf") return formatCPF(value.replace(/\D/g, "").slice(0, 11));
   if (type === "random")
     return value.replace(/[^0-9a-fA-F-]/g, "").slice(0, 36).toLowerCase();
@@ -81,10 +89,15 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
 
   const handleSave = async () => {
     if (!pixInput || isSaving) return;
+    const key = toPixKeyValue(pixType, pixInput);
+    if (!validatePixKey(key, pixType)) {
+      setPixError(PIX_KEY_ERRORS[pixType]);
+      return;
+    }
     setIsSaving(true);
     try {
       const formData = new FormData();
-      formData.set("pixKey", toPixKeyValue(pixType, pixInput));
+      formData.set("pixKey", key);
       formData.set("pixKeyType", pixType);
       const result = await updatePixKey(me.id, formData);
       if ("error" in result) {

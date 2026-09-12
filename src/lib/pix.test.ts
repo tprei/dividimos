@@ -119,8 +119,18 @@ describe("validatePixKey", () => {
   });
 
   describe("CPF keys", () => {
-    it("accepts exactly 11 digits", () => {
-      expect(validatePixKey("12345678901", "cpf")).toBe(true);
+    it("accepts a CPF whose check digits are correct", () => {
+      expect(validatePixKey("52998224725", "cpf")).toBe(true);
+    });
+
+    it("rejects 11 digits whose check digits do not match", () => {
+      expect(validatePixKey("12345678901", "cpf")).toBe(false);
+      expect(validatePixKey("52998224724", "cpf")).toBe(false);
+    });
+
+    it("rejects a repeated digit run that passes the arithmetic", () => {
+      expect(validatePixKey("11111111111", "cpf")).toBe(false);
+      expect(validatePixKey("00000000000", "cpf")).toBe(false);
     });
 
     it("rejects CPF with +55 prefix", () => {
