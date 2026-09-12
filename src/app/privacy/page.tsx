@@ -94,7 +94,7 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong className="text-foreground">Câmera:</strong> usada para escanear cupons
-              fiscais e QR Codes NFC-e. As imagens são processadas e descartadas imediatamente.
+              fiscais. As imagens são processadas e descartadas imediatamente.
             </li>
           </ul>
         </section>

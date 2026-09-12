@@ -76,9 +76,7 @@ describe("BillTypeSelector", () => {
       );
 
       expect(screen.getByText("Escanear nota")).toBeInTheDocument();
-      expect(
-        screen.getByText("Foto do cupom ou QR Code NFC-e"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Foto do cupom")).toBeInTheDocument();
     });
 
     it("calls onScanReceipt when scan option is clicked", async () => {

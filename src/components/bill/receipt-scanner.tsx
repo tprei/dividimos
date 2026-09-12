@@ -2,14 +2,10 @@
 
 import { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, ImagePlus, QrCode, RotateCcw, ScanLine, X } from "lucide-react";
+import { Camera, ImagePlus, RotateCcw, ScanLine, X } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Button } from "@/components/ui/button";
-import { QrScannerView } from "./qr-scanner-view";
-import type { NfceQrResult } from "@/lib/nfce-qr";
-import { parseNfceQrCode } from "@/lib/nfce-qr";
 
-type Tab = "photo" | "qr";
 
 export interface ReceiptScannerProps {
   /** Called with the captured/selected image file when user taps "Processar" */
@@ -18,23 +14,15 @@ export interface ReceiptScannerProps {
   onBack: () => void;
   /** Whether processing is in progress (disables button, shows spinner) */
   processing?: boolean;
-  /** Called when a valid NFC-e QR code is detected */
-  onQrDetected?: (result: NfceQrResult) => void;
-  /** Which tab to show initially (defaults to "photo") */
-  defaultTab?: Tab;
 }
 
 export function ReceiptScanner({
   onProcess,
   onBack,
   processing = false,
-  onQrDetected,
-  defaultTab = "photo",
 }: ReceiptScannerProps) {
-  const [tab, setTab] = useState<Tab>(defaultTab);
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [qrPaused, setQrPaused] = useState(false);
   const isAndroid = Capacitor.getPlatform() === "android";
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
@@ -90,16 +78,6 @@ export function ReceiptScanner({
     [],
   );
 
-  const handleQrDecode = useCallback(
-    (data: string) => {
-      const parsed = parseNfceQrCode(data);
-      if (parsed) {
-        setQrPaused(true);
-        onQrDetected?.(parsed);
-      }
-    },
-    [onQrDetected],
-  );
 
   return (
     <div className="space-y-4">
@@ -115,41 +93,10 @@ export function ReceiptScanner({
         <div>
           <h2 className="text-lg font-semibold">Escanear nota</h2>
           <p className="text-sm text-muted-foreground">
-            {tab === "photo"
-              ? "Tire uma foto ou escolha da galeria."
-              : "Aponte para o QR code da nota fiscal."}
+            Tire uma foto ou escolha da galeria.
           </p>
         </div>
       </div>
-
-      {/* Tab switcher */}
-      <div className="flex gap-1 rounded-xl bg-muted p-1">
-        <button
-          type="button"
-          onClick={() => setTab("photo")}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            tab === "photo"
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Camera className="h-4 w-4" />
-          Foto
-        </button>
-        <button
-          type="button"
-          onClick={() => { setTab("qr"); setQrPaused(false); }}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            tab === "qr"
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <QrCode className="h-4 w-4" />
-          QR Code
-        </button>
-      </div>
-
       {/* Hidden file inputs */}
       <input
         ref={cameraRef}
@@ -170,28 +117,7 @@ export function ReceiptScanner({
       />
 
       <AnimatePresence mode="wait">
-        {tab === "qr" ? (
-          <motion.div
-            key="qr-scanner"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.2 }}
-            className="space-y-2"
-          >
-            <QrScannerView onDecode={handleQrDecode} paused={qrPaused} />
-            {processing && qrPaused ? (
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                <ScanLine className="h-4 w-4 animate-pulse" />
-                <span>Consultando nota fiscal...</span>
-              </div>
-            ) : (
-              <p className="text-center text-xs text-muted-foreground">
-                Posicione o QR code da nota dentro do quadrado
-              </p>
-            )}
-          </motion.div>
-        ) : !preview ? (
+        {!preview ? (
           <motion.div
             key="input-modes"
             initial={{ opacity: 0, y: 12 }}

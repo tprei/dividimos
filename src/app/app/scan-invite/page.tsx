@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import { QrScannerView } from "@/components/bill/qr-scanner-view";
+import { useQrScannerPreload } from "@/hooks/use-qr-preload";
 import { useStartBillWithUser } from "@/components/profile/use-start-bill-with-user";
-import { parseNfceQrCode } from "@/lib/nfce-qr";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { parseClaimQrCode } from "@/lib/claim-qr";
@@ -19,6 +19,7 @@ import type { UserProfile } from "@/types";
 export default function ScanInvitePage() {
   const router = useRouter();
   const { startBill, openConversation, starting } = useStartBillWithUser();
+  useQrScannerPreload();
   const [hint, setHint] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [scannedProfile, setScannedProfile] = useState<UserProfile | null>(null);
@@ -63,10 +64,6 @@ export default function ScanInvitePage() {
         return;
       }
 
-      const nfce = parseNfceQrCode(data);
-      if (nfce) {
-        setHint("Use 'Escanear NFC' para cupons fiscais");
-      }
     },
     [router],
   );
