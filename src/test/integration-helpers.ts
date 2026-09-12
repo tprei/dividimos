@@ -208,6 +208,7 @@ export interface CreateExpenseInput {
   fixedFeeCents?: number;
   payload: unknown;
   clientId?: string;
+  receiptAccessKey?: string | null;
 }
 
 export async function createExpense(
@@ -230,6 +231,7 @@ export async function createExpense(
     p_total_cents: input.totalCents,
     p_service_fee_bps: input.serviceFeeBps ?? 0,
     p_fixed_fee_cents: input.fixedFeeCents ?? 0,
+    p_chave_acesso: input.receiptAccessKey ?? null,
     p_payload: input.payload,
   });
 }
