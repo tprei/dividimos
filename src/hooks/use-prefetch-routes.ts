@@ -1,19 +1,30 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useAppStore } from "@/stores/app-store";
 
 /**
  * Prefetches an array of routes when the component mounts or the list changes.
- * Deduplicates across calls and skips routes already prefetched in this session.
+ *
+ * Marks are per mounted component and per account. A module-global set kept
+ * them for the whole session, so a prefetch that failed was never retried and
+ * one account's navigation intent carried into the next sign-in.
  */
-const prefetched = new Set<string>();
-
 export function usePrefetchRoutes(routes: string[]) {
   const router = useRouter();
+  const accountId = useAppStore((state) => state.me?.id ?? null);
+  const prefetched = useRef(new Set<string>());
+  const markedAccount = useRef<string | null>(null);
 
   useEffect(() => {
-    const pending = routes.filter((r) => !prefetched.has(r));
+    if (markedAccount.current !== accountId) {
+      markedAccount.current = accountId;
+      prefetched.current = new Set<string>();
+    }
+
+    const marks = prefetched.current;
+    const pending = routes.filter((route) => !marks.has(route));
     if (pending.length === 0) return;
 
     // Stagger prefetches to avoid flooding the network
@@ -21,21 +32,22 @@ export function usePrefetchRoutes(routes: string[]) {
     pending.forEach((route, i) => {
       timers.push(
         setTimeout(() => {
-          if (!prefetched.has(route)) {
-            prefetched.add(route);
-            router.prefetch(route);
+          if (marks.has(route)) return;
+          marks.add(route);
+          try {
+            // A failed prefetch must not be remembered as done, or the route
+            // stays uncached for the rest of the session.
+            const result = router.prefetch(route) as unknown;
+            if (result instanceof Promise) {
+              result.catch(() => marks.delete(route));
+            }
+          } catch {
+            marks.delete(route);
           }
         }, i * 100),
       );
     });
 
     return () => timers.forEach(clearTimeout);
-  }, [router, routes]);
-}
-
-/**
- * Resets the prefetch cache. Useful for testing.
- */
-export function resetPrefetchCache() {
-  prefetched.clear();
+  }, [accountId, router, routes]);
 }
