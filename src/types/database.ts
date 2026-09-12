@@ -844,11 +844,11 @@ export type Database = {
         }
         Returns: Json
       }
-      create_guest_claim_token: { Args: { p_guest_id: string }; Returns: Json }
       create_group: {
         Args: { p_member_ids: string[]; p_name: string }
         Returns: Json
       }
+      create_guest_claim_token: { Args: { p_guest_id: string }; Returns: Json }
       create_invite_link: {
         Args: { p_expires_at?: string; p_group_id: string; p_max_uses?: number }
         Returns: Json
