@@ -2,25 +2,32 @@ import { describe, expect, it } from "vitest";
 import { resolveDeepLinkTarget } from "./deep-link";
 
 const TOKEN = "gst1_" + "a".repeat(43);
+const INVITE = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6";
 
 describe("resolveDeepLinkTarget", () => {
   describe("dividimos:// scheme", () => {
-    it("resolves a normal in-app path", () => {
-      expect(resolveDeepLinkTarget("dividimos://app/groups/abc")).toBe("/groups/abc");
+    it("keeps the authority, landing on the route that exists", () => {
+      // /groups/abc is not a route; the app's screens live under /app.
+      expect(resolveDeepLinkTarget("dividimos://app/groups/abc")).toBe("/app/groups/abc");
     });
 
     it("preserves search and hash", () => {
       expect(resolveDeepLinkTarget("dividimos://app/bill?id=42#summary")).toBe(
-        "/bill?id=42#summary",
+        "/app/bill?id=42#summary",
       );
     });
 
-    it("falls back when path is protocol-relative (//evil)", () => {
-      expect(resolveDeepLinkTarget("dividimos://x////evil.com/path")).toBe("/app");
+    it("opens a bare authority at its own root", () => {
+      expect(resolveDeepLinkTarget("dividimos://app")).toBe("/app");
     });
 
-    it("falls back when path is backslash-prefixed", () => {
-      expect(resolveDeepLinkTarget("dividimos://x/\\evil")).toBe("/app");
+    it("resolves an invite through the join authority", () => {
+      expect(resolveDeepLinkTarget(`dividimos://join/${INVITE}`)).toBe(`/join/${INVITE}`);
+    });
+
+    it("rejects an authority this app does not serve", () => {
+      expect(resolveDeepLinkTarget("dividimos://x////evil.com/path")).toBeNull();
+      expect(resolveDeepLinkTarget("dividimos://x/\\evil")).toBeNull();
     });
 
     it("rejects a claim credential in the custom scheme", () => {
@@ -49,10 +56,15 @@ describe("resolveDeepLinkTarget", () => {
       expect(resolveDeepLinkTarget("https://www.dividimos.ai/claim")).toBeNull();
     });
 
-    it("resolves a /join/ link with query", () => {
-      expect(resolveDeepLinkTarget("https://www.dividimos.ai/join/tok?from=email")).toBe(
-        "/join/tok?from=email",
+    it("resolves a verified invite link", () => {
+      expect(resolveDeepLinkTarget(`https://www.dividimos.ai/join/${INVITE}`)).toBe(
+        `/join/${INVITE}`,
       );
+    });
+
+    it("rejects an invite link whose token is not an invite token", () => {
+      expect(resolveDeepLinkTarget("https://www.dividimos.ai/join/tok?from=email")).toBeNull();
+      expect(resolveDeepLinkTarget("https://www.dividimos.ai/join/")).toBeNull();
     });
 
     it("rejects a different host", () => {
