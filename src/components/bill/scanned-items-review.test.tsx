@@ -213,4 +213,13 @@ describe("ScannedItemsReview", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continuar para divisão" })).toBeDisabled();
   });
+
+  it("shows a fee the receipt printed as an amount", () => {
+    renderReview(makeResult({ serviceFeeBasisPoints: 0, fixedFeesCents: 1000, totalCents: 7900 }));
+
+    // Without this line the user sees items summing to 69,00 against a
+    // 79,00 total with nothing explaining the difference.
+    expect(screen.getByText("Taxa impressa na nota")).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s*10,00/)).toBeInTheDocument();
+  });
 });

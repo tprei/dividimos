@@ -2209,6 +2209,7 @@ DECLARE
   v_actor uuid;
   v_group_id uuid;
   v_creator_id uuid;
+  v_chave_acesso text;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -2218,17 +2219,23 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
+  SELECT group_id, creator_id, chave_acesso
+    INTO v_group_id, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
+  PERFORM lock_receipt_key(v_creator_id, v_chave_acesso);
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no, creator_id
-    INTO v_status, v_version_no, v_creator_id
-  FROM expenses WHERE id = p_expense_id;
+  SELECT status, current_version_no, creator_id, chave_acesso
+    INTO v_status, v_version_no, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id
+  FOR UPDATE;
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
     SELECT 1 FROM expense_participants
