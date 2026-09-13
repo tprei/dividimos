@@ -1,5 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockGetPlatform = vi.fn(() => "android");
+vi.mock("@capacitor/core", () => ({
+  Capacitor: { getPlatform: () => mockGetPlatform() },
+}));
+
+type StateListener = (state: { isActive: boolean }) => void;
+let stateListener: StateListener | null = null;
+const mockRemove = vi.fn().mockResolvedValue(undefined);
+vi.mock("@capacitor/app", () => ({
+  App: {
+    addListener: (_event: string, handler: StateListener) => {
+      stateListener = handler;
+      return Promise.resolve({ remove: mockRemove });
+    },
+  },
+}));
+
 const { plugin } = vi.hoisted(() => ({
   plugin: {
     failImport: false,
@@ -14,24 +31,25 @@ vi.mock("@capacitor-community/contacts", () => {
   return { Contacts: plugin };
 });
 
+async function loadPickNativeContact() {
+  const mod = await import("./contacts");
+  return mod.pickNativeContact;
+}
+
 beforeEach(() => {
   plugin.failImport = false;
   plugin.checkPermissions.mockResolvedValue({ contacts: "granted" });
   plugin.requestPermissions.mockResolvedValue({ contacts: "granted" });
   plugin.pickContact.mockReset();
+  mockGetPlatform.mockReturnValue("android");
+  mockRemove.mockClear();
+  stateListener = null;
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.resetModules();
 });
-
-// Re-imported per test: `pickNativeContact` loads the plugin through a dynamic
-// import, so each case needs a module registry that was reset first.
-async function loadPickNativeContact() {
-  const mod = await import("./contacts");
-  return mod.pickNativeContact;
-}
 
 describe("pickNativeContact", () => {
   it("returns an error result when the plugin module fails to load", async () => {
@@ -77,6 +95,18 @@ describe("pickNativeContact", () => {
     expect(await pending).toEqual({ status: "cancelled" });
   });
 
+  it("settles as cancelled when the user backs out of the picker", async () => {
+    plugin.pickContact.mockReturnValue(new Promise(() => {}));
+
+    const pickNativeContact = await loadPickNativeContact();
+    const pending = pickNativeContact();
+    await vi.waitFor(() => expect(stateListener).not.toBeNull());
+    stateListener!({ isActive: true });
+
+    await expect(pending).resolves.toEqual({ status: "cancelled" });
+    expect(mockRemove).toHaveBeenCalled();
+  });
+
   it("returns the picked contact display name and first phone", async () => {
     plugin.pickContact.mockResolvedValue({
       contact: {
@@ -104,5 +134,14 @@ describe("pickNativeContact", () => {
     const result = await pickNativeContact();
 
     expect(result).toEqual({ status: "ok", name: "Ana Lima", phone: null });
+  });
+
+  it("reports a permission check that throws as an error, not a crash", async () => {
+    plugin.checkPermissions.mockRejectedValue(new Error("plugin unavailable"));
+
+    const pickNativeContact = await loadPickNativeContact();
+    const result = await pickNativeContact();
+
+    expect(result.status).toBe("error");
   });
 });
