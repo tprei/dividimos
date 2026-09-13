@@ -234,9 +234,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // Only an explicitly decoded, committed profile may route to onboarding: a
     // failed profile read must never look like "not onboarded".
     if (hydrated && knownGood && bootstrapStatus === "ready" && me && !me.onboarded) {
-      router.replace("/auth/onboard");
+      // Carry where they were headed, so onboarding returns them to it
+      // instead of dropping them on the dashboard.
+      const destination = `${pathname}${window.location.search}`;
+      router.replace(`/auth/onboard?next=${encodeURIComponent(destination)}`);
     }
-  }, [hydrated, knownGood, bootstrapStatus, me, router]);
+  }, [hydrated, knownGood, bootstrapStatus, me, router, pathname]);
 
   // The badge is derived from authoritative snapshots and this account's own
   // recorded view, so there is no second unread store to fall out of sync.

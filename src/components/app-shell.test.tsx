@@ -177,7 +177,9 @@ describe("AppShell hydration & auth lifecycle", () => {
 
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(mockRouter.replace).not.toHaveBeenCalledWith("/auth/onboard");
+    expect(mockRouter.replace).not.toHaveBeenCalledWith(
+      expect.stringContaining("/auth/onboard"),
+    );
   });
 
   it("redirects to /auth/onboard when hydrated but me.onboarded is false", () => {
@@ -190,7 +192,10 @@ describe("AppShell hydration & auth lifecycle", () => {
 
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(mockRouter.replace).toHaveBeenCalledWith("/auth/onboard");
+    // The destination rides along so onboarding can return them to it.
+    expect(mockRouter.replace).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/auth\/onboard\?next=/),
+    );
   });
 
   it("calls runBootstrap, startRealtime, attachVisibilityRefresh, attachAuthListener on mount", () => {

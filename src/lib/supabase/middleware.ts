@@ -65,6 +65,24 @@ function applyPendingCookies(
   return response;
 }
 
+/**
+ * Assigns a validated internal destination to `url` as separate components.
+ *
+ * `safeRedirect` returns a path that may include a query string; assigning
+ * that whole string to `url.pathname` percent-encodes the `?` and turns
+ * `/app/bill/new?dm=bob` into a single nonexistent path.
+ */
+function applyDestination(url: URL, destination: string): void {
+  const separator = destination.indexOf("?");
+  if (separator === -1) {
+    url.pathname = destination;
+    url.search = "";
+    return;
+  }
+  url.pathname = destination.slice(0, separator);
+  url.search = destination.slice(separator);
+}
+
 function noStore(response: NextResponse): NextResponse {
   response.headers.set("Cache-Control", "private, no-store");
   return response;
@@ -178,8 +196,11 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && !isPublicPath(pathname) && !pathname.startsWith("/api/")) {
     const url = request.nextUrl.clone();
+    // The query string is part of the destination: /app/bill/new?dm=bob is a
+    // different screen from /app/bill/new.
+    const destination = `${pathname}${request.nextUrl.search}`;
     url.pathname = "/auth";
-    url.search = `?next=${encodeURIComponent(pathname)}`;
+    url.search = `?next=${encodeURIComponent(destination)}`;
     return noStore(finish(NextResponse.redirect(url)));
   }
 
@@ -195,10 +216,10 @@ export async function updateSession(request: NextRequest) {
 
   if (user && (pathname === "/auth" || pathname === "/")) {
     const nextParam = request.nextUrl.searchParams.get("next");
-    const redirectTo = safeRedirect(nextParam);
     const url = request.nextUrl.clone();
-    url.pathname = redirectTo;
-    url.search = "";
+    // safeRedirect returns a validated path that may carry a query string;
+    // assigning it whole to `pathname` would percent-encode the `?`.
+    applyDestination(url, safeRedirect(nextParam));
     return noStore(finish(NextResponse.redirect(url)));
   }
 

@@ -102,6 +102,56 @@ describe("updateSession", () => {
     expect(response.headers.get("cache-control")).toContain("no-store");
   });
 
+  it("carries the destination's query string into the auth redirect", async () => {
+    getClaimsMock.mockResolvedValue({
+      data: null,
+      error: { name: "AuthSessionMissingError", status: 401 },
+    });
+
+    const response = await updateSession(
+      makeRequest("/app/bill/new?dm=bob&groupId=g1"),
+    );
+
+    const location = response.headers.get("location") ?? "";
+    // /app/bill/new?dm=bob is a different screen from /app/bill/new.
+    expect(location).toContain(
+      `next=${encodeURIComponent("/app/bill/new?dm=bob&groupId=g1")}`,
+    );
+  });
+
+  it("lands an authenticated visitor on the destination path and query", async () => {
+    getClaimsMock.mockResolvedValue({
+      data: { claims: { sub: "user-1" } },
+      error: null,
+    });
+
+    const response = await updateSession(
+      makeRequest(
+        `/auth?next=${encodeURIComponent("/app/bill/new?dm=bob&groupId=g1")}`,
+      ),
+    );
+
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.pathname).toBe("/app/bill/new");
+    expect(location.searchParams.get("dm")).toBe("bob");
+    expect(location.searchParams.get("groupId")).toBe("g1");
+  });
+
+  it("still refuses an external destination", async () => {
+    getClaimsMock.mockResolvedValue({
+      data: { claims: { sub: "user-1" } },
+      error: null,
+    });
+
+    const response = await updateSession(
+      makeRequest(`/auth?next=${encodeURIComponent("https://evil.example.com/x")}`),
+    );
+
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.host).toBe("localhost");
+    expect(location.pathname).toBe("/app");
+  });
+
   it("preserves every rotated and deleted cookie on a public response", async () => {
     getClaimsMock.mockImplementation(async () => {
       cookieAdapter?.setAll([
