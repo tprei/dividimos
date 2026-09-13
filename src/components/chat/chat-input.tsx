@@ -10,6 +10,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ onSend, onError, disabled }: ChatInputProps) {
+
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

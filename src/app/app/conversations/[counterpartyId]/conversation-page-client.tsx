@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { ChatAiInput } from "@/components/chat/chat-ai-input";
+import { ChatAiInput, type SendOutcome } from "@/components/chat/chat-ai-input";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ConversationQuickActions } from "@/components/chat/conversation-quick-actions";
@@ -222,13 +222,17 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   }, [groupId]);
 
   const handleSend = useCallback(
-    async (content: string) => {
-      if (!groupId) return;
+    async (content: string): Promise<SendOutcome> => {
+      // A missing group is a real failure, not a silent no-op that would let
+      // the input discard what the user typed.
+      if (!groupId) {
+        return { ok: false, message: "Conversa indisponível." };
+      }
       try {
         await sendMessage(groupId, content);
+        return { ok: true };
       } catch (error) {
-        toast.error(ledgerErrorMessage(error));
-        throw error;
+        return { ok: false, message: ledgerErrorMessage(error) };
       }
     },
     [groupId],

@@ -64,6 +64,23 @@ describe("ChatInput", () => {
       expect(textarea).toHaveValue("");
     });
   });
+  it("keeps input and reports a failed send", async () => {
+    const error = new Error("offline");
+    const onSend = vi.fn().mockRejectedValue(error);
+    const onError = vi.fn();
+    const user = userEvent.setup();
+    render(<ChatInput onSend={onSend} onError={onError} />);
+
+    const textarea = screen.getByPlaceholderText("Mensagem...");
+    await user.type(textarea, "Olá");
+    await user.click(screen.getByRole("button", { name: "Enviar mensagem" }));
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(error);
+      expect(textarea).toHaveValue("Olá");
+    });
+    expect(screen.getByRole("button", { name: "Enviar mensagem" })).not.toBeDisabled();
+  });
 
   it("sends on Enter key (without Shift)", async () => {
     const onSend = vi.fn().mockResolvedValue(undefined);
