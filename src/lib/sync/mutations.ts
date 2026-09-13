@@ -229,7 +229,7 @@ export async function createExpense(input: {
         p_service_fee_bps: header.serviceFeeBasisPoints,
         p_fixed_fee_cents: header.fixedFeeCents,
         p_payload: payload,
-        p_chave_acesso: header.receiptAccessKey ?? null,
+        p_chave_acesso: header.receiptAccessKey ?? undefined,
       },
       decodeMutationAck,
     );
@@ -275,7 +275,7 @@ export async function createExpenseWithGroup(input: {
       p_service_fee_bps: header.serviceFeeBasisPoints,
       p_fixed_fee_cents: header.fixedFeeCents,
       p_payload: payload,
-      p_chave_acesso: header.receiptAccessKey ?? null,
+      p_chave_acesso: header.receiptAccessKey ?? undefined,
     },
     decodeMutationAck,
   );

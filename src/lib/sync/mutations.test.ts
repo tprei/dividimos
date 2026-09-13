@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type {
   ChatMessage,
   ExpenseHeader,
@@ -210,7 +210,7 @@ describe("mutations", () => {
           p_service_fee_bps: HEADER.serviceFeeBasisPoints,
           p_fixed_fee_cents: HEADER.fixedFeeCents,
           p_payload: PAYLOAD,
-          p_chave_acesso: null,
+          p_chave_acesso: undefined,
         }),
         expect.any(Function),
       );
@@ -1247,10 +1247,18 @@ describe("mutations", () => {
       expect(useAppStore.getState().me?.name).toBe("Novo Nome");
     });
 
-    it("looks up user, issues and claims guest token, and manages vendor charges", async () => {
-      vi.mocked(rpc).mockResolvedValueOnce(USER_2);
+    it("looks up user through the route boundary, issues and claims guest token, and manages vendor charges", async () => {
+      const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ profile: USER_2 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
       const user = await lookupUserByHandle("amigo");
       expect(user).toEqual(USER_2);
+      expect(fetchMock).toHaveBeenCalledWith("/api/users/lookup?handle=amigo");
 
       vi.mocked(rpc).mockResolvedValueOnce({ token: "gst1_abc", expiresAt: "2026-09-18T00:00:00Z" });
       const issued = await createGuestClaimToken("guest-1");
@@ -1327,6 +1335,60 @@ describe("mutations", () => {
       resolve();
       await Promise.all([first, second]);
       expect(rpcVoid).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("lookupUserByHandle", () => {
+    function routeResponse(status: number, body: unknown): Response {
+      return new Response(body === null ? null : JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    function stubRoute(response: Response): Mock {
+      const fetchMock = vi.fn().mockResolvedValue(response);
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      return fetchMock;
+    }
+
+    it("returns the decoded profile for a 200 route answer", async () => {
+      stubRoute(routeResponse(200, { profile: USER_2 }));
+
+      await expect(lookupUserByHandle("  Amigo  ")).resolves.toEqual(USER_2);
+      expect(globalThis.fetch).toHaveBeenCalledWith("/api/users/lookup?handle=%20%20Amigo%20%20");
+    });
+
+    it("maps the route's 404 to null, keeping not-found distinct from failure", async () => {
+      stubRoute(routeResponse(404, { error: "Usuário não encontrado" }));
+
+      await expect(lookupUserByHandle("ghost")).resolves.toBeNull();
+    });
+
+    it("throws instead of resolving null when the route rate-limits the caller", async () => {
+      stubRoute(routeResponse(429, { error: "Muitas requisições. Tente novamente em alguns segundos." }));
+
+      await expect(lookupUserByHandle("amigo")).rejects.toMatchObject({ code: "unknown" });
+    });
+
+    it("maps a 401 route answer to the sync unauthenticated code", async () => {
+      stubRoute(routeResponse(401, { error: "Não autenticado" }));
+
+      await expect(lookupUserByHandle("amigo")).rejects.toMatchObject({
+        code: "unauthenticated",
+      });
+    });
+
+    it("throws a transport failure when the route is unreachable", async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error("offline")) as unknown as typeof fetch;
+
+      await expect(lookupUserByHandle("amigo")).rejects.toMatchObject({ code: "network" });
+    });
+
+    it("throws invalid_wire when a 200 answer carries an unusable profile", async () => {
+      stubRoute(routeResponse(200, { profile: { id: "user-2", handle: 42 } }));
+
+      await expect(lookupUserByHandle("amigo")).rejects.toMatchObject({ code: "invalid_wire" });
     });
   });
 });
