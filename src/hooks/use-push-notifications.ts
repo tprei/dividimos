@@ -7,6 +7,7 @@ import {
   unregisterNativePushToken,
 } from "@/lib/push/native-registration";
 import { PushFailure } from "@/lib/push/failures";
+import { serviceWorkerReady } from "@/lib/push/service-worker";
 import { useAppStore } from "@/stores/app-store";
 
 export type PushPermission = "default" | "granted" | "denied" | "unsupported";
@@ -157,7 +158,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     setPermission(Notification.permission as PushPermission);
 
     try {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await serviceWorkerReady();
       let subscription = await registration.pushManager.getSubscription();
 
       if (subscription !== null && !matchesConfiguredKey(subscription)) {
@@ -256,7 +257,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       const vapidKey = getVapidKey();
       if (vapidKey === null) throw new PushFailure("config");
 
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await serviceWorkerReady();
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: vapidKey,
@@ -281,35 +282,49 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   }, [native]);
 
   const unsubscribe = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
     if (native) {
-      setIsLoading(true);
       try {
         await unregisterNativePushToken();
         setIsSubscribed(false);
+      } catch (cause) {
+        setError(new PushFailure("native", cause));
       } finally {
         setIsLoading(false);
       }
       return;
     }
 
-    if (!isPushSupported()) return;
-
-    setIsLoading(true);
     try {
-      const registration = await navigator.serviceWorker.ready;
+      if (!isPushSupported()) {
+        setPermission("unsupported");
+        return;
+      }
+
+      const registration = await serviceWorkerReady();
       const subscription = await registration.pushManager.getSubscription();
 
-      if (subscription) {
-        await fetch("/api/push/unsubscribe", {
+      if (subscription !== null) {
+        const response = await fetch("/api/push/unsubscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: subscription.endpoint }),
         });
 
+        // Dropping it locally stops delivery here regardless, but a server
+        // row left behind is a real failure the user can retry.
         await subscription.unsubscribe();
+        if (!response.ok) throw new PushFailure("server");
       }
 
       setIsSubscribed(false);
+    } catch (cause) {
+      setIsSubscribed(false);
+      setError(
+        cause instanceof PushFailure ? cause : new PushFailure("worker", cause),
+      );
     } finally {
       setIsLoading(false);
     }

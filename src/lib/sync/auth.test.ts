@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bootstrap, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { attachAuthListener } from "./auth";
+import { attachAuthListener, signOut } from "./auth";
 import { rpc } from "./client";
 import { runBootstrap } from "./bootstrap";
 
@@ -15,6 +15,14 @@ vi.mock("./client", async () => {
   };
 });
 
+const mockDetachPush = vi.fn(async () => {});
+const mockLocalDetach = vi.fn<(accountId: string | null) => void>();
+vi.mock("@/lib/push/detach", () => ({
+  detachPushForSignOut: () => mockDetachPush(),
+  detachLocalPushForSignOut: (accountId: string | null) => mockLocalDetach(accountId),
+}));
+
+const mockSignOut = vi.fn();
 vi.mock("./mutations-group", () => ({
   clearPendingVendorChargeCancellations: vi.fn(),
 }));
@@ -56,6 +64,7 @@ beforeEach(async () => {
   // Listener-driven re-bootstraps must not consume a queued response; only the
   // requests a test explicitly resolves are allowed to settle.
   vi.mocked(rpc).mockImplementation(() => new Promise(() => {}) as never);
+  mockSignOut.mockResolvedValue({ error: null });
 
   const { getSupabase } = await import("./client");
   vi.mocked(getSupabase).mockReturnValue({
@@ -64,6 +73,7 @@ beforeEach(async () => {
         handlers.push(handler);
         return { data: { subscription: { unsubscribe } } };
       },
+      signOut: (...args: unknown[]) => mockSignOut(...args),
     },
   } as never);
 });
@@ -90,6 +100,21 @@ describe("bootstrap account epoch", () => {
     await afterRefresh;
 
     expect(useAppStore.getState().me?.id).toBe("user-a");
+    detach();
+  });
+
+  it("reboots the same account after a sign-out event", async () => {
+    const detach = attachAuthListener(() => {}, () => {});
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+
+    emit("SIGNED_OUT", null);
+
+    const fresh = Promise.withResolvers<Bootstrap>();
+    vi.mocked(rpc).mockReturnValueOnce(fresh.promise as never);
+    emit("SIGNED_IN", "user-a");
+    fresh.resolve(bootstrapFor("user-a"));
+
+    await vi.waitFor(() => expect(useAppStore.getState().me?.id).toBe("user-a"));
     detach();
   });
 
@@ -140,6 +165,15 @@ describe("bootstrap account epoch", () => {
 
     expect(useAppStore.getState().me).toBeNull();
   });
+  it("ignores an auth event queued after the listener is detached", () => {
+    const detach = attachAuthListener(() => {}, () => {});
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+
+    detach();
+    emit("SIGNED_OUT", null);
+
+    expect(useAppStore.getState().me?.id).toBe("user-a");
+  });
 
   it("starts a fresh request instead of reusing an invalidated one", async () => {
     const detach = attachAuthListener(() => {}, () => {});
@@ -160,6 +194,39 @@ describe("bootstrap account epoch", () => {
     await Promise.all([pending, next]);
 
     expect(useAppStore.getState().me?.id).toBe("user-b");
+    detach();
+  });
+});
+
+describe("sign-out push detach", () => {
+  it("detaches this device's push before dropping the session", async () => {
+    const order: string[] = [];
+    mockDetachPush.mockImplementation(async () => {
+      order.push("detach");
+    });
+    mockSignOut.mockImplementation(async () => {
+      order.push("signOut");
+      return { error: null };
+    });
+
+    const result = await signOut();
+
+    expect(result).toEqual({ ok: true });
+    expect(order).toEqual(["detach", "signOut"]);
+    expect(mockDetachPush).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops local push delivery when the session ends elsewhere", async () => {
+    const detach = attachAuthListener(() => {}, () => {});
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+
+    emit("SIGNED_OUT", null);
+
+    await vi.waitFor(() => {
+      expect(mockLocalDetach).toHaveBeenCalledWith("user-a");
+    });
+    expect(useAppStore.getState().me).toBeNull();
     detach();
   });
 });

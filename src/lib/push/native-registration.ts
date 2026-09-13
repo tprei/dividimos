@@ -1,22 +1,27 @@
 "use client";
 
+import { getAuthGeneration } from "@/lib/sync/client";
 import { Capacitor } from "@capacitor/core";
 
 type TokenHandler = (token: string | null) => void;
-
 interface PendingResolver {
+  generation: number;
   resolve: (token: string) => void;
   reject: (error: Error) => void;
 }
 
+const REGISTER_TIMEOUT_MS = 10_000;
 let cachedToken: string | null = null;
 let lastPostedToken: string | null = null;
+let activeRegistrationGeneration: number | null = null;
 let listenersAttached = false;
 let attachPromise: Promise<void> | null = null;
 let registerInflight: Promise<string> | null = null;
+let registerInflightGeneration: number | null = null;
+let registerTimeout: ReturnType<typeof setTimeout> | null = null;
 const pendingResolvers: PendingResolver[] = [];
-const subscribers = new Set<TokenHandler>();
 
+const subscribers = new Set<TokenHandler>();
 function notifySubscribers(token: string | null): void {
   for (const handler of subscribers) handler(token);
 }
@@ -50,23 +55,64 @@ async function postSubscribe(token: string): Promise<void> {
     throw new Error(`Failed to save FCM token on server (${response.status})`);
   }
 }
-
 async function postUnsubscribe(token: string): Promise<void> {
-  await fetch("/api/push/unsubscribe", {
+  const response = await fetch("/api/push/unsubscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, channel: "fcm" }),
   });
+  if (!response.ok) {
+    throw new Error(`Failed to remove FCM token from server (${response.status})`);
+  }
 }
 
-function resolvePending(token: string): void {
-  const pending = pendingResolvers.splice(0);
-  for (const p of pending) p.resolve(token);
+export async function unregisterNativePushTokenLocally(): Promise<void> {
+  activeRegistrationGeneration = null;
+  clearRegisterTimeout();
+  registerInflight = null;
+  registerInflightGeneration = null;
+  rejectPending(new Error("Native push registration cancelled"));
+
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    await Promise.allSettled([PushNotifications.unregister()]);
+  } finally {
+    cachedToken = null;
+    lastPostedToken = null;
+    notifySubscribers(null);
+  }
+}
+function clearRegisterTimeout(): void {
+  if (registerTimeout !== null) {
+    clearTimeout(registerTimeout);
+    registerTimeout = null;
+  }
 }
 
-function rejectPending(error: Error): void {
+function resolvePending(token: string, generation: number): void {
+  clearRegisterTimeout();
   const pending = pendingResolvers.splice(0);
-  for (const p of pending) p.reject(error);
+  for (const resolver of pending) {
+    if (resolver.generation === generation) {
+      resolver.resolve(token);
+    } else {
+      resolver.reject(new Error("Native push registration expired"));
+    }
+  }
+}
+
+function rejectPending(error: Error, generation?: number): void {
+  if (generation === undefined || registerInflightGeneration === generation) {
+    clearRegisterTimeout();
+  }
+  const pending = pendingResolvers.splice(0);
+  for (const resolver of pending) {
+    if (generation === undefined || resolver.generation === generation) {
+      resolver.reject(error);
+    } else {
+      pendingResolvers.push(resolver);
+    }
+  }
 }
 
 async function ensureListenersAttached(): Promise<void> {
@@ -74,33 +120,73 @@ async function ensureListenersAttached(): Promise<void> {
   if (attachPromise) return attachPromise;
 
   attachPromise = (async () => {
-    const { PushNotifications } = await import("@capacitor/push-notifications");
+    // Handles are tracked as they attach so a failure partway through can
+    // release what it already installed; otherwise a retry would add a
+    // second registration listener beside the orphaned first.
+    const attached: { remove: () => Promise<void> }[] = [];
+    try {
+      const { PushNotifications } = await import("@capacitor/push-notifications");
 
-    await PushNotifications.addListener("registration", async (token) => {
-      cachedToken = token.value;
-      notifySubscribers(cachedToken);
-      try {
-        if (lastPostedToken !== token.value) {
-          await postSubscribe(token.value);
-          lastPostedToken = token.value;
-        }
-        resolvePending(token.value);
-      } catch (error) {
-        rejectPending(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-    });
+      attached.push(
+        await PushNotifications.addListener("registration", async (token) => {
+          const generation = getAuthGeneration();
+          const registrationGeneration = activeRegistrationGeneration;
+          if (registrationGeneration !== generation) {
+            rejectPending(
+              new Error("Native push registration expired"),
+              registrationGeneration ?? undefined,
+            );
+            return;
+          }
 
-    await PushNotifications.addListener("registrationError", (err) => {
-      const message =
-        err && typeof err.error === "string"
-          ? err.error
-          : "FCM registration failed";
-      rejectPending(new Error(message));
-    });
+          try {
+            if (lastPostedToken !== token.value) {
+              await postSubscribe(token.value);
+            }
+            if (
+              getAuthGeneration() !== generation ||
+              activeRegistrationGeneration !== generation
+            ) {
+              rejectPending(new Error("Native push registration expired"), generation);
+              return;
+            }
+            cachedToken = token.value;
+            lastPostedToken = token.value;
+            notifySubscribers(cachedToken);
+            resolvePending(token.value, generation);
+          } catch (error) {
+            rejectPending(
+              error instanceof Error ? error : new Error(String(error)),
+              generation,
+            );
+          }
+        }),
+      );
 
-    listenersAttached = true;
+      attached.push(
+        await PushNotifications.addListener("registrationError", (err) => {
+          const generation = getAuthGeneration();
+          const registrationGeneration = activeRegistrationGeneration;
+          activeRegistrationGeneration = null;
+          const message =
+            err && typeof err.error === "string"
+              ? err.error
+              : "FCM registration failed";
+          rejectPending(
+            new Error(message),
+            registrationGeneration ?? generation,
+          );
+        }),
+      );
+
+      listenersAttached = true;
+    } catch (error) {
+      for (const handle of attached) void handle.remove();
+      // A transient failure must not disable opt-in for the whole session:
+      // clearing the cached promise lets the next caller retry cleanly.
+      attachPromise = null;
+      throw error;
+    }
   })();
 
   return attachPromise;
@@ -117,66 +203,123 @@ async function ensureListenersAttached(): Promise<void> {
 export async function registerNativePushToken(): Promise<string | null> {
   if (!isNativePlatform()) return null;
 
+  const generation = getAuthGeneration();
   const { PushNotifications } = await import("@capacitor/push-notifications");
   await ensureListenersAttached();
+  if (getAuthGeneration() !== generation) return null;
 
-  if (registerInflight) return registerInflight;
+  if (
+    registerInflight !== null &&
+    registerInflightGeneration === generation
+  ) {
+    return registerInflight;
+  }
+  if (registerInflight !== null && registerInflightGeneration !== generation) {
+    const previousGeneration = registerInflightGeneration;
+    if (previousGeneration !== null) {
+      clearRegisterTimeout();
+      rejectPending(new Error("Native push registration expired"), previousGeneration);
+    }
+    registerInflight = null;
+    registerInflightGeneration = null;
+  }
 
-  registerInflight = new Promise<string>((resolve, reject) => {
+  activeRegistrationGeneration = generation;
+  const promise = new Promise<string>((resolve, reject) => {
     pendingResolvers.push({
+      generation,
       resolve: (token) => {
-        registerInflight = null;
+        if (registerInflightGeneration === generation) {
+          registerInflight = null;
+          registerInflightGeneration = null;
+        }
         resolve(token);
       },
       reject: (error) => {
-        registerInflight = null;
+        if (registerInflightGeneration === generation) {
+          registerInflight = null;
+          registerInflightGeneration = null;
+        }
         reject(error);
       },
     });
-    PushNotifications.register().catch((error) => {
-      const err = error instanceof Error ? error : new Error(String(error));
+    registerTimeout = setTimeout(() => {
+      if (registerInflightGeneration !== generation) return;
+      clearRegisterTimeout();
       registerInflight = null;
-      rejectPending(err);
+      registerInflightGeneration = null;
+      activeRegistrationGeneration = null;
+      rejectPending(new Error("FCM registration timed out"), generation);
+    }, REGISTER_TIMEOUT_MS);
+    PushNotifications.register().catch((error) => {
+      if (registerInflightGeneration !== generation) return;
+      const err = error instanceof Error ? error : new Error(String(error));
+      clearRegisterTimeout();
+      registerInflight = null;
+      registerInflightGeneration = null;
+      activeRegistrationGeneration = null;
+      rejectPending(err, generation);
     });
   });
-
-  return registerInflight;
+  registerInflight = promise;
+  registerInflightGeneration = generation;
+  return promise;
 }
 
 /**
  * Unregister the current FCM token from the server and the native plugin.
- * Safe to call even if we never successfully registered.
  */
 export async function unregisterNativePushToken(): Promise<void> {
   if (!isNativePlatform()) return;
 
+  const generation = getAuthGeneration();
   const token = cachedToken;
-  const { PushNotifications } = await import("@capacitor/push-notifications");
+  let failure: { error: unknown } | null = null;
 
   if (token) {
     try {
+      if (getAuthGeneration() !== generation) {
+        throw new Error("Native push account changed during sign-out");
+      }
       await postUnsubscribe(token);
-    } catch {
-      // Swallow — local cleanup should still proceed
+      if (getAuthGeneration() !== generation) {
+        throw new Error("Native push account changed during sign-out");
+      }
+    } catch (error: unknown) {
+      failure = { error };
     }
   }
 
   try {
-    await PushNotifications.unregister();
-  } finally {
-    cachedToken = null;
-    lastPostedToken = null;
-    notifySubscribers(null);
+    await unregisterNativePushTokenLocally();
+  } catch (error: unknown) {
+    if (failure === null) failure = { error };
   }
+
+  if (failure !== null) throw failure.error;
+}
+
+export function invalidateNativeRegistration(): void {
+  activeRegistrationGeneration = null;
+  clearRegisterTimeout();
+  registerInflight = null;
+  registerInflightGeneration = null;
+  rejectPending(new Error("Native push registration expired"));
+  cachedToken = null;
+  lastPostedToken = null;
+  notifySubscribers(null);
 }
 
 /** Test-only: reset module state between tests. */
 export function __resetNativeRegistrationForTests(): void {
+  activeRegistrationGeneration = null;
+  clearRegisterTimeout();
   cachedToken = null;
   lastPostedToken = null;
   listenersAttached = false;
   attachPromise = null;
   registerInflight = null;
+  registerInflightGeneration = null;
   pendingResolvers.splice(0);
   subscribers.clear();
 }
