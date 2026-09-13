@@ -71,6 +71,16 @@ const counterparty = {
   name: "Bob Silva",
   avatarUrl: null,
 };
+const incomingMessage: ChatMessage = {
+  id: "msg-incoming",
+  clientId: "client-incoming",
+  groupId: "dm-1",
+  senderId: counterparty.id,
+  content: "Oi, Alice!",
+  createdAt: "2026-01-01T00:01:00Z",
+  sender: counterparty,
+};
+
 
 function makeDmSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   return {
@@ -214,14 +224,13 @@ describe("ConversationPageClient", () => {
       expect(mutations.sendMessage).toHaveBeenCalledWith("dm-1", "Olá Bob!");
     });
   });
-
-  it("opening with unread calls markRead", async () => {
-    seedDm(makeDmSnapshot({ unreadCount: 3 }), { messages: [], events: [] });
+  it("opening with unread calls markRead at the latest incoming message", async () => {
+    seedDm(makeDmSnapshot({ unreadCount: 3 }), { messages: [incomingMessage], events: [] });
 
     render(<ConversationPageClient counterpartyId={counterparty.id} />);
 
     await waitFor(() => {
-      expect(mutations.markRead).toHaveBeenCalledWith("dm-1");
+      expect(mutations.markRead).toHaveBeenCalledWith("dm-1", "msg-incoming");
     });
   });
   it("rejects an unresolved chat actor before the confirmation write", async () => {

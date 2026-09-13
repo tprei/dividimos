@@ -184,6 +184,7 @@ CREATE TABLE public.conversation_reads (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
   last_read_at timestamptz NOT NULL DEFAULT now(),
+  last_read_message_id uuid REFERENCES public.chat_messages(id),
   PRIMARY KEY (user_id, group_id)
 );
 

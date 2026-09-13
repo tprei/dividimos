@@ -17,6 +17,7 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { markRead, recordSettlement, sendMessage } from "@/lib/sync/mutations";
+import type { ChatMessage } from "@/types/ledger";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { loadConversation } from "@/lib/sync/refresh";
 import { selectGroup } from "@/stores/app-selectors";
@@ -118,10 +119,29 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
     loadConversation(groupId).catch((error) => toast.error(ledgerErrorMessage(error)));
   }, [groupId]);
 
+  // The read receipt is a watermark: acknowledge the newest incoming message
+  // actually held, never a wall-clock timestamp.
+  const lastIncomingMessageId = useMemo(() => {
+    if (!me) return null;
+    let latest: ChatMessage | null = null;
+    for (const message of conversation?.messages ?? []) {
+      if (message.senderId === me.id) continue;
+      if (
+        !latest ||
+        message.createdAt > latest.createdAt ||
+        (message.createdAt === latest.createdAt && message.id > latest.id)
+      ) {
+        latest = message;
+      }
+    }
+    return latest?.id ?? null;
+  }, [conversation, me]);
+
   useEffect(() => {
     if (!snapshot || !me || myStatus !== "accepted" || snapshot.unreadCount === 0) return;
-    markRead(groupId).catch(() => undefined);
-  }, [groupId, me, myStatus, snapshot]);
+    if (!lastIncomingMessageId) return;
+    markRead(groupId, lastIncomingMessageId).catch(() => undefined);
+  }, [groupId, me, myStatus, snapshot, lastIncomingMessageId]);
 
   const handleLoadMore = useCallback(() => {
     const cursor = useAppStore.getState().conversations[groupId]?.oldestCursor;

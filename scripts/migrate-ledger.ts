@@ -934,6 +934,33 @@ async function copyConversationReads(oldDb: Client, newDb: Client): Promise<numb
   const { rows } = await oldDb.query<OldConversationRead>(
     "SELECT user_id, group_id, last_read_at FROM public.conversation_read_receipts",
   );
+  const resolved: unknown[][] = [];
+  let skipped = 0;
+  for (const row of rows) {
+    // The unread projection orders by (created_at, id), so a receipt must name
+    // the exact committed incoming message it acknowledged. Carrying the old
+    // wall-clock timestamp without that ID would mark every later incoming
+    // message unread forever.
+    const target = await newDb.query<{ id: string; created_at: Date }>(
+      `SELECT id, created_at
+         FROM public.chat_messages
+        WHERE group_id = $1
+          AND sender_id <> $2
+          AND created_at <= $3
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+      [row.group_id, row.user_id, row.last_read_at],
+    );
+    const message = target.rows[0];
+    if (!message) {
+      skipped += 1;
+      continue;
+    }
+    resolved.push([row.user_id, row.group_id, message.created_at, message.id]);
+  }
+  if (skipped > 0) {
+    console.log(`  receipts without an acknowledged incoming message: ${skipped}`);
+  }
   return insertRows(
     newDb,
     "public.conversation_reads",
@@ -941,8 +968,9 @@ async function copyConversationReads(oldDb: Client, newDb: Client): Promise<numb
       { name: "user_id" },
       { name: "group_id" },
       { name: "last_read_at" },
+      { name: "last_read_message_id" },
     ],
-    rows.map((row) => [row.user_id, row.group_id, row.last_read_at]),
+    resolved,
   );
 }
 

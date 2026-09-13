@@ -80,16 +80,19 @@ export type Database = {
         Row: {
           group_id: string
           last_read_at: string
+          last_read_message_id: string | null
           user_id: string
         }
         Insert: {
           group_id: string
           last_read_at?: string
+          last_read_message_id?: string | null
           user_id: string
         }
         Update: {
           group_id?: string
           last_read_at?: string
+          last_read_message_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -98,6 +101,13 @@ export type Database = {
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_reads_last_read_message_id_fkey"
+            columns: ["last_read_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
             referencedColumns: ["id"]
           },
           {
@@ -977,7 +987,10 @@ export type Database = {
         Returns: undefined
       }
       lookup_user_by_handle: { Args: { p_handle: string }; Returns: Json }
-      mark_read: { Args: { p_group_id: string }; Returns: undefined }
+      mark_read: {
+        Args: { p_group_id: string; p_last_read_message_id: string }
+        Returns: undefined
+      }
       materialize_participants: {
         Args: { p_author: string; p_expense_id: string; p_payload: Json }
         Returns: Json

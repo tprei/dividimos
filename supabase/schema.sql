@@ -200,6 +200,7 @@ CREATE TABLE public.conversation_reads (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
   last_read_at timestamptz NOT NULL DEFAULT now(),
+  last_read_message_id uuid REFERENCES public.chat_messages(id),
   PRIMARY KEY (user_id, group_id)
 );
 
@@ -1466,10 +1467,23 @@ BEGIN
       SELECT count(*)::integer FROM chat_messages m
       WHERE m.group_id = g.id
         AND m.sender_id <> p_viewer
-        AND m.created_at > COALESCE((
-          SELECT cr.last_read_at FROM conversation_reads cr
-          WHERE cr.user_id = p_viewer AND cr.group_id = g.id
-        ), '-infinity'::timestamptz)
+        AND (
+          NOT EXISTS (
+            SELECT 1
+            FROM conversation_reads cr
+            WHERE cr.user_id = p_viewer AND cr.group_id = g.id
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM conversation_reads cr
+            WHERE cr.user_id = p_viewer
+              AND cr.group_id = g.id
+              AND (
+                cr.last_read_message_id IS NULL
+                OR (m.created_at, m.id) > (cr.last_read_at, cr.last_read_message_id)
+              )
+          )
+        )
     ),
     'lastMessage', COALESCE((
       SELECT jsonb_build_object('content', m.content, 'senderId', m.sender_id, 'createdAt', to_jsonb(m.created_at))
@@ -3174,6 +3188,7 @@ DECLARE
   v_existing_sender uuid;
   v_existing_group uuid;
   v_message_id uuid;
+  v_created_at timestamptz;
   v_result jsonb;
 BEGIN
   v_actor := current_user_id();
@@ -3187,6 +3202,8 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
+  -- Serialise message creation with reads and other chat writers for this group.
+  PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, v_actor);
 
   SELECT id, sender_id, group_id INTO v_existing_id, v_existing_sender, v_existing_group
@@ -3200,9 +3217,17 @@ BEGIN
     RETURN public.ledger_chat_message_json(v_existing_id);
   END IF;
 
+  SELECT GREATEST(
+    clock_timestamp(),
+    COALESCE(max(created_at) + interval '1 microsecond', '-infinity'::timestamptz)
+  )
+  INTO v_created_at
+  FROM chat_messages
+  WHERE group_id = p_group_id;
+
   -- Concurrent retries of the same client_id must both resolve to one row.
-  INSERT INTO chat_messages (client_id, group_id, sender_id, content)
-  VALUES (p_client_id, p_group_id, v_actor, v_content)
+  INSERT INTO chat_messages (client_id, group_id, sender_id, content, created_at)
+  VALUES (p_client_id, p_group_id, v_actor, v_content, v_created_at)
   ON CONFLICT (client_id) DO NOTHING
   RETURNING id INTO v_message_id;
 
@@ -3223,33 +3248,50 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.mark_read(p_group_id uuid)
+CREATE FUNCTION public.mark_read(p_group_id uuid, p_last_read_message_id uuid)
 RETURNS void
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_actor uuid;
+  v_last_read_at timestamptz;
 BEGIN
   v_actor := current_user_id();
 
-  IF p_group_id IS NULL THEN
+  IF p_group_id IS NULL OR p_last_read_message_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
   PERFORM assert_member(p_group_id, v_actor);
 
-  INSERT INTO conversation_reads (user_id, group_id, last_read_at)
-  VALUES (v_actor, p_group_id, now())
+  SELECT created_at
+  INTO v_last_read_at
+  FROM chat_messages
+  WHERE id = p_last_read_message_id
+    AND group_id = p_group_id
+    AND sender_id <> v_actor;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  INSERT INTO conversation_reads (user_id, group_id, last_read_at, last_read_message_id)
+  VALUES (v_actor, p_group_id, v_last_read_at, p_last_read_message_id)
   ON CONFLICT (user_id, group_id)
-  DO UPDATE SET last_read_at = now();
+  DO UPDATE
+  SET last_read_at = EXCLUDED.last_read_at,
+      last_read_message_id = EXCLUDED.last_read_message_id
+  WHERE conversation_reads.last_read_message_id IS NULL
+     OR (EXCLUDED.last_read_at, EXCLUDED.last_read_message_id)
+        > (conversation_reads.last_read_at, conversation_reads.last_read_message_id);
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.send_message(uuid, uuid, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.send_message(uuid, uuid, text) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.mark_read(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.mark_read(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.mark_read(uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.mark_read(uuid, uuid) TO authenticated;
 
 -- ---- 08_rpc_guest.sql ----
 -- A claim token is a bearer credential: whoever opens the link becomes the
