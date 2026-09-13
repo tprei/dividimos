@@ -17,10 +17,10 @@ export type Database = {
     Functions: {
       graphql: {
         Args: {
+          extensions?: Json
           operationName?: string
           query?: string
           variables?: Json
-          extensions?: Json
         }
         Returns: Json
       }
@@ -824,70 +824,43 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      accept_invitation: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: Json
-      }
+      accept_invitation: { Args: { p_group_id: string }; Returns: Json }
       assert_member: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
       }
       assert_member_or_invited: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
       }
-      bootstrap: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
+      bootstrap: { Args: never; Returns: Json }
       broadcast_group: {
         Args: {
+          p_event_id: number
           p_group_id: string
           p_ledger_version: number
-          p_event_id: number
         }
         Returns: undefined
       }
       broadcast_user: {
-        Args: {
-          p_user_id: string
-          p_group_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: undefined
       }
       cancel_vendor_charge: {
-        Args: {
-          p_charge_id: string
-        }
+        Args: { p_charge_id: string }
         Returns: undefined
       }
-      claim_guest: {
-        Args: {
-          p_token: string
-        }
-        Returns: Json
-      }
+      claim_guest: { Args: { p_token: string }; Returns: Json }
       claim_push_subscription: {
         Args: {
-          p_user_id: string
           p_channel: string
           p_endpoint_digest: string
           p_subscription_encrypted: string
+          p_user_id: string
         }
         Returns: Json
       }
-      cleanup_expired_rate_limit_counters: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
+      cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       complete_onboarding: {
         Args: {
           p_handle: string
@@ -898,170 +871,108 @@ export type Database = {
         }
         Returns: Json
       }
-      confirm_vendor_charge: {
-        Args: {
-          p_charge_id: string
-        }
-        Returns: Json
-      }
+      confirm_vendor_charge: { Args: { p_charge_id: string }; Returns: Json }
       create_expense: {
         Args: {
-          p_client_id: string
-          p_group_id: string
-          p_occurred_on: string
-          p_title: string
-          p_merchant_name: string
-          p_expense_type: Database["public"]["Enums"]["expense_type"]
-          p_total_cents: number
-          p_service_fee_bps: number
-          p_fixed_fee_cents: number
-          p_payload: Json
           p_chave_acesso?: string
+          p_client_id: string
+          p_expense_type: Database["public"]["Enums"]["expense_type"]
+          p_fixed_fee_cents: number
+          p_group_id: string
+          p_merchant_name: string
+          p_occurred_on: string
+          p_payload: Json
+          p_service_fee_bps: number
+          p_title: string
+          p_total_cents: number
         }
         Returns: Json
       }
       create_expense_with_group: {
         Args: {
+          p_chave_acesso?: string
           p_client_id: string
+          p_expense_type: Database["public"]["Enums"]["expense_type"]
+          p_fixed_fee_cents: number
           p_group_name: string
           p_member_ids: string[]
-          p_occurred_on: string
-          p_title: string
           p_merchant_name: string
-          p_expense_type: Database["public"]["Enums"]["expense_type"]
-          p_total_cents: number
-          p_service_fee_bps: number
-          p_fixed_fee_cents: number
+          p_occurred_on: string
           p_payload: Json
-          p_chave_acesso?: string
+          p_service_fee_bps: number
+          p_title: string
+          p_total_cents: number
         }
         Returns: Json
       }
       create_group: {
-        Args: {
-          p_name: string
-          p_member_ids: string[]
-        }
+        Args: { p_member_ids: string[]; p_name: string }
         Returns: Json
       }
-      create_guest_claim_token: {
-        Args: {
-          p_guest_id: string
-        }
-        Returns: Json
-      }
+      create_guest_claim_token: { Args: { p_guest_id: string }; Returns: Json }
       create_invite_link: {
-        Args: {
-          p_group_id: string
-          p_expires_at?: string
-          p_max_uses?: number
-        }
+        Args: { p_expires_at?: string; p_group_id: string; p_max_uses?: number }
         Returns: Json
       }
-      current_user_id: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
-      current_user_is_member: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: boolean
-      }
-      deactivate_invite_link: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: Json
-      }
-      decline_invitation: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: Json
-      }
-      delete_expense: {
-        Args: {
-          p_expense_id: string
-        }
-        Returns: Json
-      }
-      delete_group: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: Json
-      }
+      current_user_id: { Args: never; Returns: string }
+      current_user_is_member: { Args: { p_group_id: string }; Returns: boolean }
+      deactivate_invite_link: { Args: { p_group_id: string }; Returns: Json }
+      decline_invitation: { Args: { p_group_id: string }; Returns: Json }
+      delete_expense: { Args: { p_expense_id: string }; Returns: Json }
+      delete_group: { Args: { p_group_id: string }; Returns: Json }
       edit_expense: {
         Args: {
-          p_expense_id: string
           p_expected_version_no: number
-          p_occurred_on: string
-          p_title: string
-          p_merchant_name: string
+          p_expense_id: string
           p_expense_type: Database["public"]["Enums"]["expense_type"]
-          p_total_cents: number
-          p_service_fee_bps: number
           p_fixed_fee_cents: number
+          p_merchant_name: string
+          p_occurred_on: string
           p_payload: Json
+          p_service_fee_bps: number
+          p_title: string
+          p_total_cents: number
         }
         Returns: Json
       }
       emit_event: {
         Args: {
-          p_group_id: string
-          p_kind: Database["public"]["Enums"]["event_kind"]
           p_actor: string
           p_expense_id?: string
+          p_group_id: string
+          p_kind: Database["public"]["Enums"]["event_kind"]
+          p_payload?: Json
           p_settlement_id?: string
           p_subject_user_id?: string
-          p_payload?: Json
         }
         Returns: number
       }
       expense_change_summary: {
-        Args: {
-          p_expense_id: string
-          p_from: number
-          p_to: number
-        }
+        Args: { p_expense_id: string; p_from: number; p_to: number }
         Returns: Json
       }
       get_activity: {
-        Args: {
-          p_before_id: number
-          p_limit?: number
-        }
+        Args: { p_before_id: number; p_limit?: number }
         Returns: Json
       }
       get_conversation: {
         Args: {
-          p_group_id: string
-          p_message_before_created_at?: string
-          p_message_before_id?: string
           p_event_before_created_at?: string
           p_event_before_id?: number
-          p_limit?: number
-        }
-        Returns: Json
-      }
-      get_expense: {
-        Args: {
-          p_expense_id: string
-        }
-        Returns: Json
-      }
-      get_group: {
-        Args: {
           p_group_id: string
+          p_limit?: number
+          p_message_before_created_at?: string
+          p_message_before_id?: string
         }
         Returns: Json
       }
+      get_expense: { Args: { p_expense_id: string }; Returns: Json }
+      get_group: { Args: { p_group_id: string }; Returns: Json }
       get_group_expenses: {
         Args: {
-          p_group_id: string
           p_before_created_at?: string
           p_before_id?: string
+          p_group_id: string
           p_limit?: number
         }
         Returns: Json
@@ -1074,16 +985,8 @@ export type Database = {
         }
         Returns: Json
       }
-      get_my_profile: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      get_or_create_dm: {
-        Args: {
-          p_user_id: string
-        }
-        Returns: Json
-      }
+      get_my_profile: { Args: never; Returns: Json }
+      get_or_create_dm: { Args: { p_user_id: string }; Returns: Json }
       get_vendor_charges: {
         Args: {
           p_before_created_at?: string
@@ -1093,241 +996,135 @@ export type Database = {
         Returns: Json
       }
       group_pairwise_edges: {
-        Args: {
-          p_group_id: string
-        }
+        Args: { p_group_id: string }
         Returns: {
-          from_kind: Database["public"]["Enums"]["participant_kind"]
-          from_id: string
-          to_id: string
           amount_cents: number
+          from_id: string
+          from_kind: Database["public"]["Enums"]["participant_kind"]
+          to_id: string
         }[]
       }
       group_transfers: {
-        Args: {
-          p_group_id: string
-        }
+        Args: { p_group_id: string }
         Returns: {
-          from_kind: Database["public"]["Enums"]["participant_kind"]
-          from_id: string
-          to_id: string
           amount_cents: number
+          from_id: string
+          from_kind: Database["public"]["Enums"]["participant_kind"]
+          to_id: string
         }[]
       }
       increment_rate_limit: {
         Args: {
           p_bucket: string
-          p_subject: string
           p_limit: number
+          p_subject: string
           p_window_seconds: number
         }
         Returns: boolean
       }
       invite_member: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: Json
       }
       is_member: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: boolean
       }
       is_member_or_invited: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: boolean
       }
-      join_via_link: {
-        Args: {
-          p_token: string
-        }
-        Returns: Json
-      }
-      leave_group: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: Json
-      }
+      join_via_link: { Args: { p_token: string }; Returns: Json }
+      leave_group: { Args: { p_group_id: string }; Returns: Json }
       ledger_chat_message_json: {
-        Args: {
-          p_message_id: string
-        }
+        Args: { p_message_id: string }
         Returns: Json
       }
-      ledger_event_json: {
-        Args: {
-          p_event_id: number
-        }
-        Returns: Json
-      }
+      ledger_event_json: { Args: { p_event_id: number }; Returns: Json }
       ledger_expense_summary_json: {
-        Args: {
-          p_expense_id: string
-          p_viewer: string
-        }
+        Args: { p_expense_id: string; p_viewer: string }
         Returns: Json
       }
       ledger_expense_version_json: {
-        Args: {
-          p_expense_id: string
-          p_version_no: number
-        }
+        Args: { p_expense_id: string; p_version_no: number }
         Returns: Json
       }
       ledger_group_snapshot_json: {
-        Args: {
-          p_group_id: string
-          p_viewer: string
-        }
+        Args: { p_group_id: string; p_viewer: string }
         Returns: Json
       }
-      ledger_me_json: {
-        Args: {
-          p_user_id: string
-        }
-        Returns: Json
-      }
+      ledger_me_json: { Args: { p_user_id: string }; Returns: Json }
       ledger_settlement_json: {
-        Args: {
-          p_settlement_id: string
-        }
+        Args: { p_settlement_id: string }
         Returns: Json
       }
-      ledger_user_profile_json: {
-        Args: {
-          p_user_id: string
-        }
-        Returns: Json
-      }
-      lock_group: {
-        Args: {
-          p_group_id: string
-        }
-        Returns: undefined
-      }
+      ledger_user_profile_json: { Args: { p_user_id: string }; Returns: Json }
+      lock_group: { Args: { p_group_id: string }; Returns: undefined }
       lock_receipt_key: {
-        Args: {
-          p_creator_id: string
-          p_chave_acesso: string
-        }
+        Args: { p_chave_acesso: string; p_creator_id: string }
         Returns: undefined
       }
-      lookup_user_by_handle: {
-        Args: {
-          p_handle: string
-        }
-        Returns: Json
-      }
+      lookup_user_by_handle: { Args: { p_handle: string }; Returns: Json }
       mark_read: {
-        Args: {
-          p_group_id: string
-          p_last_read_message_id: string
-        }
+        Args: { p_group_id: string; p_last_read_message_id: string }
         Returns: undefined
       }
       materialize_participants: {
-        Args: {
-          p_expense_id: string
-          p_author: string
-          p_payload: Json
-        }
+        Args: { p_author: string; p_expense_id: string; p_payload: Json }
         Returns: Json
       }
       pairwise_from_nets: {
         Args: {
-          p_kinds: Database["public"]["Enums"]["participant_kind"][]
           p_ids: string[]
+          p_kinds: Database["public"]["Enums"]["participant_kind"][]
           p_nets: number[]
         }
         Returns: {
-          from_kind: Database["public"]["Enums"]["participant_kind"]
-          from_id: string
-          to_id: string
           amount_cents: number
+          from_id: string
+          from_kind: Database["public"]["Enums"]["participant_kind"]
+          to_id: string
         }[]
       }
-      preview_invite_link: {
-        Args: {
-          p_token: string
-        }
-        Returns: Json
-      }
+      preview_invite_link: { Args: { p_token: string }; Returns: Json }
       recompute_group_balances: {
-        Args: {
-          p_group_id: string
-        }
+        Args: { p_group_id: string }
         Returns: number
       }
       record_settlement: {
         Args: {
-          p_operation_id: string
-          p_group_id: string
-          p_from_user_id: string
-          p_to_user_id: string
-          p_amount_cents: number
           p_allow_overpay?: boolean
+          p_amount_cents: number
+          p_from_user_id: string
+          p_group_id: string
+          p_operation_id: string
+          p_to_user_id: string
         }
         Returns: Json
       }
       record_vendor_charge: {
-        Args: {
-          p_amount_cents: number
-          p_description?: string
-        }
+        Args: { p_amount_cents: number; p_description?: string }
         Returns: Json
       }
       remove_member: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: Json
       }
-      resolve_guest_claim_token: {
-        Args: {
-          p_token: string
-        }
-        Returns: Json
-      }
-      restore_expense: {
-        Args: {
-          p_expense_id: string
-        }
-        Returns: Json
-      }
-      revoke_guest_claim_token: {
-        Args: {
-          p_guest_id: string
-        }
-        Returns: Json
-      }
+      resolve_guest_claim_token: { Args: { p_token: string }; Returns: Json }
+      restore_expense: { Args: { p_expense_id: string }; Returns: Json }
+      revoke_guest_claim_token: { Args: { p_guest_id: string }; Returns: Json }
       send_message: {
-        Args: {
-          p_client_id: string
-          p_group_id: string
-          p_content: string
-        }
+        Args: { p_client_id: string; p_content: string; p_group_id: string }
         Returns: Json
       }
       send_nudge: {
-        Args: {
-          p_group_id: string
-          p_user_id: string
-        }
+        Args: { p_group_id: string; p_user_id: string }
         Returns: Json
       }
       update_profile: {
         Args: {
-          p_name?: string
           p_handle?: string
+          p_name?: string
           p_notification_preferences?: Json
         }
         Returns: Json
@@ -1336,18 +1133,13 @@ export type Database = {
         Args: {
           p: Json
           p_expense_type: Database["public"]["Enums"]["expense_type"]
-          p_total: number
           p_fee_bps: number
           p_fixed_fee: number
+          p_total: number
         }
         Returns: Json
       }
-      void_settlement: {
-        Args: {
-          p_settlement_id: string
-        }
-        Returns: Json
-      }
+      void_settlement: { Args: { p_settlement_id: string }; Returns: Json }
     }
     Enums: {
       event_kind:
@@ -1377,27 +1169,33 @@ export type Database = {
   }
 }
 
-type PublicSchema = Database[Extract<keyof Database, "public">]
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
-  PublicTableNameOrOptions extends
-    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-        Database[PublicTableNameOrOptions["schema"]]["Views"])
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
-      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
-        PublicSchema["Views"])
-    ? (PublicSchema["Tables"] &
-        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -1405,20 +1203,24 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -1426,20 +1228,24 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends
-    | keyof PublicSchema["Tables"]
-    | { schema: keyof Database },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
-    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -1447,30 +1253,67 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  PublicEnumNameOrOptions extends
-    | keyof PublicSchema["Enums"]
-    | { schema: keyof Database },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
-    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = PublicEnumNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
-    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof PublicSchema["CompositeTypes"]
-    | { schema: keyof Database },
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof Database
+    schema: keyof DatabaseWithoutInternals
   }
-    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
     : never = never,
-> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
-  ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof PublicSchema["CompositeTypes"]
-    ? PublicSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
+
+export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
+  public: {
+    Enums: {
+      event_kind: [
+        "expense_created",
+        "expense_edited",
+        "expense_deleted",
+        "expense_restored",
+        "settlement_recorded",
+        "settlement_voided",
+        "member_invited",
+        "member_joined",
+        "member_left",
+        "member_removed",
+        "guest_claimed",
+        "nudge",
+      ],
+      expense_status: ["active", "deleted"],
+      expense_type: ["itemized", "single_amount"],
+      group_kind: ["group", "dm"],
+      member_status: ["invited", "accepted"],
+      participant_kind: ["user", "guest"],
+      pix_key_type: ["cpf", "email", "phone", "random"],
+      settlement_status: ["confirmed", "voided"],
+    },
+  },
+} as const
 

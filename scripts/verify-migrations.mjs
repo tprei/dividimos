@@ -50,6 +50,18 @@ const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 const PUSH_OMITTED_NOTE =
   "omitted: 16_rpc_push.sql exposes only claim_push_subscription, a service_role RPC; there is no authenticated push RPC to exercise";
 
+// P3b (20260913010070) closes the lookup bypass: direct authenticated
+// lookup_user_by_handle flips from success (base) to denial (head) on
+// purpose. The upgrade gate tracks exactly this named transition — no
+// other privilege drift is exempt from equality.
+const LOOKUP_FLIP = {
+  label: "lookup:direct:authenticated",
+  before: "success",
+  after: "denied",
+  note: "intentional upgrade: 20260913010070 revokes browser-role execute on public.lookup_user_by_handle(text); /api/users/lookup owns the rate limit and calls it through service_role",
+};
+export const INTENTIONAL_UPGRADES = new Map([[LOOKUP_FLIP.label, LOOKUP_FLIP]]);
+
 const SCRIPT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXEC_FILE_OPTIONS = { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 };
 
@@ -560,6 +572,21 @@ async function callRpc(client, fn, args) {
   return data;
 }
 
+/**
+ * Probes a direct lookup_user_by_handle call from a browser-role client and
+ * classifies the outcome as "success" or "denied". Anything else is a bug
+ * in the fixture, not a migration fact, and must fail loudly.
+ *
+ * @param {import("@supabase/supabase-js").SupabaseClient} client
+ * @param {string} handle
+ * @returns {Promise<"success"|"denied">}
+ */
+async function classifyDirectLookup(client, handle) {
+  const { data, error } = await client.rpc("lookup_user_by_handle", { p_handle: handle });
+  if (!error && data && data.handle === handle) return "success";
+  if (error && /permission denied/i.test(error.message)) return "denied";
+  throw new Error(`unexpected direct lookup result: ${JSON.stringify({ data, error })}`);
+}
 // Mirrors equalSplitPayload from src/test/integration-helpers.ts so the gate
 // exercises the same payload shape the app sends.
 function equalSplitPayload(userIds, totalCents, payerIndex = 0) {
@@ -743,6 +770,15 @@ async function collectStableObservations(context, identities) {
   });
 
 
+  observations.push({
+    label: LOOKUP_FLIP.label,
+    value: await classifyDirectLookup(alice, "verify_bob"),
+  });
+  observations.push({
+    label: "lookup:direct:anon",
+    value: await classifyDirectLookup(context.actors.outsider, "verify_bob"),
+  });
+
   observations.push({ label: "notes:push", value: PUSH_OMITTED_NOTE });
   return observations;
 }
@@ -790,7 +826,13 @@ export async function seedVerificationFixture(context) {
   const bobId = identities["user:bob"];
   const carolId = identities["user:carol"];
 
-  const bobProfile = await callRpc(alice, "lookup_user_by_handle", { p_handle: "verify_bob" });
+  // Fixture identities are resolved through the ADMIN client only: since
+  // 20260913010070 no browser role may execute the lookup, and the gate
+  // tracks that flip as the named expectation below (LOOKUP_FLIP) instead
+  // of exercising an actor RPC here.
+  const bobProfile = await callRpc(context.admin, "lookup_user_by_handle", {
+    p_handle: "verify_bob",
+  });
   if (!bobProfile || bobProfile.handle !== "verify_bob") {
     throw new Error(`lookup_user_by_handle did not return bob: ${JSON.stringify(bobProfile)}`);
   }
@@ -972,9 +1014,22 @@ export function compareFixtureObservations(expected, actual) {
     }
   }
   for (const [label, expectedValue] of expectedByLabel) {
+    const upgrade = INTENTIONAL_UPGRADES.get(label);
+    if (upgrade) continue;
     const actualValue = actualByLabel.get(label);
     if (actualValue === undefined || isDeepStrictEqual(expectedValue, actualValue)) continue;
     failures.push(`${label}: before=${JSON.stringify(expectedValue)} after=${JSON.stringify(actualValue)}`);
+  }
+  for (const [label, upgrade] of INTENTIONAL_UPGRADES) {
+    const before = expectedByLabel.get(label);
+    const after = actualByLabel.get(label);
+    if (before === undefined && after === undefined) continue;
+    if (before !== upgrade.before) {
+      failures.push(`${label}: seed should be ${JSON.stringify(upgrade.before)}, observed before=${JSON.stringify(before)} (${upgrade.note})`);
+    }
+    if (after !== upgrade.after) {
+      failures.push(`${label}: upgrade should be ${JSON.stringify(upgrade.after)}, observed after=${JSON.stringify(after)} (${upgrade.note})`);
+    }
   }
   return failures.sort(compareStrings);
 }

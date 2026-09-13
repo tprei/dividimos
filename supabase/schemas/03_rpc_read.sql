@@ -749,5 +749,5 @@ REVOKE ALL ON FUNCTION public.get_conversation(uuid, timestamptz, uuid, timestam
 GRANT EXECUTE ON FUNCTION public.get_conversation(uuid, timestamptz, uuid, timestamptz, bigint, integer) TO authenticated;
 REVOKE ALL ON FUNCTION public.get_my_profile() FROM public;
 GRANT EXECUTE ON FUNCTION public.get_my_profile() TO authenticated;
-REVOKE ALL ON FUNCTION public.lookup_user_by_handle(text) FROM public;
-GRANT EXECUTE ON FUNCTION public.lookup_user_by_handle(text) TO authenticated;
+REVOKE ALL ON FUNCTION public.lookup_user_by_handle(text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.lookup_user_by_handle(text) TO service_role;
