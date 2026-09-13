@@ -823,35 +823,24 @@ describe.skipIf(!isIntegrationTestReady)(
           messages: true,
           nudges: false,
         });
-
-        const foundUser = await rpc<UserProfile | null>(
-          c1,
-          "lookup_user_by_handle",
-          { p_handle: newHandle },
+      });
+      // Since 20260913010070 the lookup boundary is route-only: direct RPC
+      // execution is denied for every browser role. The profile semantics
+      // that used to be asserted here (found user, missing handle, the
+      // un-onboarded privacy filter) live at the route level now
+      // (src/app/api/users/lookup/route.integration.test.ts).
+      it("denies direct authenticated RPC lookups after the service-role cutover", async () => {
+        const err = await expectRpcError(
+          c1.rpc("lookup_user_by_handle", { p_handle: "any_handle_at_all" }),
         );
-        expect(foundUser).not.toBeNull();
-        expect(foundUser?.id).toBe(u3.id);
-        expect(foundUser?.handle).toBe(newHandle);
-        expect(foundUser?.name).toBe(newName);
-
-        const missingUser = await rpc<UserProfile | null>(
-          c1,
-          "lookup_user_by_handle",
-          { p_handle: "nonexistent_handle_xyz_123" },
-        );
-        expect(missingUser).toBeNull();
+        expect(err).toMatch(/permission denied/i);
       });
 
-      it("does not resolve a handle whose owner has not onboarded", async () => {
-        const [pending] = await createTestUsers(1, { onboarded: false });
-
-        const found = await rpc<UserProfile | null>(c1, "lookup_user_by_handle", {
-          p_handle: pending.handle,
-        });
-
-        // The handle is guessable from the signup email, so the OAuth name and
-        // avatar must stay private until public profile setup finishes.
-        expect(found).toBeNull();
+      it("denies anonymous REST lookups", async () => {
+        const err = await expectRpcError(
+          anonClient.rpc("lookup_user_by_handle", { p_handle: "any_handle_at_all" }),
+        );
+        expect(err).toMatch(/permission denied/i);
       });
     });
 

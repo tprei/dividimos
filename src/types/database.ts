@@ -603,6 +603,7 @@ export type Database = {
           endpoint_digest: string
           id: string
           subscription_encrypted: string
+          updated_at: string
           user_id: string
         }
         Insert: {
@@ -611,6 +612,7 @@ export type Database = {
           endpoint_digest: string
           id?: string
           subscription_encrypted: string
+          updated_at?: string
           user_id: string
         }
         Update: {
@@ -619,6 +621,7 @@ export type Database = {
           endpoint_digest?: string
           id?: string
           subscription_encrypted?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: [
@@ -839,21 +842,39 @@ export type Database = {
         }
         Returns: undefined
       }
+      broadcast_user: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      cancel_vendor_charge: {
+        Args: { p_charge_id: string }
+        Returns: undefined
+      }
+      claim_guest: { Args: { p_token: string }; Returns: Json }
       claim_push_subscription: {
         Args: {
-          p_user_id: string
           p_channel: string
           p_endpoint_digest: string
           p_subscription_encrypted: string
+          p_user_id: string
         }
         Returns: Json
       }
-      claim_guest: { Args: { p_token: string }; Returns: Json }
       cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
+      complete_onboarding: {
+        Args: {
+          p_handle: string
+          p_name: string
+          p_pix_key_encrypted: string
+          p_pix_key_hint: string
+          p_pix_key_type: Database["public"]["Enums"]["pix_key_type"]
+        }
+        Returns: Json
+      }
       confirm_vendor_charge: { Args: { p_charge_id: string }; Returns: Json }
       create_expense: {
         Args: {
-          p_chave_acesso?: string | null
+          p_chave_acesso?: string
           p_client_id: string
           p_expense_type: Database["public"]["Enums"]["expense_type"]
           p_fixed_fee_cents: number
@@ -867,19 +888,9 @@ export type Database = {
         }
         Returns: Json
       }
-      complete_onboarding: {
-        Args: {
-          p_handle: string
-          p_name: string
-          p_pix_key_encrypted: string
-          p_pix_key_hint: string
-          p_pix_key_type: Database["public"]["Enums"]["pix_key_type"]
-        }
-        Returns: Json
-      }
       create_expense_with_group: {
         Args: {
-          p_chave_acesso?: string | null
+          p_chave_acesso?: string
           p_client_id: string
           p_expense_type: Database["public"]["Enums"]["expense_type"]
           p_fixed_fee_cents: number
@@ -904,6 +915,7 @@ export type Database = {
         Returns: Json
       }
       current_user_id: { Args: never; Returns: string }
+      current_user_is_member: { Args: { p_group_id: string }; Returns: boolean }
       deactivate_invite_link: { Args: { p_group_id: string }; Returns: Json }
       decline_invitation: { Args: { p_group_id: string }; Returns: Json }
       delete_expense: { Args: { p_expense_id: string }; Returns: Json }
@@ -945,12 +957,12 @@ export type Database = {
       }
       get_conversation: {
         Args: {
-          p_event_before_created_at?: string | null
-          p_event_before_id?: number | null
+          p_event_before_created_at?: string
+          p_event_before_id?: number
           p_group_id: string
           p_limit?: number
-          p_message_before_created_at?: string | null
-          p_message_before_id?: string | null
+          p_message_before_created_at?: string
+          p_message_before_id?: string
         }
         Returns: Json
       }
@@ -958,8 +970,8 @@ export type Database = {
       get_group: { Args: { p_group_id: string }; Returns: Json }
       get_group_expenses: {
         Args: {
-          p_before_created_at?: string | null
-          p_before_id?: string | null
+          p_before_created_at?: string
+          p_before_id?: string
           p_group_id: string
           p_limit?: number
         }
@@ -967,8 +979,8 @@ export type Database = {
       }
       get_my_expenses: {
         Args: {
-          p_before_created_at?: string | null
-          p_before_id?: string | null
+          p_before_created_at?: string
+          p_before_id?: string
           p_limit?: number
         }
         Returns: Json
@@ -977,11 +989,20 @@ export type Database = {
       get_or_create_dm: { Args: { p_user_id: string }; Returns: Json }
       get_vendor_charges: {
         Args: {
-          p_before_created_at?: string | null
-          p_before_id?: string | null
+          p_before_created_at?: string
+          p_before_id?: string
           p_limit?: number
         }
         Returns: Json
+      }
+      group_pairwise_edges: {
+        Args: { p_group_id: string }
+        Returns: {
+          amount_cents: number
+          from_id: string
+          from_kind: Database["public"]["Enums"]["participant_kind"]
+          to_id: string
+        }[]
       }
       group_transfers: {
         Args: { p_group_id: string }
@@ -1006,6 +1027,10 @@ export type Database = {
         Returns: Json
       }
       is_member: {
+        Args: { p_group_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_member_or_invited: {
         Args: { p_group_id: string; p_user_id: string }
         Returns: boolean
       }
@@ -1036,7 +1061,7 @@ export type Database = {
       ledger_user_profile_json: { Args: { p_user_id: string }; Returns: Json }
       lock_group: { Args: { p_group_id: string }; Returns: undefined }
       lock_receipt_key: {
-        Args: { p_chave_acesso: string | null; p_creator_id: string }
+        Args: { p_chave_acesso: string; p_creator_id: string }
         Returns: undefined
       }
       lookup_user_by_handle: { Args: { p_handle: string }; Returns: Json }
@@ -1048,6 +1073,19 @@ export type Database = {
         Args: { p_author: string; p_expense_id: string; p_payload: Json }
         Returns: Json
       }
+      pairwise_from_nets: {
+        Args: {
+          p_ids: string[]
+          p_kinds: Database["public"]["Enums"]["participant_kind"][]
+          p_nets: number[]
+        }
+        Returns: {
+          amount_cents: number
+          from_id: string
+          from_kind: Database["public"]["Enums"]["participant_kind"]
+          to_id: string
+        }[]
+      }
       preview_invite_link: { Args: { p_token: string }; Returns: Json }
       recompute_group_balances: {
         Args: { p_group_id: string }
@@ -1055,18 +1093,14 @@ export type Database = {
       }
       record_settlement: {
         Args: {
+          p_allow_overpay?: boolean
           p_amount_cents: number
           p_from_user_id: string
           p_group_id: string
           p_operation_id: string
           p_to_user_id: string
-          p_allow_overpay?: boolean
         }
         Returns: Json
-      }
-      cancel_vendor_charge: {
-        Args: { p_charge_id: string }
-        Returns: undefined
       }
       record_vendor_charge: {
         Args: { p_amount_cents: number; p_description?: string }

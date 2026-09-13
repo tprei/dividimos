@@ -1,121 +1,101 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createMockSupabase, type MockSupabase } from "@/test/mock-supabase";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn(),
-}));
+vi.mock("server-only", () => ({}));
 
-const mockEnforceRateLimit = vi.fn();
-vi.mock("@/lib/rate-limit", () => ({
-  enforceRateLimit: (...args: unknown[]) => mockEnforceRateLimit(...args),
-}));
-
-import { createClient } from "@/lib/supabase/server";
-import { GET } from "./route";
-
-let mock: MockSupabase;
-
-beforeEach(() => {
-  mock = createMockSupabase();
-  vi.mocked(createClient).mockResolvedValue(mock.client);
-  mockEnforceRateLimit.mockReset();
-  mockEnforceRateLimit.mockResolvedValue(undefined);
+const mockLookupProfile = vi.fn();
+vi.mock("@/lib/profile-lookup", async (importOriginal) => {
+  const actual = await importOriginal<object>();
+  return {
+    ...actual,
+    lookupProfile: (...args: unknown[]) => mockLookupProfile(...args),
+  };
 });
 
+import { GET } from "./route";
+
+const PROFILE = { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null };
+
+beforeEach(() => {
+  mockLookupProfile.mockReset();
+});
+
+function lookupRequest(handle?: string): Request {
+  const query = handle === undefined ? "" : `?handle=${encodeURIComponent(handle)}`;
+  return new Request(`http://localhost/api/users/lookup${query}`);
+}
+
 describe("GET /api/users/lookup", () => {
-  it("returns 401 when not authenticated", async () => {
-    const request = new Request("http://localhost/api/users/lookup?handle=alice");
-    const response = await GET(request);
+  it("returns the resolved profile", async () => {
+    mockLookupProfile.mockResolvedValueOnce(PROFILE);
 
-    expect(response.status).toBe(401);
-    const body = await response.json();
-    expect(body.error).toBe("Não autenticado");
+    const response = await GET(lookupRequest("bob"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ profile: PROFILE });
   });
 
-  it("returns 400 when handle is missing", async () => {
-    mock.setUser({ id: "user-alice" });
+  it("delegates the raw query parameter to the lookup boundary", async () => {
+    mockLookupProfile.mockResolvedValueOnce(null);
+    await GET(lookupRequest(" Bob "));
 
-    const request = new Request("http://localhost/api/users/lookup");
-    const response = await GET(request);
-
-    expect(response.status).toBe(400);
-    const body = await response.json();
-    expect(body.error).toBe("Handle obrigatorio");
+    expect(mockLookupProfile).toHaveBeenCalledExactlyOnceWith(" Bob ");
   });
 
-  it("returns 404 when user is not found", async () => {
-    mock.setUser({ id: "user-alice" });
-    mock.onRpc("lookup_user_by_handle", { data: null });
+  it("returns 404 when the handle resolves to no onboarded profile", async () => {
+    mockLookupProfile.mockResolvedValueOnce(null);
 
-    const request = new Request("http://localhost/api/users/lookup?handle=nobody");
-    const response = await GET(request);
+    const response = await GET(lookupRequest("nobody"));
 
     expect(response.status).toBe(404);
-    const body = await response.json();
-    expect(body.error).toBe("Usuário não encontrado");
+    expect(await response.json()).toEqual({ error: "Usuário não encontrado" });
   });
 
-  it("returns profile on success", async () => {
-    mock.setUser({ id: "user-alice" });
-    mock.onRpc("lookup_user_by_handle", {
-      data: {
-        id: "user-bob",
-        handle: "bob",
-        name: "Bob Santos",
-        avatar_url: "https://example.com/bob.jpg",
-      },
-    });
+  it("publishes 401 for an unauthenticated caller", async () => {
+    mockLookupProfile.mockRejectedValueOnce(new AppError("AUTH_UNAUTHORIZED", "Não autenticado"));
 
-    const request = new Request("http://localhost/api/users/lookup?handle=Bob");
-    const response = await GET(request);
+    const response = await GET(lookupRequest("bob"));
 
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.profile).toMatchObject({
-      id: "user-bob",
-      handle: "bob",
-      name: "Bob Santos",
-    });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Não autenticado" });
   });
 
-  it("passes normalized handle to the RPC", async () => {
-    mock.setUser({ id: "user-alice" });
-    mock.onRpc("lookup_user_by_handle", { data: { id: "user-bob", handle: "bob", name: "Bob" } });
+  it("publishes 400 for an empty handle", async () => {
+    mockLookupProfile.mockRejectedValueOnce(new AppError("USER_INVALID_HANDLE", "Handle obrigatorio"));
 
-    const request = new Request("http://localhost/api/users/lookup?handle=%20BOB%20");
-    await GET(request);
+    const response = await GET(lookupRequest("%20%20"));
 
-    const rpcCalls = mock.findCalls("rpc:lookup_user_by_handle", "rpc");
-    expect(rpcCalls).toHaveLength(1);
-    expect(rpcCalls[0].args[1]).toEqual({ p_handle: "bob" });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Handle obrigatorio" });
   });
 
-  it("spends the users.lookup bucket for the authenticated caller", async () => {
-    mock.setUser({ id: "user-alice" });
-    mock.onRpc("lookup_user_by_handle", { data: { id: "user-bob", handle: "bob", name: "Bob" } });
-
-    const request = new Request("http://localhost/api/users/lookup?handle=bob");
-    const response = await GET(request);
-
-    expect(response.status).toBe(200);
-    expect(mockEnforceRateLimit).toHaveBeenCalledExactlyOnceWith("users.lookup", "user-alice");
-  });
-
-  it("returns 429 without calling the lookup RPC when the bucket is saturated", async () => {
-    mock.setUser({ id: "user-alice" });
-    mockEnforceRateLimit.mockRejectedValue(
-      new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos.", {
-        statusCode: 429,
-      }),
+  it("publishes 429 when the bucket is saturated", async () => {
+    mockLookupProfile.mockRejectedValueOnce(
+      new AppError("RATE_LIMIT_EXCEEDED", "Muitas requisições. Tente novamente em alguns segundos."),
     );
 
-    const request = new Request("http://localhost/api/users/lookup?handle=bob");
-    const response = await GET(request);
+    const response = await GET(lookupRequest("bob"));
 
     expect(response.status).toBe(429);
-    const body = await response.json();
-    expect(body.error).toBe("Muitas requisições. Tente novamente em alguns segundos.");
-    expect(mock.findCalls("rpc:lookup_user_by_handle", "rpc")).toHaveLength(0);
+    expect(await response.json()).toEqual({
+      error: "Muitas requisições. Tente novamente em alguns segundos.",
+    });
+  });
+
+  it("publishes 503 when the boundary fails closed", async () => {
+    mockLookupProfile.mockRejectedValueOnce(
+      new AppError("RATE_LIMIT_UNAVAILABLE", "Serviço temporariamente indisponível"),
+    );
+
+    const response = await GET(lookupRequest("bob"));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Serviço temporariamente indisponível" });
+  });
+
+  it("lets errors outside the lookup contract surface", async () => {
+    mockLookupProfile.mockRejectedValueOnce(new Error("boom"));
+
+    await expect(GET(lookupRequest("bob"))).rejects.toThrow("boom");
   });
 });
