@@ -43,7 +43,9 @@ jobs:
           MAIN_SHA="$(git rev-parse FETCH_HEAD)"
           # FETCH_HEAD is the commit origin/main answered with for this run;
           # detaching makes every later command execute from that exact,
-          # immutable commit rather than a mutable branch name.
+          # immutable commit rather than a mutable branch name. The reset
+          # manifest, if one is ever authorized, is read from this commit.
+          echo "MAIN_SHA=$MAIN_SHA" >> "$GITHUB_ENV"
           git checkout --detach "$MAIN_SHA"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -59,8 +61,9 @@ jobs:
         run: |
           if [ "$CI_LABEL" = "true" ]; then
             node scripts/check-migration-history.mjs \
-              "$BASE_SHA" refs/remotes/pr/head --allow-ci-changes
+              "$BASE_SHA" refs/remotes/pr/head \
+              --trusted-main "$MAIN_SHA" --allow-ci-changes
           else
             node scripts/check-migration-history.mjs \
-              "$BASE_SHA" refs/remotes/pr/head
+              "$BASE_SHA" refs/remotes/pr/head --trusted-main "$MAIN_SHA"
           fi
