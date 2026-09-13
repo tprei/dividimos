@@ -93,6 +93,12 @@ function resetTransitionFailures(baseSha, headSha) {
     }
   }
 
+  // The pinned-tree comparison is the whole authorization, and it is checked
+  // before anything from the head runs. After the reset landed no base can
+  // match the pin again, so the steps below are unreachable and the head's
+  // build script is never executed by this gate.
+  if (failures.length > 0) return failures;
+
   const headMigrations = [...migrationBlobMap(headSha).keys()].sort();
   if (headMigrations.length !== 1 || headMigrations[0] !== BASELINE_PATH) {
     failures.push(
@@ -123,39 +129,92 @@ function resetTransitionFailures(baseSha, headSha) {
   return failures;
 }
 
+// Files the deployed database can never re-read, and files whose edits decide
+// what the gates themselves do. An ordinary PR may not touch them.
+const PROTECTED_CI_PATHS = [
+  ".github/workflows/",
+  "scripts/check-migration-history.mjs",
+  "supabase/config.toml",
+];
+
+/**
+ * Paths changed by the PR itself, measured from the merge base so migrations
+ * that landed on the base branch after this PR started are not attributed to
+ * it. Renames are decomposed into a delete and an add, so the old path shows
+ * up as changed instead of hiding behind an R status.
+ */
+function changedPaths(mergeBase, headSha, pathspec) {
+  const out = gitText([
+    "diff",
+    "--name-only",
+    "--no-renames",
+    mergeBase,
+    headSha,
+    "--",
+    ...pathspec,
+  ]);
+  return out.split("\n").filter((line) => line.length > 0);
+}
+
 function main() {
-  const [baseSha, headSha] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const allowCiChanges = args.includes("--allow-ci-changes");
+  const [baseSha, headSha] = args.filter((a) => !a.startsWith("--"));
   if (!baseSha || !headSha) {
-    console.error("usage: check-migration-history.mjs <base-sha> <head-sha>");
+    console.error(
+      "usage: check-migration-history.mjs <base-sha> <head-sha> [--allow-ci-changes]",
+    );
     process.exit(2);
   }
 
-  const changes = gitText([
-    "diff",
-    "--name-status",
-    "--diff-filter=RD",
-    `${baseSha}...${headSha}`,
-    "--",
-    `${MIGRATIONS_DIR}/*.sql`,
-  ]).trim();
+  const mergeBase = gitText(["merge-base", baseSha, headSha]).trim();
 
-  if (changes.length === 0) {
-    console.log("OK: no migrations renamed or deleted.");
+  const touchedCi = changedPaths(mergeBase, headSha, PROTECTED_CI_PATHS);
+  if (touchedCi.length > 0 && !allowCiChanges) {
+    console.error(
+      "::error::This PR changes CI or database configuration that the gates rely on.",
+    );
+    for (const path of touchedCi) console.error(`  - ${path}`);
+    console.error("");
+    console.error("Why: these files decide what every other check is allowed to");
+    console.error("approve, so a PR cannot quietly weaken them alongside a change.");
+    console.error("");
+    console.error(
+      "Fix: a maintainer reviews the diff and adds the 'trusted-ci-change' label.",
+    );
+    process.exit(1);
+  }
+
+  // Anything the deployed database has already applied is frozen: it records
+  // migrations by filename and never re-reads one. Editing, deleting, renaming
+  // or chmod-ing such a file ships drift that no environment will replay, and
+  // adding a file whose name already exists on the base collides with the
+  // applied version. New timestamps are unrestricted, including later edits to
+  // them inside the same PR, because the base has never seen them.
+  const appliedOnBase = migrationBlobMap(baseSha);
+  const touched = changedPaths(mergeBase, headSha, [`${MIGRATIONS_DIR}/*.sql`]);
+  const offenders = touched.filter((path) => appliedOnBase.has(path)).sort();
+
+  if (offenders.length === 0) {
+    console.log("OK: no already-applied migration was touched.");
     return;
   }
 
   const failures = resetTransitionFailures(baseSha, headSha);
   if (failures.length === 0) {
     console.log("OK: approved legacy-to-fresh-baseline reset.");
-    console.log(changes);
+    console.log(offenders.join("\n"));
     return;
   }
 
-  console.error("::error::Existing migration files must not be renamed or deleted.");
-  console.error(changes);
+  console.error(
+    "::error::Migrations already present on the base branch must not be changed.",
+  );
+  for (const path of offenders) console.error(`  - ${path}`);
   console.error("");
-  console.error("Why: the remote DB records each migration by its filename timestamp.");
-  console.error("Renaming or deleting after pushing creates phantom versions in");
+  console.error("Why: the remote DB records each migration by its filename timestamp");
+  console.error("and never re-runs it. Editing one ships schema drift; renaming or");
+  console.error("deleting one creates phantom versions in");
   console.error("supabase_migrations.schema_migrations and breaks 'db push'.");
   console.error("");
   console.error("This change does not qualify as the approved baseline reset:");
