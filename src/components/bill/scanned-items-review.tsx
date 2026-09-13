@@ -261,6 +261,14 @@ export function ScannedItemsReview({
                 Taxa de serviço inválida.
               </p>
             )}
+            {result.fixedFeesCents > 0 && (
+              <div className="flex min-h-14 items-baseline justify-between gap-3 py-2">
+                <span className="text-sm leading-5 font-bold uppercase tracking-[0.12em]">
+                  Taxa impressa na nota
+                </span>
+                <Money cents={result.fixedFeesCents} className="text-base font-bold" />
+              </div>
+            )}
             <div className="flex min-h-14 items-baseline justify-between gap-3 py-2">
               <span className="text-sm leading-5 font-bold uppercase tracking-[0.12em]">
                 Total
