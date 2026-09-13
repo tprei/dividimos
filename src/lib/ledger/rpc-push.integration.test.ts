@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { forceLockContentionRace } from "@/test/db-race-barrier";
 import type { Database } from "@/types/database";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
@@ -79,6 +80,60 @@ describe.skipIf(!isIntegrationTestReady)("claim_push_subscription", () => {
 
     expect(again.transferred).toBe(false);
     expect(await ownersOf(endpoint)).toEqual([userA.id]);
+  });
+
+  it("settles simultaneous claims into one row with one owner", async () => {
+    const databaseUrl = process.env.SUPABASE_DB_URL ?? "";
+    if (!databaseUrl) throw new Error("SUPABASE_DB_URL is required for contention tests");
+
+    const endpoint = `https://push.example.com/${crypto.randomUUID()}`;
+    const initial = await claim(service, userA.id, endpoint);
+    expect(initial.transferred).toBe(false);
+
+    // The upsert locks the row behind the unique endpoint_digest, so holding
+    // that exact row forces B's transfer and A's refresh to queue inside
+    // PostgreSQL. The `transferred` read is race-dependent, so only the
+    // stored outcome is pinned.
+    const hexDigest = Buffer.from(endpoint, "utf8").toString("hex");
+    const { result, contention } = await forceLockContentionRace(
+      databaseUrl,
+      {
+        lockSql:
+          "select id from public.push_subscriptions where endpoint_digest = decode($1, 'hex') for update",
+        lockParams: [hexDigest],
+        queryContains: ["claim_push_subscription"],
+        expectedRacers: 2,
+      },
+      () =>
+        Promise.allSettled([
+          claim(service, userB.id, endpoint),
+          claim(service, userA.id, endpoint, "fcm"),
+        ]),
+    );
+
+    expect(contention.observed).toBe(true);
+    const claims = result.map((outcome) => {
+      if (outcome.status === "rejected") throw new Error(String(outcome.reason));
+      return outcome.value;
+    });
+    // Both claims address the same row: a transfer never duplicates or
+    // renames it.
+    for (const outcome of claims) {
+      expect(outcome.subscriptionId).toBe(initial.subscriptionId);
+    }
+
+    const rows = await withPg(async (pg) => {
+      const stored = await pg.query<{ id: string; user_id: string }>(
+        "select id, user_id from push_subscriptions where endpoint_digest = decode($1, 'hex')",
+        [hexDigest],
+      );
+      return stored.rows;
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(initial.subscriptionId);
+    // Exactly one of the two claimants ends up holding the endpoint.
+    expect([userA.id, userB.id]).toContain(rows[0]!.user_id);
+    expect(await ownersOf(endpoint)).toEqual([rows[0]!.user_id]);
   });
 
   it("keeps distinct endpoints of one account independent", async () => {
