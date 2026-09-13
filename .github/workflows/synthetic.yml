@@ -81,7 +81,6 @@ jobs:
           echo "jwt_secret=$(echo "$STATUS" | jq -r '.JWT_SECRET')" >> $GITHUB_OUTPUT
 
       - name: Cache Next.js build
-        if: github.event_name != 'pull_request'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .next/cache
@@ -89,28 +88,19 @@ jobs:
           restore-keys: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
 
       - name: Build app
-        if: github.event_name != 'pull_request'
         run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
 
-      # No NODE_ENV override and no DEV_LOGIN_SECRET: the post-merge run must
-      # exercise the same production branches the deployed app takes.
+      # No NODE_ENV override and no dev login: PRs run the same production
+      # server as the post-merge run, so a red production branch is caught
+      # before merge instead of on main.
       - name: Start server (production)
-        if: github.event_name != 'pull_request'
         run: npm run start &
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-
-      - name: Start server (Turbopack dev)
-        if: github.event_name == 'pull_request'
-        run: npx next dev --turbopack &
-        env:
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-          DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
 
       - name: Wait for server
         run: |
@@ -124,7 +114,6 @@ jobs:
       # holding the real secret. If someone reintroduces NODE_ENV=test or
       # passes the secret to the server, this turns red.
       - name: Assert dev login is unreachable in production
-        if: github.event_name != 'pull_request'
         env:
           DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
         run: |
@@ -147,7 +136,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
           SUPABASE_JWT_SECRET: ${{ steps.supabase.outputs.jwt_secret }}
           E2E_BASE_URL: http://localhost:3000
-          DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
+
 
       - name: Upload test artifacts
         if: always()
