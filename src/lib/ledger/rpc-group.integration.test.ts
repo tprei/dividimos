@@ -841,6 +841,18 @@ describe.skipIf(!isIntegrationTestReady)(
         );
         expect(missingUser).toBeNull();
       });
+
+      it("does not resolve a handle whose owner has not onboarded", async () => {
+        const [pending] = await createTestUsers(1, { onboarded: false });
+
+        const found = await rpc<UserProfile | null>(c1, "lookup_user_by_handle", {
+          p_handle: pending.handle,
+        });
+
+        // The handle is guessable from the signup email, so the OAuth name and
+        // avatar must stay private until public profile setup finishes.
+        expect(found).toBeNull();
+      });
     });
 
     describe("expenses with a pending invitee", () => {
