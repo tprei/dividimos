@@ -79,9 +79,13 @@ CREATE TABLE public.expenses (
   occurred_on date NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
-  deleted_by uuid REFERENCES public.users(id)
+  deleted_by uuid REFERENCES public.users(id),
+  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$')
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
+CREATE UNIQUE INDEX expenses_creator_chave_active_idx
+  ON public.expenses (creator_id, chave_acesso)
+  WHERE status = 'active' AND chave_acesso IS NOT NULL;
 
 CREATE TABLE public.expense_versions (
   expense_id uuid NOT NULL REFERENCES public.expenses(id) ON DELETE CASCADE,

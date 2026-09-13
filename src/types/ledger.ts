@@ -111,6 +111,7 @@ export interface ExpenseHeader {
   totalCents: number;
   serviceFeeBasisPoints: number;
   fixedFeeCents: number;
+  receiptAccessKey?: string | null;
 }
 
 export interface ChangeSummary {

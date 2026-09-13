@@ -223,6 +223,7 @@ export type Database = {
       }
       expenses: {
         Row: {
+          chave_acesso: string | null
           client_id: string
           created_at: string
           creator_id: string
@@ -235,6 +236,7 @@ export type Database = {
           status: Database["public"]["Enums"]["expense_status"]
         }
         Insert: {
+          chave_acesso?: string | null
           client_id: string
           created_at?: string
           creator_id: string
@@ -247,6 +249,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["expense_status"]
         }
         Update: {
+          chave_acesso?: string | null
           client_id?: string
           created_at?: string
           creator_id?: string
@@ -831,6 +834,7 @@ export type Database = {
       confirm_vendor_charge: { Args: { p_charge_id: string }; Returns: Json }
       create_expense: {
         Args: {
+          p_chave_acesso?: string | null
           p_client_id: string
           p_expense_type: Database["public"]["Enums"]["expense_type"]
           p_fixed_fee_cents: number
@@ -968,6 +972,10 @@ export type Database = {
       }
       ledger_user_profile_json: { Args: { p_user_id: string }; Returns: Json }
       lock_group: { Args: { p_group_id: string }; Returns: undefined }
+      lock_receipt_key: {
+        Args: { p_chave_acesso: string | null; p_creator_id: string }
+        Returns: undefined
+      }
       lookup_user_by_handle: { Args: { p_handle: string }; Returns: Json }
       mark_read: { Args: { p_group_id: string }; Returns: undefined }
       materialize_participants: {

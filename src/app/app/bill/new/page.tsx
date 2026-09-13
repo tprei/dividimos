@@ -11,6 +11,7 @@ import { SingleBillForm } from "@/components/bill/single-bill-form";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
+import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
@@ -215,15 +216,26 @@ function NewBillPageContent() {
     setStep("info");
   }, [me, selectedGroupId]);
 
-  const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
+  const handleScanConfirm = useCallback((
+    result: ReceiptOcrResult,
+    receiptAccessKey: string | null,
+    divisions: Record<number, ItemDivisionValue>,
+    occurredOn: string,
+  ) => {
     setBillType("itemized");
     const billStore = useBillStore.getState();
     if (scanGroup) setSelectedGroupId(scanGroup.group.id);
     if (me) {
       billStore.setCurrentUser(meToLegacyUser(me));
-      if (!billStore.expense) {
-        billStore.createExpense("", "itemized", undefined, scanGroup?.group.id);
-      }
+      billStore.createExpense(
+        result.merchant || "Nota escaneada",
+        "itemized",
+        result.merchant || undefined,
+        scanGroup?.group.id,
+      );
+      // The scanned document's identity travels with the draft so the create
+      // RPC can reject a second expense for the same receipt.
+      billStore.setReceiptAccessKey(receiptAccessKey);
       billStore.updateExpense({
         title: result.merchant || "Nota escaneada",
         merchantName: result.merchant || undefined,

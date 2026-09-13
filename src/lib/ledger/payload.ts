@@ -37,8 +37,8 @@ export type BillPayloadState = Pick<
   | "billSplits"
   | "payers"
   | "totalAmountInput"
+  | "receiptAccessKey"
 >;
-
 export function buildExpensePayload(
   state: BillPayloadState,
   occurredOn: string,
@@ -161,6 +161,7 @@ export function buildExpensePayload(
     totalCents: money.summary.totalAmountCents,
     serviceFeeBasisPoints: money.serviceFeeBasisPoints,
     fixedFeeCents: money.fixedFeesCents,
+    receiptAccessKey: state.receiptAccessKey,
   };
 
   const payloadItems: ExpenseItemPayload[] = money.items.map((item) => ({

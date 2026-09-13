@@ -65,18 +65,18 @@ export interface ExpenseState {
   /** Wizard "Data" input (YYYY-MM-DD); null until the wizard sets it. */
   occurredOn: string | null;
   draftKey: string;
+  /** Receipt access key attached to this draft, or null for nonreceipt expenses. */
+  receiptAccessKey: string | null;
 
   setCurrentUser: (user: User) => void;
   setOccurredOn: (date: string) => void;
-
+  setReceiptAccessKey: (receiptAccessKey: string | null) => void;
   createExpense: (title: string, expenseType: ExpenseType, merchantName?: string, groupId?: string) => void;
   updateExpense: (updates: Partial<Expense> & { totalAmountInput?: number }) => void;
   setExpenseType: (expenseType: ExpenseType) => void;
 
   addParticipant: (user: User) => void;
   removeParticipant: (userId: string) => void;
-
-  /** Adds a guest by name. Returns the generated guest ID. */
   addGuest: (name: string, phone?: string) => string;
   /** Removes a guest and cascades removal to splits and billSplits. */
   removeGuest: (guestId: string) => void;
@@ -512,10 +512,11 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
 
       setCurrentUser: (user) => set({ currentUser: user }),
       setOccurredOn: (date) => set({ occurredOn: date }),
-
+      setReceiptAccessKey: (receiptAccessKey) => set({ receiptAccessKey }),
   createExpense: (title, expenseType, merchantName, groupId) => {
     const now = new Date().toISOString();
     const expense: Expense = {
@@ -545,6 +546,7 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
 
@@ -1078,6 +1080,7 @@ export const useBillStore = create<ExpenseState>()(
       payers: [],
       splits: [],
       billSplits: [],
+      receiptAccessKey: null,
     });
   },
 
@@ -1100,7 +1103,6 @@ export const useBillStore = create<ExpenseState>()(
       createdAt: now,
       updatedAt: now,
     };
-
     set({
       expense,
       totalAmountInput: 0,
@@ -1112,6 +1114,7 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
 
@@ -1164,7 +1167,6 @@ export const useBillStore = create<ExpenseState>()(
         });
       }
     }
-
     set({
       expense,
       totalAmountInput: result.expenseType === "single_amount" ? result.amountCents : 0,
@@ -1176,11 +1178,15 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
 
   hydrateFromDetail: (detail, members) => {
-    set(detailToWizardState(detail, members));
+    set({
+      ...detailToWizardState(detail, members),
+      receiptAccessKey: null,
+    });
   },
 
   reset: () => {
@@ -1195,13 +1201,21 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
     }),
     {
       name: "dividimos-draft",
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<ExpenseState>;
+        return {
+          ...state,
+          receiptAccessKey: state.receiptAccessKey ?? null,
+        };
+      },
       partialize: (state) => ({
         expense: state.expense,
         totalAmountInput: state.totalAmountInput,
@@ -1212,6 +1226,7 @@ export const useBillStore = create<ExpenseState>()(
         splits: state.splits,
         billSplits: state.billSplits,
         occurredOn: state.occurredOn,
+        receiptAccessKey: state.receiptAccessKey,
       }),
     },
   ),

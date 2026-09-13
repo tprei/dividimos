@@ -95,9 +95,13 @@ CREATE TABLE public.expenses (
   occurred_on date NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
-  deleted_by uuid REFERENCES public.users(id)
+  deleted_by uuid REFERENCES public.users(id),
+  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$')
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
+CREATE UNIQUE INDEX expenses_creator_chave_active_idx
+  ON public.expenses (creator_id, chave_acesso)
+  WHERE status = 'active' AND chave_acesso IS NOT NULL;
 
 CREATE TABLE public.expense_versions (
   expense_id uuid NOT NULL REFERENCES public.expenses(id) ON DELETE CASCADE,
@@ -300,6 +304,19 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'group_not_found';
   END IF;
+END;
+$$;
+
+CREATE FUNCTION public.lock_receipt_key(p_creator_id uuid, p_chave_acesso text) RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  IF p_chave_acesso IS NULL THEN
+    RETURN;
+  END IF;
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_creator_id::text || ':' || p_chave_acesso, 0)
+  );
 END;
 $$;
 
@@ -1749,7 +1766,7 @@ CREATE FUNCTION public.create_expense(
   p_client_id uuid, p_group_id uuid, p_occurred_on date,
   p_title text, p_merchant_name text, p_expense_type expense_type,
   p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer,
-  p_payload jsonb
+  p_payload jsonb, p_chave_acesso text DEFAULT NULL
 ) RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -1765,9 +1782,12 @@ DECLARE
   v_existing_ledger_version bigint;
   v_ledger_version bigint;
   v_event_id bigint;
+  v_constraint text;
 BEGIN
   v_actor := current_user_id();
 
+
+  PERFORM lock_receipt_key(v_actor, p_chave_acesso);
   PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, v_actor);
 
@@ -1789,6 +1809,19 @@ BEGIN
       'ledgerVersion', v_existing_ledger_version,
       'eventId', NULL
     );
+  END IF;
+  IF p_chave_acesso IS NOT NULL AND p_chave_acesso !~ '^[0-9]{44}$' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  IF p_chave_acesso IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM expenses
+    WHERE creator_id = v_actor
+      AND chave_acesso = p_chave_acesso
+      AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
   END IF;
 
   v_title := btrim(p_title);
@@ -1818,13 +1851,15 @@ BEGIN
   END IF;
 
   BEGIN
-    INSERT INTO expenses (client_id, group_id, creator_id, occurred_on)
-    VALUES (p_client_id, p_group_id, v_actor, p_occurred_on)
+    INSERT INTO expenses (client_id, group_id, creator_id, occurred_on, chave_acesso)
+    VALUES (p_client_id, p_group_id, v_actor, p_occurred_on, p_chave_acesso)
     RETURNING id INTO v_expense_id;
   EXCEPTION
     WHEN unique_violation THEN
-      -- A concurrent create in another group won the global client_id race;
-      -- surface the same domain error as the sequential wrong-group path.
+      GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+      IF v_constraint = 'expenses_creator_chave_active_idx' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
+      END IF;
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END;
 
@@ -2028,6 +2063,7 @@ DECLARE
   v_actor uuid;
   v_group_id uuid;
   v_creator_id uuid;
+  v_chave_acesso text;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -2036,27 +2072,32 @@ DECLARE
   v_materialized jsonb;
   v_ledger_version bigint;
   v_event_id bigint;
+  v_constraint text;
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
+  SELECT group_id, creator_id, chave_acesso
+    INTO v_group_id, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
+  PERFORM lock_receipt_key(v_creator_id, v_chave_acesso);
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no, creator_id
-    INTO v_status, v_version_no, v_creator_id
-  FROM expenses WHERE id = p_expense_id;
+  SELECT status, current_version_no, creator_id, chave_acesso
+    INTO v_status, v_version_no, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id
+  FOR UPDATE;
 
   SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
   FROM expense_versions
   WHERE expense_id = p_expense_id AND version_no = v_version_no;
 
-  -- delete_expense empties expense_participants, so authorization for restore
-  -- must come from the stored version payload, not the live rows.
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
     SELECT 1
     FROM jsonb_array_elements(COALESCE(v_payload->'participants', '[]'::jsonb)) AS pp(p)
@@ -2070,8 +2111,28 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
   END IF;
 
-  UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
-  WHERE id = p_expense_id;
+  IF v_chave_acesso IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM expenses
+    WHERE creator_id = v_creator_id
+      AND chave_acesso = v_chave_acesso
+      AND status = 'active'
+      AND id <> p_expense_id
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
+  END IF;
+
+  BEGIN
+    UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
+    WHERE id = p_expense_id;
+  EXCEPTION
+    WHEN unique_violation THEN
+      GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+      IF v_constraint = 'expenses_creator_chave_active_idx' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
+      END IF;
+      RAISE;
+  END;
 
   v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
   IF v_materialized IS DISTINCT FROM v_payload THEN
@@ -2096,8 +2157,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb) FROM public;
-GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
 REVOKE ALL ON FUNCTION public.edit_expense(uuid, integer, date, text, text, expense_type, integer, integer, integer, jsonb) FROM public;
 GRANT EXECUTE ON FUNCTION public.edit_expense(uuid, integer, date, text, text, expense_type, integer, integer, integer, jsonb) TO authenticated;
 REVOKE ALL ON FUNCTION public.delete_expense(uuid) FROM public;

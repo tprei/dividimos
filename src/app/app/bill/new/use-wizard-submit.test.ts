@@ -49,6 +49,7 @@ describe("useWizardSubmit", () => {
 
   it("create path calls createExpense with payload from buildExpensePayload and resets store", async () => {
     setupValidSingleExpense();
+    const draftKey = useBillStore.getState().draftKey;
     mockCreateExpense.mockResolvedValueOnce({
       groupId: "group-1",
       ledgerVersion: 1,
@@ -73,6 +74,7 @@ describe("useWizardSubmit", () => {
     expect(ok).toBe(true);
     expect(mockCreateExpense).toHaveBeenCalledOnce();
     const [call] = mockCreateExpense.mock.calls;
+    expect(call[0].clientId).toBe(draftKey);
     expect(call[0].groupId).toBe("group-1");
     expect(call[0].header).toMatchObject({
       occurredOn: "2026-09-06",

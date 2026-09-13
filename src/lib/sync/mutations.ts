@@ -60,10 +60,14 @@ function revertExpenseDetail(expenseId: string, patched: ExpenseDetail, prior: E
   };
 }
 
-function removeOptimisticExpense(clientId: string, groupId: string): RollbackStep {
+function removeOptimisticExpense(
+  clientId: string,
+  groupId: string,
+  patched: ExpenseSummary,
+): RollbackStep {
   return () => {
     useAppStore.getState().patch((s) => {
-      if (s.expenses[clientId]?.groupId !== groupId) return {};
+      if (s.expenses[clientId] !== patched || patched.groupId !== groupId) return {};
       const expenses = { ...s.expenses };
       delete expenses[clientId];
       const list = s.expenseLists[groupId];
@@ -138,9 +142,7 @@ export async function createExpense(input: {
   if (!me) throw new LedgerError("unauthenticated");
 
   const { myShareCents, myPaidCents } = computeMyShareAndPaid(payload, me.id);
-  const rollback: RollbackStep[] = [removeOptimisticExpense(clientId, groupId)];
-
-  store.upsertExpense({
+  const optimisticExpense: ExpenseSummary = {
     id: clientId,
     groupId,
     creatorId: me.id,
@@ -155,8 +157,12 @@ export async function createExpense(input: {
     myShareCents,
     myPaidCents,
     participantCount: payload.participants.length,
-  });
+  };
+  const rollback: RollbackStep[] = [
+    removeOptimisticExpense(clientId, groupId, optimisticExpense),
+  ];
 
+  store.upsertExpense(optimisticExpense);
   const priorGroup = store.groups[groupId];
   if (priorGroup) {
     const patchedGroup: GroupSnapshot = {
@@ -183,10 +189,13 @@ export async function createExpense(input: {
         p_service_fee_bps: header.serviceFeeBasisPoints,
         p_fixed_fee_cents: header.fixedFeeCents,
         p_payload: payload,
+        p_chave_acesso: header.receiptAccessKey ?? null,
       },
       decodeMutationAck,
     );
-    if (ack.expenseId) useAppStore.getState().replaceExpenseId(clientId, ack.expenseId);
+    if (ack.expenseId) {
+      useAppStore.getState().replaceExpenseId(clientId, ack.expenseId);
+    }
     void refreshGroup(groupId);
     notify(ack.eventId);
     return ack;
