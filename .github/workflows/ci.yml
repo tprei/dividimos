@@ -22,9 +22,10 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci --ignore-scripts
-
       - run: npm test
+
+      - name: Migration history checker tests
+        run: node --test scripts/check-migration-history.test.mjs
 
   typecheck:
     runs-on: ubuntu-latest
