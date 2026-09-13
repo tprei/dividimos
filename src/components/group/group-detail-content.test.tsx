@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import toast from "react-hot-toast";
 import { GroupDetailContent } from "./group-detail-content";
 import { LedgerError } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
-import { useAppStore } from "@/stores/app-store";
+import { groupReadKey, useAppStore } from "@/stores/app-store";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 
 const routerMock = vi.hoisted(() => ({
@@ -207,14 +206,31 @@ describe("GroupDetailContent", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows an error toast for failures unrelated to membership", async () => {
-    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
-    vi.mocked(refreshGroup).mockRejectedValueOnce(new Error("network"));
+  it("offers a retry, not a missing-group message, when the read fails", async () => {
+    useAppStore.setState({
+      hydrated: true,
+      me,
+      groups: {},
+      groupOrder: [],
+      reads: { [groupReadKey(groupId)]: { status: "error", code: "network" } },
+    });
+    vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("network"));
 
     render(<GroupDetailContent groupId={groupId} />);
 
+    expect(
+      await screen.findByRole("button", { name: /Tentar novamente/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Esse grupo não está mais disponível")).toBeNull();
+  });
+
+  it("warns without discarding a group already on screen", async () => {
+    seedLoaded();
+    vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("network"));
+
+    render(<GroupDetailContent groupId={groupId} />);
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalled();
+      expect(screen.getAllByText("Viagem").length).toBeGreaterThan(0);
     });
   });
 

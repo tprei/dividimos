@@ -71,6 +71,15 @@ export type ResourceReadState =
   | { status: "idle" | "loading" | "ready" }
   | { status: "error"; code: LedgerErrorCode };
 
+export const groupReadKey = (groupId: string) => `group:${groupId}`;
+export const expenseReadKey = (expenseId: string) => `expense:${expenseId}`;
+export const conversationReadKey = (groupId: string) => `conversation:${groupId}`;
+export const expensePageReadKey = (groupId: string) => `expensePage:${groupId}`;
+export const CHARGES_READ_KEY = "charges";
+
+/** Nothing has been attempted for this resource yet. */
+export const IDLE_READ: ResourceReadState = { status: "idle" };
+
 interface AppStateData {
   hydrated: boolean;
   me: Me | null;
@@ -90,6 +99,11 @@ interface AppStateData {
   activityViewedAt: Record<string, string>;
   conversations: Record<string, ConversationState>;
   vendorCharges: VendorCharge[];
+  /**
+   * Read lifecycle per resource, keyed by the helpers below. Runtime only, and
+   * cleared by reset(), so it is never inherited across accounts.
+   */
+  reads: Record<string, ResourceReadState>;
   lastBootstrapAt: string | null;
   /** Lifecycle of the bootstrap read for the currently authenticated account. */
   bootstrapStatus: "idle" | "loading" | "ready" | "error";
@@ -112,6 +126,7 @@ export interface AppState extends AppStateData {
   applyExpensePage(groupId: string, page: ExpenseSummary[], complete: boolean): void;
   applyActivity(items: GroupEvent[], complete: boolean): void;
   setActivityRead(read: ResourceReadState): void;
+  setResourceRead(key: string, read: ResourceReadState): void;
   markActivityViewed(accountId: string, newestAt: string): void;
   applyConversation(groupId: string, merge: ConversationMerge): void;
   setConversationReconcile(groupId: string, status: ConversationReconcileState["status"]): void;
@@ -135,6 +150,7 @@ const initialData: AppStateData = {
   activityViewedAt: {},
   conversations: {},
   vendorCharges: [],
+  reads: {},
   lastBootstrapAt: null,
   bootstrapStatus: "idle",
   bootstrapErrorCode: null,
@@ -339,6 +355,9 @@ export const useAppStore = create<AppState>()(
 
       setActivityRead: (read) =>
         set((state) => ({ activity: { ...state.activity, read } })),
+
+      setResourceRead: (key, read) =>
+        set((state) => ({ reads: { ...state.reads, [key]: read } })),
 
       markActivityViewed: (accountId, newestAt) =>
         set((state) => ({

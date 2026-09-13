@@ -3,11 +3,13 @@
 import { motion } from "framer-motion";
 import { ArrowLeft, CheckCircle2, Clock, Zap } from "lucide-react";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { formatBRL } from "@/lib/currency";
 import { staggerContainer, staggerItem } from "@/lib/animations";
 import { loadVendorCharges } from "@/lib/sync/refresh";
-import { useAppStore } from "@/stores/app-store";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { CHARGES_READ_KEY, IDLE_READ, useAppStore } from "@/stores/app-store";
 import type { VendorCharge } from "@/types/ledger";
 
 function formatRelativeTime(dateStr: string): string {
@@ -52,9 +54,17 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
   const storeCharges = useAppStore((state) => state.vendorCharges);
   const charges = initialCharges ?? storeCharges;
 
-  useEffect(() => {
-    void loadVendorCharges();
+  const read = useAppStore((state) => state.reads[CHARGES_READ_KEY] ?? IDLE_READ);
+
+  const load = useCallback(() => {
+    void loadVendorCharges().catch(() => {
+      // The store records the failure; the retry control renders it.
+    });
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const total = todayTotal(charges);
   const receivedCount = charges.filter(
@@ -85,7 +95,12 @@ export function ChargeHistoryList({ initialCharges }: ChargeHistoryListProps = {
         </motion.div>
       )}
 
-      {charges.length === 0 ? (
+      {charges.length === 0 && read.status === "error" ? (
+        <SyncErrorState
+          message={ledgerErrorMessage(new LedgerError(read.code))}
+          onRetry={load}
+        />
+      ) : charges.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}

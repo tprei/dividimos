@@ -23,8 +23,8 @@ vi.mock("@/lib/sync/client", () => ({
   rpc: vi.fn(),
   rpcVoid: vi.fn(),
   getSupabase: vi.fn(),
+  getAuthGeneration: vi.fn(() => 0),
 }));
-
 // Fresh ids per run: refreshGroup's in-flight registry is module state in
 // refresh.ts, and a run that aborts on a failing expectation would otherwise
 // leave an entry bound to a dead scheduler that later runs wait on forever.

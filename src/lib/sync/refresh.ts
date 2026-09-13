@@ -6,7 +6,14 @@ import {
   decodeGroupSnapshot,
   decodeVendorCharges,
 } from "@/lib/ledger/decode";
-import { useAppStore } from "@/stores/app-store";
+import {
+  CHARGES_READ_KEY,
+  conversationReadKey,
+  expensePageReadKey,
+  expenseReadKey,
+  groupReadKey,
+  useAppStore,
+} from "@/stores/app-store";
 import type { ChatCursor, Conversation, ExpenseSummary, GroupSnapshot } from "@/types/ledger";
 import { rpc } from "./client";
 import { LedgerError } from "./errors";
@@ -14,6 +21,50 @@ import { LedgerError } from "./errors";
 const inFlightGroups = new Map<string, Promise<void>>();
 const pendingGroups = new Map<string, Promise<void>>();
 const inFlightExpensePages = new Map<string, Promise<void>>();
+
+/**
+ * Read generations per resource key. A read publishes its lifecycle only while
+ * it is still the newest attempt, so a slow response cannot overwrite the
+ * state of a request that started after it.
+ */
+const readGenerations = new Map<string, number>();
+
+function beginRead(key: string): number {
+  const generation = (readGenerations.get(key) ?? 0) + 1;
+  readGenerations.set(key, generation);
+  useAppStore.getState().setResourceRead(key, { status: "loading" });
+  return generation;
+}
+
+function isCurrentRead(key: string, generation: number): boolean {
+  return readGenerations.get(key) === generation;
+}
+
+/** Runs `read`, recording its lifecycle, and rethrows so callers can react. */
+async function trackedRead<T>(
+  key: string,
+  generation: number,
+  read: () => Promise<T>,
+  publish: (value: T) => void,
+): Promise<T> {
+  let value: T;
+  try {
+    value = await read();
+  } catch (error) {
+    if (isCurrentRead(key, generation)) {
+      useAppStore.getState().setResourceRead(key, {
+        status: "error",
+        code: error instanceof LedgerError ? error.code : "unknown",
+      });
+    }
+    throw error;
+  }
+
+  if (!isCurrentRead(key, generation)) return value;
+  publish(value);
+  useAppStore.getState().setResourceRead(key, { status: "ready" });
+  return value;
+}
 
 function refreshStaleDetails(
   groupId: string,
@@ -52,13 +103,17 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
   const prevVersion = prev?.group.ledgerVersion ?? null;
   const prevEventId = prev?.lastEventId ?? null;
 
-  const snapshot = await rpc(
-    "get_group",
-    { p_group_id: groupId },
-    decodeGroupSnapshot,
+  const key = groupReadKey(groupId);
+  const generation = beginRead(key);
+
+  const snapshot = await trackedRead(
+    key,
+    generation,
+    () => rpc("get_group", { p_group_id: groupId }, decodeGroupSnapshot),
+    (value) => useAppStore.getState().applyGroup(value),
   );
 
-  useAppStore.getState().applyGroup(snapshot);
+  if (!isCurrentRead(key, generation)) return;
   refreshStaleDetails(groupId, snapshot, prevVersion);
   const conversation = useAppStore.getState().conversations[groupId];
   const loaded = conversation !== undefined && conversation.messages.length > 0;
@@ -93,12 +148,14 @@ export function refreshGroup(groupId: string): Promise<void> {
 }
 
 export async function refreshExpense(expenseId: string): Promise<void> {
-  const detail = await rpc(
-    "get_expense",
-    { p_expense_id: expenseId },
-    decodeExpenseDetail,
+  const key = expenseReadKey(expenseId);
+  const generation = beginRead(key);
+  await trackedRead(
+    key,
+    generation,
+    () => rpc("get_expense", { p_expense_id: expenseId }, decodeExpenseDetail),
+    (detail) => useAppStore.getState().applyExpenseDetail(detail),
   );
-  useAppStore.getState().applyExpenseDetail(detail);
 }
 
 export async function loadMoreExpenses(groupId: string): Promise<void> {
@@ -111,19 +168,24 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
     return;
   }
 
+  const key = expensePageReadKey(groupId);
+  const generation = beginRead(key);
+
   const task = (async () => {
     try {
-      const page = await rpc(
-        "get_group_expenses",
-        {
-          p_group_id: groupId,
-          p_before: before,
-          p_limit: 30,
-        },
-        decodeExpenseSummaries,
+      // A failed older page must leave the cursor and loaded rows untouched so
+      // the user can retry the same page.
+      await trackedRead(
+        key,
+        generation,
+        () =>
+          rpc(
+            "get_group_expenses",
+            { p_group_id: groupId, p_before: before, p_limit: 30 },
+            decodeExpenseSummaries,
+          ),
+        (page) => useAppStore.getState().applyExpensePage(groupId, page, page.length < 30),
       );
-      const complete = page.length < 30;
-      useAppStore.getState().applyExpensePage(groupId, page, complete);
     } finally {
       inFlightExpensePages.delete(groupId);
     }
@@ -176,31 +238,43 @@ export async function loadConversation(
   groupId: string,
   cursors?: ConversationPageCursors,
 ): Promise<Conversation> {
-  const data = await rpc(
-    "get_conversation",
-    {
-      p_group_id: groupId,
-      p_message_before_created_at: cursors?.messageBefore?.createdAt ?? null,
-      p_message_before_id: cursors?.messageBefore?.id ?? null,
-      p_event_before_created_at: cursors?.eventBefore?.createdAt ?? null,
-      p_event_before_id: cursors?.eventBefore === undefined || cursors.eventBefore === null
-        ? null
-        : Number(cursors.eventBefore.id),
-      p_limit: 50,
-    },
-    decodeConversation,
+  const key = conversationReadKey(groupId);
+  const generation = beginRead(key);
+  return await trackedRead(
+    key,
+    generation,
+    () =>
+      rpc(
+        "get_conversation",
+        {
+          p_group_id: groupId,
+          p_message_before_created_at: cursors?.messageBefore?.createdAt ?? null,
+          p_message_before_id: cursors?.messageBefore?.id ?? null,
+          p_event_before_created_at: cursors?.eventBefore?.createdAt ?? null,
+          p_event_before_id:
+            cursors?.eventBefore === undefined || cursors.eventBefore === null
+              ? null
+              : Number(cursors.eventBefore.id),
+          p_limit: 50,
+        },
+        decodeConversation,
+      ),
+    (data) =>
+      useAppStore
+        .getState()
+        .applyConversation(groupId, {
+          kind: cursors === undefined ? "head" : "older",
+          envelope: data,
+        }),
   );
-  useAppStore
-    .getState()
-    .applyConversation(groupId, { kind: cursors === undefined ? "head" : "older", envelope: data });
-  return data;
 }
 
 export async function loadVendorCharges(limit = 50): Promise<void> {
-  const charges = await rpc(
-    "get_vendor_charges",
-    { p_limit: limit },
-    decodeVendorCharges,
+  const generation = beginRead(CHARGES_READ_KEY);
+  await trackedRead(
+    CHARGES_READ_KEY,
+    generation,
+    () => rpc("get_vendor_charges", { p_limit: limit }, decodeVendorCharges),
+    (charges) => useAppStore.getState().applyVendorCharges(charges),
   );
-  useAppStore.getState().applyVendorCharges(charges);
 }

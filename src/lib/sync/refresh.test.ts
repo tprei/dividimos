@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GroupSnapshot, Me } from "@/types/ledger";
-import { useAppStore } from "@/stores/app-store";
+import { expensePageReadKey, groupReadKey, useAppStore } from "@/stores/app-store";
 import { rpc } from "./client";
-import { loadActivity, refreshGroup } from "./refresh";
+import { loadActivity, loadMoreExpenses, refreshGroup } from "./refresh";
 import { LedgerError } from "./errors";
 
 vi.mock("./client", () => ({ rpc: vi.fn() }));
@@ -144,5 +144,58 @@ describe("loadActivity", () => {
     const activity = useAppStore.getState().activity;
     expect(activity.read).toEqual({ status: "error", code: "network" });
     expect(activity.items).toHaveLength(1);
+  });
+});
+
+describe("resource read state", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resolvers.length = 0;
+    useAppStore.getState().reset();
+    vi.mocked(rpc).mockImplementation(async () => {
+      const { promise, resolve } = Promise.withResolvers<GroupSnapshot>();
+      resolvers.push(resolve);
+      return await promise;
+    });
+  });
+
+  it("lets a newer read own the state when an older one settles late", async () => {
+    useAppStore.getState().applyGroup(snapshot("g1", 1));
+
+    const first = refreshGroup("g1");
+    // The follow-up is the newer attempt for this resource.
+    const second = refreshGroup("g1");
+
+    resolvers[0]?.(snapshot("g1", 2));
+    await first;
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+
+    // While the newer read is in flight the resource is loading, even though
+    // the older one just finished successfully.
+    expect(useAppStore.getState().reads[groupReadKey("g1")]).toEqual({ status: "loading" });
+
+    resolvers[1]?.(snapshot("g1", 3));
+    await second;
+    expect(useAppStore.getState().reads[groupReadKey("g1")]).toEqual({ status: "ready" });
+  });
+
+  it("keeps the cursor and rows when an older expense page fails", async () => {
+    useAppStore.setState({
+      expenseLists: {
+        g1: { ids: ["e1"], oldestCursor: "2026-01-02T00:00:00Z", complete: false },
+      },
+    });
+
+    vi.mocked(rpc).mockRejectedValueOnce(new LedgerError("network"));
+    await expect(loadMoreExpenses("g1")).rejects.toThrow();
+
+    const list = useAppStore.getState().expenseLists.g1;
+    expect(list?.ids).toEqual(["e1"]);
+    expect(list?.oldestCursor).toBe("2026-01-02T00:00:00Z");
+    expect(list?.complete).toBe(false);
+    expect(useAppStore.getState().reads[expensePageReadKey("g1")]).toEqual({
+      status: "error",
+      code: "network",
+    });
   });
 });
