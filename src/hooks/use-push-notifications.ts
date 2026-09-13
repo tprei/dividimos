@@ -1,13 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { getAuthGeneration } from "@/lib/sync/client";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isNativePlatform,
   registerNativePushToken,
   unregisterNativePushToken,
 } from "@/lib/push/native-registration";
 import { PushFailure } from "@/lib/push/failures";
+import { hasNativePushConsent, setNativePushConsent } from "@/lib/push/native-consent";
 import { serviceWorkerReady } from "@/lib/push/service-worker";
+import { retryPendingPushDetaches } from "@/lib/push/detach";
 import { useAppStore } from "@/stores/app-store";
 
 export type PushPermission = "default" | "granted" | "denied" | "unsupported";
@@ -106,6 +109,11 @@ async function uploadSubscription(subscription: PushSubscription): Promise<boole
   if (!response.ok) throw new PushFailure("server");
   return true;
 }
+type PushAttempt = {
+  id: number;
+  accountId: string | null;
+  authGeneration: number;
+};
 
 export function usePushNotifications(): UsePushNotificationsReturn {
   const [permission, setPermission] = useState<PushPermission>("default");
@@ -116,8 +124,28 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   const accountId = useAppStore((s) => s.me?.id ?? null);
   const native = isNativePlatform();
 
+  const attemptRef = useRef(0);
+  const beginAttempt = useCallback((): PushAttempt => {
+    const attempt = {
+      id: attemptRef.current + 1,
+      accountId,
+      authGeneration: getAuthGeneration(),
+    };
+    attemptRef.current = attempt.id;
+    return attempt;
+  }, [accountId]);
+  const isCurrentAttempt = useCallback(
+    (attempt: PushAttempt): boolean =>
+      attempt.id === attemptRef.current &&
+      attempt.authGeneration === getAuthGeneration() &&
+      (useAppStore.getState().me?.id ?? null) === accountId,
+    [accountId],
+  );
+
   const reconcile = useCallback(async () => {
+    const attempt = beginAttempt();
     setError(null);
+    setIsInitializing(true);
 
     if (native) {
       try {
@@ -125,11 +153,15 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           "@capacitor/push-notifications"
         );
         const result = await PushNotifications.checkPermissions();
+        if (!isCurrentAttempt(attempt)) return;
         const mapped = mapNativePermission(result.receive);
         setPermission(mapped);
 
-        if (mapped !== "granted") {
-          setIsSubscribed(false);
+        // OS permission is not consent: it outlives an in-app opt-out and
+        // older Android reports it granted without ever asking. Only this
+        // account's own recorded choice enrolls the device.
+        if (mapped !== "granted" || !hasNativePushConsent(accountId)) {
+          if (isCurrentAttempt(attempt)) setIsSubscribed(false);
           return;
         }
 
@@ -137,40 +169,51 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         // current token, since tokens rotate and the row may have moved.
         try {
           await registerNativePushToken();
-          setIsSubscribed(true);
+          if (isCurrentAttempt(attempt)) setIsSubscribed(true);
         } catch (cause) {
+          if (!isCurrentAttempt(attempt)) return;
           setIsSubscribed(false);
           setError(new PushFailure("native", cause));
         }
       } finally {
-        setIsInitializing(false);
+        if (isCurrentAttempt(attempt)) setIsInitializing(false);
       }
       return;
     }
 
     if (!isPushSupported()) {
-      setPermission("unsupported");
-      setIsSubscribed(false);
-      setIsInitializing(false);
+      if (isCurrentAttempt(attempt)) {
+        setPermission("unsupported");
+        setIsSubscribed(false);
+        setIsInitializing(false);
+      }
       return;
     }
 
+    if (!isCurrentAttempt(attempt)) return;
     setPermission(Notification.permission as PushPermission);
 
     try {
+      await retryPendingPushDetaches();
       const registration = await serviceWorkerReady();
+      if (!isCurrentAttempt(attempt)) return;
       let subscription = await registration.pushManager.getSubscription();
+      if (!isCurrentAttempt(attempt)) return;
 
       if (subscription !== null && !matchesConfiguredKey(subscription)) {
         // The deployed VAPID key rotated: the old subscription can never be
         // delivered to again, so replace it rather than reporting enabled.
+        if (!isCurrentAttempt(attempt)) return;
         await subscription.unsubscribe();
+        if (!isCurrentAttempt(attempt)) return;
         subscription = null;
 
         const vapidKey = getVapidKey();
         if (vapidKey === null) {
-          setIsSubscribed(false);
-          setError(new PushFailure("config"));
+          if (isCurrentAttempt(attempt)) {
+            setIsSubscribed(false);
+            setError(new PushFailure("config"));
+          }
           return;
         }
         if (Notification.permission === "granted") {
@@ -178,31 +221,36 @@ export function usePushNotifications(): UsePushNotificationsReturn {
             userVisibleOnly: true,
             applicationServerKey: vapidKey,
           });
+          if (!isCurrentAttempt(attempt)) return;
         }
       }
 
       if (subscription === null) {
-        setIsSubscribed(false);
+        if (isCurrentAttempt(attempt)) setIsSubscribed(false);
         return;
       }
 
       // Server state decides: a row owned by another account, or no row at
       // all, means this account is not subscribed on this device.
+      if (!isCurrentAttempt(attempt)) return;
       if (await serverOwnsSubscription(subscription.endpoint)) {
-        setIsSubscribed(true);
+        if (isCurrentAttempt(attempt)) setIsSubscribed(true);
         return;
       }
 
-      setIsSubscribed(await uploadSubscription(subscription));
+      if (!isCurrentAttempt(attempt)) return;
+      const uploaded = await uploadSubscription(subscription);
+      if (isCurrentAttempt(attempt)) setIsSubscribed(uploaded);
     } catch (cause) {
+      if (!isCurrentAttempt(attempt)) return;
       setIsSubscribed(false);
       setError(
         cause instanceof PushFailure ? cause : new PushFailure("worker", cause),
       );
     } finally {
-      setIsInitializing(false);
+      if (isCurrentAttempt(attempt)) setIsInitializing(false);
     }
-  }, [native]);
+  }, [accountId, beginAttempt, isCurrentAttempt, native]);
 
   // Re-runs on account change: the previous account's subscription state says
   // nothing about this one.
@@ -211,6 +259,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   }, [reconcile, accountId]);
 
   const subscribe = useCallback(async () => {
+    const attempt = beginAttempt();
     setIsLoading(true);
     setError(null);
 
@@ -220,6 +269,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           "@capacitor/push-notifications"
         );
         const result = await PushNotifications.requestPermissions();
+        if (!isCurrentAttempt(attempt)) return;
         const mapped = mapNativePermission(result.receive);
         setPermission(mapped);
 
@@ -229,24 +279,30 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         }
 
         await registerNativePushToken();
+        if (!isCurrentAttempt(attempt)) return;
+        setNativePushConsent(accountId, true);
         setIsSubscribed(true);
       } catch (cause) {
+        if (!isCurrentAttempt(attempt)) return;
         setIsSubscribed(false);
         setError(new PushFailure("native", cause));
       } finally {
-        setIsLoading(false);
+        if (isCurrentAttempt(attempt)) setIsLoading(false);
       }
       return;
     }
 
     try {
       if (!isPushSupported()) {
-        setPermission("unsupported");
-        setError(new PushFailure("unsupported"));
+        if (isCurrentAttempt(attempt)) {
+          setPermission("unsupported");
+          setError(new PushFailure("unsupported"));
+        }
         return;
       }
 
       const result = await Notification.requestPermission();
+      if (!isCurrentAttempt(attempt)) return;
       setPermission(result as PushPermission);
 
       if (result !== "granted") {
@@ -258,53 +314,62 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       if (vapidKey === null) throw new PushFailure("config");
 
       const registration = await serviceWorkerReady();
+      if (!isCurrentAttempt(attempt)) return;
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: vapidKey,
       });
+      if (!isCurrentAttempt(attempt)) return;
 
       try {
-        setIsSubscribed(await uploadSubscription(subscription));
+        const uploaded = await uploadSubscription(subscription);
+        if (isCurrentAttempt(attempt)) setIsSubscribed(uploaded);
       } catch (cause) {
-        // Nothing on the server means nothing enabled: drop the local
-        // subscription so a retry starts clean.
-        await subscription.unsubscribe();
+        if (isCurrentAttempt(attempt)) await subscription.unsubscribe();
         throw cause;
       }
     } catch (cause) {
+      if (!isCurrentAttempt(attempt)) return;
       setIsSubscribed(false);
       setError(
         cause instanceof PushFailure ? cause : new PushFailure("worker", cause),
       );
     } finally {
-      setIsLoading(false);
+      if (isCurrentAttempt(attempt)) setIsLoading(false);
     }
-  }, [native]);
+  }, [accountId, beginAttempt, isCurrentAttempt, native]);
 
   const unsubscribe = useCallback(async () => {
+    const attempt = beginAttempt();
     setIsLoading(true);
     setError(null);
 
     if (native) {
       try {
         await unregisterNativePushToken();
+        if (!isCurrentAttempt(attempt)) return;
+        // Recorded before anything else so the choice survives a restart
+        // even though OS permission stays granted.
+        setNativePushConsent(accountId, false);
         setIsSubscribed(false);
       } catch (cause) {
-        setError(new PushFailure("native", cause));
+        if (isCurrentAttempt(attempt)) setError(new PushFailure("native", cause));
       } finally {
-        setIsLoading(false);
+        if (isCurrentAttempt(attempt)) setIsLoading(false);
       }
       return;
     }
 
     try {
       if (!isPushSupported()) {
-        setPermission("unsupported");
+        if (isCurrentAttempt(attempt)) setPermission("unsupported");
         return;
       }
 
       const registration = await serviceWorkerReady();
+      if (!isCurrentAttempt(attempt)) return;
       const subscription = await registration.pushManager.getSubscription();
+      if (!isCurrentAttempt(attempt)) return;
 
       if (subscription !== null) {
         const response = await fetch("/api/push/unsubscribe", {
@@ -312,6 +377,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: subscription.endpoint }),
         });
+        if (!isCurrentAttempt(attempt)) return;
 
         // Dropping it locally stops delivery here regardless, but a server
         // row left behind is a real failure the user can retry.
@@ -319,16 +385,18 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         if (!response.ok) throw new PushFailure("server");
       }
 
-      setIsSubscribed(false);
+      if (isCurrentAttempt(attempt)) setIsSubscribed(false);
     } catch (cause) {
+      if (!isCurrentAttempt(attempt)) return;
       setIsSubscribed(false);
       setError(
         cause instanceof PushFailure ? cause : new PushFailure("worker", cause),
       );
     } finally {
-      setIsLoading(false);
+      if (isCurrentAttempt(attempt)) setIsLoading(false);
     }
-  }, [native]);
+  }, [accountId, beginAttempt, isCurrentAttempt, native]);
+
 
   return {
     permission,

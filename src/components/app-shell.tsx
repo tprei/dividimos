@@ -27,6 +27,8 @@ import { UnreadBadge } from "@/components/shared/unread-badge";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
 import { hasUnreadActivity, newestActivityAt } from "@/lib/activity-badge";
+import { hasNativePushConsent } from "@/lib/push/native-consent";
+import { registerNativePushToken } from "@/lib/push/native-registration";
 import { attachAuthListener } from "@/lib/sync/auth";
 import { attachVisibilityRefresh, runBootstrap } from "@/lib/sync/bootstrap";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -241,6 +243,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [hydrated, knownGood, bootstrapStatus, me, router, pathname]);
 
+  useEffect(() => {
+    // FCM tokens rotate while the app is closed. Refreshing here means an
+    // opted-in device is reachable from the next cold start, instead of only
+    // after the user happens to open Settings or a group.
+    if (!knownGood || !me || !hasNativePushConsent(me.id)) return;
+    void registerNativePushToken().catch(() => {
+      // A failed refresh leaves the previous token registered; the next
+      // startup or an explicit visit to Settings tries again.
+    });
+  }, [knownGood, me]);
+
   // The badge is derived from authoritative snapshots and this account's own
   // recorded view, so there is no second unread store to fall out of sync.
   const unread = useMemo(() => {
@@ -285,12 +298,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const handleRefresh = useCallback(async (): Promise<boolean> => {
     setRefreshing(true);
     try {
-      await runBootstrap();
-      // Refresh an already-loaded activity slice once, at the sync boundary.
-      // A slice nobody has opened stays untouched.
-      if (useAppStore.getState().activity.read.status !== "idle") {
-        await loadActivity();
-      }
+      const shouldRefreshActivity = useAppStore.getState().activity.read.status !== "idle";
+      await Promise.all([
+        runBootstrap(),
+        shouldRefreshActivity ? loadActivity() : Promise.resolve(),
+      ]);
       return true;
     } catch (err) {
       if (err instanceof LedgerError && err.code === "unauthenticated") {
