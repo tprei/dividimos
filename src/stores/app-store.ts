@@ -63,6 +63,14 @@ export interface MyDebts {
   owed: Transfer[];
 }
 
+/**
+ * Lifecycle of one resource read. An error carries its code so screens can
+ * explain the failure instead of rendering an empty or settled state.
+ */
+export type ResourceReadState =
+  | { status: "idle" | "loading" | "ready" }
+  | { status: "error"; code: LedgerErrorCode };
+
 interface AppStateData {
   hydrated: boolean;
   me: Me | null;
@@ -71,7 +79,15 @@ interface AppStateData {
   expenseLists: Record<string, ExpenseListState>;
   expenses: Record<string, ExpenseSummary>;
   expenseDetails: Record<string, ExpenseDetail>;
-  activity: { items: GroupEvent[]; oldestId: number | null };
+  activity: {
+    items: GroupEvent[];
+    oldestId: number | null;
+    /** The server had no older rows on the last successful page. */
+    complete: boolean;
+    read: ResourceReadState;
+  };
+  /** Newest activity each account has actually seen, keyed by account id. */
+  activityViewedAt: Record<string, string>;
   conversations: Record<string, ConversationState>;
   vendorCharges: VendorCharge[];
   lastBootstrapAt: string | null;
@@ -94,7 +110,9 @@ export interface AppState extends AppStateData {
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
   applyExpensePage(groupId: string, page: ExpenseSummary[], complete: boolean): void;
-  applyActivity(items: GroupEvent[]): void;
+  applyActivity(items: GroupEvent[], complete: boolean): void;
+  setActivityRead(read: ResourceReadState): void;
+  markActivityViewed(accountId: string, newestAt: string): void;
   applyConversation(groupId: string, merge: ConversationMerge): void;
   setConversationReconcile(groupId: string, status: ConversationReconcileState["status"]): void;
   upsertExpense(summary: ExpenseSummary): void;
@@ -113,7 +131,8 @@ const initialData: AppStateData = {
   expenseLists: {},
   expenses: {},
   expenseDetails: {},
-  activity: { items: [], oldestId: null },
+  activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
+  activityViewedAt: {},
   conversations: {},
   vendorCharges: [],
   lastBootstrapAt: null,
@@ -307,8 +326,24 @@ export const useAppStore = create<AppState>()(
           },
         })),
 
-      applyActivity: (items) =>
-        set((state) => ({ activity: mergeActivity(state.activity.items, items) })),
+      // Rows are published only from a successful read, so a failure can never
+      // shrink the list or mark it complete.
+      applyActivity: (items, complete) =>
+        set((state) => ({
+          activity: {
+            ...mergeActivity(state.activity.items, items),
+            complete,
+            read: { status: "ready" as const },
+          },
+        })),
+
+      setActivityRead: (read) =>
+        set((state) => ({ activity: { ...state.activity, read } })),
+
+      markActivityViewed: (accountId, newestAt) =>
+        set((state) => ({
+          activityViewedAt: { ...state.activityViewedAt, [accountId]: newestAt },
+        })),
 
       applyConversation: (groupId, merge) =>
         set((state) => ({
@@ -403,6 +438,7 @@ export const useAppStore = create<AppState>()(
         expenses: state.expenses,
         expenseDetails: state.expenseDetails,
         activity: state.activity,
+        activityViewedAt: state.activityViewedAt,
         conversations: state.conversations,
         vendorCharges: state.vendorCharges,
         lastBootstrapAt: state.lastBootstrapAt,

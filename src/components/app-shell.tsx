@@ -12,26 +12,27 @@ import {
   Settings,
   User,
   Users,
-  WifiOff,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import toast from "react-hot-toast";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { Logo } from "@/components/shared/logo";
 import { DashboardSkeleton } from "@/components/shared/skeleton";
-import { Button } from "@/components/ui/button";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
-import { hasUnreadActivity, markActivityViewed } from "@/lib/activity-badge";
+import { hasUnreadActivity, newestActivityAt } from "@/lib/activity-badge";
 import { attachAuthListener } from "@/lib/sync/auth";
 import { attachVisibilityRefresh, runBootstrap } from "@/lib/sync/bootstrap";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
-import { startRealtime } from "@/lib/sync/realtime";
 import { cn } from "@/lib/utils";
+import { startRealtime } from "@/lib/sync/realtime";
+import { loadActivity } from "@/lib/sync/refresh";
 import { selectUnreadTotal } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
 
@@ -120,7 +121,8 @@ function NavBar() {
   );
 }
 
-function usePullToRefresh(onRefresh: () => Promise<void>) {
+/** `onRefresh` resolves true only when the refresh actually succeeded. */
+function usePullToRefresh(onRefresh: () => Promise<boolean>) {
   const [pulling, setPulling] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const startY = useRef(0);
@@ -151,15 +153,19 @@ function usePullToRefresh(onRefresh: () => Promise<void>) {
   const onTouchEnd = useCallback(async () => {
     if (!isDragging.current) return;
     isDragging.current = false;
-    if (pullDistance >= threshold) {
-      haptics.impact();
-      setPulling(true);
+    if (pullDistance < threshold) {
       setPullDistance(0);
-      await onRefresh();
-      haptics.success();
+      return;
+    }
+    haptics.impact();
+    setPulling(true);
+    setPullDistance(0);
+    try {
+      // Success feedback would otherwise fire on a failed refresh and tell the
+      // user their data is current when it is not.
+      if (await onRefresh()) haptics.success();
+    } finally {
       setPulling(false);
-    } else {
-      setPullDistance(0);
     }
   }, [pullDistance, threshold, onRefresh]);
 
@@ -171,13 +177,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const keyboardOpen = useKeyboardVisible();
   const [refreshing, setRefreshing] = useState(false);
-  const [unread, setUnread] = useState(false);
 
   const hydrated = useAppStore((s) => s.hydrated);
   const me = useAppStore((s) => s.me);
   const bootstrapStatus = useAppStore((s) => s.bootstrapStatus);
   const bootstrapErrorCode = useAppStore((s) => s.bootstrapErrorCode);
   const lastBootstrappedAccountId = useAppStore((s) => s.lastBootstrappedAccountId);
+  const groups = useAppStore(useShallow((s) => s.groups));
+  const activityViewedAt = useAppStore(useShallow((s) => s.activityViewedAt));
 
   // Known-good means this account's own bootstrap committed. A persisted `me`
   // alone proves nothing: it may belong to a previous account or a read that
@@ -231,20 +238,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [hydrated, knownGood, bootstrapStatus, me, router]);
 
-  useEffect(() => {
-    if (pathname === "/app/activity") {
-      markActivityViewed();
-      setUnread(false);
-    } else {
-      setUnread(hasUnreadActivity());
-    }
-  }, [pathname]);
-
-  useEffect(() => {
-    const onNewActivity = () => setUnread(hasUnreadActivity());
-    window.addEventListener("activity-updated", onNewActivity);
-    return () => window.removeEventListener("activity-updated", onNewActivity);
-  }, []);
+  // The badge is derived from authoritative snapshots and this account's own
+  // recorded view, so there is no second unread store to fall out of sync.
+  const unread = useMemo(() => {
+    if (!knownGood || me === null) return false;
+    return hasUnreadActivity(newestActivityAt(groups), activityViewedAt[me.id]);
+  }, [knownGood, me, groups, activityViewedAt]);
 
   useEffect(() => {
     let handle: { remove: () => Promise<void> } | null = null;
@@ -280,16 +279,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
-  const handleRefresh = useCallback(async () => {
+  const handleRefresh = useCallback(async (): Promise<boolean> => {
     setRefreshing(true);
     try {
       await runBootstrap();
+      // Refresh an already-loaded activity slice once, at the sync boundary.
+      // A slice nobody has opened stays untouched.
+      if (useAppStore.getState().activity.read.status !== "idle") {
+        await loadActivity();
+      }
+      return true;
     } catch (err) {
       if (err instanceof LedgerError && err.code === "unauthenticated") {
         router.replace("/auth");
-        return;
+        return false;
       }
       toast.error(ledgerErrorMessage(err));
+      return false;
     } finally {
       setRefreshing(false);
     }
@@ -305,24 +311,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <DashboardSkeleton />
         </div>
       ) : !knownGood ? (
-        <div className="flex h-dvh flex-col items-center justify-center gap-4 px-8 text-center">
-          <WifiOff className="h-8 w-8 text-muted-foreground opacity-50" strokeWidth={1.5} />
-          <div className="space-y-1">
-            <p className="font-medium">Não conseguimos carregar sua conta</p>
-            <p role="alert" className="text-sm text-muted-foreground">
-              {bootstrapErrorCode === null
+        <div className="flex h-dvh flex-col items-center justify-center">
+          <SyncErrorState
+            title="Não conseguimos carregar sua conta"
+            message={
+              bootstrapErrorCode === null
                 ? "Verifique sua conexão e tente novamente."
-                : ledgerErrorMessage(new LedgerError(bootstrapErrorCode))}
-            </p>
-          </div>
-          <Button
-            onClick={retryBootstrap}
-            disabled={retrying}
-            className="mt-2 w-full max-w-xs gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${retrying ? "animate-spin" : ""}`} />
-            {retrying ? "Tentando..." : "Tentar novamente"}
-          </Button>
+                : ledgerErrorMessage(new LedgerError(bootstrapErrorCode))
+            }
+            onRetry={retryBootstrap}
+            retrying={retrying}
+          />
         </div>
       ) : (
         <div className="flex h-dvh flex-col overflow-hidden bg-background">

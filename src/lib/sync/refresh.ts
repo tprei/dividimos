@@ -9,6 +9,7 @@ import {
 import { useAppStore } from "@/stores/app-store";
 import type { ChatCursor, Conversation, ExpenseSummary, GroupSnapshot } from "@/types/ledger";
 import { rpc } from "./client";
+import { LedgerError } from "./errors";
 
 const inFlightGroups = new Map<string, Promise<void>>();
 const pendingGroups = new Map<string, Promise<void>>();
@@ -132,16 +133,33 @@ export async function loadMoreExpenses(groupId: string): Promise<void> {
   await task;
 }
 
+const ACTIVITY_PAGE_SIZE = 50;
+
 export async function loadActivity(before?: number): Promise<void> {
-  const items = await rpc(
-    "get_activity",
-    {
-      p_before_id: before ?? Number.MAX_SAFE_INTEGER,
-      p_limit: 50,
-    },
-    decodeGroupEvents,
-  );
-  useAppStore.getState().applyActivity(items);
+  const store = useAppStore.getState();
+  store.setActivityRead({ status: "loading" });
+
+  let items;
+  try {
+    items = await rpc(
+      "get_activity",
+      {
+        p_before_id: before ?? Number.MAX_SAFE_INTEGER,
+        p_limit: ACTIVITY_PAGE_SIZE,
+      },
+      decodeGroupEvents,
+    );
+  } catch (error) {
+    // Keep whatever rows are already published and say why the read failed.
+    useAppStore.getState().setActivityRead({
+      status: "error",
+      code: error instanceof LedgerError ? error.code : "unknown",
+    });
+    throw error;
+  }
+
+  // A short page is the only proof the server has nothing older.
+  useAppStore.getState().applyActivity(items, items.length < ACTIVITY_PAGE_SIZE);
 }
 
 export interface ConversationPageCursors {
