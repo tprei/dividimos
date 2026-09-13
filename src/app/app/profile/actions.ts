@@ -1,11 +1,10 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAuthUser } from "@/lib/auth";
+import { resolveAuthProfile } from "@/lib/auth";
 import { encryptPixKey } from "@/lib/crypto";
 import { maskPixKey, validatePixKey } from "@/lib/pix";
 import type { PixKeyType } from "@/types";
-import type { Me } from "@/types/ledger";
 
 export interface UpdatePixKeySuccess {
   pixKeyType: PixKeyType;
@@ -31,11 +30,18 @@ export async function updatePixKey(
   expectedUserId: string,
   formData: FormData,
 ): Promise<UpdatePixKeyResult> {
-  const user: (Me | { id: string }) | null = await getAuthUser();
+  const profile = await resolveAuthProfile();
 
-  if (!user || user.id !== expectedUserId) {
+  if (profile.kind === "unauthenticated") {
     return { error: "Sessao expirada" };
   }
+  if (profile.kind !== "ok") {
+    return { error: "Nao foi possivel carregar sua conta. Tente novamente." };
+  }
+  if (profile.me.id !== expectedUserId) {
+    return { error: "Sessao expirada" };
+  }
+  const user = profile.me;
 
   const pixKey = formData.get("pixKey") as string;
   const pixKeyType = formData.get("pixKeyType") as PixKeyType;
