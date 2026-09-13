@@ -17,6 +17,7 @@ jobs:
   replay:
     name: Replay on fresh database
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -27,7 +28,7 @@ jobs:
       - name: Start Supabase (applies every migration in order)
         run: |
           for attempt in 1 2 3; do
-            if supabase start; then
+            if timeout 8m supabase start; then
               break
             fi
             echo "supabase start failed (attempt $attempt/3), retrying..."
@@ -43,6 +44,7 @@ jobs:
   declaration-parity:
     name: Declared schemas match forward migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -53,7 +55,7 @@ jobs:
       - name: Replay migrations before declaration parity
         run: |
           for attempt in 1 2 3; do
-            if supabase start; then
+            if timeout 8m supabase start; then
               break
             fi
             echo "supabase start failed (attempt $attempt/3), retrying..."
@@ -88,6 +90,7 @@ jobs:
   baseline-freshness:
     name: Schema snapshot matches supabase/schemas
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -117,6 +120,7 @@ jobs:
   migration-history:
     name: No unauthorized renamed or deleted migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:

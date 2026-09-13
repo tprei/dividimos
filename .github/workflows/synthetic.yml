@@ -55,7 +55,7 @@ jobs:
         id: supabase
         run: |
           for attempt in 1 2 3; do
-            if supabase start -x vector,imgproxy,logflare,edge-runtime; then
+            if timeout 8m supabase start -x vector,imgproxy,logflare,edge-runtime; then
               break
             fi
             echo "supabase start failed (attempt $attempt/3), retrying..."
@@ -84,13 +84,14 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
 
+      # No NODE_ENV override and no DEV_LOGIN_SECRET: the post-merge run must
+      # exercise the same production branches the deployed app takes.
       - name: Start server (production)
         if: github.event_name != 'pull_request'
-        run: NODE_ENV=test npm run start &
+        run: npm run start &
         env:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase.outputs.service_role_key }}
-          DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
 
       - name: Start server (Turbopack dev)
         if: github.event_name == 'pull_request'
@@ -107,6 +108,25 @@ jobs:
             sleep 2
           done
           echo "Server did not start in time" && exit 1
+
+      # Proves the production server refuses the dev login even for a caller
+      # holding the real secret. If someone reintroduces NODE_ENV=test or
+      # passes the secret to the server, this turns red.
+      - name: Assert dev login is unreachable in production
+        if: github.event_name != 'pull_request'
+        env:
+          DEV_LOGIN_SECRET: ${{ secrets.DEV_LOGIN_SECRET }}
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST http://localhost:3000/api/dev/login \
+            -H 'Content-Type: application/json' \
+            -H "x-dev-login-secret: $DEV_LOGIN_SECRET" \
+            -d '{"email":"probe@test.dividimos.local"}')
+          if [ "$status" != "404" ]; then
+            echo "::error::/api/dev/login answered $status on the production server; expected 404"
+            exit 1
+          fi
+          echo "dev login correctly unavailable (404)"
 
       - name: Run synthetic tests
         run: npm run test:synthetic -- --shard=${{ matrix.shard }}/${{ matrix.total }}
