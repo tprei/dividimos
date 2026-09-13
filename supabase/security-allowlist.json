@@ -293,8 +293,8 @@
     },
     "public.lookup_user_by_handle(p_handle text)": {
       "anon": false,
-      "authenticated": true,
-      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+      "authenticated": false,
+      "note": "Route-only lookup; the /api/users/lookup boundary owns the rate limit and calls it through the service role."
     },
     "public.mark_read(p_group_id uuid, p_last_read_message_id uuid)": {
       "anon": false,
