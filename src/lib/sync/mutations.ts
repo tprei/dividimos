@@ -244,6 +244,46 @@ export async function createExpense(input: {
   }
 }
 
+/**
+ * Creates a group and its first expense in one server transaction.
+ *
+ * There is no optimistic patch here: the group does not exist yet, so there
+ * is nothing in the store to patch and nothing to roll back. The caller
+ * refreshes from the ack.
+ */
+export async function createExpenseWithGroup(input: {
+  groupName: string;
+  memberIds: string[];
+  clientId: string;
+  header: ExpenseHeader;
+  payload: ExpensePayload;
+}): Promise<MutationAck> {
+  const { groupName, memberIds, clientId, header, payload } = input;
+  if (!useAppStore.getState().me) throw new LedgerError("unauthenticated");
+
+  const ack = await rpc(
+    "create_expense_with_group",
+    {
+      p_client_id: clientId,
+      p_group_name: groupName,
+      p_member_ids: memberIds,
+      p_occurred_on: header.occurredOn,
+      p_title: header.title,
+      p_merchant_name: header.merchantName ?? "",
+      p_expense_type: header.expenseType,
+      p_total_cents: header.totalCents,
+      p_service_fee_bps: header.serviceFeeBasisPoints,
+      p_fixed_fee_cents: header.fixedFeeCents,
+      p_payload: payload,
+      p_chave_acesso: header.receiptAccessKey ?? null,
+    },
+    decodeMutationAck,
+  );
+  void refreshGroup(ack.groupId);
+  notify(ack.eventId);
+  return ack;
+}
+
 export async function editExpense(input: {
   expenseId: string;
   expectedVersionNo: number;
