@@ -6,10 +6,13 @@ import {
   decryptPixKey as decrypt,
   hashEndpoint,
 } from "@/lib/crypto";
+import { validateWebSubscription } from "@/lib/push/validate-endpoint";
 
-type SubscribeBody =
-  | { subscription: PushSubscriptionJSON; channel?: "web" }
-  | { token: string; channel: "fcm" };
+type SubscribeBody = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -22,18 +25,20 @@ export async function POST(request: Request) {
 
   let body: SubscribeBody;
   try {
-    body = await request.json();
+    const parsed: unknown = await request.json();
+    if (!isRecord(parsed)) {
+      return NextResponse.json({ error: "Subscription inválida" }, { status: 400 });
+    }
+    body = parsed as SubscribeBody;
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const channel = ("channel" in body && body.channel === "fcm") ? "fcm" : "web";
-
+  const channel = body.channel === "fcm" ? "fcm" : "web";
   const admin = createAdminClient();
 
   if (channel === "fcm") {
-    const fcmBody = body as { token: string; channel: "fcm" };
-    if (!fcmBody.token || typeof fcmBody.token !== "string") {
+    if (typeof body.token !== "string" || body.token.length === 0) {
       return NextResponse.json(
         { error: "Token FCM obrigatório" },
         { status: 400 },
@@ -50,11 +55,9 @@ export async function POST(request: Request) {
     for (const row of existing ?? []) {
       try {
         const decrypted = decrypt(row.subscription_encrypted);
-        if (decrypted === fcmBody.token) {
-          duplicateIds.push(row.id);
-        }
+        if (decrypted === body.token) duplicateIds.push(row.id);
       } catch {
-        // Skip rows that can't be decrypted — stale data
+        // Skip rows that can't be decrypted — stale data.
       }
     }
 
@@ -62,11 +65,10 @@ export async function POST(request: Request) {
       await admin.from("push_subscriptions").delete().in("id", duplicateIds);
     }
 
-    const encrypted = encrypt(fcmBody.token);
-
+    const encrypted = encrypt(body.token);
     const { error } = await admin.from("push_subscriptions").insert({
       user_id: userId,
-      endpoint_digest: hashEndpoint(fcmBody.token),
+      endpoint_digest: hashEndpoint(body.token),
       subscription_encrypted: encrypted,
       channel: "fcm",
     });
@@ -87,15 +89,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // Web Push flow (existing behavior)
-  const webBody = body as { subscription: PushSubscriptionJSON };
-  const { subscription } = webBody;
-  if (!subscription?.endpoint || !subscription?.keys) {
+  const validation = await validateWebSubscription(body.subscription);
+  if (!validation.ok) {
     return NextResponse.json(
-      { error: "Subscription inválida — endpoint e keys são obrigatórios" },
-      { status: 400 },
+      {
+        error:
+          validation.reason === "resolution_failed"
+            ? "Não foi possível validar o endpoint agora"
+            : "Subscription inválida",
+      },
+      { status: validation.reason === "resolution_failed" ? 503 : 400 },
     );
   }
+  const subscription = validation.value;
 
   const { data: existing } = await admin
     .from("push_subscriptions")
@@ -106,14 +112,12 @@ export async function POST(request: Request) {
   const duplicateIds: string[] = [];
   for (const row of existing ?? []) {
     try {
-      const sub = JSON.parse(decrypt(row.subscription_encrypted)) as {
-        endpoint: string;
+      const stored = JSON.parse(decrypt(row.subscription_encrypted)) as {
+        endpoint?: unknown;
       };
-      if (sub.endpoint === subscription.endpoint) {
-        duplicateIds.push(row.id);
-      }
+      if (stored.endpoint === subscription.endpoint) duplicateIds.push(row.id);
     } catch {
-      // Skip rows that can't be decrypted — stale data
+      // Skip rows that can't be decrypted — stale data.
     }
   }
 
@@ -122,7 +126,6 @@ export async function POST(request: Request) {
   }
 
   const encrypted = encrypt(JSON.stringify(subscription));
-
   const { error } = await admin.from("push_subscriptions").insert({
     user_id: userId,
     endpoint_digest: hashEndpoint(subscription.endpoint),

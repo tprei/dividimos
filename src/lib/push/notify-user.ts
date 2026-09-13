@@ -54,18 +54,30 @@ export async function notifyUser(
         return;
       }
 
-      let delivered: boolean;
       if (channel === "fcm") {
         if (!isFcmConfigured()) return;
-        delivered = await sendFcmNotification(decrypted, payload);
-      } else {
-        delivered = await sendPushNotification(decrypted, payload);
+        try {
+          const delivered = await sendFcmNotification(decrypted, payload);
+          if (delivered) {
+            sent++;
+          } else {
+            staleIds.push(row.id);
+          }
+        } catch {
+          // Keep transient provider failures for a later retry.
+        }
+        return;
       }
 
-      if (delivered) {
-        sent++;
-      } else {
-        staleIds.push(row.id);
+      try {
+        const outcome = await sendPushNotification(decrypted, payload);
+        if (outcome.status === "accepted") {
+          sent++;
+        } else if (outcome.status === "stale") {
+          staleIds.push(row.id);
+        }
+      } catch {
+        // The web sender settles, but a defensive boundary keeps fan-out alive.
       }
     }),
   );

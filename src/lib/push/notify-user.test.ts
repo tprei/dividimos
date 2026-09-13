@@ -66,7 +66,7 @@ describe("notifyUser", () => {
     });
 
     vi.mocked(decryptPixKey).mockReturnValue(subJson);
-    vi.mocked(sendPushNotification).mockResolvedValue(true);
+    vi.mocked(sendPushNotification).mockResolvedValue({ status: "accepted" });
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
@@ -111,7 +111,7 @@ describe("notifyUser", () => {
       throw new Error("unknown");
     });
 
-    vi.mocked(sendPushNotification).mockResolvedValue(true);
+    vi.mocked(sendPushNotification).mockResolvedValue({ status: "accepted" });
     vi.mocked(sendFcmNotification).mockResolvedValue(true);
 
     const payload = { title: "Hi", body: "Test" };
@@ -152,14 +152,27 @@ describe("notifyUser", () => {
 
     vi.mocked(decryptPixKey).mockReturnValue(subJson);
     vi.mocked(sendPushNotification)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false); // stale
+      .mockResolvedValueOnce({ status: "accepted" })
+      .mockResolvedValueOnce({ status: "stale" });
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
     expect(result).toEqual({ sent: 1, cleaned: 1 });
     expect(mockDelete).toHaveBeenCalled();
     expect(mockIn).toHaveBeenCalledWith("id", ["sub-2"]);
+  });
+  it("retains web subscriptions after transient failures", async () => {
+    mockEq.mockResolvedValue({
+      data: [{ id: "sub-1", subscription_encrypted: "encrypted-1", channel: "web" }],
+      error: null,
+    });
+    vi.mocked(decryptPixKey).mockReturnValue(JSON.stringify({ endpoint: "https://fcm.example.com/abc" }));
+    vi.mocked(sendPushNotification).mockResolvedValue({ status: "failed" });
+
+    const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
+
+    expect(result).toEqual({ sent: 0, cleaned: 0 });
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it("cleans up stale FCM subscriptions", async () => {
@@ -213,7 +226,7 @@ describe("notifyUser", () => {
     });
 
     vi.mocked(decryptPixKey).mockReturnValue(subJson);
-    vi.mocked(sendPushNotification).mockResolvedValue(true);
+    vi.mocked(sendPushNotification).mockResolvedValue({ status: "accepted" });
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
