@@ -25,6 +25,7 @@ export function ReceiptScanner({
 }: ReceiptScannerProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const isAndroid = Capacitor.getPlatform() === "android";
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
@@ -58,24 +59,31 @@ export function ReceiptScanner({
 
   const handleNativeCapture = useCallback(
     async (source: "camera" | "gallery") => {
-      try {
-        const { takeNativePhoto, pickNativeGalleryPhoto } = await import(
-          "@/lib/capacitor/camera"
-        );
-        const captured =
-          source === "camera"
-            ? await takeNativePhoto()
-            : await pickNativeGalleryPhoto();
+      const { takeNativePhoto, pickNativeGalleryPhoto } = await import(
+        "@/lib/capacitor/camera"
+      );
+      const outcome =
+        source === "camera" ? await takeNativePhoto() : await pickNativeGalleryPhoto();
 
-        setFile(captured);
-        const url = URL.createObjectURL(captured);
+      if (outcome.kind === "captured") {
+        setCaptureError(null);
+        setFile(outcome.file);
+        const url = URL.createObjectURL(outcome.file);
         setPreview((prev) => {
           if (prev) URL.revokeObjectURL(prev);
           return url;
         });
-      } catch {
-        // User cancelled the camera/gallery — no action needed
+        return;
       }
+
+      // Backing out is a choice, so it stays silent. Anything else left the
+      // user tapping a button that appeared to do nothing.
+      if (outcome.kind === "cancelled") return;
+      setCaptureError(
+        outcome.kind === "permission_denied"
+          ? "Permita o acesso à câmera nas configurações do aparelho."
+          : outcome.message,
+      );
     },
     [],
   );
@@ -83,6 +91,11 @@ export function ReceiptScanner({
 
   return (
     <div className="space-y-4">
+      {captureError !== null && (
+        <p role="alert" className="text-sm text-destructive">
+          {captureError}
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
