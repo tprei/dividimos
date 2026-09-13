@@ -80,16 +80,10 @@ test.describe("Fixed-amount exact inputs", () => {
 
     const expenseId = expenses![0].id as string;
 
-    const { data: participants } = await adminClient
-      .from("expense_participants")
-      .select("user_id, share_cents")
-      .eq("expense_id", expenseId);
+    const detail = await seed.getExpense(alice.id, expenseId);
 
     const shareByUser = Object.fromEntries(
-      (participants ?? []).map((p) => [
-        p.user_id as string,
-        p.share_cents as number,
-      ]),
+      detail.participants.map((p) => [p.user?.id ?? "", p.shareCents]),
     );
     expect(shareByUser[alice.id]).toBe(5000);
     expect(shareByUser[bob.id]).toBe(5000);
