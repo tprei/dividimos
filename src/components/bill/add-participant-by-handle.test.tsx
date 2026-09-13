@@ -1,109 +1,143 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { UserProfile } from "@/types/ledger";
+import { lookupUserByHandle } from "@/lib/sync/mutations-group";
 import { AddParticipantByHandle } from "./add-participant-by-handle";
 
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: vi.fn(() => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          single: vi.fn(() => ({ data: null })),
-        })),
-      })),
-    })),
-    rpc: vi.fn(() => ({
-      maybeSingle: vi.fn(() => Promise.resolve({ data: null })),
-    })),
-  })),
+vi.mock("@/lib/sync/mutations-group", () => ({
+  lookupUserByHandle: vi.fn(),
 }));
+
+const lookup = vi.mocked(lookupUserByHandle);
+
+function profile(handle: string): UserProfile {
+  return {
+    id: `user-${handle}`,
+    handle,
+    name: handle[0].toUpperCase() + handle.slice(1),
+    avatarUrl: null,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function renderSearch(overrides: { onAdd?: () => void; excludeIds?: string[] } = {}) {
+  return render(
+    <AddParticipantByHandle
+      onAdd={overrides.onAdd ?? vi.fn()}
+      onCancel={vi.fn()}
+      excludeIds={overrides.excludeIds ?? []}
+    />,
+  );
+}
+
+function searchButton(): HTMLElement {
+  return screen.getByRole("button", { name: "Buscar handle" });
+}
+
+function typeHandle(value: string): void {
+  fireEvent.change(screen.getByPlaceholderText(/handle/), { target: { value } });
+}
+
+function pressEnter(): void {
+  fireEvent.keyDown(screen.getByPlaceholderText(/handle/), { key: "Enter" });
+}
+
+beforeEach(() => {
+  lookup.mockReset();
+});
 
 describe("AddParticipantByHandle", () => {
   it("renders handle input with @ prefix", () => {
-    render(
-      <AddParticipantByHandle
-        onAdd={vi.fn()}
-        onCancel={vi.fn()}
-        excludeIds={[]}
-      />,
-    );
-
+    renderSearch();
     expect(screen.getByText("@")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/handle/)).toBeInTheDocument();
   });
 
   it("replaces spaces with periods in handle input", async () => {
-    render(
-      <AddParticipantByHandle
-        onAdd={vi.fn()}
-        onCancel={vi.fn()}
-        excludeIds={[]}
-      />,
-    );
-
-    const input = screen.getByPlaceholderText(/handle/);
-    fireEvent.change(input, { target: { value: "test handle" } });
-
+    renderSearch();
+    // The animated container replaces the input node on re-render, so it is
+    // re-queried rather than captured.
+    typeHandle("joao silva");
     await waitFor(() => {
-      expect(screen.getByPlaceholderText(/handle/)).toHaveValue("test.handle");
+      expect(screen.getByPlaceholderText(/handle/)).toHaveValue("joao.silva");
     });
   });
 
-  it("replaces multiple spaces with multiple periods", async () => {
-    render(
-      <AddParticipantByHandle
-        onAdd={vi.fn()}
-        onCancel={vi.fn()}
-        excludeIds={[]}
-      />,
-    );
+  it("reports a user who does not exist", async () => {
+    lookup.mockResolvedValue(null);
+    renderSearch();
 
-    const input = screen.getByPlaceholderText(/handle/);
-    fireEvent.change(input, { target: { value: "a b c" } });
+    typeHandle("ninguem");
+    await userEvent.click(searchButton());
 
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/handle/)).toHaveValue("a.b.c");
-    });
+    expect(await screen.findByText(/Nenhum usuario encontrado com @ninguem/)).toBeInTheDocument();
   });
 
-  it("preserves other characters while replacing spaces", async () => {
-    render(
-      <AddParticipantByHandle
-        onAdd={vi.fn()}
-        onCancel={vi.fn()}
-        excludeIds={[]}
-      />,
-    );
+  it("shows a retryable failure instead of claiming nobody was found", async () => {
+    lookup.mockRejectedValueOnce(new Error("offline"));
+    renderSearch();
 
-    const input = screen.getByPlaceholderText(/handle/);
-    fireEvent.change(input, { target: { value: "test user name" } });
+    typeHandle("alice");
+    await userEvent.click(searchButton());
 
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText(/handle/)).toHaveValue("test.user.name");
-    });
+    expect(await screen.findByText("Não foi possível buscar @alice.")).toBeInTheDocument();
+    expect(screen.queryByText(/Nenhum usuario encontrado/)).not.toBeInTheDocument();
+
+    lookup.mockResolvedValueOnce(profile("alice"));
+    await userEvent.click(screen.getByRole("button", { name: "Tentar novamente" }));
+
+    expect(await screen.findByText("@alice")).toBeInTheDocument();
   });
 
-  it("does not show 'Buscando...' text (uses skeleton instead)", async () => {
-    const user = userEvent.setup();
-    render(
-      <AddParticipantByHandle
-        onAdd={vi.fn()}
-        onCancel={vi.fn()}
-        excludeIds={[]}
-      />,
-    );
+  it("ignores a stale result that arrives after the handle changed", async () => {
+    const aliceLookup = deferred<UserProfile | null>();
+    lookup.mockReturnValueOnce(aliceLookup.promise);
+    lookup.mockResolvedValueOnce(profile("bob"));
 
-    const input = screen.getByPlaceholderText(/handle/);
-    await user.type(input, "alice");
+    const onAdd = vi.fn();
+    renderSearch({ onAdd });
 
-    // Click the search button (the shadcn Button with data-slot)
-    const searchBtn = document.querySelector("[data-slot='button']") as HTMLElement;
-    await user.click(searchBtn);
+    typeHandle("alice");
+    await userEvent.click(searchButton());
 
-    // After search resolves, should show not-found and never old "Buscando..." text
-    await waitFor(() => {
-      expect(screen.getByText(/Nenhum usuario encontrado/)).toBeInTheDocument();
-    });
-    expect(screen.queryByText("Buscando...")).not.toBeInTheDocument();
+    // The user changes their mind and searches for somebody else.
+    typeHandle("bob");
+    await userEvent.click(searchButton());
+    expect(await screen.findByText("@bob")).toBeInTheDocument();
+
+    // Alice's lookup lands late and must not replace Bob.
+    aliceLookup.resolve(profile("alice"));
+    await waitFor(() => expect(screen.getByText("@bob")).toBeInTheDocument());
+    expect(screen.queryByText("@alice")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ handle: "bob" }));
+  });
+
+  it("does not start a second search from Enter while one is in flight", async () => {
+    const pending = deferred<UserProfile | null>();
+    lookup.mockReturnValue(pending.promise);
+    renderSearch();
+
+    typeHandle("alice");
+    pressEnter();
+    await waitFor(() => expect(lookup).toHaveBeenCalledTimes(1));
+
+    pressEnter();
+    pressEnter();
+    expect(lookup).toHaveBeenCalledTimes(1);
+
+    pending.resolve(profile("alice"));
+    expect(await screen.findByText("@alice")).toBeInTheDocument();
   });
 });
