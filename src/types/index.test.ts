@@ -31,7 +31,6 @@ describe("Expense types", () => {
       serviceFeePercent: 10,
       serviceFeeBasisPoints: 1000,
       fixedFees: 0,
-      status: "draft",
       createdAt: "2026-03-28T00:00:00Z",
       updatedAt: "2026-03-28T00:00:00Z",
     };

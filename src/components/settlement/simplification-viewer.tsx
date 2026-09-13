@@ -25,11 +25,15 @@ export function SimplificationViewer({
   result,
   participants,
 }: SimplificationViewerProps) {
-  const [currentStep, setCurrentStep] = useState(0);
+  const [requestedStep, setRequestedStep] = useState(0);
   const [direction, setDirection] = useState<1 | -1>(1);
   const touchStartX = useRef<number | null>(null);
 
   const totalSteps = result.steps.length;
+  // A new result can be shorter than the one the user was paging through, so
+  // the index is clamped during render rather than corrected by an effect:
+  // one render past the end dereferences an undefined step and throws.
+  const currentStep = Math.min(requestedStep, Math.max(0, totalSteps - 1));
   const step = result.steps[currentStep];
   const isFinal = currentStep === totalSteps - 1;
   const isFirst = currentStep === 0;
@@ -38,7 +42,7 @@ export function SimplificationViewer({
     if (index < 0 || index >= totalSteps) return;
     haptics.selectionChanged();
     setDirection(index > currentStep ? 1 : -1);
-    setCurrentStep(index);
+    setRequestedStep(index);
   }
 
   function handleTouchStart(e: React.TouchEvent) {
@@ -59,6 +63,9 @@ export function SimplificationViewer({
     center: { opacity: 1, x: 0 },
     exit: (dir: number) => ({ opacity: 0, x: dir * -40 }),
   };
+
+  // No steps means nothing to walk through; every read below assumes one.
+  if (!step) return null;
 
   const fadingEdges = step.removedEdges?.map((e) => ({
     from: e.fromUserId,
