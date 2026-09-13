@@ -2,11 +2,23 @@
 
 import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
-import { createGroup, getOrCreateDm } from "@/lib/sync/mutations-group";
+import { getOrCreateDm } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me, UserProfile } from "@/types/ledger";
 import type { User } from "@/types";
+
+/**
+ * Where this bill should live, decided but not yet written.
+ *
+ * A new group is described rather than created so the submit can write the
+ * group and the bill in one transaction.
+ */
+export type GroupPlan =
+  | { kind: "existing"; groupId: string }
+  | { kind: "create"; name: string; memberIds: string[] }
+  | { kind: "none" }
+  | { kind: "invalid" };
 
 export function profileToUser(profile: UserProfile): User {
   return {
@@ -66,9 +78,11 @@ export function useGroupResolution({
     [groups, me.id],
   );
 
-  const resolveGroup = useCallback(
-    async (defaultGroupName: string): Promise<string | null | undefined> => {
-      if (groupSelection && groupSelection !== "create" && groupSelection !== "dm") return groupSelection;
+  const planGroup = useCallback(
+    async (defaultGroupName: string): Promise<GroupPlan> => {
+      if (groupSelection && groupSelection !== "create" && groupSelection !== "dm") {
+        return { kind: "existing", groupId: groupSelection };
+      }
       const state = useBillStore.getState();
       const others = state.participants.filter((participant) => participant.id !== me.id);
       const hasGuests = state.guests.length > 0;
@@ -78,39 +92,34 @@ export function useGroupResolution({
       if (isDmCase) {
         if (others.length !== 1 || hasGuests) {
           toast.error("Conversa direta exige uma pessoa registrada.");
-          return undefined;
+          return { kind: "invalid" };
         }
-        if (isDmMode && initialGroupId) return initialGroupId;
+        if (isDmMode && initialGroupId) return { kind: "existing", groupId: initialGroupId };
         try {
           const dm = await getOrCreateDm(others[0].id);
           setGroupSelection(dm.groupId);
           setCreateGroupEnabled(false);
-          return dm.groupId;
+          return { kind: "existing", groupId: dm.groupId };
         } catch (error) {
           toast.error(ledgerErrorMessage(error));
-          return undefined;
+          return { kind: "invalid" };
         }
       }
       const needsGroup = others.length > 0 || hasGuests;
       if (groupSelection === "create" || (groupSelection === null && needsGroup)) {
         if (!createGroupEnabled) {
           toast.error('Escolha um grupo existente ou deixe "Criar grupo" marcado.');
-          return undefined;
+          return { kind: "invalid" };
         }
-        try {
-          const ack = await createGroup(
-            createGroupName.trim() || defaultGroupName || "Novo grupo",
-            others.map((participant) => participant.id),
-          );
-          setGroupSelection(ack.groupId);
-          setCreateGroupEnabled(false);
-          return ack.groupId;
-        } catch (error) {
-          toast.error(ledgerErrorMessage(error));
-          return undefined;
-        }
+        // Nothing is created here. The group is born with the bill in one
+        // transaction, so abandoning or failing the submit leaves nothing.
+        return {
+          kind: "create",
+          name: createGroupName.trim() || defaultGroupName || "Novo grupo",
+          memberIds: others.map((participant) => participant.id),
+        };
       }
-      return null;
+      return { kind: "none" };
     },
     [createGroupEnabled, createGroupName, groupSelection, initialGroupId, isDmMode, me.id],
   );
@@ -122,6 +131,7 @@ export function useGroupResolution({
     setCreateGroupName,
     setCreateGroupEnabled,
     handleGroupSelect,
-    resolveGroup,
+    planGroup,
+    setGroupSelection,
   };
 }

@@ -12,7 +12,6 @@ import { VoiceExpenseModal, type ResolvedParticipant } from "@/components/bill/v
 import { Button } from "@/components/ui/button";
 import { processReceiptScan } from "@/lib/process-receipt-scan";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
-import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import type { ExpenseType, UserProfile } from "@/types";
@@ -24,12 +23,7 @@ export interface TypeStepProps {
   /** Id of the signed-in account; a change invalidates any pending scan attempt. */
   accountId: string | null;
   onTypeSelect: (type: ExpenseType) => void;
-  onScanConfirm: (
-    result: ReceiptOcrResult,
-    receiptAccessKey: string | null,
-    divisions: Record<number, ItemDivisionValue>,
-    occurredOn: string,
-  ) => void;
+  onScanConfirm: (result: ReceiptOcrResult, occurredOn: string) => void;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
   onReviewingChange: (reviewing: boolean) => void;
   onManageParticipants: () => void;
@@ -169,7 +163,7 @@ export function TypeStep({
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     setScanResult(null);
-    onScanConfirm(result, null, {}, occurredOn);
+    onScanConfirm(result, occurredOn);
   }, [onScanConfirm]);
 
   const handleScanCancel = useCallback(() => {
