@@ -194,10 +194,12 @@ CREATE TABLE public.push_subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   channel text NOT NULL CHECK (channel IN ('web', 'fcm')),
-  endpoint_digest bytea NOT NULL,
+  -- One physical endpoint has exactly one owner: a device registered to a
+  -- second account stops delivering to the first.
+  endpoint_digest bytea NOT NULL UNIQUE,
   subscription_encrypted text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, endpoint_digest)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE guest_credentials.claim_tokens (

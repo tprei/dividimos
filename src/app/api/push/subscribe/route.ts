@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  encryptPixKey as encrypt,
-  decryptPixKey as decrypt,
-  hashEndpoint,
-} from "@/lib/crypto";
+import { encryptPixKey as encrypt, hashEndpoint } from "@/lib/crypto";
 import { validateWebSubscription } from "@/lib/push/validate-endpoint";
 
 type SubscribeBody = Record<string, unknown>;
@@ -45,41 +41,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: existing } = await admin
-      .from("push_subscriptions")
-      .select("id, subscription_encrypted")
-      .eq("user_id", userId)
-      .eq("channel", "fcm");
-
-    const duplicateIds: string[] = [];
-    for (const row of existing ?? []) {
-      try {
-        const decrypted = decrypt(row.subscription_encrypted);
-        if (decrypted === body.token) duplicateIds.push(row.id);
-      } catch {
-        // Skip rows that can't be decrypted — stale data.
-      }
-    }
-
-    if (duplicateIds.length > 0) {
-      await admin.from("push_subscriptions").delete().in("id", duplicateIds);
-    }
-
-    const encrypted = encrypt(body.token);
-    const { error } = await admin.from("push_subscriptions").insert({
-      user_id: userId,
-      endpoint_digest: hashEndpoint(body.token),
-      subscription_encrypted: encrypted,
-      channel: "fcm",
+    const { error } = await admin.rpc("claim_push_subscription", {
+      p_user_id: userId,
+      p_channel: "fcm",
+      p_endpoint_digest: hashEndpoint(body.token),
+      p_subscription_encrypted: encrypt(body.token),
     });
 
     if (error) {
-      if (error.code === "PST09") {
-        return NextResponse.json(
-          { error: "Limite de dispositivos atingido" },
-          { status: 409 },
-        );
-      }
+      console.error("[push/subscribe] claim failed:", error);
       return NextResponse.json(
         { error: "Erro ao salvar subscription" },
         { status: 500 },
@@ -103,43 +73,15 @@ export async function POST(request: Request) {
   }
   const subscription = validation.value;
 
-  const { data: existing } = await admin
-    .from("push_subscriptions")
-    .select("id, subscription_encrypted")
-    .eq("user_id", userId)
-    .eq("channel", "web");
-
-  const duplicateIds: string[] = [];
-  for (const row of existing ?? []) {
-    try {
-      const stored = JSON.parse(decrypt(row.subscription_encrypted)) as {
-        endpoint?: unknown;
-      };
-      if (stored.endpoint === subscription.endpoint) duplicateIds.push(row.id);
-    } catch {
-      // Skip rows that can't be decrypted — stale data.
-    }
-  }
-
-  if (duplicateIds.length > 0) {
-    await admin.from("push_subscriptions").delete().in("id", duplicateIds);
-  }
-
-  const encrypted = encrypt(JSON.stringify(subscription));
-  const { error } = await admin.from("push_subscriptions").insert({
-    user_id: userId,
-    endpoint_digest: hashEndpoint(subscription.endpoint),
-    subscription_encrypted: encrypted,
-    channel: "web",
+  const { error } = await admin.rpc("claim_push_subscription", {
+    p_user_id: userId,
+    p_channel: "web",
+    p_endpoint_digest: hashEndpoint(subscription.endpoint),
+    p_subscription_encrypted: encrypt(JSON.stringify(subscription)),
   });
 
   if (error) {
-    if (error.code === "PST09") {
-      return NextResponse.json(
-        { error: "Limite de dispositivos atingido" },
-        { status: 409 },
-      );
-    }
+    console.error("[push/subscribe] claim failed:", error);
     return NextResponse.json(
       { error: "Erro ao salvar subscription" },
       { status: 500 },
