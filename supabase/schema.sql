@@ -325,6 +325,8 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.lock_receipt_key(uuid, text) FROM public, anon, authenticated;
+
 CREATE FUNCTION public.recompute_group_balances(p_group_id uuid) RETURNS bigint
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
