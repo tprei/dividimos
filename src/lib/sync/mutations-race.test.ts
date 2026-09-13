@@ -214,6 +214,7 @@ describe("optimistic mutations under interleaved responses", () => {
           GROUP_ID = `group-race-${runSeq}`;
           EXPENSE_ID = `expense-race-${runSeq}`;
 
+          useAppStore.getState().reset();
           useAppStore.setState({
             me: ME,
             groups: { [GROUP_ID]: snapshotOf(server) },
