@@ -52,7 +52,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 0, cleaned: 0 });
+    expect(result).toEqual({ sent: 0, cleaned: 0, failed: 0 });
   });
 
   it("sends to all valid web subscriptions", async () => {
@@ -70,7 +70,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 2, cleaned: 0 });
+    expect(result).toEqual({ sent: 2, cleaned: 0, failed: 0 });
     expect(sendPushNotification).toHaveBeenCalledTimes(2);
     expect(sendFcmNotification).not.toHaveBeenCalled();
   });
@@ -89,7 +89,7 @@ describe("notifyUser", () => {
     const payload = { title: "Hi", body: "Test" };
     const result = await notifyUser("user-1", payload);
 
-    expect(result).toEqual({ sent: 1, cleaned: 0 });
+    expect(result).toEqual({ sent: 1, cleaned: 0, failed: 0 });
     expect(sendFcmNotification).toHaveBeenCalledWith("device-token-123", payload);
     expect(sendPushNotification).not.toHaveBeenCalled();
   });
@@ -117,12 +117,12 @@ describe("notifyUser", () => {
     const payload = { title: "Hi", body: "Test" };
     const result = await notifyUser("user-1", payload);
 
-    expect(result).toEqual({ sent: 2, cleaned: 0 });
+    expect(result).toEqual({ sent: 2, cleaned: 0, failed: 0 });
     expect(sendPushNotification).toHaveBeenCalledWith(webSubJson, payload);
     expect(sendFcmNotification).toHaveBeenCalledWith("device-token-456", payload);
   });
 
-  it("skips FCM subscriptions when FCM is not configured", async () => {
+  it("reports an unconfigured FCM provider as a failure, not a silent success", async () => {
     vi.mocked(isFcmConfigured).mockReturnValue(false);
 
     mockEq.mockResolvedValue({
@@ -136,7 +136,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 0, cleaned: 0 });
+    expect(result).toEqual({ sent: 0, cleaned: 0, failed: 1 });
     expect(sendFcmNotification).not.toHaveBeenCalled();
   });
 
@@ -157,7 +157,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 1, cleaned: 1 });
+    expect(result).toEqual({ sent: 1, cleaned: 1, failed: 0 });
     expect(mockDelete).toHaveBeenCalled();
     expect(mockIn).toHaveBeenCalledWith("id", ["sub-2"]);
   });
@@ -171,7 +171,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 0, cleaned: 0 });
+    expect(result).toEqual({ sent: 0, cleaned: 0, failed: 1 });
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
@@ -188,7 +188,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 0, cleaned: 1 });
+    expect(result).toEqual({ sent: 0, cleaned: 1, failed: 0 });
     expect(mockIn).toHaveBeenCalledWith("id", ["fcm-1"]);
   });
 
@@ -204,7 +204,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 0, cleaned: 1 });
+    expect(result).toEqual({ sent: 0, cleaned: 1, failed: 0 });
     expect(sendPushNotification).not.toHaveBeenCalled();
   });
 
@@ -213,7 +213,7 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 0, cleaned: 0 });
+    expect(result).toEqual({ sent: 0, cleaned: 0, failed: 1 });
   });
 
   it("defaults to web channel when channel is null", async () => {
@@ -230,8 +230,32 @@ describe("notifyUser", () => {
 
     const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
 
-    expect(result).toEqual({ sent: 1, cleaned: 0 });
+    expect(result).toEqual({ sent: 1, cleaned: 0, failed: 0 });
     expect(sendPushNotification).toHaveBeenCalledWith(subJson, { title: "Hi", body: "Test" });
     expect(sendFcmNotification).not.toHaveBeenCalled();
+  });
+
+  it("settles every device: valid ones send, stale ones are cleaned, failures are reported", async () => {
+    mockEq.mockResolvedValue({
+      data: [
+        { id: "ok", subscription_encrypted: "e1", channel: "web" },
+        { id: "gone", subscription_encrypted: "e2", channel: "web" },
+        { id: "flaky", subscription_encrypted: "e3", channel: "web" },
+      ],
+      error: null,
+    });
+    vi.mocked(decryptPixKey).mockImplementation((v: string) => v);
+    vi.mocked(sendPushNotification).mockImplementation(async (sub: string) => {
+      if (sub === "e1") return { status: "accepted" as const };
+      if (sub === "e2") return { status: "stale" as const };
+      // A provider that throws must not take its siblings down.
+      throw new Error("provider exploded");
+    });
+
+    const result = await notifyUser("user-1", { title: "Hi", body: "Test" });
+
+    expect(result).toEqual({ sent: 1, cleaned: 1, failed: 1 });
+    // Cleanup still runs even though a sibling rejected.
+    expect(mockIn).toHaveBeenCalledWith("id", ["gone"]);
   });
 });

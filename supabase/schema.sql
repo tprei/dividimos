@@ -4289,6 +4289,9 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'no_debt';
   END IF;
 
+  -- A nudge nobody received must not cost the sender a day. Only a delivered
+  -- nudge holds the cooldown; an undelivered one keeps a short grace window so
+  -- a failing provider cannot be turned into a spam channel.
   IF EXISTS (
     SELECT 1 FROM group_events
     WHERE group_id = p_group_id
@@ -4296,6 +4299,7 @@ BEGIN
       AND actor_id = v_actor
       AND subject_user_id = p_user_id
       AND created_at > now() - interval '24 hours'
+      AND (notified_at IS NOT NULL OR created_at > now() - interval '5 minutes')
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'nudge_cooldown';
   END IF;

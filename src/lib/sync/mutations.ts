@@ -1,6 +1,6 @@
 import { applyExpenseDelta, applySettlementDelta, hasUnresolvedParticipants } from "@/lib/ledger/apply";
 import { decodeChatMessage, decodeMutationAck } from "@/lib/ledger/decode";
-import { rpc, rpcVoid } from "@/lib/sync/client";
+import { getAuthGeneration, rpc, rpcVoid } from "@/lib/sync/client";
 import { LedgerError } from "@/lib/sync/errors";
 import { loadConversation, refreshExpense, refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
@@ -118,6 +118,46 @@ function computeMyShareAndPaid(
     if (payer.participantIndex === idx) myPaidCents += payer.amountCents;
   }
   return { myShareCents: payload.shares[idx] ?? 0, myPaidCents };
+}
+
+/** What a dispatch achieved, as reported by /api/notify. */
+export interface NotifyOutcome {
+  sent: number;
+  cleaned: number;
+  failed: number;
+  recipients: number;
+  skipped: number;
+}
+
+/**
+ * Dispatches notifications for an event and reports what happened. `null`
+ * means the request itself never produced an answer, which is not evidence of
+ * delivery either way.
+ */
+export async function dispatchNotification(
+  eventId: number,
+): Promise<NotifyOutcome | null> {
+  try {
+    const response = await fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId }),
+    });
+    if (!response.ok) return null;
+    if (response.status === 204) {
+      return { sent: 0, cleaned: 0, failed: 0, recipients: 0, skipped: 0 };
+    }
+    const body = (await response.json()) as Partial<NotifyOutcome>;
+    return {
+      sent: body.sent ?? 0,
+      cleaned: body.cleaned ?? 0,
+      failed: body.failed ?? 0,
+      recipients: body.recipients ?? 0,
+      skipped: body.skipped ?? 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function notify(eventId: number | null): void {
@@ -498,6 +538,7 @@ function optimisticCreatedAt(): string {
 }
 
 export async function sendMessage(groupId: string, content: string): Promise<ChatMessage> {
+  const generation = getAuthGeneration();
   const store = useAppStore.getState();
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
@@ -526,6 +567,7 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
       { p_client_id: clientId, p_group_id: groupId, p_content: content },
       decodeChatMessage,
     );
+    if (getAuthGeneration() !== generation) throw new LedgerError("unauthenticated");
     // The shared reducer keys by clientId, so this replaces the provisional
     // row rather than adding a duplicate.
     useAppStore
@@ -533,6 +575,7 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
       .applyConversation(groupId, { kind: "broadcast", messages: [ack], events: [] });
     return ack;
   } catch (error) {
+    if (getAuthGeneration() !== generation) throw error;
     rollbackAndReconcile([removeOptimisticMessage(groupId, clientId)], groupId, error, reloadConversation);
   }
 }

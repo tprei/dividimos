@@ -33,6 +33,17 @@ function readPreferences(json: Json | null): NotificationPreferences {
   return prefs;
 }
 
+/** Lets a later attempt re-dispatch an event that never reached anyone. */
+async function releaseClaim(
+  admin: ReturnType<typeof createAdminClient>,
+  eventId: number,
+): Promise<void> {
+  await admin
+    .from("group_events")
+    .update({ notified_at: null })
+    .eq("id", eventId);
+}
+
 export async function POST(request: Request): Promise<Response> {
   const supabase = await createClient();
   const { data: claims, error: claimsError } = await supabase.auth.getClaims();
@@ -144,6 +155,8 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
 
+    const skipped = 0;
+
     const results = await Promise.all(
       targets.map((member) => {
         const payload = eventNotification(event, {
@@ -164,11 +177,33 @@ export async function POST(request: Request): Promise<Response> {
       }),
     );
 
+    const outcome = results.reduce(
+      (total, result) => ({
+        sent: total.sent + result.sent,
+        cleaned: total.cleaned + result.cleaned,
+        failed: total.failed + result.failed,
+      }),
+      { sent: 0, cleaned: 0, failed: 0 },
+    );
+
+    // Hold a claim only when there is a transport failure worth retrying.
+    // Preference suppression, missing devices, and stale-device cleanup are
+    // terminal outcomes for this event.
+    if (outcome.sent === 0 && (outcome.failed > 0 || skipped > 0)) {
+      await releaseClaim(admin, eventId);
+    }
+
     return NextResponse.json({
-      sent: results.reduce((sent, result) => sent + result.sent, 0),
+      ...outcome,
+      recipients: targets.length,
+      skipped,
     });
   } catch (error) {
     console.error("notify route failed", error);
-    return NextResponse.json({ sent: 0 });
+    await releaseClaim(admin, eventId);
+    return NextResponse.json(
+      { sent: 0, cleaned: 0, failed: 1, recipients: 0, skipped: 0 },
+      { status: 500 },
+    );
   }
 }
