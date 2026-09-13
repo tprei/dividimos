@@ -12,6 +12,7 @@ import {
   Settings,
   User,
   Users,
+  WifiOff,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -21,6 +22,7 @@ import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
 import { Logo } from "@/components/shared/logo";
 import { DashboardSkeleton } from "@/components/shared/skeleton";
+import { Button } from "@/components/ui/button";
 import { UnreadBadge } from "@/components/shared/unread-badge";
 import { haptics } from "@/hooks/use-haptics";
 import { useKeyboardVisible } from "@/hooks/use-keyboard-visible";
@@ -173,6 +175,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const hydrated = useAppStore((s) => s.hydrated);
   const me = useAppStore((s) => s.me);
+  const bootstrapStatus = useAppStore((s) => s.bootstrapStatus);
+  const bootstrapErrorCode = useAppStore((s) => s.bootstrapErrorCode);
+  const lastBootstrappedAccountId = useAppStore((s) => s.lastBootstrappedAccountId);
+
+  // Known-good means this account's own bootstrap committed. A persisted `me`
+  // alone proves nothing: it may belong to a previous account or a read that
+  // never succeeded.
+  const knownGood = me !== null && lastBootstrappedAccountId === me.id;
+
+  const [retrying, setRetrying] = useState(false);
+  const retryBootstrap = useCallback(() => {
+    setRetrying(true);
+    runBootstrap()
+      .catch((err) => {
+        if (err instanceof LedgerError && err.code === "unauthenticated") {
+          router.replace("/auth");
+          return;
+        }
+        toast.error(ledgerErrorMessage(err));
+      })
+      .finally(() => setRetrying(false));
+  }, [router]);
 
   useEffect(() => {
     const reportBootstrapError = (err: unknown) => {
@@ -200,10 +224,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   useEffect(() => {
-    if (hydrated && me && !me.onboarded) {
+    // Only an explicitly decoded, committed profile may route to onboarding: a
+    // failed profile read must never look like "not onboarded".
+    if (hydrated && knownGood && bootstrapStatus === "ready" && me && !me.onboarded) {
       router.replace("/auth/onboard");
     }
-  }, [hydrated, me, router]);
+  }, [hydrated, knownGood, bootstrapStatus, me, router]);
 
   useEffect(() => {
     if (pathname === "/app/activity") {
@@ -274,12 +300,50 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {!hydrated ? (
+      {!hydrated || (!knownGood && bootstrapStatus !== "error") ? (
         <div className="px-4 py-6">
           <DashboardSkeleton />
         </div>
+      ) : !knownGood ? (
+        <div className="flex h-dvh flex-col items-center justify-center gap-4 px-8 text-center">
+          <WifiOff className="h-8 w-8 text-muted-foreground opacity-50" strokeWidth={1.5} />
+          <div className="space-y-1">
+            <p className="font-medium">Não conseguimos carregar sua conta</p>
+            <p role="alert" className="text-sm text-muted-foreground">
+              {bootstrapErrorCode === null
+                ? "Verifique sua conexão e tente novamente."
+                : ledgerErrorMessage(new LedgerError(bootstrapErrorCode))}
+            </p>
+          </div>
+          <Button
+            onClick={retryBootstrap}
+            disabled={retrying}
+            className="mt-2 w-full max-w-xs gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${retrying ? "animate-spin" : ""}`} />
+            {retrying ? "Tentando..." : "Tentar novamente"}
+          </Button>
+        </div>
       ) : (
         <div className="flex h-dvh flex-col overflow-hidden bg-background">
+          {bootstrapStatus === "error" && (
+            <div
+              role="alert"
+              className="flex items-center justify-center gap-2 border-b border-border/50 bg-muted/30 px-4 py-1.5 text-center"
+            >
+              <span className="text-xs text-muted-foreground">
+                Mostrando dados salvos.
+              </span>
+              <button
+                type="button"
+                onClick={retryBootstrap}
+                disabled={retrying}
+                className="text-xs font-medium text-primary transition-colors hover:text-primary/80 disabled:opacity-50"
+              >
+                {retrying ? "Atualizando..." : "Atualizar"}
+              </button>
+            </div>
+          )}
           {!usesScreenHeader(pathname) && (
           <header className="sticky top-0 z-40 glass border-b border-border/50">
             <div className="flex h-14 items-center justify-between px-4">
