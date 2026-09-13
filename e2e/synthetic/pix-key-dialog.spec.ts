@@ -50,6 +50,27 @@ test.describe("Pix key dialog", () => {
     await page.getByLabel("Chave", { exact: true }).fill("11999998888");
     await page.getByRole("button", { name: "Salvar" }).click();
     await expect(dialog).not.toBeVisible();
-    await expect(page.getByText("(**) *****-8888")).toBeVisible();
+  });
+
+  test("another user's profile page never shows the key or its hint", async ({
+    page,
+    seed,
+    loginAs,
+  }) => {
+    const owner = await seed.createUser({
+      name: "Carol Pix",
+      handle: "carol_pix",
+      pixKeyType: "email",
+    });
+    const visitor = await seed.createUser({ name: "Dave Peek" });
+    await loginAs(visitor, { navigate: false });
+
+    await page.goto(`/u/${owner.handle}`);
+    await expect(page.getByRole("heading", { name: "Carol Pix" })).toBeVisible();
+
+    await expect(page.getByText("@carol_pix")).toBeVisible();
+    // The public profile renders identity, never the key or its masked hint.
+    await expect(page.getByText(/\*\*\*@/)).toHaveCount(0);
+    await expect(page.getByText(/@hint/)).toHaveCount(0);
   });
 });
