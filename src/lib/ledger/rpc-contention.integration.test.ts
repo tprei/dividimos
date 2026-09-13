@@ -18,6 +18,13 @@ import type { ExpenseDetail } from "@/types/ledger";
 assertLedgerInvariantsAfterEach();
 
 const LOCK_GROUP_SQL = "select id from public.groups where id = $1 for update";
+/**
+ * The exact advisory key `lock_receipt_key(creator, chave_acesso)` takes:
+ * pg_advisory_xact_lock(hashtextextended('<creator-id>:<chave>', 0)), held
+ * inside the barrier's transaction so both racing RPC bodies queue on it.
+ */
+const LOCK_RECEIPT_KEY_SQL =
+  "select pg_advisory_xact_lock(hashtextextended($1::text || ':' || $2, 0))";
 
 /** A Postgres-level failure reaching the client is a bug, never an outcome. */
 const LEAKED_INTERNALS = /40001|40P01|deadlock|could not serialize|current transaction is aborted/i;
@@ -93,6 +100,12 @@ describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contenti
       p_fixed_fee_cents: 0,
       p_payload: payload,
     };
+  }
+
+  /** A valid NFe-style access key: 44 digits, unique per active receipt. */
+  function receiptKey(): string {
+    const digits = crypto.randomUUID().replace(/[^0-9]/g, "");
+    return (digits + "0123456789".repeat(5)).slice(0, 44);
   }
 
   it("lets exactly one of two same-version edits win", async () => {
@@ -519,5 +532,233 @@ describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contenti
       expect(state.claimedBy).toBeNull();
       expect(state.membership).toBeNull();
     }
+  });
+
+  it("keeps one active receipt when a restore races a create with the same chave", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const chave = receiptKey();
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 4000,
+      payload: equalSplitPayload([alice.id, bruno.id], 4000),
+      receiptAccessKey: chave,
+    });
+    await rpcOk<unknown>(aliceClient, "delete_expense", { p_expense_id: created.expenseId });
+
+    // Both RPC bodies open with lock_receipt_key(creator, chave) — the
+    // advisory xact lock on "creator:chave" — so holding exactly that key
+    // forces the restore and the create to contend deterministically.
+    const { result, contention } = await forceLockContentionRace(
+      databaseUrl,
+      {
+        lockSql: LOCK_RECEIPT_KEY_SQL,
+        lockParams: [alice.id, chave],
+        queryContains: ["restore_expense", "create_expense"],
+        expectedRacers: 2,
+      },
+      () =>
+        Promise.allSettled([
+          aliceClient.rpc("restore_expense", { p_expense_id: created.expenseId }),
+          aliceClient.rpc("create_expense", {
+            p_client_id: crypto.randomUUID(),
+            p_group_id: groupId,
+            p_occurred_on: "2026-02-01",
+            p_title: "Restauração",
+            p_merchant_name: null,
+            p_expense_type: "single_amount",
+            p_total_cents: 4000,
+            p_service_fee_bps: 0,
+            p_fixed_fee_cents: 0,
+            p_chave_acesso: chave,
+            p_payload: equalSplitPayload([alice.id, bruno.id], 4000),
+          }),
+        ]),
+    );
+
+    expect(contention.observed).toBe(true);
+    const outcomes = summarize(result);
+    expectNoLeakedInternals(outcomes);
+    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
+    expect(outcomes.find((outcome) => !outcome.ok)?.message).toBe("duplicate_receipt");
+
+    const state = await withPg(async (client) => {
+      const receipts = await client.query<{ id: string; status: string }>(
+        "select id, status from public.expenses where creator_id = $1 and chave_acesso = $2",
+        [alice.id, chave],
+      );
+      const balances = await client.query<{ participant_id: string; net_cents: string }>(
+        "select participant_id, net_cents from public.group_balances where group_id = $1",
+        [groupId],
+      );
+      return {
+        receipts: receipts.rows,
+        balances: balances.rows.map((row) => ({
+          participantId: row.participant_id,
+          netCents: Number(row.net_cents),
+        })),
+      };
+    });
+
+    const active = state.receipts.filter((row) => row.status === "active");
+    expect(active).toHaveLength(1);
+    const acks = outcomes
+      .filter((outcome) => outcome.ok)
+      .map((outcome) => {
+        const ack = outcome.value;
+        if (typeof ack !== "object" || ack === null || !("expenseId" in ack)) {
+          throw new Error(`expected an expense ack, got ${JSON.stringify(ack)}`);
+        }
+        return ack as { expenseId: string };
+      });
+    expect(acks).toHaveLength(1);
+    expect(acks[0].expenseId).toBe(active[0].id);
+    expect(state.balances).toHaveLength(2);
+    expect(state.balances.find((row) => row.participantId === alice.id)?.netCents).toBe(2000);
+    expect(state.balances.find((row) => row.participantId === bruno.id)?.netCents).toBe(-2000);
+  });
+
+  it("replays the same group and expense when create_expense_with_group races itself", async () => {
+    const clientId = crypto.randomUUID();
+    const chave = receiptKey();
+    const groupName = `Grupo corrida ${crypto.randomUUID()}`;
+    const args = {
+      p_client_id: clientId,
+      p_group_name: groupName,
+      p_member_ids: [bruno.id],
+      p_occurred_on: "2026-02-01",
+      p_title: "Compartilhado",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 5000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_chave_acesso: chave,
+      p_payload: equalSplitPayload([alice.id, bruno.id], 5000),
+    };
+
+    // Both retries share the client-supplied replay identity (client_id +
+    // chave_acesso). The advisory xact lock inside create_expense is the
+    // contention point: whoever loses must observe the winner's committed
+    // client_id row and replay instead of writing a second group.
+    const { result, contention } = await forceLockContentionRace(
+      databaseUrl,
+      {
+        lockSql: LOCK_RECEIPT_KEY_SQL,
+        lockParams: [alice.id, chave],
+        queryContains: ["create_expense_with_group"],
+        expectedRacers: 2,
+      },
+      () =>
+        Promise.allSettled([
+          aliceClient.rpc("create_expense_with_group", args),
+          aliceClient.rpc("create_expense_with_group", args),
+        ]),
+    );
+
+    expect(contention.observed).toBe(true);
+    const outcomes = summarize(result);
+    expectNoLeakedInternals(outcomes);
+    expect(outcomes.filter((outcome) => !outcome.ok).map((outcome) => outcome.message)).toEqual([]);
+    const acks = outcomes.map((outcome) => {
+      const ack = outcome.value;
+      if (typeof ack !== "object" || ack === null || !("expenseId" in ack) || !("groupId" in ack)) {
+        throw new Error(`expected an expense ack, got ${JSON.stringify(ack)}`);
+      }
+      return ack as { expenseId: string; groupId: string; eventId: number | null };
+    });
+    expect(new Set(acks.map((ack) => ack.expenseId)).size).toBe(1);
+    expect(new Set(acks.map((ack) => ack.groupId)).size).toBe(1);
+    // Only the call that actually wrote carries an event id; the replay
+    // returns eventId NULL.
+    expect(acks.filter((ack) => ack.eventId !== null)).toHaveLength(1);
+
+    const groupId = acks[0].groupId;
+    const state = await withPg(async (client) => {
+      const expenses = await client.query<{ id: string; group_id: string }>(
+        "select id, group_id from public.expenses where client_id = $1",
+        [clientId],
+      );
+      const groups = await client.query<{ id: string }>(
+        "select id from public.groups where creator_id = $1 and name = $2",
+        [alice.id, groupName],
+      );
+      const members = await client.query<{ user_id: string; status: string }>(
+        "select user_id, status from public.group_members where group_id = $1",
+        [groupId],
+      );
+      return {
+        expenses: expenses.rows,
+        groups: groups.rows,
+        members: members.rows,
+      };
+    });
+
+    expect(state.expenses).toHaveLength(1);
+    expect(state.expenses[0].group_id).toBe(groupId);
+    expect(state.groups).toHaveLength(1);
+    expect(state.groups[0].id).toBe(groupId);
+    expect(state.members).toHaveLength(2);
+    expect(state.members.find((row) => row.user_id === alice.id)?.status).toBe("accepted");
+    expect(state.members.find((row) => row.user_id === bruno.id)?.status).toBe("invited");
+  });
+
+  it("opens one dm when both sides call get_or_create_dm at the same time", async () => {
+    // get_or_create_dm locks no pre-existing row: its atomicity comes from
+    // the UNIQUE (dm_user_a, dm_user_b) constraint via ON CONFLICT DO
+    // NOTHING, so plain concurrent execution of both pair orders plus the
+    // deterministic uniqueness outcome is the proof here.
+    const settled = await Promise.allSettled([
+      aliceClient.rpc("get_or_create_dm", { p_user_id: bruno.id }),
+      brunoClient.rpc("get_or_create_dm", { p_user_id: alice.id }),
+    ]);
+
+    const outcomes = summarize(settled);
+    expectNoLeakedInternals(outcomes);
+    expect(outcomes.every((outcome) => outcome.ok)).toBe(true);
+    const acks = outcomes.map((outcome) => {
+      const ack = outcome.value;
+      if (typeof ack !== "object" || ack === null || !("groupId" in ack) || !("created" in ack)) {
+        throw new Error(`expected a dm ack, got ${JSON.stringify(ack)}`);
+      }
+      return ack as { groupId: string; created: boolean };
+    });
+    expect(new Set(acks.map((ack) => ack.groupId)).size).toBe(1);
+    expect(acks.filter((ack) => ack.created)).toHaveLength(1);
+
+    const groupId = acks[0].groupId;
+    const state = await withPg(async (client) => {
+      const groups = await client.query<{ id: string; dm_user_a: string; dm_user_b: string }>(
+        "select id, dm_user_a, dm_user_b from public.groups " +
+          "where kind = 'dm' " +
+          "and (dm_user_a = $1 or dm_user_b = $1) " +
+          "and (dm_user_a = $2 or dm_user_b = $2)",
+        [alice.id, bruno.id],
+      );
+      const members = await client.query<{ user_id: string; status: string }>(
+        "select user_id, status from public.group_members where group_id = $1",
+        [groupId],
+      );
+      return {
+        groups: groups.rows,
+        members: members.rows,
+      };
+    });
+
+    expect(state.groups).toHaveLength(1);
+    expect(state.groups[0].id).toBe(groupId);
+    expect([state.groups[0].dm_user_a, state.groups[0].dm_user_b].sort()).toEqual(
+      [alice.id, bruno.id].sort(),
+    );
+    expect(state.members).toHaveLength(2);
+    const accepted = state.members.filter((row) => row.status === "accepted");
+    const invited = state.members.filter((row) => row.status === "invited");
+    expect(accepted).toHaveLength(1);
+    expect(invited).toHaveLength(1);
+    // The RPC inserts its caller accepted and its target invited, so the
+    // winner's caller joins immediately and the other side still has to
+    // accept explicitly.
+    const winnerActor = acks[0].created ? alice.id : bruno.id;
+    expect(accepted[0].user_id).toBe(winnerActor);
+    expect(invited[0].user_id).toBe(winnerActor === alice.id ? bruno.id : alice.id);
   });
 });

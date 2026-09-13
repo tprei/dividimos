@@ -798,6 +798,172 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     // 55 rows at 10 per page: completion flips only on the final page.
     expect(pages).toBe(6);
   });
+
+  it("walks every event exactly once when several share a created_at", async () => {
+    // A dedicated group keeps the shared-timestamp events away from the
+    // other tests' fixtures.
+    const eventGroup = await createGroupWithMembers(userA, [userB], "Eventos");
+    await createExpense(userA, {
+      groupId: eventGroup,
+      title: "Evento 1",
+      totalCents: 2000,
+      payload: equalSplitPayload([userA.id, userB.id], 2000),
+    });
+    await createExpense(userA, {
+      groupId: eventGroup,
+      title: "Evento 2",
+      totalCents: 1000,
+      payload: equalSplitPayload([userA.id, userB.id], 1000),
+    });
+    // B owes A for the first expense, so B can settle part of the debt.
+    const settlement = await rpcOk<{ settlementId: string }>(
+      authenticateAs(userB),
+      "record_settlement",
+      {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: eventGroup,
+        p_from_user_id: userB.id,
+        p_to_user_id: userA.id,
+        p_amount_cents: 800,
+      },
+    );
+    expect(settlement.settlementId).toBeTruthy();
+    const third = await createExpense(userA, {
+      groupId: eventGroup,
+      title: "Evento 3",
+      totalCents: 4000,
+      payload: equalSplitPayload([userA.id, userB.id], 4000),
+    });
+    const edited = await rpcOk<{ eventId: number }>(authenticateAs(userA), "edit_expense", {
+      p_expense_id: third.expenseId,
+      p_expected_version_no: third.versionNo,
+      p_occurred_on: "2026-02-01",
+      p_title: "Evento 3 editado",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 5000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: equalSplitPayload([userA.id, userB.id], 5000),
+    });
+    expect(edited.eventId).toBeGreaterThan(0);
+
+    // Messages ride along in the same walk: their cursor pairing must stay
+    // intact while the event cursor advances through its own ties.
+    for (let i = 0; i < 5; i++) {
+      await rpcOk<ChatMessage>(authenticateAs(userB), "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: eventGroup,
+        p_content: `evento mensagem ${i}`,
+      });
+    }
+
+    // Collapse every event except the newest onto one instant so the
+    // (created_at, id) tiebreak decides the page boundaries.
+    await withPg((pg) =>
+      pg.query(
+        "update group_events set created_at = (select min(created_at) from group_events where group_id = $1) where group_id = $1 and id <> (select max(id) from group_events where group_id = $1)",
+        [eventGroup],
+      ),
+    );
+
+    const expectedEvents = await withPg(async (pg) => {
+      const result = await pg.query<{ id: string }>(
+        "select id::text from group_events where group_id = $1 order by created_at desc, id desc",
+        [eventGroup],
+      );
+      return result.rows.map((row) => row.id);
+    });
+    const expectedMessages = await withPg(async (pg) => {
+      const result = await pg.query<{ id: string }>(
+        "select id::text from chat_messages where group_id = $1 order by created_at desc, id desc",
+        [eventGroup],
+      );
+      return result.rows.map((row) => row.id);
+    });
+
+    const seenEvents: string[] = [];
+    const seenMessages: string[] = [];
+    let eventCursor: PageCursorWire | null = null;
+    let messageCursor: PageCursorWire | null = null;
+    let eventsComplete = false;
+    let messagesComplete = false;
+    let pages = 0;
+
+    while (!eventsComplete || !messagesComplete) {
+      const args: Record<string, unknown> = { p_group_id: eventGroup, p_limit: 2 };
+      if (!messagesComplete && messageCursor !== null) {
+        args.p_message_before_created_at = messageCursor.createdAt;
+        args.p_message_before_id = messageCursor.id;
+      }
+      if (!eventsComplete && eventCursor !== null) {
+        args.p_event_before_created_at = eventCursor.createdAt;
+        args.p_event_before_id = eventCursor.id;
+      }
+      const conv = await rpcOk<Conversation>(authenticateAs(userA), "get_conversation", args);
+      // A completed stream answers with its first page again (its cursor is
+      // null), so its rows are frozen once its complete flag flips.
+      if (!messagesComplete) {
+        seenMessages.push(...conv.messages.map((message) => message.id));
+        messageCursor = conv.messageCursor;
+        messagesComplete = conv.messagesComplete;
+      }
+      if (!eventsComplete) {
+        seenEvents.push(...conv.events.map((event) => String(event.id)));
+        eventCursor = conv.eventCursor;
+        eventsComplete = conv.eventsComplete;
+      }
+      pages += 1;
+      if (pages > 20) throw new Error("cursor walk failed to terminate");
+    }
+
+    expect(eventsComplete).toBe(true);
+    expect(messagesComplete).toBe(true);
+    expect(eventCursor).toBeNull();
+    expect(messageCursor).toBeNull();
+    expect(seenEvents).toEqual(expectedEvents);
+    expect(new Set(seenEvents).size).toBe(expectedEvents.length);
+    expect(seenMessages).toEqual(expectedMessages);
+    expect(new Set(seenMessages).size).toBe(expectedMessages.length);
+    // Seven events at two per page: four pages; the five messages finish in
+    // three and the walk keeps going for the events alone.
+    expect(pages).toBe(4);
+
+    // get_activity pages by event id alone: its typed arg set is only
+    // { p_before_id, p_limit } — a timestamp cursor cannot even compile —
+    // so exercising the walk through the typed client proves the shape.
+    // p_before_id is a required argument, so the first page starts above the
+    // newest known id instead of relying on an absent cursor.
+    const expectedActivity = await withPg(async (pg) => {
+      const result = await pg.query<{ id: string }>(
+        "select ev.id::text from group_events ev " +
+          "where ev.group_id in " +
+          "(select gm.group_id from group_members gm where gm.user_id = $1 and gm.status = 'accepted') " +
+          "order by ev.id desc",
+        [userA.id],
+      );
+      return result.rows.map((row) => row.id);
+    });
+    const seenActivity: string[] = [];
+    if (expectedActivity.length > 0) {
+      let beforeId = Number(expectedActivity[0]) + 1;
+      for (;;) {
+        const page = await rpcOk<GroupEvent[]>(
+          authenticateAs(userA),
+          "get_activity",
+          { p_before_id: beforeId, p_limit: 2 },
+        );
+        if (page.length === 0) break;
+        for (const event of page) {
+          expect(seenActivity).not.toContain(String(event.id));
+          seenActivity.push(String(event.id));
+        }
+        if (page.length < 2) break;
+        beforeId = page[page.length - 1]!.id;
+      }
+    }
+    expect(seenActivity).toEqual(expectedActivity);
+  });
   it("validates incoming read watermarks and preserves tuple order", async () => {
     expect(
       await expectRpcError(

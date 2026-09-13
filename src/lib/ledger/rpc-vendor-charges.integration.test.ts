@@ -8,6 +8,7 @@ interface ChargePageWire {
   receivedCount: number;
   receivedTodayCents: number;
 }
+import { forceLockContentionRace } from "@/test/db-race-barrier";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import {
@@ -134,6 +135,73 @@ describe.skipIf(!isIntegrationTestReady)("vendor charge cancellation RPCs", () =
     const visible = finalHistory.charges.find((row) => row.id === charge.id);
     if (visible) {
       expect(visible.status).toBe("received");
+    }
+  });
+
+  it("forces confirm and cancel to contend on the charge row so one terminal state survives", async () => {
+    const databaseUrl = process.env.SUPABASE_DB_URL ?? "";
+    if (!databaseUrl) throw new Error("SUPABASE_DB_URL is required for contention tests");
+
+    const charge = await rpcOk<VendorCharge>(ownerClient, "record_vendor_charge", {
+      p_amount_cents: 1600,
+      p_description: "disputa terminal",
+    });
+
+    // Both RPC bodies take `select ... for update` on the vendor_charges row,
+    // so holding that exact lock forces the two calls to queue inside
+    // PostgreSQL instead of relying on network timing.
+    const { result, contention } = await forceLockContentionRace(
+      databaseUrl,
+      {
+        lockSql: "select id from public.vendor_charges where id = $1 for update",
+        lockParams: [charge.id],
+        queryContains: ["confirm_vendor_charge", "cancel_vendor_charge"],
+        expectedRacers: 2,
+      },
+      () =>
+        Promise.allSettled([
+          ownerClient.rpc("confirm_vendor_charge", { p_charge_id: charge.id }),
+          ownerClient.rpc("cancel_vendor_charge", { p_charge_id: charge.id }),
+        ]),
+    );
+
+    expect(contention.observed).toBe(true);
+
+    const settled = result.map((outcome) => {
+      if (outcome.status === "rejected") {
+        return { ok: false, message: String(outcome.reason) };
+      }
+      return { ok: outcome.value.error === null, message: outcome.value.error?.message ?? "" };
+    });
+    // Exactly one side wins; the loser gets the SQL's terminal-state error.
+    expect(settled.filter((outcome) => outcome.ok)).toHaveLength(1);
+
+    const [confirm, cancel] = settled;
+    if (confirm.ok) {
+      expect(cancel.message).toBe("charge_already_received");
+    } else {
+      expect(confirm.message).toBe("charge_cancelled");
+    }
+
+    const stored = await withPg(async (pg) => {
+      const rows = await pg.query<{ status: string; confirmed_at: string | null }>(
+        "select status, confirmed_at::text from vendor_charges where id = $1",
+        [charge.id],
+      );
+      return rows.rows[0]!;
+    });
+    const history = await rpcOk<ChargePageWire>(ownerClient, "get_vendor_charges", {
+      p_limit: 50,
+    });
+
+    if (confirm.ok) {
+      expect(stored.status).toBe("received");
+      expect(stored.confirmed_at).not.toBeNull();
+      expect(history.charges.find((row) => row.id === charge.id)?.status).toBe("received");
+    } else {
+      expect(stored.status).toBe("cancelled");
+      expect(stored.confirmed_at).toBeNull();
+      expect(history.charges.some((row) => row.id === charge.id)).toBe(false);
     }
   });
 
