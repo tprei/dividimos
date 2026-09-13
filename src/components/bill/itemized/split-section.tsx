@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { ChevronDown, Equal } from "lucide-react";
 import { AvatarStack, type AvatarStackPerson } from "@/components/shared/avatar-stack";
 import { Money } from "@/components/shared/money";
@@ -24,6 +24,7 @@ export interface SplitSectionProps {
   onToggleItem: (itemId: string) => void;
   onSaveDivision: (itemId: string, value: ItemDivisionValue) => void;
   onCloseDivision: () => void;
+  onAssignSelected: (itemIds: string[], personIds: string[]) => void;
 }
 
 function participantEntries(participants: User[], guests: Guest[]): ItemDivisionParticipant[] {
@@ -69,20 +70,44 @@ export function SplitSection({
   onToggleItem,
   onSaveDivision,
   onCloseDivision,
+  onAssignSelected,
 }: SplitSectionProps) {
   const people = participantEntries(participants, guests);
   const peopleIds = new Set(people.map((person) => person.id));
   const unassignedCount = items.filter((item) => !isItemAssigned(item, splits, peopleIds)).length;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchPeopleIds, setBatchPeopleIds] = useState<string[]>([]);
 
-  function divideAllEqually() {
+  const selected = new Set(selectedIds);
+  const batchPeople = new Set(batchPeopleIds);
+  const allSelected = items.length > 0 && selectedIds.length === items.length;
+
+  function divideAllEqually(): void {
     for (const item of items) {
       const division = equalDivision(people.map((person) => person.id), item.totalPriceCents);
       if (division) onSaveDivision(item.id, division);
     }
   }
 
+  function toggleSelected(itemId: string): void {
+    setSelectedIds((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+    );
+  }
+
+  function togglePerson(personId: string): void {
+    setBatchPeopleIds((prev) =>
+      prev.includes(personId) ? prev.filter((id) => id !== personId) : [...prev, personId],
+    );
+  }
+
+  function applyBatch(): void {
+    onAssignSelected(selectedIds, batchPeopleIds);
+    setSelectedIds([]);
+  }
+
   return (
-    <div className="px-4 py-3">
+    <div className="space-y-3 px-4 py-3">
       <h2 className="text-sm leading-5 font-semibold">Quem consumiu</h2>
       <Button
         type="button"
@@ -99,42 +124,113 @@ export function SplitSection({
           {unassignedCount === 1 ? "1 item sem divisão" : `${unassignedCount} de ${items.length} itens sem divisão`}
         </p>
       )}
-      <div className="mt-4 divide-y divide-border rounded-2xl border bg-card">
+      <div className="rounded-2xl border bg-card p-3">
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex min-h-11 items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}
+              className="size-4 accent-primary"
+            />
+            Selecionar todos
+          </label>
+          <span className="text-xs text-muted-foreground" aria-live="polite">
+            {selectedIds.length} de {items.length} selecionados
+          </span>
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div className="mt-3 space-y-3 border-t pt-3">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Dividir itens selecionados entre">
+              {people.map((person) => {
+                const active = batchPeople.has(person.id);
+                return (
+                  <button
+                    key={person.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => togglePerson(person.id)}
+                    className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input bg-transparent text-foreground"
+                    }`}
+                  >
+                    {person.name}
+                    {person.isGuest ? " (convidado)" : ""}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={applyBatch}
+                disabled={batchPeopleIds.length === 0}
+              >
+                Dividir {selectedIds.length} {selectedIds.length === 1 ? "item" : "itens"} igualmente
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setSelectedIds([])}>
+                Limpar seleção
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="divide-y divide-border rounded-2xl border bg-card">
         {items.map((item) => {
           const expanded = expandedId === item.id;
           const division = divisionForItem(item, splits);
           const assignees = assigneePeople(item, splits, people);
+          const name = item.description || "Item sem nome";
           return (
             <Fragment key={item.id}>
-              <button
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => onToggleItem(item.id)}
-                className="flex min-h-14 w-full min-w-0 items-center gap-3 px-4 py-2 text-left"
-              >
-                <span className="min-w-0 flex-1 text-[15px] font-semibold">
-                  {item.description || "Item sem nome"}
-                </span>
-                <Money cents={item.totalPriceCents} className="shrink-0 text-sm" />
-                {isItemAssigned(item, splits, peopleIds) ? (
-                  <AvatarStack people={assignees} />
-                ) : (
-                  <Badge variant="secondary" className="shrink-0">
-                    Pendente
-                  </Badge>
-                )}
-                <ChevronDown
-                  aria-hidden="true"
-                  className={cn(
-                    "size-4 shrink-0 text-muted-foreground transition-transform",
-                    expanded && "rotate-180",
-                  )}
+              <div className="flex min-h-14 w-full min-w-0 items-center gap-2 px-4 py-2">
+                <input
+                  type="checkbox"
+                  checked={selected.has(item.id)}
+                  onChange={() => toggleSelected(item.id)}
+                  aria-label={`Selecionar ${name}`}
+                  className="size-4 shrink-0 accent-primary"
                 />
-              </button>
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => onToggleItem(item.id)}
+                  className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">
+                    {name}
+                  </span>
+                  <Money cents={item.totalPriceCents} className="shrink-0 text-sm" />
+                  {isItemAssigned(item, splits, peopleIds) ? (
+                    <>
+                      <AvatarStack people={assignees} />
+                      <span className="sr-only">
+                        Dividido entre {assignees.map((person) => person.name).join(", ")}
+                      </span>
+                    </>
+                  ) : (
+                    <Badge variant="secondary" className="shrink-0">
+                      Pendente
+                    </Badge>
+                  )}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={cn(
+                      "size-4 shrink-0 text-muted-foreground transition-transform",
+                      expanded && "rotate-180",
+                    )}
+                  />
+                </button>
+              </div>
               {expanded && (
                 <ItemDivisionEditor
                   itemId={item.id}
-                  itemName={item.description || "Item sem nome"}
+                  itemName={name}
                   itemCents={item.totalPriceCents}
                   participants={people}
                   value={division}
