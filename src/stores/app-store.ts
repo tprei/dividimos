@@ -6,7 +6,8 @@ import { createIdbStorage } from "@/lib/idb-storage";
 import type { LedgerErrorCode } from "@/lib/sync/errors";
 import type {
   Bootstrap,
-  ChatCursor,
+  ExpensePage,
+  PageCursor,
   ChatMessage,
   ConversationReadWatermark,
   ExpenseDetail,
@@ -33,8 +34,11 @@ import {
 
 export interface ExpenseListState {
   ids: string[];
-  oldestCursor: string | null;
+  /** Strict boundary for the next older page; null when there is none. */
+  cursor: PageCursor | null;
   complete: boolean;
+  /** Server count over the whole scope; null until a page reported it. */
+  total: number | null;
 }
 
 export interface ConversationReconcileState {
@@ -49,9 +53,9 @@ export interface ConversationReconcileState {
 export interface ConversationState {
   messages: ChatMessage[];
   events: GroupEvent[];
-  messageCursor: ChatCursor | null;
+  messageCursor: PageCursor | null;
   messagesComplete: boolean;
-  eventCursor: ChatCursor | null;
+  eventCursor: PageCursor | null;
   eventsComplete: boolean;
   readWatermark: ConversationReadWatermark | null;
   reconcile: ConversationReconcileState;
@@ -76,6 +80,7 @@ export const expenseReadKey = (expenseId: string) => `expense:${expenseId}`;
 export const conversationReadKey = (groupId: string) => `conversation:${groupId}`;
 export const expensePageReadKey = (groupId: string) => `expensePage:${groupId}`;
 export const CHARGES_READ_KEY = "charges";
+export const MY_EXPENSES_READ_KEY = "myExpenses";
 
 /** Nothing has been attempted for this resource yet. */
 export const IDLE_READ: ResourceReadState = { status: "idle" };
@@ -86,6 +91,8 @@ interface AppStateData {
   groups: Record<string, GroupSnapshot>;
   groupOrder: string[];
   expenseLists: Record<string, ExpenseListState>;
+  /** Cross-group history for the bills screen, ordered by the server. */
+  myExpenses: ExpenseListState;
   expenses: Record<string, ExpenseSummary>;
   expenseDetails: Record<string, ExpenseDetail>;
   activity: {
@@ -123,7 +130,8 @@ export interface AppState extends AppStateData {
   applyGroup(s: GroupSnapshot): void;
   removeGroup(groupId: string): void;
   applyExpenseDetail(d: ExpenseDetail): void;
-  applyExpensePage(groupId: string, page: ExpenseSummary[], complete: boolean): void;
+  applyExpensePage(groupId: string, page: ExpensePage): void;
+  applyMyExpensePage(page: ExpensePage, reset: boolean): void;
   applyActivity(items: GroupEvent[], complete: boolean): void;
   setActivityRead(read: ResourceReadState): void;
   setResourceRead(key: string, read: ResourceReadState): void;
@@ -144,6 +152,7 @@ const initialData: AppStateData = {
   groups: {},
   groupOrder: [],
   expenseLists: {},
+  myExpenses: { ids: [], cursor: null, complete: false, total: null },
   expenses: {},
   expenseDetails: {},
   activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
@@ -240,7 +249,7 @@ export const useAppStore = create<AppState>()(
 
             expenses = upsertSummaries(expenses, snapshot.recentExpenses);
             groups[id] = snapshot;
-            expenseLists[id] = listFromSeed(state.expenseLists[id], snapshot.recentExpenses, expenses);
+            expenseLists[id] = listFromSeed(state.expenseLists[id], snapshot.recentExpenses);
             conversations[id] = state.conversations[id] ?? conversationState();
           }
 
@@ -295,7 +304,7 @@ export const useAppStore = create<AppState>()(
             expenses,
             expenseLists: {
               ...state.expenseLists,
-              [id]: listFromSeed(state.expenseLists[id], s.recentExpenses, expenses),
+              [id]: listFromSeed(state.expenseLists[id], s.recentExpenses),
             },
           };
         }),
@@ -333,13 +342,20 @@ export const useAppStore = create<AppState>()(
           expenses: upsertSummaries(state.expenses, [summaryFromDetail(d, state.me?.id ?? null)]),
         })),
 
-      applyExpensePage: (groupId, page, complete) =>
+      applyExpensePage: (groupId, page) =>
         set((state) => ({
-          expenses: upsertSummaries(state.expenses, page),
+          expenses: upsertSummaries(state.expenses, page.expenses),
           expenseLists: {
             ...state.expenseLists,
-            [groupId]: appendPage(state.expenseLists[groupId], page, complete),
+            [groupId]: appendPage(state.expenseLists[groupId], page),
           },
+        })),
+
+      applyMyExpensePage: (page, reset) =>
+        set((state) => ({
+          expenses: upsertSummaries(state.expenses, page.expenses),
+          // A head load reseeds the list; an older page extends it.
+          myExpenses: appendPage(reset ? undefined : state.myExpenses, page),
         })),
 
       // Rows are published only from a successful read, so a failure can never

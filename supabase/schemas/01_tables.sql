@@ -83,6 +83,8 @@ CREATE TABLE public.expenses (
   chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$')
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
+-- Cursor order for history paging; occurred_on above still serves its own readers.
+CREATE INDEX expenses_group_created_idx ON public.expenses (group_id, created_at DESC, id DESC);
 CREATE UNIQUE INDEX expenses_creator_chave_active_idx
   ON public.expenses (creator_id, chave_acesso)
   WHERE status = 'active' AND chave_acesso IS NOT NULL;

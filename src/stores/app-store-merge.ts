@@ -3,12 +3,13 @@ import type {
   Conversation,
   ExpenseDetail,
   ExpenseSummary,
+  ExpensePage,
+  PageCursor,
   GroupEvent,
   GroupSnapshot,
 } from "@/types/ledger";
 import type { ConversationState, ExpenseListState } from "./app-store";
-
-const emptyList: ExpenseListState = { ids: [], oldestCursor: null, complete: false };
+const emptyList: ExpenseListState = { ids: [], cursor: null, complete: false, total: null };
 
 export function upsertSummaries(
   expenses: Record<string, ExpenseSummary>,
@@ -20,36 +21,44 @@ export function upsertSummaries(
   return next;
 }
 
-/** Newest-first list: snapshot seed becomes the head, the previous tail is preserved and deduped. */
+function cursorFor(rows: readonly ExpenseSummary[]): PageCursor | null {
+  const last = rows[rows.length - 1];
+  return last === undefined ? null : { createdAt: last.createdAt, id: last.id };
+}
+
+/**
+ * Seeds a group's list from a bootstrap snapshot. The snapshot carries no
+ * server cursor or total, so the list stays incomplete with an unknown total
+ * until a real page reports them.
+ */
 export function listFromSeed(
   existing: ExpenseListState | undefined,
   seed: ExpenseSummary[],
-  expenses: Record<string, ExpenseSummary>,
 ): ExpenseListState {
   const headIds = seed.map((row) => row.id);
   const head = new Set(headIds);
   const tailIds = (existing?.ids ?? []).filter((id) => !head.has(id));
-  const ids = [...headIds, ...tailIds];
-  const oldest = ids.length > 0 ? expenses[ids[ids.length - 1]]?.createdAt : undefined;
   return {
-    ids,
-    oldestCursor: oldest ?? existing?.oldestCursor ?? null,
+    ids: [...headIds, ...tailIds],
+    cursor: cursorFor(seed) ?? existing?.cursor ?? null,
     complete: existing?.complete ?? seed.length < 20,
+    total: existing?.total ?? null,
   };
 }
 
 export function appendPage(
   existing: ExpenseListState | undefined,
-  page: ExpenseSummary[],
-  complete: boolean,
+  page: ExpensePage,
 ): ExpenseListState {
   const prev = existing ?? emptyList;
   const known = new Set(prev.ids);
-  const fresh = page.filter((row) => !known.has(row.id)).map((row) => row.id);
+  const fresh = page.expenses.filter((row) => !known.has(row.id)).map((row) => row.id);
   return {
     ids: [...prev.ids, ...fresh],
-    oldestCursor: page.length > 0 ? (page[page.length - 1]?.createdAt ?? prev.oldestCursor) : prev.oldestCursor,
-    complete,
+    // The server's own cursor and completeness, never inferred from the page.
+    cursor: page.nextCursor,
+    complete: page.complete,
+    total: page.total,
   };
 }
 

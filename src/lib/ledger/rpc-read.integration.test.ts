@@ -151,17 +151,24 @@ interface GroupEvent {
   expenseTitle: string | null;
 }
 
-interface ChatCursorWire {
+interface ExpensePageWire {
+  expenses: ExpenseSummary[];
+  nextCursor: { createdAt: string; id: string } | null;
+  complete: boolean;
+  total: number;
+}
+
+interface PageCursorWire {
   createdAt: string;
   id: string | number;
 }
 
 interface Conversation {
   messages: ChatMessage[];
-  messageCursor: ChatCursorWire | null;
+  messageCursor: PageCursorWire | null;
   messagesComplete: boolean;
   events: GroupEvent[];
-  eventCursor: ChatCursorWire | null;
+  eventCursor: PageCursorWire | null;
   eventsComplete: boolean;
   readWatermark: { lastReadAt: string; lastReadMessageId: string } | null;
 }
@@ -588,14 +595,98 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     expect(hasG2).toBe(true);
   });
 
-  it("get_group_expenses returns the group's expenses", async () => {
-    const list = await rpcOk<ExpenseSummary[]>(
+  it("get_group_expenses returns a cursored envelope with the group total", async () => {
+    const page = await rpcOk<ExpensePageWire>(
       authenticateAs(userA),
       "get_group_expenses",
-      { p_group_id: g1, p_before: null, p_limit: 30 },
+      { p_group_id: g1, p_limit: 30 },
     );
-    expect(list).toHaveLength(1);
-    expect(list[0]!.id).toBe(expenseId);
+    expect(Object.keys(page).sort()).toEqual(
+      ["complete", "expenses", "nextCursor", "total"].sort(),
+    );
+    expect(page.expenses).toHaveLength(1);
+    expect(page.expenses[0]!.id).toBe(expenseId);
+    expect(page.complete).toBe(true);
+    expect(page.nextCursor).toBeNull();
+    expect(page.total).toBe(1);
+  });
+
+  it("get_group_expenses rejects outsiders, half cursors and bad limits", async () => {
+    expect(
+      await expectRpcError(
+        authenticateAs(userX).rpc("get_group_expenses", { p_group_id: g1, p_limit: 30 }),
+      ),
+    ).toBe("not_a_member");
+
+    expect(
+      await expectRpcError(
+        authenticateAs(userA).rpc("get_group_expenses", {
+          p_group_id: g1,
+          p_before_created_at: "2026-09-01T00:00:00Z",
+        }),
+      ),
+    ).toBe("invalid_argument");
+
+    expect(
+      await expectRpcError(
+        authenticateAs(userA).rpc("get_group_expenses", { p_group_id: g1, p_limit: 0 }),
+      ),
+    ).toBe("invalid_argument");
+  });
+
+  it("get_my_expenses pages across groups with a total beyond the page", async () => {
+    const pagingGroup = await createGroupWithMembers(userA, [userB], "Histórico");
+    const created: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const ack = await createExpense(userA, {
+        groupId: pagingGroup,
+        title: `Despesa ${i}`,
+        totalCents: 1000 + i,
+        payload: equalSplitPayload([userA.id, userB.id], 1000 + i),
+      });
+      created.push(ack.expenseId);
+    }
+
+    const first = await rpcOk<ExpensePageWire>(authenticateAs(userA), "get_my_expenses", {
+      p_limit: 2,
+    });
+    expect(first.expenses).toHaveLength(2);
+    expect(first.complete).toBe(false);
+    expect(first.nextCursor).not.toBeNull();
+    // The total spans every visible group, not this page.
+    expect(first.total).toBeGreaterThan(2);
+
+    const seen = new Set(first.expenses.map((e) => e.id));
+    let cursor = first.nextCursor;
+    let complete = first.complete;
+    let guard = 0;
+    while (!complete) {
+      const next: ExpensePageWire = await rpcOk<ExpensePageWire>(
+        authenticateAs(userA),
+        "get_my_expenses",
+        {
+          p_limit: 2,
+          p_before_created_at: cursor!.createdAt,
+          p_before_id: cursor!.id,
+        },
+      );
+      for (const row of next.expenses) {
+        expect(seen.has(row.id)).toBe(false);
+        seen.add(row.id);
+      }
+      cursor = next.nextCursor;
+      complete = next.complete;
+      if (++guard > 20) throw new Error("cursor walk failed to terminate");
+    }
+
+    expect(seen.size).toBe(first.total);
+    for (const id of created) expect(seen.has(id)).toBe(true);
+
+    // Another member's unrelated group must not appear for this caller.
+    const outsider = await rpcOk<ExpensePageWire>(authenticateAs(userX), "get_my_expenses", {
+      p_limit: 50,
+    });
+    expect(outsider.expenses.some((e: ExpenseSummary) => created.includes(e.id))).toBe(false);
   });
 
   it("send_message is idempotent on client id", async () => {
@@ -679,7 +770,7 @@ describe.skipIf(!isIntegrationTestReady)("ledger read RPCs — integration", () 
     );
 
     const seen: string[] = [];
-    let cursor: ChatCursorWire | null = null;
+    let cursor: PageCursorWire | null = null;
     let complete = false;
     let pages = 0;
 

@@ -11,6 +11,10 @@ const mutations = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/sync/mutations", () => mutations);
 
+vi.mock("@/lib/sync/refresh", () => ({
+  loadMyExpenses: vi.fn().mockResolvedValue(undefined),
+}));
+
 const toastError = vi.fn();
 vi.mock("react-hot-toast", () => ({
   default: {
@@ -106,13 +110,30 @@ const dmSnapshot = snapshot({
   },
 });
 
-function seedStore(expenses: Record<string, ExpenseSummary>) {
+function seedStore(
+  expenses: Record<string, ExpenseSummary>,
+  options: { ids?: string[]; complete?: boolean; total?: number | null } = {},
+) {
+  // The server owns history order, so the list is seeded with its ids. The
+  // default mirrors what get_my_expenses returns: newest created first.
+  const ids =
+    options.ids ??
+    Object.values(expenses)
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((e) => e.id);
   useAppStore.setState({
     hydrated: true,
     me,
     groups: { [groupSnapshot.group.id]: groupSnapshot, [dmSnapshot.group.id]: dmSnapshot },
     groupOrder: [groupSnapshot.group.id, dmSnapshot.group.id],
     expenses,
+    myExpenses: {
+      ids,
+      cursor: null,
+      complete: options.complete ?? true,
+      total: options.total === undefined ? ids.length : options.total,
+    },
   });
 }
 
@@ -168,15 +189,42 @@ describe("BillsListContent", () => {
     expect(container.querySelector("a")).toBeNull();
   });
 
-  it("orders rows by occurredOn desc then createdAt desc", () => {
-    seedStore(seededExpenses);
+  it("renders history in the server's order rather than re-sorting it", () => {
+    // Deliberately not the occurredOn order: the advertised total describes
+    // this sequence, so the screen must not reorder it.
+    seedStore(seededExpenses, { ids: ["e-old", "e-dm", "e-newer"] });
     const { container } = render(<BillsListContent />);
 
     expect(rowLinks(container)).toEqual([
+      "/app/bill/e-old",
       "/app/bill/e-dm",
       "/app/bill/e-newer",
-      "/app/bill/e-old",
     ]);
+  });
+
+  it("reports the server total and offers more while history is incomplete", () => {
+    seedStore(seededExpenses, { complete: false, total: 42 });
+    useAppStore.setState({
+      myExpenses: {
+        ...useAppStore.getState().myExpenses,
+        cursor: { createdAt: "2026-08-20T12:00:00Z", id: "e-old" },
+      },
+    });
+    render(<BillsListContent />);
+
+    expect(screen.getByText("42 contas no total")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Carregar mais" })).toBeInTheDocument();
+  });
+
+  it("says a zero-match filter only covers loaded history", () => {
+    seedStore(seededExpenses, { complete: false, total: 42 });
+    render(<BillsListContent />);
+
+    fireEvent.change(screen.getByPlaceholderText(/buscar/i), {
+      target: { value: "nao-existe" },
+    });
+
+    expect(screen.getByText(/contas já carregadas/)).toBeInTheDocument();
   });
 
   it("shows the counterparty name for DM rows and the group name for groups", () => {
@@ -209,7 +257,8 @@ describe("BillsListContent", () => {
     expect(screen.queryByText("Cinema")).not.toBeInTheDocument();
 
     query("nao_existe");
-    expect(screen.getByText("Nenhuma conta por aqui")).toBeInTheDocument();
+    // A search with no hits is not an empty history.
+    expect(screen.getByText("Nenhum resultado")).toBeInTheDocument();
     expect(screen.getByText('Sem resultados para "nao_existe".')).toBeInTheDocument();
   });
 

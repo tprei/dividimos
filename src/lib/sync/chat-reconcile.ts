@@ -1,5 +1,5 @@
 import { useAppStore } from "@/stores/app-store";
-import type { ChatCursor, Conversation } from "@/types/ledger";
+import type { PageCursor, Conversation } from "@/types/ledger";
 import { getAuthGeneration } from "./client";
 import { loadConversation, refreshGroup } from "./refresh";
 
@@ -107,8 +107,8 @@ async function runReconciliation(groupId: string, run: Run): Promise<void> {
 
   store.setConversationReconcile(groupId, "loading");
 
-  let messageBefore: ChatCursor | null = null;
-  let eventBefore: ChatCursor | null = null;
+  let messageBefore: PageCursor | null = null;
+  let eventBefore: PageCursor | null = null;
   let firstPage = true;
   let messagesSettled = false;
   let eventsSettled = false;
@@ -116,10 +116,10 @@ async function runReconciliation(groupId: string, run: Run): Promise<void> {
   for (;;) {
     if (!isCurrent(groupId, run)) return;
 
-    const page: Conversation = firstPage
+    const page: Conversation | null = firstPage
       ? await loadConversation(groupId)
       : await loadConversation(groupId, { messageBefore, eventBefore });
-    if (!isCurrent(groupId, run)) return;
+    if (page === null || !isCurrent(groupId, run)) return;
     firstPage = false;
 
     messagesSettled =

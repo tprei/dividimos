@@ -185,7 +185,7 @@ describe("selectExpenseList", () => {
       me,
       groups: { g1: snapshot("g1") },
       expenses: { e1: summary("e1", "g1"), e3: summary("e3", "g1") },
-      expenseLists: { g1: { ids: ["e1", "e2", "e3"], oldestCursor: null, complete: false } },
+      expenseLists: { g1: { ids: ["e1", "e2", "e3"], cursor: null, complete: false, total: null } },
     });
 
     expect(selectExpenseList(useAppStore.getState(), "g1").map((row) => row.id)).toEqual(["e1", "e3"]);
