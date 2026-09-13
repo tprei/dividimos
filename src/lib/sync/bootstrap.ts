@@ -1,21 +1,32 @@
 import { decodeBootstrap } from "@/lib/ledger/decode";
 import { useAppStore } from "@/stores/app-store";
-import { rpc } from "./client";
+import { getAuthGeneration, rpc } from "./client";
 
-let bootstrapInFlight: Promise<void> | null = null;
+let bootstrapInFlight: { generation: number; promise: Promise<void> } | null = null;
 
-async function executeBootstrap(): Promise<void> {
+async function executeBootstrap(generation: number): Promise<void> {
   const data = await rpc("bootstrap", {}, decodeBootstrap);
+  // The account may have been replaced, signed out, or the root torn down
+  // while this request was in flight; publishing then would resurrect data
+  // belonging to a previous session.
+  if (getAuthGeneration() !== generation) return;
   useAppStore.getState().applyBootstrap(data);
 }
 
 export function runBootstrap(): Promise<void> {
-  if (!bootstrapInFlight) {
-    bootstrapInFlight = executeBootstrap().finally(() => {
-      bootstrapInFlight = null;
-    });
+  const generation = getAuthGeneration();
+  if (bootstrapInFlight === null || bootstrapInFlight.generation !== generation) {
+    const entry: { generation: number; promise: Promise<void> } = {
+      generation,
+      promise: executeBootstrap(generation).finally(() => {
+        // Clear only this request's entry: a newer generation's request must
+        // survive an older one settling late.
+        if (bootstrapInFlight === entry) bootstrapInFlight = null;
+      }),
+    };
+    bootstrapInFlight = entry;
   }
-  return bootstrapInFlight;
+  return bootstrapInFlight.promise;
 }
 
 export async function bootstrapIfStale(maxAgeMs = 60_000): Promise<void> {

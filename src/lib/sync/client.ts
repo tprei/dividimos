@@ -30,6 +30,7 @@ export function advanceAuthGeneration(): number {
   return authGeneration;
 }
 
+
 export function getSupabase(): SupabaseClient<Database> {
   if (!clientInstance) {
     clientInstance = createBrowserClient<Database>(

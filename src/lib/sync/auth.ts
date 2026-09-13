@@ -1,32 +1,64 @@
 import { useAppStore } from "@/stores/app-store";
 import { runBootstrap } from "./bootstrap";
-import { getSupabase } from "./client";
+import { advanceAuthGeneration, getSupabase } from "./client";
 import { clearPendingVendorChargeCancellations } from "./mutations-group";
 
 export function attachAuthListener(
   onSignedOut: () => void,
   onError: (error: unknown) => void,
 ): () => void {
+  /**
+   * `undefined` means no identity event has been observed yet, so the prior
+   * identity must come from the store. An explicit `null` records a real
+   * sign-out and must not fall back to stale stored data.
+   */
+  let observedUserId: string | null | undefined;
+  let disposed = false;
+
+  const priorUserId = (): string | null =>
+    observedUserId === undefined ? useAppStore.getState().me?.id ?? null : observedUserId;
+
   const { data } = getSupabase().auth.onAuthStateChange((event, session) => {
+    if (disposed) return;
+
     if (event === "SIGNED_OUT") {
+      observedUserId = null;
+      advanceAuthGeneration();
       clearPendingVendorChargeCancellations();
       useAppStore.getState().reset();
       onSignedOut();
       return;
     }
 
-    if (event === "SIGNED_IN") {
-      const me = useAppStore.getState().me;
-      if (me !== null && session?.user.id !== me.id) {
-        clearPendingVendorChargeCancellations();
-        useAppStore.getState().reset();
-        runBootstrap().catch(onError);
-      }
+    // TOKEN_REFRESHED and INITIAL_SESSION fire often without changing who is
+    // signed in; invalidating on them would cancel healthy in-flight work.
+    if (event !== "SIGNED_IN") return;
+
+    const nextUserId = session?.user.id ?? null;
+    if (nextUserId === null) return;
+
+    // Comparing against the remembered identity catches A -> B -> A, where the
+    // store is momentarily empty because a reset already ran.
+    if (nextUserId === priorUserId()) {
+      observedUserId = nextUserId;
+      return;
     }
+
+    observedUserId = nextUserId;
+    advanceAuthGeneration();
+    clearPendingVendorChargeCancellations();
+    useAppStore.getState().reset();
+    runBootstrap().catch(onError);
   });
 
   return () => {
+    if (disposed) return;
+    // Mark disposed before unsubscribing so a callback already queued for this
+    // listener cannot act, and advance once so an old root's in-flight requests
+    // cannot publish into a remounted root.
+    disposed = true;
     data.subscription.unsubscribe();
+    advanceAuthGeneration();
   };
 }
 
