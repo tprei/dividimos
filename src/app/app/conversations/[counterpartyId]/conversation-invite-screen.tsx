@@ -1,6 +1,8 @@
 "use client";
 
 import { Check, X } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
@@ -8,8 +10,8 @@ import type { UserProfile } from "@/types/ledger";
 
 interface ConversationInviteScreenProps {
   counterparty: UserProfile;
-  onAccept: () => void;
-  onDecline: () => void;
+  onAccept: () => Promise<void>;
+  onDecline: () => Promise<void>;
 }
 
 export function ConversationInviteScreen({
@@ -17,6 +19,30 @@ export function ConversationInviteScreen({
   onAccept,
   onDecline,
 }: ConversationInviteScreenProps) {
+  // One synchronous lock for both actions: accept and decline are competing
+  // transitions and only the first may run.
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState<"accept" | "decline" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = useCallback(
+    async (which: "accept" | "decline", action: () => Promise<void>) => {
+      if (pendingRef.current) return;
+      pendingRef.current = true;
+      setPending(which);
+      setError(null);
+      try {
+        await action();
+      } catch (caught) {
+        setError(ledgerErrorMessage(caught));
+      } finally {
+        pendingRef.current = false;
+        setPending(null);
+      }
+    },
+    [],
+  );
+
   return (
     <div className="flex h-full flex-col">
       <ScreenHeader back title={counterparty.name} eyebrow={`@${counterparty.handle}`} />
@@ -28,14 +54,28 @@ export function ConversationInviteScreen({
             Esta conversa está pendente. @{counterparty.handle} convidou você a conversar.
           </p>
         </div>
+        {error !== null && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="flex w-full max-w-xs flex-col gap-3">
-          <Button onClick={onAccept} className="w-full gap-2">
+          <Button
+            onClick={() => void run("accept", onAccept)}
+            disabled={pending !== null}
+            className="w-full gap-2"
+          >
             <Check className="h-4 w-4" />
-            Aceitar convite
+            {pending === "accept" ? "Aceitando..." : "Aceitar convite"}
           </Button>
-          <Button variant="outline" onClick={onDecline} className="w-full gap-2">
+          <Button
+            variant="outline"
+            onClick={() => void run("decline", onDecline)}
+            disabled={pending !== null}
+            className="w-full gap-2"
+          >
             <X className="h-4 w-4" />
-            Recusar
+            {pending === "decline" ? "Recusando..." : "Recusar"}
           </Button>
         </div>
       </div>
