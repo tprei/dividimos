@@ -416,5 +416,3 @@ BEGIN
 END;
 $function$
 ;
-
-

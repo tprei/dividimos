@@ -1283,4 +1283,3 @@ describe("create_expense_with_group", () => {
     ).toBe("not_a_member");
   });
 });
-
