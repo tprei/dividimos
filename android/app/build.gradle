@@ -7,8 +7,14 @@ android {
         applicationId "ai.dividimos.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Release CI passes -PdividimosVersionCode / -PdividimosVersionName.
+        // A local build keeps the checked-in defaults.
+        versionCode project.hasProperty('dividimosVersionCode')
+            ? project.property('dividimosVersionCode').toInteger()
+            : 1
+        versionName project.hasProperty('dividimosVersionName')
+            ? project.property('dividimosVersionName')
+            : "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -44,11 +50,15 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
+// A release without Firebase config is a release without push notifications,
+// so it fails rather than shipping silently. Debug builds stay usable without
+// it, which is what local development needs.
+def servicesJSON = file('google-services.json')
+if (servicesJSON.exists() && servicesJSON.text) {
+    apply plugin: 'com.google.gms.google-services'
+} else if (project.hasProperty('dividimosRequireFirebase')) {
+    throw new GradleException(
+        "google-services.json is missing or empty; a release build cannot deliver push notifications.")
+} else {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
