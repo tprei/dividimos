@@ -185,6 +185,8 @@ jobs:
 
       - name: Verify the built bundle
         env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
           VERSION_CODE: ${{ steps.version.outputs.code }}
           VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
@@ -223,7 +225,10 @@ jobs:
               raise SystemExit(f"bundle manifest metadata mismatch: {actual!r} != {expected!r}")
           PY
 
-          jarsigner -verify -verbose:summary -certs "$AAB"
+          jarsigner -verify -strict -verbose:summary -certs \
+            -keystore android/app/release.jks \
+            -storepass:env KEYSTORE_STORE_PASSWORD \
+            "$AAB" "$KEYSTORE_KEY_ALIAS"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
