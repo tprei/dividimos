@@ -42,15 +42,132 @@ export function dmExpensePayload(
 }
 
 export function normalizeHandle(handle: string): string {
-  return handle.replace(/^@/, "").toLowerCase();
+  return handle.trim().replace(/^@/, "").toLowerCase();
 }
 
-export function wizardUrl(groupId: string, result: ChatExpenseResult): string {
+export interface ResolvedDraftActors {
+  participantIds: [string, string];
+  payerId: string;
+}
+
+export type DraftActorResolution =
+  | { kind: "resolved"; actors: ResolvedDraftActors }
+  | { kind: "error"; message: string };
+
+function actorResolutionError(message: string): DraftActorResolution {
+  return { kind: "error", message };
+}
+
+function resolveActorHandle(
+  rawHandle: string,
+  me: Me,
+  counterparty: UserProfile,
+): string | null | "equal_handles" {
+  const normalized = normalizeHandle(rawHandle);
+  const meHandle = normalizeHandle(me.handle);
+  const counterpartyHandle = normalizeHandle(counterparty.handle);
+  if (meHandle === counterpartyHandle) return "equal_handles";
+  if (normalized === "self" || normalized === meHandle) return me.id;
+  if (normalized === counterpartyHandle) return counterparty.id;
+  return null;
+}
+
+function validateExplicitActors(
+  handles: Array<string | null>,
+  me: Me,
+  counterparty: UserProfile,
+): DraftActorResolution {
+  const ids: string[] = [];
+  for (const handle of handles) {
+    if (handle === null) return actorResolutionError("Não consegui identificar todas as pessoas.");
+    const id = resolveActorHandle(handle, me, counterparty);
+    if (id === "equal_handles") {
+      return actorResolutionError("Os handles da conversa precisam ser diferentes.");
+    }
+    if (id === null) return actorResolutionError("Não consegui identificar todas as pessoas.");
+    if (ids.includes(id)) return actorResolutionError("A mesma pessoa apareceu mais de uma vez.");
+    ids.push(id);
+  }
+
+  const isImplicitCurrentUserOnly = ids.length === 1 && ids[0] === counterparty.id;
+  if (
+    !isImplicitCurrentUserOnly &&
+    (ids.length !== 2 || !ids.includes(me.id) || !ids.includes(counterparty.id))
+  ) {
+    return actorResolutionError("A despesa precisa ter exatamente as duas pessoas da conversa.");
+  }
+  return {
+    kind: "resolved",
+    actors: { participantIds: [me.id, counterparty.id], payerId: me.id },
+  };
+}
+
+export function resolveDraftActors(
+  result: ChatExpenseResult,
+  me: Me,
+  counterparty: UserProfile,
+): DraftActorResolution {
+  const meHandle = normalizeHandle(me.handle);
+  const counterpartyHandle = normalizeHandle(counterparty.handle);
+  if (meHandle === counterpartyHandle) {
+    return actorResolutionError("Os handles da conversa precisam ser diferentes.");
+  }
+
+  let actors: ResolvedDraftActors = {
+    participantIds: [me.id, counterparty.id],
+    payerId: me.id,
+  };
+
+  if (result.participants.length > 0) {
+    if (result.participants.some((participant) => participant.confidence === "low")) {
+      return actorResolutionError("Não consegui identificar todas as pessoas.");
+    }
+    const participantResolution = validateExplicitActors(
+      result.participants.map((participant) => participant.matchedHandle),
+      me,
+      counterparty,
+    );
+    if (participantResolution.kind === "error") return participantResolution;
+    actors = participantResolution.actors;
+  }
+
+  if (result.splitType === "custom") {
+    const allocationResolution = validateExplicitActors(
+      result.allocations.map((allocation) => allocation.participantHandle),
+      me,
+      counterparty,
+    );
+    if (allocationResolution.kind === "error") return allocationResolution;
+    actors = allocationResolution.actors;
+  }
+
+  if (result.payerHandle !== null && result.payerHandle.trim() !== "") {
+    const payerId = resolveActorHandle(result.payerHandle, me, counterparty);
+    if (payerId === "equal_handles") {
+      return actorResolutionError("Os handles da conversa precisam ser diferentes.");
+    }
+    if (payerId === null) return actorResolutionError("Não consegui identificar quem pagou.");
+    actors.payerId = payerId;
+  }
+
+  return { kind: "resolved", actors };
+}
+
+export function wizardUrl(
+  groupId: string,
+  result: ChatExpenseResult,
+  actors?: ResolvedDraftActors,
+): string {
   const params = new URLSearchParams({
     groupId,
     title: result.title,
     amount: String(result.amountCents),
+    type: result.expenseType,
   });
+  if (actors) {
+    params.set("participantIds", actors.participantIds.join(","));
+    params.set("payerId", actors.payerId);
+  }
   return `/app/bill/new?${params.toString()}`;
 }
 
@@ -65,29 +182,27 @@ export function resolveDraftExpense(
   counterparty: UserProfile,
   result: ChatExpenseResult,
 ): DraftExpenseResolution {
+  const actorResolution = resolveDraftActors(result, me, counterparty);
+  if (actorResolution.kind === "error") return actorResolution;
+  const actors = actorResolution.actors;
+
   if (result.expenseType === "itemized") {
-    return { kind: "wizard", url: wizardUrl(groupId, result) };
+    return { kind: "wizard", url: wizardUrl(groupId, result, actors) };
   }
 
   const totalCents = result.amountCents;
   let shares: [number, number];
 
-  if (result.splitType === "custom" && result.allocations.length === 2) {
-    const myHandle = normalizeHandle(me.handle);
-    const theirHandle = normalizeHandle(counterparty.handle);
+  if (result.splitType === "custom") {
     let myShare: number | null = null;
     let otherShare: number | null = null;
-
-    for (const alloc of result.allocations) {
-      const handle = normalizeHandle(alloc.participantHandle);
-      if (handle === myHandle && myShare === null) myShare = alloc.shareAmountCents;
-      if (handle === theirHandle && otherShare === null) {
-        otherShare = alloc.shareAmountCents;
-      }
+    for (const allocation of result.allocations) {
+      const actorId = resolveActorHandle(allocation.participantHandle, me, counterparty);
+      if (actorId === me.id) myShare = allocation.shareAmountCents;
+      if (actorId === counterparty.id) otherShare = allocation.shareAmountCents;
     }
-
     if (myShare === null || otherShare === null) {
-      return { kind: "wizard", url: wizardUrl(groupId, result) };
+      return { kind: "error", message: "Não consegui resolver as partes da despesa." };
     }
     shares = [myShare, otherShare];
   } else if (result.splitType === "equal") {
@@ -95,17 +210,17 @@ export function resolveDraftExpense(
     if (!amounts.ok) return { kind: "error", message: "Não foi possível dividir o valor." };
     shares = [amounts.value[0], amounts.value[1]];
   } else {
-    return { kind: "wizard", url: wizardUrl(groupId, result) };
+    return { kind: "error", message: "Não consegui resolver a divisão da despesa." };
   }
 
-  const payerHandle = result.payerHandle ? normalizeHandle(result.payerHandle) : null;
-  const payerIndex: 0 | 1 =
-    payerHandle === null || payerHandle === "self" || payerHandle === normalizeHandle(me.handle)
-      ? 0
-      : 1;
-
   const header = dmExpenseHeader(result.title || "Conta", totalCents, result.merchantName);
-  const payload = dmExpensePayload(me, counterparty.id, shares, payerIndex, totalCents);
+  const payload = dmExpensePayload(
+    me,
+    counterparty.id,
+    shares,
+    actors.payerId === me.id ? 0 : 1,
+    totalCents,
+  );
 
   return { kind: "ready", header, payload };
 }

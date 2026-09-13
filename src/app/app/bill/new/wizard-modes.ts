@@ -21,7 +21,11 @@ export interface ChatDraftMode {
   groupId: string;
   title: string;
   amountCents: number;
+  expenseType: ExpenseType;
+  participantIds?: string[];
+  payerId?: string;
 }
+
 
 export interface WizardModes {
   dm: DmMode | null;
@@ -32,6 +36,26 @@ export interface WizardModes {
   /** Wizard step requested by the URL (`?step=`) for voice hydration flows. */
   entryStep: string | null;
 }
+function parseValidatedActorIds(
+  participantIdsParam: string | null,
+  payerIdParam: string | null,
+): { participantIds: string[]; payerId: string } | null {
+  if (participantIdsParam === null && payerIdParam === null) return null;
+  if (!participantIdsParam || !payerIdParam) return null;
+  const participantIds = participantIdsParam
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (
+    participantIds.length !== 2 ||
+    new Set(participantIds).size !== participantIds.length ||
+    !participantIds.includes(payerIdParam)
+  ) {
+    return null;
+  }
+  return { participantIds, payerId: payerIdParam };
+}
+
 
 interface ParamReader {
   get(name: string): string | null;
@@ -44,15 +68,30 @@ export function parseWizardModes(params: ParamReader): WizardModes {
   const dmType: ExpenseType = dmTypeParam === "itemized" ? "itemized" : "single_amount";
   const dm =
     dmUserId && dmGroupId ? { userId: dmUserId, groupId: dmGroupId, type: dmType } : null;
-
   const draftGroupId = params.get("groupId");
   const draftTitle = params.get("title");
   const draftAmount = params.get("amount");
+  const draftTypeParam = params.get("type");
+  const draftExpenseType: ExpenseType = draftTypeParam === "itemized" ? "itemized" : "single_amount";
+  const participantIdsParam = params.get("participantIds");
+  const payerIdParam = params.get("payerId");
+  const actorIds =
+    participantIdsParam !== null || payerIdParam !== null
+      ? parseValidatedActorIds(participantIdsParam, payerIdParam)
+      : null;
+  const actorParamsValid =
+    participantIdsParam === null && payerIdParam === null ? true : actorIds !== null;
   let chatDraft: ChatDraftMode | null = null;
-  if (!dm && draftGroupId && draftTitle && draftAmount) {
+  if (!dm && draftGroupId && draftTitle && draftAmount && actorParamsValid) {
     const amountCents = Number.parseInt(draftAmount, 10);
     if (Number.isFinite(amountCents) && amountCents > 0) {
-      chatDraft = { groupId: draftGroupId, title: draftTitle, amountCents };
+      chatDraft = {
+        groupId: draftGroupId,
+        title: draftTitle,
+        amountCents,
+        expenseType: draftExpenseType,
+        ...(actorIds ?? {}),
+      };
     }
   }
 
