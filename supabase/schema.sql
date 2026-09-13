@@ -3970,41 +3970,92 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.get_vendor_charges(p_limit integer DEFAULT 50)
-RETURNS jsonb
+CREATE FUNCTION public.get_vendor_charges(
+  p_before_created_at timestamptz DEFAULT NULL,
+  p_before_id uuid DEFAULT NULL,
+  p_limit integer DEFAULT 50
+) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_actor uuid;
-  v_result jsonb;
+  v_charges jsonb;
+  v_cursor jsonb;
+  v_complete boolean;
+  v_today_start timestamptz;
+  v_today_end timestamptz;
 BEGIN
   v_actor := current_user_id();
 
-  IF p_limit IS NULL OR p_limit < 1 THEN
-    p_limit := 50;
+  IF (p_before_created_at IS NULL) <> (p_before_id IS NULL) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'id', vc.id,
-      'userId', vc.user_id,
-      'amountCents', vc.amount_cents,
-      'description', vc.description,
-      'status', vc.status,
-      'createdAt', to_jsonb(vc.created_at),
-      'confirmedAt', to_jsonb(vc.confirmed_at)
-    )
-  ), '[]'::jsonb)
-  INTO v_result
-  FROM (
-    SELECT *
-    FROM vendor_charges
-    WHERE user_id = v_actor AND status <> 'cancelled'
-    ORDER BY created_at DESC, id DESC
-    LIMIT p_limit
-  ) vc;
+  -- Convert the local calendar day separately in each direction: a fixed UTC
+  -- offset would drift across a Sao Paulo DST change.
+  v_today_start := (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')) AT TIME ZONE 'America/Sao_Paulo';
+  v_today_end := (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day') AT TIME ZONE 'America/Sao_Paulo';
 
-  RETURN v_result;
+  WITH page AS (
+    SELECT id, created_at, user_id, amount_cents, description, status, confirmed_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
+    FROM vendor_charges
+    WHERE user_id = v_actor
+      AND status <> 'cancelled'
+      AND (
+        p_before_id IS NULL
+        OR (created_at, id) < (p_before_created_at, p_before_id)
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(
+      jsonb_build_object(
+        'id', p.id,
+        'userId', p.user_id,
+        'amountCents', p.amount_cents,
+        'description', p.description,
+        'status', p.status,
+        'createdAt', to_jsonb(p.created_at),
+        'confirmedAt', to_jsonb(p.confirmed_at)
+      ) ORDER BY p.created_at DESC, p.id DESC
+    ) FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_charges, v_complete, v_cursor
+  FROM page p;
+
+  RETURN jsonb_build_object(
+    'charges', v_charges,
+    'nextCursor', v_cursor,
+    'complete', v_complete,
+    -- Counts and sums cover every uncancelled charge, not the page.
+    'total', (
+      SELECT count(*)::integer FROM vendor_charges
+      WHERE user_id = v_actor AND status <> 'cancelled'
+    ),
+    'receivedCount', (
+      SELECT count(*)::integer FROM vendor_charges
+      WHERE user_id = v_actor AND status = 'received'
+    ),
+    -- bigint: a day's takings can exceed int4 and must never be truncated.
+    'receivedTodayCents', (
+      SELECT COALESCE(sum(amount_cents), 0)::bigint FROM vendor_charges
+      WHERE user_id = v_actor
+        AND status = 'received'
+        AND confirmed_at IS NOT NULL
+        AND confirmed_at >= v_today_start
+        AND confirmed_at < v_today_end
+    )
+  );
 END;
 $$;
 
@@ -4018,8 +4069,8 @@ GRANT EXECUTE ON FUNCTION public.confirm_vendor_charge(uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.cancel_vendor_charge(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.cancel_vendor_charge(uuid) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.get_vendor_charges(integer) FROM public;
-GRANT EXECUTE ON FUNCTION public.get_vendor_charges(integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_vendor_charges(timestamptz, uuid, integer) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_vendor_charges(timestamptz, uuid, integer) TO authenticated;
 
 -- ---- 12_rate_limit.sql ----
 CREATE TABLE public.rate_limit_counters (

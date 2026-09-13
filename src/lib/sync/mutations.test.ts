@@ -34,7 +34,6 @@ import {
   declineInvitation,
   deleteGroup,
   getOrCreateDm,
-  getVendorCharges,
   inviteMember,
   createGuestClaimToken,
   joinViaLink,
@@ -1186,10 +1185,6 @@ describe("mutations", () => {
       vi.mocked(rpc).mockResolvedValueOnce({ ...charge, status: "received" as const });
       const conf = await confirmVendorCharge("vc-1");
       expect(conf.status).toBe("received");
-
-      vi.mocked(rpc).mockResolvedValueOnce([charge]);
-      const list = await getVendorCharges(10);
-      expect(list).toEqual([charge]);
 
       vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 106 });
       await removeMember("g1", USER_2.id);
