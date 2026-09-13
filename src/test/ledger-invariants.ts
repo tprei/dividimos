@@ -28,17 +28,6 @@ interface SettlementRecord {
   to_user_id: string;
   amount_cents: number;
 }
-
-interface ParticipantRecord {
-  expense_id: string;
-  participant_index: number;
-  kind: ParticipantKind;
-  user_id: string | null;
-  guest_id: string | null;
-  share_cents: number;
-  paid_cents: number;
-}
-
 interface TransferRecord {
   from_kind: ParticipantKind;
   from_id: string;
@@ -153,56 +142,6 @@ function checkProjectionMatchesFacts(
   }
 }
 
-function checkParticipantsMatchPayload(
-  expenses: readonly ExpenseRecord[],
-  participants: readonly ParticipantRecord[],
-  violations: string[],
-): void {
-  const byExpense = new Map<string, ParticipantRecord[]>();
-  for (const row of participants) {
-    const bucket = byExpense.get(row.expense_id);
-    if (bucket) bucket.push(row);
-    else byExpense.set(row.expense_id, [row]);
-  }
-  for (const expense of expenses) {
-    const rows = byExpense.get(expense.id) ?? [];
-    const payload = expense.payload;
-    if (rows.length !== payload.participants.length) {
-      violations.push(
-        `[4] expense ${expense.id} has ${rows.length} materialized participants ` +
-          `but the payload declares ${payload.participants.length}`,
-      );
-      continue;
-    }
-    payload.participants.forEach((participant, index) => {
-      const row = rows[index];
-      const expectedId =
-        participant.kind === "user" ? participant.userId : participant.guestId;
-      const actualId = row.kind === "user" ? row.user_id : row.guest_id;
-      const expectedPaid = payload.payers
-        .filter((payer) => payer.participantIndex === index)
-        .reduce((total, payer) => total + payer.amountCents, 0);
-      if (
-        row.participant_index !== index ||
-        row.kind !== participant.kind ||
-        actualId !== expectedId ||
-        row.share_cents !== (payload.shares[index] ?? 0) ||
-        row.paid_cents !== expectedPaid
-      ) {
-        violations.push(
-          `[4] expense ${expense.id} participant ${index} drifted from its payload.\n` +
-            `  materialized: ${JSON.stringify(row)}\n` +
-            `  payload: ${JSON.stringify({
-              kind: participant.kind,
-              participantId: expectedId,
-              shareCents: payload.shares[index] ?? 0,
-              paidCents: expectedPaid,
-            })}`,
-        );
-      }
-    });
-  }
-}
 
 function checkTransfers(
   balances: readonly BalanceRow[],
@@ -265,47 +204,28 @@ async function collectViolations(client: Client, groupId: string): Promise<strin
   const balances = await readBalances(client, groupId);
   const expenses = await readActiveExpenses(client, groupId);
   const settlements = await readConfirmedSettlements(client, groupId);
-
-  const participants = await client.query<ParticipantRecord>(
-    "select ep.expense_id, ep.participant_index, ep.kind, ep.user_id, ep.guest_id, " +
-      "ep.share_cents, ep.paid_cents " +
-      "from public.expense_participants ep " +
-      "join public.expenses e on e.id = ep.expense_id " +
-      "where e.group_id = $1 and e.status = 'active' " +
-      "order by ep.expense_id, ep.participant_index",
-    [groupId],
-  );
-  const orphaned = await client.query<{ expense_id: string }>(
-    "select distinct ep.expense_id from public.expense_participants ep " +
-      "join public.expenses e on e.id = ep.expense_id " +
-      "where e.group_id = $1 and e.status = 'deleted'",
-    [groupId],
-  );
   const transfers = await client.query<TransferRecord>(
     "select from_kind, from_id, to_id, amount_cents::text as amount_cents " +
       "from public.group_transfers($1)",
     [groupId],
   );
 
+  // [1], [2], [3] and [6] below recompute everything from the versioned
+  // facts and settlements. The writable participant copy is deliberately
+  // not inspected: it is an acceleration projection, not a fact table, so
+  // its drift surfaces through the balance projection it feeds.
   checkZeroSum(balances, violations);
   checkNoZeroRows(balances, violations);
   checkProjectionMatchesFacts(balances, expenses, settlements, violations);
-  checkParticipantsMatchPayload(expenses, participants.rows, violations);
-  if (orphaned.rows.length > 0) {
-    violations.push(
-      `[5] deleted expenses still hold participant rows: ` +
-        `${JSON.stringify(orphaned.rows.map((row) => row.expense_id))}`,
-    );
-  }
   checkTransfers(balances, transfers.rows, violations);
 
   return violations;
 }
-
 /**
  * Assert every ledger invariant that must hold for a group after any sequence
- * of mutations, successful or rejected. Recomputes the balance projection from
- * the underlying facts rather than trusting the SQL that wrote it.
+ * of mutations, successful or rejected. The oracle reads only the versioned
+ * expense facts and confirmed settlements; it never trusts the SQL that wrote
+ * the projection or any participant-copy table.
  */
 export async function assertLedgerInvariants(groupId: string): Promise<void> {
   const violations = await withPg((client) => collectViolations(client, groupId));

@@ -72,19 +72,13 @@ test.describe("Group Invite & Accept", () => {
   test("invitee declines invite → group disappears from list", async ({
     seed,
     browser,
-    adminClient,
   }) => {
     const alice = await seed.createUser({ name: "Alice Decline" });
     const bob = await seed.createUser({ name: "Bob Decline" });
 
     const group = await seed.createGroup(alice.id, [], "Decline Test Group");
 
-    await adminClient.from("group_members").insert({
-      group_id: group.id,
-      user_id: bob.id,
-      status: "invited",
-      invited_by: alice.id,
-    });
+    await seed.inviteMember(alice.id, group.id, bob.id);
 
     // Bob sees the pending invite
     const bobCtx = await browser.newContext();
@@ -109,19 +103,12 @@ test.describe("Group Invite & Accept", () => {
     page,
     seed,
     loginAs,
-    adminClient,
   }) => {
     const alice = await seed.createUser({ name: "Alice Pending" });
     const bob = await seed.createUser({ name: "Bob Pending" });
-
     const group = await seed.createGroup(alice.id, [], "Pending Test");
 
-    await adminClient.from("group_members").insert({
-      group_id: group.id,
-      user_id: bob.id,
-      status: "invited",
-      invited_by: alice.id,
-    });
+    await seed.inviteMember(alice.id, group.id, bob.id);
 
     // Alice views group detail — sees Bob as "Pendente"
     await loginAs(alice);

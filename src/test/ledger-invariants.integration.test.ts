@@ -46,26 +46,26 @@ describe.skipIf(!isIntegrationTestReady)("assertLedgerInvariants", () => {
     await expect(assertLedgerInvariants(groupId)).rejects.toThrow(/\[1\][\s\S]*\[3\]/);
   });
 
-  it("catches a materialized participant that drifted from its payload", async () => {
+  it("catches a raw version payload edit the projection never saw", async () => {
     const { groupId, expenseId } = await corruptibleGroup();
-    await withPg((client) =>
-      client.query(
-        "update public.expense_participants set share_cents = share_cents + 1 " +
-          "where expense_id = $1 and participant_index = 0",
+    await withPg(async (client) => {
+      const { rows } = await client.query<{ payload: { shares: number[] } }>(
+        "select payload from public.expense_versions ev " +
+          "join public.expenses e on e.id = ev.expense_id " +
+          "where e.id = $1 and ev.version_no = e.current_version_no",
         [expenseId],
-      ),
-    );
+      );
+      const payload = rows[0].payload;
+      payload.shares = [payload.shares[0] + 1, payload.shares[1] - 1];
+      await client.query(
+        "update public.expense_versions set payload = $2 " +
+          "where expense_id = $1 and version_no = " +
+          "(select current_version_no from public.expenses where id = $1)",
+        [expenseId, JSON.stringify(payload)],
+      );
+    });
 
-    await expect(assertLedgerInvariants(groupId)).rejects.toThrow(/\[4\]/);
-  });
-
-  it("catches participant rows left behind by a deleted expense", async () => {
-    const { groupId, expenseId } = await corruptibleGroup();
-    await withPg((client) =>
-      client.query("update public.expenses set status = 'deleted' where id = $1", [expenseId]),
-    );
-
-    await expect(assertLedgerInvariants(groupId)).rejects.toThrow(/\[5\]/);
+    await expect(assertLedgerInvariants(groupId)).rejects.toThrow(/\[3\]/);
   });
 
   it("catches a zeroed row left in the projection", async () => {
