@@ -11,14 +11,15 @@ import {
   Users,
   BellRing,
 } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
+import { pushFailureMessage } from "@/lib/push/failures";
 import { useMe } from "@/hooks/use-me";
+import { useSignOut } from "@/hooks/use-sign-out";
 import { useAppStore } from "@/stores/app-store";
 import { updateProfile } from "@/lib/sync/mutations-group";
-import { getSupabase } from "@/lib/sync/client";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -70,12 +71,20 @@ const CATEGORIES: CategoryConfig[] = [
 export default function SettingsPage() {
   const me = useMe();
   const router = useRouter();
-  const { permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
+  const {
+    permission,
+    isSubscribed,
+    isLoading: pushLoading,
+    subscribe,
+    unsubscribe,
+    error: pushError,
+    retry: pushRetry,
+  } = usePushNotifications();
+  const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
 
   const handleSignOut = async () => {
-    await getSupabase().auth.signOut();
-    useAppStore.getState().reset();
-    router.replace("/auth");
+    const result = await signOut();
+    if (result.ok) router.replace("/auth");
   };
 
   if (!me) {
@@ -164,6 +173,20 @@ export default function SettingsPage() {
                   {pushLoading ? "Ativando..." : "Ativar notificações"}
                 </Button>
               )}
+              {pushError !== null && (
+                <p role="alert" className="mt-2 text-xs text-destructive">
+                  {pushFailureMessage(pushError)}
+                  {pushError.retryable && (
+                    <button
+                      type="button"
+                      onClick={() => void pushRetry()}
+                      className="ml-1 underline"
+                    >
+                      Tentar novamente
+                    </button>
+                  )}
+                </p>
+              )}
             </div>
           </div>
         </motion.div>
@@ -184,13 +207,27 @@ export default function SettingsPage() {
         transition={{ delay: 0.2, duration: 0.4 }}
         className="mt-8"
       >
+        {signOutError && (
+          <div role="alert" className="mb-3 flex items-center justify-between gap-3 text-sm text-destructive">
+            <span>{signOutError}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleSignOut()}
+            >
+              Tentar novamente
+            </Button>
+          </div>
+        )}
         <Button
           variant="outline"
           className="w-full gap-2 text-destructive"
-          onClick={handleSignOut}
+          onClick={() => void handleSignOut()}
+          disabled={signOutPending}
         >
           <LogOut className="h-4 w-4" />
-          Sair
+          {signOutPending ? "Saindo..." : "Sair"}
         </Button>
       </motion.div>
     </div>
@@ -226,6 +263,15 @@ function NotificationPreferencesSection() {
     emptyCategoryRecord(0),
   );
 
+  // Each category shows its own state: the switch moves immediately, but the
+  // row says so until the write lands, and says so louder if it fails.
+  const [saving, setSaving] = useState<Record<NotificationCategory, boolean>>(() =>
+    emptyCategoryRecord(false),
+  );
+  const [failed, setFailed] = useState<Record<NotificationCategory, boolean>>(() =>
+    emptyCategoryRecord(false),
+  );
+
   const toggleCategory = (category: NotificationCategory) => {
     const currentMe = useAppStore.getState().me;
     if (!currentMe) return;
@@ -237,6 +283,8 @@ function NotificationPreferencesSection() {
     const generation = generationsRef.current[category];
     intentsRef.current[category] = intent;
     pendingRef.current[category] += 1;
+    setSaving((prev) => ({ ...prev, [category]: true }));
+    setFailed((prev) => (prev[category] ? { ...prev, [category]: false } : prev));
 
     useAppStore.getState().patch((s) => {
       if (!s.me) return {};
@@ -267,10 +315,16 @@ function NotificationPreferencesSection() {
               },
             };
           });
+          setFailed((prev) => ({ ...prev, [category]: true }));
           toast.error(ledgerErrorMessage(err));
         }
       } finally {
         pendingRef.current[category] -= 1;
+        // Only the newest write for this category clears the indicator; an
+        // older one finishing late says nothing about the current intent.
+        if (generationsRef.current[category] === generation) {
+          setSaving((prev) => ({ ...prev, [category]: false }));
+        }
         const queued = CATEGORY_KEYS.filter((key) => pendingRef.current[key] > 0);
         if (queued.length > 0) {
           useAppStore.getState().patch((s) => {
@@ -290,6 +344,8 @@ function NotificationPreferencesSection() {
       {CATEGORIES.map((cat, i) => {
         const Icon = cat.icon;
         const enabled = prefs[cat.key] !== false;
+        const isSaving = saving[cat.key];
+        const hasFailed = failed[cat.key];
         return (
           <div key={cat.key}>
             {i > 0 && <Separator />}
@@ -298,14 +354,25 @@ function NotificationPreferencesSection() {
                 <Icon className="h-5 w-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">{cat.label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {cat.description}
-                  </p>
+                  {hasFailed ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(cat.key)}
+                      className="text-xs font-medium text-destructive underline"
+                    >
+                      Não salvou. Tentar novamente
+                    </button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {isSaving ? "Salvando..." : cat.description}
+                    </p>
+                  )}
                 </div>
               </div>
               <Switch
                 checked={enabled}
                 onCheckedChange={() => toggleCategory(cat.key)}
+                aria-label={cat.label}
               />
             </div>
           </div>

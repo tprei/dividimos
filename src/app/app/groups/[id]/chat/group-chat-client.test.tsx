@@ -103,6 +103,7 @@ function makeSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
 function seed(
   snapshot: GroupSnapshot,
   messages: ChatMessage[] = [],
+  readableThroughMessageId: string | null = null,
 ): void {
   useAppStore.setState({
     hydrated: true,
@@ -113,7 +114,12 @@ function seed(
       [snapshot.group.id]: {
         messages,
         events: [],
-        oldestCursor: null,
+        messageCursor: null,
+        messagesComplete: true,
+        eventCursor: null,
+        eventsComplete: true,
+        readWatermark: null,
+        reconcile: { status: "ready", readableThroughMessageId },
       },
     },
   });
@@ -123,6 +129,10 @@ describe("GroupChatClient", () => {
   beforeEach(() => {
     useAppStore.getState().reset();
     vi.clearAllMocks();
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
   });
 
   it("renders the group timeline and identity", () => {
@@ -161,13 +171,42 @@ describe("GroupChatClient", () => {
     });
   });
 
-  it("marks an unread group as read when opened", async () => {
-    seed(makeSnapshot({ unreadCount: 4 }));
+  it("acknowledges the newest incoming message when an unread group opens", async () => {
+    const older: ChatMessage = {
+      id: "message-1",
+      clientId: "client-1",
+      groupId: "group-1",
+      senderId: carol.id,
+      content: "Primeira",
+      createdAt: "2026-01-01T10:00:00Z",
+      sender: carol,
+    };
+    const newest: ChatMessage = {
+      ...older,
+      id: "message-2",
+      clientId: "client-2",
+      content: "Segunda",
+      createdAt: "2026-01-01T11:00:00Z",
+    };
+    seed(makeSnapshot({ unreadCount: 4 }), [older, newest], "message-2");
 
     render(<GroupChatClient groupId="group-1" />);
 
     await waitFor(() => {
-      expect(mutations.markRead).toHaveBeenCalledWith("group-1");
+      // A watermark, not a wall-clock read: the receipt names the message.
+      expect(mutations.markRead).toHaveBeenCalledWith("group-1", "message-2");
     });
+  });
+
+  it("acknowledges nothing when the group holds no incoming message", async () => {
+    seed(makeSnapshot({ unreadCount: 4 }));
+
+    render(<GroupChatClient groupId="group-1" />);
+
+    // Give the read effect a chance to run before asserting it did not.
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Ver grupo" })).toBeInTheDocument();
+    });
+    expect(mutations.markRead).not.toHaveBeenCalled();
   });
 });

@@ -2,8 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ConversationPageClient } from "./conversation-page-client";
 import { useAppStore } from "@/stores/app-store";
+import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import type { ChatMessage, GroupEvent, GroupSnapshot, Me } from "@/types/ledger";
-
 const mutations = vi.hoisted(() => ({
   sendMessage: vi.fn().mockResolvedValue({ id: "msg-ack" }),
   markRead: vi.fn().mockResolvedValue(undefined),
@@ -20,6 +20,7 @@ vi.mock("@/lib/sync/mutations-group", () => mutationsGroup);
 
 const refresh = vi.hoisted(() => ({
   loadConversation: vi.fn().mockResolvedValue(undefined),
+  refreshGroup: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/sync/refresh", () => refresh);
 
@@ -27,6 +28,21 @@ const realtime = vi.hoisted(() => ({
   subscribeChat: vi.fn(() => vi.fn()),
 }));
 vi.mock("@/lib/sync/realtime", () => realtime);
+
+const aiParse = vi.hoisted(() => ({
+  result: null as ChatExpenseResult | null,
+  parse: vi.fn(),
+  reset: vi.fn(),
+}));
+vi.mock("@/hooks/use-ai-expense-parse", () => ({
+  useAiExpenseParse: () => ({
+    result: aiParse.result,
+    parse: aiParse.parse,
+    reset: aiParse.reset,
+    isParsing: false,
+    error: null,
+  }),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
@@ -56,6 +72,16 @@ const counterparty = {
   name: "Bob Silva",
   avatarUrl: null,
 };
+const incomingMessage: ChatMessage = {
+  id: "msg-incoming",
+  clientId: "client-incoming",
+  groupId: "dm-1",
+  senderId: counterparty.id,
+  content: "Oi, Alice!",
+  createdAt: "2026-01-01T00:01:00Z",
+  sender: counterparty,
+};
+
 
 function makeDmSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   return {
@@ -107,15 +133,47 @@ function seedDm(
       [snapshot.group.id]: {
         messages: conversation.messages,
         events: conversation.events,
-        oldestCursor: "2026-01-01T00:00:00Z",
+        messageCursor: null,
+        messagesComplete: true,
+        eventCursor: null,
+        eventsComplete: true,
+        readWatermark: null,
+        reconcile: {
+          status: "ready",
+          // Mirrors the store reducer: with a complete history, the newest
+          // incoming message is the acknowledgeable boundary.
+          readableThroughMessageId:
+            conversation.messages.filter((m) => m.senderId !== me.id).at(-1)?.id ?? null,
+        },
       },
     },
   });
 }
+function aiDraft(overrides: Partial<ChatExpenseResult> = {}): ChatExpenseResult {
+  return {
+    title: "Jantar",
+    amountCents: 10000,
+    expenseType: "single_amount",
+    splitType: "equal",
+    allocations: [],
+    items: [],
+    participants: [],
+    payerHandle: null,
+    merchantName: null,
+    confidence: "high",
+    ...overrides,
+  };
+}
+
 
 describe("ConversationPageClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    aiParse.result = null;
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
   });
 
   it("timeline merges messages and events by createdAt", () => {
@@ -167,6 +225,30 @@ describe("ConversationPageClient", () => {
     expect(text1.compareDocumentPosition(text2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("loads DM history on mount without waiting for realtime", async () => {
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    await waitFor(() => {
+      expect(refresh.loadConversation).toHaveBeenCalledWith("dm-1");
+    });
+  });
+  it("does not render chat actions when the account is absent from the DM", () => {
+    const snapshot = makeDmSnapshot({
+      members: [makeDmSnapshot().members[1]!],
+    });
+    seedDm(snapshot, { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Essa conversa não está disponível para sua conta.",
+    );
+    expect(screen.queryByTestId("chat-input")).toBeNull();
+    expect(screen.queryByText("Nova cobrança")).toBeNull();
+  });
+
   it("sending a message calls sendMessage", async () => {
     seedDm(makeDmSnapshot(), { messages: [], events: [] });
 
@@ -182,14 +264,78 @@ describe("ConversationPageClient", () => {
       expect(mutations.sendMessage).toHaveBeenCalledWith("dm-1", "Olá Bob!");
     });
   });
-
-  it("opening with unread calls markRead", async () => {
-    seedDm(makeDmSnapshot({ unreadCount: 3 }), { messages: [], events: [] });
+  it("opening with unread calls markRead at the latest incoming message", async () => {
+    seedDm(makeDmSnapshot({ unreadCount: 3 }), { messages: [incomingMessage], events: [] });
 
     render(<ConversationPageClient counterpartyId={counterparty.id} />);
 
     await waitFor(() => {
-      expect(mutations.markRead).toHaveBeenCalledWith("dm-1");
+      expect(mutations.markRead).toHaveBeenCalledWith("dm-1", "msg-incoming");
     });
+  });
+  it("rejects an unresolved chat actor before the confirmation write", async () => {
+    aiParse.result = aiDraft({
+      participants: [{ spokenName: "Carol", matchedHandle: null, confidence: "low" }],
+      payerHandle: "carol",
+    });
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+    fireEvent.click(screen.getByTestId("draft-confirm-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("draft-error")).toHaveTextContent("identificar");
+    });
+    expect(mutations.createExpense).not.toHaveBeenCalled();
+  });
+
+  it("writes a valid chat actor set through the direct confirmation handler", async () => {
+    aiParse.result = aiDraft({ payerHandle: "SELF" });
+    seedDm(makeDmSnapshot(), { messages: [], events: [] });
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+    fireEvent.click(screen.getByTestId("draft-confirm-button"));
+
+    await waitFor(() => {
+      expect(mutations.createExpense).toHaveBeenCalledWith(
+        expect.objectContaining({
+          groupId: "dm-1",
+          payload: expect.objectContaining({
+            participants: [
+              { kind: "user", userId: me.id },
+              { kind: "user", userId: counterparty.id },
+            ],
+            payers: [{ participantIndex: 0, amountCents: 10000 }],
+          }),
+        }),
+      );
+    });
+  });
+  it("rejects a quick-charge payer when the displayed handles conflict", async () => {
+    const conflictingCounterparty = { ...counterparty, handle: me.handle };
+    seedDm(
+      makeDmSnapshot({
+        members: [
+          makeDmSnapshot().members[0],
+          {
+            ...makeDmSnapshot().members[1],
+            user: conflictingCounterparty,
+          },
+        ],
+      }),
+      { messages: [], events: [] },
+    );
+
+    render(<ConversationPageClient counterpartyId={counterparty.id} />);
+    fireEvent.click(screen.getByText("Nova cobrança"));
+    fireEvent.change(screen.getByTestId("quick-charge-amount"), {
+      target: { value: "100,00" },
+    });
+    fireEvent.click(screen.getByTestId("quick-charge-confirm"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-charge-error")).toHaveTextContent("handles");
+    });
+    expect(mutations.createExpense).not.toHaveBeenCalled();
   });
 });

@@ -4,8 +4,12 @@ import type {
   Bootstrap,
   ChatMessage,
   ChatLastMessage,
+  PageCursor,
   Conversation,
+  ConversationReadWatermark,
   EventKind,
+  ChargePage,
+  ExpensePage,
   Group,
   GroupGuest,
   GroupEvent,
@@ -32,6 +36,7 @@ import type {
 import {
   arrayOf,
   bool,
+  decodeExpenseSummaries,
   decodeExpenseSummary,
   decodeUserProfile,
   exactKeys,
@@ -854,7 +859,147 @@ export function decodeVendorCharges(
   return arrayOf(raw, path, decodeVendorCharge);
 }
 
-const CONVERSATION_KEYS = ["messages", "events"] as const;
+const CONVERSATION_KEYS = [
+  "messages",
+  "messageCursor",
+  "messagesComplete",
+  "events",
+  "eventCursor",
+  "eventsComplete",
+  "readWatermark",
+] as const;
+const CURSOR_KEYS = ["createdAt", "id"] as const;
+const EXPENSE_PAGE_KEYS = ["expenses", "nextCursor", "complete", "total"] as const;
+const CHARGE_PAGE_KEYS = [
+  "charges",
+  "nextCursor",
+  "complete",
+  "total",
+  "receivedCount",
+  "receivedTodayCents",
+] as const;
+
+export function decodeChargePage(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<ChargePage, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, CHARGE_PAGE_KEYS, path);
+  if (!k.ok) return k;
+
+  const charges = decodeVendorCharges(raw.charges, [...path, "charges"]);
+  if (!charges.ok) return charges;
+  const nextCursor = decodePageCursor(raw.nextCursor, [...path, "nextCursor"], id);
+  if (!nextCursor.ok) return nextCursor;
+  const complete = bool(raw.complete, [...path, "complete"]);
+  if (!complete.ok) return complete;
+  const total = int(raw.total, [...path, "total"]);
+  if (!total.ok) return total;
+  const receivedCount = int(raw.receivedCount, [...path, "receivedCount"]);
+  if (!receivedCount.ok) return receivedCount;
+  // A day's takings can exceed int4, so this arrives as a bigint and must stay
+  // a safe integer rather than being silently truncated.
+  const receivedTodayCents = int(raw.receivedTodayCents, [...path, "receivedTodayCents"]);
+  if (!receivedTodayCents.ok) return receivedTodayCents;
+
+  return ok({
+    charges: charges.value,
+    nextCursor: nextCursor.value,
+    complete: complete.value,
+    total: total.value,
+    receivedCount: receivedCount.value,
+    receivedTodayCents: receivedTodayCents.value,
+  });
+}
+
+export function decodeExpensePage(
+  raw: unknown,
+  path: Path = [],
+): ValidationResult<ExpensePage, WireIssue> {
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, EXPENSE_PAGE_KEYS, path);
+  if (!k.ok) return k;
+
+  const expenses = decodeExpenseSummaries(raw.expenses, [...path, "expenses"]);
+  if (!expenses.ok) return expenses;
+  const nextCursor = decodePageCursor(raw.nextCursor, [...path, "nextCursor"], id);
+  if (!nextCursor.ok) return nextCursor;
+  const complete = bool(raw.complete, [...path, "complete"]);
+  if (!complete.ok) return complete;
+  const total = int(raw.total, [...path, "total"]);
+  if (!total.ok) return total;
+
+  return ok({
+    expenses: expenses.value,
+    nextCursor: nextCursor.value,
+    complete: complete.value,
+    total: total.value,
+  });
+}
+const READ_WATERMARK_KEYS = ["lastReadAt", "lastReadMessageId"] as const;
+
+/**
+ * Cursors are compared against PostgreSQL `(created_at, id)` tuples, so the
+ * timestamp must survive the round trip at full microsecond precision.
+ * Date-based parsing truncates to milliseconds and would skip or repeat rows
+ * sharing a millisecond, so this normalizes the text instead.
+ */
+export function canonicalizeTimestamp(
+  raw: unknown,
+  path: Path,
+): ValidationResult<string, WireIssue> {
+  if (typeof raw !== "string") return fail(path);
+  const match =
+    /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}(?::?\d{2})?)$/.exec(raw);
+  if (!match) return fail(path);
+
+  const [, date, time, fraction = "", zone] = match;
+  if (fraction.length > 6) return fail(path);
+  if (zone !== "Z" && !/^[+-]00(?::?00)?$/.test(zone)) return fail(path);
+
+  return ok(`${date}T${time}.${fraction.padEnd(6, "0")}Z`);
+}
+
+function decodePageCursor(
+  raw: unknown,
+  path: Path,
+  decodeId: (value: unknown, idPath: Path) => ValidationResult<string, WireIssue>,
+): ValidationResult<PageCursor | null, WireIssue> {
+  if (raw === null) return ok(null);
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, CURSOR_KEYS, path);
+  if (!k.ok) return k;
+
+  const createdAt = canonicalizeTimestamp(raw.createdAt, [...path, "createdAt"]);
+  if (!createdAt.ok) return createdAt;
+  const cursorId = decodeId(raw.id, [...path, "id"]);
+  if (!cursorId.ok) return cursorId;
+
+  return ok({ createdAt: createdAt.value, id: cursorId.value });
+}
+
+/** Event ids are PostgreSQL bigints; JSON delivers them as numbers. */
+function eventCursorId(raw: unknown, path: Path): ValidationResult<string, WireIssue> {
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1) return fail(path);
+  return ok(String(raw));
+}
+
+function decodeReadWatermark(
+  raw: unknown,
+  path: Path,
+): ValidationResult<ConversationReadWatermark | null, WireIssue> {
+  if (raw === null) return ok(null);
+  if (!isRecord(raw)) return fail(path);
+  const k = exactKeys(raw, READ_WATERMARK_KEYS, path);
+  if (!k.ok) return k;
+
+  const lastReadAt = canonicalizeTimestamp(raw.lastReadAt, [...path, "lastReadAt"]);
+  if (!lastReadAt.ok) return lastReadAt;
+  const lastReadMessageId = id(raw.lastReadMessageId, [...path, "lastReadMessageId"]);
+  if (!lastReadMessageId.ok) return lastReadMessageId;
+
+  return ok({ lastReadAt: lastReadAt.value, lastReadMessageId: lastReadMessageId.value });
+}
 
 export function decodeConversation(
   raw: unknown,
@@ -866,8 +1011,28 @@ export function decodeConversation(
 
   const messages = arrayOf(raw.messages, [...path, "messages"], decodeChatMessage);
   if (!messages.ok) return messages;
+  const messageCursor = decodePageCursor(raw.messageCursor, [...path, "messageCursor"], id);
+  if (!messageCursor.ok) return messageCursor;
+  const messagesComplete = bool(raw.messagesComplete, [...path, "messagesComplete"]);
+  if (!messagesComplete.ok) return messagesComplete;
+
   const events = arrayOf(raw.events, [...path, "events"], decodeGroupEvent);
   if (!events.ok) return events;
+  const eventCursor = decodePageCursor(raw.eventCursor, [...path, "eventCursor"], eventCursorId);
+  if (!eventCursor.ok) return eventCursor;
+  const eventsComplete = bool(raw.eventsComplete, [...path, "eventsComplete"]);
+  if (!eventsComplete.ok) return eventsComplete;
 
-  return ok({ messages: messages.value, events: events.value });
+  const readWatermark = decodeReadWatermark(raw.readWatermark, [...path, "readWatermark"]);
+  if (!readWatermark.ok) return readWatermark;
+
+  return ok({
+    messages: messages.value,
+    messageCursor: messageCursor.value,
+    messagesComplete: messagesComplete.value,
+    events: events.value,
+    eventCursor: eventCursor.value,
+    eventsComplete: eventsComplete.value,
+    readWatermark: readWatermark.value,
+  });
 }

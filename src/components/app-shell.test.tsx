@@ -13,13 +13,6 @@ vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname(),
 }));
 
-const mockHasUnread = vi.fn(() => false);
-const mockMarkViewed = vi.fn();
-
-vi.mock("@/lib/activity-badge", () => ({
-  hasUnreadActivity: () => mockHasUnread(),
-  markActivityViewed: () => mockMarkViewed(),
-}));
 
 vi.mock("@/components/pwa/install-prompt", () => ({
   InstallPrompt: () => null,
@@ -77,7 +70,7 @@ vi.mock("@/lib/sync/auth", () => ({
 
 import { haptics } from "@/hooks/use-haptics";
 import { useAppStore } from "@/stores/app-store";
-import type { Me } from "@/types/ledger";
+import type { GroupSnapshot, Me } from "@/types/ledger";
 import { AppShell } from "./app-shell";
 
 const mockMe: Me = {
@@ -101,6 +94,9 @@ describe("AppShell hydration & auth lifecycle", () => {
       me: null,
       groups: {},
       groupOrder: [],
+      bootstrapStatus: "idle",
+      bootstrapErrorCode: null,
+      lastBootstrappedAccountId: null,
     });
   });
 
@@ -112,7 +108,12 @@ describe("AppShell hydration & auth lifecycle", () => {
   });
 
   it("renders children when hydrated with an onboarded user", () => {
-    useAppStore.setState({ hydrated: true, me: mockMe });
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
 
     render(<AppShell><div>content</div></AppShell>);
 
@@ -120,15 +121,81 @@ describe("AppShell hydration & auth lifecycle", () => {
     expect(screen.queryByTestId("dashboard-skeleton")).toBeNull();
   });
 
-  it("redirects to /auth/onboard when hydrated but me.onboarded is false", () => {
+  it("shows a skeleton, not the app, when no bootstrap succeeded for this account", () => {
+    // A persisted profile from a previous account must not unlock the app.
     useAppStore.setState({
       hydrated: true,
-      me: { ...mockMe, onboarded: false },
+      me: mockMe,
+      bootstrapStatus: "loading",
+      lastBootstrappedAccountId: "someone-else",
     });
 
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(mockRouter.replace).toHaveBeenCalledWith("/auth/onboard");
+    expect(screen.getByTestId("dashboard-skeleton")).toBeDefined();
+    expect(screen.queryByText("content")).toBeNull();
+  });
+
+  it("blocks with a retry when the first bootstrap for this account failed", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "error",
+      bootstrapErrorCode: "network",
+      lastBootstrappedAccountId: null,
+    });
+
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(screen.queryByText("content")).toBeNull();
+    expect(screen.getByRole("button", { name: /Tentar novamente/ })).toBeDefined();
+  });
+
+  it("keeps known-good data on screen with a retry when a later read fails", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "error",
+      bootstrapErrorCode: "network",
+      lastBootstrappedAccountId: mockMe.id,
+    });
+
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(screen.getByText("content")).toBeDefined();
+    expect(screen.getByRole("button", { name: /Atualizar/ })).toBeDefined();
+  });
+
+  it("never routes to onboarding while the profile is unproven", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: { ...mockMe, onboarded: false },
+      bootstrapStatus: "error",
+      bootstrapErrorCode: "network",
+      lastBootstrappedAccountId: null,
+    });
+
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(mockRouter.replace).not.toHaveBeenCalledWith(
+      expect.stringContaining("/auth/onboard"),
+    );
+  });
+
+  it("redirects to /auth/onboard when hydrated but me.onboarded is false", () => {
+    useAppStore.setState({
+      hydrated: true,
+      me: { ...mockMe, onboarded: false },
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
+
+    render(<AppShell><div>content</div></AppShell>);
+
+    // The destination rides along so onboarding can return them to it.
+    expect(mockRouter.replace).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/auth\/onboard\?next=/),
+    );
   });
 
   it("calls runBootstrap, startRealtime, attachVisibilityRefresh, attachAuthListener on mount", () => {
@@ -162,7 +229,12 @@ describe("AppShell header", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPathname.mockReturnValue("/app/settings");
-    useAppStore.setState({ hydrated: true, me: mockMe });
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
   });
 
   it("renders a search icon linking to /app/search", () => {
@@ -201,8 +273,13 @@ describe("AppShell header", () => {
 describe("AppShell navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPathname.mockReturnValue("/app");
-    useAppStore.setState({ hydrated: true, me: mockMe });
+    mockPathname.mockReturnValue("/app/settings");
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
   });
 
   it("renders Conversas tab linking to /app/conversations", () => {
@@ -231,8 +308,13 @@ describe("AppShell navigation", () => {
 describe("AppShell haptics", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPathname.mockReturnValue("/app");
-    useAppStore.setState({ hydrated: true, me: mockMe });
+    mockPathname.mockReturnValue("/app/settings");
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
   });
 
   it("triggers tap haptic when a nav tab is clicked", () => {
@@ -325,6 +407,29 @@ describe("AppShell haptics", () => {
     expect(haptics.success).not.toHaveBeenCalled();
   });
 
+  it("withholds success feedback when the refresh failed", async () => {
+    render(<AppShell><div>content</div></AppShell>);
+    // Queue the failure after mount so the mount bootstrap does not consume it.
+    mockRunBootstrap.mockRejectedValueOnce(new Error("offline"));
+
+    const main = document.querySelector("main")!;
+
+    act(() => {
+      fireEvent.touchStart(main, { touches: [{ clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 250 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    // Telling the user their data is current when the read failed is worse
+    // than no feedback at all.
+    expect(haptics.impact).toHaveBeenCalledOnce();
+    expect(haptics.success).not.toHaveBeenCalled();
+  });
+
   it("does not trigger haptics when pull distance is below threshold", () => {
     render(<AppShell><div>content</div></AppShell>);
 
@@ -348,11 +453,41 @@ describe("AppShell haptics", () => {
 });
 
 describe("AppShell activity bell", () => {
+  const groupAt = (lastActivityAt: string): GroupSnapshot => ({
+    group: {
+      id: "g1",
+      kind: "group",
+      name: "Amigos",
+      creatorId: mockMe.id,
+      dmUserA: null,
+      dmUserB: null,
+      ledgerVersion: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+    members: [],
+    balances: [],
+    guests: [],
+    settlements: [],
+    recentExpenses: [],
+    lastEventId: 1,
+    unreadCount: 0,
+    lastMessage: null,
+    lastActivityAt,
+    expenseCount: 0,
+    pairwiseEdges: [],
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockPathname.mockReturnValue("/app/settings");
-    mockHasUnread.mockReturnValue(false);
-    useAppStore.setState({ hydrated: true, me: mockMe });
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+      groups: {},
+      activityViewedAt: {},
+    });
   });
 
   it("renders the activity bell link", () => {
@@ -363,44 +498,54 @@ describe("AppShell activity bell", () => {
     expect(bellLink.getAttribute("href")).toBe("/app/activity");
   });
 
-  it("shows unread badge when there is unread activity", () => {
-    mockHasUnread.mockReturnValue(true);
+  it("shows the badge for activity this account has not seen", () => {
+    useAppStore.setState({ groups: { g1: groupAt("2026-02-01T10:00:00.000Z") } });
     render(<AppShell><div>content</div></AppShell>);
 
-    const bellLink = screen.getByLabelText("Atividade");
-    const badge = bellLink.querySelector("span");
-    expect(badge).not.toBeNull();
+    expect(screen.getByLabelText("Atividade").querySelector("span")).not.toBeNull();
   });
 
-  it("hides unread badge when there is no unread activity", () => {
-    mockHasUnread.mockReturnValue(false);
+  it("hides the badge once this account has seen the newest activity", () => {
+    useAppStore.setState({
+      groups: { g1: groupAt("2026-02-01T10:00:00.000Z") },
+      activityViewedAt: { [mockMe.id]: "2026-02-01T10:00:00.000Z" },
+    });
     render(<AppShell><div>content</div></AppShell>);
 
-    const bellLink = screen.getByLabelText("Atividade");
-    const badge = bellLink.querySelector("span");
-    expect(badge).toBeNull();
+    expect(screen.getByLabelText("Atividade").querySelector("span")).toBeNull();
   });
 
-  it("marks activity as viewed when on activity page", () => {
+  it("does not credit one account with another account's view", () => {
+    useAppStore.setState({
+      groups: { g1: groupAt("2026-02-01T10:00:00.000Z") },
+      activityViewedAt: { "other-account": "2026-02-01T10:00:00.000Z" },
+    });
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(screen.getByLabelText("Atividade").querySelector("span")).not.toBeNull();
+  });
+
+  it("does not mark activity viewed merely by visiting the route", () => {
     mockPathname.mockReturnValue("/app/activity");
+    useAppStore.setState({ groups: { g1: groupAt("2026-02-01T10:00:00.000Z") } });
+
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(mockMarkViewed).toHaveBeenCalled();
-  });
-
-  it("does not mark activity as viewed on other pages", () => {
-    mockPathname.mockReturnValue("/app/groups");
-    render(<AppShell><div>content</div></AppShell>);
-
-    expect(mockMarkViewed).not.toHaveBeenCalled();
+    // Only a successful activity read inside the screen records the view.
+    expect(useAppStore.getState().activityViewedAt[mockMe.id]).toBeUndefined();
   });
 });
 
 describe("AppShell keyboard padding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPathname.mockReturnValue("/app");
-    useAppStore.setState({ hydrated: true, me: mockMe });
+    mockPathname.mockReturnValue("/app/settings");
+    useAppStore.setState({
+      hydrated: true,
+      me: mockMe,
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: mockMe.id,
+    });
   });
 
   it("applies pb-20 padding to main when keyboard is closed", () => {

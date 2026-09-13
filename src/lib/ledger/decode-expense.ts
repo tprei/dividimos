@@ -7,6 +7,7 @@ import type {
   ExpenseItemPayload,
   ExpensePayerPayload,
   ExpensePayload,
+  ExpenseSplitMethod,
   ExpenseRecord,
   ExpenseStatus,
   ExpenseSummary,
@@ -39,13 +40,21 @@ export function exactKeys(
   raw: Record<string, unknown>,
   expected: readonly string[],
   path: Path,
+  /**
+   * Keys that may appear but are not required. Rows written before a field
+   * existed do not carry it, and refusing them would make old expenses
+   * unreadable.
+   */
+  optional: readonly string[] = [],
 ): ValidationResult<true, WireIssue> {
   for (let i = 0; i < expected.length; i++) {
     if (!(expected[i] in raw)) return fail([...path, expected[i]]);
   }
   const keys = Object.keys(raw);
   for (let i = 0; i < keys.length; i++) {
-    if (!expected.includes(keys[i])) return fail([...path, keys[i]]);
+    if (!expected.includes(keys[i]) && !optional.includes(keys[i])) {
+      return fail([...path, keys[i]]);
+    }
   }
   return ok(true);
 }
@@ -254,12 +263,17 @@ const EXPENSE_PAYLOAD_KEYS = [
   "itemAssignments",
 ] as const;
 
+// Recorded since the authored split method landed; older versions predate it.
+const EXPENSE_PAYLOAD_OPTIONAL_KEYS = ["splitMethod"] as const;
+
+const SPLIT_METHODS: readonly ExpenseSplitMethod[] = ["equal", "percentage", "fixed"];
+
 export function decodeExpensePayload(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<ExpensePayload, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, EXPENSE_PAYLOAD_KEYS, path);
+  const k = exactKeys(raw, EXPENSE_PAYLOAD_KEYS, path, EXPENSE_PAYLOAD_OPTIONAL_KEYS);
   if (!k.ok) return k;
 
   const items = arrayOf(raw.items, [...path, "items"], decodeExpenseItemPayload);
@@ -286,12 +300,26 @@ export function decodeExpensePayload(
     itemAssignments = assignmentsRes.value;
   }
 
+  // Versions written before the method was recorded have no key at all, and
+  // the server sends null when it does not apply, so both mean "not stated".
+  let splitMethod: ExpenseSplitMethod | null = null;
+  if (raw.splitMethod !== undefined && raw.splitMethod !== null) {
+    if (
+      typeof raw.splitMethod !== "string" ||
+      !SPLIT_METHODS.includes(raw.splitMethod as ExpenseSplitMethod)
+    ) {
+      return fail([...path, "splitMethod"]);
+    }
+    splitMethod = raw.splitMethod as ExpenseSplitMethod;
+  }
+
   return ok({
     items: items.value,
     participants: participants.value,
     shares: shares.value,
     payers: payers.value,
     itemAssignments,
+    splitMethod,
   });
 }
 

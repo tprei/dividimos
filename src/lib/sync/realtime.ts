@@ -1,10 +1,16 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { decodeChatMessage } from "@/lib/ledger/decode";
 import { useAppStore } from "@/stores/app-store";
-import type { AppState, ConversationState } from "@/stores/app-store";
+import type { AppState } from "@/stores/app-store";
+import { mergeConversation } from "@/stores/app-store-merge";
+import {
+  invalidateChatReconciliation,
+  isMalformedHint,
+  reconcileChat,
+} from "./chat-reconcile";
 import type { ChatMessage, GroupSnapshot } from "@/types/ledger";
 import { runBootstrap } from "./bootstrap";
-import { getSupabase } from "./client";
+import { getAuthGeneration, getSupabase } from "./client";
 import { refreshGroup } from "./refresh";
 
 interface LedgerBroadcastPayload {
@@ -58,12 +64,6 @@ export function shouldRefreshGroup(
   );
 }
 
-function compareCreatedAtAsc(a: ChatMessage, b: ChatMessage): number {
-  if (a.createdAt < b.createdAt) return -1;
-  if (a.createdAt > b.createdAt) return 1;
-  return 0;
-}
-
 export function mergeChatBroadcast(
   state: AppState,
   groupId: string,
@@ -78,16 +78,15 @@ export function mergeChatBroadcast(
   const patch: Partial<AppState> = {};
 
   if (!isDuplicate) {
-    const prevMessages = existingConv?.messages ?? [];
-    const prevEvents = existingConv?.events ?? [];
-    const newConv: ConversationState = {
-      messages: [...prevMessages, message].sort(compareCreatedAtAsc),
-      events: prevEvents,
-      oldestCursor: existingConv?.oldestCursor ?? null,
-    };
+    // The shared reducer owns identity and ordering; a live row never changes
+    // either stream's cursor or completeness.
     patch.conversations = {
       ...state.conversations,
-      [groupId]: newConv,
+      [groupId]: mergeConversation(
+        existingConv,
+        { kind: "broadcast", messages: [message], events: [] },
+        state.me?.id ?? null,
+      ),
     };
   }
 
@@ -122,13 +121,24 @@ function handleLedgerBroadcast(groupId: string, payload: unknown): void {
   }
 }
 
-function handleChatBroadcast(groupId: string, payload: unknown): void {
+function handleChatBroadcast(
+  groupId: string,
+  payload: unknown,
+  authGeneration: number,
+): void {
+  if (getAuthGeneration() !== authGeneration) return;
   const decoded = decodeChatMessage(payload);
   if (!decoded.ok) return;
+
+  // A row older than everything we hold proves a gap the live stream cannot
+  // fill, so schedule one coalesced reconciliation instead of a query burst.
+  const gapped = isMalformedHint(groupId, decoded.value.createdAt);
 
   useAppStore
     .getState()
     .patch((state) => mergeChatBroadcast(state, groupId, decoded.value));
+
+  if (gapped) reconcileChat(groupId);
 }
 
 let membershipInFlight: Promise<void> | null = null;
@@ -201,6 +211,11 @@ export function startRealtime(): () => void {
           .on("broadcast", { event: "ledger" }, ({ payload }) => {
             handleLedgerBroadcast(id, payload);
           })
+          .on("broadcast", { event: "chat_activity" }, () => {
+            // Wakes conversation previews and unread badges through the one
+            // coalesced group refresh; never a per-event query burst.
+            void refreshGroup(id).catch(() => {});
+          })
           .subscribe(
             onRecovery(() => {
               void refreshGroup(id).catch(() => {});
@@ -261,14 +276,38 @@ export function startRealtime(): () => void {
 }
 
 export function subscribeChat(groupId: string): () => void {
+  const authGeneration = getAuthGeneration();
   const channel = getSupabase()
     .channel(`chat:${groupId}`, { config: { private: true } })
     .on("broadcast", { event: "message" }, ({ payload }) => {
-      handleChatBroadcast(groupId, payload);
+      handleChatBroadcast(groupId, payload, authGeneration);
     })
-    .subscribe();
+    .subscribe((status) => {
+      // Reconcile once the subscription is live: anything inserted before this
+      // point was never broadcast to us.
+      if (status === "SUBSCRIBED" && getAuthGeneration() === authGeneration) {
+        reconcileChat(groupId);
+      }
+    });
+
+  const handleVisibility = () => {
+    if (
+      document.visibilityState === "visible" &&
+      getAuthGeneration() === authGeneration
+    ) {
+      reconcileChat(groupId);
+    }
+  };
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibility);
+  }
 
   return () => {
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    }
+    // Invalidate before removing the channel so in-flight pages cannot publish.
+    invalidateChatReconciliation(groupId);
     void getSupabase().removeChannel(channel);
   };
 }

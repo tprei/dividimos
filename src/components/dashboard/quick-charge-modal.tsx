@@ -14,11 +14,28 @@ import { haptics } from "@/hooks/use-haptics";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { ConfettiBurst } from "@/components/shared/confetti-burst";
 import {
-  recordVendorCharge,
+  cancelVendorCharge,
   confirmVendorCharge,
+  recordVendorCharge,
 } from "@/lib/sync/mutations-group";
-import { useAppStore } from "@/stores/app-store";
+import { getAuthGeneration } from "@/lib/sync/client";
 import type { VendorCharge } from "@/types/ledger";
+import { useAppStore } from "@/stores/app-store";
+
+interface ChargeOperation {
+  generation: number;
+  authGeneration: number;
+  controller: AbortController;
+  amountCents: number;
+  description: string | null;
+  insertPromise: Promise<VendorCharge> | null;
+  chargeId: string | null;
+  cancellationPromise: Promise<void> | null;
+  cancellationAttached: boolean;
+  confirmationStarted: boolean;
+  confirmed: boolean;
+  abandoned: boolean;
+}
 
 interface QuickChargeModalProps {
   open: boolean;
@@ -35,7 +52,9 @@ export function QuickChargeModal({
   const abortRef = useRef<AbortController | null>(null);
   const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationRef = useRef(0);
-  const insertPromiseRef = useRef<Promise<VendorCharge | null> | null>(null);
+  const operationRef = useRef<ChargeOperation | null>(null);
+  const activeRef = useRef(open);
+  activeRef.current = open;
 
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
@@ -45,43 +64,124 @@ export function QuickChargeModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
-  const [chargeId, setChargeId] = useState<string | null>(null);
   const [confirmedAmount, setConfirmedAmount] = useState(0);
   useBackHandler(open && !isConfirming && phase !== "success", onClose);
 
+  const requestCancellation = useCallback((operation: ChargeOperation, id: string) => {
+    if (
+      operation.cancellationPromise ||
+      operation.confirmationStarted ||
+      operation.confirmed ||
+      getAuthGeneration() !== operation.authGeneration
+    ) {
+      return;
+    }
+    const cancellation = cancelVendorCharge(id);
+    operation.cancellationPromise = cancellation;
+    void cancellation.catch(() => {
+      if (activeRef.current) {
+        const message = "Não foi possível cancelar a cobrança. Tente novamente.";
+        setError(message);
+        toast.error(message);
+      }
+    });
+  }, []);
+
+  const attachCancellation = useCallback(
+    (operation: ChargeOperation) => {
+      if (!operation.insertPromise || operation.cancellationAttached) return;
+      operation.cancellationAttached = true;
+      void operation.insertPromise.then(
+        (charge) => {
+          operation.chargeId = charge.id;
+          if (operation.abandoned) {
+            requestCancellation(operation, charge.id);
+          }
+        },
+        () => {
+          // A failed insert created no row to cancel.
+        },
+      );
+    },
+    [requestCancellation],
+  );
+
+  const abandonGeneration = useCallback(() => {
+    generationRef.current += 1;
+    const operation = operationRef.current;
+    if (operation) {
+      operation.abandoned = true;
+      operation.controller.abort();
+      if (operation.chargeId) {
+        requestCancellation(operation, operation.chargeId);
+      }
+    }
+    operationRef.current = null;
+    abortRef.current = null;
+  }, [requestCancellation]);
+  const isCurrentOperation = useCallback((operation: ChargeOperation) => {
+    return (
+      activeRef.current &&
+      operationRef.current === operation &&
+      generationRef.current === operation.generation &&
+      getAuthGeneration() === operation.authGeneration &&
+      !operation.abandoned &&
+      !operation.controller.signal.aborted
+    );
+  }, []);
+
   useEffect(() => {
     if (open) {
+      abandonGeneration();
       setAmountCents(0);
       setDescription("");
       setPhase("input");
       setCopiaECola("");
       setCopied(false);
       setError("");
-      setChargeId(null);
       setIsConfirming(false);
       setConfirmedAmount(0);
-      insertPromiseRef.current = null;
-    } else {
-      if (autoCloseRef.current) {
-        clearTimeout(autoCloseRef.current);
-        autoCloseRef.current = null;
-      }
+      return;
     }
-  }, [open]);
+
+    abandonGeneration();
+    if (autoCloseRef.current) {
+      clearTimeout(autoCloseRef.current);
+      autoCloseRef.current = null;
+    }
+  }, [open, abandonGeneration]);
+
+  useEffect(() => {
+    return () => {
+      abandonGeneration();
+    };
+  }, [abandonGeneration]);
 
   const generateQr = useCallback(async () => {
-    if (amountCents <= 0) return;
+    if (!activeRef.current || amountCents <= 0) return;
 
+    abandonGeneration();
     setPhase("qr");
     setLoading(true);
     setError("");
-    setCopiaECola("");
-    setChargeId(null);
-    insertPromiseRef.current = null;
 
-    const gen = ++generationRef.current;
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    const controller = new AbortController();
+    const operation: ChargeOperation = {
+      generation: ++generationRef.current,
+      authGeneration: getAuthGeneration(),
+      controller,
+      amountCents,
+      description: description || null,
+      insertPromise: null,
+      chargeId: null,
+      cancellationPromise: null,
+      cancellationAttached: false,
+      confirmationStarted: false,
+      confirmed: false,
+      abandoned: false,
+    };
+    operationRef.current = operation;
+    abortRef.current = controller;
 
     let copia: string | null = null;
     try {
@@ -89,11 +189,10 @@ export function QuickChargeModal({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amountCents }),
-        signal: abortRef.current.signal,
+        signal: controller.signal,
       });
-
       const data = await res.json();
-      if (generationRef.current !== gen) return;
+      if (!isCurrentOperation(operation)) return;
 
       if (!data.copiaECola) {
         setError(data.error || "Eita, deu ruim no Pix");
@@ -105,32 +204,44 @@ export function QuickChargeModal({
       setCopiaECola(data.copiaECola);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      if (generationRef.current !== gen) return;
+      if (!isCurrentOperation(operation)) return;
       setError("Sem conexão. Tenta de novo.");
       haptics.error();
       return;
     } finally {
-      if (generationRef.current === gen) setLoading(false);
+      if (isCurrentOperation(operation)) setLoading(false);
     }
 
-    if (!copia) return;
+    if (!copia || !isCurrentOperation(operation)) return;
 
-    // Kick off the insert and stash the promise so handleConfirm can await it
-    // instead of issuing a duplicate. Failures become null and trigger a retry
-    // on confirm. Stale resolutions (from a prior generation) never touch state.
     const insertPromise = recordVendorCharge(
-      amountCents,
-      description || null,
-    ).catch(() => null);
-    insertPromiseRef.current = insertPromise;
+      operation.amountCents,
+      operation.description,
+    );
+    operation.insertPromise = insertPromise;
+    attachCancellation(operation);
 
-    const charge = await insertPromise;
-    if (generationRef.current !== gen) return;
-    if (charge) {
-      setChargeId(charge.id);
+    try {
+      const charge = await insertPromise;
+      operation.chargeId = charge.id;
+      if (!isCurrentOperation(operation)) {
+        if (operation.abandoned) requestCancellation(operation, charge.id);
+        return;
+      }
       useAppStore.getState().upsertVendorCharge(charge);
+    } catch {
+      if (!isCurrentOperation(operation)) return;
+      setError("Não foi possível registrar a cobrança. Tente novamente.");
+      haptics.error();
     }
-  }, [amountCents, description]);
+  }, [
+    amountCents,
+    description,
+    abandonGeneration,
+    isCurrentOperation,
+    attachCancellation,
+    requestCancellation,
+  ]);
 
   useEffect(() => {
     if (!copiaECola || !canvasRef.current) return;
@@ -149,80 +260,102 @@ export function QuickChargeModal({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleConfirm = async () => {
-    if (isConfirming) return;
-    setIsConfirming(true);
-    setConfirmedAmount(amountCents);
-    try {
-      let id = chargeId;
-
-      // Await an in-flight best-effort insert before creating a new one —
-      // otherwise two inserts race and one pending row becomes orphaned.
-      if (!id && insertPromiseRef.current) {
-        const charge = await insertPromiseRef.current;
-        if (charge) {
-          id = charge.id;
-          setChargeId(id);
-        }
-      }
-
-      if (!id) {
-        const charge = await recordVendorCharge(
-          amountCents,
-          description || null,
-        );
-        id = charge.id;
-        setChargeId(id);
-        useAppStore.getState().upsertVendorCharge(charge);
-      }
-
-      const confirmed = await confirmVendorCharge(id);
-      useAppStore.getState().upsertVendorCharge(confirmed);
-      haptics.success();
-      setPhase("success");
-      autoCloseRef.current = setTimeout(() => {
-        handleSuccessClose();
-      }, 2500);
-    } catch {
-      setIsConfirming(false);
-      toast.error("Erro ao confirmar. Tente novamente.");
-      haptics.error();
-    }
-  };
-
-  const handleSuccessClose = () => {
+  const closeModal = useCallback(() => {
     if (autoCloseRef.current) {
       clearTimeout(autoCloseRef.current);
       autoCloseRef.current = null;
     }
+    abandonGeneration();
     setPhase("input");
     setIsConfirming(false);
     onClose();
-    onChargeConfirmed?.();
-  };
+  }, [abandonGeneration, onClose]);
+  const handleConfirm = useCallback(async () => {
+    if (isConfirming) return;
+    const operation = operationRef.current;
+    if (!operation || !isCurrentOperation(operation) || !copiaECola) return;
 
-  const handleBackdropClick = () => {
+    setIsConfirming(true);
+    setConfirmedAmount(operation.amountCents);
+    try {
+      let id = operation.chargeId;
+      if (!id && operation.insertPromise) {
+        const charge = await operation.insertPromise;
+        operation.chargeId = charge.id;
+        id = charge.id;
+      }
+
+      if (!id || !isCurrentOperation(operation)) return;
+
+      operation.confirmationStarted = true;
+      const confirmed = await confirmVendorCharge(id);
+      if (!isCurrentOperation(operation)) return;
+      operation.confirmed = true;
+      useAppStore.getState().upsertVendorCharge(confirmed);
+
+      haptics.success();
+      setPhase("success");
+      autoCloseRef.current = setTimeout(() => {
+        closeModal();
+        onChargeConfirmed?.();
+      }, 2500);
+    } catch {
+      operation.confirmationStarted = false;
+      if (operation.abandoned && operation.chargeId) {
+        requestCancellation(operation, operation.chargeId);
+      }
+      if (!isCurrentOperation(operation)) return;
+      setIsConfirming(false);
+      toast.error("Erro ao confirmar. Tente novamente.");
+      haptics.error();
+    }
+  }, [
+    copiaECola,
+    isConfirming,
+    isCurrentOperation,
+    closeModal,
+    onChargeConfirmed,
+    requestCancellation,
+  ]);
+
+
+  const handleSuccessClose = useCallback(() => {
+    const operation = operationRef.current;
+    if (operation) operation.confirmed = true;
+    closeModal();
+    onChargeConfirmed?.();
+  }, [closeModal, onChargeConfirmed]);
+
+  const handleBackToInput = useCallback(() => {
+    if (isConfirming) return;
+    abandonGeneration();
+    setPhase("input");
+    setCopiaECola("");
+    setError("");
+  }, [abandonGeneration, isConfirming]);
+
+  const handleBackdropClick = useCallback(() => {
     if (isConfirming && phase !== "success") return;
     if (phase === "success") {
       handleSuccessClose();
       return;
     }
-    onClose();
-  };
+    closeModal();
+  }, [closeModal, handleSuccessClose, isConfirming, phase]);
 
-  const handleDragEnd = (
-    _: unknown,
-    info: { offset: { y: number }; velocity: { y: number } },
-  ) => {
-    if (isConfirming && phase !== "success") return;
-    if (info.offset.y > 100 || info.velocity.y > 500) {
-      if (phase === "success") {
-        handleSuccessClose();
-      } else {
-        onClose();
+  const handleDragEnd = useCallback(
+    (_: unknown, info: { offset: { y: number }; velocity: { y: number } }) => {
+      if (isConfirming && phase !== "success") return;
+      if (info.offset.y > 100 || info.velocity.y > 500) {
+        if (phase === "success") {
+          handleSuccessClose();
+        } else {
+          closeModal();
+        }
       }
-    }
-  };
+    },
+    [closeModal, handleSuccessClose, isConfirming, phase],
+  );
 
   if (!open) return null;
 
@@ -344,7 +477,7 @@ export function QuickChargeModal({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setPhase("input")}
+                        onClick={handleBackToInput}
                       >
                         Voltar
                       </Button>
@@ -406,7 +539,7 @@ export function QuickChargeModal({
                     variant="ghost"
                     className="w-full"
                     size="sm"
-                    onClick={() => setPhase("input")}
+                    onClick={handleBackToInput}
                     disabled={isConfirming}
                   >
                     Alterar valor
@@ -475,6 +608,9 @@ export function QuickChargeModal({
                     maxLength={100}
                     className="mt-4 w-full rounded-xl border bg-muted/30 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary/30 transition-colors"
                   />
+                  {error && (
+                    <p className="mt-2 text-center text-sm text-destructive">{error}</p>
+                  )}
                 </div>
 
                 <div className="mt-6">

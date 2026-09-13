@@ -2,41 +2,22 @@ import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import OnboardForm from "./onboard-form";
+import type { Me } from "@/types/ledger";
 
-const completeOnboardingMock = vi.fn().mockResolvedValue(undefined);
+const me: Me = {
+  id: "user-a",
+  handle: "ana_costa",
+  name: "Ana Costa",
+  avatarUrl: null,
+  email: "ana@example.com",
+  pixKeyType: null,
+  pixKeyHint: null,
+  onboarded: false,
+  notificationPreferences: {},
+};
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(""),
-}));
-
-vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({
-        data: {
-          user: {
-            id: "u1",
-            email: "ana@test.com",
-            user_metadata: { full_name: "Ana Costa" },
-          },
-        },
-      }),
-    },
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          single: vi.fn().mockResolvedValue({ data: null }),
-        }),
-      }),
-    }),
-  }),
-}));
-
-vi.mock("./actions", () => ({
-  completeOnboarding: (formData: FormData) => completeOnboardingMock(formData),
-}));
-
-import OnboardPage from "./page";
+const action = vi.fn().mockResolvedValue(undefined);
 
 async function advanceToPixStep(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByDisplayValue("Ana Costa");
@@ -44,25 +25,23 @@ async function advanceToPixStep(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Chave Pix" });
 }
 
-describe("OnboardPage phone Pix key", () => {
+describe("OnboardForm phone Pix key", () => {
   beforeEach(() => {
-    completeOnboardingMock.mockClear();
+    action.mockClear();
   });
 
   it("renders the Telefone Pix key option on the Pix step", async () => {
     const user = userEvent.setup();
-    render(<OnboardPage />);
+    render(<OnboardForm me={me} action={action} />);
 
     await advanceToPixStep(user);
 
-    expect(
-      screen.getByRole("button", { name: "Telefone" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Telefone" })).toBeInTheDocument();
   });
 
   it("selecting Telefone switches placeholder and inputMode to numeric", async () => {
     const user = userEvent.setup();
-    render(<OnboardPage />);
+    render(<OnboardForm me={me} action={action} />);
 
     await advanceToPixStep(user);
     await user.click(screen.getByRole("button", { name: "Telefone" }));
@@ -71,9 +50,9 @@ describe("OnboardPage phone Pix key", () => {
     expect(input).toHaveAttribute("inputmode", "numeric");
   });
 
-  it("formats a typed phone number and submits with +55 prefix", async () => {
+  it("formats a typed phone number and submits without client identity fields", async () => {
     const user = userEvent.setup();
-    render(<OnboardPage />);
+    render(<OnboardForm me={me} action={action} />);
 
     await advanceToPixStep(user);
     await user.click(screen.getByRole("button", { name: "Telefone" }));
@@ -90,10 +69,12 @@ describe("OnboardPage phone Pix key", () => {
     await user.click(screen.getByRole("button", { name: /Começar a usar/i }));
 
     await waitFor(() => {
-      expect(completeOnboardingMock).toHaveBeenCalledTimes(1);
+      expect(action).toHaveBeenCalledTimes(1);
     });
-    const formData = completeOnboardingMock.mock.calls[0][0] as FormData;
+    const formData = action.mock.calls[0][0] as FormData;
     expect(formData.get("pixKeyType")).toBe("phone");
     expect(formData.get("pixKey")).toBe("+5511999998888");
+    expect(formData.get("userId")).toBeNull();
+    expect(formData.get("next")).toBeNull();
   });
 });

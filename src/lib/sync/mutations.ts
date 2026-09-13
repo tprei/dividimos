@@ -1,6 +1,6 @@
 import { applyExpenseDelta, applySettlementDelta, hasUnresolvedParticipants } from "@/lib/ledger/apply";
 import { decodeChatMessage, decodeMutationAck } from "@/lib/ledger/decode";
-import { rpc, rpcVoid } from "@/lib/sync/client";
+import { getAuthGeneration, rpc, rpcVoid } from "@/lib/sync/client";
 import { LedgerError } from "@/lib/sync/errors";
 import { loadConversation, refreshExpense, refreshGroup } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
@@ -60,10 +60,14 @@ function revertExpenseDetail(expenseId: string, patched: ExpenseDetail, prior: E
   };
 }
 
-function removeOptimisticExpense(clientId: string, groupId: string): RollbackStep {
+function removeOptimisticExpense(
+  clientId: string,
+  groupId: string,
+  patched: ExpenseSummary,
+): RollbackStep {
   return () => {
     useAppStore.getState().patch((s) => {
-      if (s.expenses[clientId]?.groupId !== groupId) return {};
+      if (s.expenses[clientId] !== patched || patched.groupId !== groupId) return {};
       const expenses = { ...s.expenses };
       delete expenses[clientId];
       const list = s.expenseLists[groupId];
@@ -116,6 +120,46 @@ function computeMyShareAndPaid(
   return { myShareCents: payload.shares[idx] ?? 0, myPaidCents };
 }
 
+/** What a dispatch achieved, as reported by /api/notify. */
+export interface NotifyOutcome {
+  sent: number;
+  cleaned: number;
+  failed: number;
+  recipients: number;
+  skipped: number;
+}
+
+/**
+ * Dispatches notifications for an event and reports what happened. `null`
+ * means the request itself never produced an answer, which is not evidence of
+ * delivery either way.
+ */
+export async function dispatchNotification(
+  eventId: number,
+): Promise<NotifyOutcome | null> {
+  try {
+    const response = await fetch("/api/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId }),
+    });
+    if (!response.ok) return null;
+    if (response.status === 204) {
+      return { sent: 0, cleaned: 0, failed: 0, recipients: 0, skipped: 0 };
+    }
+    const body = (await response.json()) as Partial<NotifyOutcome>;
+    return {
+      sent: body.sent ?? 0,
+      cleaned: body.cleaned ?? 0,
+      failed: body.failed ?? 0,
+      recipients: body.recipients ?? 0,
+      skipped: body.skipped ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function notify(eventId: number | null): void {
   if (eventId === null) return;
   fetch("/api/notify", {
@@ -138,9 +182,7 @@ export async function createExpense(input: {
   if (!me) throw new LedgerError("unauthenticated");
 
   const { myShareCents, myPaidCents } = computeMyShareAndPaid(payload, me.id);
-  const rollback: RollbackStep[] = [removeOptimisticExpense(clientId, groupId)];
-
-  store.upsertExpense({
+  const optimisticExpense: ExpenseSummary = {
     id: clientId,
     groupId,
     creatorId: me.id,
@@ -155,8 +197,12 @@ export async function createExpense(input: {
     myShareCents,
     myPaidCents,
     participantCount: payload.participants.length,
-  });
+  };
+  const rollback: RollbackStep[] = [
+    removeOptimisticExpense(clientId, groupId, optimisticExpense),
+  ];
 
+  store.upsertExpense(optimisticExpense);
   const priorGroup = store.groups[groupId];
   if (priorGroup) {
     const patchedGroup: GroupSnapshot = {
@@ -183,16 +229,59 @@ export async function createExpense(input: {
         p_service_fee_bps: header.serviceFeeBasisPoints,
         p_fixed_fee_cents: header.fixedFeeCents,
         p_payload: payload,
+        p_chave_acesso: header.receiptAccessKey ?? null,
       },
       decodeMutationAck,
     );
-    if (ack.expenseId) useAppStore.getState().replaceExpenseId(clientId, ack.expenseId);
+    if (ack.expenseId) {
+      useAppStore.getState().replaceExpenseId(clientId, ack.expenseId);
+    }
     void refreshGroup(groupId);
     notify(ack.eventId);
     return ack;
   } catch (error) {
     rollbackAndReconcile(rollback, groupId, error, refreshGroup);
   }
+}
+
+/**
+ * Creates a group and its first expense in one server transaction.
+ *
+ * There is no optimistic patch here: the group does not exist yet, so there
+ * is nothing in the store to patch and nothing to roll back. The caller
+ * refreshes from the ack.
+ */
+export async function createExpenseWithGroup(input: {
+  groupName: string;
+  memberIds: string[];
+  clientId: string;
+  header: ExpenseHeader;
+  payload: ExpensePayload;
+}): Promise<MutationAck> {
+  const { groupName, memberIds, clientId, header, payload } = input;
+  if (!useAppStore.getState().me) throw new LedgerError("unauthenticated");
+
+  const ack = await rpc(
+    "create_expense_with_group",
+    {
+      p_client_id: clientId,
+      p_group_name: groupName,
+      p_member_ids: memberIds,
+      p_occurred_on: header.occurredOn,
+      p_title: header.title,
+      p_merchant_name: header.merchantName ?? "",
+      p_expense_type: header.expenseType,
+      p_total_cents: header.totalCents,
+      p_service_fee_bps: header.serviceFeeBasisPoints,
+      p_fixed_fee_cents: header.fixedFeeCents,
+      p_payload: payload,
+      p_chave_acesso: header.receiptAccessKey ?? null,
+    },
+    decodeMutationAck,
+  );
+  void refreshGroup(ack.groupId);
+  notify(ack.eventId);
+  return ack;
 }
 
 export async function editExpense(input: {
@@ -469,31 +558,48 @@ export async function voidSettlement(
   }
 }
 
+
+/** Reconciler shape for rollbackAndReconcile: reloads the newest page. */
+async function reloadConversation(groupId: string): Promise<void> {
+  await loadConversation(groupId);
+}
+/**
+ * Provisional timestamp for an optimistic row. Server rows carry microsecond
+ * precision, so a millisecond `Date` string would sort ambiguously against
+ * them; the counter keeps successive local sends strictly ordered.
+ */
+let optimisticCounter = 0;
+
+function optimisticCreatedAt(): string {
+  optimisticCounter = (optimisticCounter + 1) % 1000;
+  const now = new Date();
+  const micros = String(optimisticCounter).padStart(3, "0");
+  return `${now.toISOString().slice(0, 23)}${micros}Z`;
+}
+
 export async function sendMessage(groupId: string, content: string): Promise<ChatMessage> {
+  const generation = getAuthGeneration();
   const store = useAppStore.getState();
   const me = store.me;
   if (!me) throw new LedgerError("unauthenticated");
 
   const clientId = crypto.randomUUID();
 
-  store.applyConversation(
-    groupId,
-    {
-      messages: [
-        {
-          id: clientId,
-          clientId,
-          groupId,
-          senderId: me.id,
-          content,
-          createdAt: new Date().toISOString(),
-          sender: { id: me.id, handle: me.handle, name: me.name, avatarUrl: me.avatarUrl },
-        },
-      ],
-      events: [],
-    },
-    false,
-  );
+  store.applyConversation(groupId, {
+    kind: "broadcast",
+    messages: [
+      {
+        id: clientId,
+        clientId,
+        groupId,
+        senderId: me.id,
+        content,
+        createdAt: optimisticCreatedAt(),
+        sender: { id: me.id, handle: me.handle, name: me.name, avatarUrl: me.avatarUrl },
+      },
+    ],
+    events: [],
+  });
 
   try {
     const ack = await rpc(
@@ -501,29 +607,27 @@ export async function sendMessage(groupId: string, content: string): Promise<Cha
       { p_client_id: clientId, p_group_id: groupId, p_content: content },
       decodeChatMessage,
     );
-    useAppStore.getState().applyConversation(groupId, { messages: [ack], events: [] }, false);
+    if (getAuthGeneration() !== generation) throw new LedgerError("unauthenticated");
+    // The shared reducer keys by clientId, so this replaces the provisional
+    // row rather than adding a duplicate.
+    useAppStore
+      .getState()
+      .applyConversation(groupId, { kind: "broadcast", messages: [ack], events: [] });
     return ack;
   } catch (error) {
-    rollbackAndReconcile([removeOptimisticMessage(groupId, clientId)], groupId, error, loadConversation);
+    if (getAuthGeneration() !== generation) throw error;
+    rollbackAndReconcile([removeOptimisticMessage(groupId, clientId)], groupId, error, reloadConversation);
   }
 }
 
-export async function markRead(groupId: string): Promise<void> {
-  const store = useAppStore.getState();
-
-  const rollback: RollbackStep[] = [];
-  const priorGroup = store.groups[groupId];
-  if (priorGroup) {
-    const patchedGroup: GroupSnapshot = { ...priorGroup, unreadCount: 0 };
-    store.patch((s) => ({
-      groups: s.groups[groupId] ? { ...s.groups, [groupId]: patchedGroup } : s.groups,
-    }));
-    rollback.push(revertGroup(groupId, patchedGroup, priorGroup));
-  }
-
+export async function markRead(groupId: string, lastReadMessageId: string): Promise<void> {
   try {
-    await rpcVoid("mark_read", { p_group_id: groupId });
+    await rpcVoid("mark_read", {
+      p_group_id: groupId,
+      p_last_read_message_id: lastReadMessageId,
+    });
+    await refreshGroup(groupId);
   } catch (error) {
-    rollbackAndReconcile(rollback, groupId, error, refreshGroup);
+    rollbackAndReconcile([], groupId, error, refreshGroup);
   }
 }

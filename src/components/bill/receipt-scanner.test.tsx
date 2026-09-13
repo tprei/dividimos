@@ -19,23 +19,43 @@ vi.mock("@/lib/capacitor/camera", () => ({
     mockPickNativeGalleryPhoto(...args),
 }));
 
+vi.mock("./qr-scanner-view", () => ({
+  QrScannerView: ({ paused, onDecode }: { paused?: boolean; onDecode: (data: string) => void }) => (
+    <div data-testid="qr-scanner-view" data-paused={paused ? "true" : "false"}>
+      <button
+        type="button"
+        onClick={() =>
+          onDecode(
+            "https://nfce.sefaz.sp.gov.br/consulta?chNFe=35240199999999999999550010000001231234567890",
+          )
+        }
+      >
+        Simular decodificação
+      </button>
+    </div>
+  ),
+}));
+
 import { ReceiptScanner } from "./receipt-scanner";
 
 function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
   return new File(["fake-image-data"], name, { type });
 }
 
-// Stub URL.createObjectURL / revokeObjectURL for happy-dom
+// Stub object-URL helpers without replacing the URL constructor used by QR parsing.
 const fakeUrl = "blob:http://localhost/fake-preview";
+const originalUrlConstructor = globalThis.URL;
 beforeEach(() => {
   mockGetPlatform.mockReturnValue("web");
   mockTakeNativePhoto.mockReset();
   mockPickNativeGalleryPhoto.mockReset();
-  vi.stubGlobal("URL", {
-    ...globalThis.URL,
-    createObjectURL: vi.fn(() => fakeUrl),
-    revokeObjectURL: vi.fn(),
-  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(originalUrlConstructor, {
+      createObjectURL: vi.fn(() => fakeUrl),
+      revokeObjectURL: vi.fn(),
+    }),
+  );
 });
 
 afterEach(() => {
@@ -248,7 +268,7 @@ describe("ReceiptScanner", () => {
 
     it("calls takeNativePhoto when Camera is clicked on Android", async () => {
       const mockFile = createMockFile();
-      mockTakeNativePhoto.mockResolvedValue(mockFile);
+      mockTakeNativePhoto.mockResolvedValue({ kind: "captured", file: mockFile });
 
       render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
 
@@ -262,7 +282,7 @@ describe("ReceiptScanner", () => {
 
     it("calls pickNativeGalleryPhoto when Galeria is clicked on Android", async () => {
       const mockFile = createMockFile();
-      mockPickNativeGalleryPhoto.mockResolvedValue(mockFile);
+      mockPickNativeGalleryPhoto.mockResolvedValue({ kind: "captured", file: mockFile });
 
       render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
 
@@ -276,7 +296,7 @@ describe("ReceiptScanner", () => {
 
     it("shows preview after native capture", async () => {
       const mockFile = createMockFile();
-      mockTakeNativePhoto.mockResolvedValue(mockFile);
+      mockTakeNativePhoto.mockResolvedValue({ kind: "captured", file: mockFile });
 
       render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
 
@@ -304,6 +324,35 @@ describe("ReceiptScanner", () => {
 
       expect(mockTakeNativePhoto).not.toHaveBeenCalled();
       expect(mockPickNativeGalleryPhoto).not.toHaveBeenCalled();
+    });
+  });
+
+
+  describe("capture failures", () => {
+    beforeEach(() => {
+      mockGetPlatform.mockReturnValue("android");
+    });
+
+    it("stays silent when the user backs out", async () => {
+      mockTakeNativePhoto.mockResolvedValue({ kind: "cancelled" });
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      await user.click(screen.getByText("Camera").closest("button")!);
+
+      expect(mockTakeNativePhoto).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("explains a refused camera permission instead of doing nothing", async () => {
+      mockTakeNativePhoto.mockResolvedValue({ kind: "permission_denied" });
+      render(<ReceiptScanner onProcess={vi.fn()} onBack={vi.fn()} />);
+
+      const user = userEvent.setup();
+      await user.click(screen.getByText("Camera").closest("button")!);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toMatch(/configura/i);
     });
   });
 });

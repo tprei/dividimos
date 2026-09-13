@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyUser } from "@/lib/push/notify-user";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { AppError } from "@/lib/errors";
 import {
   categoryFor,
   eventNotification,
@@ -31,6 +33,17 @@ function readPreferences(json: Json | null): NotificationPreferences {
     }
   }
   return prefs;
+}
+
+/** Lets a later attempt re-dispatch an event that never reached anyone. */
+async function releaseClaim(
+  admin: ReturnType<typeof createAdminClient>,
+  eventId: number,
+): Promise<void> {
+  await admin
+    .from("group_events")
+    .update({ notified_at: null })
+    .eq("id", eventId);
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -67,6 +80,24 @@ export async function POST(request: Request): Promise<Response> {
 
   if (!event) {
     return new NextResponse(null, { status: 204 });
+  }
+
+  // One dispatch, one token: an actor cannot fan out unboundedly by
+  // generating events. Failing closed here means zero sends.
+  try {
+    await enforceRateLimit("push.send", callerId);
+  } catch (error) {
+    await releaseClaim(admin, eventId);
+    if (error instanceof AppError && error.code === "RATE_LIMIT_EXCEEDED") {
+      return NextResponse.json(
+        { error: "Muitas notificações. Tente novamente em alguns segundos." },
+        { status: 429 },
+      );
+    }
+    return NextResponse.json(
+      { error: "Não foi possível verificar o limite de notificações." },
+      { status: 503 },
+    );
   }
 
   try {
@@ -144,8 +175,19 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
 
+    let skipped = 0;
+
     const results = await Promise.all(
-      targets.map((member) => {
+      targets.map(async (member) => {
+        // Per (actor, recipient): one exhausted pair skips that recipient
+        // only, and never blocks a sibling or another actor.
+        try {
+          await enforceRateLimit("push.send-pair", `${callerId}:${member.userId}`);
+        } catch {
+          skipped++;
+          return { sent: 0, cleaned: 0, failed: 0 };
+        }
+
         const payload = eventNotification(event, {
           groupName: group.name,
           isDm: group.kind === "dm",
@@ -164,11 +206,33 @@ export async function POST(request: Request): Promise<Response> {
       }),
     );
 
+    const outcome = results.reduce(
+      (total, result) => ({
+        sent: total.sent + result.sent,
+        cleaned: total.cleaned + result.cleaned,
+        failed: total.failed + result.failed,
+      }),
+      { sent: 0, cleaned: 0, failed: 0 },
+    );
+
+    // Hold a claim only when there is a transport failure worth retrying.
+    // Preference suppression, missing devices, and stale-device cleanup are
+    // terminal outcomes for this event.
+    if (outcome.sent === 0 && (outcome.failed > 0 || skipped > 0)) {
+      await releaseClaim(admin, eventId);
+    }
+
     return NextResponse.json({
-      sent: results.reduce((sent, result) => sent + result.sent, 0),
+      ...outcome,
+      skipped,
+      recipients: targets.length,
     });
   } catch (error) {
     console.error("notify route failed", error);
-    return NextResponse.json({ sent: 0 });
+    await releaseClaim(admin, eventId);
+    return NextResponse.json(
+      { sent: 0, cleaned: 0, failed: 1, recipients: 0, skipped: 0 },
+      { status: 500 },
+    );
   }
 }

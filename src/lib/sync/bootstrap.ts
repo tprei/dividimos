@@ -1,21 +1,52 @@
 import { decodeBootstrap } from "@/lib/ledger/decode";
+import { LedgerError } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
-import { rpc } from "./client";
+import { getAuthGeneration, rpc } from "./client";
 
-let bootstrapInFlight: Promise<void> | null = null;
+let bootstrapInFlight: { generation: number; promise: Promise<void> } | null = null;
 
-async function executeBootstrap(): Promise<void> {
-  const data = await rpc("bootstrap", {}, decodeBootstrap);
-  useAppStore.getState().applyBootstrap(data);
+async function executeBootstrap(generation: number): Promise<void> {
+  const store = useAppStore.getState();
+  // The membership set as it stood when the request left: the response cannot
+  // speak for groups created or removed after this point.
+  const knownGroupIds = Object.keys(store.groups);
+  store.setBootstrapLoading();
+
+  let data;
+  try {
+    data = await rpc("bootstrap", {}, decodeBootstrap);
+  } catch (error) {
+    // A failed read must not clear projections; it records why and rethrows so
+    // the caller can retry.
+    if (getAuthGeneration() === generation) {
+      useAppStore
+        .getState()
+        .setBootstrapError(error instanceof LedgerError ? error.code : "unknown");
+    }
+    throw error;
+  }
+
+  // The account may have been replaced, signed out, or the root torn down
+  // while this request was in flight; publishing then would resurrect data
+  // belonging to a previous session.
+  if (getAuthGeneration() !== generation) return;
+  useAppStore.getState().applyBootstrap(data, knownGroupIds);
 }
 
 export function runBootstrap(): Promise<void> {
-  if (!bootstrapInFlight) {
-    bootstrapInFlight = executeBootstrap().finally(() => {
-      bootstrapInFlight = null;
-    });
+  const generation = getAuthGeneration();
+  if (bootstrapInFlight === null || bootstrapInFlight.generation !== generation) {
+    const entry: { generation: number; promise: Promise<void> } = {
+      generation,
+      promise: executeBootstrap(generation).finally(() => {
+        // Clear only this request's entry: a newer generation's request must
+        // survive an older one settling late.
+        if (bootstrapInFlight === entry) bootstrapInFlight = null;
+      }),
+    };
+    bootstrapInFlight = entry;
   }
-  return bootstrapInFlight;
+  return bootstrapInFlight.promise;
 }
 
 export async function bootstrapIfStale(maxAgeMs = 60_000): Promise<void> {

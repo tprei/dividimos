@@ -95,12 +95,24 @@ export type ExpenseItemAssignmentPayload = {
   amountCents: number;
 };
 
+/**
+ * How the author described a single-amount division.
+ *
+ * The cents in `shares` stay authoritative. This records which control the
+ * author used so reopening the expense shows that control instead of
+ * inferring one from the amounts, which cannot tell an even split from a
+ * custom one that happens to be even.
+ */
+export type ExpenseSplitMethod = "equal" | "percentage" | "fixed";
+
 export type ExpensePayload = {
   items: ExpenseItemPayload[];
   participants: ParticipantRef[];
   shares: number[];
   payers: ExpensePayerPayload[];
   itemAssignments: ExpenseItemAssignmentPayload[] | null;
+  /** Absent on versions written before this was recorded. */
+  splitMethod?: ExpenseSplitMethod | null;
 };
 
 export interface ExpenseHeader {
@@ -111,6 +123,7 @@ export interface ExpenseHeader {
   totalCents: number;
   serviceFeeBasisPoints: number;
   fixedFeeCents: number;
+  receiptAccessKey?: string | null;
 }
 
 export interface ChangeSummary {
@@ -304,9 +317,45 @@ export interface GuestClaimResolution {
   status: GuestClaimStatus;
 }
 
+/** Strict `(created_at, id)` paging boundary shared by every cursored read. */
+export interface PageCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface ConversationReadWatermark {
+  lastReadAt: string;
+  lastReadMessageId: string;
+}
+
+/** Envelope returned by the cursored charge history read. */
+export interface ChargePage {
+  charges: VendorCharge[];
+  nextCursor: PageCursor | null;
+  complete: boolean;
+  total: number;
+  receivedCount: number;
+  /** Sum of today's received charges in Sao Paulo local time. */
+  receivedTodayCents: number;
+}
+
+/** Envelope returned by every cursored expense history read. */
+export interface ExpensePage {
+  expenses: ExpenseSummary[];
+  nextCursor: PageCursor | null;
+  complete: boolean;
+  /** Count over the whole visible scope, not the page. */
+  total: number;
+}
+
 export interface Conversation {
   messages: ChatMessage[];
+  messageCursor: PageCursor | null;
+  messagesComplete: boolean;
   events: GroupEvent[];
+  eventCursor: PageCursor | null;
+  eventsComplete: boolean;
+  readWatermark: ConversationReadWatermark | null;
 }
 
 export interface WireIssue {

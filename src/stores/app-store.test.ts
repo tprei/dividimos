@@ -1,3 +1,4 @@
+import { conversationState } from "./app-store-merge";
 import { beforeEach, describe, expect, it } from "vitest";
 import type {
   Bootstrap,
@@ -153,12 +154,12 @@ describe("applyBootstrap", () => {
       groups: { g1: snapshot("g1", []), g2: snapshot("g2", []) },
       groupOrder: ["g1", "g2"],
       expenseLists: {
-        g1: { ids: ["e1"], oldestCursor: "2026-01-02T00:00:00Z", complete: true },
-        g2: { ids: [], oldestCursor: null, complete: true },
+        g1: { ids: ["e1"], cursor: { createdAt: "2026-01-02T00:00:00Z", id: "e1" }, complete: true, total: null },
+        g2: { ids: [], cursor: null, complete: true, total: null },
       },
       conversations: {
-        g1: { messages: [message("m1", "m1", "2026-01-02T00:00:00Z")], events: [], oldestCursor: "2026-01-02T00:00:00Z" },
-        g2: { messages: [], events: [], oldestCursor: null },
+        g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T00:00:00Z")] }),
+        g2: conversationState(),
       },
       expenseDetails: { e1: detail("e1", "g1"), e2: detail("e2", "g2") },
     });
@@ -180,6 +181,77 @@ describe("applyBootstrap", () => {
     expect(state.lastBootstrapAt).not.toBeNull();
   });
 
+  it("retains every slice of a group whose incoming snapshot is older", () => {
+    const localExpense = summary("e-local", "g1", "2026-01-05T00:00:00Z");
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", [localExpense], { group: { ...snapshot("g1", []).group, ledgerVersion: 9 } }) },
+      groupOrder: ["g1"],
+      expenseLists: { g1: { ids: ["e-local"], cursor: null, complete: true, total: null } },
+      conversations: { g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T00:00:00Z")] }) },
+      expenses: { "e-local": localExpense },
+    });
+
+    const stale = snapshot("g1", [summary("e-stale", "g1", "2026-01-01T00:00:00Z")], {
+      group: { ...snapshot("g1", []).group, ledgerVersion: 4 },
+    });
+    useAppStore.getState().applyBootstrap({ me, serverTime: "2026-01-06T00:00:00Z", groups: [stale] }, ["g1"]);
+
+    const state = useAppStore.getState();
+    expect(state.groups.g1?.group.ledgerVersion).toBe(9);
+    expect(state.expenseLists.g1?.ids).toEqual(["e-local"]);
+    expect(state.conversations.g1?.messages).toHaveLength(1);
+    // A rejected group must not have seeded its expenses either.
+    expect(state.expenses["e-stale"]).toBeUndefined();
+  });
+
+  it("keeps a group created after the request started and does not resurrect a removed one", () => {
+    useAppStore.setState({
+      me,
+      groups: { "g-new": snapshot("g-new", []) },
+      groupOrder: ["g-new"],
+    });
+
+    // The request left when only g-old existed: g-new is newer than this
+    // response, and g-old was removed after it started.
+    useAppStore.getState().applyBootstrap(
+      { me, serverTime: "2026-01-06T00:00:00Z", groups: [snapshot("g-old", [])] },
+      ["g-old"],
+    );
+
+    const state = useAppStore.getState();
+    expect(Object.keys(state.groups)).toEqual(["g-new"]);
+  });
+
+  it("records the bootstrapped account and clears the error", () => {
+    useAppStore.setState({ bootstrapStatus: "error", bootstrapErrorCode: "network" });
+
+    useAppStore.getState().applyBootstrap({ me, serverTime: "2026-01-06T00:00:00Z", groups: [] });
+
+    const state = useAppStore.getState();
+    expect(state.bootstrapStatus).toBe("ready");
+    expect(state.bootstrapErrorCode).toBeNull();
+    expect(state.lastBootstrappedAccountId).toBe(me.id);
+  });
+
+  it("keeps projections when a read fails", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+      groupOrder: ["g1"],
+      lastBootstrappedAccountId: me.id,
+      bootstrapStatus: "ready",
+    });
+
+    useAppStore.getState().setBootstrapError("network");
+
+    const state = useAppStore.getState();
+    expect(state.bootstrapStatus).toBe("error");
+    expect(state.bootstrapErrorCode).toBe("network");
+    expect(Object.keys(state.groups)).toEqual(["g1"]);
+    expect(state.lastBootstrappedAccountId).toBe(me.id);
+  });
+
   it("seeds complete=false when the snapshot has 20 recent expenses", () => {
     useAppStore.getState().applyBootstrap({
       me,
@@ -187,6 +259,21 @@ describe("applyBootstrap", () => {
       groups: [snapshot("g1", recentExpenses(20, "g1"))],
     });
     expect(useAppStore.getState().expenseLists.g1?.complete).toBe(false);
+  });
+
+  it("seeds a conversation the reader can consume for a group it has never opened", () => {
+    useAppStore.getState().applyBootstrap({
+      me,
+      serverTime: "2026-01-03T00:00:00Z",
+      groups: [snapshot("g1", [])],
+    });
+
+    // The chat screen reads the reconcile slice on first render; a seed
+    // missing it took the whole conversation down.
+    const conversation = useAppStore.getState().conversations.g1;
+    expect(conversation?.reconcile.readableThroughMessageId).toBeNull();
+    expect(conversation?.messagesComplete).toBe(false);
+    expect(conversation?.messageCursor).toBeNull();
   });
 
   it("seeds complete=true when the snapshot has fewer than 20 recent expenses", () => {
@@ -202,7 +289,7 @@ describe("applyBootstrap", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", [summary("e2", "g1", "2026-01-01T00:00:02Z"), summary("e3", "g1", "2026-01-01T00:00:01Z")]) },
-      expenseLists: { g1: { ids: ["e2", "e3", "e4"], oldestCursor: "2026-01-01T00:00:00Z", complete: true } },
+      expenseLists: { g1: { ids: ["e2", "e3", "e4"], cursor: { createdAt: "2026-01-01T00:00:00Z", id: "e4" }, complete: true, total: null } },
     });
 
     useAppStore.getState().applyGroup(
@@ -218,19 +305,31 @@ describe("applyExpensePage", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", []) },
-      expenseLists: { g1: { ids: ["e1"], oldestCursor: "2026-01-01T00:00:00Z", complete: false } },
+      expenseLists: { g1: { ids: ["e1"], cursor: { createdAt: "2026-01-01T00:00:00Z", id: "e1" }, complete: false, total: null } },
     });
 
-    useAppStore.getState().applyExpensePage("g1", [
-      summary("e2", "g1", "2026-01-01T00:00:01Z"),
-      summary("e3", "g1", "2026-01-01T00:00:02Z"),
-    ], false);
+    useAppStore.getState().applyExpensePage("g1", {
+      expenses: [
+        summary("e2", "g1", "2026-01-01T00:00:01Z"),
+        summary("e3", "g1", "2026-01-01T00:00:02Z"),
+      ],
+      nextCursor: { createdAt: "2026-01-01T00:00:02Z", id: "e3" },
+      complete: false,
+      total: 9,
+    });
     let list = useAppStore.getState().expenseLists.g1;
     expect(list?.ids).toEqual(["e1", "e2", "e3"]);
-    expect(list?.oldestCursor).toBe("2026-01-01T00:00:02Z");
+    // Cursor, completeness and total all come from the server envelope.
+    expect(list?.cursor).toEqual({ createdAt: "2026-01-01T00:00:02Z", id: "e3" });
     expect(list?.complete).toBe(false);
+    expect(list?.total).toBe(9);
 
-    useAppStore.getState().applyExpensePage("g1", [summary("e3", "g1", "2026-01-01T00:00:02Z")], true);
+    useAppStore.getState().applyExpensePage("g1", {
+      expenses: [summary("e3", "g1", "2026-01-01T00:00:02Z")],
+      nextCursor: null,
+      complete: true,
+      total: 3,
+    });
     list = useAppStore.getState().expenseLists.g1;
     expect(list?.ids).toEqual(["e1", "e2", "e3"]);
     expect(list?.complete).toBe(true);
@@ -240,13 +339,18 @@ describe("applyExpensePage", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", []) },
-      expenseLists: { g1: { ids: ["e1"], oldestCursor: "2026-01-01T00:00:00Z", complete: false } },
+      expenseLists: { g1: { ids: ["e1"], cursor: { createdAt: "2026-01-01T00:00:00Z", id: "e1" }, complete: false, total: null } },
     });
 
-    useAppStore.getState().applyExpensePage("g1", [], true);
+    useAppStore.getState().applyExpensePage("g1", {
+      expenses: [],
+      nextCursor: null,
+      complete: true,
+      total: 1,
+    });
 
     const list = useAppStore.getState().expenseLists.g1;
-    expect(list?.oldestCursor).toBe("2026-01-01T00:00:00Z");
+    expect(list?.cursor).toBeNull();
     expect(list?.complete).toBe(true);
   });
 });
@@ -257,7 +361,7 @@ describe("replaceExpenseId", () => {
       me,
       groups: { g1: snapshot("g1", []) },
       expenses: { old: summary("old", "g1", "2026-01-01T00:00:00Z") },
-      expenseLists: { g1: { ids: ["old", "e9"], oldestCursor: null, complete: true } },
+      expenseLists: { g1: { ids: ["old", "e9"], cursor: null, complete: true, total: null } },
       expenseDetails: { old: detail("old") },
     });
 
@@ -275,31 +379,77 @@ describe("replaceExpenseId", () => {
 });
 
 describe("applyConversation", () => {
-  it("dedupes by clientId, replaces the optimistic message on ack and keeps oldestCursor on append", () => {
+  it("replaces the optimistic message with its acknowledgement exactly once", () => {
     useAppStore.setState({
       me,
       groups: { g1: snapshot("g1", []) },
       conversations: {},
     });
 
-    useAppStore.getState().applyConversation(
-      "g1",
-      { messages: [message("optimistic", "client-1", "2026-01-02T10:00:00Z")], events: [] },
-      false,
-    );
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("client-1", "client-1", "2026-01-02T10:00:00Z")],
+      events: [],
+    });
     let conversation = useAppStore.getState().conversations.g1;
     expect(conversation?.messages).toHaveLength(1);
-    expect(conversation?.oldestCursor).toBe("2026-01-02T10:00:00Z");
+    expect(conversation?.messages[0]?.id).toBe("client-1");
 
-    useAppStore.getState().applyConversation(
-      "g1",
-      { messages: [message("srv-1", "client-1", "2026-01-02T10:00:00Z")], events: [] },
-      false,
-    );
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("srv-1", "client-1", "2026-01-02T10:00:00Z")],
+      events: [],
+    });
     conversation = useAppStore.getState().conversations.g1;
     expect(conversation?.messages).toHaveLength(1);
     expect(conversation?.messages[0]?.id).toBe("srv-1");
-    expect(conversation?.oldestCursor).toBe("2026-01-02T10:00:00Z");
+
+    // The acknowledgement arriving twice, or an out-of-order provisional row,
+    // must not resurrect the optimistic id or duplicate the row.
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("client-1", "client-1", "2026-01-02T10:00:00Z")],
+      events: [],
+    });
+    conversation = useAppStore.getState().conversations.g1;
+    expect(conversation?.messages).toHaveLength(1);
+    expect(conversation?.messages[0]?.id).toBe("srv-1");
+  });
+
+  it("keeps cursors untouched for a live row but adopts them from a page", () => {
+    useAppStore.setState({
+      me,
+      groups: { g1: snapshot("g1", []) },
+      conversations: {
+        g1: conversationState({
+          messages: [message("m1", "m1", "2026-01-02T10:00:00Z")],
+          messageCursor: { createdAt: "2026-01-02T10:00:00.000000Z", id: "m1" },
+        }),
+      },
+    });
+
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [message("m2", "m2", "2026-01-02T10:00:05Z")],
+      events: [],
+    });
+    expect(useAppStore.getState().conversations.g1?.messageCursor?.id).toBe("m1");
+    expect(useAppStore.getState().conversations.g1?.messagesComplete).toBe(false);
+
+    useAppStore.getState().applyConversation("g1", {
+      kind: "older",
+      envelope: {
+        messages: [],
+        messageCursor: null,
+        messagesComplete: true,
+        events: [],
+        eventCursor: null,
+        eventsComplete: true,
+        readWatermark: null,
+      },
+    });
+    expect(useAppStore.getState().conversations.g1?.messageCursor).toBeNull();
+    expect(useAppStore.getState().conversations.g1?.messagesComplete).toBe(true);
   });
 
   it("dedupes events by id", () => {
@@ -307,11 +457,15 @@ describe("applyConversation", () => {
       me,
       groups: { g1: snapshot("g1", []) },
       conversations: {
-        g1: { messages: [message("m1", "m1", "2026-01-02T10:00:00Z")], events: [], oldestCursor: "2026-01-02T10:00:00Z" },
+        g1: conversationState({ messages: [message("m1", "m1", "2026-01-02T10:00:00Z")] }),
       },
     });
 
-    useAppStore.getState().applyConversation("g1", { messages: [], events: [event(1, "2026-01-02T10:00:01Z"), event(1, "2026-01-02T10:00:01Z")] }, false);
+    useAppStore.getState().applyConversation("g1", {
+      kind: "broadcast",
+      messages: [],
+      events: [event(1, "2026-01-02T10:00:01Z"), event(1, "2026-01-02T10:00:01Z")],
+    });
 
     expect(useAppStore.getState().conversations.g1?.events).toHaveLength(1);
   });
@@ -365,7 +519,13 @@ describe("reset", () => {
     expect(state.expenseDetails).toEqual({});
     expect(state.conversations).toEqual({});
     expect(state.vendorCharges).toEqual([]);
-    expect(state.activity).toEqual({ items: [], oldestId: null });
+    expect(state.activity).toEqual({
+      items: [],
+      oldestId: null,
+      complete: false,
+      read: { status: "idle" },
+    });
+    expect(state.activityViewedAt).toEqual({});
     expect(state.lastBootstrapAt).toBeNull();
     expect(state.hydrated).toBe(true);
   });
@@ -392,22 +552,48 @@ describe("vendor charges", () => {
     confirmedAt: "2026-01-01T11:05:00Z",
   };
 
-  it("applies a list of vendor charges", () => {
-    useAppStore.getState().applyVendorCharges([charge1, charge2]);
+  const chargePage = (charges: VendorCharge[], overrides = {}) => ({
+    charges,
+    nextCursor: null,
+    complete: true,
+    total: charges.length,
+    receivedCount: charges.filter((c) => c.status === "received").length,
+    receivedTodayCents: 0,
+    ...overrides,
+  });
+
+  it("seeds charges from a head page and appends an older one", () => {
+    useAppStore.getState().applyChargePage(chargePage([charge1]), true);
+    expect(useAppStore.getState().vendorCharges).toEqual([charge1]);
+
+    useAppStore.getState().applyChargePage(chargePage([charge2]), false);
     expect(useAppStore.getState().vendorCharges).toEqual([charge1, charge2]);
 
-    useAppStore.getState().applyVendorCharges([charge1]);
+    // A head load replaces the list rather than appending to it again.
+    useAppStore.getState().applyChargePage(chargePage([charge1]), true);
     expect(useAppStore.getState().vendorCharges).toEqual([charge1]);
   });
 
+  it("takes totals and today's sum from the server envelope", () => {
+    useAppStore
+      .getState()
+      .applyChargePage(chargePage([charge1], { total: 87, receivedCount: 40, receivedTodayCents: 5_000_000_000 }), true);
+
+    const summary = useAppStore.getState().chargeSummary;
+    expect(summary.total).toBe(87);
+    expect(summary.receivedCount).toBe(40);
+    // Beyond int4: a day's takings must survive intact.
+    expect(summary.receivedTodayCents).toBe(5_000_000_000);
+  });
+
   it("upserts a new vendor charge at the beginning", () => {
-    useAppStore.getState().applyVendorCharges([charge1]);
+    useAppStore.getState().applyChargePage(chargePage([charge1]), true);
     useAppStore.getState().upsertVendorCharge(charge2);
     expect(useAppStore.getState().vendorCharges).toEqual([charge2, charge1]);
   });
 
   it("updates an existing vendor charge in place", () => {
-    useAppStore.getState().applyVendorCharges([charge1, charge2]);
+    useAppStore.getState().applyChargePage(chargePage([charge1, charge2]), true);
     const updatedCharge1: VendorCharge = {
       ...charge1,
       status: "received",
@@ -450,5 +636,36 @@ describe("migrateAppState", () => {
     expect(migrated.groups).toEqual({});
     expect(migrated.me).toBeNull();
     expect(migrated.vendorCharges).toEqual([]);
+  });
+  it("normalizes old read and pagination shapes before renderers consume them", () => {
+    const migrated = migrateAppState({
+      activity: { items: [], complete: false },
+      expenseLists: {
+        g1: {
+          ids: ["e1", 4],
+          oldestCursor: { createdAt: "2026-01-02T00:00:00Z", id: "e1" },
+          complete: false,
+        },
+      },
+    });
+
+    expect(migrated.activity.read).toEqual({ status: "idle" });
+    expect(migrated.expenseLists.g1).toEqual({
+      ids: ["e1"],
+      cursor: { createdAt: "2026-01-02T00:00:00Z", id: "e1" },
+      complete: false,
+      total: null,
+    });
+  });
+
+  it("keeps a complete expense list shape when an expense arrives first", () => {
+    useAppStore.getState().upsertExpense(summary("e1", "g1", "2026-01-01T00:00:00Z"));
+
+    expect(useAppStore.getState().expenseLists.g1).toEqual({
+      ids: ["e1"],
+      cursor: null,
+      complete: false,
+      total: null,
+    });
   });
 });

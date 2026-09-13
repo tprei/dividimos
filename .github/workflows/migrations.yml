@@ -1,33 +1,69 @@
 name: Migrations
 
+# No path filter: a required check that never runs on a PR leaves branch
+# protection waiting forever, so every PR reports these contexts and the SQL
+# jobs skip themselves when no SQL changed.
 on:
   pull_request:
-    paths:
-      - 'supabase/migrations/**'
-      - 'supabase/schemas/**'
-      - 'supabase/schema.sql'
-      - 'scripts/build-baseline.sh'
-      - 'scripts/check-migration-history.mjs'
-      - '.github/workflows/migrations.yml'
+
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect SQL changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sql: ${{ steps.filter.outputs.sql }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          merge_base=$(git merge-base "$BASE_SHA" HEAD)
+          if git diff --name-only "$merge_base" HEAD -- \
+              supabase scripts/build-baseline.sh .github/workflows/migrations.yml \
+              | grep -q .; then
+            echo "sql=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sql=false" >> "$GITHUB_OUTPUT"
+          fi
+
   replay:
     name: Replay on fresh database
+    needs: changes
+    if: needs.changes.outputs.sql == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          # Same version as the devDependency, so local and CI run one CLI.
+          version: 2.20.3
+
+      - name: Assert pinned Supabase CLI
+        run: |
+          actual=$(supabase --version | tr -d 'v \r\n')
+          if [ "$actual" != "2.20.3" ]; then
+            echo "::error::Supabase CLI $actual, expected 2.20.3"
+            exit 1
+          fi
 
       - name: Start Supabase (applies every migration in order)
         run: |
           for attempt in 1 2 3; do
-            if supabase start; then
+            if timeout 8m supabase start; then
               break
             fi
             echo "supabase start failed (attempt $attempt/3), retrying..."
@@ -40,20 +76,48 @@ jobs:
       - name: Reset and replay migrations
         run: supabase db reset --local
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      # Reads the effective schema the migrations just produced, rather than
+      # trusting what the SQL says it did.
+      - name: Assert database security invariants
+        run: |
+          DB_URL=$(supabase status --output json | jq -r '.DB_URL')
+          node scripts/check-database-invariants.mjs "$DB_URL"
+
   declaration-parity:
     name: Declared schemas match forward migrations
+    needs: changes
+    if: needs.changes.outputs.sql == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          # Same version as the devDependency, so local and CI run one CLI.
+          version: 2.20.3
+
+      - name: Assert pinned Supabase CLI
+        run: |
+          actual=$(supabase --version | tr -d 'v \r\n')
+          if [ "$actual" != "2.20.3" ]; then
+            echo "::error::Supabase CLI $actual, expected 2.20.3"
+            exit 1
+          fi
 
       - name: Replay migrations before declaration parity
         run: |
           for attempt in 1 2 3; do
-            if supabase start; then
+            if timeout 8m supabase start; then
               break
             fi
             echo "supabase start failed (attempt $attempt/3), retrying..."
@@ -87,7 +151,10 @@ jobs:
 
   baseline-freshness:
     name: Schema snapshot matches supabase/schemas
+    needs: changes
+    if: needs.changes.outputs.sql == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -113,22 +180,3 @@ jobs:
             exit 1
           fi
           echo "OK: schema snapshot matches supabase/schemas."
-
-  migration-history:
-    name: No unauthorized renamed or deleted migrations
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-
-      - name: Reject unauthorized renames or deletions under supabase/migrations
-        run: |
-          node scripts/check-migration-history.mjs \
-            "${{ github.event.pull_request.base.sha }}" \
-            "$(git rev-parse HEAD)"

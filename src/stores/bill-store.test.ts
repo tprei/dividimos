@@ -33,7 +33,6 @@ describe("createExpense", () => {
     const { expense } = useBillStore.getState();
     expect(expense?.expenseType).toBe("itemized");
     expect(expense?.serviceFeePercent).toBe(10);
-    expect(expense?.status).toBe("draft");
   });
 
   it("creates a single_amount expense with 0% service fee", () => {
@@ -298,6 +297,56 @@ describe("splitBillEqually", () => {
   });
 });
 
+describe("split writes are idempotent", () => {
+  it("keeps a saved custom split untouched when the same values are re-applied", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.addParticipant(userBob);
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 7000 },
+      { userId: "user-bob", amountCents: 3000 },
+    ]);
+
+    const saved = useBillStore.getState().billSplits;
+    let notifications = 0;
+    const unsubscribe = useBillStore.subscribe(() => {
+      notifications += 1;
+    });
+
+    // What the division UI does on mount: recompute and hand back the same
+    // allocation it just read.
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 7000 },
+      { userId: "user-bob", amountCents: 3000 },
+    ]);
+    unsubscribe();
+
+    expect(notifications).toBe(0);
+    expect(useBillStore.getState().billSplits).toBe(saved);
+  });
+
+  it("still writes when an amount actually changes", () => {
+    const s = setup();
+    s.createExpense("Test", "single_amount");
+    s.updateExpense({ totalAmountInput: 10000 });
+    s.addParticipant(userBob);
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 7000 },
+      { userId: "user-bob", amountCents: 3000 },
+    ]);
+
+    useBillStore.getState().splitBillByFixed([
+      { userId: "user-alice", amountCents: 6000 },
+      { userId: "user-bob", amountCents: 4000 },
+    ]);
+
+    expect(
+      useBillStore.getState().billSplits.map((split) => split.computedAmountCents),
+    ).toEqual([6000, 4000]);
+  });
+});
+
 describe("splitBillByBasisPoints", () => {
   function setupSingleAmountExpense(totalAmountInput = 10000) {
     const s = setup();
@@ -492,7 +541,6 @@ describe("selectPreviewDebts", () => {
     setPayerFull("user-alice");
     const debts = selectPreviewDebts(useBillStore.getState());
     expect(debts).toHaveLength(0);
-    expect(useBillStore.getState().expense?.status).toBe("draft");
   });
 
   it("does not synthesize the creator as a payer when no payer was selected", () => {
@@ -724,7 +772,6 @@ describe("hydrateFromVoice", () => {
     expect(expense?.title).toBe("Uber");
     expect(expense?.expenseType).toBe("single_amount");
     expect(expense?.groupId).toBe("group-1");
-    expect(expense?.status).toBe("draft");
     expect(expense?.serviceFeePercent).toBe(0);
     expect(totalAmountInput).toBe(2500);
     expect(items).toHaveLength(0);
@@ -1177,7 +1224,6 @@ describe("createExpenseFromDm", () => {
     expect(expense?.groupId).toBe("dm-group-1");
     expect(expense?.expenseType).toBe("single_amount");
     expect(expense?.serviceFeePercent).toBe(0);
-    expect(expense?.status).toBe("draft");
     expect(participants).toHaveLength(2);
     expect(participants[0].id).toBe("user-alice");
     expect(participants[1].id).toBe("user-bob");
@@ -1256,7 +1302,6 @@ describe("hydrateFromChatDraft", () => {
     expect(expense?.groupId).toBe("dm-group-1");
     expect(expense?.merchantName).toBe("Uber");
     expect(expense?.totalAmount).toBe(2500);
-    expect(expense?.status).toBe("draft");
     expect(totalAmountInput).toBe(2500);
     expect(participants).toHaveLength(2);
     expect(participants[0].id).toBe("user-alice");
@@ -1584,7 +1629,6 @@ describe("hydrateFromDetail", () => {
       totalAmount: 11000,
       serviceFeePercent: 10,
       serviceFeeBasisPoints: 1000,
-      status: "active",
     });
     expect(state.items).toHaveLength(1);
     expect(state.items[0]).toMatchObject({ description: "Pizza", quantity: 1000, totalPriceCents: 10000 });
@@ -1768,9 +1812,10 @@ describe("occurredOn and draft persistence", () => {
     useBillStore.getState().setOccurredOn("2026-09-06");
 
     const persisted = JSON.parse(localStorage.getItem("dividimos-draft") ?? "{}");
-    expect(persisted.version).toBe(1);
+    expect(persisted.version).toBe(2);
     expect(persisted.state.occurredOn).toBe("2026-09-06");
     expect(persisted.state.totalAmountInput).toBe(4200);
+    expect(persisted.state.receiptAccessKey).toBe(useBillStore.getState().receiptAccessKey);
     expect(persisted.state.currentUser).toBeUndefined();
 
     useBillStore.getState().reset();

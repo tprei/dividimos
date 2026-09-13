@@ -72,7 +72,7 @@ describe("ChatAiInput", () => {
   });
 
   it("calls onSend when submitting in normal mode", async () => {
-    const onSend = vi.fn();
+    const onSend = vi.fn().mockResolvedValue({ ok: true });
     const { user } = setup({ onSend });
 
     await user.type(screen.getByTestId("chat-input"), "Olá");
@@ -310,10 +310,94 @@ describe("ChatAiInput", () => {
   });
 
   it("pressing Enter submits in normal mode", async () => {
-    const onSend = vi.fn();
+    const onSend = vi.fn().mockResolvedValue({ ok: true });
     const { user } = setup({ onSend });
 
     await user.type(screen.getByTestId("chat-input"), "Oi{Enter}");
     expect(onSend).toHaveBeenCalledWith("Oi");
+  });
+});
+
+describe("send acknowledgement", () => {
+  it("keeps the text until the send is acknowledged, then clears it", async () => {
+    const gate = Promise.withResolvers<{ ok: true }>();
+    const onSend = vi.fn().mockReturnValue(gate.promise);
+    const { user } = setup({ onSend });
+
+    const input = screen.getByTestId("chat-input") as HTMLInputElement;
+    await user.type(input, "Oi");
+    await user.click(screen.getByTestId("send-button"));
+
+    // Still in flight: discarding the text now would lose it on failure.
+    expect(input.value).toBe("Oi");
+
+    gate.resolve({ ok: true });
+    await waitFor(() => expect(input.value).toBe(""));
+  });
+
+  it("preserves the exact text and shows a retry when the send fails", async () => {
+    const onSend = vi
+      .fn()
+      .mockResolvedValue({ ok: false, message: "Sem conexão." });
+    const { user } = setup({ onSend });
+
+    const input = screen.getByTestId("chat-input") as HTMLInputElement;
+    await user.type(input, "  Oi  tudo bem");
+    await user.click(screen.getByTestId("send-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("send-error")).toBeInTheDocument();
+    });
+    // Whitespace the user typed is untouched, so retrying sends the same thing.
+    expect(input.value).toBe("  Oi  tudo bem");
+    expect(onSend).toHaveBeenCalledWith("Oi  tudo bem");
+  });
+
+  it("locks out a second submit while the first is in flight", async () => {
+    const gate = Promise.withResolvers<{ ok: true }>();
+    const onSend = vi.fn().mockReturnValue(gate.promise);
+    const { user } = setup({ onSend });
+
+    await user.type(screen.getByTestId("chat-input"), "Oi");
+    await user.click(screen.getByTestId("send-button"));
+    await user.click(screen.getByTestId("send-button"));
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+
+    gate.resolve({ ok: true });
+    await waitFor(() => {
+      expect((screen.getByTestId("chat-input") as HTMLInputElement).value).toBe("");
+    });
+  });
+
+  it("does not overwrite newer text typed while the send was in flight", async () => {
+    const gate = Promise.withResolvers<{ ok: true }>();
+    const onSend = vi.fn().mockReturnValue(gate.promise);
+    const { user } = setup({ onSend });
+
+    const input = screen.getByTestId("chat-input") as HTMLInputElement;
+    await user.type(input, "primeira");
+    await user.click(screen.getByTestId("send-button"));
+    await user.type(input, " e segunda");
+
+    gate.resolve({ ok: true });
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+
+    // The success belongs to an older edit generation, so it must not clear
+    // what the user has typed since.
+    expect(input.value).toBe("primeira e segunda");
+  });
+
+  it("treats a thrown send as failure and keeps the text", async () => {
+    const onSend = vi.fn().mockRejectedValue(new Error("boom"));
+    const { user } = setup({ onSend });
+
+    const input = screen.getByTestId("chat-input") as HTMLInputElement;
+    await user.type(input, "Oi{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("send-error")).toBeInTheDocument();
+    });
+    expect(input.value).toBe("Oi");
   });
 });

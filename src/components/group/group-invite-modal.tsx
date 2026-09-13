@@ -17,6 +17,7 @@ import toast from "react-hot-toast";
 import { InviteContactsList, type InviteContact } from "@/components/group/group-invite-contacts";
 import { useClientOnly } from "@/hooks/use-client-only";
 import { Button } from "@/components/ui/button";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import {
   createInviteLink,
@@ -169,10 +170,16 @@ export function GroupInviteModal({
   const handleSendToContact = useCallback(
     (phone: string) => {
       const url = buildWhatsAppLink(`${inviteMessage}\n${joinUrl}`, phone);
-      window.open(url, "_blank");
+      const composer = window.open(url, "_blank");
+      if (!composer) {
+        // Popup blocked: nothing opened, keep the contact retryable.
+        toast.error("Não foi possível abrir o WhatsApp. Tente novamente.");
+        return false;
+      }
       setContacts((prev) =>
         prev.map((c) => (c.phone === phone ? { ...c, sent: true } : c)),
       );
+      return true;
     },
     [inviteMessage, joinUrl],
   );
@@ -194,6 +201,11 @@ export function GroupInviteModal({
       setDeactivating(false);
     }
   }, [groupId]);
+
+  // This overlay is hand-rolled rather than a Dialog, so it has to join the
+  // hardware-back stack itself. Without this, Back navigated away from the
+  // group behind the modal, or closed the app.
+  useBackHandler(open, onClose);
 
   const handleRegenerate = useCallback(() => {
     requestedRef.current = false;

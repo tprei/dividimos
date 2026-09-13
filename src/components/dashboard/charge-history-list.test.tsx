@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { ChargeHistoryList } from "./charge-history-list";
-import { useAppStore } from "@/stores/app-store";
+import { useAppStore, CHARGES_READ_KEY } from "@/stores/app-store";
 import type { VendorCharge } from "@/types/ledger";
 
 vi.mock("@/lib/sync/refresh", () => ({
   loadVendorCharges: vi.fn(async () => {}),
 }));
 
+vi.mock("@/lib/sync/mutations-group", () => ({
+  retryPendingVendorChargeCancellations: vi.fn(async () => {}),
+}));
 import { loadVendorCharges } from "@/lib/sync/refresh";
 
 describe("ChargeHistoryList", () => {
@@ -16,12 +19,13 @@ describe("ChargeHistoryList", () => {
     vi.clearAllMocks();
   });
 
-  it("calls loadVendorCharges on mount", () => {
+  it("calls loadVendorCharges on mount", async () => {
     render(<ChargeHistoryList />);
-    expect(loadVendorCharges).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(loadVendorCharges).toHaveBeenCalledTimes(1));
   });
 
   it("renders empty state when there are no charges", () => {
+    useAppStore.setState({ reads: { [CHARGES_READ_KEY]: { status: "ready" } } });
     render(<ChargeHistoryList />);
     expect(screen.getByText("Nenhuma cobrança ainda")).toBeInTheDocument();
     expect(
@@ -49,7 +53,17 @@ describe("ChargeHistoryList", () => {
       confirmedAt: null,
     };
 
-    useAppStore.getState().applyVendorCharges([charge1, charge2]);
+    useAppStore.getState().applyChargePage(
+      {
+        charges: [charge1, charge2],
+        nextCursor: null,
+        complete: true,
+        total: 2,
+        receivedCount: 1,
+        receivedTodayCents: charge1.amountCents,
+      },
+      true,
+    );
     render(<ChargeHistoryList />);
 
     expect(screen.getByText("Cobranças recebidas")).toBeInTheDocument();
@@ -61,7 +75,7 @@ describe("ChargeHistoryList", () => {
     expect(screen.getByText(/1 recebida de 2 cobranças/i)).toBeInTheDocument();
   });
 
-  it("accepts initialCharges override via props", () => {
+  it("reports the server's counts rather than the loaded page", () => {
     const charge: VendorCharge = {
       id: "vc-3",
       userId: "u-1",
@@ -72,8 +86,21 @@ describe("ChargeHistoryList", () => {
       confirmedAt: new Date().toISOString(),
     };
 
-    render(<ChargeHistoryList initialCharges={[charge]} />);
+    useAppStore.getState().applyChargePage(
+      {
+        charges: [charge],
+        nextCursor: { createdAt: charge.createdAt, id: charge.id },
+        complete: false,
+        total: 64,
+        receivedCount: 31,
+        receivedTodayCents: 12_345,
+      },
+      true,
+    );
+    render(<ChargeHistoryList />);
+
     expect(screen.getByText("Jantar")).toBeInTheDocument();
-    expect(screen.getByText(/1 recebida de 1 cobrança/i)).toBeInTheDocument();
+    expect(screen.getByText(/31 recebidas de 64 cobranças/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Carregar mais" })).toBeInTheDocument();
   });
 });

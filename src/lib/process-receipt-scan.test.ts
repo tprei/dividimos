@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock compressImage to return the same file (avoid canvas APIs in tests)
 vi.mock("@/lib/image-utils", () => ({
@@ -36,6 +36,7 @@ const mockOcrResult: ReceiptOcrResult = {
 function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
   return new File(["fake-image-data"], name, { type });
 }
+
 
 describe("processReceiptScan", () => {
   beforeEach(() => {
@@ -135,6 +136,27 @@ describe("processReceiptScan", () => {
     fetchSpy.mockRestore();
   });
 
+  it("aborts the OCR request when the caller aborts", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_input, init) =>
+        new Promise<Response>((_, reject) => {
+          // Platform fetch rejects immediately on an already-aborted signal.
+          const fail = () => reject(new DOMException("aborted", "AbortError"));
+          if (init?.signal?.aborted) fail();
+          else init?.signal?.addEventListener("abort", fail);
+        }),
+    );
+
+    const controller = new AbortController();
+    const pending = processReceiptScan(createMockFile(), controller.signal);
+    const assertion = expect(pending).rejects.toBeInstanceOf(ReceiptTimeoutError);
+    controller.abort();
+    await assertion;
+
+    expect(fetchSpy.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    fetchSpy.mockRestore();
+  });
+
   it("rejects an OCR result with zero items and a positive total (#477 637k: never inferred as single_amount)", async () => {
     const emptyItemsResult: ReceiptOcrResult = {
       merchant: "Bar do Zeca",
@@ -179,6 +201,8 @@ describe("processReceiptScan", () => {
 });
 
 
+
+
 describe("ReceiptTimeoutError", () => {
   it("has timeout property set to true", () => {
     const err = new ReceiptTimeoutError();
@@ -197,5 +221,38 @@ describe("ReceiptTimeoutError", () => {
   it("accepts custom message", () => {
     const err = new ReceiptTimeoutError("Custom timeout");
     expect(err.message).toBe("Custom timeout");
+  });
+});
+
+describe("application-owned deadlines", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** A proxy that accepts the connection and then never answers. */
+  function stalledFetch() {
+    return vi.fn(
+      (_input: string, init?: RequestInit) =>
+        new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(init.signal?.reason ?? new DOMException("aborted", "AbortError"));
+          });
+        }),
+    );
+  }
+
+
+  it("times out the OCR call instead of hanging the scan", async () => {
+    vi.stubGlobal("fetch", stalledFetch());
+
+    const pending = processReceiptScan(createMockFile());
+    const assertion = expect(pending).rejects.toBeInstanceOf(ReceiptTimeoutError);
+    await vi.advanceTimersByTimeAsync(40_000);
+    await assertion;
   });
 });

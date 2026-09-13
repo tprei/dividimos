@@ -1,0 +1,51 @@
+name: Migration History
+
+# pull_request_target runs the base branch's copy of this workflow and of the
+# checker, so a PR cannot edit the gate that judges it. The PR head is fetched
+# as git objects and read with plumbing commands only; nothing from it is ever
+# executed, and no path filter is used so every PR reports this context.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  migration-history:
+    name: No unauthorized changes to applied migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the base branch (trusted code)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the PR head as data
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --no-tags origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Check migration history
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A label is authorization a PR author without write access cannot
+          # grant themselves.
+          CI_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'trusted-ci-change') }}
+        run: |
+          if [ "$CI_LABEL" = "true" ]; then
+            node scripts/check-migration-history.mjs \
+              "$BASE_SHA" refs/remotes/pr/head --allow-ci-changes
+          else
+            node scripts/check-migration-history.mjs \
+              "$BASE_SHA" refs/remotes/pr/head
+          fi

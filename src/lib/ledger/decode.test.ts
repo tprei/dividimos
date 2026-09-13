@@ -302,6 +302,61 @@ describe("decodeExpensePayload", () => {
     }
   });
 
+  it("accepts the authored split method the server now sends", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+      splitMethod: "percentage",
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.splitMethod).toBe("percentage");
+  });
+
+  it("accepts a version written before the method was recorded", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.splitMethod).toBeNull();
+  });
+
+  it("treats a null method as not stated", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+      splitMethod: null,
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.splitMethod).toBeNull();
+  });
+
+  it("rejects a method the division controls cannot produce", () => {
+    const raw = {
+      items: [],
+      participants: [{ kind: "user", userId: "user-1" }],
+      shares: [1000],
+      payers: [{ participantIndex: 0, amountCents: 1000 }],
+      itemAssignments: null,
+      splitMethod: "weighted",
+    };
+    const result = decodeExpensePayload(raw);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issue.path).toEqual(["splitMethod"]);
+  });
+
   it("rejects a payer with a non-integer amount", () => {
     const raw = {
       items: [],
@@ -363,9 +418,32 @@ describe("additional wire decoders", () => {
 
     const conv = {
       messages: [msg],
+      messageCursor: { createdAt: "2026-09-01T00:00:00.123456+00:00", id: "m-1" },
+      messagesComplete: false,
       events: [],
+      eventCursor: { createdAt: "2026-09-01T00:00:00+00", id: 42 },
+      eventsComplete: true,
+      readWatermark: { lastReadAt: "2026-09-01T00:00:00.500000Z", lastReadMessageId: "m-1" },
     };
-    expect(decodeConversation(conv).ok).toBe(true);
+    const decoded = decodeConversation(conv);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+
+    // Cursor timestamps keep microsecond precision, and event ids become
+    // strings because a PostgreSQL bigint cannot round-trip as a JS number.
+    expect(decoded.value.messageCursor?.createdAt).toBe("2026-09-01T00:00:00.123456Z");
+    expect(decoded.value.eventCursor?.createdAt).toBe("2026-09-01T00:00:00.000000Z");
+    expect(decoded.value.eventCursor?.id).toBe("42");
+    expect(decoded.value.readWatermark?.lastReadMessageId).toBe("m-1");
+
+    // The old two-key envelope and an unsafe event id must be rejected.
+    expect(decodeConversation({ messages: [msg], events: [] }).ok).toBe(false);
+    expect(
+      decodeConversation({
+        ...conv,
+        eventCursor: { createdAt: "2026-09-01T00:00:00Z", id: 2 ** 53 },
+      }).ok,
+    ).toBe(false);
   });
 
   it("decodes invite link and preview", () => {

@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { ChatAiInput } from "@/components/chat/chat-ai-input";
+import { ChatAiInput, type SendOutcome } from "@/components/chat/chat-ai-input";
 import { ChatThread } from "@/components/chat/chat-thread";
 import { ConversationPayButton } from "@/components/chat/conversation-pay-button";
 import { ConversationQuickActions } from "@/components/chat/conversation-quick-actions";
@@ -22,7 +22,8 @@ import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 import { Money } from "@/components/shared/money";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import { getAuthGeneration } from "@/lib/sync/client";
 import { createExpense, markRead, sendMessage } from "@/lib/sync/mutations";
 import {
   acceptInvitation,
@@ -30,13 +31,25 @@ import {
   getOrCreateDm,
 } from "@/lib/sync/mutations-group";
 import { subscribeChat } from "@/lib/sync/realtime";
-import { loadConversation } from "@/lib/sync/refresh";
-import { findDmGroup } from "@/stores/app-selectors";
-import { useAppStore } from "@/stores/app-store";
-import type { ExpenseHeader, ExpensePayload, MutationAck, UserProfile } from "@/types/ledger";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { loadConversation, refreshGroup } from "@/lib/sync/refresh";
+import {
+  findDmGroup,
+  selectDmMembership,
+  type DmMembershipView,
+} from "@/stores/app-selectors";
+import { conversationReadKey, groupReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
+import type {
+  ExpenseHeader,
+  ExpensePayload,
+  Me,
+  MutationAck,
+  UserProfile,
+} from "@/types/ledger";
 import {
   dmExpenseHeader,
   dmExpensePayload,
+  resolveDraftActors,
   resolveDraftExpense,
   wizardUrl,
 } from "./conversation-expense-builder";
@@ -44,34 +57,114 @@ import { ConversationInviteScreen } from "./conversation-invite-screen";
 interface ConversationPageClientProps {
   counterpartyId: string;
 }
+function resolveQuickSplitActors(
+  result: QuickSplitResult,
+  me: Me,
+  counterparty: UserProfile,
+): {
+  kind: "resolved";
+  myShare: number;
+  otherShare: number;
+  payerIndex: 0 | 1;
+} | { kind: "error"; message: string } {
+  if (result.payerId !== me.id && result.payerId !== counterparty.id) {
+    return { kind: "error", message: "Não consegui identificar quem pagou." };
+  }
+  if (result.shares.length !== 2) {
+    return { kind: "error", message: "Não consegui resolver as partes da despesa." };
+  }
+  const seen = new Set<string>();
+  for (const share of result.shares) {
+    if (share.userId !== me.id && share.userId !== counterparty.id) {
+      return { kind: "error", message: "A divisão tem uma pessoa que não está na conversa." };
+    }
+    if (seen.has(share.userId)) {
+      return { kind: "error", message: "A mesma pessoa apareceu mais de uma vez." };
+    }
+    seen.add(share.userId);
+  }
+  const myShare = result.shares.find((share) => share.userId === me.id)?.shareAmountCents;
+  const otherShare = result.shares.find(
+    (share) => share.userId === counterparty.id,
+  )?.shareAmountCents;
+  if (myShare === undefined || otherShare === undefined) {
+    return { kind: "error", message: "A divisão precisa incluir as duas pessoas da conversa." };
+  }
+  if (myShare + otherShare !== result.amountCents) {
+    return { kind: "error", message: "As partes não fecham com o valor total." };
+  }
+  return {
+    kind: "resolved",
+    myShare,
+    otherShare,
+    payerIndex: result.payerId === me.id ? 0 : 1,
+  };
+}
+
 
 export function ConversationPageClient({ counterpartyId }: ConversationPageClientProps) {
   const router = useRouter();
   const me = useAppStore((s) => s.me);
   const dm = useAppStore((s) => (me ? findDmGroup(s, me.id, counterpartyId) : null));
   const conversation = useAppStore((s) => (dm ? s.conversations[dm.group.id] : undefined));
+  const [resolveError, setResolveError] = useState<{
+    accountKey: string;
+    message: string;
+  } | null>(null);
 
-  const [resolveError, setResolveError] = useState<string | null>(null);
-  const resolving = !dm && !resolveError;
   const [chargeSheetOpen, setChargeSheetOpen] = useState(false);
   const [chargeStatus, setChargeStatus] = useState<QuickChargeStatus>("idle");
   const [chargeError, setChargeError] = useState<string | undefined>();
   const [splitSheetOpen, setSplitSheetOpen] = useState(false);
   const [splitStatus, setSplitStatus] = useState<QuickSplitStatus>("idle");
   const [splitError, setSplitError] = useState<string | undefined>();
-  const [historyComplete, setHistoryComplete] = useState(false);
+  // The store's boundary is what the server can prove is contiguous; the
+  // thread confirms it actually rendered that far before we acknowledge it.
+  const readableThroughId = conversation?.reconcile.readableThroughMessageId ?? null;
+  const renderedBoundaryKey = `${me?.id ?? ""}:${dm?.group.id ?? ""}`;
+  const [renderedBoundary, setRenderedBoundary] = useState<{
+    key: string;
+    id: string | null;
+  }>({ key: renderedBoundaryKey, id: null });
+  const renderedThroughId =
+    renderedBoundary.key === renderedBoundaryKey ? renderedBoundary.id : null;
+  const handleRenderedThrough = useCallback(
+    (messageId: string | null) => {
+      setRenderedBoundary({ key: renderedBoundaryKey, id: messageId });
+    },
+    [renderedBoundaryKey],
+  );
+  const conversationRead = useAppStore((s) =>
+    dm ? (s.reads[conversationReadKey(dm.group.id)] ?? IDLE_READ) : IDLE_READ,
+  );
+
   const chargeResetTimer = useRef<number | undefined>(undefined);
   const splitResetTimer = useRef<number | undefined>(undefined);
   const chargeKey = useRef(crypto.randomUUID());
   const splitKey = useRef(crypto.randomUUID());
   const draftKey = useRef(crypto.randomUUID());
-  const requestedRef = useRef(false);
+  const requestedKeyRef = useRef<string | null>(null);
   const loadedRef = useRef<Set<string>>(new Set());
-
   const groupId = dm?.group.id ?? null;
+  const loadKey = me && groupId ? `${me.id}:${groupId}` : null;
+  const accountKey = me === null ? null : `${me.id}:${counterpartyId}`;
+  const activeResolveError =
+    !dm && resolveError?.accountKey === accountKey ? resolveError.message : null;
+  const resolving = accountKey !== null && !dm && activeResolveError === null;
   const counterpartyMember = dm?.members.find((m) => m.userId === counterpartyId);
   const counterparty: UserProfile | null = counterpartyMember?.user ?? null;
-  const myStatus = dm?.members.find((m) => m.userId === me?.id)?.status ?? "invited";
+  // Subscribe to stable references only: deriving the view inside the store
+  // selector would return a fresh object every render and loop forever.
+  const groupRead = useAppStore((s) =>
+    dm ? (s.reads[groupReadKey(dm.group.id)] ?? IDLE_READ) : IDLE_READ,
+  );
+  const membership: DmMembershipView = useMemo(
+    () =>
+      me
+        ? selectDmMembership(dm ?? undefined, me.id, groupRead)
+        : { status: "loading" },
+    [dm, me, groupRead],
+  );
   const isCounterpartyPending = counterpartyMember?.status === "invited";
 
   const debtRows = useMemo(
@@ -93,19 +186,40 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     [nameById],
   );
 
+  const requestDm = useCallback(
+    (key: string) => {
+      requestedKeyRef.current = key;
+      const authGeneration = getAuthGeneration();
+      void getOrCreateDm(counterpartyId).catch((error) => {
+        if (
+          getAuthGeneration() !== authGeneration ||
+          requestedKeyRef.current !== key
+        ) {
+          return;
+        }
+        requestedKeyRef.current = null;
+        setResolveError({
+          accountKey: key,
+          message: ledgerErrorMessage(error),
+        });
+      });
+    },
+    [counterpartyId],
+  );
+
   useEffect(() => {
-    if (!me) return;
-    if (dm) {
-      requestedRef.current = true;
+    if (accountKey === null) {
+      requestedKeyRef.current = null;
       return;
     }
-    if (requestedRef.current) return;
-    requestedRef.current = true;
-    getOrCreateDm(counterpartyId).catch((error) => {
-      requestedRef.current = false;
-      setResolveError(ledgerErrorMessage(error));
-    });
-  }, [me, dm, counterpartyId]);
+    if (dm) {
+      requestedKeyRef.current = accountKey;
+      return;
+    }
+    if (resolveError?.accountKey === accountKey) return;
+    if (requestedKeyRef.current === accountKey) return;
+    requestDm(accountKey);
+  }, [accountKey, dm, requestDm, resolveError]);
 
   useEffect(() => {
     return () => {
@@ -117,69 +231,83 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   useEffect(() => {
     if (!groupId) return;
     return subscribeChat(groupId);
-  }, [groupId]);
+  }, [groupId, me?.id]);
+
+  const loadInitialConversation = useCallback(() => {
+    if (!groupId || loadKey === null) return;
+    loadedRef.current.add(loadKey);
+    loadConversation(groupId).catch((error) => {
+      // With messages already on screen a toast is enough; with none, the
+      // thread renders a retry from the recorded read state.
+      if ((useAppStore.getState().conversations[groupId]?.messages.length ?? 0) > 0) {
+        toast.error(ledgerErrorMessage(error));
+      }
+    });
+  }, [groupId, loadKey]);
 
   useEffect(() => {
-    if (!groupId || loadedRef.current.has(groupId)) return;
-    loadedRef.current.add(groupId);
-    loadConversation(groupId).catch((error) => toast.error(ledgerErrorMessage(error)));
-  }, [groupId]);
+    if (loadKey === null || loadedRef.current.has(loadKey)) return;
+    loadInitialConversation();
+  }, [loadInitialConversation, loadKey]);
+
 
   useEffect(() => {
     if (!groupId || !dm || dm.unreadCount === 0) return;
+    // Acknowledge no farther than the contiguous prefix the thread has
+    // actually rendered: a boundary beyond it would mark unseen messages read.
+    const boundary = renderedThroughId;
+    if (boundary === null || boundary !== readableThroughId) return;
     if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-    markRead(groupId).catch(() => {});
-  }, [groupId, dm]);
-
+    markRead(groupId, boundary).catch(() => {});
+  }, [dm, groupId, readableThroughId, renderedThroughId]);
 
   const handleRetryResolve = useCallback(() => {
+    if (accountKey === null) return;
     setResolveError(null);
-    requestedRef.current = false;
-  }, []);
+    requestDm(accountKey);
+  }, [accountKey, requestDm]);
+  const handleRetryMembership = useCallback(() => {
+    if (!groupId) return;
+    void refreshGroup(groupId).catch(() => {});
+  }, [groupId]);
 
   const handleLoadMore = useCallback(() => {
     if (!groupId) return;
     const conv = useAppStore.getState().conversations[groupId];
-    if (!conv?.oldestCursor) return;
-    const cursor = conv.oldestCursor;
-    loadConversation(groupId, cursor)
-      .then(() => {
-        const next = useAppStore.getState().conversations[groupId];
-        if (next?.oldestCursor === cursor) setHistoryComplete(true);
-      })
-      .catch((error) => toast.error(ledgerErrorMessage(error)));
+    if (conv === undefined) return;
+    if (conv.messageCursor === null && conv.eventCursor === null) return;
+    loadConversation(groupId, {
+      messageBefore: conv.messageCursor,
+      eventBefore: conv.eventCursor,
+    }).catch((error) => toast.error(ledgerErrorMessage(error)));
   }, [groupId]);
 
   const handleSend = useCallback(
-    async (content: string) => {
-      if (!groupId) return;
+    async (content: string): Promise<SendOutcome> => {
+      // A missing group is a real failure, not a silent no-op that would let
+      // the input discard what the user typed.
+      if (!groupId) {
+        return { ok: false, message: "Conversa indisponível." };
+      }
       try {
         await sendMessage(groupId, content);
+        return { ok: true };
       } catch (error) {
-        toast.error(ledgerErrorMessage(error));
-        throw error;
+        return { ok: false, message: ledgerErrorMessage(error) };
       }
     },
     [groupId],
   );
 
   const handleAccept = useCallback(async () => {
-    if (!groupId) return;
-    try {
-      await acceptInvitation(groupId);
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    }
+    if (!groupId) throw new LedgerError("unknown");
+    await acceptInvitation(groupId);
   }, [groupId]);
 
   const handleDecline = useCallback(async () => {
-    if (!groupId) return;
-    try {
-      await declineInvitation(groupId);
-      router.replace("/app/conversations");
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-    }
+    if (!groupId) throw new LedgerError("unknown");
+    await declineInvitation(groupId);
+    router.replace("/app/conversations");
   }, [groupId, router]);
 
   const createDmExpense = useCallback(
@@ -193,13 +321,25 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     },
     [groupId],
   );
-
   const handleQuickChargeConfirm = useCallback(
     async (result: ChatExpenseResult) => {
       if (!me || !counterparty) return;
+      const actorResult = resolveDraftActors(
+        {
+          ...result,
+          splitType: "equal",
+        },
+        me,
+        counterparty,
+      );
+      if (actorResult.kind === "error") {
+        setChargeStatus("error");
+        setChargeError(actorResult.message);
+        return;
+      }
       setChargeStatus("confirming");
       setChargeError(undefined);
-      const payerIsSelf = !result.payerHandle || result.payerHandle === "SELF";
+      const payerIsSelf = actorResult.actors.payerId === me.id;
       const header = dmExpenseHeader(result.title || "Cobrança", result.amountCents, null);
       const payload = dmExpensePayload(
         me,
@@ -209,6 +349,19 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
         result.amountCents,
       );
       try {
+        const latestActors = resolveDraftActors(
+          {
+            ...result,
+            splitType: "equal",
+          },
+          me,
+          counterparty,
+        );
+        if (latestActors.kind === "error") {
+          setChargeStatus("error");
+          setChargeError(latestActors.message);
+          return;
+        }
         await createDmExpense(chargeKey.current, header, payload);
         setChargeStatus("confirmed");
         chargeKey.current = crypto.randomUUID();
@@ -227,21 +380,29 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
   const handleQuickSplitConfirm = useCallback(
     async (result: QuickSplitResult) => {
       if (!me || !counterparty) return;
+      const actorResult = resolveQuickSplitActors(result, me, counterparty);
+      if (actorResult.kind === "error") {
+        setSplitStatus("error");
+        setSplitError(actorResult.message);
+        return;
+      }
       setSplitStatus("confirming");
       setSplitError(undefined);
-      const myShare =
-        result.shares.find((s) => s.userId === me.id)?.shareAmountCents ?? 0;
-      const otherShare =
-        result.shares.find((s) => s.userId === counterparty.id)?.shareAmountCents ?? 0;
       const header = dmExpenseHeader(result.title, result.amountCents, null);
       const payload = dmExpensePayload(
         me,
         counterparty.id,
-        [myShare, otherShare],
-        result.payerId === me.id ? 0 : 1,
+        [actorResult.myShare, actorResult.otherShare],
+        actorResult.payerIndex,
         result.amountCents,
       );
       try {
+        const latestActors = resolveQuickSplitActors(result, me, counterparty);
+        if (latestActors.kind === "error") {
+          setSplitStatus("error");
+          setSplitError(latestActors.message);
+          return;
+        }
         await createDmExpense(splitKey.current, header, payload);
         setSplitStatus("confirmed");
         splitKey.current = crypto.randomUUID();
@@ -259,10 +420,15 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
 
   const handleEditDraft = useCallback(
     (result: ChatExpenseResult) => {
-      if (!groupId) return;
-      router.push(wizardUrl(groupId, result));
+      if (!groupId || !me || !counterparty) return;
+      const actorResult = resolveDraftActors(result, me, counterparty);
+      if (actorResult.kind === "error") {
+        toast.error(actorResult.message);
+        return;
+      }
+      router.push(wizardUrl(groupId, result, actorResult.actors));
     },
-    [groupId, router],
+    [groupId, me, counterparty, router],
   );
 
   const handleConfirmDraft = useCallback(
@@ -270,15 +436,22 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
       result: ChatExpenseResult,
     ): Promise<{ expenseId: string } | { error: string }> => {
       if (!groupId || !me || !counterparty) return { error: "Conversa não disponível." };
+      const actorResult = resolveDraftActors(result, me, counterparty);
+      if (actorResult.kind === "error") return { error: actorResult.message };
+
       const resolution = resolveDraftExpense(groupId, me, counterparty, result);
       if (resolution.kind === "wizard") {
-        router.push(resolution.url);
+        const latestActors = resolveDraftActors(result, me, counterparty);
+        if (latestActors.kind === "error") return { error: latestActors.message };
+        router.push(wizardUrl(groupId, result, latestActors.actors));
         return { expenseId: "" };
       }
       if (resolution.kind === "error") {
         return { error: resolution.message };
       }
       try {
+        const latestActors = resolveDraftActors(result, me, counterparty);
+        if (latestActors.kind === "error") return { error: latestActors.message };
         const ack = await createDmExpense(draftKey.current, resolution.header, resolution.payload);
         draftKey.current = crypto.randomUUID();
         return { expenseId: ack.expenseId ?? "" };
@@ -306,10 +479,10 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
     );
   }
 
-  if (resolveError) {
+  if (activeResolveError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <p className="text-sm text-destructive">{resolveError}</p>
+        <p className="text-sm text-destructive">{activeResolveError}</p>
         <button onClick={handleRetryResolve} className="text-sm text-primary underline">
           Tentar novamente
         </button>
@@ -319,12 +492,47 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
 
   if (!dm || !counterparty) return null;
 
-  if (myStatus === "invited") {
+  if (membership.status === "error") {
+    return (
+      <div className="flex h-full flex-col">
+        <ScreenHeader back title={counterparty.name} />
+        <div className="flex-1">
+          <SyncErrorState
+            message={ledgerErrorMessage(new LedgerError(membership.code))}
+            onRetry={handleRetryMembership}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (membership.status === "absent") {
+    return (
+      <div className="flex h-full flex-col">
+        <ScreenHeader back title={counterparty.name} />
+        <div className="flex flex-1 items-center justify-center px-6 text-center">
+          <p role="alert" className="text-sm text-muted-foreground">
+            Essa conversa não está disponível para sua conta.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (membership.status === "loading") {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (membership.status === "invited") {
     return (
       <ConversationInviteScreen
         counterparty={counterparty}
-        onAccept={() => void handleAccept()}
-        onDecline={() => void handleDecline()}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
       />
     );
   }
@@ -370,6 +578,16 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           </p>
         </div>
       )}
+      {conversationRead.status === "error" &&
+      (conversation?.messages.length ?? 0) === 0 &&
+      (conversation?.events.length ?? 0) === 0 ? (
+        <div className="flex-1">
+          <SyncErrorState
+            message={ledgerErrorMessage(new LedgerError(conversationRead.code))}
+            onRetry={loadInitialConversation}
+          />
+        </div>
+      ) : (
       <div className="flex min-h-0 flex-1 flex-col justify-center">
         <ChatThread
           groupId={dm.group.id}
@@ -378,10 +596,13 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           events={conversation?.events ?? []}
           settlements={dm.settlements}
           nameOf={nameOf}
-          hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
+          hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
+          acknowledgeThroughId={readableThroughId}
+          onRenderedThrough={handleRenderedThrough}
           onLoadMore={handleLoadMore}
         />
       </div>
+      )}
       {!isCounterpartyPending && groupId && (
         <>
           <AnimatePresence>

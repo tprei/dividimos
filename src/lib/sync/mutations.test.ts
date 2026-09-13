@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  ChatMessage,
   ExpenseHeader,
   ExpensePayload,
   GroupSnapshot,
@@ -10,6 +11,7 @@ import type {
 } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
 import { rpc, rpcVoid } from "./client";
+import { LedgerError } from "./errors";
 import { loadConversation, refreshExpense, refreshGroup } from "./refresh";
 import {
   createExpense,
@@ -25,6 +27,8 @@ import {
 import {
   acceptInvitation,
   claimGuest,
+  cancelVendorCharge,
+  clearPendingVendorChargeCancellations,
   confirmVendorCharge,
   createGroup,
   createInviteLink,
@@ -32,21 +36,27 @@ import {
   declineInvitation,
   deleteGroup,
   getOrCreateDm,
-  getVendorCharges,
   inviteMember,
   createGuestClaimToken,
   joinViaLink,
   leaveGroup,
   lookupUserByHandle,
+  retryPendingVendorChargeCancellations,
   recordVendorCharge,
   removeMember,
   updateProfile,
 } from "./mutations-group";
 
+const authState = vi.hoisted(() => ({ generation: 0 }));
 vi.mock("@/lib/sync/client", () => ({
   rpc: vi.fn(),
   rpcVoid: vi.fn(),
   getSupabase: vi.fn(),
+  getAuthGeneration: () => authState.generation,
+  advanceAuthGeneration: () => {
+    authState.generation += 1;
+    return authState.generation;
+  },
 }));
 
 vi.mock("@/lib/sync/refresh", () => ({
@@ -145,12 +155,12 @@ const PAYLOAD: ExpensePayload = {
   payers: [{ participantIndex: 0, amountCents: 5000 }],
   itemAssignments: null,
 };
-
 describe("mutations", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.generation = 0;
     useAppStore.getState().reset();
     globalThis.fetch = vi.fn(async () => new Response("{}", { status: 200 }));
   });
@@ -167,10 +177,10 @@ describe("mutations", () => {
         me: ME,
         groups: { g1 },
         groupOrder: ["g1"],
-        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: [], cursor: null, complete: true, total: null } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -190,6 +200,7 @@ describe("mutations", () => {
       expect(rpc).toHaveBeenCalledWith(
         "create_expense",
         expect.objectContaining({
+          p_client_id: CLIENT_ID,
           p_group_id: "g1",
           p_occurred_on: HEADER.occurredOn,
           p_title: HEADER.title,
@@ -199,6 +210,7 @@ describe("mutations", () => {
           p_service_fee_bps: HEADER.serviceFeeBasisPoints,
           p_fixed_fee_cents: HEADER.fixedFeeCents,
           p_payload: PAYLOAD,
+          p_chave_acesso: null,
         }),
         expect.any(Function),
       );
@@ -233,7 +245,7 @@ describe("mutations", () => {
         me: ME,
         groups: { g1 },
         groupOrder: ["g1"],
-        expenseLists: { g1: { ids: ["old-exp"], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: ["old-exp"], cursor: null, complete: true, total: null } },
         expenses: {
           "old-exp": {
             id: "old-exp",
@@ -253,7 +265,7 @@ describe("mutations", () => {
           },
         },
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -272,6 +284,44 @@ describe("mutations", () => {
       expect(state.groups.g1).toBe(prevGroup);
       expect(refreshGroup).toHaveBeenCalledWith("g1");
     });
+    it("does not roll back a newer optimistic retry reusing the draft client id", async () => {
+      const g1 = makeGroupSnapshot("g1");
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1 },
+        groupOrder: ["g1"],
+        expenseLists: { g1: { ids: [], cursor: null, complete: true, total: null } },
+        expenses: {},
+        expenseDetails: {},
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
+        conversations: {},
+        lastBootstrapAt: "2026-01-01T00:00:00.000Z",
+      });
+
+      let rejectFirst!: (error: Error) => void;
+      const firstRpc = new Promise<never>((_, reject) => {
+        rejectFirst = reject;
+      });
+      const ack: MutationAck = {
+        groupId: "g1",
+        expenseId: "exp-retry-2",
+        versionNo: 1,
+        ledgerVersion: 2,
+        eventId: 43,
+      };
+      vi.mocked(rpc).mockImplementationOnce(() => firstRpc).mockResolvedValueOnce(ack);
+
+      const clientId = "stable-draft-id";
+      const first = createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD, clientId });
+      const second = createExpense({ groupId: "g1", header: HEADER, payload: PAYLOAD, clientId });
+      rejectFirst(new Error("network"));
+
+      await expect(first).rejects.toThrow("network");
+      await expect(second).resolves.toEqual(ack);
+      expect(useAppStore.getState().expenses["exp-retry-2"]?.title).toBe(HEADER.title);
+    });
+
 
     it("on rejection keeps an unrelated group refreshed mid-flight", async () => {
       const g1 = makeGroupSnapshot("g1");
@@ -281,10 +331,10 @@ describe("mutations", () => {
         me: ME,
         groups: { g1, g2 },
         groupOrder: ["g1", "g2"],
-        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: [], cursor: null, complete: true, total: null } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -315,10 +365,10 @@ describe("mutations", () => {
         me: ME,
         groups: { g1 },
         groupOrder: ["g1"],
-        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: [], cursor: null, complete: true, total: null } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -355,10 +405,10 @@ describe("mutations", () => {
         me: ME,
         groups: { g1: makeGroupSnapshot("g1") },
         groupOrder: ["g1"],
-        expenseLists: { g1: { ids: [], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: [], cursor: null, complete: true, total: null } },
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -415,7 +465,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {
           g1: {
             messages: [
@@ -430,7 +480,12 @@ describe("mutations", () => {
               },
             ],
             events: [],
-            oldestCursor: "2026-01-01T00:00:00.000Z",
+            messageCursor: null,
+            messagesComplete: true,
+            eventCursor: null,
+            eventsComplete: true,
+            readWatermark: null,
+            reconcile: { status: "ready", readableThroughMessageId: null },
           },
         },
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
@@ -460,6 +515,31 @@ describe("mutations", () => {
       expect(conversation?.messages.map((m) => m.id)).toEqual(["msg-old", "msg-server-id"]);
       expect(conversation?.messages[1]?.clientId).toBe(message.clientId);
     });
+    it("does not publish an acknowledgement after the account changes", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+      const gate = Promise.withResolvers<ChatMessage>();
+      vi.mocked(rpc).mockImplementationOnce(() => gate.promise);
+      const pending = sendMessage("g1", "Conta antiga");
+      authState.generation = 1;
+      useAppStore.getState().reset();
+      gate.resolve({
+        id: "msg-stale",
+        clientId: "stale-client",
+        groupId: "g1",
+        senderId: ME.id,
+        content: "Conta antiga",
+        createdAt: "2026-01-01T00:01:00.000000Z",
+        sender: ME,
+      });
+
+      await expect(pending).rejects.toMatchObject({ code: "unauthenticated" });
+      expect(useAppStore.getState().conversations).toEqual({});
+    });
 
     it("on failure removes the optimistic message and reloads the conversation", async () => {
       useAppStore.setState({
@@ -470,7 +550,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {
           g1: {
             messages: [
@@ -485,7 +565,12 @@ describe("mutations", () => {
               },
             ],
             events: [],
-            oldestCursor: "2026-01-01T00:00:00.000Z",
+            messageCursor: null,
+            messagesComplete: true,
+            eventCursor: null,
+            eventsComplete: true,
+            readWatermark: null,
+            reconcile: { status: "ready", readableThroughMessageId: null },
           },
         },
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
@@ -557,10 +642,10 @@ describe("mutations", () => {
         me: ME,
         groups: { g1 },
         groupOrder: ["g1"],
-        expenseLists: { g1: { ids: ["exp-1"], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: ["exp-1"], cursor: null, complete: true, total: null } },
         expenses: { "exp-1": initialSummary },
         expenseDetails: { "exp-1": detail },
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -672,10 +757,10 @@ describe("mutations", () => {
         me: ME,
         groups: { g1 },
         groupOrder: ["g1"],
-        expenseLists: { g1: { ids: ["exp-1"], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: ["exp-1"], cursor: null, complete: true, total: null } },
         expenses: { "exp-1": initialSummary },
         expenseDetails: { "exp-1": detail },
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -771,10 +856,10 @@ describe("mutations", () => {
         me: ME,
         groups: { g1 },
         groupOrder: ["g1"],
-        expenseLists: { g1: { ids: ["exp-1"], oldestCursor: null, complete: true } },
+        expenseLists: { g1: { ids: ["exp-1"], cursor: null, complete: true, total: null } },
         expenses: { "exp-1": summary },
         expenseDetails: { "exp-1": detail },
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -818,7 +903,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -876,7 +961,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -945,6 +1030,8 @@ describe("mutations", () => {
             },
           ],
           oldestId: 90,
+          complete: false,
+          read: { status: "ready" },
         },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
@@ -969,7 +1056,7 @@ describe("mutations", () => {
   });
 
   describe("markRead", () => {
-    it("optimistically zeroes unreadCount and rolls back on failure", async () => {
+    it("keeps unread state until the server confirms the boundary", async () => {
       useAppStore.setState({
         hydrated: true,
         me: ME,
@@ -978,7 +1065,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -986,14 +1073,17 @@ describe("mutations", () => {
       expect(useAppStore.getState().groups.g1?.unreadCount).toBe(3);
 
       vi.mocked(rpcVoid).mockRejectedValueOnce(new Error("failed"));
-      await expect(markRead("g1")).rejects.toThrow("failed");
+      await expect(markRead("g1", "message-3")).rejects.toThrow("failed");
       expect(useAppStore.getState().groups.g1?.unreadCount).toBe(3);
       expect(refreshGroup).toHaveBeenCalledWith("g1");
 
       vi.mocked(rpcVoid).mockResolvedValueOnce(undefined);
-      await markRead("g1");
-      expect(useAppStore.getState().groups.g1?.unreadCount).toBe(0);
-      expect(rpcVoid).toHaveBeenCalledWith("mark_read", { p_group_id: "g1" });
+      await markRead("g1", "message-3");
+      expect(useAppStore.getState().groups.g1?.unreadCount).toBe(3);
+      expect(rpcVoid).toHaveBeenCalledWith("mark_read", {
+        p_group_id: "g1",
+        p_last_read_message_id: "message-3",
+      });
     });
   });
 
@@ -1024,7 +1114,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -1040,6 +1130,64 @@ describe("mutations", () => {
       expect(useAppStore.getState().groups.g1).toBeUndefined();
     });
 
+    it("fails an accept the refreshed membership does not confirm", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        // Refresh is mocked, so the store keeps this unconfirmed membership.
+        groups: {
+          g1: {
+            ...makeGroupSnapshot("g1"),
+            members: [
+              {
+                groupId: "g1",
+                userId: ME.id,
+                status: "invited" as const,
+                invitedBy: USER_2.id,
+                acceptedAt: null,
+                user: { id: ME.id, handle: ME.handle, name: ME.name, avatarUrl: null },
+              },
+            ],
+          },
+        },
+        groupOrder: ["g1"],
+      });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 1 });
+      await expect(acceptInvitation("g1")).rejects.toThrow();
+      // The screen must not unlock chat on an unconfirmed transition.
+      expect(useAppStore.getState().groups.g1?.members[0]?.status).toBe("invited");
+    });
+
+    it("treats an unreadable group after decline as the expected outcome", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: null });
+      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("not_a_member"));
+
+      await expect(declineInvitation("g1")).resolves.toBeTruthy();
+      expect(useAppStore.getState().groups.g1).toBeUndefined();
+    });
+
+    it("surfaces an unrelated refresh failure after decline", async () => {
+      useAppStore.setState({
+        hydrated: true,
+        me: ME,
+        groups: { g1: makeGroupSnapshot("g1") },
+        groupOrder: ["g1"],
+      });
+
+      vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: null });
+      vi.mocked(refreshGroup).mockRejectedValueOnce(new LedgerError("network"));
+
+      await expect(declineInvitation("g1")).rejects.toThrow();
+    });
+
     it("leaves and deletes group", async () => {
       useAppStore.setState({
         hydrated: true,
@@ -1049,7 +1197,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -1066,7 +1214,7 @@ describe("mutations", () => {
         expenseLists: {},
         expenses: {},
         expenseDetails: {},
-        activity: { items: [], oldestId: null },
+        activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
         conversations: {},
         lastBootstrapAt: "2026-01-01T00:00:00.000Z",
       });
@@ -1129,12 +1277,56 @@ describe("mutations", () => {
       const conf = await confirmVendorCharge("vc-1");
       expect(conf.status).toBe("received");
 
-      vi.mocked(rpc).mockResolvedValueOnce([charge]);
-      const list = await getVendorCharges(10);
-      expect(list).toEqual([charge]);
-
       vi.mocked(rpc).mockResolvedValueOnce({ groupId: "g1", ledgerVersion: 1, eventId: 106 });
       await removeMember("g1", USER_2.id);
+    });
+    it("cancels a vendor charge through the void RPC", async () => {
+      vi.mocked(rpcVoid).mockResolvedValueOnce(undefined);
+      await cancelVendorCharge("vc-cancel");
+      expect(rpcVoid).toHaveBeenCalledWith(
+        "cancel_vendor_charge",
+        { p_charge_id: "vc-cancel" },
+      );
+    });
+    it("retains failed cancellation work for an explicit retry", async () => {
+      clearPendingVendorChargeCancellations();
+      vi.mocked(rpcVoid).mockRejectedValueOnce(new Error("offline"));
+
+      await expect(cancelVendorCharge("vc-retry")).rejects.toThrow("offline");
+
+      vi.mocked(rpcVoid).mockResolvedValueOnce(undefined);
+      await retryPendingVendorChargeCancellations();
+
+      expect(rpcVoid).toHaveBeenCalledTimes(2);
+      clearPendingVendorChargeCancellations();
+    });
+    it("drops terminal cancellation failures instead of retrying them", async () => {
+      clearPendingVendorChargeCancellations();
+      vi.mocked(rpcVoid).mockRejectedValueOnce(
+        new LedgerError("charge_already_received"),
+      );
+
+      await expect(cancelVendorCharge("vc-terminal")).rejects.toThrow();
+
+      vi.mocked(rpcVoid).mockClear();
+      await retryPendingVendorChargeCancellations();
+      expect(rpcVoid).not.toHaveBeenCalled();
+    });
+
+    it("shares one in-flight cancellation across concurrent drains", async () => {
+      clearPendingVendorChargeCancellations();
+      vi.mocked(rpcVoid).mockRejectedValueOnce(new Error("offline"));
+      await expect(cancelVendorCharge("vc-dedup")).rejects.toThrow("offline");
+
+      const { promise, resolve } = Promise.withResolvers<void>();
+      vi.mocked(rpcVoid).mockReturnValueOnce(promise);
+      const first = retryPendingVendorChargeCancellations();
+      const second = retryPendingVendorChargeCancellations();
+      await vi.waitFor(() => expect(rpcVoid).toHaveBeenCalledTimes(2));
+
+      resolve();
+      await Promise.all([first, second]);
+      expect(rpcVoid).toHaveBeenCalledTimes(2);
     });
   });
 });

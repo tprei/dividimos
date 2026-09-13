@@ -80,16 +80,19 @@ export type Database = {
         Row: {
           group_id: string
           last_read_at: string
+          last_read_message_id: string | null
           user_id: string
         }
         Insert: {
           group_id: string
           last_read_at?: string
+          last_read_message_id?: string | null
           user_id: string
         }
         Update: {
           group_id?: string
           last_read_at?: string
+          last_read_message_id?: string | null
           user_id?: string
         }
         Relationships: [
@@ -98,6 +101,13 @@ export type Database = {
             columns: ["group_id"]
             isOneToOne: false
             referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_reads_last_read_message_id_fkey"
+            columns: ["last_read_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
             referencedColumns: ["id"]
           },
           {
@@ -223,6 +233,7 @@ export type Database = {
       }
       expenses: {
         Row: {
+          chave_acesso: string | null
           client_id: string
           created_at: string
           creator_id: string
@@ -235,6 +246,7 @@ export type Database = {
           status: Database["public"]["Enums"]["expense_status"]
         }
         Insert: {
+          chave_acesso?: string | null
           client_id: string
           created_at?: string
           creator_id: string
@@ -247,6 +259,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["expense_status"]
         }
         Update: {
+          chave_acesso?: string | null
           client_id?: string
           created_at?: string
           creator_id?: string
@@ -826,11 +839,21 @@ export type Database = {
         }
         Returns: undefined
       }
+      claim_push_subscription: {
+        Args: {
+          p_user_id: string
+          p_channel: string
+          p_endpoint_digest: string
+          p_subscription_encrypted: string
+        }
+        Returns: Json
+      }
       claim_guest: { Args: { p_token: string }; Returns: Json }
       cleanup_expired_rate_limit_counters: { Args: never; Returns: number }
       confirm_vendor_charge: { Args: { p_charge_id: string }; Returns: Json }
       create_expense: {
         Args: {
+          p_chave_acesso?: string | null
           p_client_id: string
           p_expense_type: Database["public"]["Enums"]["expense_type"]
           p_fixed_fee_cents: number
@@ -851,6 +874,23 @@ export type Database = {
           p_pix_key_encrypted: string
           p_pix_key_hint: string
           p_pix_key_type: Database["public"]["Enums"]["pix_key_type"]
+        }
+        Returns: Json
+      }
+      create_expense_with_group: {
+        Args: {
+          p_chave_acesso?: string | null
+          p_client_id: string
+          p_expense_type: Database["public"]["Enums"]["expense_type"]
+          p_fixed_fee_cents: number
+          p_group_name: string
+          p_member_ids: string[]
+          p_merchant_name: string
+          p_occurred_on: string
+          p_payload: Json
+          p_service_fee_bps: number
+          p_title: string
+          p_total_cents: number
         }
         Returns: Json
       }
@@ -904,18 +944,45 @@ export type Database = {
         Returns: Json
       }
       get_conversation: {
-        Args: { p_before: string; p_group_id: string; p_limit?: number }
+        Args: {
+          p_event_before_created_at?: string | null
+          p_event_before_id?: number | null
+          p_group_id: string
+          p_limit?: number
+          p_message_before_created_at?: string | null
+          p_message_before_id?: string | null
+        }
         Returns: Json
       }
       get_expense: { Args: { p_expense_id: string }; Returns: Json }
       get_group: { Args: { p_group_id: string }; Returns: Json }
       get_group_expenses: {
-        Args: { p_before: string; p_group_id: string; p_limit?: number }
+        Args: {
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+          p_group_id: string
+          p_limit?: number
+        }
+        Returns: Json
+      }
+      get_my_expenses: {
+        Args: {
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+          p_limit?: number
+        }
         Returns: Json
       }
       get_my_profile: { Args: never; Returns: Json }
       get_or_create_dm: { Args: { p_user_id: string }; Returns: Json }
-      get_vendor_charges: { Args: { p_limit?: number }; Returns: Json }
+      get_vendor_charges: {
+        Args: {
+          p_before_created_at?: string | null
+          p_before_id?: string | null
+          p_limit?: number
+        }
+        Returns: Json
+      }
       group_transfers: {
         Args: { p_group_id: string }
         Returns: {
@@ -968,8 +1035,15 @@ export type Database = {
       }
       ledger_user_profile_json: { Args: { p_user_id: string }; Returns: Json }
       lock_group: { Args: { p_group_id: string }; Returns: undefined }
+      lock_receipt_key: {
+        Args: { p_chave_acesso: string | null; p_creator_id: string }
+        Returns: undefined
+      }
       lookup_user_by_handle: { Args: { p_handle: string }; Returns: Json }
-      mark_read: { Args: { p_group_id: string }; Returns: undefined }
+      mark_read: {
+        Args: { p_group_id: string; p_last_read_message_id: string }
+        Returns: undefined
+      }
       materialize_participants: {
         Args: { p_author: string; p_expense_id: string; p_payload: Json }
         Returns: Json
@@ -989,6 +1063,10 @@ export type Database = {
           p_allow_overpay?: boolean
         }
         Returns: Json
+      }
+      cancel_vendor_charge: {
+        Args: { p_charge_id: string }
+        Returns: undefined
       }
       record_vendor_charge: {
         Args: { p_amount_cents: number; p_description?: string }

@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import {
-  encryptPixKey as encrypt,
-  decryptPixKey as decrypt,
-  hashEndpoint,
-} from "@/lib/crypto";
+import { encryptPixKey as encrypt, hashEndpoint } from "@/lib/crypto";
+import { validateWebSubscription } from "@/lib/push/validate-endpoint";
 
-type SubscribeBody =
-  | { subscription: PushSubscriptionJSON; channel?: "web" }
-  | { token: string; channel: "fcm" };
+type SubscribeBody = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -22,62 +21,35 @@ export async function POST(request: Request) {
 
   let body: SubscribeBody;
   try {
-    body = await request.json();
+    const parsed: unknown = await request.json();
+    if (!isRecord(parsed)) {
+      return NextResponse.json({ error: "Subscription inválida" }, { status: 400 });
+    }
+    body = parsed as SubscribeBody;
   } catch {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const channel = ("channel" in body && body.channel === "fcm") ? "fcm" : "web";
-
+  const channel = body.channel === "fcm" ? "fcm" : "web";
   const admin = createAdminClient();
 
   if (channel === "fcm") {
-    const fcmBody = body as { token: string; channel: "fcm" };
-    if (!fcmBody.token || typeof fcmBody.token !== "string") {
+    if (typeof body.token !== "string" || body.token.length === 0) {
       return NextResponse.json(
         { error: "Token FCM obrigatório" },
         { status: 400 },
       );
     }
 
-    const { data: existing } = await admin
-      .from("push_subscriptions")
-      .select("id, subscription_encrypted")
-      .eq("user_id", userId)
-      .eq("channel", "fcm");
-
-    const duplicateIds: string[] = [];
-    for (const row of existing ?? []) {
-      try {
-        const decrypted = decrypt(row.subscription_encrypted);
-        if (decrypted === fcmBody.token) {
-          duplicateIds.push(row.id);
-        }
-      } catch {
-        // Skip rows that can't be decrypted — stale data
-      }
-    }
-
-    if (duplicateIds.length > 0) {
-      await admin.from("push_subscriptions").delete().in("id", duplicateIds);
-    }
-
-    const encrypted = encrypt(fcmBody.token);
-
-    const { error } = await admin.from("push_subscriptions").insert({
-      user_id: userId,
-      endpoint_digest: hashEndpoint(fcmBody.token),
-      subscription_encrypted: encrypted,
-      channel: "fcm",
+    const { error } = await admin.rpc("claim_push_subscription", {
+      p_user_id: userId,
+      p_channel: "fcm",
+      p_endpoint_digest: hashEndpoint(body.token),
+      p_subscription_encrypted: encrypt(body.token),
     });
 
     if (error) {
-      if (error.code === "PST09") {
-        return NextResponse.json(
-          { error: "Limite de dispositivos atingido" },
-          { status: 409 },
-        );
-      }
+      console.error("[push/subscribe] claim failed:", error);
       return NextResponse.json(
         { error: "Erro ao salvar subscription" },
         { status: 500 },
@@ -87,56 +59,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  // Web Push flow (existing behavior)
-  const webBody = body as { subscription: PushSubscriptionJSON };
-  const { subscription } = webBody;
-  if (!subscription?.endpoint || !subscription?.keys) {
+  const validation = await validateWebSubscription(body.subscription);
+  if (!validation.ok) {
     return NextResponse.json(
-      { error: "Subscription inválida — endpoint e keys são obrigatórios" },
-      { status: 400 },
+      {
+        error:
+          validation.reason === "resolution_failed"
+            ? "Não foi possível validar o endpoint agora"
+            : "Subscription inválida",
+      },
+      { status: validation.reason === "resolution_failed" ? 503 : 400 },
     );
   }
+  const subscription = validation.value;
 
-  const { data: existing } = await admin
-    .from("push_subscriptions")
-    .select("id, subscription_encrypted")
-    .eq("user_id", userId)
-    .eq("channel", "web");
-
-  const duplicateIds: string[] = [];
-  for (const row of existing ?? []) {
-    try {
-      const sub = JSON.parse(decrypt(row.subscription_encrypted)) as {
-        endpoint: string;
-      };
-      if (sub.endpoint === subscription.endpoint) {
-        duplicateIds.push(row.id);
-      }
-    } catch {
-      // Skip rows that can't be decrypted — stale data
-    }
-  }
-
-  if (duplicateIds.length > 0) {
-    await admin.from("push_subscriptions").delete().in("id", duplicateIds);
-  }
-
-  const encrypted = encrypt(JSON.stringify(subscription));
-
-  const { error } = await admin.from("push_subscriptions").insert({
-    user_id: userId,
-    endpoint_digest: hashEndpoint(subscription.endpoint),
-    subscription_encrypted: encrypted,
-    channel: "web",
+  const { error } = await admin.rpc("claim_push_subscription", {
+    p_user_id: userId,
+    p_channel: "web",
+    p_endpoint_digest: hashEndpoint(subscription.endpoint),
+    p_subscription_encrypted: encrypt(JSON.stringify(subscription)),
   });
 
   if (error) {
-    if (error.code === "PST09") {
-      return NextResponse.json(
-        { error: "Limite de dispositivos atingido" },
-        { status: 409 },
-      );
-    }
+    console.error("[push/subscribe] claim failed:", error);
     return NextResponse.json(
       { error: "Erro ao salvar subscription" },
       { status: 500 },

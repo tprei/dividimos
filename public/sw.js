@@ -1,6 +1,6 @@
 // Service worker — offline cache + fallback for PWA installability.
 
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const STATIC_CACHE = `dividimos-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `dividimos-runtime-${CACHE_VERSION}`;
 const SHELL_CACHE = `dividimos-shell-${CACHE_VERSION}`;
@@ -14,13 +14,34 @@ const PRECACHE_URLS = [
   "/badge-72.png",
 ];
 
+function expectedPrecacheType(pathname) {
+  return pathname === OFFLINE_URL ? "text/html" : "image/png";
+}
+
+function hasContentType(response, expected) {
+  const contentType = response.headers?.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  return contentType === expected;
+}
+
+async function precacheUrl(cache, pathname) {
+  const url = new URL(pathname, self.location.origin);
+  if (url.origin !== self.location.origin) {
+    throw new Error(`Refusing cross-origin precache URL: ${pathname}`);
+  }
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  if (!response.ok || !hasContentType(response, expectedPrecacheType(url.pathname))) {
+    throw new Error(`Invalid precache response: ${pathname}`);
+  }
+  await cache.put(pathname, response.clone());
+}
+
 // ── Install ──────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(STATIC_CACHE)
-      .then((cache) => cache.addAll(PRECACHE_URLS))
-      .then(() => self.skipWaiting())
+    caches.open(STATIC_CACHE).then(async (cache) => {
+      await Promise.all(PRECACHE_URLS.map((pathname) => precacheUrl(cache, pathname)));
+      return self.skipWaiting();
+    })
   );
 });
 
@@ -61,6 +82,54 @@ function isCacheableAsset(request, url) {
   );
 }
 
+// A gateway that is up but broken is an outage from the user's point of view,
+// so these statuses get the offline fallback. Every other status, including
+// 404 and 500, is the app deliberately answering and is passed through.
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+
+// A navigation that never settles is worse than one that fails: the tab spins
+// with nothing to read. After this long the fallback is served instead.
+const NAVIGATION_TIMEOUT_MS = 8000;
+
+function isOutage(response) {
+  return !response || TRANSIENT_STATUSES.has(response.status);
+}
+
+/**
+ * Fetches with a deadline. Resolves to null on rejection or timeout so callers
+ * treat both the same way, and aborts the request so a stalled connection is
+ * not left holding the socket.
+ */
+function fetchWithDeadline(request) {
+  const controller =
+    typeof AbortController === "function" ? new AbortController() : null;
+  let timer = null;
+
+  const network = fetch(
+    request,
+    controller ? { signal: controller.signal } : undefined,
+  ).catch(() => null);
+
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      if (controller) controller.abort();
+      resolve(null);
+    }, NAVIGATION_TIMEOUT_MS);
+  });
+
+  return Promise.race([network, deadline]).finally(() => {
+    if (timer !== null) clearTimeout(timer);
+  });
+}
+
+function isEligibleAppShellResponse(response, requestUrl) {
+  if (!response || !response.ok || response.type === "opaque") return false;
+  const contentType = response.headers?.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.startsWith("text/html")) return false;
+  const finalUrl = response.url ? new URL(response.url, self.location.origin) : requestUrl;
+  return finalUrl.origin === self.location.origin && finalUrl.pathname.startsWith("/app");
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
@@ -82,36 +151,45 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(
         caches.open(SHELL_CACHE).then((cache) =>
           cache.match(request).then((cached) => {
-            const revalidate = fetch(request)
-              .then((response) => {
-                if (response.ok) {
-                  cache.put(request, response.clone());
-                }
-                return response;
-              })
-              .catch(() => null);
+            const validCached = isEligibleAppShellResponse(cached, url);
+            if (cached && !validCached && typeof cache.delete === "function") {
+              void cache.delete(request);
+            }
 
-            if (cached) {
+            const revalidate = fetchWithDeadline(request).then((response) => {
+              if (isEligibleAppShellResponse(response, url)) {
+                // Chained into whatever keeps this event alive, so the worker
+                // cannot be killed between the response and the write.
+                return cache
+                  .put(request, response.clone())
+                  .then(() => response, () => response);
+              }
+              return response;
+            });
+
+            if (validCached) {
               if (typeof event.waitUntil === "function") {
                 event.waitUntil(revalidate);
               }
               return cached;
             }
 
-            return revalidate.then(
-              (networkResponse) =>
-                networkResponse || caches.match(OFFLINE_URL)
+            return revalidate.then((networkResponse) =>
+              isOutage(networkResponse)
+                ? caches.match(OFFLINE_URL)
+                : networkResponse,
             );
-          })
-        )
+          }),
+        ),
       );
       return;
     }
 
     // Other navigations — network-first, offline fallback only
     event.respondWith(
-      fetch(request)
-        .catch(() => caches.match(OFFLINE_URL))
+      fetchWithDeadline(request).then((response) =>
+        isOutage(response) ? caches.match(OFFLINE_URL) : response,
+      ),
     );
     return;
   }
@@ -124,14 +202,22 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // Only cache successful responses
+        // Only cache successful responses, and keep the event alive until the
+        // write settles rather than firing it off and hoping.
         if (response.ok) {
           const clone = response.clone();
-          caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, clone));
+          const write = caches
+            .open(RUNTIME_CACHE)
+            .then((cache) => cache.put(request, clone));
+          if (typeof event.waitUntil === "function") {
+            event.waitUntil(write);
+          } else {
+            return write.then(() => response, () => response);
+          }
         }
         return response;
       })
-      .catch(() => caches.match(request))
+      .catch(() => caches.match(request)),
   );
 });
 

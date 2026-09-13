@@ -65,18 +65,18 @@ export interface ExpenseState {
   /** Wizard "Data" input (YYYY-MM-DD); null until the wizard sets it. */
   occurredOn: string | null;
   draftKey: string;
+  /** Receipt access key attached to this draft, or null for nonreceipt expenses. */
+  receiptAccessKey: string | null;
 
   setCurrentUser: (user: User) => void;
   setOccurredOn: (date: string) => void;
-
+  setReceiptAccessKey: (receiptAccessKey: string | null) => void;
   createExpense: (title: string, expenseType: ExpenseType, merchantName?: string, groupId?: string) => void;
   updateExpense: (updates: Partial<Expense> & { totalAmountInput?: number }) => void;
   setExpenseType: (expenseType: ExpenseType) => void;
 
   addParticipant: (user: User) => void;
   removeParticipant: (userId: string) => void;
-
-  /** Adds a guest by name. Returns the generated guest ID. */
   addGuest: (name: string, phone?: string) => string;
   /** Removes a guest and cascades removal to splits and billSplits. */
   removeGuest: (guestId: string) => void;
@@ -90,6 +90,8 @@ export interface ExpenseState {
   assignItem: (itemId: string, userId: string, splitType: SplitType, value: number) => void;
   unassignItem: (itemId: string, userId: string) => void;
   splitItemEqually: (itemId: string, userIds: string[]) => void;
+  /** Splits several items equally among the same people, in one write. */
+  assignItemsEqually: (itemIds: string[], userIds: string[]) => void;
   setItemDivision: (itemId: string, value: ItemDivisionValue) => void;
 
   setPayerFull: (userId: string) => PayerMutationResult;
@@ -421,18 +423,28 @@ function detailToWizardState(
     return userId ? [{ expenseId: record.id, userId, amountCents: payer.amountCents }] : [];
   });
 
+  // Reopens the control the author used. Versions written before the method
+  // was recorded fall back to fixed amounts, which is what they effectively
+  // were: only the cents survived.
+  const authoredMethod: SplitType = payload.splitMethod ?? "fixed";
   const billSplits: AmountSplit[] =
     current.expenseType === "single_amount"
       ? detail.participants.flatMap((participant) => {
           const userId = localIdByIndex.get(participant.participantIndex);
-          return userId
-            ? [{
-                userId,
-                splitType: "fixed" as SplitType,
-                value: participant.shareCents,
-                computedAmountCents: participant.shareCents,
-              }]
-            : [];
+          if (!userId) return [];
+          const totalCents = current.totalCents || 0;
+          const value =
+            authoredMethod === "percentage" && totalCents > 0
+              ? (participant.shareCents / totalCents) * 100
+              : authoredMethod === "equal"
+                ? 100 / detail.participants.length
+                : participant.shareCents;
+          return [{
+            userId,
+            splitType: authoredMethod,
+            value,
+            computedAmountCents: participant.shareCents,
+          }];
         })
       : [];
 
@@ -483,7 +495,6 @@ function detailToWizardState(
       serviceFeePercent: current.serviceFeeBasisPoints / 100,
       serviceFeeBasisPoints: current.serviceFeeBasisPoints,
       fixedFees: current.fixedFeeCents,
-      status: "active",
       createdAt: record.createdAt,
       updatedAt: current.createdAt,
     },
@@ -496,6 +507,36 @@ function detailToWizardState(
     billSplits,
     occurredOn: record.occurredOn,
   };
+}
+
+/**
+ * Writes bill splits only when they actually differ.
+ *
+ * The division UI recomputes an allocation on every render and hands it back
+ * to the store. Without this guard a mount, or a re-render triggered by
+ * something else entirely, republishes an identical array and wakes every
+ * subscriber; worse, it marks a hydrated custom split as freshly authored.
+ */
+function sameBillSplits(a: AmountSplit[], b: AmountSplit[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((split, index) => {
+    const other = b[index];
+    return (
+      split.userId === other.userId &&
+      split.splitType === other.splitType &&
+      split.value === other.value &&
+      split.computedAmountCents === other.computedAmountCents
+    );
+  });
+}
+
+function commitBillSplits(
+  set: (partial: Partial<ExpenseState>) => void,
+  get: () => ExpenseState,
+  billSplits: AmountSplit[],
+): void {
+  if (sameBillSplits(get().billSplits, billSplits)) return;
+  set({ billSplits });
 }
 
 export const useBillStore = create<ExpenseState>()(
@@ -512,10 +553,11 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
 
       setCurrentUser: (user) => set({ currentUser: user }),
       setOccurredOn: (date) => set({ occurredOn: date }),
-
+      setReceiptAccessKey: (receiptAccessKey) => set({ receiptAccessKey }),
   createExpense: (title, expenseType, merchantName, groupId) => {
     const now = new Date().toISOString();
     const expense: Expense = {
@@ -529,7 +571,6 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: expenseType === "itemized" ? 10 : 0,
       serviceFeeBasisPoints: expenseType === "itemized" ? 1000 : 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
@@ -545,6 +586,7 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
 
@@ -834,6 +876,33 @@ export const useBillStore = create<ExpenseState>()(
 
     set({ splits: [...existingOther, ...newSplits] });
   },
+  assignItemsEqually: (itemIds, userIds) => {
+    if (itemIds.length === 0 || userIds.length === 0) return;
+    const targeted = new Set(itemIds);
+    const known = get().items.filter((item) => targeted.has(item.id));
+    if (known.length === 0) return;
+
+    const keptSplits = get().splits.filter((split) => !targeted.has(split.itemId));
+    const created: ExpenseSplit[] = [];
+    for (const item of known) {
+      const perPerson = Math.floor(item.totalPriceCents / userIds.length);
+      const remainder = item.totalPriceCents - perPerson * userIds.length;
+      userIds.forEach((userId, index) => {
+        created.push({
+          id: generateId(),
+          itemId: item.id,
+          userId,
+          splitType: "equal" as SplitType,
+          value: 100 / userIds.length,
+          computedAmountCents: perPerson + (index < remainder ? 1 : 0),
+        });
+      });
+    }
+
+    // One write for the whole batch: assigning fifty rows should not wake
+    // every subscriber fifty times.
+    set({ splits: [...keptSplits, ...created] });
+  },
   setItemDivision: (itemId, value) => {
     set((state) => {
       if (!state.items.some((item) => item.id === itemId) || value.shares.length === 0) {
@@ -843,6 +912,7 @@ export const useBillStore = create<ExpenseState>()(
         ...state.participants.map((participant) => participant.id),
         ...state.guests.map((guest) => guest.id),
       ]);
+
       if (value.shares.some((share) => !memberIds.has(share.participantId))) {
         return {};
       }
@@ -949,7 +1019,7 @@ export const useBillStore = create<ExpenseState>()(
       value: 100 / userIds.length,
       computedAmountCents: perPerson + (idx < remainder ? 1 : 0),
     }));
-    set({ billSplits });
+    commitBillSplits(set, get, billSplits);
   },
 
   splitBillByBasisPoints: (assignments) => {
@@ -964,7 +1034,7 @@ export const useBillStore = create<ExpenseState>()(
       value: assignment.basisPoints / 100,
       computedAmountCents: allocation.value[index],
     }));
-    set({ billSplits });
+    commitBillSplits(set, get, billSplits);
   },
 
   splitBillByFixed: (assignments) => {
@@ -974,7 +1044,7 @@ export const useBillStore = create<ExpenseState>()(
       value: a.amountCents,
       computedAmountCents: a.amountCents,
     }));
-    set({ billSplits });
+    commitBillSplits(set, get, billSplits);
   },
 
   getGrandTotal: () => {
@@ -1054,7 +1124,6 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: 0,
       serviceFeeBasisPoints: 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
@@ -1078,6 +1147,7 @@ export const useBillStore = create<ExpenseState>()(
       payers: [],
       splits: [],
       billSplits: [],
+      receiptAccessKey: null,
     });
   },
 
@@ -1096,11 +1166,9 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: 0,
       serviceFeeBasisPoints: 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
-
     set({
       expense,
       totalAmountInput: 0,
@@ -1112,6 +1180,7 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
 
@@ -1133,7 +1202,6 @@ export const useBillStore = create<ExpenseState>()(
       serviceFeePercent: 0,
       serviceFeeBasisPoints: 0,
       fixedFees: 0,
-      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
@@ -1164,7 +1232,6 @@ export const useBillStore = create<ExpenseState>()(
         });
       }
     }
-
     set({
       expense,
       totalAmountInput: result.expenseType === "single_amount" ? result.amountCents : 0,
@@ -1176,11 +1243,15 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
 
   hydrateFromDetail: (detail, members) => {
-    set(detailToWizardState(detail, members));
+    set({
+      ...detailToWizardState(detail, members),
+      receiptAccessKey: null,
+    });
   },
 
   reset: () => {
@@ -1195,13 +1266,21 @@ export const useBillStore = create<ExpenseState>()(
       billSplits: [],
       occurredOn: null,
       draftKey: crypto.randomUUID(),
+      receiptAccessKey: null,
     });
   },
     }),
     {
       name: "dividimos-draft",
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<ExpenseState>;
+        return {
+          ...state,
+          receiptAccessKey: state.receiptAccessKey ?? null,
+        };
+      },
       partialize: (state) => ({
         expense: state.expense,
         totalAmountInput: state.totalAmountInput,
@@ -1212,6 +1291,7 @@ export const useBillStore = create<ExpenseState>()(
         splits: state.splits,
         billSplits: state.billSplits,
         occurredOn: state.occurredOn,
+        receiptAccessKey: state.receiptAccessKey,
       }),
     },
   ),

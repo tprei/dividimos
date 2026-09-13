@@ -1,5 +1,7 @@
 import { transfersFromBalances, transfersInvolving } from "@/lib/ledger/transfers";
 import type { BalanceRow, GroupSnapshot, Transfer } from "@/types/ledger";
+import type { LedgerErrorCode } from "@/lib/sync/errors";
+import type { ResourceReadState } from "./app-store";
 import type { AppState, MyDebts } from "./app-store";
 
 export function selectGroup(state: AppState, id: string): GroupSnapshot | null {
@@ -127,4 +129,37 @@ export function findDmGroup(
     }
   }
   return null;
+}
+
+/**
+ * What the caller's own membership in a DM is, as far as authoritative data
+ * shows. Missing or malformed membership is never "accepted": the compose and
+ * payment actions depend on this, so an unreadable group must fail closed.
+ */
+export type DmMembershipView =
+  | { status: "loading" }
+  | { status: "error"; code: LedgerErrorCode }
+  | { status: "absent" }
+  | { status: "invited"; invitedBy: string | null }
+  | { status: "accepted" };
+
+export function selectDmMembership(
+  snapshot: GroupSnapshot | undefined,
+  meId: string,
+  read: ResourceReadState,
+): DmMembershipView {
+  if (snapshot === undefined) {
+    if (read.status === "error") return { status: "error", code: read.code };
+    // Only a completed read can prove the group is genuinely gone.
+    return read.status === "ready" ? { status: "absent" } : { status: "loading" };
+  }
+
+  const mine = snapshot.members.find((member) => member.userId === meId);
+  if (mine === undefined) return { status: "absent" };
+  if (mine.status === "accepted") return { status: "accepted" };
+  if (mine.status === "invited") {
+    return { status: "invited", invitedBy: mine.invitedBy };
+  }
+  // An unrecognised status is malformed data, not consent.
+  return { status: "absent" };
 }

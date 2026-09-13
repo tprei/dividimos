@@ -16,13 +16,30 @@ class MockResponse {
   ok: boolean;
   status: number;
   body: string;
-  constructor(body = "", init: { status?: number } = {}) {
+  headers: { get: (name: string) => string | null };
+  type: string;
+  url: string;
+  constructor(
+    body = "",
+    init: { status?: number; contentType?: string; url?: string; type?: string } = {},
+  ) {
     this.body = body;
     this.status = init.status ?? 200;
     this.ok = this.status >= 200 && this.status < 300;
+    const contentType = init.contentType ?? "text/html";
+    this.headers = {
+      get: (name) => (name.toLowerCase() === "content-type" ? contentType : null),
+    };
+    this.type = init.type ?? "basic";
+    this.url = init.url ?? "";
   }
   clone() {
-    return new MockResponse(this.body, { status: this.status });
+    return new MockResponse(this.body, {
+      status: this.status,
+      contentType: this.headers.get("content-type") ?? undefined,
+      type: this.type,
+      url: this.url,
+    });
   }
 }
 
@@ -32,7 +49,10 @@ class MockRequest {
   method: string;
   mode: string;
   destination: string;
-  constructor(url: string, init: { method?: string; mode?: string; destination?: string } = {}) {
+  constructor(
+    url: string,
+    init: { method?: string; mode?: string; destination?: string } = {},
+  ) {
     this.url = url;
     this.method = init.method ?? "GET";
     this.mode = init.mode ?? "cors";
@@ -51,6 +71,10 @@ function createCacheMock() {
       const key = typeof req === "string" ? req : req.url;
       store.set(key, res);
     }),
+    delete: vi.fn(async (req: MockRequest | string) => {
+      const key = typeof req === "string" ? req : req.url;
+      return store.delete(key);
+    }),
     match: vi.fn(async (req: MockRequest | string) => {
       const key = typeof req === "string" ? req : req.url;
       return store.get(key) ?? undefined;
@@ -58,7 +82,6 @@ function createCacheMock() {
     _store: store,
   };
 }
-
 /** Minimal CacheStorage mock */
 function createCacheStorageMock() {
   const caches = new Map<string, ReturnType<typeof createCacheMock>>();
@@ -96,8 +119,12 @@ function createSWEnv(origin = "https://dividimos.app") {
     clients: { claim: vi.fn(async () => { clientsClaimed.value = true; }) },
     location: new URL(origin),
     skipWaiting: vi.fn(),
-    // fetch will be overridden per test
-    fetch: vi.fn(),
+    fetch: vi.fn((input: MockRequest | string) => {
+      const requestUrl = typeof input === "string" ? input : input.url;
+      const pathname = new URL(requestUrl, origin).pathname;
+      const contentType = pathname.endsWith(".png") ? "image/png" : "text/html";
+      return Promise.resolve(new MockResponse(pathname, { contentType, url: requestUrl }));
+    }),
     addEventListener: (type: string, handler: EventHandler) => {
       (listeners[type] ??= []).push(handler);
     },
@@ -147,13 +174,26 @@ describe("Service Worker", () => {
       env.listeners["install"]![0]!(event);
       await Promise.all(event._promises);
 
-      const staticCache = await env.cacheStorage.open("dividimos-static-v4");
-      expect(staticCache.addAll).toHaveBeenCalledWith([
+      const staticCache = await env.cacheStorage.open("dividimos-static-v5");
+      expect(staticCache.put).toHaveBeenCalledTimes(4);
+      expect(Array.from(staticCache._store.keys())).toEqual([
         "/offline.html",
         "/icon-192.png",
         "/icon-512.png",
         "/badge-72.png",
       ]);
+    });
+    it("fails installation when a precached asset is not the expected content", async () => {
+      (env.env.fetch as Mock).mockResolvedValue(
+        new MockResponse("not an image", { status: 200, contentType: "text/html" }),
+      );
+      const event = makeExtendableEvent();
+      env.listeners["install"]![0]!(event);
+
+      await expect(Promise.all(event._promises)).rejects.toThrow("Invalid precache response");
+      const staticCache = await env.cacheStorage.open("dividimos-static-v5");
+      expect(staticCache.put).toHaveBeenCalledTimes(1);
+      expect(env.env.skipWaiting).not.toHaveBeenCalled();
     });
   });
 
@@ -163,16 +203,16 @@ describe("Service Worker", () => {
       await env.cacheStorage.open("dividimos-static-v0");
       await env.cacheStorage.open("dividimos-runtime-v0");
       // Also create current caches so they exist
-      await env.cacheStorage.open("dividimos-static-v4");
-      await env.cacheStorage.open("dividimos-runtime-v4");
+      await env.cacheStorage.open("dividimos-static-v5");
+      await env.cacheStorage.open("dividimos-runtime-v5");
 
       const event = makeExtendableEvent();
       env.listeners["activate"]![0]!(event);
       await Promise.all(event._promises);
-
       const remaining = await env.cacheStorage.keys();
-      expect(remaining).toContain("dividimos-static-v4");
-      expect(remaining).toContain("dividimos-runtime-v4");
+
+      expect(remaining).toContain("dividimos-static-v5");
+      expect(remaining).toContain("dividimos-runtime-v5");
       expect(remaining).not.toContain("dividimos-static-v0");
       expect(remaining).not.toContain("dividimos-runtime-v0");
     });
@@ -191,6 +231,8 @@ describe("Service Worker", () => {
       await env.cacheStorage.open("dividimos-runtime-v3");
       await env.cacheStorage.open("dividimos-static-v4");
       await env.cacheStorage.open("dividimos-runtime-v4");
+      await env.cacheStorage.open("dividimos-static-v5");
+      await env.cacheStorage.open("dividimos-runtime-v5");
 
       const event = makeExtendableEvent();
       env.listeners["activate"]![0]!(event);
@@ -201,8 +243,10 @@ describe("Service Worker", () => {
       expect(remaining).not.toContain("dividimos-runtime-v2");
       expect(remaining).not.toContain("dividimos-static-v3");
       expect(remaining).not.toContain("dividimos-runtime-v3");
-      expect(remaining).toContain("dividimos-static-v4");
-      expect(remaining).toContain("dividimos-runtime-v4");
+      expect(remaining).not.toContain("dividimos-static-v4");
+      expect(remaining).not.toContain("dividimos-runtime-v4");
+      expect(remaining).toContain("dividimos-static-v5");
+      expect(remaining).toContain("dividimos-runtime-v5");
     });
   });
 
@@ -212,12 +256,15 @@ describe("Service Worker", () => {
       opts: { method?: string; mode?: string; destination?: string } = {}
     ) {
       let response: unknown;
+      const pending: Promise<unknown>[] = [];
       return {
         request: new MockRequest(url, opts),
         respondWith: (p: Promise<unknown> | unknown) => {
           response = p;
         },
+        waitUntil: (p: Promise<unknown>) => { pending.push(p); },
         get _response() { return response; },
+        get _pending() { return pending; },
       };
     }
 
@@ -273,13 +320,13 @@ describe("Service Worker", () => {
 
       // Give the cache.put a tick to complete
       await new Promise((r) => setTimeout(r, 10));
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v4");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v5");
       expect(runtimeCache.put).toHaveBeenCalled();
     });
 
     it("falls back to cache when asset fetch fails", async () => {
       // Pre-populate runtime cache
-      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v4");
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v5");
       const cachedRes = new MockResponse("cached", { status: 200 });
       const assetUrl = "https://dividimos.app/_next/static/chunk.js";
       await runtimeCache.put(new MockRequest(assetUrl) as unknown as string, cachedRes);
@@ -292,6 +339,76 @@ describe("Service Worker", () => {
       const response = await event._response;
 
       expect(response).toBe(cachedRes);
+    });
+
+    it.each([502, 503, 504])(
+      "serves the offline page when a navigation gets %i",
+      async (status) => {
+        const staticCache = await env.cacheStorage.open("dividimos-static-v5");
+        const offline = new MockResponse("offline page", { status: 200 });
+        await staticCache.put("/offline.html", offline);
+        (env.env.fetch as Mock).mockResolvedValue(
+          new MockResponse("gateway", { status }),
+        );
+
+        const event = makeFetchEvent("https://dividimos.app/sobre", {
+          mode: "navigate",
+        });
+        env.listeners["fetch"]![0]!(event);
+
+        expect(await event._response).toBe(offline);
+      },
+    );
+
+    it.each([200, 404, 500, 302])(
+      "passes a %i navigation through untouched",
+      async (status) => {
+        const real = new MockResponse("app said so", { status });
+        (env.env.fetch as Mock).mockResolvedValue(real);
+
+        const event = makeFetchEvent("https://dividimos.app/sobre", {
+          mode: "navigate",
+        });
+        env.listeners["fetch"]![0]!(event);
+
+        expect(await event._response).toBe(real);
+      },
+    );
+
+    it("serves the offline page when a navigation never settles", async () => {
+      vi.useFakeTimers();
+      try {
+        const staticCache = await env.cacheStorage.open("dividimos-static-v5");
+        const offline = new MockResponse("offline page", { status: 200 });
+        await staticCache.put("/offline.html", offline);
+        (env.env.fetch as Mock).mockReturnValue(new Promise(() => {}));
+
+        const event = makeFetchEvent("https://dividimos.app/sobre", {
+          mode: "navigate",
+        });
+        env.listeners["fetch"]![0]!(event);
+
+        await vi.advanceTimersByTimeAsync(8000);
+        expect(await event._response).toBe(offline);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps the fetch event alive until the asset cache write settles", async () => {
+      (env.env.fetch as Mock).mockResolvedValue(
+        new MockResponse("body", { status: 200 }),
+      );
+
+      const event = makeFetchEvent("https://dividimos.app/_next/static/chunk.js");
+      env.listeners["fetch"]![0]!(event);
+      await event._response;
+
+      expect(event._pending).toHaveLength(1);
+      await Promise.all(event._pending);
+
+      const runtimeCache = await env.cacheStorage.open("dividimos-runtime-v5");
+      expect(runtimeCache.put).toHaveBeenCalled();
     });
 
     it("never caches RSC payload requests", () => {
@@ -307,7 +424,7 @@ describe("Service Worker", () => {
     });
 
     it("serves /app navigations cache-first from shell cache when cached", async () => {
-      const shellCache = await env.cacheStorage.open("dividimos-shell-v4");
+      const shellCache = await env.cacheStorage.open("dividimos-shell-v5");
       const cachedRes = new MockResponse("cached-shell", { status: 200 });
       const appUrl = "https://dividimos.app/app";
       await shellCache.put(appUrl, cachedRes);
@@ -321,6 +438,23 @@ describe("Service Worker", () => {
       const response = await event._response;
       expect(response).toBe(cachedRes);
     });
+    it("does not cache an authenticated redirect returned for /app", async () => {
+      const authResponse = new MockResponse("login", {
+        status: 200,
+        contentType: "text/html",
+        url: "https://dividimos.app/auth/login",
+      });
+      (env.env.fetch as Mock).mockResolvedValue(authResponse);
+
+      const appUrl = "https://dividimos.app/app";
+      const event = makeFetchEvent(appUrl, { mode: "navigate" });
+      env.listeners["fetch"]![0]!(event);
+
+      expect(await event._response).toBe(authResponse);
+      const shellCache = await env.cacheStorage.open("dividimos-shell-v5");
+      await Promise.resolve();
+      expect(shellCache.put).not.toHaveBeenCalled();
+    });
 
     it("caches /app navigation in shell cache on first visit", async () => {
       const freshRes = new MockResponse("fresh-shell", { status: 200 });
@@ -333,7 +467,7 @@ describe("Service Worker", () => {
       const response = await event._response;
       expect(response).toBe(freshRes);
 
-      const shellCache = await env.cacheStorage.open("dividimos-shell-v4");
+      const shellCache = await env.cacheStorage.open("dividimos-shell-v5");
       await vi.waitFor(() => {
         expect(shellCache.put).toHaveBeenCalled();
       });
@@ -349,7 +483,7 @@ describe("Service Worker", () => {
       const response = await event._response;
       expect(response).toBe(freshRes);
 
-      const shellCache = await env.cacheStorage.open("dividimos-shell-v4");
+      const shellCache = await env.cacheStorage.open("dividimos-shell-v5");
       await Promise.resolve();
       expect(shellCache.put).not.toHaveBeenCalled();
     });

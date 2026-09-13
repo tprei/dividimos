@@ -4,7 +4,11 @@ import { LedgerError } from "./errors";
 import { rpc } from "./client";
 import { attachVisibilityRefresh } from "./bootstrap";
 
-vi.mock("./client", () => ({ rpc: vi.fn() }));
+vi.mock("./client", () => ({
+  rpc: vi.fn(),
+  getAuthGeneration: () => 0,
+  advanceAuthGeneration: () => 1,
+}));
 
 const rpcMock = vi.mocked(rpc);
 

@@ -95,9 +95,15 @@ CREATE TABLE public.expenses (
   occurred_on date NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
-  deleted_by uuid REFERENCES public.users(id)
+  deleted_by uuid REFERENCES public.users(id),
+  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$')
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
+-- Cursor order for history paging; occurred_on above still serves its own readers.
+CREATE INDEX expenses_group_created_idx ON public.expenses (group_id, created_at DESC, id DESC);
+CREATE UNIQUE INDEX expenses_creator_chave_active_idx
+  ON public.expenses (creator_id, chave_acesso)
+  WHERE status = 'active' AND chave_acesso IS NOT NULL;
 
 CREATE TABLE public.expense_versions (
   expense_id uuid NOT NULL REFERENCES public.expenses(id) ON DELETE CASCADE,
@@ -190,12 +196,13 @@ CREATE TABLE public.chat_messages (
   content text NOT NULL CHECK (length(content) BETWEEN 1 AND 2000),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX chat_messages_group_idx ON public.chat_messages (group_id, created_at DESC);
+CREATE INDEX chat_messages_group_idx ON public.chat_messages (group_id, created_at DESC, id DESC);
 
 CREATE TABLE public.conversation_reads (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
   last_read_at timestamptz NOT NULL DEFAULT now(),
+  last_read_message_id uuid REFERENCES public.chat_messages(id),
   PRIMARY KEY (user_id, group_id)
 );
 
@@ -203,10 +210,12 @@ CREATE TABLE public.push_subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   channel text NOT NULL CHECK (channel IN ('web', 'fcm')),
-  endpoint_digest bytea NOT NULL,
+  -- One physical endpoint has exactly one owner: a device registered to a
+  -- second account stops delivering to the first.
+  endpoint_digest bytea NOT NULL UNIQUE,
   subscription_encrypted text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, endpoint_digest)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE guest_credentials.claim_tokens (
@@ -303,6 +312,19 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.lock_receipt_key(p_creator_id uuid, p_chave_acesso text) RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  IF p_chave_acesso IS NULL THEN
+    RETURN;
+  END IF;
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_creator_id::text || ':' || p_chave_acesso, 0)
+  );
+END;
+$$;
+
 CREATE FUNCTION public.recompute_group_balances(p_group_id uuid) RETURNS bigint
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -380,6 +402,7 @@ DECLARE
   v_items jsonb;
   v_participants jsonb;
   v_shares jsonb;
+  v_split_method text;
   v_payers jsonb;
   v_item_assignments jsonb;
   v_n integer;
@@ -552,6 +575,21 @@ BEGIN
   END LOOP;
   IF v_share_sum <> p_total THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'share_total_mismatch';
+  END IF;
+
+  -- How the author described the division ('equal', 'percentage', 'fixed').
+  -- Cents remain authoritative; this only lets an edit reopen the control the
+  -- author used instead of guessing from the amounts. Older versions have no
+  -- such key and stay valid.
+  IF p ? 'splitMethod' AND jsonb_typeof(p->'splitMethod') <> 'null' THEN
+    IF jsonb_typeof(p->'splitMethod') <> 'string'
+       OR (p->>'splitMethod') NOT IN ('equal', 'percentage', 'fixed')
+    THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+    END IF;
+    v_split_method := p->>'splitMethod';
+  ELSE
+    v_split_method := NULL;
   END IF;
 
   IF p ? 'payers' THEN v_payers := p->'payers'; ELSE v_payers := NULL; END IF;
@@ -764,7 +802,8 @@ BEGIN
         'amountCents', (x->>'amountCents')::integer
       ) ORDER BY ord), '[]'::jsonb)
       FROM jsonb_array_elements(v_item_assignments) WITH ORDINALITY AS t(x, ord)
-    ) END
+    ) END,
+    'splitMethod', to_jsonb(v_split_method)
   );
 END;
 $$;
@@ -1449,10 +1488,23 @@ BEGIN
       SELECT count(*)::integer FROM chat_messages m
       WHERE m.group_id = g.id
         AND m.sender_id <> p_viewer
-        AND m.created_at > COALESCE((
-          SELECT cr.last_read_at FROM conversation_reads cr
-          WHERE cr.user_id = p_viewer AND cr.group_id = g.id
-        ), '-infinity'::timestamptz)
+        AND (
+          NOT EXISTS (
+            SELECT 1
+            FROM conversation_reads cr
+            WHERE cr.user_id = p_viewer AND cr.group_id = g.id
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM conversation_reads cr
+            WHERE cr.user_id = p_viewer
+              AND cr.group_id = g.id
+              AND (
+                cr.last_read_message_id IS NULL
+                OR (m.created_at, m.id) > (cr.last_read_at, cr.last_read_message_id)
+              )
+          )
+        )
     ),
     'lastMessage', COALESCE((
       SELECT jsonb_build_object('content', m.content, 'senderId', m.sender_id, 'createdAt', to_jsonb(m.created_at))
@@ -1550,26 +1602,136 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.get_group_expenses(p_group_id uuid, p_before timestamptz, p_limit integer DEFAULT 30) RETURNS jsonb
+CREATE FUNCTION public.get_group_expenses(
+  p_group_id uuid,
+  p_before_created_at timestamptz DEFAULT NULL,
+  p_before_id uuid DEFAULT NULL,
+  p_limit integer DEFAULT 30
+) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_user_id uuid;
-  v_limit integer;
+  v_expenses jsonb;
+  v_cursor jsonb;
+  v_complete boolean;
 BEGIN
   v_user_id := current_user_id();
+
+  IF p_group_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+  -- Half a cursor cannot express the strict (created_at, id) boundary.
+  IF (p_before_created_at IS NULL) <> (p_before_id IS NULL) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
   PERFORM assert_member(p_group_id, v_user_id);
-  v_limit := GREATEST(1, LEAST(COALESCE(p_limit, 30), 100));
-  RETURN COALESCE((
-    SELECT jsonb_agg(ledger_expense_summary_json(e.id, v_user_id) ORDER BY e.created_at DESC, e.id DESC)
-    FROM (
-      SELECT id, created_at FROM expenses
-      WHERE group_id = p_group_id
-        AND created_at < COALESCE(p_before, 'infinity'::timestamptz)
-      ORDER BY created_at DESC, id DESC
-      LIMIT v_limit
-    ) e
-  ), '[]'::jsonb);
+
+  WITH page AS (
+    SELECT id, created_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
+    FROM expenses
+    WHERE group_id = p_group_id
+      AND (
+        p_before_id IS NULL
+        OR (created_at, id) < (p_before_created_at, p_before_id)
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(ledger_expense_summary_json(p.id, v_user_id) ORDER BY p.created_at DESC, p.id DESC)
+      FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_expenses, v_complete, v_cursor
+  FROM page p;
+
+  RETURN jsonb_build_object(
+    'expenses', v_expenses,
+    'nextCursor', v_cursor,
+    'complete', v_complete,
+    -- Total over the whole group, not the page, so the UI never advertises a
+    -- count that only describes what happens to be loaded.
+    'total', (SELECT count(*)::integer FROM expenses WHERE group_id = p_group_id)
+  );
+END;
+$$;
+
+/**
+ * Cross-group expense history for the caller, scoped to groups where they are
+ * an accepted member. Includes deleted rows, matching the bills history.
+ */
+CREATE FUNCTION public.get_my_expenses(
+  p_before_created_at timestamptz DEFAULT NULL,
+  p_before_id uuid DEFAULT NULL,
+  p_limit integer DEFAULT 50
+) RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid;
+  v_expenses jsonb;
+  v_cursor jsonb;
+  v_complete boolean;
+BEGIN
+  v_user_id := current_user_id();
+
+  IF (p_before_created_at IS NULL) <> (p_before_id IS NULL) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  WITH visible AS (
+    SELECT e.id, e.created_at
+    FROM expenses e
+    WHERE e.group_id IN (
+      SELECT gm.group_id FROM group_members gm
+      WHERE gm.user_id = v_user_id AND gm.status = 'accepted'
+    )
+  ), page AS (
+    SELECT id, created_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
+    FROM visible
+    WHERE p_before_id IS NULL
+      OR (created_at, id) < (p_before_created_at, p_before_id)
+    ORDER BY created_at DESC, id DESC
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(ledger_expense_summary_json(p.id, v_user_id) ORDER BY p.created_at DESC, p.id DESC)
+      FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_expenses, v_complete, v_cursor
+  FROM page p;
+
+  RETURN jsonb_build_object(
+    'expenses', v_expenses,
+    'nextCursor', v_cursor,
+    'complete', v_complete,
+    'total', (
+      SELECT count(*)::integer FROM expenses e
+      WHERE e.group_id IN (
+        SELECT gm.group_id FROM group_members gm
+        WHERE gm.user_id = v_user_id AND gm.status = 'accepted'
+      )
+    )
+  );
 END;
 $$;
 
@@ -1659,37 +1821,113 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.get_conversation(p_group_id uuid, p_before timestamptz, p_limit integer DEFAULT 50) RETURNS jsonb
+CREATE FUNCTION public.get_conversation(
+  p_group_id uuid,
+  p_message_before_created_at timestamptz DEFAULT NULL,
+  p_message_before_id uuid DEFAULT NULL,
+  p_event_before_created_at timestamptz DEFAULT NULL,
+  p_event_before_id bigint DEFAULT NULL,
+  p_limit integer DEFAULT 50
+) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_user_id uuid;
-  v_limit integer;
+  v_messages jsonb;
+  v_message_cursor jsonb;
+  v_messages_complete boolean;
+  v_events jsonb;
+  v_event_cursor jsonb;
+  v_events_complete boolean;
 BEGIN
   v_user_id := current_user_id();
+
+  IF p_group_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  -- A half-specified cursor cannot express the strict (created_at, id)
+  -- boundary, so accepting one half would skip or repeat rows sharing a
+  -- timestamp.
+  IF (p_message_before_created_at IS NULL) <> (p_message_before_id IS NULL)
+     OR (p_event_before_created_at IS NULL) <> (p_event_before_id IS NULL) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
   PERFORM assert_member(p_group_id, v_user_id);
-  v_limit := GREATEST(1, LEAST(COALESCE(p_limit, 50), 200));
+
+  -- Each stream reads p_limit + 1 rows: the surplus row proves another page
+  -- exists (a full page alone does not), and is dropped before the cursor is
+  -- taken from the last row actually returned.
+  WITH page AS (
+    SELECT id, created_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
+    FROM chat_messages
+    WHERE group_id = p_group_id
+      AND (
+        p_message_before_id IS NULL
+        OR (created_at, id) < (p_message_before_created_at, p_message_before_id)
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(ledger_chat_message_json(p.id) ORDER BY p.created_at DESC, p.id DESC)
+      FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_messages, v_messages_complete, v_message_cursor
+  FROM page p;
+
+  WITH page AS (
+    SELECT id, created_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
+    FROM group_events
+    WHERE group_id = p_group_id
+      AND (
+        p_event_before_id IS NULL
+        OR (created_at, id) < (p_event_before_created_at, p_event_before_id)
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(ledger_event_json(p.id) ORDER BY p.created_at DESC, p.id DESC)
+      FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_events, v_events_complete, v_event_cursor
+  FROM page p;
+
   RETURN jsonb_build_object(
-    'messages', COALESCE((
-      SELECT jsonb_agg(ledger_chat_message_json(m.id) ORDER BY m.created_at DESC, m.id DESC)
-      FROM (
-        SELECT id, created_at FROM chat_messages
-        WHERE group_id = p_group_id
-          AND created_at < COALESCE(p_before, 'infinity'::timestamptz)
-        ORDER BY created_at DESC, id DESC
-        LIMIT v_limit
-      ) m
-    ), '[]'::jsonb),
-    'events', COALESCE((
-      SELECT jsonb_agg(ledger_event_json(ev.id) ORDER BY ev.created_at DESC, ev.id DESC)
-      FROM (
-        SELECT id, created_at FROM group_events
-        WHERE group_id = p_group_id
-          AND created_at < COALESCE(p_before, 'infinity'::timestamptz)
-        ORDER BY created_at DESC, id DESC
-        LIMIT v_limit
-      ) ev
-    ), '[]'::jsonb)
+    'messages', v_messages,
+    'messageCursor', v_message_cursor,
+    'messagesComplete', v_messages_complete,
+    'events', v_events,
+    'eventCursor', v_event_cursor,
+    'eventsComplete', v_events_complete,
+    'readWatermark', COALESCE((
+      SELECT jsonb_build_object(
+        'lastReadAt', to_jsonb(cr.last_read_at),
+        'lastReadMessageId', cr.last_read_message_id
+      )
+      FROM conversation_reads cr
+      WHERE cr.user_id = v_user_id
+        AND cr.group_id = p_group_id
+        AND cr.last_read_message_id IS NOT NULL
+    ), 'null'::jsonb)
   );
 END;
 $$;
@@ -1711,9 +1949,13 @@ AS $$
 DECLARE
   v_out jsonb;
 BEGIN
+  -- Handles are derived from the email local-part at signup, so a
+  -- pre-onboarding handle is guessable. Until the user completes public
+  -- profile setup, their OAuth name and avatar are not discoverable.
   SELECT COALESCE(ledger_user_profile_json(u.id), 'null'::jsonb) INTO v_out
   FROM users u
-  WHERE u.handle = lower(trim(p_handle));
+  WHERE u.handle = lower(trim(p_handle))
+    AND u.onboarded;
   RETURN COALESCE(v_out, 'null'::jsonb);
 END;
 $$;
@@ -1731,14 +1973,16 @@ REVOKE ALL ON FUNCTION public.bootstrap() FROM public;
 GRANT EXECUTE ON FUNCTION public.bootstrap() TO authenticated;
 REVOKE ALL ON FUNCTION public.get_group(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_group(uuid) TO authenticated;
-REVOKE ALL ON FUNCTION public.get_group_expenses(uuid, timestamptz, integer) FROM public;
-GRANT EXECUTE ON FUNCTION public.get_group_expenses(uuid, timestamptz, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_group_expenses(uuid, timestamptz, uuid, integer) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_group_expenses(uuid, timestamptz, uuid, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_my_expenses(timestamptz, uuid, integer) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_my_expenses(timestamptz, uuid, integer) TO authenticated;
 REVOKE ALL ON FUNCTION public.get_expense(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_expense(uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.get_activity(bigint, integer) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_activity(bigint, integer) TO authenticated;
-REVOKE ALL ON FUNCTION public.get_conversation(uuid, timestamptz, integer) FROM public;
-GRANT EXECUTE ON FUNCTION public.get_conversation(uuid, timestamptz, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_conversation(uuid, timestamptz, uuid, timestamptz, bigint, integer) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_conversation(uuid, timestamptz, uuid, timestamptz, bigint, integer) TO authenticated;
 REVOKE ALL ON FUNCTION public.get_my_profile() FROM public;
 GRANT EXECUTE ON FUNCTION public.get_my_profile() TO authenticated;
 REVOKE ALL ON FUNCTION public.lookup_user_by_handle(text) FROM public;
@@ -1749,7 +1993,7 @@ CREATE FUNCTION public.create_expense(
   p_client_id uuid, p_group_id uuid, p_occurred_on date,
   p_title text, p_merchant_name text, p_expense_type expense_type,
   p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer,
-  p_payload jsonb
+  p_payload jsonb, p_chave_acesso text DEFAULT NULL
 ) RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -1765,9 +2009,12 @@ DECLARE
   v_existing_ledger_version bigint;
   v_ledger_version bigint;
   v_event_id bigint;
+  v_constraint text;
 BEGIN
   v_actor := current_user_id();
 
+
+  PERFORM lock_receipt_key(v_actor, p_chave_acesso);
   PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, v_actor);
 
@@ -1789,6 +2036,19 @@ BEGIN
       'ledgerVersion', v_existing_ledger_version,
       'eventId', NULL
     );
+  END IF;
+  IF p_chave_acesso IS NOT NULL AND p_chave_acesso !~ '^[0-9]{44}$' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  IF p_chave_acesso IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM expenses
+    WHERE creator_id = v_actor
+      AND chave_acesso = p_chave_acesso
+      AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
   END IF;
 
   v_title := btrim(p_title);
@@ -1818,13 +2078,15 @@ BEGIN
   END IF;
 
   BEGIN
-    INSERT INTO expenses (client_id, group_id, creator_id, occurred_on)
-    VALUES (p_client_id, p_group_id, v_actor, p_occurred_on)
+    INSERT INTO expenses (client_id, group_id, creator_id, occurred_on, chave_acesso)
+    VALUES (p_client_id, p_group_id, v_actor, p_occurred_on, p_chave_acesso)
     RETURNING id INTO v_expense_id;
   EXCEPTION
     WHEN unique_violation THEN
-      -- A concurrent create in another group won the global client_id race;
-      -- surface the same domain error as the sequential wrong-group path.
+      GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+      IF v_constraint = 'expenses_creator_chave_active_idx' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
+      END IF;
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END;
 
@@ -1964,6 +2226,7 @@ DECLARE
   v_actor uuid;
   v_group_id uuid;
   v_creator_id uuid;
+  v_chave_acesso text;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -1973,17 +2236,23 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
+  SELECT group_id, creator_id, chave_acesso
+    INTO v_group_id, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
+  PERFORM lock_receipt_key(v_creator_id, v_chave_acesso);
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no, creator_id
-    INTO v_status, v_version_no, v_creator_id
-  FROM expenses WHERE id = p_expense_id;
+  SELECT status, current_version_no, creator_id, chave_acesso
+    INTO v_status, v_version_no, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id
+  FOR UPDATE;
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
     SELECT 1 FROM expense_participants
@@ -2028,6 +2297,7 @@ DECLARE
   v_actor uuid;
   v_group_id uuid;
   v_creator_id uuid;
+  v_chave_acesso text;
   v_status public.expense_status;
   v_version_no integer;
   v_title text;
@@ -2036,27 +2306,32 @@ DECLARE
   v_materialized jsonb;
   v_ledger_version bigint;
   v_event_id bigint;
+  v_constraint text;
 BEGIN
   v_actor := current_user_id();
 
-  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
+  SELECT group_id, creator_id, chave_acesso
+    INTO v_group_id, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
   END IF;
 
+  PERFORM lock_receipt_key(v_creator_id, v_chave_acesso);
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no, creator_id
-    INTO v_status, v_version_no, v_creator_id
-  FROM expenses WHERE id = p_expense_id;
+  SELECT status, current_version_no, creator_id, chave_acesso
+    INTO v_status, v_version_no, v_creator_id, v_chave_acesso
+  FROM expenses
+  WHERE id = p_expense_id
+  FOR UPDATE;
 
   SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
   FROM expense_versions
   WHERE expense_id = p_expense_id AND version_no = v_version_no;
 
-  -- delete_expense empties expense_participants, so authorization for restore
-  -- must come from the stored version payload, not the live rows.
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
     SELECT 1
     FROM jsonb_array_elements(COALESCE(v_payload->'participants', '[]'::jsonb)) AS pp(p)
@@ -2070,8 +2345,28 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
   END IF;
 
-  UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
-  WHERE id = p_expense_id;
+  IF v_chave_acesso IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM expenses
+    WHERE creator_id = v_creator_id
+      AND chave_acesso = v_chave_acesso
+      AND status = 'active'
+      AND id <> p_expense_id
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
+  END IF;
+
+  BEGIN
+    UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
+    WHERE id = p_expense_id;
+  EXCEPTION
+    WHEN unique_violation THEN
+      GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+      IF v_constraint = 'expenses_creator_chave_active_idx' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
+      END IF;
+      RAISE;
+  END;
 
   v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
   IF v_materialized IS DISTINCT FROM v_payload THEN
@@ -2096,14 +2391,81 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb) FROM public;
-GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
 REVOKE ALL ON FUNCTION public.edit_expense(uuid, integer, date, text, text, expense_type, integer, integer, integer, jsonb) FROM public;
 GRANT EXECUTE ON FUNCTION public.edit_expense(uuid, integer, date, text, text, expense_type, integer, integer, integer, jsonb) TO authenticated;
 REVOKE ALL ON FUNCTION public.delete_expense(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.delete_expense(uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.restore_expense(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.restore_expense(uuid) TO authenticated;
+
+-- Creates a group and its first expense in one transaction.
+--
+-- The wizard used to commit the group when the user left the participants
+-- step and the expense later at submit. An error or an abandoned wizard in
+-- between left a group with invited members and no bill, which is visible to
+-- everyone invited. Both writes now succeed or neither does.
+--
+-- Idempotency is keyed on the expense's client id and checked before anything
+-- is written, so a retry after a lost response returns the original pair
+-- instead of creating a second group.
+CREATE FUNCTION public.create_expense_with_group(
+  p_client_id uuid, p_group_name text, p_member_ids uuid[],
+  p_occurred_on date, p_title text, p_merchant_name text,
+  p_expense_type expense_type, p_total_cents integer,
+  p_service_fee_bps integer, p_fixed_fee_cents integer,
+  p_payload jsonb, p_chave_acesso text DEFAULT NULL
+) RETURNS jsonb
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_actor uuid;
+  v_existing_id uuid;
+  v_existing_group_id uuid;
+  v_existing_status public.expense_status;
+  v_existing_version_no integer;
+  v_existing_ledger_version bigint;
+  v_group jsonb;
+  v_group_id uuid;
+BEGIN
+  v_actor := current_user_id();
+
+  SELECT id, group_id, status, current_version_no
+    INTO v_existing_id, v_existing_group_id, v_existing_status, v_existing_version_no
+  FROM expenses WHERE client_id = p_client_id;
+
+  IF v_existing_id IS NOT NULL THEN
+    IF v_existing_status = 'deleted' THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
+    END IF;
+    -- A replay must belong to the caller; another member's expense is not
+    -- theirs to read back.
+    PERFORM assert_member(v_existing_group_id, v_actor);
+    SELECT ledger_version INTO v_existing_ledger_version
+    FROM groups WHERE id = v_existing_group_id;
+    RETURN jsonb_build_object(
+      'expenseId', v_existing_id,
+      'groupId', v_existing_group_id,
+      'versionNo', v_existing_version_no,
+      'ledgerVersion', v_existing_ledger_version,
+      'eventId', NULL
+    );
+  END IF;
+
+  v_group := create_group(p_group_name, p_member_ids);
+  v_group_id := (v_group->>'groupId')::uuid;
+
+  RETURN create_expense(
+    p_client_id, v_group_id, p_occurred_on, p_title, p_merchant_name,
+    p_expense_type, p_total_cents, p_service_fee_bps, p_fixed_fee_cents,
+    p_payload, p_chave_acesso
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_expense_with_group(uuid, text, uuid[], date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.create_expense_with_group(uuid, text, uuid[], date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
 
 -- ---- 05_rpc_settlement.sql ----
 CREATE FUNCTION public.record_settlement(
@@ -3113,6 +3475,7 @@ DECLARE
   v_existing_sender uuid;
   v_existing_group uuid;
   v_message_id uuid;
+  v_created_at timestamptz;
   v_result jsonb;
 BEGIN
   v_actor := current_user_id();
@@ -3126,6 +3489,8 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
+  -- Serialise message creation with reads and other chat writers for this group.
+  PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, v_actor);
 
   SELECT id, sender_id, group_id INTO v_existing_id, v_existing_sender, v_existing_group
@@ -3139,9 +3504,17 @@ BEGIN
     RETURN public.ledger_chat_message_json(v_existing_id);
   END IF;
 
+  SELECT GREATEST(
+    clock_timestamp(),
+    COALESCE(max(created_at) + interval '1 microsecond', '-infinity'::timestamptz)
+  )
+  INTO v_created_at
+  FROM chat_messages
+  WHERE group_id = p_group_id;
+
   -- Concurrent retries of the same client_id must both resolve to one row.
-  INSERT INTO chat_messages (client_id, group_id, sender_id, content)
-  VALUES (p_client_id, p_group_id, v_actor, v_content)
+  INSERT INTO chat_messages (client_id, group_id, sender_id, content, created_at)
+  VALUES (p_client_id, p_group_id, v_actor, v_content, v_created_at)
   ON CONFLICT (client_id) DO NOTHING
   RETURNING id INTO v_message_id;
 
@@ -3158,37 +3531,63 @@ BEGIN
 
   PERFORM realtime.send(v_result, 'message', 'chat:' || p_group_id::text, true);
 
+  -- Conversation lists subscribe per group, not per chat topic: this wakes
+  -- them without inserting a fake financial event into the ledger stream.
+  PERFORM realtime.send(
+    jsonb_build_object('group_id', p_group_id),
+    'chat_activity',
+    'group:' || p_group_id::text,
+    true
+  );
+
   RETURN v_result;
 END;
 $$;
 
-CREATE FUNCTION public.mark_read(p_group_id uuid)
+CREATE FUNCTION public.mark_read(p_group_id uuid, p_last_read_message_id uuid)
 RETURNS void
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_actor uuid;
+  v_last_read_at timestamptz;
 BEGIN
   v_actor := current_user_id();
 
-  IF p_group_id IS NULL THEN
+  IF p_group_id IS NULL OR p_last_read_message_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
   PERFORM assert_member(p_group_id, v_actor);
 
-  INSERT INTO conversation_reads (user_id, group_id, last_read_at)
-  VALUES (v_actor, p_group_id, now())
+  SELECT created_at
+  INTO v_last_read_at
+  FROM chat_messages
+  WHERE id = p_last_read_message_id
+    AND group_id = p_group_id
+    AND sender_id <> v_actor;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  INSERT INTO conversation_reads (user_id, group_id, last_read_at, last_read_message_id)
+  VALUES (v_actor, p_group_id, v_last_read_at, p_last_read_message_id)
   ON CONFLICT (user_id, group_id)
-  DO UPDATE SET last_read_at = now();
+  DO UPDATE
+  SET last_read_at = EXCLUDED.last_read_at,
+      last_read_message_id = EXCLUDED.last_read_message_id
+  WHERE conversation_reads.last_read_message_id IS NULL
+     OR (EXCLUDED.last_read_at, EXCLUDED.last_read_message_id)
+        > (conversation_reads.last_read_at, conversation_reads.last_read_message_id);
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.send_message(uuid, uuid, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.send_message(uuid, uuid, text) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.mark_read(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.mark_read(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.mark_read(uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.mark_read(uuid, uuid) TO authenticated;
 
 -- ---- 08_rpc_guest.sql ----
 -- A claim token is a bearer credential: whoever opens the link becomes the
@@ -3527,7 +3926,7 @@ CREATE TABLE public.vendor_charges (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   amount_cents integer NOT NULL CHECK (amount_cents BETWEEN 1 AND 99999999),
   description text CHECK (description IS NULL OR length(description) <= 160),
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'received')),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'received', 'cancelled')),
   created_at timestamptz NOT NULL DEFAULT now(),
   confirmed_at timestamptz
 );
@@ -3597,6 +3996,10 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_owner';
   END IF;
 
+  IF v_row.status = 'cancelled' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_cancelled';
+  END IF;
+
   IF v_row.status = 'received' THEN
     RETURN jsonb_build_object(
       'id', v_row.id,
@@ -3611,7 +4014,7 @@ BEGIN
 
   UPDATE vendor_charges
   SET status = 'received', confirmed_at = now()
-  WHERE id = p_charge_id
+  WHERE id = p_charge_id AND status = 'pending'
   RETURNING * INTO v_row;
 
   RETURN jsonb_build_object(
@@ -3625,42 +4028,131 @@ BEGIN
   );
 END;
 $$;
+CREATE FUNCTION public.cancel_vendor_charge(p_charge_id uuid)
+RETURNS void
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_actor uuid;
+  v_status text;
+  v_owner uuid;
+BEGIN
+  v_actor := current_user_id();
 
-CREATE FUNCTION public.get_vendor_charges(p_limit integer DEFAULT 50)
-RETURNS jsonb
+  IF p_charge_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_not_found';
+  END IF;
+
+  SELECT status, user_id
+  INTO v_status, v_owner
+  FROM vendor_charges
+  WHERE id = p_charge_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_owner <> v_actor THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_not_found';
+  END IF;
+
+  IF v_status = 'cancelled' THEN
+    RETURN;
+  END IF;
+
+  IF v_status = 'received' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_already_received';
+  END IF;
+
+  UPDATE vendor_charges
+  SET status = 'cancelled'
+  WHERE id = p_charge_id AND user_id = v_actor AND status = 'pending';
+END;
+$$;
+
+CREATE FUNCTION public.get_vendor_charges(
+  p_before_created_at timestamptz DEFAULT NULL,
+  p_before_id uuid DEFAULT NULL,
+  p_limit integer DEFAULT 50
+) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_actor uuid;
-  v_result jsonb;
+  v_charges jsonb;
+  v_cursor jsonb;
+  v_complete boolean;
+  v_today_start timestamptz;
+  v_today_end timestamptz;
 BEGIN
   v_actor := current_user_id();
 
-  IF p_limit IS NULL OR p_limit < 1 THEN
-    p_limit := 50;
+  IF (p_before_created_at IS NULL) <> (p_before_id IS NULL) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
 
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'id', vc.id,
-      'userId', vc.user_id,
-      'amountCents', vc.amount_cents,
-      'description', vc.description,
-      'status', vc.status,
-      'createdAt', to_jsonb(vc.created_at),
-      'confirmedAt', to_jsonb(vc.confirmed_at)
-    )
-  ), '[]'::jsonb)
-  INTO v_result
-  FROM (
-    SELECT *
+  -- Convert the local calendar day separately in each direction: a fixed UTC
+  -- offset would drift across a Sao Paulo DST change.
+  v_today_start := (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo')) AT TIME ZONE 'America/Sao_Paulo';
+  v_today_end := (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day') AT TIME ZONE 'America/Sao_Paulo';
+
+  WITH page AS (
+    SELECT id, created_at, user_id, amount_cents, description, status, confirmed_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
     FROM vendor_charges
     WHERE user_id = v_actor
+      AND status <> 'cancelled'
+      AND (
+        p_before_id IS NULL
+        OR (created_at, id) < (p_before_created_at, p_before_id)
+      )
     ORDER BY created_at DESC, id DESC
-    LIMIT p_limit
-  ) vc;
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(
+      jsonb_build_object(
+        'id', p.id,
+        'userId', p.user_id,
+        'amountCents', p.amount_cents,
+        'description', p.description,
+        'status', p.status,
+        'createdAt', to_jsonb(p.created_at),
+        'confirmedAt', to_jsonb(p.confirmed_at)
+      ) ORDER BY p.created_at DESC, p.id DESC
+    ) FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_charges, v_complete, v_cursor
+  FROM page p;
 
-  RETURN v_result;
+  RETURN jsonb_build_object(
+    'charges', v_charges,
+    'nextCursor', v_cursor,
+    'complete', v_complete,
+    -- Counts and sums cover every uncancelled charge, not the page.
+    'total', (
+      SELECT count(*)::integer FROM vendor_charges
+      WHERE user_id = v_actor AND status <> 'cancelled'
+    ),
+    'receivedCount', (
+      SELECT count(*)::integer FROM vendor_charges
+      WHERE user_id = v_actor AND status = 'received'
+    ),
+    -- bigint: a day's takings can exceed int4 and must never be truncated.
+    'receivedTodayCents', (
+      SELECT COALESCE(sum(amount_cents), 0)::bigint FROM vendor_charges
+      WHERE user_id = v_actor
+        AND status = 'received'
+        AND confirmed_at IS NOT NULL
+        AND confirmed_at >= v_today_start
+        AND confirmed_at < v_today_end
+    )
+  );
 END;
 $$;
 
@@ -3671,9 +4163,11 @@ GRANT EXECUTE ON FUNCTION public.record_vendor_charge(integer, text) TO authenti
 
 REVOKE ALL ON FUNCTION public.confirm_vendor_charge(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.confirm_vendor_charge(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.cancel_vendor_charge(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.cancel_vendor_charge(uuid) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.get_vendor_charges(integer) FROM public;
-GRANT EXECUTE ON FUNCTION public.get_vendor_charges(integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_vendor_charges(timestamptz, uuid, integer) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_vendor_charges(timestamptz, uuid, integer) TO authenticated;
 
 -- ---- 12_rate_limit.sql ----
 CREATE TABLE public.rate_limit_counters (
@@ -3890,6 +4384,9 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'no_debt';
   END IF;
 
+  -- A nudge nobody received must not cost the sender a day. Only a delivered
+  -- nudge holds the cooldown; an undelivered one keeps a short grace window so
+  -- a failing provider cannot be turned into a spam channel.
   IF EXISTS (
     SELECT 1 FROM group_events
     WHERE group_id = p_group_id
@@ -3897,6 +4394,7 @@ BEGIN
       AND actor_id = v_actor
       AND subject_user_id = p_user_id
       AND created_at > now() - interval '24 hours'
+      AND (notified_at IS NOT NULL OR created_at > now() - interval '5 minutes')
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'nudge_cooldown';
   END IF;
@@ -3994,3 +4492,70 @@ $$;
 
 REVOKE ALL ON FUNCTION public.complete_onboarding(text, text, text, text, public.pix_key_type) FROM public;
 GRANT EXECUTE ON FUNCTION public.complete_onboarding(text, text, text, text, public.pix_key_type) TO authenticated;
+
+-- ---- 16_rpc_push.sql ----
+-- Push subscription ownership.
+--
+-- A physical endpoint (web push URL or FCM token) belongs to exactly one
+-- account. Claiming is a single statement so two concurrent registrations of
+-- the same device cannot both win, and re-registering a device under a second
+-- account moves the row instead of leaving the first account subscribed.
+--
+-- Called with the service role from the push API routes after they authenticate
+-- the session; never exposed to authenticated clients.
+
+CREATE FUNCTION public.claim_push_subscription(
+  p_user_id uuid,
+  p_channel text,
+  p_endpoint_digest bytea,
+  p_subscription_encrypted text
+) RETURNS jsonb
+  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_previous_owner uuid;
+  v_id uuid;
+BEGIN
+  IF p_user_id IS NULL
+    OR p_endpoint_digest IS NULL
+    OR length(p_subscription_encrypted) = 0
+  THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  IF p_channel NOT IN ('web', 'fcm') THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_user_id) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'user_not_found';
+  END IF;
+
+  SELECT user_id INTO v_previous_owner
+  FROM push_subscriptions
+  WHERE endpoint_digest = p_endpoint_digest;
+
+  -- The unique endpoint_digest makes this the whole transfer: the losing
+  -- account's row is overwritten, not duplicated.
+  INSERT INTO push_subscriptions (
+    user_id, channel, endpoint_digest, subscription_encrypted
+  ) VALUES (
+    p_user_id, p_channel, p_endpoint_digest, p_subscription_encrypted
+  )
+  ON CONFLICT (endpoint_digest) DO UPDATE
+    SET user_id = EXCLUDED.user_id,
+        channel = EXCLUDED.channel,
+        subscription_encrypted = EXCLUDED.subscription_encrypted,
+        updated_at = now()
+  RETURNING id INTO v_id;
+
+  RETURN jsonb_build_object(
+    'subscriptionId', v_id,
+    'transferred', v_previous_owner IS NOT NULL AND v_previous_owner <> p_user_id
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_push_subscription(uuid, text, bytea, text) FROM public;
+REVOKE ALL ON FUNCTION public.claim_push_subscription(uuid, text, bytea, text) FROM anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_push_subscription(uuid, text, bytea, text) TO service_role;

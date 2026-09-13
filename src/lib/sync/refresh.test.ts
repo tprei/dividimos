@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GroupSnapshot, Me } from "@/types/ledger";
-import { useAppStore } from "@/stores/app-store";
+import { expensePageReadKey, groupReadKey, useAppStore } from "@/stores/app-store";
 import { rpc } from "./client";
-import { refreshGroup } from "./refresh";
+import { invalidateSyncReads, loadActivity, loadMoreExpenses, refreshGroup } from "./refresh";
+import { LedgerError } from "./errors";
 
-vi.mock("./client", () => ({ rpc: vi.fn() }));
+const clientState = vi.hoisted(() => ({ authGeneration: 0 }));
+vi.mock("./client", () => ({
+  rpc: vi.fn(),
+  getAuthGeneration: () => clientState.authGeneration,
+}));
 
 const ME: Me = {
   id: "user-me",
@@ -51,7 +56,9 @@ const resolvers: SnapshotResolver[] = [];
 describe("refreshGroup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clientState.authGeneration = 0;
     resolvers.length = 0;
+    invalidateSyncReads();
     useAppStore.getState().reset();
     vi.mocked(rpc).mockImplementation(async () => {
       const { promise, resolve } = Promise.withResolvers<GroupSnapshot>();
@@ -100,5 +107,123 @@ describe("refreshGroup", () => {
     await Promise.all([first, second, third]);
 
     expect(useAppStore.getState().groups.g1?.group.ledgerVersion).toBe(8);
+  });
+});
+
+describe("loadActivity", () => {
+  beforeEach(() => {
+    clientState.authGeneration = 0;
+    useAppStore.getState().reset();
+  });
+
+  it("publishes rows and marks completeness only from a successful short page", async () => {
+    vi.mocked(rpc).mockResolvedValueOnce([] as never);
+
+    await loadActivity();
+
+    const activity = useAppStore.getState().activity;
+    expect(activity.read).toEqual({ status: "ready" });
+    expect(activity.complete).toBe(true);
+  });
+
+  it("records the failure code and keeps existing rows", async () => {
+    vi.mocked(rpc).mockResolvedValueOnce([
+      {
+        id: 7,
+        groupId: "g1",
+        actorId: null,
+        kind: "nudge",
+        expenseId: null,
+        settlementId: null,
+        subjectUserId: null,
+        payload: {},
+        createdAt: "2026-01-01T00:00:00.000Z",
+        actor: null,
+        expenseTitle: null,
+      },
+    ] as never);
+    await loadActivity();
+
+    vi.mocked(rpc).mockRejectedValueOnce(new LedgerError("network"));
+    await expect(loadActivity()).rejects.toThrow();
+
+    const activity = useAppStore.getState().activity;
+    expect(activity.read).toEqual({ status: "error", code: "network" });
+    expect(activity.items).toHaveLength(1);
+  });
+
+  it("ignores a result from the previous auth generation", async () => {
+    const first = Promise.withResolvers<unknown>();
+    const second = Promise.withResolvers<unknown>();
+    vi.mocked(rpc)
+      .mockReturnValueOnce(first.promise as never)
+      .mockReturnValueOnce(second.promise as never);
+
+    const oldRead = loadActivity();
+    clientState.authGeneration = 1;
+    const currentRead = loadActivity();
+
+    first.reject(new LedgerError("network"));
+    await expect(oldRead).resolves.toBeUndefined();
+    expect(useAppStore.getState().activity.read).toEqual({ status: "loading" });
+
+    second.resolve([]);
+    await currentRead;
+    expect(useAppStore.getState().activity.read).toEqual({ status: "ready" });
+  });
+});
+
+describe("resource read state", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clientState.authGeneration = 0;
+    resolvers.length = 0;
+    invalidateSyncReads();
+    useAppStore.getState().reset();
+    vi.mocked(rpc).mockImplementation(async () => {
+      const { promise, resolve } = Promise.withResolvers<GroupSnapshot>();
+      resolvers.push(resolve);
+      return await promise;
+    });
+  });
+
+  it("lets a newer read own the state when an older one settles late", async () => {
+    useAppStore.getState().applyGroup(snapshot("g1", 1));
+
+    const first = refreshGroup("g1");
+    // The follow-up is the newer attempt for this resource.
+    const second = refreshGroup("g1");
+
+    resolvers[0]?.(snapshot("g1", 2));
+    await first;
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+
+    // While the newer read is in flight the resource is loading, even though
+    // the older one just finished successfully.
+    expect(useAppStore.getState().reads[groupReadKey("g1")]).toEqual({ status: "loading" });
+
+    resolvers[1]?.(snapshot("g1", 3));
+    await second;
+    expect(useAppStore.getState().reads[groupReadKey("g1")]).toEqual({ status: "ready" });
+  });
+
+  it("keeps the cursor and rows when an older expense page fails", async () => {
+    useAppStore.setState({
+      expenseLists: {
+        g1: { ids: ["e1"], cursor: { createdAt: "2026-01-02T00:00:00Z", id: "e1" }, complete: false, total: null },
+      },
+    });
+
+    vi.mocked(rpc).mockRejectedValueOnce(new LedgerError("network"));
+    await expect(loadMoreExpenses("g1")).rejects.toThrow();
+
+    const list = useAppStore.getState().expenseLists.g1;
+    expect(list?.ids).toEqual(["e1"]);
+    expect(list?.cursor).toEqual({ createdAt: "2026-01-02T00:00:00Z", id: "e1" });
+    expect(list?.complete).toBe(false);
+    expect(useAppStore.getState().reads[expensePageReadKey("g1")]).toEqual({
+      status: "error",
+      code: "network",
+    });
   });
 });

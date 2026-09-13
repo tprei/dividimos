@@ -12,6 +12,7 @@ jobs:
   retarget:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Point child PRs at the merged base
         env:

@@ -79,9 +79,15 @@ CREATE TABLE public.expenses (
   occurred_on date NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
-  deleted_by uuid REFERENCES public.users(id)
+  deleted_by uuid REFERENCES public.users(id),
+  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$')
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
+-- Cursor order for history paging; occurred_on above still serves its own readers.
+CREATE INDEX expenses_group_created_idx ON public.expenses (group_id, created_at DESC, id DESC);
+CREATE UNIQUE INDEX expenses_creator_chave_active_idx
+  ON public.expenses (creator_id, chave_acesso)
+  WHERE status = 'active' AND chave_acesso IS NOT NULL;
 
 CREATE TABLE public.expense_versions (
   expense_id uuid NOT NULL REFERENCES public.expenses(id) ON DELETE CASCADE,
@@ -174,12 +180,13 @@ CREATE TABLE public.chat_messages (
   content text NOT NULL CHECK (length(content) BETWEEN 1 AND 2000),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX chat_messages_group_idx ON public.chat_messages (group_id, created_at DESC);
+CREATE INDEX chat_messages_group_idx ON public.chat_messages (group_id, created_at DESC, id DESC);
 
 CREATE TABLE public.conversation_reads (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
   last_read_at timestamptz NOT NULL DEFAULT now(),
+  last_read_message_id uuid REFERENCES public.chat_messages(id),
   PRIMARY KEY (user_id, group_id)
 );
 
@@ -187,10 +194,12 @@ CREATE TABLE public.push_subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   channel text NOT NULL CHECK (channel IN ('web', 'fcm')),
-  endpoint_digest bytea NOT NULL,
+  -- One physical endpoint has exactly one owner: a device registered to a
+  -- second account stops delivering to the first.
+  endpoint_digest bytea NOT NULL UNIQUE,
   subscription_encrypted text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, endpoint_digest)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE guest_credentials.claim_tokens (

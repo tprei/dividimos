@@ -105,6 +105,7 @@ describe("buildExpensePayload", () => {
       totalCents: 8800,
       serviceFeeBasisPoints: 1000,
       fixedFeeCents: 0,
+      receiptAccessKey: null,
     });
 
     expect(payload.items).toEqual([
@@ -146,6 +147,21 @@ describe("buildExpensePayload", () => {
     const item1Total = item1Assignments.reduce((sum, a) => sum + a.amountCents, 0);
     expect(item1Total).toBe(3000);
   });
+  it("includes the persisted receipt access key in the header", () => {
+    const store = useBillStore.getState();
+    store.createExpense("Nota", "single_amount");
+    store.updateExpense({ totalAmountInput: 1000 });
+    store.addParticipant(userAlice);
+    store.splitBillEqually([userAlice.id]);
+    store.setPayerFull(userAlice.id);
+    store.setReceiptAccessKey("12345678901234567890123456789012345678901234");
+
+    const result = buildExpensePayload(useBillStore.getState(), "2026-09-05");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.header.receiptAccessKey).toBe("12345678901234567890123456789012345678901234");
+  });
+
 
   it("handles guest participant with guestId null for locally added guests", () => {
     const store = useBillStore.getState();

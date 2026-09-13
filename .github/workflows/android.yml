@@ -3,13 +3,70 @@ name: Android Build
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "android/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/android.yml"
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  # PR gate: proves the Android project still assembles. No signing secrets
+  # and no upload — a broken manifest, resource or Gradle change is red here
+  # instead of on main.
+  compile:
+    name: Android compiles
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
+
+      - run: npm ci --ignore-scripts
+
+      # cap sync copies the web assets and regenerates the plugin wiring, so
+      # a plugin added to package.json without a native counterpart fails here.
+      - name: Create placeholder web assets
+        run: |
+          mkdir -p out
+          cat > out/index.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="pt-BR">
+            <head><meta charset="UTF-8"><title>Dividimos</title></head>
+            <body><p>Carregando...</p></body>
+          </html>
+          HTML
+
+      - run: npx cap sync android
+
+      # Firebase config is a release-only requirement, and the debug variant
+      # exercises the same manifest, resources and Gradle wiring.
+      - name: Assemble debug APK
+        run: cd android && ./gradlew assembleDebug
+
+  build:
+    name: Signed release bundle
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -42,30 +99,131 @@ jobs:
           HTML
 
       - name: Inject google-services.json for FCM
-        if: env.GOOGLE_SERVICES_JSON != ''
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: echo "$GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+        run: |
+          set -euo pipefail
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON is empty; a release cannot ship without Firebase config."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json || {
+            echo "::error::GOOGLE_SERVICES_JSON is not valid base64."
+            exit 1
+          }
+          python3 -c 'import json,sys; json.load(open("android/app/google-services.json"))' || {
+            echo "::error::GOOGLE_SERVICES_JSON did not decode to valid JSON."
+            exit 1
+          }
 
       - name: Sync Capacitor Android
         run: npx cap sync android
 
       - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
 
       - name: Decode keystore
-        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.jks
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is empty; refusing to build an unsigned release."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.jks || {
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64."
+            exit 1
+          }
+          test -s android/app/release.jks
 
-      - name: Set versionCode
-        run: sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+      - name: Resolve release version
+        id: version
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          # The build file must still carry the defaults CI overrides. If they
+          # moved, shipping would silently reuse stale metadata.
+          grep -q "dividimosVersionCode" android/app/build.gradle || {
+            echo "::error::android/app/build.gradle no longer reads dividimosVersionCode."
+            exit 1
+          }
+          grep -q "dividimosVersionName" android/app/build.gradle || {
+            echo "::error::android/app/build.gradle no longer reads dividimosVersionName."
+            exit 1
+          }
+          case "$RUN_NUMBER" in
+            ''|*[!0-9]*)
+              echo "::error::run number '$RUN_NUMBER' is not a version code."
+              exit 1
+              ;;
+          esac
+          echo "code=$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "name=1.0.$RUN_NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: Build signed AAB
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
         run: |
-          cd android && ./gradlew bundleRelease \
-            -Pandroid.injected.signing.store.file=$PWD/app/release.jks \
-            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_STORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.KEYSTORE_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.KEYSTORE_KEY_PASSWORD }}"
+          set -euo pipefail
+          cd android
+          # Secrets reach Gradle through the environment; only "$VAR" appears
+          # in shell source, so a quote or backtick in a password is data.
+          ./gradlew bundleRelease \
+            -PdividimosRequireFirebase=true \
+            -PdividimosVersionCode="$VERSION_CODE" \
+            -PdividimosVersionName="$VERSION_NAME" \
+            -Pandroid.injected.signing.store.file="$PWD/app/release.jks" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEYSTORE_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEYSTORE_KEY_PASSWORD"
+
+      - name: Verify the built bundle
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          AAB=android/app/build/outputs/bundle/release/app-release.aab
+          test -s "$AAB"
+
+          BUNDLETOOL_VERSION=1.18.1
+          BUNDLETOOL_SHA256=675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c
+          BUNDLETOOL=bundletool-all-"$BUNDLETOOL_VERSION".jar
+          curl --fail --location --retry 3 \
+            --output "$BUNDLETOOL" \
+            "https://github.com/google/bundletool/releases/download/$BUNDLETOOL_VERSION/$BUNDLETOOL"
+          printf '%s  %s\n' "$BUNDLETOOL_SHA256" "$BUNDLETOOL" | sha256sum --check --strict
+
+          MANIFEST=/tmp/dividimos-AndroidManifest.xml
+          java -jar "$BUNDLETOOL" dump manifest --bundle="$AAB" > "$MANIFEST"
+          python3 - "$MANIFEST" "$VERSION_CODE" "$VERSION_NAME" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ElementTree
+
+          manifest_path, expected_code, expected_name = sys.argv[1:]
+          android = "http://schemas.android.com/apk/res/android"
+          root = ElementTree.parse(manifest_path).getroot()
+          actual = {
+              "package": root.attrib.get("package"),
+              "versionCode": root.attrib.get(f"{{{android}}}versionCode"),
+              "versionName": root.attrib.get(f"{{{android}}}versionName"),
+          }
+          expected = {
+              "package": "ai.dividimos.app",
+              "versionCode": expected_code,
+              "versionName": expected_name,
+          }
+          if actual != expected:
+              raise SystemExit(f"bundle manifest metadata mismatch: {actual!r} != {expected!r}")
+          PY
+
+          jarsigner -verify -strict -certs "$AAB"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

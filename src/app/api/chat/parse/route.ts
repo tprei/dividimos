@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { AppError } from "@/lib/errors";
+import { classifyLlmFailure, LLM_FAILURE_MESSAGE } from "@/lib/llm-errors";
 import {
   parseChatExpense,
   type MemberContext,
@@ -115,18 +116,19 @@ export async function POST(request: Request) {
     const result = await parseChatExpense(text.trim(), apiKey, members);
     return NextResponse.json(result);
   } catch (error) {
-    const isTimeout =
-      error instanceof Error &&
-      (error.name === "TimeoutError" || error.name === "AbortError");
-    const message = isTimeout
-      ? "Não foi possível processar. Tente novamente."
-      : "Erro ao processar mensagem do chat";
-    if (!isTimeout) {
-      console.error("[chat/parse] Gemini error:", error);
+    const failure = classifyLlmFailure(error);
+    if (failure.code !== "LLM_TIMEOUT") {
+      // Logged server-side only: provider text must never reach the client.
+      console.error(`[chat/parse] ${failure.code}:`, error);
     }
     return NextResponse.json(
-      { error: message, timeout: isTimeout },
-      { status: isTimeout ? 504 : 500 },
+      {
+        error: LLM_FAILURE_MESSAGE[failure.code],
+        code: failure.code,
+        retryable: failure.retryable,
+        timeout: failure.code === "LLM_TIMEOUT",
+      },
+      { status: failure.status },
     );
   }
 }

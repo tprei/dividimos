@@ -12,7 +12,7 @@ export interface InviteContact {
 
 interface InviteContactsListProps {
   contacts: InviteContact[];
-  onSend: (phone: string) => void;
+  onSend: (phone: string) => boolean;
   onRemove: (phone: string) => void;
 }
 
@@ -45,7 +45,7 @@ export function InviteContactsList({ contacts, onSend, onRemove }: InviteContact
             {contact.sent ? (
               <span className="flex items-center gap-1 text-xs text-success">
                 <Check className="h-3.5 w-3.5" />
-                Enviado
+                Aberto
               </span>
             ) : (
               <div className="flex items-center gap-1">
@@ -75,10 +75,14 @@ export function InviteContactsList({ contacts, onSend, onRemove }: InviteContact
         <Button
           className="mt-2 w-full gap-2 bg-[#25D366] hover:bg-[#1da851] text-white"
           onClick={() => {
+            let opened = 0;
             for (const c of unsent) {
-              onSend(c.phone);
+              if (onSend(c.phone)) opened += 1;
             }
-            toast.success(`Abrindo WhatsApp para ${unsent.length} contatos`);
+            // Blocked contacts already get a toast from onSend.
+            if (opened === unsent.length) {
+              toast.success(`Abrindo WhatsApp para ${opened} contatos`);
+            }
           }}
         >
           <Send className="h-4 w-4" />

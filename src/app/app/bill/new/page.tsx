@@ -14,11 +14,13 @@ import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
-import { createGroup, getOrCreateDm } from "@/lib/sync/mutations-group";
+import { getOrCreateDm } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
-import { ledgerErrorMessage } from "@/lib/sync/errors";
+import { SyncErrorState } from "@/components/shared/sync-error-state";
+import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
+import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
 import { useBillStore } from "@/stores/bill-store";
-import { useAppStore } from "@/stores/app-store";
+import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
 import { useMe } from "@/hooks/use-me";
 import { useClientOnly, useMounted } from "@/hooks/use-client-only";
@@ -26,7 +28,7 @@ import { meToLegacyUser } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
 import type { GroupSnapshot, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
-import { useWizardInit } from "./use-wizard-init";
+import { selectDraftForType, useWizardInit } from "./use-wizard-init";
 import { parseWizardModes, type Step } from "./wizard-modes";
 import { todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
 
@@ -60,6 +62,9 @@ function NewBillPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const modes = useMemo(() => parseWizardModes(searchParams), [searchParams]);
+  const editRead = useAppStore((s) =>
+    modes.editExpenseId ? (s.reads[expenseReadKey(modes.editExpenseId)] ?? IDLE_READ) : IDLE_READ,
+  );
   const me = useMe();
 
   const store = useBillStore(
@@ -202,15 +207,10 @@ function NewBillPageContent() {
 
   const handleTypeSelect = useCallback((type: ExpenseType) => {
     setBillType(type);
-    if (type === "single_amount" && me) {
+    if (me) {
       const billStore = useBillStore.getState();
       billStore.setCurrentUser(meToLegacyUser(me));
-      billStore.createExpense("", "single_amount");
-    }
-    if (type === "itemized" && me) {
-      const billStore = useBillStore.getState();
-      billStore.setCurrentUser(meToLegacyUser(me));
-      billStore.createExpense("Nova conta", "itemized", undefined, selectedGroupId ?? undefined);
+      selectDraftForType(billStore, type, selectedGroupId);
     }
     setStep("info");
   }, [me, selectedGroupId]);
@@ -241,7 +241,6 @@ function NewBillPageContent() {
           totalPriceCents: item.totalCents,
         });
       }
-
     }
     billStore.setOccurredOn(occurredOn);
     setStep("split");
@@ -317,53 +316,41 @@ function NewBillPageContent() {
     [me],
   );
 
-  const resolveGroup = useCallback(async (): Promise<string | null> => {
-    if (selectedGroupId || !me) return selectedGroupId;
+  const planGroup = useCallback(async (): Promise<GroupPlan> => {
+    if (selectedGroupId) return { kind: "existing", groupId: selectedGroupId };
+    if (!me) return { kind: "invalid" };
     const state = useBillStore.getState();
     const otherParticipants = state.participants.filter((participant) => participant.id !== me.id);
     const hasGuests = state.guests.length > 0;
     const needsGroup = otherParticipants.length > 0 || hasGuests;
-    if (!needsGroup) return null;
+    if (!needsGroup) return { kind: "none" };
     if (otherParticipants.length === 1 && !hasGuests) {
       try {
         const dm = await getOrCreateDm(otherParticipants[0].id);
         setSelectedGroupId(dm.groupId);
         useBillStore.getState().updateExpense({ groupId: dm.groupId });
-        return dm.groupId;
+        return { kind: "existing", groupId: dm.groupId };
       } catch (error) {
         toast.error(ledgerErrorMessage(error));
-        return null;
+        return { kind: "invalid" };
       }
     }
     if (!createGroupEnabled) {
       toast.error("Escolha um grupo existente ou deixe \"Criar grupo\" marcado.");
-      return null;
+      return { kind: "invalid" };
     }
-    try {
-      const ack = await createGroup(
-        createGroupName.trim() || defaultGroupName || "Novo grupo",
-        otherParticipants.map((participant) => participant.id),
-      );
-      setSelectedGroupId(ack.groupId);
-      useBillStore.getState().updateExpense({ groupId: ack.groupId });
-      return ack.groupId;
-    } catch (error) {
-      toast.error(ledgerErrorMessage(error));
-      return null;
-    }
+    // Described, not created: the submit writes the group with the bill.
+    return {
+      kind: "create",
+      name: createGroupName.trim() || defaultGroupName || "Novo grupo",
+      memberIds: otherParticipants.map((participant) => participant.id),
+    };
   }, [selectedGroupId, me, createGroupEnabled, createGroupName, defaultGroupName]);
 
   const submitItemized = useCallback(async (): Promise<boolean> => {
     if (!me) return false;
-    return submit(async () => {
-      const state = useBillStore.getState();
-      const otherParticipants = state.participants.filter((participant) => participant.id !== me.id);
-      const needsGroup = otherParticipants.length > 0 || state.guests.length > 0;
-      const groupId = await resolveGroup();
-      if (needsGroup && !groupId) return undefined;
-      return groupId;
-    });
-  }, [me, resolveGroup, submit]);
+    return submit(planGroup);
+  }, [me, planGroup, submit]);
 
   const goBack = () => {
     if (isDmMode && modes.dm) {
@@ -385,6 +372,21 @@ function NewBillPageContent() {
     return (
       <div className="mx-auto max-w-lg px-4 py-6" aria-busy="true">
         <ScanSkeletonLoader />
+      </div>
+    );
+  }
+
+  // Editing an expense we could not read would silently present an empty
+  // wizard as though the user were creating a new bill.
+  if (modes.editExpenseId && editDetail === null && editRead.status === "error") {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <SyncErrorState
+          message={ledgerErrorMessage(new LedgerError(editRead.code))}
+          onRetry={() => {
+            void refreshExpense(modes.editExpenseId!).catch(() => {});
+          }}
+        />
       </div>
     );
   }
@@ -451,6 +453,7 @@ function NewBillPageContent() {
 
       <div className={reviewingScan ? "min-h-[400px]" : "mt-6 min-h-[400px]"}>
         <TypeStep
+          accountId={me?.id ?? null}
           groupMembers={(selectedGroup?.members ?? []).map((m) => ({
             id: m.user.id,
             handle: m.user.handle,

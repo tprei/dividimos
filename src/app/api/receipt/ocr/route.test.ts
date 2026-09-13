@@ -202,7 +202,8 @@ describe("POST /api/receipt/ocr", () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe("Erro ao processar imagem");
+    expect(body.code).toBe("LLM_INTERNAL");
+    expect(body.retryable).toBe(false);
     expect(JSON.stringify(body)).not.toContain("leaked internal detail");
   });
 
@@ -214,7 +215,8 @@ describe("POST /api/receipt/ocr", () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe("Erro ao processar imagem");
+    expect(body.code).toBe("LLM_INTERNAL");
+    expect(body.retryable).toBe(false);
     expect(body.timeout).toBe(false);
   });
 
@@ -229,7 +231,8 @@ describe("POST /api/receipt/ocr", () => {
     expect(res.status).toBe(504);
     const body = await res.json();
     expect(body.timeout).toBe(true);
-    expect(body.error).toContain("Tente novamente");
+    expect(body.code).toBe("LLM_TIMEOUT");
+    expect(body.retryable).toBe(true);
   });
 
   it("returns 504 with timeout flag when Gemini aborts", async () => {

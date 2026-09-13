@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
-vi.mock("@/lib/capacitor/speech", () => ({
-  isNativeSpeechAvailable: () => false,
+const { nativeSpeechAvailable, startNativeListening, nativeSpeechSupported } = vi.hoisted(() => ({
+  nativeSpeechAvailable: vi.fn(() => false),
   startNativeListening: vi.fn(),
+  nativeSpeechSupported: vi.fn(async () => false),
+}));
+vi.mock("@/lib/capacitor/speech", () => ({
+  isNativeSpeechAvailable: () => nativeSpeechAvailable(),
+  startNativeListening,
+  isNativeSpeechSupported: nativeSpeechSupported,
 }));
 
 import { useVoiceInput } from "./use-voice-input";
@@ -64,6 +70,9 @@ function makeMockCtor() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  nativeSpeechAvailable.mockReturnValue(false);
+  nativeSpeechSupported.mockResolvedValue(false);
+  startNativeListening.mockReset();
   MockSpeechRecognition = makeMockCtor();
   Object.defineProperty(window, "webkitSpeechRecognition", {
     value: MockSpeechRecognition,
@@ -146,6 +155,27 @@ describe("useVoiceInput", () => {
     act(() => result.current.startListening());
     act(() => result.current.stopListening());
 
+    expect(result.current.isListening).toBe(false);
+  });
+  it("cancels a native start that has not settled yet", async () => {
+    nativeSpeechAvailable.mockReturnValue(true);
+    const { promise, resolve } = Promise.withResolvers<{
+      kind: "started";
+      stop: () => Promise<void>;
+    }>();
+    const nativeStop = vi.fn(async () => undefined);
+    startNativeListening.mockReturnValue(promise);
+
+    const { result } = renderHook(() => useVoiceInput());
+    act(() => result.current.startListening());
+    act(() => result.current.stopListening());
+
+    resolve({ kind: "started", stop: nativeStop });
+    await act(async () => {
+      await promise;
+    });
+
+    expect(nativeStop).toHaveBeenCalledOnce();
     expect(result.current.isListening).toBe(false);
   });
 
