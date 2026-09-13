@@ -12,6 +12,23 @@ type FunctionArgs<Fn extends keyof Functions> = [Functions[Fn]["Args"]] extends 
   : Functions[Fn]["Args"];
 
 let clientInstance: SupabaseClient<Database> | null = null;
+/**
+ * Account epoch for in-flight sync work. Every consumer that can publish into
+ * the store after an await captures this before its request and re-checks it
+ * before publishing, so a response belonging to a replaced account or a torn
+ * down root is dropped instead of overwriting current data. Runtime only:
+ * never persisted.
+ */
+let authGeneration = 0;
+
+export function getAuthGeneration(): number {
+  return authGeneration;
+}
+
+export function advanceAuthGeneration(): number {
+  authGeneration += 1;
+  return authGeneration;
+}
 
 export function getSupabase(): SupabaseClient<Database> {
   if (!clientInstance) {
