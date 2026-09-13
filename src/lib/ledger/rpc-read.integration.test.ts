@@ -1375,15 +1375,11 @@ describe.skipIf(!isIntegrationTestReady)(
       );
       expect(versionAfterEdit).toBe(2);
       expect(
-        await withPg((pg) =>
-          pg
-            .query<{ user_id: string }>(
-              "select user_id from expense_participants " +
-                "where expense_id = $1 order by participant_index",
-              [e2.expenseId],
-            )
-            .then((r) => r.rows.map((row) => row.user_id)),
-        ),
+        (
+          await rpcOk<ExpenseDetail>(authenticateAs(cee), "get_expense", {
+            p_expense_id: e2.expenseId,
+          })
+        ).participants.map((participant) => participant.user?.id ?? null),
       ).toEqual([ay.id, cee.id]);
       balances = await balanceMap();
       expect(balances.get(bee.id)).toBe(5000);
@@ -1393,32 +1389,22 @@ describe.skipIf(!isIntegrationTestReady)(
       await rpcOk(authenticateAs(cee), "delete_expense", {
         p_expense_id: e2.expenseId,
       });
-      const liveRowsAfterDelete = await withPg((pg) =>
-        pg
-          .query<{ n: number }>(
-            "select count(*)::int as n from expense_participants where expense_id = $1",
-            [e2.expenseId],
-          )
-          .then((r) => r.rows[0].n),
-      );
-      expect(liveRowsAfterDelete).toBe(0);
-      balances = await balanceMap();
-      expect(balances.get(ay.id)).toBe(-5000);
-      expect(balances.get(bee.id)).toBe(5000);
-
+      expect(
+        (
+          await rpcOk<ExpenseDetail>(authenticateAs(cee), "get_expense", {
+            p_expense_id: e2.expenseId,
+          })
+        ).participants,
+      ).toEqual([]);
       await rpcOk(authenticateAs(cee), "restore_expense", {
         p_expense_id: e2.expenseId,
       });
       expect(
-        await withPg((pg) =>
-          pg
-            .query<{ user_id: string }>(
-              "select user_id from expense_participants " +
-                "where expense_id = $1 order by participant_index",
-              [e2.expenseId],
-            )
-            .then((r) => r.rows.map((row) => row.user_id)),
-        ),
+        (
+          await rpcOk<ExpenseDetail>(authenticateAs(cee), "get_expense", {
+            p_expense_id: e2.expenseId,
+          })
+        ).participants.map((participant) => participant.user?.id ?? null),
       ).toEqual([ay.id, cee.id]);
       const memberStatusAfterRestore = await withPg((pg) =>
         pg

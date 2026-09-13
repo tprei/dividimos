@@ -13,6 +13,7 @@ import {
 } from "@/test/integration-helpers";
 import { isIntegrationTestReady } from "@/test/integration-setup";
 import { assertLedgerInvariantsAfterEach } from "@/test/ledger-invariants";
+import type { ExpenseDetail } from "@/types/ledger";
 
 assertLedgerInvariantsAfterEach();
 
@@ -450,14 +451,12 @@ describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contenti
         itemAssignments: null,
       },
     });
-
     const guestId = await withPg(async (client) => {
-      const rows = await client.query<{ guest_id: string }>(
-        "select guest_id from public.expense_participants " +
-          "where expense_id = $1 and guest_id is not null",
+      const rows = await client.query<{ id: string }>(
+        "select id from public.guests where expense_id = $1",
         [created.expenseId],
       );
-      return rows.rows[0].guest_id;
+      return rows.rows[0].id;
     });
     const issued = await rpcOk<{ token: string }>(
       aliceClient,
@@ -501,19 +500,17 @@ describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contenti
         "select status from public.group_members where group_id = $1 and user_id = $2",
         [groupId, carla.id],
       );
-      const participants = await client.query<{ kind: string; user_id: string | null }>(
-        "select kind, user_id from public.expense_participants where expense_id = $1",
-        [created.expenseId],
-      );
       return {
         claimedBy: guest.rows[0]?.claimed_by ?? null,
         membership: member.rows[0]?.status ?? null,
-        participants: participants.rows,
       };
     });
+    const afterRace = await rpcOk<ExpenseDetail>(aliceClient, "get_expense", {
+      p_expense_id: created.expenseId,
+    });
 
-    expect(state.participants).toHaveLength(2);
-    expect(state.participants.every((row) => row.kind === "user")).toBe(true);
+    expect(afterRace.participants).toHaveLength(2);
+    expect(afterRace.participants.every((row) => row.kind === "user")).toBe(true);
     if (claim.ok) {
       expect(state.claimedBy).toBe(carla.id);
       expect(state.membership).toBe("accepted");
