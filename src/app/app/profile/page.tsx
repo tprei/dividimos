@@ -29,9 +29,9 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useMe } from "@/hooks/use-me";
+import { useSignOut } from "@/hooks/use-sign-out";
 import { useAppStore } from "@/stores/app-store";
 import { updateProfile } from "@/lib/sync/mutations-group";
-import { getSupabase } from "@/lib/sync/client";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import type { UpdatePixKeySuccess } from "./actions";
 import type { Me } from "@/types/ledger";
@@ -98,6 +98,7 @@ function AuthenticatedProfilePage({
   onToggleDark: () => void;
 }) {
   const router = useRouter();
+  const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
   const userId = me.id;
 
   const [editingProfile, setEditingProfile] = useState(false);
@@ -124,9 +125,8 @@ function AuthenticatedProfilePage({
   });
 
   const handleSignOut = async () => {
-    await getSupabase().auth.signOut();
-    useAppStore.getState().reset();
-    router.replace("/auth");
+    const result = await signOut();
+    if (result.ok) router.replace("/auth");
   };
 
   const startEditProfile = () => {
@@ -414,13 +414,28 @@ function AuthenticatedProfilePage({
         transition={{ delay: 0.25, duration: 0.4 }}
         className="mt-8"
       >
+        {signOutError && (
+          <div role="alert" className="mb-3 flex items-center justify-between gap-3 text-sm text-destructive">
+            <span>{signOutError}</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void handleSignOut()}
+              disabled={signOutPending}
+            >
+              Tentar novamente
+            </Button>
+          </div>
+        )}
         <Button
           variant="outline"
           className="w-full gap-2 text-destructive"
-          onClick={handleSignOut}
+          onClick={() => void handleSignOut()}
+          disabled={signOutPending}
         >
           <LogOut className="h-4 w-4" />
-          Sair
+          {signOutPending ? "Saindo..." : "Sair"}
         </Button>
       </motion.div>
       </div>
