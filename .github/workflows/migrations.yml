@@ -29,7 +29,11 @@ jobs:
         run: |
           merge_base=$(git merge-base "$BASE_SHA" HEAD)
           if git diff --name-only "$merge_base" HEAD -- \
-              supabase scripts/build-baseline.sh .github/workflows/migrations.yml \
+              supabase scripts/build-baseline.sh \
+              scripts/check-database-invariants.mjs \
+              src/types/database.ts \
+              vitest.integration.config.mts \
+              .github/workflows/migrations.yml \
               | grep -q .; then
             echo "sql=true" >> "$GITHUB_OUTPUT"
           else

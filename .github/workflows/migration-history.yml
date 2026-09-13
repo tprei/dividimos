@@ -1,12 +1,15 @@
 name: Migration History
 
-# pull_request_target runs the base branch's copy of this workflow and of the
-# checker, so a PR cannot edit the gate that judges it. The PR head is fetched
-# as git objects and read with plumbing commands only; nothing from it is ever
-# executed, and no path filter is used so every PR reports this context.
+# pull_request_target runs the base branch's copy of this workflow, which for
+# a stacked PR is an unmerged parent. Nothing from the parent or the PR head
+# is therefore executed: after fetching the candidate refs as git objects, the
+# working tree is detached at the exact commit that origin/main resolved to at
+# run time, and only that immutable, trusted commit's checker runs. The PR
+# base and head are read with plumbing commands only; no path filter is used
+# so every PR reports this context. `edited` covers base retargets.
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -17,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check out the base branch (trusted code)
+      - name: Check out the PR base (git objects only)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.pull_request.base.sha }}
@@ -28,8 +31,20 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          # The head's history contains the PR base tip for stacked PRs, so
+          # the base tree is inspectable without executing or checking out
+          # either candidate ref.
           git fetch --no-tags origin \
             "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+
+      - name: Pin the working tree to one immutable main commit
+        run: |
+          git fetch --no-tags origin main
+          MAIN_SHA="$(git rev-parse FETCH_HEAD)"
+          # FETCH_HEAD is the commit origin/main answered with for this run;
+          # detaching makes every later command execute from that exact,
+          # immutable commit rather than a mutable branch name.
+          git checkout --detach "$MAIN_SHA"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
