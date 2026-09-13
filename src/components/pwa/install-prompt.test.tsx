@@ -174,6 +174,52 @@ describe("InstallPrompt", () => {
       expect(screen.queryByLabelText("Instalar no celular")).toBeInTheDocument();
     });
 
+    it("never prompts twice on one event and offers the guide instead", async () => {
+      setUserAgent(ANDROID_UA);
+
+      const mockPrompt = vi.fn().mockResolvedValue(undefined);
+      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
+        prompt: mockPrompt,
+        userChoice: Promise.resolve({ outcome: "dismissed" as const }),
+        preventDefault: vi.fn(),
+      };
+
+      render(<InstallPrompt />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Instalar no celular"));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Instalar no celular"));
+      });
+
+      expect(mockPrompt).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Instalar o app")).toBeInTheDocument();
+    });
+
+    it("survives a browser that refuses the prompt", async () => {
+      setUserAgent(ANDROID_UA);
+
+      (window as unknown as Record<string, unknown>).__pwaInstallPrompt = {
+        prompt: vi.fn().mockRejectedValue(new Error("already used")),
+        userChoice: Promise.resolve({ outcome: "dismissed" as const }),
+        preventDefault: vi.fn(),
+      };
+
+      render(<InstallPrompt />);
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Instalar no celular"));
+      });
+
+      expect(screen.getByLabelText("Instalar no celular")).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Instalar no celular"));
+      });
+      expect(screen.getByText("Instalar o app")).toBeInTheDocument();
+    });
+
     it("opens install guide when no native prompt available", async () => {
       setUserAgent(ANDROID_UA);
       render(<InstallPrompt />);
