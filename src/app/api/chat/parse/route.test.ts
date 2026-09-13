@@ -475,15 +475,39 @@ describe("POST /api/chat/parse", () => {
 
   // --- Error handling ---
 
-  it("returns 500 when parseChatExpense throws a generic error", async () => {
-    mockParseChatExpense.mockRejectedValue(new Error("Gemini API error"));
+  it.each([
+    [429, 429, "LLM_QUOTA", true],
+    [503, 503, "LLM_UNAVAILABLE", true],
+    [401, 503, "LLM_CONFIG", false],
+  ])(
+    "translates upstream %i into %i/%s",
+    async (upstream, status, code, retryable) => {
+      mockParseChatExpense.mockRejectedValue(
+        Object.assign(new Error("leaked internal detail"), { status: upstream }),
+      );
+
+      const res = await POST(jsonRequest({ text: "pizza" }));
+
+      expect(res.status).toBe(status);
+      const body = await res.json();
+      expect(body.code).toBe(code);
+      expect(body.retryable).toBe(retryable);
+      // Provider text must never reach the client.
+      expect(JSON.stringify(body)).not.toContain("leaked internal detail");
+    },
+  );
+
+  it("returns a non-retryable internal failure for an unknown error", async () => {
+    mockParseChatExpense.mockRejectedValue(new Error("leaked internal detail"));
 
     const res = await POST(jsonRequest({ text: "pizza" }));
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe("Erro ao processar mensagem do chat");
+    expect(body.code).toBe("LLM_INTERNAL");
+    expect(body.retryable).toBe(false);
     expect(body.timeout).toBe(false);
+    expect(JSON.stringify(body)).not.toContain("leaked internal detail");
   });
 
   it("returns 504 with timeout flag on TimeoutError", async () => {
@@ -496,7 +520,8 @@ describe("POST /api/chat/parse", () => {
     expect(res.status).toBe(504);
     const body = await res.json();
     expect(body.timeout).toBe(true);
-    expect(body.error).toContain("Tente novamente");
+    expect(body.code).toBe("LLM_TIMEOUT");
+    expect(body.retryable).toBe(true);
   });
 
   it("returns 504 with timeout flag on AbortError", async () => {
