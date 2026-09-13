@@ -37,6 +37,7 @@ function createMockFile(name = "receipt.jpg", type = "image/jpeg"): File {
   return new File(["fake-image-data"], name, { type });
 }
 
+
 describe("processReceiptScan", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -135,6 +136,22 @@ describe("processReceiptScan", () => {
     fetchSpy.mockRestore();
   });
 
+  it("passes the caller's abort signal to the OCR API fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(mockOcrResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const controller = new AbortController();
+    await processReceiptScan(createMockFile(), controller.signal);
+
+    expect(fetchSpy.mock.calls[0][1]?.signal).toBe(controller.signal);
+
+    fetchSpy.mockRestore();
+  });
+
   it("rejects an OCR result with zero items and a positive total (#477 637k: never inferred as single_amount)", async () => {
     const emptyItemsResult: ReceiptOcrResult = {
       merchant: "Bar do Zeca",
@@ -177,6 +194,7 @@ describe("processReceiptScan", () => {
     fetchSpy.mockRestore();
   });
 });
+
 
 
 describe("ReceiptTimeoutError", () => {

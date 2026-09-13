@@ -463,6 +463,7 @@ function NewBillPageContent() {
 
       <div className={reviewingScan ? "min-h-[400px]" : "mt-6 min-h-[400px]"}>
         <TypeStep
+          accountId={me?.id ?? null}
           groupMembers={(selectedGroup?.members ?? []).map((m) => ({
             id: m.user.id,
             handle: m.user.handle,
