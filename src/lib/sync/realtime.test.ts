@@ -10,10 +10,14 @@ import {
   parseMembershipPayload,
   shouldRefreshGroup,
   startRealtime,
+  subscribeChat,
 } from "./realtime";
 import { refreshGroup } from "./refresh";
-
-vi.mock("./client", () => ({ getSupabase: vi.fn() }));
+const authState = vi.hoisted(() => ({ generation: 0 }));
+vi.mock("./client", () => ({
+  getSupabase: vi.fn(),
+  getAuthGeneration: () => authState.generation,
+}));
 vi.mock("./bootstrap", () => ({ runBootstrap: vi.fn() }));
 vi.mock("./refresh", () => ({ refreshGroup: vi.fn(async () => {}) }));
 
@@ -216,7 +220,12 @@ describe("mergeChatBroadcast", () => {
             },
           ],
           events: [],
-          oldestCursor: null,
+          messageCursor: null,
+          messagesComplete: true,
+          eventCursor: null,
+          eventsComplete: true,
+          readWatermark: null,
+          reconcile: { status: "ready", readableThroughMessageId: null },
         },
       },
     });
@@ -242,7 +251,12 @@ describe("mergeChatBroadcast", () => {
         "group-1": {
           messages: [incomingMessage],
           events: [],
-          oldestCursor: null,
+          messageCursor: null,
+          messagesComplete: true,
+          eventCursor: null,
+          eventsComplete: true,
+          readWatermark: null,
+          reconcile: { status: "ready", readableThroughMessageId: null },
         },
       },
     });
@@ -335,6 +349,7 @@ describe("startRealtime", () => {
     vi.clearAllMocks();
     createdChannels = [];
     removedChannels = [];
+    authState.generation = 0;
     bootstrapResolvers.length = 0;
     bootstrapPromises.length = 0;
     useAppStore.getState().reset();
@@ -378,6 +393,18 @@ describe("startRealtime", () => {
     expect(channel.config).toEqual({ config: { private: true } });
     expect(channel.subscribed).toBe(true);
     expect(channel.listeners.has("membership")).toBe(true);
+  });
+  it("ignores chat broadcasts from the previous account", () => {
+    useAppStore.setState({ me: meUser });
+    const stopChat = subscribeChat("group-1");
+    const channel = createdChannels.find((item) => item.topic === "chat:group-1");
+    if (!channel) throw new Error("chat channel not opened");
+
+    authState.generation = 1;
+    channel.emit("message", incomingMessage);
+
+    expect(useAppStore.getState().conversations).toEqual({});
+    stopChat();
   });
 
   it("opens no user channel before sign-in and opens it when me appears", () => {

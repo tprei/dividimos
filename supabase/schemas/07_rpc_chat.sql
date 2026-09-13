@@ -65,6 +65,15 @@ BEGIN
 
   PERFORM realtime.send(v_result, 'message', 'chat:' || p_group_id::text, true);
 
+  -- Conversation lists subscribe per group, not per chat topic: this wakes
+  -- them without inserting a fake financial event into the ledger stream.
+  PERFORM realtime.send(
+    jsonb_build_object('group_id', p_group_id),
+    'chat_activity',
+    'group:' || p_group_id::text,
+    true
+  );
+
   RETURN v_result;
 END;
 $$;

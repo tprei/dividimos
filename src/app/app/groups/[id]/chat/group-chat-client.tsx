@@ -17,7 +17,6 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { debtRowsForGroup } from "@/lib/ledger/debt-rows";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { markRead, recordSettlement, sendMessage } from "@/lib/sync/mutations";
-import type { ChatMessage } from "@/types/ledger";
 import { subscribeChat } from "@/lib/sync/realtime";
 import { loadConversation } from "@/lib/sync/refresh";
 import { selectGroup } from "@/stores/app-selectors";
@@ -32,9 +31,8 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const me = useAppStore((state) => state.me);
   const snapshot = useAppStore((state) => selectGroup(state, groupId));
   const conversation = useAppStore((state) => state.conversations[groupId]);
-  const [historyCompleteGroupId, setHistoryCompleteGroupId] = useState<string | null>(null);
   const loadedRef = useRef<Set<string>>(new Set());
-  const historyComplete = historyCompleteGroupId === groupId;
+  const loadedKey = me ? `${me.id}:${groupId}` : null;
   const myStatus = snapshot?.members.find((member) => member.userId === me?.id)?.status;
 
   const accepted = useMemo(
@@ -81,6 +79,20 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
   const [paymentError, setPaymentError] = useState<string | undefined>(undefined);
   const paymentKey = useRef(crypto.randomUUID());
 
+  const readableThroughId = conversation?.reconcile.readableThroughMessageId ?? null;
+  const renderedBoundaryKey = `${me?.id ?? ""}:${groupId}`;
+  const [renderedBoundary, setRenderedBoundary] = useState<{
+    key: string;
+    id: string | null;
+  }>({ key: renderedBoundaryKey, id: null });
+  const renderedThroughId =
+    renderedBoundary.key === renderedBoundaryKey ? renderedBoundary.id : null;
+  const handleRenderedThrough = useCallback(
+    (messageId: string | null) => {
+      setRenderedBoundary({ key: renderedBoundaryKey, id: messageId });
+    },
+    [renderedBoundaryKey],
+  );
   const handleRegisterPayment = useCallback(
     async (result: GroupPaymentResult) => {
       if (!me) return;
@@ -111,61 +123,48 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
 
   useEffect(() => {
     return subscribeChat(groupId);
-  }, [groupId]);
-
+  }, [groupId, me?.id]);
   useEffect(() => {
-    if (loadedRef.current.has(groupId)) return;
-    loadedRef.current.add(groupId);
+    if (loadedKey === null || loadedRef.current.has(loadedKey)) return;
+    loadedRef.current.add(loadedKey);
     loadConversation(groupId).catch((error) => toast.error(ledgerErrorMessage(error)));
-  }, [groupId]);
+  }, [groupId, loadedKey]);
 
-  // The read receipt is a watermark: acknowledge the newest incoming message
-  // actually held, never a wall-clock timestamp.
-  const lastIncomingMessageId = useMemo(() => {
-    if (!me) return null;
-    let latest: ChatMessage | null = null;
-    for (const message of conversation?.messages ?? []) {
-      if (message.senderId === me.id) continue;
-      if (
-        !latest ||
-        message.createdAt > latest.createdAt ||
-        (message.createdAt === latest.createdAt && message.id > latest.id)
-      ) {
-        latest = message;
-      }
-    }
-    return latest?.id ?? null;
-  }, [conversation, me]);
 
   useEffect(() => {
     if (!snapshot || !me || myStatus !== "accepted" || snapshot.unreadCount === 0) return;
-    if (!lastIncomingMessageId) return;
-    markRead(groupId, lastIncomingMessageId).catch(() => undefined);
-  }, [groupId, me, myStatus, snapshot, lastIncomingMessageId]);
+    if (!readableThroughId || renderedThroughId !== readableThroughId) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+    markRead(groupId, readableThroughId).catch(() => undefined);
+  }, [
+    groupId,
+    me,
+    myStatus,
+    readableThroughId,
+    renderedThroughId,
+    snapshot,
+  ]);
 
   const handleLoadMore = useCallback(() => {
-    const cursor = useAppStore.getState().conversations[groupId]?.oldestCursor;
-    if (!cursor) return;
-    loadConversation(groupId, cursor)
-      .then(() => {
-        const next = useAppStore.getState().conversations[groupId];
-        if (next?.oldestCursor === cursor) setHistoryCompleteGroupId(groupId);
-      })
-      .catch((error) => toast.error(ledgerErrorMessage(error)));
+    const conv = useAppStore.getState().conversations[groupId];
+    if (conv === undefined) return;
+    // Each stream is paged by its own strict (created_at, id) boundary.
+    if (conv.messageCursor === null && conv.eventCursor === null) return;
+    loadConversation(groupId, {
+      messageBefore: conv.messageCursor,
+      eventBefore: conv.eventCursor,
+    }).catch((error) => toast.error(ledgerErrorMessage(error)));
   }, [groupId]);
 
   const handleSend = useCallback(
     async (content: string) => {
-      try {
-        await sendMessage(groupId, content);
-      } catch (error) {
-        toast.error(ledgerErrorMessage(error));
-        throw error;
-      }
+      await sendMessage(groupId, content);
     },
     [groupId],
   );
-
+  const handleSendError = useCallback((error: unknown) => {
+    toast.error(ledgerErrorMessage(error));
+  }, []);
   if (!me || !snapshot) {
     return (
       <div className="flex h-full flex-col">
@@ -233,7 +232,9 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           events={conversation?.events ?? []}
           settlements={snapshot.settlements}
           nameOf={nameOf}
-          hasMore={Boolean(conversation?.oldestCursor) && !historyComplete}
+          hasMore={conversation?.messageCursor !== null || conversation?.eventCursor !== null}
+          acknowledgeThroughId={readableThroughId}
+          onRenderedThrough={handleRenderedThrough}
           onLoadMore={handleLoadMore}
         />
       </div>
@@ -265,7 +266,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           </button>
         </div>
       )}
-      <ChatInput onSend={handleSend} />
+      <ChatInput onSend={handleSend} onError={handleSendError} />
     </div>
   );
 }

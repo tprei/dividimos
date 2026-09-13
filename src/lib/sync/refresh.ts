@@ -7,7 +7,7 @@ import {
   decodeVendorCharges,
 } from "@/lib/ledger/decode";
 import { useAppStore } from "@/stores/app-store";
-import type { ExpenseSummary, GroupSnapshot } from "@/types/ledger";
+import type { ChatCursor, Conversation, ExpenseSummary, GroupSnapshot } from "@/types/ledger";
 import { rpc } from "./client";
 
 const inFlightGroups = new Map<string, Promise<void>>();
@@ -60,7 +60,7 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
   useAppStore.getState().applyGroup(snapshot);
   refreshStaleDetails(groupId, snapshot, prevVersion);
   const conversation = useAppStore.getState().conversations[groupId];
-  const loaded = conversation !== undefined && conversation.oldestCursor !== null;
+  const loaded = conversation !== undefined && conversation.messages.length > 0;
   if (loaded && prevEventId !== null && snapshot.lastEventId > prevEventId) {
     void loadConversation(groupId);
   }
@@ -144,20 +144,38 @@ export async function loadActivity(before?: number): Promise<void> {
   useAppStore.getState().applyActivity(items);
 }
 
+export interface ConversationPageCursors {
+  messageBefore: ChatCursor | null;
+  eventBefore: ChatCursor | null;
+}
+
+/**
+ * Loads the newest page when no cursors are given, or the page strictly older
+ * than each stream's cursor. Each stream is paged independently: exhausting
+ * one says nothing about the other.
+ */
 export async function loadConversation(
   groupId: string,
-  before?: string,
-): Promise<void> {
+  cursors?: ConversationPageCursors,
+): Promise<Conversation> {
   const data = await rpc(
     "get_conversation",
     {
       p_group_id: groupId,
-      p_before: before ?? "9999-12-31T23:59:59.999Z",
+      p_message_before_created_at: cursors?.messageBefore?.createdAt ?? null,
+      p_message_before_id: cursors?.messageBefore?.id ?? null,
+      p_event_before_created_at: cursors?.eventBefore?.createdAt ?? null,
+      p_event_before_id: cursors?.eventBefore === undefined || cursors.eventBefore === null
+        ? null
+        : Number(cursors.eventBefore.id),
       p_limit: 50,
     },
     decodeConversation,
   );
-  useAppStore.getState().applyConversation(groupId, data, before !== undefined);
+  useAppStore
+    .getState()
+    .applyConversation(groupId, { kind: cursors === undefined ? "head" : "older", envelope: data });
+  return data;
 }
 
 export async function loadVendorCharges(limit = 50): Promise<void> {

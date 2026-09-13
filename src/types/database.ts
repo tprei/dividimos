@@ -918,7 +918,14 @@ export type Database = {
         Returns: Json
       }
       get_conversation: {
-        Args: { p_before: string; p_group_id: string; p_limit?: number }
+        Args: {
+          p_event_before_created_at?: string | null
+          p_event_before_id?: number | null
+          p_group_id: string
+          p_limit?: number
+          p_message_before_created_at?: string | null
+          p_message_before_id?: string | null
+        }
         Returns: Json
       }
       get_expense: { Args: { p_expense_id: string }; Returns: Json }

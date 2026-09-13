@@ -178,7 +178,7 @@ CREATE TABLE public.chat_messages (
   content text NOT NULL CHECK (length(content) BETWEEN 1 AND 2000),
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX chat_messages_group_idx ON public.chat_messages (group_id, created_at DESC);
+CREATE INDEX chat_messages_group_idx ON public.chat_messages (group_id, created_at DESC, id DESC);
 
 CREATE TABLE public.conversation_reads (
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

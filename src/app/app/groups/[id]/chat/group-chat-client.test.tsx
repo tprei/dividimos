@@ -103,6 +103,7 @@ function makeSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
 function seed(
   snapshot: GroupSnapshot,
   messages: ChatMessage[] = [],
+  readableThroughMessageId: string | null = null,
 ): void {
   useAppStore.setState({
     hydrated: true,
@@ -113,7 +114,12 @@ function seed(
       [snapshot.group.id]: {
         messages,
         events: [],
-        oldestCursor: null,
+        messageCursor: null,
+        messagesComplete: true,
+        eventCursor: null,
+        eventsComplete: true,
+        readWatermark: null,
+        reconcile: { status: "ready", readableThroughMessageId },
       },
     },
   });
@@ -123,6 +129,10 @@ describe("GroupChatClient", () => {
   beforeEach(() => {
     useAppStore.getState().reset();
     vi.clearAllMocks();
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
   });
 
   it("renders the group timeline and identity", () => {
@@ -178,7 +188,7 @@ describe("GroupChatClient", () => {
       content: "Segunda",
       createdAt: "2026-01-01T11:00:00Z",
     };
-    seed(makeSnapshot({ unreadCount: 4 }), [older, newest]);
+    seed(makeSnapshot({ unreadCount: 4 }), [older, newest], "message-2");
 
     render(<GroupChatClient groupId="group-1" />);
 

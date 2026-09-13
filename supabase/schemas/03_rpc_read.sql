@@ -475,37 +475,113 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION public.get_conversation(p_group_id uuid, p_before timestamptz, p_limit integer DEFAULT 50) RETURNS jsonb
+CREATE FUNCTION public.get_conversation(
+  p_group_id uuid,
+  p_message_before_created_at timestamptz DEFAULT NULL,
+  p_message_before_id uuid DEFAULT NULL,
+  p_event_before_created_at timestamptz DEFAULT NULL,
+  p_event_before_id bigint DEFAULT NULL,
+  p_limit integer DEFAULT 50
+) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_user_id uuid;
-  v_limit integer;
+  v_messages jsonb;
+  v_message_cursor jsonb;
+  v_messages_complete boolean;
+  v_events jsonb;
+  v_event_cursor jsonb;
+  v_events_complete boolean;
 BEGIN
   v_user_id := current_user_id();
+
+  IF p_group_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  -- A half-specified cursor cannot express the strict (created_at, id)
+  -- boundary, so accepting one half would skip or repeat rows sharing a
+  -- timestamp.
+  IF (p_message_before_created_at IS NULL) <> (p_message_before_id IS NULL)
+     OR (p_event_before_created_at IS NULL) <> (p_event_before_id IS NULL) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
+  IF p_limit IS NULL OR p_limit < 1 OR p_limit > 100 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
+  END IF;
+
   PERFORM assert_member(p_group_id, v_user_id);
-  v_limit := GREATEST(1, LEAST(COALESCE(p_limit, 50), 200));
+
+  -- Each stream reads p_limit + 1 rows: the surplus row proves another page
+  -- exists (a full page alone does not), and is dropped before the cursor is
+  -- taken from the last row actually returned.
+  WITH page AS (
+    SELECT id, created_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
+    FROM chat_messages
+    WHERE group_id = p_group_id
+      AND (
+        p_message_before_id IS NULL
+        OR (created_at, id) < (p_message_before_created_at, p_message_before_id)
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(ledger_chat_message_json(p.id) ORDER BY p.created_at DESC, p.id DESC)
+      FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_messages, v_messages_complete, v_message_cursor
+  FROM page p;
+
+  WITH page AS (
+    SELECT id, created_at,
+      row_number() OVER (ORDER BY created_at DESC, id DESC) AS row_no
+    FROM group_events
+    WHERE group_id = p_group_id
+      AND (
+        p_event_before_id IS NULL
+        OR (created_at, id) < (p_event_before_created_at, p_event_before_id)
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT p_limit + 1
+  )
+  SELECT
+    COALESCE(jsonb_agg(ledger_event_json(p.id) ORDER BY p.created_at DESC, p.id DESC)
+      FILTER (WHERE p.row_no <= p_limit), '[]'::jsonb),
+    count(*) <= p_limit,
+    COALESCE((
+      SELECT jsonb_build_object('createdAt', to_jsonb(last_row.created_at), 'id', last_row.id)
+      FROM page last_row
+      WHERE last_row.row_no = p_limit AND (SELECT count(*) FROM page) > p_limit
+    ), 'null'::jsonb)
+  INTO v_events, v_events_complete, v_event_cursor
+  FROM page p;
+
   RETURN jsonb_build_object(
-    'messages', COALESCE((
-      SELECT jsonb_agg(ledger_chat_message_json(m.id) ORDER BY m.created_at DESC, m.id DESC)
-      FROM (
-        SELECT id, created_at FROM chat_messages
-        WHERE group_id = p_group_id
-          AND created_at < COALESCE(p_before, 'infinity'::timestamptz)
-        ORDER BY created_at DESC, id DESC
-        LIMIT v_limit
-      ) m
-    ), '[]'::jsonb),
-    'events', COALESCE((
-      SELECT jsonb_agg(ledger_event_json(ev.id) ORDER BY ev.created_at DESC, ev.id DESC)
-      FROM (
-        SELECT id, created_at FROM group_events
-        WHERE group_id = p_group_id
-          AND created_at < COALESCE(p_before, 'infinity'::timestamptz)
-        ORDER BY created_at DESC, id DESC
-        LIMIT v_limit
-      ) ev
-    ), '[]'::jsonb)
+    'messages', v_messages,
+    'messageCursor', v_message_cursor,
+    'messagesComplete', v_messages_complete,
+    'events', v_events,
+    'eventCursor', v_event_cursor,
+    'eventsComplete', v_events_complete,
+    'readWatermark', COALESCE((
+      SELECT jsonb_build_object(
+        'lastReadAt', to_jsonb(cr.last_read_at),
+        'lastReadMessageId', cr.last_read_message_id
+      )
+      FROM conversation_reads cr
+      WHERE cr.user_id = v_user_id
+        AND cr.group_id = p_group_id
+        AND cr.last_read_message_id IS NOT NULL
+    ), 'null'::jsonb)
   );
 END;
 $$;
@@ -553,8 +629,8 @@ REVOKE ALL ON FUNCTION public.get_expense(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_expense(uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.get_activity(bigint, integer) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_activity(bigint, integer) TO authenticated;
-REVOKE ALL ON FUNCTION public.get_conversation(uuid, timestamptz, integer) FROM public;
-GRANT EXECUTE ON FUNCTION public.get_conversation(uuid, timestamptz, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_conversation(uuid, timestamptz, uuid, timestamptz, bigint, integer) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_conversation(uuid, timestamptz, uuid, timestamptz, bigint, integer) TO authenticated;
 REVOKE ALL ON FUNCTION public.get_my_profile() FROM public;
 GRANT EXECUTE ON FUNCTION public.get_my_profile() TO authenticated;
 REVOKE ALL ON FUNCTION public.lookup_user_by_handle(text) FROM public;
