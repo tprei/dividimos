@@ -53,6 +53,37 @@ function resolveChatDraftActors(
 }
 
 
+/**
+ * Starts, or keeps, the draft behind a bill-type choice.
+ *
+ * Returning to the type step and picking the same kind of bill again is
+ * navigation, not a reset. Minting a fresh draft there threw away items,
+ * guests, payers and splits the user had already entered, with no warning and
+ * no way back.
+ */
+export function selectDraftForType(
+  billStore: Pick<
+    ReturnType<typeof useBillStore.getState>,
+    "expense" | "createExpense" | "updateExpense"
+  >,
+  type: ExpenseType,
+  selectedGroupId: string | null,
+): void {
+  const draft = billStore.expense;
+  if (draft && draft.expenseType === type) {
+    if (selectedGroupId && !draft.groupId) {
+      billStore.updateExpense({ groupId: selectedGroupId });
+    }
+    return;
+  }
+
+  if (type === "single_amount") {
+    billStore.createExpense("", "single_amount");
+    return;
+  }
+  billStore.createExpense("Nova conta", "itemized", undefined, selectedGroupId ?? undefined);
+}
+
 export interface WizardInitInput {
   modes: WizardModes;
   me: Me | null;
