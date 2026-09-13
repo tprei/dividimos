@@ -2,10 +2,15 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SignJWT } from "jose";
 import type { ValidationResult } from "../src/lib/expense-money";
 import { allocateEvenly } from "../src/lib/expense-money";
-import { decodeChatMessage, decodeMutationAck } from "../src/lib/ledger/decode";
+import {
+  decodeChatMessage,
+  decodeExpenseDetail,
+  decodeMutationAck,
+} from "../src/lib/ledger/decode";
 import { transfersFromBalances } from "../src/lib/ledger/transfers";
 import type {
   BalanceRow,
+  ExpenseDetail,
   ExpenseItemAssignmentPayload,
   ExpenseItemPayload,
   ExpensePayerPayload,
@@ -310,6 +315,27 @@ export class SeedHelper {
     };
   }
 
+  async inviteMember(
+    creatorId: string,
+    groupId: string,
+    userId: string,
+  ): Promise<void> {
+    const client = await this.authenticateAs(creatorId);
+    const { data, error } = await client.rpc("invite_member", {
+      p_group_id: groupId,
+      p_user_id: userId,
+    });
+
+    if (error) {
+      throw new Error(`SeedHelper.inviteMember: invite_member failed: ${error.message}`);
+    }
+
+    unwrap(
+      decodeMutationAck(data),
+      "SeedHelper.inviteMember: malformed invite_member acknowledgment",
+    );
+  }
+
   // -----------------------------------------------------------------------
   // DM creation
   // -----------------------------------------------------------------------
@@ -601,6 +627,22 @@ export class SeedHelper {
     }
 
     return { expense, settlements };
+  }
+
+  async getExpense(actorId: string, expenseId: string): Promise<ExpenseDetail> {
+    const client = await this.authenticateAs(actorId);
+    const { data, error } = await client.rpc("get_expense", {
+      p_expense_id: expenseId,
+    });
+
+    if (error) {
+      throw new Error(`SeedHelper.getExpense: get_expense failed: ${error.message}`);
+    }
+
+    return unwrap(
+      decodeExpenseDetail(data),
+      "SeedHelper.getExpense: malformed get_expense response",
+    );
   }
 
   // -----------------------------------------------------------------------

@@ -81,19 +81,16 @@ test.describe("Expense payer cleanup (browser)", () => {
     expect(versions).toHaveLength(1);
     expect(versions![0].total_cents).toBe(10000);
 
-    const { data: participants } = await adminClient
-      .from("expense_participants")
-      .select("user_id, share_cents, paid_cents")
-      .eq("expense_id", expense.id);
+    const detail = await seed.getExpense(alice.id, expense.id);
 
-    const participantUserIds = (participants ?? []).map((p) => p.user_id).sort();
+    const participantUserIds = detail.participants.map((p) => p.user?.id).sort();
     expect(participantUserIds).toEqual([alice.id, carol.id].sort());
     expect(
-      participants!.reduce((sum, p) => sum + (p.share_cents as number), 0),
+      detail.participants.reduce((sum, p) => sum + p.shareCents, 0),
     ).toBe(10000);
 
     const paidByUser = Object.fromEntries(
-      (participants ?? []).map((p) => [p.user_id as string, p.paid_cents as number]),
+      detail.participants.map((p) => [p.user?.id ?? "", p.paidCents]),
     );
     expect(paidByUser[alice.id]).toBe(10000);
     expect(paidByUser[carol.id]).toBe(0);
@@ -191,11 +188,8 @@ test.describe("Expense payer cleanup (browser)", () => {
       .eq("id", expense.id);
     expect(rows![0].current_version_no).toBe(2);
 
-    const { data: participants } = await adminClient
-      .from("expense_participants")
-      .select("user_id")
-      .eq("expense_id", expense.id);
-    expect((participants ?? []).map((p) => p.user_id).sort()).toEqual(
+    const detail = await seed.getExpense(alice.id, expense.id);
+    expect(detail.participants.map((p) => p.user?.id).sort()).toEqual(
       [alice.id, carol.id].sort(),
     );
   });
@@ -286,21 +280,18 @@ test.describe("Expense payer cleanup (browser)", () => {
       .eq("expense_id", expenseId);
     expect(guestsAfter ?? []).toHaveLength(0);
 
-    const { data: participants } = await adminClient
-      .from("expense_participants")
-      .select("kind, user_id, share_cents, paid_cents")
-      .eq("expense_id", expenseId);
+    const detail = await seed.getExpense(alice.id, expenseId);
 
-    expect((participants ?? []).every((p) => p.kind === "user")).toBe(true);
-    expect((participants ?? []).map((p) => p.user_id).sort()).toEqual(
+    expect(detail.participants.every((p) => p.kind === "user")).toBe(true);
+    expect(detail.participants.map((p) => p.user?.id).sort()).toEqual(
       [alice.id, bob.id].sort(),
     );
     expect(
-      participants!.reduce((sum, p) => sum + (p.share_cents as number), 0),
+      detail.participants.reduce((sum, p) => sum + p.shareCents, 0),
     ).toBe(9000);
 
     const paidByUser = Object.fromEntries(
-      (participants ?? []).map((p) => [p.user_id as string, p.paid_cents as number]),
+      detail.participants.map((p) => [p.user?.id ?? "", p.paidCents]),
     );
     expect(paidByUser[bob.id]).toBe(9000);
     expect(paidByUser[alice.id]).toBe(0);
