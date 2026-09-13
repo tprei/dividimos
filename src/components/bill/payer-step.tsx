@@ -36,6 +36,7 @@ interface PayerStepProps {
   onRemovePayerEntry: (userId: string) => void;
 }
 
+
 export function PayerStep({
   participants,
   payers,
@@ -408,6 +409,7 @@ export function PayerStep({
             </Button>
 
             <AnimatePresence>
+
               {remaining !== 0 && totalPaid > 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
