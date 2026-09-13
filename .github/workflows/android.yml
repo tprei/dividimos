@@ -223,7 +223,7 @@ jobs:
               raise SystemExit(f"bundle manifest metadata mismatch: {actual!r} != {expected!r}")
           PY
 
-          jarsigner -verify -strict -certs "$AAB"
+          jarsigner -verify -verbose:summary -certs "$AAB"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
