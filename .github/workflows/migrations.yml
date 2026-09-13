@@ -47,6 +47,17 @@ jobs:
           persist-credentials: false
 
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          # Same version as the devDependency, so local and CI run one CLI.
+          version: 2.20.3
+
+      - name: Assert pinned Supabase CLI
+        run: |
+          actual=$(supabase --version | tr -d 'v \r\n')
+          if [ "$actual" != "2.20.3" ]; then
+            echo "::error::Supabase CLI $actual, expected 2.20.3"
+            exit 1
+          fi
 
       - name: Start Supabase (applies every migration in order)
         run: |
@@ -90,6 +101,17 @@ jobs:
           persist-credentials: false
 
       - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          # Same version as the devDependency, so local and CI run one CLI.
+          version: 2.20.3
+
+      - name: Assert pinned Supabase CLI
+        run: |
+          actual=$(supabase --version | tr -d 'v \r\n')
+          if [ "$actual" != "2.20.3" ]; then
+            echo "::error::Supabase CLI $actual, expected 2.20.3"
+            exit 1
+          fi
 
       - name: Replay migrations before declaration parity
         run: |
