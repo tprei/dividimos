@@ -2,7 +2,12 @@
   "$comment": [
     "Reviewed exceptions to the deny-all database contract, checked by",
     "scripts/check-database-invariants.mjs. Every entry names a real object and",
-    "says why it is safe. Removing this file fails the gate."
+    "says why it is safe. Removing this file fails the gate.",
+    "The functionPrivileges object is the exact signature/role contract for every",
+    "function in the application schemas: entry keys are schema-qualified signatures",
+    "with identity arguments, and anon/authenticated state whether each browser role",
+    "may execute. A function missing from the manifest, a manifest entry naming a",
+    "missing function, any PUBLIC grant, or a privilege drift fails the gate."
   ],
   "policies": [
     "realtime.messages.group_broadcast_authz"
@@ -14,5 +19,385 @@
   "definerOwners": [
     "postgres"
   ],
-  "tablesWithoutRls": []
+  "tablesWithoutRls": [],
+  "schemas": [
+    "_realtime",
+    "auth",
+    "extensions",
+    "graphql",
+    "graphql_public",
+    "guest_credentials",
+    "net",
+    "pgbouncer",
+    "pgsodium",
+    "pgsodium_masks",
+    "public",
+    "realtime",
+    "storage",
+    "supabase_functions",
+    "supabase_migrations",
+    "vault"
+  ],
+  "functionPrivileges": {
+    "public.accept_invitation(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.assert_member(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.assert_member_or_invited(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.bootstrap()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.broadcast_group(p_group_id uuid, p_ledger_version bigint, p_event_id bigint)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal broadcast helper; called only inside ledger RPCs."
+    },
+    "public.broadcast_user(p_user_id uuid, p_group_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal broadcast helper; called only inside ledger RPCs."
+    },
+    "public.cancel_vendor_charge(p_charge_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.claim_guest(p_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.claim_push_subscription(p_user_id uuid, p_channel text, p_endpoint_digest bytea, p_subscription_encrypted text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Service-role push claim operation used by the notify route; browsers use the ownership-checked RPC."
+    },
+    "public.cleanup_expired_rate_limit_counters()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal rate-limit machinery; server-side callers only."
+    },
+    "public.complete_onboarding(p_handle text, p_name text, p_pix_key_encrypted text, p_pix_key_hint text, p_pix_key_type pix_key_type)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.confirm_vendor_charge(p_charge_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.create_expense(p_client_id uuid, p_group_id uuid, p_occurred_on date, p_title text, p_merchant_name text, p_expense_type expense_type, p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer, p_payload jsonb, p_chave_acesso text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.create_expense_with_group(p_client_id uuid, p_group_name text, p_member_ids uuid[], p_occurred_on date, p_title text, p_merchant_name text, p_expense_type expense_type, p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer, p_payload jsonb, p_chave_acesso text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.create_group(p_name text, p_member_ids uuid[])": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.create_guest_claim_token(p_guest_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.create_invite_link(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.current_user_id()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.current_user_is_member(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.deactivate_invite_link(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.decline_invitation(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.delete_expense(p_expense_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.delete_group(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.edit_expense(p_expense_id uuid, p_expected_version_no integer, p_occurred_on date, p_title text, p_merchant_name text, p_expense_type expense_type, p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer, p_payload jsonb)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.emit_event(p_group_id uuid, p_kind event_kind, p_actor uuid, p_expense_id uuid, p_settlement_id uuid, p_subject_user_id uuid, p_payload jsonb)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.expense_change_summary(p_expense_id uuid, p_from integer, p_to integer)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal ledger helper; called only inside ledger RPCs."
+    },
+    "public.get_activity(p_before_id bigint, p_limit integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_conversation(p_group_id uuid, p_message_before_created_at timestamp with time zone, p_message_before_id uuid, p_event_before_created_at timestamp with time zone, p_event_before_id bigint, p_limit integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_expense(p_expense_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_group(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_group_expenses(p_group_id uuid, p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_my_expenses(p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_my_profile()": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_or_create_dm(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_vendor_charges(p_before_created_at timestamp with time zone, p_before_id uuid, p_limit integer)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.group_pairwise_edges(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal transfer math; reachable only through membership-checked read RPCs."
+    },
+    "public.group_transfers(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal transfer math; reachable only through membership-checked read RPCs."
+    },
+    "public.handle_new_user()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Auth trigger on auth.users; no client execution path."
+    },
+    "public.increment_rate_limit(p_bucket text, p_subject text, p_limit integer, p_window_seconds integer)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal rate-limit machinery; server-side callers only."
+    },
+    "public.invite_member(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.is_member(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.is_member_or_invited(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.join_via_link(p_token text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.leave_group(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.ledger_chat_message_json(p_message_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_event_json(p_event_id bigint)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_expense_summary_json(p_expense_id uuid, p_viewer uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_expense_version_json(p_expense_id uuid, p_version_no integer)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_group_snapshot_json(p_group_id uuid, p_viewer uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_me_json(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_settlement_json(p_settlement_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.ledger_user_profile_json(p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal serializer; reachable only through membership-checked read RPCs."
+    },
+    "public.lock_group(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
+    "public.lock_receipt_key(p_creator_id uuid, p_chave_acesso text)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal lock helper called only inside receipt ledger RPCs; browser execution revoked by 20260913010000_receipt_helper_privileges."
+    },
+    "public.lookup_user_by_handle(p_handle text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.mark_read(p_group_id uuid, p_last_read_message_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.materialize_participants(p_expense_id uuid, p_author uuid, p_payload jsonb)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal ledger helper; called only inside ledger RPCs."
+    },
+    "public.pairwise_from_nets(p_kinds participant_kind[], p_ids uuid[], p_nets bigint[])": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal transfer math; reachable only through membership-checked read RPCs."
+    },
+    "public.preview_invite_link(p_token text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Anonymous token endpoint (invite/claim preview); the unguessable token is the authorization."
+    },
+    "public.recompute_group_balances(p_group_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal ledger helper; called only inside ledger RPCs."
+    },
+    "public.record_settlement(p_operation_id uuid, p_group_id uuid, p_from_user_id uuid, p_to_user_id uuid, p_amount_cents integer, p_allow_overpay boolean)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.record_vendor_charge(p_amount_cents integer, p_description text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.remove_member(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.resolve_guest_claim_token(p_token text)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Anonymous token endpoint (invite/claim preview); the unguessable token is the authorization."
+    },
+    "public.restore_expense(p_expense_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.revoke_guest_claim_token(p_guest_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.send_message(p_client_id uuid, p_group_id uuid, p_content text)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.send_nudge(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.set_updated_at()": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Table trigger; no client execution path."
+    },
+    "public.update_profile(p_name text, p_handle text, p_notification_preferences jsonb)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.validate_expense_payload(p jsonb, p_expense_type expense_type, p_total integer, p_fee_bps integer, p_fixed_fee integer)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal ledger helper; called only inside ledger RPCs."
+    },
+    "public.void_settlement(p_settlement_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    }
+  }
 }
