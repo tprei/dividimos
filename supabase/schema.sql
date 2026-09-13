@@ -324,6 +324,7 @@ BEGIN
   );
 END;
 $$;
+
 CREATE FUNCTION public.recompute_group_balances(p_group_id uuid) RETURNS bigint
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -590,6 +591,7 @@ BEGIN
   ELSE
     v_split_method := NULL;
   END IF;
+
   IF p ? 'payers' THEN v_payers := p->'payers'; ELSE v_payers := NULL; END IF;
   IF v_payers IS NULL OR jsonb_typeof(v_payers) <> 'array' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
@@ -2330,7 +2332,6 @@ BEGIN
   FROM expense_versions
   WHERE expense_id = p_expense_id AND version_no = v_version_no;
 
-
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
     SELECT 1
     FROM jsonb_array_elements(COALESCE(v_payload->'participants', '[]'::jsonb)) AS pp(p)
@@ -2465,6 +2466,7 @@ $$;
 
 REVOKE ALL ON FUNCTION public.create_expense_with_group(uuid, text, uuid[], date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.create_expense_with_group(uuid, text, uuid[], date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
+
 -- ---- 05_rpc_settlement.sql ----
 CREATE FUNCTION public.record_settlement(
   p_operation_id uuid,
@@ -3537,6 +3539,7 @@ BEGIN
     'group:' || p_group_id::text,
     true
   );
+
   RETURN v_result;
 END;
 $$;
@@ -3996,6 +3999,7 @@ BEGIN
   IF v_row.status = 'cancelled' THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'charge_cancelled';
   END IF;
+
   IF v_row.status = 'received' THEN
     RETURN jsonb_build_object(
       'id', v_row.id,
