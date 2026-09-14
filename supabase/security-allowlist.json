@@ -20,6 +20,24 @@
     "postgres"
   ],
   "tablesWithoutRls": [],
+  "schemas": [
+    "_realtime",
+    "auth",
+    "extensions",
+    "graphql",
+    "graphql_public",
+    "guest_credentials",
+    "net",
+    "pgbouncer",
+    "pgsodium",
+    "pgsodium_masks",
+    "public",
+    "realtime",
+    "storage",
+    "supabase_functions",
+    "supabase_migrations",
+    "vault"
+  ],
   "functionPrivileges": {
     "public.accept_invitation(p_group_id uuid)": {
       "anon": false,

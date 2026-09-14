@@ -38,7 +38,7 @@ function loadAllowlist() {
     process.exit(1);
   }
 
-  for (const key of ["policies", "grants", "definerOwners", "tablesWithoutRls"]) {
+  for (const key of ["policies", "grants", "definerOwners", "tablesWithoutRls", "schemas"]) {
     if (!Array.isArray(parsed[key])) {
       console.error(`::error::${ALLOWLIST_PATH} is missing the "${key}" array.`);
       process.exit(1);
@@ -117,11 +117,34 @@ async function collect(client) {
       order by 1, 2, 3`,
     [AUDITED_POLICY_SCHEMAS],
   );
+  // Effective table-level privileges, not role_table_grants: a grant to a
+  // role that browser roles inherit, or a column-level grant, would be
+  // invisible in information_schema.role_table_grants.
   const grants = await client.query(
-    `select table_schema, table_name, grantee, privilege_type
-       from information_schema.role_table_grants
-      where table_schema = any($1::text[]) and grantee = any($2::text[])
-      order by 1, 2, 3, 4`,
+    `select n.nspname as table_schema,
+            c.relname as table_name,
+            r.rolname as grantee,
+            has_table_privilege(r.oid, c.oid, 'SELECT') as can_select,
+            has_table_privilege(r.oid, c.oid, 'INSERT') as can_insert,
+            has_table_privilege(r.oid, c.oid, 'UPDATE') as can_update,
+            has_table_privilege(r.oid, c.oid, 'DELETE') as can_delete,
+            (has_any_column_privilege(r.oid, c.oid, 'SELECT')
+             or has_any_column_privilege(r.oid, c.oid, 'INSERT')
+             or has_any_column_privilege(r.oid, c.oid, 'UPDATE')) as any_column
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       cross join pg_roles r
+      where n.nspname = any($1::text[])
+        and c.relkind in ('r', 'v')
+        and r.rolname = any($2::text[])
+        and (has_table_privilege(r.oid, c.oid, 'SELECT')
+             or has_table_privilege(r.oid, c.oid, 'INSERT')
+             or has_table_privilege(r.oid, c.oid, 'UPDATE')
+             or has_table_privilege(r.oid, c.oid, 'DELETE')
+             or has_any_column_privilege(r.oid, c.oid, 'SELECT')
+             or has_any_column_privilege(r.oid, c.oid, 'INSERT')
+             or has_any_column_privilege(r.oid, c.oid, 'UPDATE'))
+      order by 1, 2, 3`,
     [AUDITED_TABLE_SCHEMAS, FORBIDDEN_GRANTEES],
   );
 
@@ -163,8 +186,9 @@ async function collect(client) {
             p.proconfig
        from pg_proc p
        join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.prosecdef
+      where n.nspname = any($1::text[]) and p.prosecdef
       order by 1, 2`,
+    [FUNCTION_PRIVILEGE_SCHEMAS],
   );
   const functionPrivileges = await client.query(
     `select n.nspname as function_schema,
@@ -191,6 +215,12 @@ async function collect(client) {
     [FUNCTION_PRIVILEGE_SCHEMAS],
   );
 
+  const schemas = await client.query(
+    `select nspname from pg_namespace
+      where nspname !~ '^pg_' and nspname <> 'information_schema'
+      order by 1`,
+  );
+
   return {
     tables: tables.rows,
     policies: policies.rows,
@@ -199,6 +229,7 @@ async function collect(client) {
     functionPrivileges: functionPrivileges.rows,
     sequenceGrants: sequenceGrants.rows,
     schemaPrivileges: schemaPrivileges.rows,
+    schemas: schemas.rows,
   };
 }
 
@@ -220,16 +251,32 @@ function auditFailures(state, allowlist) {
     );
   }
 
-  for (const { table_schema, table_name, grantee, privilege_type } of state.grants) {
-    const id = `${table_schema}.${table_name}.${grantee}.${privilege_type}`;
+  for (const grant of state.grants) {
+    const privileges = [
+      grant.can_select && "SELECT",
+      grant.can_insert && "INSERT",
+      grant.can_update && "UPDATE",
+      grant.can_delete && "DELETE",
+      grant.any_column && "COLUMN",
+    ].filter((privilege) => privilege !== false);
+    const id = `${grant.table_schema}.${grant.table_name}.${grant.grantee}.${privileges.join("+")}`;
     if (allowlist.grants.includes(id)) continue;
     failures.push(
-      `${grantee} holds ${privilege_type} on ${table_schema}.${table_name}; clients reach data only through RPCs`,
+      `${grant.grantee} effectively holds ${privileges.join("+")} on ${grant.table_schema}.${grant.table_name}; ` +
+        `clients reach data only through RPCs`,
     );
-    }
+  }
   for (const { schema_name, sequence_name, grantee } of state.sequenceGrants) {
     failures.push(
       `${grantee} holds privileges on sequence ${schema_name}.${sequence_name}; sequences are server-side only`,
+    );
+  }
+
+  for (const { nspname } of state.schemas) {
+    if (allowlist.schemas.includes(nspname)) continue;
+    failures.push(
+      `unknown schema ${nspname} exists outside the platform and application set; ` +
+        `a new schema must be a reviewed allowlist entry, not an unaudited escape hatch`,
     );
   }
 

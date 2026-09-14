@@ -38,7 +38,15 @@ const BLOB_PATTERN = /^[0-9a-f]{40}$/;
 const PROTECTED_CI_PATHS = [
   ".github/workflows/",
   "scripts/check-migration-history.mjs",
+  "scripts/check-migration-history.test.mjs",
+  "scripts/check-database-invariants.mjs",
+  "scripts/verify-migrations.mjs",
+  "scripts/verify-migrations.test.mjs",
   "supabase/config.toml",
+  "supabase/security-allowlist.json",
+  "package.json",
+  "src/test/integration-setup.ts",
+  "src/test/db-race-barrier.ts",
   RESET_MANIFEST_PATH,
 ];
 

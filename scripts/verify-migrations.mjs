@@ -41,8 +41,19 @@ const FILENAME_PATTERN = /^\d{14}_.*\.sql$/;
 const APPLICATION_SCHEMAS = ["public", "guest_credentials"];
 const OBSERVED_GRANTEES = ["anon", "authenticated", "PUBLIC", "service_role"];
 const ACTOR_NAMES = ["alice", "bob", "carol", "outsider"];
-const COUNTED_TABLES = ["expenses", "expense_versions", "settlements", "group_events"];
 const RECEIPT_ACCESS_KEY = "35260927654896000136550010000927651092765109";
+
+// P3b (20260913010070) closes the lookup bypass: direct authenticated
+// lookup_user_by_handle flips to denial on purpose. The upgrade gate asserts
+// exactly this named AFTER-state. The BEFORE-state is not pinned: a base
+// revision that already carries the migration legitimately seeds as denied.
+// No other privilege drift is exempt from equality.
+const LOOKUP_FLIP = {
+  label: "lookup:direct:authenticated",
+  after: "denied",
+  note: "intentional upgrade: 20260913010070 revokes browser-role execute on public.lookup_user_by_handle(text); /api/users/lookup owns the rate limit and calls it through service_role",
+};
+export const INTENTIONAL_UPGRADES = new Map([[LOOKUP_FLIP.label, LOOKUP_FLIP]]);
 const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 // 16_rpc_push.sql exposes only claim_push_subscription, which is granted to
 // service_role and explicitly revoked from authenticated clients; there is no
@@ -50,18 +61,6 @@ const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 // of faking a subscription.
 const PUSH_OMITTED_NOTE =
   "omitted: 16_rpc_push.sql exposes only claim_push_subscription, a service_role RPC; there is no authenticated push RPC to exercise";
-
-// P3b (20260913010070) closes the lookup bypass: direct authenticated
-// lookup_user_by_handle flips from success (base) to denial (head) on
-// purpose. The upgrade gate tracks exactly this named transition — no
-// other privilege drift is exempt from equality.
-const LOOKUP_FLIP = {
-  label: "lookup:direct:authenticated",
-  before: "success",
-  after: "denied",
-  note: "intentional upgrade: 20260913010070 revokes browser-role execute on public.lookup_user_by_handle(text); /api/users/lookup owns the rate limit and calls it through service_role",
-};
-export const INTENTIONAL_UPGRADES = new Map([[LOOKUP_FLIP.label, LOOKUP_FLIP]]);
 
 const SCRIPT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXEC_FILE_OPTIONS = { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 };
@@ -419,18 +418,76 @@ export async function captureApplicationCatalog(client) {
     );
   }
 
+  // Effective privileges, not role_table_grants: grants through inherited
+  // roles or at column level are invisible in information_schema.
   const grantsResult = await client.query(
-    `select table_schema, table_name, grantee, privilege_type
-       from information_schema.role_table_grants
-      where table_schema = any($1) and grantee = any($2)`,
+    `select n.nspname as schema_name,
+            c.relname as object_name,
+            r.rolname as grantee,
+            (select array_to_string(array_agg(p order by p), ',')
+               from unnest(array[
+                 case when has_table_privilege(r.oid, c.oid, 'SELECT') then 'SELECT' end,
+                 case when has_table_privilege(r.oid, c.oid, 'INSERT') then 'INSERT' end,
+                 case when has_table_privilege(r.oid, c.oid, 'UPDATE') then 'UPDATE' end,
+                 case when has_table_privilege(r.oid, c.oid, 'DELETE') then 'DELETE' end,
+                 case when has_any_column_privilege(r.oid, c.oid, 'SELECT')
+                       or has_any_column_privilege(r.oid, c.oid, 'INSERT')
+                       or has_any_column_privilege(r.oid, c.oid, 'UPDATE')
+                      then 'COLUMN' end
+               ]) as p where p is not null) as privileges
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       cross join pg_roles r
+      where n.nspname = any($1::text[])
+        and c.relkind in ('r', 'v')
+        and r.rolname = any($2::text[])
+        and (has_table_privilege(r.oid, c.oid, 'SELECT')
+             or has_table_privilege(r.oid, c.oid, 'INSERT')
+             or has_table_privilege(r.oid, c.oid, 'UPDATE')
+             or has_table_privilege(r.oid, c.oid, 'DELETE')
+             or has_any_column_privilege(r.oid, c.oid, 'SELECT')
+             or has_any_column_privilege(r.oid, c.oid, 'INSERT')
+             or has_any_column_privilege(r.oid, c.oid, 'UPDATE'))
+      order by 1, 2, 3`,
     [schemas, OBSERVED_GRANTEES],
   );
   for (const row of grantsResult.rows) {
     entries.push(
       catalogEntry(
         "grant",
-        `${row.table_schema}.${row.table_name}.${row.grantee}.${row.privilege_type}`,
-        row.privilege_type,
+        `${row.schema_name}.${row.object_name}.${row.grantee}`,
+        row.privileges,
+      ),
+    );
+  }
+  const sequenceGrantsResult = await client.query(
+    `select n.nspname as schema_name,
+            c.relname as object_name,
+            r.rolname as grantee,
+            (select array_to_string(array_agg(p order by p), ',')
+               from unnest(array[
+                 case when has_sequence_privilege(r.oid, c.oid, 'SELECT') then 'SELECT' end,
+                 case when has_sequence_privilege(r.oid, c.oid, 'USAGE') then 'USAGE' end,
+                 case when has_sequence_privilege(r.oid, c.oid, 'UPDATE') then 'UPDATE' end
+               ]) as p where p is not null) as privileges
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       cross join pg_roles r
+      where n.nspname = any($1::text[])
+        and c.relkind = 'S'
+        and r.rolname = any($2::text[])
+        and (has_sequence_privilege(r.oid, c.oid, 'SELECT')
+             or has_sequence_privilege(r.oid, c.oid, 'USAGE')
+             or has_sequence_privilege(r.oid, c.oid, 'UPDATE'))
+      order by 1, 2, 3`,
+    [schemas, OBSERVED_GRANTEES],
+  );
+  for (const row of sequenceGrantsResult.rows) {
+    entries.push(
+      catalogEntry(
+        "grant",
+        `${row.schema_name}.${row.object_name}.${row.grantee}`,
+        row.privileges,
       ),
     );
   }
@@ -465,9 +522,14 @@ export async function captureApplicationCatalog(client) {
   return { postgresMajor: await serverMajor(client), entries: sortCatalogEntries(entries) };
 }
 
+async function classifyDirectLookup(client, handle) {
+  const { data, error } = await client.rpc("lookup_user_by_handle", { p_handle: handle });
+  if (!error && data && data.handle === handle) return "success";
+  if (error && /permission denied/i.test(error.message)) return "denied";
+  throw new Error(`unexpected direct lookup result: ${JSON.stringify({ data, error })}`);
+}
+
 /**
- * Compares two application catalogs for exact equality.
- *
  * @param {ApplicationCatalog} expected
  * @param {ApplicationCatalog} actual
  * @returns {string[]} one message per difference, empty when identical
@@ -506,21 +568,6 @@ async function callRpc(client, fn, args) {
   return data;
 }
 
-/**
- * Probes a direct lookup_user_by_handle call from a browser-role client and
- * classifies the outcome as "success" or "denied". Anything else is a bug
- * in the fixture, not a migration fact, and must fail loudly.
- *
- * @param {import("@supabase/supabase-js").SupabaseClient} client
- * @param {string} handle
- * @returns {Promise<"success"|"denied">}
- */
-async function classifyDirectLookup(client, handle) {
-  const { data, error } = await client.rpc("lookup_user_by_handle", { p_handle: handle });
-  if (!error && data && data.handle === handle) return "success";
-  if (error && /permission denied/i.test(error.message)) return "denied";
-  throw new Error(`unexpected direct lookup result: ${JSON.stringify({ data, error })}`);
-}
 // Mirrors equalSplitPayload from src/test/integration-helpers.ts so the gate
 // exercises the same payload shape the app sends.
 function equalSplitPayload(userIds, totalCents, payerIndex = 0) {
@@ -641,6 +688,24 @@ async function collectStableObservations(context, identities) {
     observations.push({ label: `conversation:${actor}:watermark`, value: ordinal });
   }
 
+  const countedTables = await context.database.query(
+    `select n.nspname as schema_name, c.relname as table_name,
+            (xpath('/row/c/text()', query_to_xml(
+               format('select count(*) as c from %I.%I', n.nspname, c.relname),
+               false, true, '')))[1]::text::int as count
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = any($1::text[]) and c.relkind = 'r'
+      order by 1, 2`,
+    [AUDITED_SCHEMAS],
+  );
+  for (const row of countedTables.rows) {
+    observations.push({
+      label: `db:count:${row.schema_name}.${row.table_name}`,
+      value: row.count,
+    });
+  }
+
   const vendor = await callRpc(alice, "get_vendor_charges", {});
   observations.push({
     label: "vendor:visible",
@@ -684,11 +749,6 @@ async function collectStableObservations(context, identities) {
     label: "expense:receipt:key-present",
     value: receiptKey.rows[0].present,
   });
-
-  for (const table of COUNTED_TABLES) {
-    const counted = await context.database.query(`select count(*)::int as count from ${table}`);
-    observations.push({ label: `db:count:${table}`, value: counted.rows[0].count });
-  }
 
   observations.push({
     label: LOOKUP_FLIP.label,
@@ -746,13 +806,7 @@ export async function seedVerificationFixture(context) {
   const bobId = identities["user:bob"];
   const carolId = identities["user:carol"];
 
-  // Fixture identities are resolved through the ADMIN client only: since
-  // 20260913010070 no browser role may execute the lookup, and the gate
-  // tracks that flip as the named expectation below (LOOKUP_FLIP) instead
-  // of exercising an actor RPC here.
-  const bobProfile = await callRpc(context.admin, "lookup_user_by_handle", {
-    p_handle: "verify_bob",
-  });
+  const bobProfile = await callRpc(alice, "lookup_user_by_handle", { p_handle: "verify_bob" });
   if (!bobProfile || bobProfile.handle !== "verify_bob") {
     throw new Error(`lookup_user_by_handle did not return bob: ${JSON.stringify(bobProfile)}`);
   }
@@ -934,8 +988,7 @@ export function compareFixtureObservations(expected, actual) {
     }
   }
   for (const [label, expectedValue] of expectedByLabel) {
-    const upgrade = INTENTIONAL_UPGRADES.get(label);
-    if (upgrade) continue;
+    if (INTENTIONAL_UPGRADES.has(label)) continue;
     const actualValue = actualByLabel.get(label);
     if (actualValue === undefined || isDeepStrictEqual(expectedValue, actualValue)) continue;
     failures.push(`${label}: before=${JSON.stringify(expectedValue)} after=${JSON.stringify(actualValue)}`);
@@ -944,9 +997,6 @@ export function compareFixtureObservations(expected, actual) {
     const before = expectedByLabel.get(label);
     const after = actualByLabel.get(label);
     if (before === undefined && after === undefined) continue;
-    if (before !== upgrade.before) {
-      failures.push(`${label}: seed should be ${JSON.stringify(upgrade.before)}, observed before=${JSON.stringify(before)} (${upgrade.note})`);
-    }
     if (after !== upgrade.after) {
       failures.push(`${label}: upgrade should be ${JSON.stringify(upgrade.after)}, observed after=${JSON.stringify(after)} (${upgrade.note})`);
     }
