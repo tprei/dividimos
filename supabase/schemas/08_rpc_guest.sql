@@ -151,9 +151,6 @@ DECLARE
   v_guest_id uuid;
   v_rec RECORD;
   v_cred RECORD;
-  v_payload jsonb;
-  v_new_participants jsonb;
-  v_new_payload jsonb;
   v_ledger_version bigint;
   v_event_id bigint;
 BEGIN
@@ -238,7 +235,8 @@ BEGIN
 
   UPDATE guests
   SET claimed_by = v_actor,
-      claimed_at = now()
+      claimed_at = now(),
+      claimed_version_no = v_rec.current_version_no
   WHERE id = v_rec.id;
 
   UPDATE expense_participants
@@ -246,27 +244,6 @@ BEGIN
       user_id = v_actor,
       guest_id = NULL
   WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id;
-
-  SELECT payload INTO v_payload
-  FROM expense_versions
-  WHERE expense_id = v_rec.expense_id AND version_no = v_rec.current_version_no;
-
-  SELECT jsonb_agg(
-    CASE
-      WHEN p->>'kind' = 'guest' AND p->>'guestId' = v_rec.id::text
-      THEN jsonb_build_object('kind', 'user', 'userId', v_actor)
-      ELSE p
-    END
-    ORDER BY ord
-  )
-  INTO v_new_participants
-  FROM jsonb_array_elements(v_payload->'participants') WITH ORDINALITY AS t(p, ord);
-
-  v_new_payload := jsonb_set(v_payload, '{participants}', v_new_participants);
-
-  UPDATE expense_versions
-  SET payload = v_new_payload
-  WHERE expense_id = v_rec.expense_id AND version_no = v_rec.current_version_no;
 
   INSERT INTO group_members (group_id, user_id, status, accepted_at)
   VALUES (v_rec.group_id, v_actor, 'accepted', now())

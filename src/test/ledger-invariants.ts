@@ -20,7 +20,15 @@ interface BalanceRecord {
 
 interface ExpenseRecord {
   id: string;
+  version_no: number;
   payload: ExpensePayload;
+}
+
+interface ClaimRecord {
+  guest_id: string;
+  expense_id: string;
+  claimed_by: string;
+  claimed_version_no: number;
 }
 
 interface SettlementRecord {
@@ -62,13 +70,51 @@ async function readBalances(client: Client, groupId: string): Promise<BalanceRow
 
 async function readActiveExpenses(client: Client, groupId: string): Promise<ExpenseRecord[]> {
   const result = await client.query<ExpenseRecord>(
-    "select e.id, ev.payload " +
+    "select e.id, ev.version_no, ev.payload " +
       "from public.expenses e " +
       "join public.expense_versions ev on ev.expense_id = e.id and ev.version_no = e.current_version_no " +
       "where e.group_id = $1 and e.status = 'active' order by e.id",
     [groupId],
   );
   return result.rows;
+}
+
+async function readClaimMappings(client: Client, groupId: string): Promise<ClaimRecord[]> {
+  const result = await client.query<ClaimRecord>(
+    "select g.id as guest_id, g.expense_id, g.claimed_by, g.claimed_version_no " +
+      "from public.guests g " +
+      "join public.expenses e on e.id = g.expense_id " +
+      "where e.group_id = $1 and g.claimed_by is not null and g.claimed_version_no is not null",
+    [groupId],
+  );
+  return result.rows;
+}
+
+function resolveEffectiveExpensePayload(
+  expenseId: string,
+  versionNo: number,
+  rawPayload: ExpensePayload,
+  claims: readonly ClaimRecord[],
+): ExpensePayload {
+  const matchingClaims = new Map<string, string>();
+  for (const c of claims) {
+    if (c.expense_id === expenseId && Number(c.claimed_version_no) === versionNo && c.claimed_by) {
+      matchingClaims.set(c.guest_id, c.claimed_by);
+    }
+  }
+  if (matchingClaims.size === 0) {
+    return rawPayload;
+  }
+  const participants = rawPayload.participants.map((p) => {
+    if (p.kind === "guest" && p.guestId && matchingClaims.has(p.guestId)) {
+      return { kind: "user" as const, userId: matchingClaims.get(p.guestId)! };
+    }
+    return p;
+  });
+  return {
+    ...rawPayload,
+    participants,
+  };
 }
 
 async function readConfirmedSettlements(
@@ -107,18 +153,25 @@ function checkProjectionMatchesFacts(
   balances: readonly BalanceRow[],
   expenses: readonly ExpenseRecord[],
   settlements: readonly SettlementRecord[],
+  claims: readonly ClaimRecord[],
   violations: string[],
 ): void {
   let expected: BalanceRow[] = [];
   for (const expense of expenses) {
-    if (hasUnresolvedParticipants(expense.payload)) {
+    const effectivePayload = resolveEffectiveExpensePayload(
+      expense.id,
+      expense.version_no,
+      expense.payload,
+      claims,
+    );
+    if (hasUnresolvedParticipants(effectivePayload)) {
       violations.push(
         `[3] active expense ${expense.id} stores a payload with an unresolved participant: ` +
-          `${JSON.stringify(expense.payload.participants)}`,
+          `${JSON.stringify(effectivePayload.participants)}`,
       );
       continue;
     }
-    expected = applyExpenseDelta(expected, expense.payload, 1);
+    expected = applyExpenseDelta(expected, effectivePayload, 1);
   }
   for (const settlement of settlements) {
     expected = applySettlementDelta(
@@ -204,6 +257,7 @@ async function collectViolations(client: Client, groupId: string): Promise<strin
   const balances = await readBalances(client, groupId);
   const expenses = await readActiveExpenses(client, groupId);
   const settlements = await readConfirmedSettlements(client, groupId);
+  const claims = await readClaimMappings(client, groupId);
   const transfers = await client.query<TransferRecord>(
     "select from_kind, from_id, to_id, amount_cents::text as amount_cents " +
       "from public.group_transfers($1)",
@@ -211,12 +265,12 @@ async function collectViolations(client: Client, groupId: string): Promise<strin
   );
 
   // [1], [2], [3] and [6] below recompute everything from the versioned
-  // facts and settlements. The writable participant copy is deliberately
-  // not inspected: it is an acceleration projection, not a fact table, so
-  // its drift surfaces through the balance projection it feeds.
+  // facts, claim mappings, and settlements. The writable participant copy is
+  // deliberately not inspected: it is an acceleration projection, not a fact
+  // table, so its drift surfaces through the balance projection it feeds.
   checkZeroSum(balances, violations);
   checkNoZeroRows(balances, violations);
-  checkProjectionMatchesFacts(balances, expenses, settlements, violations);
+  checkProjectionMatchesFacts(balances, expenses, settlements, claims, violations);
   checkTransfers(balances, transfers.rows, violations);
 
   return violations;

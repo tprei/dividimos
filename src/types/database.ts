@@ -607,6 +607,7 @@ export type Database = {
         Row: {
           claimed_at: string | null
           claimed_by: string | null
+          claimed_version_no: number | null
           created_at: string
           display_name: string
           expense_id: string
@@ -615,6 +616,7 @@ export type Database = {
         Insert: {
           claimed_at?: string | null
           claimed_by?: string | null
+          claimed_version_no?: number | null
           created_at?: string
           display_name: string
           expense_id: string
@@ -623,6 +625,7 @@ export type Database = {
         Update: {
           claimed_at?: string | null
           claimed_by?: string | null
+          claimed_version_no?: number | null
           created_at?: string
           display_name?: string
           expense_id?: string
@@ -1060,6 +1063,13 @@ export type Database = {
           p_service_fee_bps: number
           p_fixed_fee_cents: number
           p_payload: Json
+        }
+        Returns: Json
+      }
+      effective_expense_payload: {
+        Args: {
+          p_expense_id: string
+          p_version_no: number
         }
         Returns: Json
       }

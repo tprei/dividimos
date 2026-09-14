@@ -140,8 +140,12 @@ CREATE TABLE public.guests (
   display_name text NOT NULL CHECK (length(display_name) BETWEEN 1 AND 80),
   claimed_by uuid REFERENCES public.users(id),
   claimed_at timestamptz,
+  claimed_version_no integer,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((claimed_by IS NULL) = (claimed_at IS NULL))
+  CONSTRAINT guests_claim_tuple_valid CHECK (
+    (claimed_by IS NULL AND claimed_at IS NULL AND claimed_version_no IS NULL) OR
+    (claimed_by IS NOT NULL AND claimed_at IS NOT NULL AND claimed_version_no IS NOT NULL)
+  )
 );
 CREATE INDEX guests_expense_idx ON public.guests (expense_id);
 
@@ -824,6 +828,69 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.effective_expense_payload(p_expense_id uuid, p_version_no integer)
+RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_payload jsonb;
+  v_participants jsonb;
+  v_new_participants jsonb;
+BEGIN
+  SELECT payload INTO v_payload
+  FROM expense_versions
+  WHERE expense_id = p_expense_id AND version_no = p_version_no;
+
+  IF v_payload IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  v_participants := v_payload->'participants';
+  IF v_participants IS NULL OR jsonb_typeof(v_participants) <> 'array' THEN
+    RETURN v_payload;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(v_participants) AS p
+    JOIN guests g
+      ON g.id = (p->>'guestId')::uuid
+     AND g.expense_id = p_expense_id
+     AND g.claimed_version_no = p_version_no
+     AND g.claimed_by IS NOT NULL
+    WHERE p->>'kind' = 'guest'
+      AND p ? 'guestId'
+      AND (p->>'guestId') ~ '^[0-9a-fA-F-]{36}$'
+  ) THEN
+    RETURN v_payload;
+  END IF;
+
+  SELECT jsonb_agg(
+    CASE
+      WHEN p->>'kind' = 'guest'
+       AND p ? 'guestId'
+       AND (p->>'guestId') ~ '^[0-9a-fA-F-]{36}$'
+       AND g.claimed_by IS NOT NULL
+      THEN jsonb_build_object('kind', 'user', 'userId', g.claimed_by)
+      ELSE p
+    END
+    ORDER BY ord
+  )
+  INTO v_new_participants
+  FROM jsonb_array_elements(v_participants) WITH ORDINALITY AS t(p, ord)
+  LEFT JOIN guests g
+    ON (p->>'kind' = 'guest' AND p ? 'guestId' AND (p->>'guestId') ~ '^[0-9a-fA-F-]{36}$')
+   AND g.id = (p->>'guestId')::uuid
+   AND g.expense_id = p_expense_id
+   AND g.claimed_version_no = p_version_no;
+
+  RETURN jsonb_set(v_payload, '{participants}', COALESCE(v_new_participants, '[]'::jsonb));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.effective_expense_payload(uuid, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.effective_expense_payload(uuid, integer) TO service_role;
+
 CREATE FUNCTION public.materialize_participants(p_expense_id uuid, p_author uuid, p_payload jsonb)
 RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -856,8 +923,7 @@ BEGIN
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
-  SELECT payload INTO v_prev_payload FROM expense_versions
-  WHERE expense_id = p_expense_id AND version_no = v_current_version;
+  v_prev_payload := effective_expense_payload(p_expense_id, v_current_version);
   SELECT COALESCE(array_agg((pa.el->>'userId')::uuid), '{}') INTO v_existing_user_ids
   FROM jsonb_array_elements(COALESCE(v_prev_payload->'participants', '[]'::jsonb)) AS pa(el)
   WHERE pa.el->>'kind' = 'user' AND pa.el ? 'userId';
@@ -965,6 +1031,8 @@ AS $$
 DECLARE
   r_old expense_versions;
   r_new expense_versions;
+  v_old_payload jsonb;
+  v_new_payload jsonb;
   v_old_ids uuid[];
   v_new_ids uuid[];
   v_added uuid[];
@@ -993,7 +1061,10 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
 
-  v_participants := r_old.payload->'participants';
+  v_old_payload := effective_expense_payload(p_expense_id, p_from);
+  v_new_payload := effective_expense_payload(p_expense_id, p_to);
+
+  v_participants := v_old_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_i := 0;
   WHILE v_i < v_n LOOP
@@ -1004,7 +1075,7 @@ BEGIN
     v_old_ids := array_append(v_old_ids, v_pid);
     v_i := v_i + 1;
   END LOOP;
-  v_participants := r_new.payload->'participants';
+  v_participants := v_new_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_i := 0;
   WHILE v_i < v_n LOOP
@@ -1033,9 +1104,9 @@ BEGIN
     v_i := v_i + 1;
   END LOOP;
 
-  v_old_payers := r_old.payload->'payers';
-  v_new_payers := r_new.payload->'payers';
-  v_participants := r_old.payload->'participants';
+  v_old_payers := v_old_payload->'payers';
+  v_new_payers := v_new_payload->'payers';
+  v_participants := v_old_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_j := 0;
   WHILE v_j < jsonb_array_length(v_old_payers) LOOP
@@ -1048,7 +1119,7 @@ BEGIN
     v_old_total := v_old_total + (v_payer->>'amountCents')::bigint;
     v_j := v_j + 1;
   END LOOP;
-  v_participants := r_new.payload->'participants';
+  v_participants := v_new_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_j := 0;
   WHILE v_j < jsonb_array_length(v_new_payers) LOOP
@@ -1354,7 +1425,7 @@ BEGIN
     'totalCents', v.total_cents,
     'serviceFeeBasisPoints', v.service_fee_bps,
     'fixedFeeCents', v.fixed_fee_cents,
-    'payload', v.payload,
+    'payload', effective_expense_payload(v.expense_id, v.version_no),
     'changeSummary', v.change_summary
   ) INTO v_out
   FROM expense_versions v
@@ -1391,7 +1462,7 @@ BEGIN
       WHERE ep.expense_id = e.id AND ep.user_id = p_viewer
     ), 0),
     'participantCount', CASE WHEN e.status = 'deleted'
-      THEN jsonb_array_length(COALESCE(v.payload -> 'participants', '[]'::jsonb))
+      THEN jsonb_array_length(COALESCE(effective_expense_payload(e.id, e.current_version_no) -> 'participants', '[]'::jsonb))
       ELSE (SELECT count(*)::integer FROM expense_participants ep WHERE ep.expense_id = e.id)
     END
   ) INTO v_out
@@ -2418,9 +2489,11 @@ BEGIN
   WHERE id = p_expense_id
   FOR UPDATE;
 
-  SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
+  SELECT title, total_cents INTO v_title, v_total_cents
   FROM expense_versions
   WHERE expense_id = p_expense_id AND version_no = v_version_no;
+
+  v_payload := effective_expense_payload(p_expense_id, v_version_no);
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
     SELECT 1
@@ -2477,10 +2550,6 @@ BEGIN
   END;
 
   v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
-  IF v_materialized IS DISTINCT FROM v_payload THEN
-    UPDATE expense_versions SET payload = v_materialized
-    WHERE expense_id = p_expense_id AND version_no = v_version_no;
-  END IF;
 
   -- Shared-history latch: the restored expense becomes visible to more than
   -- one user when a second accepted member can read it or the payload names
@@ -3086,7 +3155,7 @@ BEGIN
       WHERE e.group_id = p_group_id
         AND EXISTS (
           SELECT 1
-          FROM jsonb_array_elements(COALESCE(ev.payload->'participants', '[]'::jsonb)) AS pp(p)
+          FROM jsonb_array_elements(COALESCE(effective_expense_payload(e.id, e.current_version_no)->'participants', '[]'::jsonb)) AS pp(p)
           WHERE pp.p->>'kind' = 'user'
             AND pp.p ? 'userId'
             AND pp.p->>'userId' = v_actor::text
@@ -4020,9 +4089,6 @@ DECLARE
   v_guest_id uuid;
   v_rec RECORD;
   v_cred RECORD;
-  v_payload jsonb;
-  v_new_participants jsonb;
-  v_new_payload jsonb;
   v_ledger_version bigint;
   v_event_id bigint;
 BEGIN
@@ -4107,7 +4173,8 @@ BEGIN
 
   UPDATE guests
   SET claimed_by = v_actor,
-      claimed_at = now()
+      claimed_at = now(),
+      claimed_version_no = v_rec.current_version_no
   WHERE id = v_rec.id;
 
   UPDATE expense_participants
@@ -4115,27 +4182,6 @@ BEGIN
       user_id = v_actor,
       guest_id = NULL
   WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id;
-
-  SELECT payload INTO v_payload
-  FROM expense_versions
-  WHERE expense_id = v_rec.expense_id AND version_no = v_rec.current_version_no;
-
-  SELECT jsonb_agg(
-    CASE
-      WHEN p->>'kind' = 'guest' AND p->>'guestId' = v_rec.id::text
-      THEN jsonb_build_object('kind', 'user', 'userId', v_actor)
-      ELSE p
-    END
-    ORDER BY ord
-  )
-  INTO v_new_participants
-  FROM jsonb_array_elements(v_payload->'participants') WITH ORDINALITY AS t(p, ord);
-
-  v_new_payload := jsonb_set(v_payload, '{participants}', v_new_participants);
-
-  UPDATE expense_versions
-  SET payload = v_new_payload
-  WHERE expense_id = v_rec.expense_id AND version_no = v_rec.current_version_no;
 
   INSERT INTO group_members (group_id, user_id, status, accepted_at)
   VALUES (v_rec.group_id, v_actor, 'accepted', now())

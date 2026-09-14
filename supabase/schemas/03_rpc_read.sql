@@ -100,7 +100,7 @@ BEGIN
     'totalCents', v.total_cents,
     'serviceFeeBasisPoints', v.service_fee_bps,
     'fixedFeeCents', v.fixed_fee_cents,
-    'payload', v.payload,
+    'payload', effective_expense_payload(v.expense_id, v.version_no),
     'changeSummary', v.change_summary
   ) INTO v_out
   FROM expense_versions v
@@ -137,7 +137,7 @@ BEGIN
       WHERE ep.expense_id = e.id AND ep.user_id = p_viewer
     ), 0),
     'participantCount', CASE WHEN e.status = 'deleted'
-      THEN jsonb_array_length(COALESCE(v.payload -> 'participants', '[]'::jsonb))
+      THEN jsonb_array_length(COALESCE(effective_expense_payload(e.id, e.current_version_no) -> 'participants', '[]'::jsonb))
       ELSE (SELECT count(*)::integer FROM expense_participants ep WHERE ep.expense_id = e.id)
     END
   ) INTO v_out

@@ -1691,3 +1691,315 @@ describe("P7 decline metadata and restoration denial", () => {
     expect(balances).toHaveLength(0);
   });
 });
+
+describe.skipIf(!isIntegrationTestReady)("P9 expense operation authorization matrix", () => {
+  async function captureState(groupId: string, expenseId: string) {
+    return await withPg(async (pg) => {
+      const expense = (await pg.query("SELECT id, status, current_version_no, deleted_at, deleted_by FROM public.expenses WHERE id = $1", [expenseId])).rows[0];
+      const versions = (await pg.query("SELECT version_no, payload FROM public.expense_versions WHERE expense_id = $1 ORDER BY version_no", [expenseId])).rows;
+      const balances = (await pg.query("SELECT kind, participant_id, net_cents FROM public.group_balances WHERE group_id = $1 ORDER BY kind, participant_id", [groupId])).rows;
+      const events = (await pg.query("SELECT id, kind, payload FROM public.group_events WHERE group_id = $1 ORDER BY id", [groupId])).rows;
+      const members = (await pg.query("SELECT user_id, status FROM public.group_members WHERE group_id = $1 ORDER BY user_id", [groupId])).rows;
+      return { expense, versions, balances, events, members };
+    });
+  }
+
+  it("unknown expense returns expense_not_found on edit, delete, and restore", async () => {
+    const unknownId = crypto.randomUUID();
+    const [u] = await createTestUsers(1);
+    const client = authenticateAs(u);
+
+    expect(
+      await expectRpcError(
+        callRpc(client, "edit_expense", editArgs(unknownId, 1, 1000, equalSplitPayload([u.id], 1000))),
+      ),
+    ).toBe("expense_not_found");
+
+    expect(
+      await expectRpcError(
+        callRpc(client, "delete_expense", { p_expense_id: unknownId }),
+      ),
+    ).toBe("expense_not_found");
+
+    expect(
+      await expectRpcError(
+        callRpc(client, "restore_expense", { p_expense_id: unknownId }),
+      ),
+    ).toBe("expense_not_found");
+  });
+
+  it("enforces complete authorization matrix across all actor rows for active and deleted expense", async () => {
+    const [creator, participant, acceptedNonParty, invitedMember, outsiderUser] =
+      await createTestUsers(5);
+
+    const cCreator = authenticateAs(creator);
+    const cParticipant = authenticateAs(participant);
+    const cNonParty = authenticateAs(acceptedNonParty);
+    const cInvited = authenticateAs(invitedMember);
+    const cOutsider = authenticateAs(outsiderUser);
+
+    // Setup group with creator, participant, acceptedNonParty
+    const groupId = await createGroupWithMembers(creator, [participant, acceptedNonParty]);
+
+    // Add invited member
+    await callRpc(cCreator, "invite_member", { p_group_id: groupId, p_email: invitedMember.email });
+
+    // Active expense with creator and participant (50/50 split)
+    const activeExpense = (await createExpense(creator, {
+      groupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([creator.id, participant.id], 2000),
+    })) as unknown as ExpenseAck;
+    const activeId = activeExpense.expenseId;
+
+    // --- Active expense authorization tests ---
+    // 1. Accepted non-party -> not_expense_party
+    const stateBeforeNonPartyEdit = await captureState(groupId, activeId);
+    expect(
+      await expectRpcError(
+        callRpc(cNonParty, "edit_expense", editArgs(activeId, 1, 2000, equalSplitPayload([creator.id, participant.id], 2000))),
+      ),
+    ).toBe("not_expense_party");
+    expect(await captureState(groupId, activeId)).toEqual(stateBeforeNonPartyEdit);
+
+    const stateBeforeNonPartyDelete = await captureState(groupId, activeId);
+    expect(
+      await expectRpcError(
+        callRpc(cNonParty, "delete_expense", { p_expense_id: activeId }),
+      ),
+    ).toBe("not_expense_party");
+    expect(await captureState(groupId, activeId)).toEqual(stateBeforeNonPartyDelete);
+
+    // 2. Invited member -> not_a_member
+    const stateBeforeInvitedEdit = await captureState(groupId, activeId);
+    expect(
+      await expectRpcError(
+        callRpc(cInvited, "edit_expense", editArgs(activeId, 1, 2000, equalSplitPayload([creator.id, participant.id], 2000))),
+      ),
+    ).toBe("not_a_member");
+    expect(await captureState(groupId, activeId)).toEqual(stateBeforeInvitedEdit);
+
+    expect(
+      await expectRpcError(
+        callRpc(cInvited, "delete_expense", { p_expense_id: activeId }),
+      ),
+    ).toBe("not_a_member");
+
+    // 3. Outsider -> not_a_member
+    expect(
+      await expectRpcError(
+        callRpc(cOutsider, "edit_expense", editArgs(activeId, 1, 2000, equalSplitPayload([creator.id, participant.id], 2000))),
+      ),
+    ).toBe("not_a_member");
+    expect(
+      await expectRpcError(
+        callRpc(cOutsider, "delete_expense", { p_expense_id: activeId }),
+      ),
+    ).toBe("not_a_member");
+
+    // 4. Current non-creator participant -> allowed to edit
+    const partEdit = await callRpc(
+      cParticipant,
+      "edit_expense",
+      editArgs(activeId, 1, 2000, equalSplitPayload([creator.id, participant.id], 2000)),
+    );
+    expect(partEdit.error).toBeNull();
+    expect((partEdit.data as ExpenseAck).versionNo).toBe(2);
+
+    // 5. Creator -> allowed to edit (now expected version is 2)
+    const creatorEdit = await callRpc(
+      cCreator,
+      "edit_expense",
+      editArgs(activeId, 2, 2000, equalSplitPayload([creator.id, participant.id], 2000)),
+    );
+    expect(creatorEdit.error).toBeNull();
+    expect((creatorEdit.data as ExpenseAck).versionNo).toBe(3);
+
+    // --- Deleted expense & restore tests ---
+    // Non-creator participant deletes expense
+    const partDel = await callRpc(cParticipant, "delete_expense", { p_expense_id: activeId });
+    expect(partDel.error).toBeNull();
+
+    // Now activeId is deleted. Test restore authorization:
+    // Non-party -> not_expense_party
+    const stateBeforeNonPartyRestore = await captureState(groupId, activeId);
+    expect(
+      await expectRpcError(
+        callRpc(cNonParty, "restore_expense", { p_expense_id: activeId }),
+      ),
+    ).toBe("not_expense_party");
+    expect(await captureState(groupId, activeId)).toEqual(stateBeforeNonPartyRestore);
+
+    // Invited -> not_a_member
+    expect(
+      await expectRpcError(
+        callRpc(cInvited, "restore_expense", { p_expense_id: activeId }),
+      ),
+    ).toBe("not_a_member");
+
+    // Outsider -> not_a_member
+    expect(
+      await expectRpcError(
+        callRpc(cOutsider, "restore_expense", { p_expense_id: activeId }),
+      ),
+    ).toBe("not_a_member");
+
+    // Non-creator participant -> allowed to restore!
+    const partRestore = await callRpc(cParticipant, "restore_expense", { p_expense_id: activeId });
+    expect(partRestore.error).toBeNull();
+
+    // Creator deletes again
+    const creatorDel = await callRpc(cCreator, "delete_expense", { p_expense_id: activeId });
+    expect(creatorDel.error).toBeNull();
+
+    // Creator restores
+    const creatorRestore = await callRpc(cCreator, "restore_expense", { p_expense_id: activeId });
+    expect(creatorRestore.error).toBeNull();
+  });
+
+  it("enforces not_a_member on departed creator and departed participant", async () => {
+    const [creator, participant] = await createTestUsers(2);
+    const cCreator = authenticateAs(creator);
+    const cParticipant = authenticateAs(participant);
+
+    const groupId = await createGroupWithMembers(creator, [participant]);
+    const exp = (await createExpense(creator, {
+      groupId,
+      totalCents: 2000,
+      payload: equalSplitPayload([creator.id, participant.id], 2000),
+    })) as unknown as ExpenseAck;
+
+    // Simulate departed participant by removing their membership row
+    await withPg(async (pg) => {
+      await pg.query("DELETE FROM public.group_members WHERE group_id = $1 AND user_id = $2", [
+        groupId,
+        participant.id,
+      ]);
+    });
+
+    // Departed participant denied on edit, delete, restore
+    expect(
+      await expectRpcError(
+        callRpc(cParticipant, "edit_expense", editArgs(exp.expenseId, 1, 2000, equalSplitPayload([creator.id], 2000))),
+      ),
+    ).toBe("not_a_member");
+
+    expect(
+      await expectRpcError(
+        callRpc(cParticipant, "delete_expense", { p_expense_id: exp.expenseId }),
+      ),
+    ).toBe("not_a_member");
+
+    expect(
+      await expectRpcError(
+        callRpc(cParticipant, "restore_expense", { p_expense_id: exp.expenseId }),
+      ),
+    ).toBe("not_a_member");
+
+    // Simulate departed creator by removing creator membership row
+    await withPg(async (pg) => {
+      await pg.query("DELETE FROM public.group_members WHERE group_id = $1 AND user_id = $2", [
+        groupId,
+        creator.id,
+      ]);
+    });
+
+    // Departed creator denied on edit, delete, restore
+    expect(
+      await expectRpcError(
+        callRpc(cCreator, "edit_expense", editArgs(exp.expenseId, 1, 2000, equalSplitPayload([creator.id], 2000))),
+      ),
+    ).toBe("not_a_member");
+
+    expect(
+      await expectRpcError(
+        callRpc(cCreator, "delete_expense", { p_expense_id: exp.expenseId }),
+      ),
+    ).toBe("not_a_member");
+
+    expect(
+      await expectRpcError(
+        callRpc(cCreator, "restore_expense", { p_expense_id: exp.expenseId }),
+      ),
+    ).toBe("not_a_member");
+  });
+
+  it("claimed guest authorization: party rights on active and restore, revoked when removed", async () => {
+    const [creator, claimant] = await createTestUsers(2);
+    const cCreator = authenticateAs(creator);
+    const cClaimant = authenticateAs(claimant);
+    const groupId = await createGroupWithMembers(creator, [claimant]);
+
+    // Create expense with guest
+    const exp = (await createExpense(creator, {
+      groupId,
+      totalCents: 2000,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: creator.id },
+          { kind: "guest", guestId: null, displayName: "Guest Claim Matrix" },
+        ],
+        shares: [1000, 1000],
+        payers: [{ participantIndex: 0, amountCents: 2000 }],
+        itemAssignments: null,
+      },
+    })) as unknown as ExpenseAck;
+
+    const detailRes = await callRpc(cCreator, "get_expense", { p_expense_id: exp.expenseId });
+    const detail = detailRes.data as ExpenseDetail;
+    const guestId = detail.current.payload.participants[1].guestId!;
+
+    // Before claim: claimant has accepted membership in group, but is not an expense party
+    expect(
+      await expectRpcError(
+        callRpc(cClaimant, "edit_expense", editArgs(exp.expenseId, 1, 2000, detail.current.payload)),
+      ),
+    ).toBe("not_expense_party");
+
+    expect(
+      await expectRpcError(
+        callRpc(cClaimant, "delete_expense", { p_expense_id: exp.expenseId }),
+      ),
+    ).toBe("not_expense_party");
+
+    // Claimant claims guest
+    const tokenRes = await callRpc(cCreator, "create_guest_claim_token", { p_guest_id: guestId });
+    const token = (tokenRes.data as { token: string }).token;
+    await callRpc(cClaimant, "claim_guest", { p_token: token });
+
+    // Now claimant is recognized on the effective current version (v1)!
+    // Can edit
+    const editRes = await callRpc(cClaimant, "edit_expense", {
+      p_expense_id: exp.expenseId,
+      p_expected_version_no: 1,
+      p_occurred_on: "2026-09-01",
+      p_title: "Edited By Claimed Guest",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 2000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: creator.id },
+          { kind: "user", userId: claimant.id },
+        ],
+        shares: [1000, 1000],
+        payers: [{ participantIndex: 0, amountCents: 2000 }],
+        itemAssignments: null,
+      },
+    });
+    expect(editRes.error).toBeNull();
+    expect((editRes.data as ExpenseAck).versionNo).toBe(2);
+
+    // Can delete
+    const delRes = await callRpc(cClaimant, "delete_expense", { p_expense_id: exp.expenseId });
+    expect(delRes.error).toBeNull();
+
+    // Can restore (identity from effective current version v2)
+    const restoreRes = await callRpc(cClaimant, "restore_expense", { p_expense_id: exp.expenseId });
+    expect(restoreRes.error).toBeNull();
+  });
+});
