@@ -20,7 +20,7 @@ npm run test:watch      # watch mode
 Test the ledger RPC layer against a real local Supabase instance. Verify membership checks, optimistic concurrency, balance recomputation, and constraint enforcement. The suites live next to the code they exercise, in `src/lib/ledger/`: `rpc-read`, `rpc-expense`, `rpc-settlement`, `rpc-group`, `rpc-guest`, `rpc-nudge`, and `transfers` (SQL↔TypeScript parity for `group_transfers`/`transfersFromBalances` over 200 random ledgers) — 131 tests in total. SQL behavior is covered entirely by these TypeScript suites.
 
 ```bash
-supabase db reset
+supabase db reset --local
 npm run test:integration
 ```
 
@@ -29,6 +29,10 @@ npm run test:integration
 **What NOT to test here:** UI rendering, browser navigation, multi-step user journeys.
 
 Suites use `src/test/integration-helpers.ts` — `createTestUser`, `createTestUsers`, `authenticateAs`, `createGroup`, `createGroupWithMembers`, `createExpense`, plus `withPg` for direct `pg` setup (seeding balances, asserting rows) and `expectRpcError` for error-code assertions. Wrap suites in `describe.skipIf(!isIntegrationTestReady)` so they skip when env vars are absent.
+
+### Migration verification
+
+The ordered files in `supabase/migrations/` are the database source of truth. `supabase db reset --local` destroys the local database and replays that directory in order. Migration changes must pass the fresh replay, trusted-epoch comparison, generated-type equality, integration contract suite, and database security invariant checks in `.github/workflows/migrations.yml`. Do not edit, rename, or delete a migration that has landed on `main` or was applied to a shared database.
 
 ## Synthetic Tests (E2E)
 

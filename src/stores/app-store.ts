@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { createIdbStorage } from "@/lib/idb-storage";
+import { getSupabaseStorageNamespace } from "@/lib/supabase/client";
 import { type LedgerErrorCode } from "@/lib/sync/errors";
 import type {
   Bootstrap,
@@ -32,6 +33,8 @@ import {
   summaryFromDetail,
   upsertSummaries,
 } from "./app-store-merge";
+
+const STORAGE_NAMESPACE = getSupabaseStorageNamespace();
 
 export interface ExpenseListState {
   ids: string[];
@@ -643,8 +646,8 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: "dividimos-app",
-      storage: createJSONStorage(() => createIdbStorage("dividimos", "app")),
+      name: `dividimos-app:${STORAGE_NAMESPACE}`,
+      storage: createJSONStorage(() => createIdbStorage(`dividimos:${STORAGE_NAMESPACE}`, "app")),
       partialize: (state) => ({
         me: state.me,
         groups: state.groups,

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { getSupabaseStorageNamespace } from "@/lib/supabase/client";
 import { allocateByBasisPoints, allocateByWeights, allocateEvenly, computeServiceFeeCents } from "@/lib/expense-money";
 import type { ExpenseAllocationIssue } from "@/lib/expense-money";
 import { divisionForItem, recomputeDivisionShares } from "@/lib/item-division";
@@ -17,6 +18,8 @@ import type {
   User,
 } from "@/types";
 import type { ExpenseDetail, GroupMember, UserProfile } from "@/types/ledger";
+
+const STORAGE_NAMESPACE = getSupabaseStorageNamespace();
 
 export interface ExpenseSplit {
   id: string;
@@ -1271,7 +1274,7 @@ export const useBillStore = create<ExpenseState>()(
   },
     }),
     {
-      name: "dividimos-draft",
+      name: `dividimos-draft:${STORAGE_NAMESPACE}`,
       storage: createJSONStorage(() => localStorage),
       version: 2,
       migrate: (persistedState) => {

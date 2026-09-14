@@ -176,7 +176,7 @@
       "mode": "100644"
     },
     "supabase/migrations/20260914001000_group_membership_rpcs.sql": {
-      "blob": "69f8927bfdbd5123c58aeab0e513af72f66ebc98",
+      "blob": "69af1c5292ae2bd2ad42bb1e6f50447abdee0801",
       "mode": "100644"
     },
     "supabase/migrations/20260914001100_invite_link_and_profile_rpcs.sql": {
@@ -184,7 +184,7 @@
       "mode": "100644"
     },
     "supabase/migrations/20260914001200_expense_rpcs.sql": {
-      "blob": "7541f1b7870662bfb9d47c77e29c67c6e66b9dff",
+      "blob": "dbf5f4d7022bd2804dff901b5a668bcc6c3b4910",
       "mode": "100644"
     },
     "supabase/migrations/20260914001300_settlement_and_nudge_rpcs.sql": {

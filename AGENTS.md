@@ -73,7 +73,7 @@ Keep domain rules separate from delivery mechanisms:
 - Next.js API routes and Supabase RPC functions translate requests, enforce atomicity, and persist data.
 - Pure domain math — currency conversion, debt simplification, Pix EMV encoding — lives in `src/lib` functions with no I/O.
 - Zustand stores and React components present state and collect intent; they do not own business rules.
-- Declarative SQL schemas (`supabase/schemas/`) persist and query data; `supabase/schema.sql` is their generated current snapshot, while `supabase/migrations/` contains the frozen applied baseline and forward migrations. Access is RPC-only.
+- SQL migrations under `supabase/migrations/` persist and query data; they are the database source of truth and include tables, constraints, RPCs, grants, realtime, and triggers. Access is RPC-only.
 
 Do not create generic `manager`, `processor`, `util`, or `service` packages when a domain name would be clearer.
 
@@ -94,16 +94,16 @@ Do not create generic `manager`, `processor`, `util`, or `service` packages when
 
 ## Backend / Data Rules
 
-- Every table has RLS enabled with zero policies and no `anon`/`authenticated` grants. Every read and write is a `SECURITY DEFINER` RPC that checks membership first (`supabase/schemas/03_rpc_read.sql` through `08_rpc_guest.sql`, `11_vendor_charges.sql`, `14_rpc_nudge.sql`).
+- Every table has RLS enabled with zero policies and no `anon`/`authenticated` grants. Every read and write is a `SECURITY DEFINER` RPC that checks membership first in the ordered migration files under `supabase/migrations/`.
 - `expense_versions` (one row per edit, with `payload` and `change_summary`) and `settlements` are the only financial facts. `group_balances` is a projection: one row per `(group, kind, participant)` with a signed `net_cents` (positive = the participant is owed). Guests are participants with `kind = 'guest'` and can carry a balance until claimed.
 - `group_balances` is never written directly. Every mutating ledger RPC calls `recompute_group_balances(group)` inside the same transaction, recomputing the projection from the facts.
 - Transfers are minimized at read time: `group_transfers(group)` in SQL and `transfersFromBalances` in TypeScript implement the same greedy two-pointer over the balances (parity-tested over 200 random ledgers). Never store transfer rows or a minimized graph.
 - Expense lifecycle is `active` ⇄ `deleted` (soft delete + version history). There is no draft state. Optimistic concurrency: mutations send `expected_version_no` and the RPC rejects a mismatch with `stale_version`.
 - The client is local-first: screens read the Zustand store (`src/stores/app-store.ts`, persisted to IndexedDB via `src/lib/idb-storage.ts`) and never query Supabase. All network lives in `src/lib/sync/`. Mutations patch the store optimistically, roll back per entry on failure, and reconcile with `refreshGroup`.
 - Realtime is broadcast-only: RPCs `realtime.send` to private `group:<id>` / `chat:<id>` topics authorized by a policy on `realtime.messages`. No tables in the publication.
-- The schema is declarative: edit `supabase/schemas/*.sql`, run `./scripts/build-baseline.sh` to regenerate `supabase/schema.sql`, generate and review a forward migration with `supabase db diff` while the local stack is stopped, and commit both. Never hand-edit or regenerate `supabase/migrations/20260906000000_ledger_baseline.sql`; CI checks snapshot freshness, declaration parity, and migration history.
+- Migrations are the database source of truth. Add a new timestamped file under `supabase/migrations/`, write complete definitions, and replay the committed history with `supabase db reset --local`. Never edit, rename, or delete a migration that has landed on `main` or was applied to a shared database. The reset manifest and epoch verifier authorize the reviewed initial sequence replacement; CI checks fresh replay, trusted-epoch equality, generated types, integration behavior, and database security invariants.
 - The per-expense cap is `MAX_EXPENSE_CENTS = 99_999_999` cents (`src/lib/expense-money.ts` is the sole owner of this cap and the fee formula). Service fee is integer basis points, computed as nonnegative half-up rounding of `subtotal * basisPoints / 10_000`, identically in TypeScript and SQL. Persisted item/share/payer/fee equality is exact — never a tolerance, a client-side re-derivation the RPC then overwrites, or a second rounding convention.
-- Schema changes with semantic logic must be covered by integration tests (see Tests).
+- Migration changes with semantic logic must be covered by integration tests (see Tests).
 
 The remote Supabase instance has meaningful network latency (~1-5s per round trip from Brazil). Every unnecessary query is felt by the user. These rules are non-negotiable.
 
@@ -125,7 +125,7 @@ Write tests when they reduce real risk.
 
 Tests should verify behavior, not implementation details. Prefer a few clear tests over many fragile ones. Tests must not depend on order or shared mutable state.
 
-**Schema changes with semantic logic must be covered by integration tests.** Any change to `supabase/schemas/*.sql` that adds or modifies an RPC, realtime topic, trigger, or constraint needs behavior coverage in `*.integration.test.ts` — happy path, denial for non-members, and the edge cases the SQL specifically guards (locks, validation, membership checks). The coverage can extend an existing file under `src/lib/ledger/` or live in a new one; what matters is that an integration test exercises the change. Pure structural changes (adding an index, renaming a column with no semantic change) are exempt. The baseline-replay CI job only proves the SQL applies cleanly and the baseline is fresh; it does not exercise behavior.
+- **Migration changes with semantic logic must be covered by integration tests.** Any new or changed RPC, realtime topic, trigger, or constraint in `supabase/migrations/` needs behavior coverage in `*.integration.test.ts` — happy path, denial for non-members, and the edge cases the SQL specifically guards. Fresh replay and security checks do not replace behavior tests.
 
 ## Pull Requests
 
