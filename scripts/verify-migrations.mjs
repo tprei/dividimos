@@ -63,10 +63,16 @@ const DM_MEMBER_COUNT_REPAIR = {
   dropsBy: 1,
   note: "intentional upgrade: 20260913010200 deletes exactly the seeded noncanonical DM invitation; on bases that already enforce the canonical pair nothing is seeded and the count is stable",
 };
+const EXCLUSION_TABLE_INTRODUCED = {
+  label: "db:count:public.group_member_exclusions",
+  after: 0,
+  note: "intentional upgrade: 20260913010250 introduces group_member_exclusions; bases predating it cannot seed the table, so its count label appears empty after the upgrade",
+};
 export const INTENTIONAL_UPGRADES = new Map([
   [LOOKUP_FLIP.label, LOOKUP_FLIP],
   [DM_NONCANONICAL_REPAIR.label, DM_NONCANONICAL_REPAIR],
   [DM_MEMBER_COUNT_REPAIR.label, DM_MEMBER_COUNT_REPAIR],
+  [EXCLUSION_TABLE_INTRODUCED.label, EXCLUSION_TABLE_INTRODUCED],
 ]);
 const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 // 16_rpc_push.sql exposes only claim_push_subscription, which is granted to
@@ -1060,6 +1066,11 @@ export function compareFixtureObservations(expected, actual) {
   }
   for (const [label, value] of actualByLabel) {
     if (!expectedByLabel.has(label)) {
+      // A reviewed migration may introduce an observable that cannot exist
+      // on the base (a new table's count); the entry pins the only value
+      // the upgrade may surface for it.
+      const upgrade = INTENTIONAL_UPGRADES.get(label);
+      if (upgrade !== undefined && isDeepStrictEqual(value, upgrade.after)) continue;
       failures.push(`${label}: unexpected after upgrade, after=${JSON.stringify(value)}`);
     }
   }

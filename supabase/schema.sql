@@ -72,6 +72,14 @@ CREATE TABLE public.group_members (
 );
 CREATE INDEX group_members_user_idx ON public.group_members (user_id) WHERE status = 'accepted';
 
+CREATE TABLE public.group_member_exclusions (
+  group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  excluded_by uuid NOT NULL REFERENCES public.users(id),
+  excluded_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (group_id, user_id)
+);
+
 CREATE TABLE public.group_invite_links (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
@@ -240,6 +248,7 @@ ALTER TABLE public.group_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversation_reads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.group_member_exclusions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guest_credentials.claim_tokens ENABLE ROW LEVEL SECURITY;
 
 -- ---- 02_functions_internal.sql ----
@@ -1425,6 +1434,56 @@ DECLARE
   v_out jsonb;
   v_status public.member_status;
 BEGIN
+  SELECT status INTO v_status
+  FROM group_members
+  WHERE group_id = p_group_id AND user_id = p_viewer;
+
+  -- An invited user has not consented yet: they see who invited them and
+  -- nothing about the group's money or conversation.
+  IF v_status = 'invited' THEN
+    RETURN (
+      SELECT jsonb_build_object(
+        'group', jsonb_build_object(
+          'id', g.id,
+          'kind', g.kind,
+          'name', g.name,
+          'creatorId', g.creator_id,
+          'dmUserA', g.dm_user_a,
+          'dmUserB', g.dm_user_b,
+          'ledgerVersion', 0,
+          'createdAt', to_jsonb(g.created_at)
+        ),
+        'members', COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'groupId', gm.group_id,
+            'userId', gm.user_id,
+            'status', gm.status,
+            'invitedBy', gm.invited_by,
+            'acceptedAt', to_jsonb(gm.accepted_at),
+            'user', COALESCE(ledger_user_profile_json(gm.user_id), 'null'::jsonb)
+          ) ORDER BY gm.created_at, gm.user_id)
+          FROM group_members gm
+          WHERE gm.group_id = g.id
+            AND (gm.user_id = p_viewer OR gm.user_id = (
+              SELECT invited_by FROM group_members WHERE group_id = p_group_id AND user_id = p_viewer
+            ))
+        ), '[]'::jsonb),
+        'balances', '[]'::jsonb,
+        'guests', '[]'::jsonb,
+        'settlements', '[]'::jsonb,
+        'pairwiseEdges', '[]'::jsonb,
+        'recentExpenses', '[]'::jsonb,
+        'expenseCount', 0,
+        'unreadCount', 0,
+        'lastMessage', 'null'::jsonb,
+        'lastEventId', 0,
+        'lastActivityAt', 'null'::jsonb
+      )
+      FROM groups g
+      WHERE g.id = p_group_id
+    );
+  END IF;
+
   SELECT jsonb_build_object(
     'group', jsonb_build_object(
       'id', g.id,
@@ -1539,35 +1598,6 @@ BEGIN
   FROM groups g
   WHERE g.id = p_group_id;
 
-  SELECT status INTO v_status
-  FROM group_members
-  WHERE group_id = p_group_id AND user_id = p_viewer;
-
-  -- An invited user has not consented yet: they see who invited them and
-  -- nothing about the group's money or conversation.
-  IF v_status = 'invited' THEN
-    v_out := v_out
-      || jsonb_build_object(
-           'members', (
-             SELECT COALESCE(jsonb_agg(m ORDER BY m ->> 'userId'), '[]'::jsonb)
-             FROM jsonb_array_elements(v_out -> 'members') AS t(m)
-             WHERE m ->> 'userId' IN (
-               p_viewer::text,
-               (SELECT invited_by::text FROM group_members
-                WHERE group_id = p_group_id AND user_id = p_viewer)
-             )
-           ),
-           'balances', '[]'::jsonb,
-           'guests', '[]'::jsonb,
-           'settlements', '[]'::jsonb,
-           'pairwiseEdges', '[]'::jsonb,
-           'recentExpenses', '[]'::jsonb,
-           'expenseCount', 0,
-           'unreadCount', 0,
-           'lastMessage', 'null'::jsonb
-        );
-  END IF;
-
   RETURN v_out;
 END;
 $$;
@@ -1582,7 +1612,7 @@ BEGIN
   RETURN jsonb_build_object(
     'me', ledger_me_json(v_user_id),
     'groups', COALESCE((
-      SELECT jsonb_agg(snap ORDER BY (snap ->> 'lastActivityAt')::timestamptz DESC)
+      SELECT jsonb_agg(snap ORDER BY (snap ->> 'lastActivityAt')::timestamptz DESC NULLS LAST)
       FROM (
         SELECT ledger_group_snapshot_json(gm.group_id, v_user_id) AS snap
         FROM group_members gm
@@ -2756,6 +2786,7 @@ CREATE FUNCTION public.invite_member(p_group_id uuid, p_user_id uuid) RETURNS js
 AS $$
 DECLARE
   v_actor uuid;
+  v_creator_id uuid;
   v_status member_status;
   v_ledger_version bigint;
   v_event_id bigint;
@@ -2772,6 +2803,16 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'user_not_found';
+  END IF;
+
+  SELECT creator_id, ledger_version INTO v_creator_id, v_ledger_version FROM groups WHERE id = p_group_id;
+
+  IF EXISTS (SELECT 1 FROM group_member_exclusions WHERE group_id = p_group_id AND user_id = p_user_id) THEN
+    IF v_actor = v_creator_id THEN
+      DELETE FROM group_member_exclusions WHERE group_id = p_group_id AND user_id = p_user_id;
+    ELSE
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+    END IF;
   END IF;
 
   SELECT status INTO v_status FROM group_members WHERE group_id = p_group_id AND user_id = p_user_id;
@@ -2830,6 +2871,13 @@ BEGIN
 
   PERFORM lock_group(p_group_id);
 
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = p_group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
+
   SELECT status, invited_by INTO v_status, v_invited_by FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor
   FOR UPDATE;
@@ -2887,6 +2935,13 @@ BEGIN
   END IF;
 
   PERFORM lock_group(p_group_id);
+
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = p_group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
 
   SELECT status, invited_by INTO v_status, v_invited_by FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor
@@ -3050,6 +3105,12 @@ BEGIN
   DELETE FROM group_members
   WHERE group_id = p_group_id AND user_id = p_user_id;
 
+  INSERT INTO group_member_exclusions (group_id, user_id, excluded_by, excluded_at)
+  VALUES (p_group_id, p_user_id, v_actor, now())
+  ON CONFLICT (group_id, user_id)
+  DO UPDATE SET excluded_by = EXCLUDED.excluded_by,
+                excluded_at = EXCLUDED.excluded_at;
+
   v_event_id := emit_event(
     p_group_id,
     'member_removed',
@@ -3138,6 +3199,15 @@ BEGIN
 
   IF v_group_id IS NOT NULL THEN
     v_created := true;
+    PERFORM lock_group(v_group_id);
+
+    IF EXISTS (
+      SELECT 1 FROM group_member_exclusions
+      WHERE group_id = v_group_id AND user_id IN (v_actor, p_user_id)
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+    END IF;
+
     INSERT INTO group_members (group_id, user_id, status, accepted_at)
     VALUES (v_group_id, v_actor, 'accepted', now());
 
@@ -3158,6 +3228,15 @@ BEGIN
     SELECT id, ledger_version INTO v_group_id, v_ledger_version
     FROM groups
     WHERE dm_user_a = v_user_a AND dm_user_b = v_user_b;
+
+    PERFORM lock_group(v_group_id);
+
+    IF EXISTS (
+      SELECT 1 FROM group_member_exclusions
+      WHERE group_id = v_group_id AND user_id IN (v_actor, p_user_id)
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+    END IF;
   END IF;
 
   RETURN jsonb_build_object(
@@ -3346,6 +3425,13 @@ BEGIN
   END IF;
 
   PERFORM assert_dm_pair_allowed(v_link.group_id, v_actor);
+
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = v_link.group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
 
   SELECT status INTO v_status FROM group_members
   WHERE group_id = v_link.group_id AND user_id = v_actor
@@ -3861,6 +3947,13 @@ BEGIN
   END IF;
 
   PERFORM assert_dm_pair_allowed(v_rec.group_id, v_actor);
+
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = v_rec.group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
 
   UPDATE guests
   SET claimed_by = v_actor,

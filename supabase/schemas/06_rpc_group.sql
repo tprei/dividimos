@@ -89,6 +89,7 @@ CREATE FUNCTION public.invite_member(p_group_id uuid, p_user_id uuid) RETURNS js
 AS $$
 DECLARE
   v_actor uuid;
+  v_creator_id uuid;
   v_status member_status;
   v_ledger_version bigint;
   v_event_id bigint;
@@ -105,6 +106,16 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'user_not_found';
+  END IF;
+
+  SELECT creator_id, ledger_version INTO v_creator_id, v_ledger_version FROM groups WHERE id = p_group_id;
+
+  IF EXISTS (SELECT 1 FROM group_member_exclusions WHERE group_id = p_group_id AND user_id = p_user_id) THEN
+    IF v_actor = v_creator_id THEN
+      DELETE FROM group_member_exclusions WHERE group_id = p_group_id AND user_id = p_user_id;
+    ELSE
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+    END IF;
   END IF;
 
   SELECT status INTO v_status FROM group_members WHERE group_id = p_group_id AND user_id = p_user_id;
@@ -163,6 +174,13 @@ BEGIN
 
   PERFORM lock_group(p_group_id);
 
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = p_group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
+
   SELECT status, invited_by INTO v_status, v_invited_by FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor
   FOR UPDATE;
@@ -220,6 +238,13 @@ BEGIN
   END IF;
 
   PERFORM lock_group(p_group_id);
+
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = p_group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
 
   SELECT status, invited_by INTO v_status, v_invited_by FROM group_members
   WHERE group_id = p_group_id AND user_id = v_actor
@@ -383,6 +408,12 @@ BEGIN
   DELETE FROM group_members
   WHERE group_id = p_group_id AND user_id = p_user_id;
 
+  INSERT INTO group_member_exclusions (group_id, user_id, excluded_by, excluded_at)
+  VALUES (p_group_id, p_user_id, v_actor, now())
+  ON CONFLICT (group_id, user_id)
+  DO UPDATE SET excluded_by = EXCLUDED.excluded_by,
+                excluded_at = EXCLUDED.excluded_at;
+
   v_event_id := emit_event(
     p_group_id,
     'member_removed',
@@ -471,6 +502,15 @@ BEGIN
 
   IF v_group_id IS NOT NULL THEN
     v_created := true;
+    PERFORM lock_group(v_group_id);
+
+    IF EXISTS (
+      SELECT 1 FROM group_member_exclusions
+      WHERE group_id = v_group_id AND user_id IN (v_actor, p_user_id)
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+    END IF;
+
     INSERT INTO group_members (group_id, user_id, status, accepted_at)
     VALUES (v_group_id, v_actor, 'accepted', now());
 
@@ -491,6 +531,15 @@ BEGIN
     SELECT id, ledger_version INTO v_group_id, v_ledger_version
     FROM groups
     WHERE dm_user_a = v_user_a AND dm_user_b = v_user_b;
+
+    PERFORM lock_group(v_group_id);
+
+    IF EXISTS (
+      SELECT 1 FROM group_member_exclusions
+      WHERE group_id = v_group_id AND user_id IN (v_actor, p_user_id)
+    ) THEN
+      RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+    END IF;
   END IF;
 
   RETURN jsonb_build_object(
@@ -679,6 +728,13 @@ BEGIN
   END IF;
 
   PERFORM assert_dm_pair_allowed(v_link.group_id, v_actor);
+
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = v_link.group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
 
   SELECT status INTO v_status FROM group_members
   WHERE group_id = v_link.group_id AND user_id = v_actor

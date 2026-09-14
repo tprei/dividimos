@@ -965,6 +965,141 @@ describe.skipIf(!isIntegrationTestReady)(
       });
     });
 
+    describe("group_member_exclusions and member_excluded enforcement", () => {
+      it("remove_member writes/updates exclusion row, invite by other member fails, creator re-invite clears it", async () => {
+        const [creator, member, other] = await createTestUsers(3);
+        const cCreator = authenticateAs(creator);
+        const cMember = authenticateAs(member);
+        const cOther = authenticateAs(other);
+
+        const groupId = await createGroupWithMembers(creator, [member, other], "Exclusion Test Group");
+
+        // Creator removes member
+        const removeAck = await rpc<MutationAck>(cCreator, "remove_member", {
+          p_group_id: groupId,
+          p_user_id: member.id,
+        });
+        expect(removeAck.groupId).toBe(groupId);
+
+        // Assert exclusion row in DB
+        const exclusion = await withPg(async (pg) => {
+          const res = await pg.query<{ excluded_by: string; excluded_at: string }>(
+            "SELECT excluded_by, excluded_at FROM public.group_member_exclusions WHERE group_id = $1 AND user_id = $2",
+            [groupId, member.id],
+          );
+          return res.rows[0];
+        });
+        expect(exclusion).toBeDefined();
+        expect(exclusion?.excluded_by).toBe(creator.id);
+
+        // Other accepted member tries to invite the excluded member -> member_excluded
+        const otherInviteErr = await expectRpcError(
+          cOther.rpc("invite_member", {
+            p_group_id: groupId,
+            p_user_id: member.id,
+          }),
+        );
+        expect(otherInviteErr).toBe("member_excluded");
+
+        // Excluded user tries to accept invitation -> member_excluded
+        const acceptErr = await expectRpcError(
+          cMember.rpc("accept_invitation", {
+            p_group_id: groupId,
+          }),
+        );
+        expect(acceptErr).toBe("member_excluded");
+
+        // Excluded user tries to join via active invite link -> member_excluded
+        const link = await rpc<InviteLinkAck>(cCreator, "create_invite_link", {
+          p_group_id: groupId,
+        });
+        const joinErr = await expectRpcError(
+          cMember.rpc("join_via_link", {
+            p_token: link.token,
+          }),
+        );
+        expect(joinErr).toBe("member_excluded");
+
+        // Creator re-invites excluded user -> succeeds and atomically clears exclusion
+        const creatorInviteAck = await rpc<MutationAck>(cCreator, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: member.id,
+        });
+        expect(creatorInviteAck.groupId).toBe(groupId);
+
+        const exclusionAfter = await withPg(async (pg) => {
+          const res = await pg.query(
+            "SELECT 1 FROM public.group_member_exclusions WHERE group_id = $1 AND user_id = $2",
+            [groupId, member.id],
+          );
+          return res.rowCount;
+        });
+        expect(exclusionAfter).toBe(0);
+
+        // Member can now accept
+        const acceptAck = await rpc<MutationAck>(cMember, "accept_invitation", {
+          p_group_id: groupId,
+        });
+        expect(acceptAck.groupId).toBe(groupId);
+      });
+
+      it("leave_group and decline_invitation never write exclusion", async () => {
+        const [creator, member, invitee] = await createTestUsers(3);
+        const cCreator = authenticateAs(creator);
+        const cMember = authenticateAs(member);
+        const cInvitee = authenticateAs(invitee);
+
+        const groupId = await createGroupWithMembers(creator, [member], "Leave Group Exclusion");
+
+        // Member leaves voluntarily
+        await rpc(cMember, "leave_group", { p_group_id: groupId });
+        const leaverExclusion = await withPg(async (pg) => {
+          const res = await pg.query(
+            "SELECT 1 FROM public.group_member_exclusions WHERE group_id = $1 AND user_id = $2",
+            [groupId, member.id],
+          );
+          return res.rowCount;
+        });
+        expect(leaverExclusion).toBe(0);
+
+        // Invitee declines
+        await rpc(cCreator, "invite_member", { p_group_id: groupId, p_user_id: invitee.id });
+        await rpc(cInvitee, "decline_invitation", { p_group_id: groupId });
+        const declinerExclusion = await withPg(async (pg) => {
+          const res = await pg.query(
+            "SELECT 1 FROM public.group_member_exclusions WHERE group_id = $1 AND user_id = $2",
+            [groupId, invitee.id],
+          );
+          return res.rowCount;
+        });
+        expect(declinerExclusion).toBe(0);
+      });
+
+      it("get_or_create_dm rejects if exclusion exists on the DM group", async () => {
+        const [alice, bob] = await createTestUsers(2);
+        const cAlice = authenticateAs(alice);
+
+        const dm = await rpc<DmAck>(cAlice, "get_or_create_dm", {
+          p_user_id: bob.id,
+        });
+        expect(dm.groupId).toBeDefined();
+
+        // Seed an exclusion on this DM
+        await withPg(async (pg) => {
+          await pg.query(
+            "INSERT INTO public.group_member_exclusions (group_id, user_id, excluded_by) VALUES ($1, $2, $3)",
+            [dm.groupId, bob.id, alice.id],
+          );
+        });
+
+        // Reusing or calling get_or_create_dm now fails with member_excluded
+        const dmErr = await expectRpcError(
+          cAlice.rpc("get_or_create_dm", { p_user_id: bob.id }),
+        );
+        expect(dmErr).toBe("member_excluded");
+      });
+    });
+
     describe("expenses with a pending invitee", () => {
       it("splits with an invited member but refuses to settle with them", async () => {
         const [creator, invitee] = await createTestUsers(2);

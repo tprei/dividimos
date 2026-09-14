@@ -263,7 +263,7 @@ export interface GroupSnapshot {
   lastEventId: number;
   unreadCount: number;
   lastMessage: ChatLastMessage | null;
-  lastActivityAt: string;
+  lastActivityAt: string | null;
   expenseCount: number;
   pairwiseEdges: Transfer[];
 }

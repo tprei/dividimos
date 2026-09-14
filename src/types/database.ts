@@ -450,6 +450,49 @@ export type Database = {
           },
         ]
       }
+      group_member_exclusions: {
+        Row: {
+          excluded_at: string
+          excluded_by: string
+          group_id: string
+          user_id: string
+        }
+        Insert: {
+          excluded_at?: string
+          excluded_by: string
+          group_id: string
+          user_id: string
+        }
+        Update: {
+          excluded_at?: string
+          excluded_by?: string
+          group_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_member_exclusions_excluded_by_fkey"
+            columns: ["excluded_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_member_exclusions_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_member_exclusions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       group_members: {
         Row: {
           accepted_at: string | null
