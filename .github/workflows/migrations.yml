@@ -29,7 +29,7 @@ jobs:
         run: |
           merge_base=$(git merge-base "$BASE_SHA" HEAD)
           if git diff --name-only "$merge_base" HEAD -- \
-              supabase scripts/build-baseline.sh \
+              supabase \
               scripts/check-database-invariants.mjs \
               scripts/check-migration-history.mjs \
               scripts/check-migration-history.test.mjs \
@@ -119,12 +119,12 @@ jobs:
           path: verify-artifacts/fresh/catalog.json
           retention-days: 7
 
-  verify-upgrade:
-    name: Verify populated upgrade (base + new migrations)
+  verify-epoch:
+    name: Verify reviewed migration epoch
     needs: changes
     if: needs.changes.outputs.sql == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -147,89 +147,61 @@ jobs:
 
       - run: npm ci --ignore-scripts
 
-      - name: Upgrade a populated base database with HEAD's new migrations
+      - name: Verify the reviewed reset on independent databases
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          node scripts/verify-migrations.mjs upgrade \
+          node scripts/verify-migrations.mjs epoch \
             --base "refs/remotes/pr/base" --head HEAD \
-            --artifacts verify-artifacts/upgrade --keep
+            --trusted-main "$BASE_SHA" \
+            --artifacts verify-artifacts/epoch --keep
 
-
-      - name: Export the upgraded project endpoints
+      - name: Export the new epoch endpoints
         run: |
+          HEAD_DIR=$(cat verify-artifacts/epoch/project-dir-epoch-head.txt)
+          pushd "$HEAD_DIR" >/dev/null
+          status_json=$(supabase status --output json)
+          popd >/dev/null
           {
-            echo "UPGRADE_API_URL=$(jq -r .api_url verify-artifacts/upgrade/env.json)"
-            echo "UPGRADE_ANON_KEY=$(jq -r .anon_key verify-artifacts/upgrade/env.json)"
-            echo "UPGRADE_SERVICE_KEY=$(jq -r .service_role_key verify-artifacts/upgrade/env.json)"
-            echo "UPGRADE_DB_URL=$(jq -r .db_url verify-artifacts/upgrade/env.json)"
+            echo "NEXT_PUBLIC_SUPABASE_URL=$(jq -r .API_URL <<<"$status_json")"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(jq -r .ANON_KEY <<<"$status_json")"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(jq -r .SERVICE_ROLE_KEY <<<"$status_json")"
+            echo "SUPABASE_DB_URL=$(jq -r .DB_URL <<<"$status_json")"
           } >> "$GITHUB_ENV"
 
-      - name: Run the integration contract suite on the upgraded database
+      - name: Run the integration contract suite on the new epoch
         run: npm run test:integration
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ env.UPGRADE_API_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.UPGRADE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ env.UPGRADE_SERVICE_KEY }}
-          SUPABASE_DB_URL: ${{ env.UPGRADE_DB_URL }}
           PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
           RATE_LIMIT_DISABLED: "0"
           INTEGRATION_STRICT: "1"
 
-      - name: Assert database security invariants on the upgraded database
-        run: node scripts/check-database-invariants.mjs "$UPGRADE_DB_URL"
+      - name: Assert database security invariants on the new epoch
+        run: node scripts/check-database-invariants.mjs "$SUPABASE_DB_URL"
 
-      - name: Stop the upgraded project
+      - name: Stop the epoch projects
         if: always()
         run: |
-          if [ -f verify-artifacts/upgrade/project-dir.txt ]; then
-            supabase stop --no-backup \
-              --workdir "$(cat verify-artifacts/upgrade/project-dir.txt)"
-          fi
+          for role in base head; do
+            if [ -f "verify-artifacts/epoch/project-dir-epoch-$role.txt" ]; then
+              supabase stop --no-backup \
+                --workdir "$(cat "verify-artifacts/epoch/project-dir-epoch-$role.txt")"
+            fi
+          done
 
-      - name: Upload upgrade verification artifacts
+      - name: Upload epoch verification artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: verification-upgrade
-          # env.json carries local service credentials; artifacts carry
-          # only the reviewable catalog and observations.
+          name: verification-epoch
           path: |
-            verify-artifacts/upgrade/catalog.json
-            verify-artifacts/upgrade/observations.json
+            verify-artifacts/epoch/catalog-epoch-base.json
+            verify-artifacts/epoch/catalog-epoch-head.json
+            verify-artifacts/epoch/observations-epoch-base.json
+            verify-artifacts/epoch/observations-epoch-head.json
+            verify-artifacts/epoch/evidence-epoch-base.json
+            verify-artifacts/epoch/evidence-epoch-head.json
           retention-days: 7
-
-  verify-parity:
-    name: Fresh and upgraded catalogs are identical
-    needs: [verify-fresh, verify-upgrade]
-    if: always() && needs.verify-fresh.result == 'success' && needs.verify-upgrade.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci --ignore-scripts
-
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
-        with:
-          name: verification-fresh
-          path: fresh
-
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
-        with:
-          name: verification-upgrade
-          path: upgrade
-
-      - run: |
-          node scripts/verify-migrations.mjs compare \
-            --expected fresh/catalog.json --actual upgrade/catalog.json
 
   replay:
     name: Replay on fresh database
@@ -284,94 +256,3 @@ jobs:
         run: |
           DB_URL=$(supabase status --output json | jq -r '.DB_URL')
           node scripts/check-database-invariants.mjs "$DB_URL"
-
-  declaration-parity:
-    name: Declared schemas match forward migrations
-    needs: changes
-    if: needs.changes.outputs.sql == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
-        with:
-          # Same version as the devDependency, so local and CI run one CLI.
-          version: 2.20.3
-
-      - name: Assert pinned Supabase CLI
-        run: |
-          actual=$(supabase --version | tr -d 'v \r\n')
-          if [ "$actual" != "2.20.3" ]; then
-            echo "::error::Supabase CLI $actual, expected 2.20.3"
-            exit 1
-          fi
-
-      - name: Replay migrations before declaration parity
-        run: |
-          for attempt in 1 2 3; do
-            if timeout 8m supabase start; then
-              break
-            fi
-            echo "supabase start failed (attempt $attempt/3), retrying..."
-            supabase stop --no-backup 2>/dev/null || true
-            if [ "$attempt" -eq 3 ]; then
-              echo "supabase start failed after 3 attempts" && exit 1
-            fi
-          done
-          supabase db reset --local
-
-      - name: Stop the database before comparing declarations
-        run: supabase stop --no-backup
-
-      - name: Require an empty declaration diff
-        run: |
-          set +e
-          supabase db diff > declaration-diff.sql 2> declaration-diff.stderr
-          status=$?
-          set -e
-          cat declaration-diff.stderr >&2
-          if [ "$status" -ne 0 ]; then
-            echo "::error::supabase db diff failed with status $status."
-            exit "$status"
-          fi
-          if [ -n "$(tr -d '[:space:]' < declaration-diff.sql)" ]; then
-            echo "::error::declared schemas differ from the applied forward migrations."
-            cat declaration-diff.sql
-            exit 1
-          fi
-          echo "OK: declared schemas match forward migrations."
-
-  baseline-freshness:
-    name: Schema snapshot matches supabase/schemas
-    needs: changes
-    if: needs.changes.outputs.sql == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-
-      - name: Regenerate the schema snapshot and diff it
-        run: |
-          SNAPSHOT=supabase/schema.sql
-          if ! git ls-files --error-unmatch "$SNAPSHOT" >/dev/null 2>&1; then
-            echo "::error::$SNAPSHOT is not tracked; the schema snapshot must be committed."
-            exit 1
-          fi
-          ./scripts/build-baseline.sh
-          if [ ! -f "$SNAPSHOT" ]; then
-            echo "::error::the generator did not produce $SNAPSHOT."
-            exit 1
-          fi
-          if ! git diff --quiet -- "$SNAPSHOT"; then
-            echo "::error::$SNAPSHOT does not match supabase/schemas."
-            git diff --stat -- "$SNAPSHOT"
-            echo ""
-            echo "Fix: run ./scripts/build-baseline.sh and commit the result."
-            exit 1
-          fi
-          echo "OK: schema snapshot matches supabase/schemas."

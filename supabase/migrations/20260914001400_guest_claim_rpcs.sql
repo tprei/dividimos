@@ -1,14 +1,6 @@
--- Linearize guest credentials with claims (P4 / amended plan S2). Closes the
--- race where claim_guest read the credential before lock_group, allowing a concurrent
--- revoke or rotate to commit while claim waited on group lock and be ignored.
--- Linearizes lock acquisition order across create_guest_claim_token,
--- revoke_guest_claim_token, and claim_guest: Group -> (Guest, Expense) -> Credential.
--- Under group and guest locks, claim_guest re-reads and locks the credential row
--- FOR UPDATE by (guest_id, token_digest) and checks freshness against clock_timestamp().
-
-set check_function_bodies = off;
-
-CREATE OR REPLACE FUNCTION public.create_guest_claim_token(p_guest_id uuid)
+-- A claim token is a bearer credential: whoever opens the link becomes the
+-- guest. It therefore expires, and any member can revoke it and issue another.
+CREATE FUNCTION public.create_guest_claim_token(p_guest_id uuid)
 RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -73,10 +65,82 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.create_guest_claim_token(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.create_guest_claim_token(uuid) TO authenticated;
+CREATE FUNCTION public.resolve_guest_claim_token(p_token text)
+RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_digest bytea;
+  v_rec RECORD;
+  v_status text;
+BEGIN
+  IF p_token IS NULL OR length(trim(p_token)) = 0 THEN
+    RETURN jsonb_build_object(
+      'guestId', NULL,
+      'displayName', NULL,
+      'expenseTitle', NULL,
+      'groupName', NULL,
+      'shareCents', NULL,
+      'status', 'not_found'
+    );
+  END IF;
 
-CREATE OR REPLACE FUNCTION public.claim_guest(p_token text)
+  v_digest := extensions.digest(convert_to(p_token, 'utf8'), 'sha256');
+
+  SELECT
+    g.id AS guest_id,
+    g.display_name,
+    g.claimed_by,
+    ev.title AS expense_title,
+    grp.name AS group_name,
+    COALESCE(ep.share_cents, 0) AS share_cents
+  INTO v_rec
+  FROM guest_credentials.claim_tokens ct
+  JOIN guests g ON g.id = ct.guest_id
+  JOIN expenses e ON e.id = g.expense_id
+  JOIN expense_versions ev ON ev.expense_id = e.id AND ev.version_no = e.current_version_no
+  JOIN groups grp ON grp.id = e.group_id
+  LEFT JOIN current_expense_participants ep ON ep.expense_id = e.id AND ep.guest_id = g.id
+  WHERE ct.token_digest = v_digest AND ct.expires_at > now();
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'guestId', NULL,
+      'displayName', NULL,
+      'expenseTitle', NULL,
+      'groupName', NULL,
+      'shareCents', NULL,
+      'status', 'not_found'
+    );
+  END IF;
+
+  IF v_rec.claimed_by IS NOT NULL THEN
+    v_status := 'already_claimed';
+  ELSE
+    v_status := 'ready';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'guestId', v_rec.guest_id,
+    'displayName', v_rec.display_name,
+    'expenseTitle', v_rec.expense_title,
+    'groupName', v_rec.group_name,
+    'shareCents', v_rec.share_cents,
+    'status', v_status
+  );
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'guestId', NULL,
+    'displayName', NULL,
+    'expenseTitle', NULL,
+    'groupName', NULL,
+    'shareCents', NULL,
+    'status', 'not_found'
+  );
+END;
+$$;
+
+CREATE FUNCTION public.claim_guest(p_token text)
 RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -87,9 +151,6 @@ DECLARE
   v_guest_id uuid;
   v_rec RECORD;
   v_cred RECORD;
-  v_payload jsonb;
-  v_new_participants jsonb;
-  v_new_payload jsonb;
   v_ledger_version bigint;
   v_event_id bigint;
 BEGIN
@@ -150,55 +211,44 @@ BEGIN
   -- A guest dropped by a later edit keeps its row but no participant slot;
   -- redeeming that orphaned token would hand group membership to a stranger.
   IF NOT EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = v_rec.expense_id AND user_id = v_actor AND kind = 'user'
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'already_participant';
   END IF;
 
+  PERFORM assert_dm_pair_allowed(v_rec.group_id, v_actor);
+
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = v_rec.group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
+
   UPDATE guests
   SET claimed_by = v_actor,
-      claimed_at = now()
+      claimed_at = now(),
+      claimed_version_no = v_rec.current_version_no
   WHERE id = v_rec.id;
-
-  UPDATE expense_participants
-  SET kind = 'user',
-      user_id = v_actor,
-      guest_id = NULL
-  WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id;
-
-  SELECT payload INTO v_payload
-  FROM expense_versions
-  WHERE expense_id = v_rec.expense_id AND version_no = v_rec.current_version_no;
-
-  SELECT jsonb_agg(
-    CASE
-      WHEN p->>'kind' = 'guest' AND p->>'guestId' = v_rec.id::text
-      THEN jsonb_build_object('kind', 'user', 'userId', v_actor)
-      ELSE p
-    END
-    ORDER BY ord
-  )
-  INTO v_new_participants
-  FROM jsonb_array_elements(v_payload->'participants') WITH ORDINALITY AS t(p, ord);
-
-  v_new_payload := jsonb_set(v_payload, '{participants}', v_new_participants);
-
-  UPDATE expense_versions
-  SET payload = v_new_payload
-  WHERE expense_id = v_rec.expense_id AND version_no = v_rec.current_version_no;
 
   INSERT INTO group_members (group_id, user_id, status, accepted_at)
   VALUES (v_rec.group_id, v_actor, 'accepted', now())
   ON CONFLICT (group_id, user_id)
   DO UPDATE SET status = 'accepted', accepted_at = COALESCE(group_members.accepted_at, now());
+
+  -- Shared-history latch: the claim just granted membership for an existing
+  -- expense to a new user, so the expense's facts are shared from now on.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_rec.group_id AND financial_history_shared_at IS NULL;
 
   v_ledger_version := recompute_group_balances(v_rec.group_id);
 
@@ -223,10 +273,10 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.claim_guest(text) FROM public;
-GRANT EXECUTE ON FUNCTION public.claim_guest(text) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.revoke_guest_claim_token(p_guest_id uuid)
+-- Revoking an already-claimed guest is a no-op delete, not an error, so a
+-- member can always clear a credential that leaked.
+CREATE FUNCTION public.revoke_guest_claim_token(p_guest_id uuid)
 RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
 AS $$
@@ -271,6 +321,15 @@ BEGIN
   RETURN jsonb_build_object('guestId', p_guest_id);
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.create_guest_claim_token(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.create_guest_claim_token(uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.resolve_guest_claim_token(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.resolve_guest_claim_token(text) TO anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.claim_guest(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.claim_guest(text) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.revoke_guest_claim_token(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.revoke_guest_claim_token(uuid) TO authenticated;

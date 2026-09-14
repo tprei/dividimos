@@ -1476,6 +1476,13 @@ async function collectEpochEvidence(context, identities) {
   ];
 }
 
+function isolateProjectConfig(config, projectId) {
+  const projectIdLine = /^project_id[ \t]*=[ \t]*"[^"\r\n]*"[ \t]*$/m;
+  const replacement = `project_id = "${projectId}"`;
+  if (projectIdLine.test(config)) return config.replace(projectIdLine, replacement);
+  return `${replacement}\n${config}`;
+}
+
 /**
  * Builds one epoch side on its own: full replay of that ref's chain in a
  * throwaway project, the shared fixture scenario, normalized observations,
@@ -1487,7 +1494,10 @@ async function buildEpochSide(bin, { ref, files, role, expectedMajor, keep, arti
   try {
     const migrationsDir = join(projectDir, "supabase", "migrations");
     await mkdir(migrationsDir, { recursive: true });
-    await writeFile(join(projectDir, "supabase", "config.toml"), config);
+    await writeFile(
+      join(projectDir, "supabase", "config.toml"),
+      isolateProjectConfig(config, `verify-epoch-${role}-${basename(projectDir).slice(-6)}`),
+    );
     await writeMigrationBlobs(ref, files, migrationsDir, cwd);
     await startProject(bin, projectDir);
     const env = await readProjectEnv(bin, projectDir);
@@ -1531,7 +1541,7 @@ async function buildEpochSide(bin, { ref, files, role, expectedMajor, keep, arti
  */
 async function runEpochVerification({ bin, baseRef, headRef, baseFiles, headFiles, baseMajor, headMajor, artifactDirectory, keep, cwd }) {
   const base = await buildEpochSide(bin, {
-    ref: baseRef, files: baseFiles, role: "base", expectedMajor: baseMajor, keep, artifactDirectory, cwd,
+    ref: baseRef, files: baseFiles, role: "base", expectedMajor: baseMajor, keep: false, artifactDirectory, cwd,
   });
   const head = await buildEpochSide(bin, {
     ref: headRef, files: headFiles, role: "head", expectedMajor: headMajor, keep, artifactDirectory, cwd,
@@ -1693,7 +1703,10 @@ export async function verifyMigrations(options) {
     // the gate replays the frozen migration history.
     const migrationsDir = join(projectDir, "supabase", "migrations");
     await mkdir(migrationsDir, { recursive: true });
-    await writeFile(join(projectDir, "supabase", "config.toml"), config);
+    await writeFile(
+      join(projectDir, "supabase", "config.toml"),
+      isolateProjectConfig(config, `verify-${mode}-${basename(projectDir).slice(-6)}`),
+    );
     await writeMigrationBlobs(builtRef, mode === "fresh" ? headFiles : baseFiles, migrationsDir, cwd);
 
     await startProject(bin, projectDir);
