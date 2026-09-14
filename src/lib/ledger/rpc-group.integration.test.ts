@@ -393,6 +393,33 @@ describe.skipIf(!isIntegrationTestReady)(
           bootCreator.groups.find((g) => g.group.id === groupId),
         ).toBeUndefined();
       });
+
+      it("requires current accepted membership for remove_member and delete_group after creator leaves", async () => {
+        const [owner, peer] = await createTestUsers(2);
+        const cOwner = authenticateAs(owner);
+
+        const groupId = await createGroupWithMembers(owner, [peer], "Abandoned Group");
+
+        const leaveAck = await rpc<{ groupId: string }>(cOwner, "leave_group", {
+          p_group_id: groupId,
+        });
+        expect(leaveAck.groupId).toBe(groupId);
+
+        const removeErr = await expectError(
+          cOwner.rpc("remove_member", {
+            p_group_id: groupId,
+            p_user_id: peer.id,
+          }),
+        );
+        expect(removeErr).toBe("not_a_member");
+
+        const deleteErr = await expectError(
+          cOwner.rpc("delete_group", {
+            p_group_id: groupId,
+          }),
+        );
+        expect(deleteErr).toBe("not_a_member");
+      });
     });
 
     describe("direct messages (DM)", () => {
@@ -429,6 +456,100 @@ describe.skipIf(!isIntegrationTestReady)(
           c1.rpc("leave_group", { p_group_id: dm1.groupId }),
         );
         expect(leaveErr).toBe("cannot_leave_dm");
+      });
+
+      it("rejects third-user invitation into an accepted DM with invalid_operation", async () => {
+        const [alice, bob, carol] = await createTestUsers(3);
+        const cAlice = authenticateAs(alice);
+
+        const dm = await rpc<DmAck>(cAlice, "get_or_create_dm", {
+          p_user_id: bob.id,
+        });
+        await acceptInvitation(bob, dm.groupId);
+
+        const inviteErr = await expectError(
+          cAlice.rpc("invite_member", {
+            p_group_id: dm.groupId,
+            p_user_id: carol.id,
+          }),
+        );
+        expect(inviteErr).toBe("invalid_operation");
+      });
+
+      it("rejects invite link operations and join_via_link on a DM with invalid_operation", async () => {
+        const [alice, bob, carol] = await createTestUsers(3);
+        const cAlice = authenticateAs(alice);
+        const cCarol = authenticateAs(carol);
+
+        const dm = await rpc<DmAck>(cAlice, "get_or_create_dm", {
+          p_user_id: bob.id,
+        });
+
+        const linkErr = await expectError(
+          cAlice.rpc("create_invite_link", {
+            p_group_id: dm.groupId,
+          }),
+        );
+        expect(linkErr).toBe("invalid_operation");
+
+        const token = "test_dm_link_" + crypto.randomUUID().replace(/-/g, "");
+        await withPg(async (pg) => {
+          await pg.query(
+            `INSERT INTO public.group_invite_links (group_id, token, created_by, is_active)
+             VALUES ($1, $2, $3, true)`,
+            [dm.groupId, token, alice.id],
+          );
+        });
+
+        const joinErr = await expectError(
+          cCarol.rpc("join_via_link", {
+            p_token: token,
+          }),
+        );
+        expect(joinErr).toBe("invalid_operation");
+      });
+
+      it("repairs noncanonical DM members by deleting them while preserving canonical members and history", async () => {
+        const [alice, bob, carol] = await createTestUsers(3);
+        const cAlice = authenticateAs(alice);
+
+        const dm = await rpc<DmAck>(cAlice, "get_or_create_dm", {
+          p_user_id: bob.id,
+        });
+        await acceptInvitation(bob, dm.groupId);
+
+        await withPg(async (pg) => {
+          await pg.query(
+            `INSERT INTO public.group_members (group_id, user_id, status, accepted_at)
+             VALUES ($1, $2, 'accepted', now())`,
+            [dm.groupId, carol.id],
+          );
+        });
+
+        const beforeSnap = await rpc<GroupSnapshot>(cAlice, "get_group", {
+          p_group_id: dm.groupId,
+        });
+        expect(beforeSnap.members.map((m) => m.userId)).toContain(carol.id);
+
+        await withPg(async (pg) => {
+          await pg.query(
+            `DELETE FROM public.group_members gm
+             USING public.groups g
+             WHERE gm.group_id = g.id
+               AND g.kind = 'dm'
+               AND gm.user_id IS DISTINCT FROM g.dm_user_a
+               AND gm.user_id IS DISTINCT FROM g.dm_user_b`,
+          );
+        });
+
+        const afterSnap = await rpc<GroupSnapshot>(cAlice, "get_group", {
+          p_group_id: dm.groupId,
+        });
+        const memberIds = afterSnap.members.map((m) => m.userId);
+        expect(memberIds).not.toContain(carol.id);
+        expect(memberIds).toContain(alice.id);
+        expect(memberIds).toContain(bob.id);
+        expect(afterSnap.members.every((m) => m.status === "accepted")).toBe(true);
       });
     });
 

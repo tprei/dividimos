@@ -227,6 +227,8 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'already_participant';
   END IF;
 
+  PERFORM assert_dm_pair_allowed(v_rec.group_id, v_actor);
+
   UPDATE guests
   SET claimed_by = v_actor,
       claimed_at = now()
