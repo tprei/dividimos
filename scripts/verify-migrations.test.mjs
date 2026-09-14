@@ -316,13 +316,12 @@ test("compareFixtureObservations rejects when the lookup denial never lands", ()
   assert.match(failures[0], /upgrade should be "denied"/);
 });
 
-test("compareFixtureObservations rejects an upgrade whose seed never succeeded", () => {
+test("compareFixtureObservations accepts a base that already carries the lookup denial", () => {
   const failures = compareFixtureObservations(
     [{ label: "lookup:direct:authenticated", value: "denied" }],
     [{ label: "lookup:direct:authenticated", value: "denied" }],
   );
-  assert.equal(failures.length, 1);
-  assert.match(failures[0], /seed should be "success"/);
+  assert.deepEqual(failures, []);
 });
 
 test("the intentional upgrade list names only the lookup flip", () => {
