@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import {
-  authenticateAs,
   createGroupWithMembers,
   createTestUsers,
   type TestUser,
@@ -13,12 +13,18 @@ import { isIntegrationTestReady } from "@/test/integration-setup";
 // malformed topics must behave exactly like unauthorized ones — a denial,
 // never an exception surfaced as a distinct transport failure.
 describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
-  // Realtime sockets authorize private channels with the session token; the
-  // helper's client does not always propagate a post-sign-in token to the
-  // already-created socket, so the token is set explicitly before joining.
-  function realtimeClient(user: TestUser): SupabaseClient {
-    const client = authenticateAs(user);
-    if (user.accessToken) client.realtime.setAuth(user.accessToken);
+  async function realtimeClient(user: TestUser): Promise<SupabaseClient<Database>> {
+    if (!user.accessToken) {
+      throw new Error(`User ${user.handle} has no access token`);
+    }
+
+    const accessToken = user.accessToken;
+    const client = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { accessToken: async () => accessToken },
+    );
+    await client.realtime.setAuth(accessToken);
     return client;
   }
 
@@ -41,7 +47,7 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
 
   it("delivers to the owner's user topic and denies another user's", async () => {
     const [alice, bob] = await createTestUsers(2);
-    const aliceClient = realtimeClient(alice);
+    const aliceClient = await realtimeClient(alice);
 
     const own = aliceClient.channel(`user:${alice.id}`, { config: { private: true } });
     await expect(joinOutcome(own)).resolves.toBe("subscribed");
@@ -55,8 +61,8 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
   it("delivers group and chat topics to accepted members only", async () => {
     const [alice, bruno, outsider] = await createTestUsers(3);
     const groupId = await createGroupWithMembers(alice, [bruno]);
-    const aliceClient = realtimeClient(alice);
-    const outsiderClient = realtimeClient(outsider);
+    const aliceClient = await realtimeClient(alice);
+    const outsiderClient = await realtimeClient(outsider);
 
     const memberGroup = aliceClient.channel(`group:${groupId}`, { config: { private: true } });
     await expect(joinOutcome(memberGroup)).resolves.toBe("subscribed");
@@ -73,7 +79,7 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
 
   it("denies malformed topics as plain policy denials", async () => {
     const [alice] = await createTestUsers(1);
-    const aliceClient = realtimeClient(alice);
+    const aliceClient = await realtimeClient(alice);
     const hyphens = "-".repeat(36);
 
     for (const topic of [
@@ -95,7 +101,7 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
   it("denies a fresh join after membership ends", async () => {
     const [alice, bruno] = await createTestUsers(2);
     const groupId = await createGroupWithMembers(alice, [bruno]);
-    const brunoClient = realtimeClient(bruno);
+    const brunoClient = await realtimeClient(bruno);
 
     const before = brunoClient.channel(`group:${groupId}`, { config: { private: true } });
     await expect(joinOutcome(before)).resolves.toBe("subscribed");
