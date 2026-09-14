@@ -93,7 +93,8 @@ CREATE TABLE public.expenses (
   declined_user_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
   CONSTRAINT expenses_declined_users_valid CHECK (
     cardinality(declined_user_ids) <= 50 AND array_position(declined_user_ids, NULL) IS NULL
-  )
+  ),
+  CONSTRAINT expenses_current_version_positive CHECK (current_version_no >= 1)
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
 -- Cursor order for history paging; occurred_on above still serves its own readers.
@@ -133,22 +134,6 @@ CREATE TABLE public.guests (
 );
 CREATE INDEX guests_expense_idx ON public.guests (expense_id);
 
-CREATE TABLE public.expense_participants (
-  expense_id uuid NOT NULL REFERENCES public.expenses(id) ON DELETE CASCADE,
-  participant_index integer NOT NULL CHECK (participant_index >= 0),
-  kind public.participant_kind NOT NULL,
-  user_id uuid REFERENCES public.users(id),
-  guest_id uuid REFERENCES public.guests(id),
-  share_cents integer NOT NULL CHECK (share_cents BETWEEN 0 AND 99999999),
-  paid_cents integer NOT NULL DEFAULT 0 CHECK (paid_cents BETWEEN 0 AND 99999999),
-  PRIMARY KEY (expense_id, participant_index),
-  CHECK ((kind = 'user' AND user_id IS NOT NULL AND guest_id IS NULL) OR
-         (kind = 'guest' AND guest_id IS NOT NULL AND user_id IS NULL AND paid_cents = 0)),
-  UNIQUE (expense_id, user_id),
-  UNIQUE (expense_id, guest_id)
-);
-CREATE INDEX expense_participants_user_idx ON public.expense_participants (user_id);
-
 CREATE TABLE public.settlements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   operation_id uuid NOT NULL UNIQUE,
@@ -171,7 +156,8 @@ CREATE TABLE public.group_balances (
   kind public.participant_kind NOT NULL,
   participant_id uuid NOT NULL,
   net_cents bigint NOT NULL,
-  PRIMARY KEY (group_id, kind, participant_id)
+  PRIMARY KEY (group_id, kind, participant_id),
+  CONSTRAINT group_balances_nonzero CHECK (net_cents <> 0)
 );
 -- net_cents > 0: participant is owed; < 0: participant owes. Zero rows are never stored.
 
@@ -234,7 +220,6 @@ ALTER TABLE public.group_invite_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expense_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.expense_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_balances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_events ENABLE ROW LEVEL SECURITY;

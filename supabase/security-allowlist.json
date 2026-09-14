@@ -329,11 +329,6 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
-    "public.materialize_participants(p_expense_id uuid, p_author uuid, p_payload jsonb)": {
-      "anon": false,
-      "authenticated": false,
-      "note": "Internal ledger helper; called only inside ledger RPCs."
-    },
     "public.pairwise_from_nets(p_kinds participant_kind[], p_ids uuid[], p_nets bigint[])": {
       "anon": false,
       "authenticated": false,
@@ -363,6 +358,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.resolve_expense_participants(p_expense_id uuid, p_payload jsonb)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal ledger helper; called only inside ledger RPCs."
     },
     "public.resolve_guest_claim_token(p_token text)": {
       "anon": true,

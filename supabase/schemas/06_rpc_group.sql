@@ -301,7 +301,6 @@ BEGIN
             END
         WHERE id = v_rec.expense_id;
 
-        DELETE FROM expense_participants WHERE expense_id = v_rec.expense_id;
 
         v_event_id := emit_event(
           p_group_id, 'expense_deleted', v_actor, v_rec.expense_id,
