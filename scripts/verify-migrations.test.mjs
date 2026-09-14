@@ -4,7 +4,7 @@
 
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -421,9 +421,21 @@ test("verifyMigrations rejects a postgres major version change", async () => {
 
 test("verifyMigrations refuses to start without the pinned supabase CLI anywhere", () => {
   const dir = mkdtempSync(join(tmpdir(), "verify-migrations-cli-"));
+  const pinned = JSON.parse(
+    readFileSync(join(dirname(SCRIPT), "..", "package.json"), "utf8"),
+  ).devDependencies.supabase;
   try {
     // Neither PATH nor <cwd>/node_modules/.bin carries the pinned CLI, so
-    // the gate must fail closed before touching git or containers.
+    // the gate must fail closed before touching git or containers. The
+    // wrong-version fixture proves the version assertion itself, so the
+    // plain unit job (which installs no CLI at all) still exercises the
+    // failure shape hermetically.
+    const binDir = join(dir, "bin");
+    mkdirSync(binDir, { recursive: true });
+    const wrong = join(binDir, "supabase");
+    writeFileSync(wrong, "#!/bin/sh\necho '1.2.3'\n");
+    chmodSync(wrong, 0o755);
+
     const result = spawnSync(
       process.execPath,
       [
@@ -436,12 +448,12 @@ test("verifyMigrations refuses to start without the pinned supabase CLI anywhere
         "--artifacts",
         join(dir, "artifacts"),
       ],
-      { cwd: dir, env: { ...process.env, PATH: "" }, encoding: "utf8" },
+      { cwd: dir, env: { ...process.env, PATH: binDir }, encoding: "utf8" },
     );
     assert.equal(result.status, 1);
     const output = `${result.stdout}${result.stderr}`;
-    assert.match(output, /::error::pinned supabase CLI \d+\.\d+\.\d+ required/);
-    assert.match(output, /supabase on PATH is not runnable/);
+    assert.match(output, new RegExp(`::error::pinned supabase CLI ${pinned} required`));
+    assert.match(output, /supabase on PATH printed 1\.2\.3/);
     assert.match(output, /checkout-local node_modules\/\.bin\/supabase is not runnable/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
