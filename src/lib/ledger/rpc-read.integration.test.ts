@@ -59,7 +59,7 @@ interface GroupSnapshot {
   lastEventId: number;
   unreadCount: number;
   lastMessage: { content: string; senderId: string; createdAt: string } | null;
-  lastActivityAt: string;
+  lastActivityAt: string | null;
   expenseCount: number;
   pairwiseEdges: Array<{
     fromKind: string;
@@ -1143,12 +1143,31 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.guests).toEqual([]);
       expect(snap.settlements).toEqual([]);
       expect(snap.recentExpenses).toEqual([]);
+      expect(snap.pairwiseEdges).toEqual([]);
       expect(snap.expenseCount).toBe(0);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();
+      expect(snap.lastActivityAt).toBeNull();
+      expect(snap.lastEventId).toBe(0);
+      expect(snap.group.ledgerVersion).toBe(0);
+
+      // Verify exact key sets for allowlist snapshot
+      expect(Object.keys(snap).sort()).toEqual(SNAPSHOT_KEYS.slice().sort());
+      expect(Object.keys(snap.group).sort()).toEqual([
+        "id", "kind", "name", "creatorId", "dmUserA", "dmUserB", "ledgerVersion", "createdAt"
+      ].sort());
+
       expect(snap.members.map((m) => m.userId).sort()).toEqual(
         [invited.id, inviter.id].sort(),
       );
+      for (const m of snap.members) {
+        expect(Object.keys(m).sort()).toEqual([
+          "acceptedAt", "groupId", "invitedBy", "status", "user", "userId"
+        ].sort());
+        expect(Object.keys(m.user).sort()).toEqual([
+          "avatarUrl", "handle", "id", "name"
+        ].sort());
+      }
       const invitedRow = snap.members.find((m) => m.userId === invited.id);
       expect(invitedRow?.status).toBe("invited");
       expect(invitedRow?.invitedBy).toBe(inviter.id);
@@ -1178,12 +1197,63 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(snap.guests).toEqual([]);
       expect(snap.settlements).toEqual([]);
       expect(snap.recentExpenses).toEqual([]);
+      expect(snap.pairwiseEdges).toEqual([]);
       expect(snap.expenseCount).toBe(0);
       expect(snap.unreadCount).toBe(0);
       expect(snap.lastMessage).toBeNull();
+      expect(snap.lastActivityAt).toBeNull();
+      expect(snap.lastEventId).toBe(0);
+      expect(snap.group.ledgerVersion).toBe(0);
+
+      expect(Object.keys(snap).sort()).toEqual(SNAPSHOT_KEYS.slice().sort());
+      expect(Object.keys(snap.group).sort()).toEqual([
+        "id", "kind", "name", "creatorId", "dmUserA", "dmUserB", "ledgerVersion", "createdAt"
+      ].sort());
       expect(snap.members.map((m) => m.userId).sort()).toEqual(
         [invited.id, inviter.id].sort(),
       );
+      for (const m of snap.members) {
+        expect(Object.keys(m).sort()).toEqual([
+          "acceptedAt", "groupId", "invitedBy", "status", "user", "userId"
+        ].sort());
+        expect(Object.keys(m.user).sort()).toEqual([
+          "avatarUrl", "handle", "id", "name"
+        ].sort());
+      }
+    });
+
+    it("unrelated accepted-member activity does not change the pending response", async () => {
+      const snapBefore = await rpcOk<GroupSnapshot>(authenticateAs(invited), "get_group", {
+        p_group_id: groupId,
+      });
+
+      // Member creates another expense and chat message
+      await createExpense(member, {
+        groupId,
+        title: "Segundo gasto secreto",
+        totalCents: 2000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: inviter.id },
+            { kind: "user", userId: member.id },
+          ],
+          shares: [1000, 1000],
+          payers: [{ participantIndex: 0, amountCents: 2000 }],
+          itemAssignments: null,
+        },
+      });
+      await rpcOk<ChatMessage>(authenticateAs(member), "send_message", {
+        p_client_id: crypto.randomUUID(),
+        p_group_id: groupId,
+        p_content: "outra mensagem secreta",
+      });
+
+      const snapAfter = await rpcOk<GroupSnapshot>(authenticateAs(invited), "get_group", {
+        p_group_id: groupId,
+      });
+
+      expect(snapAfter).toEqual(snapBefore);
     });
   },
 );

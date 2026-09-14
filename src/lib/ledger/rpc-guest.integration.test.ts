@@ -697,6 +697,108 @@ describe.skipIf(!isIntegrationTestReady)(
       expect(memberCount).toBe(0);
     });
 
+    it("rejects claiming a guest when claimant is excluded and leaves all facts unchanged", async () => {
+      const [creator, member, bystander] = await createTestUsers(3);
+      const cCreator = authenticateAs(creator);
+      const cMember = authenticateAs(member);
+      const cBystander = authenticateAs(bystander);
+
+      const groupId = await createGroupWithMembers(creator, [member], "Guest Exclusion Group");
+
+      // Creator removes member -> member is now excluded
+      await rpc(cCreator, "remove_member", { p_group_id: groupId, p_user_id: member.id });
+
+      // Creator adds an expense with a guest
+      const created = await createExpense(creator, {
+        groupId,
+        title: "Guest with Excluded Claimant",
+        totalCents: 5000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: creator.id },
+            { kind: "guest", guestId: null, displayName: "Visitor" },
+          ],
+          shares: [2500, 2500],
+          payers: [{ participantIndex: 0, amountCents: 5000 }],
+          itemAssignments: null,
+        },
+      });
+
+      const detailBefore = await getExpenseDetail(cCreator, created.expenseId);
+      const guest = detailBefore.current.payload.participants[1];
+      if (guest.kind !== "guest" || !guest.guestId) {
+        throw new Error("Fixture failure: guest was not materialized");
+      }
+      const guestId = guest.guestId;
+
+      const issued = await rpc<IssuedToken>(cCreator, "create_guest_claim_token", {
+        p_guest_id: guestId,
+      });
+
+      // Record facts before failed claim
+      const credBefore = await withPg(async (pg) => {
+        const res = await pg.query<{ token_digest: Buffer; generation: number; expires_at: Date }>(
+          "SELECT token_digest, generation, expires_at FROM guest_credentials.claim_tokens WHERE guest_id = $1",
+          [guestId],
+        );
+        return res.rows[0];
+      });
+      const balancesBefore = await getBalances(groupId);
+
+      // Excluded member tries to claim the guest -> member_excluded
+      const claimErr = await expectRpcError(
+        cMember.rpc("claim_guest", { p_token: issued.token }),
+      );
+      expect(claimErr).toBe("member_excluded");
+
+      // Assert facts remain UNCHANGED:
+      // 1. Credentials unchanged
+      const credAfter = await withPg(async (pg) => {
+        const res = await pg.query<{ token_digest: Buffer; generation: number; expires_at: Date }>(
+          "SELECT token_digest, generation, expires_at FROM guest_credentials.claim_tokens WHERE guest_id = $1",
+          [guestId],
+        );
+        return res.rows[0];
+      });
+      expect(credAfter?.token_digest).toEqual(credBefore?.token_digest);
+      expect(credAfter?.generation).toBe(credBefore?.generation);
+      expect(credAfter?.expires_at).toEqual(credBefore?.expires_at);
+
+      // 2. Guest identity unchanged (unclaimed)
+      const guestRow = await withPg(async (pg) => {
+        const res = await pg.query<{ claimed_by: string | null }>(
+          "SELECT claimed_by FROM public.guests WHERE id = $1",
+          [guestId],
+        );
+        return res.rows[0];
+      });
+      expect(guestRow?.claimed_by).toBeNull();
+
+      // 3. Membership unchanged (member not added)
+      const isMember = await withPg(async (pg) => {
+        const res = await pg.query(
+          "SELECT 1 FROM public.group_members WHERE group_id = $1 AND user_id = $2",
+          [groupId, member.id],
+        );
+        return res.rows.length > 0;
+      });
+      expect(isMember).toBe(false);
+
+      // 4. Financial facts & participants unchanged
+      const detailAfter = await getExpenseDetail(cCreator, created.expenseId);
+      expect(detailAfter.current.payload.participants[1]).toEqual(guest);
+      const balancesAfter = await getBalances(groupId);
+      expect(balancesAfter).toEqual(balancesBefore);
+
+      // 5. Another non-excluded user can claim the token normally
+      const claimAck = await rpc<ClaimAck>(cBystander, "claim_guest", {
+        p_token: issued.token,
+      });
+      expect(claimAck.groupId).toBe(groupId);
+      expect(claimAck.expenseId).toBe(created.expenseId);
+    });
+
     it("rejects claiming a guest in a DM when claimant is outside the canonical pair", async () => {
       const [alice, bob, carol] = await createTestUsers(3);
       const cAlice = authenticateAs(alice);

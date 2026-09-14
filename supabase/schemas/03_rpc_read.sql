@@ -185,6 +185,56 @@ DECLARE
   v_out jsonb;
   v_status public.member_status;
 BEGIN
+  SELECT status INTO v_status
+  FROM group_members
+  WHERE group_id = p_group_id AND user_id = p_viewer;
+
+  -- An invited user has not consented yet: they see who invited them and
+  -- nothing about the group's money or conversation.
+  IF v_status = 'invited' THEN
+    RETURN (
+      SELECT jsonb_build_object(
+        'group', jsonb_build_object(
+          'id', g.id,
+          'kind', g.kind,
+          'name', g.name,
+          'creatorId', g.creator_id,
+          'dmUserA', g.dm_user_a,
+          'dmUserB', g.dm_user_b,
+          'ledgerVersion', 0,
+          'createdAt', to_jsonb(g.created_at)
+        ),
+        'members', COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'groupId', gm.group_id,
+            'userId', gm.user_id,
+            'status', gm.status,
+            'invitedBy', gm.invited_by,
+            'acceptedAt', to_jsonb(gm.accepted_at),
+            'user', COALESCE(ledger_user_profile_json(gm.user_id), 'null'::jsonb)
+          ) ORDER BY gm.created_at, gm.user_id)
+          FROM group_members gm
+          WHERE gm.group_id = g.id
+            AND (gm.user_id = p_viewer OR gm.user_id = (
+              SELECT invited_by FROM group_members WHERE group_id = p_group_id AND user_id = p_viewer
+            ))
+        ), '[]'::jsonb),
+        'balances', '[]'::jsonb,
+        'guests', '[]'::jsonb,
+        'settlements', '[]'::jsonb,
+        'pairwiseEdges', '[]'::jsonb,
+        'recentExpenses', '[]'::jsonb,
+        'expenseCount', 0,
+        'unreadCount', 0,
+        'lastMessage', 'null'::jsonb,
+        'lastEventId', 0,
+        'lastActivityAt', 'null'::jsonb
+      )
+      FROM groups g
+      WHERE g.id = p_group_id
+    );
+  END IF;
+
   SELECT jsonb_build_object(
     'group', jsonb_build_object(
       'id', g.id,
@@ -299,35 +349,6 @@ BEGIN
   FROM groups g
   WHERE g.id = p_group_id;
 
-  SELECT status INTO v_status
-  FROM group_members
-  WHERE group_id = p_group_id AND user_id = p_viewer;
-
-  -- An invited user has not consented yet: they see who invited them and
-  -- nothing about the group's money or conversation.
-  IF v_status = 'invited' THEN
-    v_out := v_out
-      || jsonb_build_object(
-           'members', (
-             SELECT COALESCE(jsonb_agg(m ORDER BY m ->> 'userId'), '[]'::jsonb)
-             FROM jsonb_array_elements(v_out -> 'members') AS t(m)
-             WHERE m ->> 'userId' IN (
-               p_viewer::text,
-               (SELECT invited_by::text FROM group_members
-                WHERE group_id = p_group_id AND user_id = p_viewer)
-             )
-           ),
-           'balances', '[]'::jsonb,
-           'guests', '[]'::jsonb,
-           'settlements', '[]'::jsonb,
-           'pairwiseEdges', '[]'::jsonb,
-           'recentExpenses', '[]'::jsonb,
-           'expenseCount', 0,
-           'unreadCount', 0,
-           'lastMessage', 'null'::jsonb
-        );
-  END IF;
-
   RETURN v_out;
 END;
 $$;
@@ -342,7 +363,7 @@ BEGIN
   RETURN jsonb_build_object(
     'me', ledger_me_json(v_user_id),
     'groups', COALESCE((
-      SELECT jsonb_agg(snap ORDER BY (snap ->> 'lastActivityAt')::timestamptz DESC)
+      SELECT jsonb_agg(snap ORDER BY (snap ->> 'lastActivityAt')::timestamptz DESC NULLS LAST)
       FROM (
         SELECT ledger_group_snapshot_json(gm.group_id, v_user_id) AS snap
         FROM group_members gm
