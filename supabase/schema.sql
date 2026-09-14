@@ -3609,6 +3609,7 @@ RETURNS jsonb
 AS $$
 DECLARE
   v_actor uuid;
+  v_group_id uuid;
   v_guest RECORD;
   v_bytes bytea;
   v_token text;
@@ -3621,12 +3622,24 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
   END IF;
 
+  SELECT e.group_id
+  INTO v_group_id
+  FROM guests g
+  JOIN expenses e ON e.id = g.expense_id
+  WHERE g.id = p_guest_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
+  END IF;
+
+  PERFORM lock_group(v_group_id);
+
   SELECT g.id, g.claimed_by, e.group_id
   INTO v_guest
   FROM guests g
   JOIN expenses e ON e.id = g.expense_id
   WHERE g.id = p_guest_id
-  FOR UPDATE OF g;
+  FOR UPDATE OF g, e;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
@@ -3737,7 +3750,10 @@ AS $$
 DECLARE
   v_actor uuid;
   v_digest bytea;
+  v_group_id uuid;
+  v_guest_id uuid;
   v_rec RECORD;
+  v_cred RECORD;
   v_payload jsonb;
   v_new_participants jsonb;
   v_new_payload jsonb;
@@ -3752,25 +3768,43 @@ BEGIN
 
   v_digest := extensions.digest(convert_to(p_token, 'utf8'), 'sha256');
 
-  SELECT ct.guest_id, g.expense_id, g.display_name, g.claimed_by, e.group_id, e.status AS expense_status, e.current_version_no
-  INTO v_rec
+  SELECT ct.guest_id, e.group_id
+  INTO v_guest_id, v_group_id
   FROM guest_credentials.claim_tokens ct
   JOIN guests g ON g.id = ct.guest_id
   JOIN expenses e ON e.id = g.expense_id
-  WHERE ct.token_digest = v_digest AND ct.expires_at > now();
+  WHERE ct.token_digest = v_digest;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
   END IF;
 
-  PERFORM lock_group(v_rec.group_id);
+  PERFORM lock_group(v_group_id);
 
   SELECT g.id, g.expense_id, g.display_name, g.claimed_by, e.group_id, e.status AS expense_status, e.current_version_no
   INTO v_rec
   FROM guests g
   JOIN expenses e ON e.id = g.expense_id
-  WHERE g.id = v_rec.guest_id
+  WHERE g.id = v_guest_id
   FOR UPDATE OF g, e;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
+  END IF;
+
+  SELECT ct.guest_id, ct.expires_at
+  INTO v_cred
+  FROM guest_credentials.claim_tokens ct
+  WHERE ct.guest_id = v_rec.id AND ct.token_digest = v_digest
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
+  END IF;
+
+  IF v_cred.expires_at <= clock_timestamp() THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
+  END IF;
 
   IF v_rec.claimed_by IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'already_claimed';
@@ -3864,6 +3898,7 @@ RETURNS jsonb
 AS $$
 DECLARE
   v_actor uuid;
+  v_group_id uuid;
   v_guest RECORD;
 BEGIN
   v_actor := current_user_id();
@@ -3872,12 +3907,24 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
   END IF;
 
+  SELECT e.group_id
+  INTO v_group_id
+  FROM guests g
+  JOIN expenses e ON e.id = g.expense_id
+  WHERE g.id = p_guest_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
+  END IF;
+
+  PERFORM lock_group(v_group_id);
+
   SELECT g.id, e.group_id
   INTO v_guest
   FROM guests g
   JOIN expenses e ON e.id = g.expense_id
   WHERE g.id = p_guest_id
-  FOR UPDATE OF g;
+  FOR UPDATE OF g, e;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'guest_not_found';
