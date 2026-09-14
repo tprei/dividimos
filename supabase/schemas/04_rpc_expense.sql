@@ -101,6 +101,30 @@ BEGIN
 
   v_payload := materialize_participants(v_expense_id, v_actor, v_payload);
 
+  -- Shared-history latch: the new expense becomes visible to more than one
+  -- user when a second accepted member can read it or the payload names
+  -- another invited/accepted user.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = p_group_id
+    AND financial_history_shared_at IS NULL
+    AND (
+      (SELECT count(*) FROM public.group_members
+       WHERE group_id = p_group_id AND status = 'accepted') > 1
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_payload->'participants') AS pp(p)
+        WHERE pp.p->>'kind' = 'user'
+          AND (pp.p->>'userId')::uuid IS DISTINCT FROM v_actor
+          AND EXISTS (
+            SELECT 1 FROM public.group_members gm
+            WHERE gm.group_id = p_group_id
+              AND gm.user_id = (pp.p->>'userId')::uuid
+              AND gm.status IN ('invited', 'accepted')
+          )
+      )
+    );
+
   INSERT INTO expense_versions (
     expense_id, version_no, author_id, title, merchant_name, expense_type,
     total_cents, service_fee_bps, fixed_fee_cents, payload, change_summary
@@ -125,6 +149,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.edit_expense(
   p_expense_id uuid, p_expected_version_no integer,
@@ -199,6 +224,30 @@ BEGIN
   v_new_version_no := v_current_version_no + 1;
   v_payload := materialize_participants(p_expense_id, v_actor, v_payload);
 
+  -- Shared-history latch: the new version becomes visible to more than one
+  -- user when a second accepted member can read it or the payload names
+  -- another invited/accepted user.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_group_id
+    AND financial_history_shared_at IS NULL
+    AND (
+      (SELECT count(*) FROM public.group_members
+       WHERE group_id = v_group_id AND status = 'accepted') > 1
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_payload->'participants') AS pp(p)
+        WHERE pp.p->>'kind' = 'user'
+          AND (pp.p->>'userId')::uuid IS DISTINCT FROM v_actor
+          AND EXISTS (
+            SELECT 1 FROM public.group_members gm
+            WHERE gm.group_id = v_group_id
+              AND gm.user_id = (pp.p->>'userId')::uuid
+              AND gm.status IN ('invited', 'accepted')
+          )
+      )
+    );
+
   INSERT INTO expense_versions (
     expense_id, version_no, author_id, title, merchant_name, expense_type,
     total_cents, service_fee_bps, fixed_fee_cents, payload, change_summary
@@ -227,6 +276,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.delete_expense(p_expense_id uuid) RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
@@ -383,6 +433,30 @@ BEGIN
     WHERE expense_id = p_expense_id AND version_no = v_version_no;
   END IF;
 
+  -- Shared-history latch: the restored expense becomes visible to more than
+  -- one user when a second accepted member can read it or the payload names
+  -- another invited/accepted user.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_group_id
+    AND financial_history_shared_at IS NULL
+    AND (
+      (SELECT count(*) FROM public.group_members
+       WHERE group_id = v_group_id AND status = 'accepted') > 1
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_materialized->'participants') AS pp(p)
+        WHERE pp.p->>'kind' = 'user'
+          AND (pp.p->>'userId')::uuid IS DISTINCT FROM v_actor
+          AND EXISTS (
+            SELECT 1 FROM public.group_members gm
+            WHERE gm.group_id = v_group_id
+              AND gm.user_id = (pp.p->>'userId')::uuid
+              AND gm.status IN ('invited', 'accepted')
+          )
+      )
+    );
+
   v_ledger_version := recompute_group_balances(v_group_id);
   v_event_id := emit_event(
     v_group_id, 'expense_restored', v_actor, p_expense_id,
@@ -399,6 +473,7 @@ BEGIN
   );
 END;
 $$;
+
 
 REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;

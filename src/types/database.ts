@@ -548,6 +548,7 @@ export type Database = {
           creator_id: string
           dm_user_a: string | null
           dm_user_b: string | null
+          financial_history_shared_at: string | null
           id: string
           kind: Database["public"]["Enums"]["group_kind"]
           ledger_version: number
@@ -558,6 +559,7 @@ export type Database = {
           creator_id: string
           dm_user_a?: string | null
           dm_user_b?: string | null
+          financial_history_shared_at?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["group_kind"]
           ledger_version?: number
@@ -568,6 +570,7 @@ export type Database = {
           creator_id?: string
           dm_user_a?: string | null
           dm_user_b?: string | null
+          financial_history_shared_at?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["group_kind"]
           ledger_version?: number

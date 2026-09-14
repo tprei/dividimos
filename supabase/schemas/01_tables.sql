@@ -37,6 +37,7 @@ CREATE TABLE public.groups (
   dm_user_a uuid REFERENCES public.users(id),
   dm_user_b uuid REFERENCES public.users(id),
   ledger_version bigint NOT NULL DEFAULT 0,
+  financial_history_shared_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (
     (kind = 'group' AND dm_user_a IS NULL AND dm_user_b IS NULL) OR

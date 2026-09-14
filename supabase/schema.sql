@@ -53,6 +53,7 @@ CREATE TABLE public.groups (
   dm_user_a uuid REFERENCES public.users(id),
   dm_user_b uuid REFERENCES public.users(id),
   ledger_version bigint NOT NULL DEFAULT 0,
+  financial_history_shared_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (
     (kind = 'group' AND dm_user_a IS NULL AND dm_user_b IS NULL) OR
@@ -2126,6 +2127,30 @@ BEGIN
 
   v_payload := materialize_participants(v_expense_id, v_actor, v_payload);
 
+  -- Shared-history latch: the new expense becomes visible to more than one
+  -- user when a second accepted member can read it or the payload names
+  -- another invited/accepted user.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = p_group_id
+    AND financial_history_shared_at IS NULL
+    AND (
+      (SELECT count(*) FROM public.group_members
+       WHERE group_id = p_group_id AND status = 'accepted') > 1
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_payload->'participants') AS pp(p)
+        WHERE pp.p->>'kind' = 'user'
+          AND (pp.p->>'userId')::uuid IS DISTINCT FROM v_actor
+          AND EXISTS (
+            SELECT 1 FROM public.group_members gm
+            WHERE gm.group_id = p_group_id
+              AND gm.user_id = (pp.p->>'userId')::uuid
+              AND gm.status IN ('invited', 'accepted')
+          )
+      )
+    );
+
   INSERT INTO expense_versions (
     expense_id, version_no, author_id, title, merchant_name, expense_type,
     total_cents, service_fee_bps, fixed_fee_cents, payload, change_summary
@@ -2150,6 +2175,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.edit_expense(
   p_expense_id uuid, p_expected_version_no integer,
@@ -2224,6 +2250,30 @@ BEGIN
   v_new_version_no := v_current_version_no + 1;
   v_payload := materialize_participants(p_expense_id, v_actor, v_payload);
 
+  -- Shared-history latch: the new version becomes visible to more than one
+  -- user when a second accepted member can read it or the payload names
+  -- another invited/accepted user.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_group_id
+    AND financial_history_shared_at IS NULL
+    AND (
+      (SELECT count(*) FROM public.group_members
+       WHERE group_id = v_group_id AND status = 'accepted') > 1
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_payload->'participants') AS pp(p)
+        WHERE pp.p->>'kind' = 'user'
+          AND (pp.p->>'userId')::uuid IS DISTINCT FROM v_actor
+          AND EXISTS (
+            SELECT 1 FROM public.group_members gm
+            WHERE gm.group_id = v_group_id
+              AND gm.user_id = (pp.p->>'userId')::uuid
+              AND gm.status IN ('invited', 'accepted')
+          )
+      )
+    );
+
   INSERT INTO expense_versions (
     expense_id, version_no, author_id, title, merchant_name, expense_type,
     total_cents, service_fee_bps, fixed_fee_cents, payload, change_summary
@@ -2252,6 +2302,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.delete_expense(p_expense_id uuid) RETURNS jsonb
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
@@ -2408,6 +2459,30 @@ BEGIN
     WHERE expense_id = p_expense_id AND version_no = v_version_no;
   END IF;
 
+  -- Shared-history latch: the restored expense becomes visible to more than
+  -- one user when a second accepted member can read it or the payload names
+  -- another invited/accepted user.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_group_id
+    AND financial_history_shared_at IS NULL
+    AND (
+      (SELECT count(*) FROM public.group_members
+       WHERE group_id = v_group_id AND status = 'accepted') > 1
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(v_materialized->'participants') AS pp(p)
+        WHERE pp.p->>'kind' = 'user'
+          AND (pp.p->>'userId')::uuid IS DISTINCT FROM v_actor
+          AND EXISTS (
+            SELECT 1 FROM public.group_members gm
+            WHERE gm.group_id = v_group_id
+              AND gm.user_id = (pp.p->>'userId')::uuid
+              AND gm.status IN ('invited', 'accepted')
+          )
+      )
+    );
+
   v_ledger_version := recompute_group_balances(v_group_id);
   v_event_id := emit_event(
     v_group_id, 'expense_restored', v_actor, p_expense_id,
@@ -2424,6 +2499,7 @@ BEGIN
   );
 END;
 $$;
+
 
 REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
@@ -2597,6 +2673,12 @@ BEGIN
   VALUES (p_operation_id, p_group_id, p_from_user_id, p_to_user_id, p_amount_cents, 'confirmed', now(), v_actor)
   RETURNING id INTO v_settlement_id;
 
+  -- Shared-history latch: any confirmed settlement is shared financial
+  -- history by definition.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = p_group_id AND financial_history_shared_at IS NULL;
+
   v_ledger_version := recompute_group_balances(p_group_id);
 
   v_subject_user_id := CASE WHEN v_actor = p_from_user_id THEN p_to_user_id ELSE p_from_user_id END;
@@ -2620,6 +2702,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.void_settlement(p_settlement_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -2890,6 +2973,15 @@ BEGIN
   SET status = 'accepted', accepted_at = now()
   WHERE group_id = p_group_id AND user_id = v_actor;
 
+  -- Shared-history latch: joining a group whose facts already exist makes
+  -- them shared from this moment.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = p_group_id
+    AND financial_history_shared_at IS NULL
+    AND (EXISTS (SELECT 1 FROM public.expenses WHERE group_id = p_group_id)
+         OR EXISTS (SELECT 1 FROM public.settlements WHERE group_id = p_group_id));
+
   SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = p_group_id;
 
   v_event_id := emit_event(
@@ -2912,6 +3004,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.decline_invitation(p_group_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -3135,6 +3228,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_creator_id uuid;
+  v_shared_at timestamptz;
 BEGIN
   v_actor := current_user_id();
 
@@ -3155,9 +3249,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
   END IF;
 
-  IF (SELECT count(*) FROM group_members WHERE group_id = p_group_id) > 1
-     AND (EXISTS (SELECT 1 FROM expenses WHERE group_id = p_group_id)
-          OR EXISTS (SELECT 1 FROM settlements WHERE group_id = p_group_id)) THEN
+  -- The latch remembers that financial history was shared even when every
+  -- witness has since departed; current membership alone cannot measure it.
+  SELECT financial_history_shared_at INTO v_shared_at
+  FROM groups WHERE id = p_group_id;
+  IF v_shared_at IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'group_has_history';
   END IF;
 
@@ -3166,6 +3262,7 @@ BEGIN
   RETURN jsonb_build_object('groupId', p_group_id);
 END;
 $$;
+
 
 CREATE FUNCTION public.get_or_create_dm(p_user_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -3459,6 +3556,15 @@ BEGIN
     VALUES (v_link.group_id, v_actor, 'accepted', now());
   END IF;
 
+  -- Shared-history latch: joining a group whose facts already exist makes
+  -- them shared from this moment.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_link.group_id
+    AND financial_history_shared_at IS NULL
+    AND (EXISTS (SELECT 1 FROM public.expenses WHERE group_id = v_link.group_id)
+         OR EXISTS (SELECT 1 FROM public.settlements WHERE group_id = v_link.group_id));
+
   SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = v_link.group_id;
 
   v_event_id := emit_event(
@@ -3478,6 +3584,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.update_profile(
   p_name text DEFAULT NULL,
@@ -3992,6 +4099,12 @@ BEGIN
   ON CONFLICT (group_id, user_id)
   DO UPDATE SET status = 'accepted', accepted_at = COALESCE(group_members.accepted_at, now());
 
+  -- Shared-history latch: the claim just granted membership for an existing
+  -- expense to a new user, so the expense's facts are shared from now on.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_rec.group_id AND financial_history_shared_at IS NULL;
+
   v_ledger_version := recompute_group_balances(v_rec.group_id);
 
   v_event_id := emit_event(
@@ -4014,6 +4127,7 @@ BEGIN
   );
 END;
 $$;
+
 
 -- Revoking an already-claimed guest is a no-op delete, not an error, so a
 -- member can always clear a credential that leaked.

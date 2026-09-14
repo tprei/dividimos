@@ -25,6 +25,10 @@ describe("errors", () => {
     expect(codeFromMessage("no_debt")).toBe("no_debt");
     expect(codeFromMessage("nudge_cooldown")).toBe("nudge_cooldown");
     expect(codeFromMessage("guest_already_claimed")).toBe("guest_already_claimed");
+    expect(codeFromMessage("group_has_history")).toBe("group_has_history");
+    expect(ledgerErrorMessage(new LedgerError("group_has_history"))).toBe(
+      "Esse grupo já tem contas ou pagamentos e não pode ser apagado.",
+    );
     expect(codeFromMessage("member_excluded")).toBe("member_excluded");
     expect(ledgerErrorMessage(new LedgerError("member_excluded"))).toBe(
       "Essa pessoa foi removida do grupo.",
