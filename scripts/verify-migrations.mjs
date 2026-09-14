@@ -1680,6 +1680,7 @@ export async function verifyMigrations(options) {
       artifactDirectory, keep, cwd,
     });
   }
+  bin = await pinnedSupabaseCli();
 
   const builtRef = mode === "fresh" ? headRef : baseRef;
   const config = await gitOut(["cat-file", "blob", `${builtRef}:${CONFIG_PATH}`], cwd);
