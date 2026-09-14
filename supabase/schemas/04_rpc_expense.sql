@@ -366,6 +366,7 @@ DECLARE
   v_ledger_version bigint;
   v_event_id bigint;
   v_constraint text;
+  v_declined_user_ids uuid[];
 BEGIN
   v_actor := current_user_id();
 
@@ -381,8 +382,8 @@ BEGIN
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no, creator_id, chave_acesso
-    INTO v_status, v_version_no, v_creator_id, v_chave_acesso
+  SELECT status, current_version_no, creator_id, chave_acesso, declined_user_ids
+    INTO v_status, v_version_no, v_creator_id, v_chave_acesso, v_declined_user_ids
   FROM expenses
   WHERE id = p_expense_id
   FOR UPDATE;
@@ -404,6 +405,20 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM unnest(COALESCE(v_declined_user_ids, '{}'::uuid[])) AS d(user_id)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM group_members gm
+      WHERE gm.group_id = v_group_id
+        AND gm.user_id = d.user_id
+        AND gm.status = 'accepted'
+    )
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invitation_not_accepted';
+  END IF;
+
   IF v_chave_acesso IS NOT NULL AND EXISTS (
     SELECT 1
     FROM expenses
@@ -416,7 +431,11 @@ BEGIN
   END IF;
 
   BEGIN
-    UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
+    UPDATE expenses
+    SET status = 'active',
+        deleted_at = NULL,
+        deleted_by = NULL,
+        declined_user_ids = '{}'::uuid[]
     WHERE id = p_expense_id;
   EXCEPTION
     WHEN unique_violation THEN
