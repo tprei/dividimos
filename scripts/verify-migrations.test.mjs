@@ -324,12 +324,13 @@ test("compareFixtureObservations accepts a base that already carries the lookup 
   assert.deepEqual(failures, []);
 });
 
-test("the intentional upgrade list names the lookup flip, both DM repairs, and the exclusion table", () => {
+test("the intentional upgrade list names the lookup flip, both DM repairs, the exclusion table, and the retired participant copy", () => {
   assert.deepEqual([...INTENTIONAL_UPGRADES.keys()], [
     "lookup:direct:authenticated",
     "dm:noncanonical-members",
     "db:count:public.group_members",
     "db:count:public.group_member_exclusions",
+    "db:count:public.expense_participants",
   ]);
 });
 
@@ -340,6 +341,17 @@ test("compareFixtureObservations accepts a reviewed migration introducing an emp
       { label: "db:count:public.groups", value: 3 },
       { label: "db:count:public.group_member_exclusions", value: 0 },
     ],
+  );
+  assert.deepEqual(failures, []);
+});
+
+test("compareFixtureObservations accepts a reviewed migration retiring the participant copy", () => {
+  const failures = compareFixtureObservations(
+    [
+      { label: "db:count:public.groups", value: 3 },
+      { label: "db:count:public.expense_participants", value: 4 },
+    ],
+    [{ label: "db:count:public.groups", value: 3 }],
   );
   assert.deepEqual(failures, []);
 });

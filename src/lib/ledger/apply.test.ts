@@ -43,7 +43,7 @@ describe("applyExpenseDelta", () => {
   });
 
   it("skips the whole patch while a guest id is unassigned, keeping the set zero-sum", () => {
-    // materialize_participants assigns the guest UUID server-side; until the
+    // resolve_expense_participants assigns the guest UUID server-side; until the
     // next snapshot lands the guest cannot be represented, and applying only
     // the resolved participants would show balances that cannot be real.
     const pendingGuestPayload: ExpensePayload = {

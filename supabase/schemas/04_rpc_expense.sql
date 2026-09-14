@@ -99,7 +99,7 @@ BEGIN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END;
 
-  v_payload := materialize_participants(v_expense_id, v_actor, v_payload);
+  v_payload := resolve_expense_participants(v_expense_id, v_payload);
 
   -- Shared-history latch: the new expense becomes visible to more than one
   -- user when a second accepted member can read it or the payload names
@@ -189,7 +189,7 @@ BEGIN
   FROM expenses WHERE id = p_expense_id;
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
@@ -222,7 +222,7 @@ BEGIN
   v_payload := validate_expense_payload(p_payload, p_expense_type, p_total_cents, p_service_fee_bps, p_fixed_fee_cents);
 
   v_new_version_no := v_current_version_no + 1;
-  v_payload := materialize_participants(p_expense_id, v_actor, v_payload);
+  v_payload := resolve_expense_participants(p_expense_id, v_payload);
 
   -- Shared-history latch: the new version becomes visible to more than one
   -- user when a second accepted member can read it or the payload names
@@ -314,7 +314,7 @@ BEGIN
   FOR UPDATE;
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
@@ -326,7 +326,6 @@ BEGIN
 
   UPDATE expenses SET status = 'deleted', deleted_at = now(), deleted_by = v_actor
   WHERE id = p_expense_id;
-  DELETE FROM expense_participants WHERE expense_id = p_expense_id;
 
   SELECT title, total_cents INTO v_title, v_total_cents
   FROM expense_versions
@@ -448,7 +447,7 @@ BEGIN
       RAISE;
   END;
 
-  v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
+  v_materialized := resolve_expense_participants(p_expense_id, v_payload);
 
   -- Shared-history latch: the restored expense becomes visible to more than
   -- one user when a second accepted member can read it or the payload names

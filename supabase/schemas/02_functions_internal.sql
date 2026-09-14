@@ -628,12 +628,15 @@ $$;
 REVOKE ALL ON FUNCTION public.effective_expense_payload(uuid, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.effective_expense_payload(uuid, integer) TO service_role;
 
-CREATE FUNCTION public.materialize_participants(p_expense_id uuid, p_author uuid, p_payload jsonb)
+CREATE FUNCTION public.resolve_expense_participants(p_expense_id uuid, p_payload jsonb)
 RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_group_id uuid;
+  v_current_version integer;
+  v_prev_payload jsonb;
+  v_existing_user_ids uuid[] := '{}';
   v_participants jsonb;
   v_n integer;
   v_i integer;
@@ -641,35 +644,33 @@ DECLARE
   v_user_id uuid;
   v_guest_id uuid;
   v_new_guest_id uuid;
-  v_display_name text;
   v_claimed_by uuid;
-  v_share integer;
-  v_paid integer;
-  v_payers jsonb;
-  v_j integer;
-  v_payer jsonb;
+  v_claimed_version_no integer;
+  v_display_name text;
   v_out_participants jsonb := '[]'::jsonb;
   v_out jsonb;
   v_seen_users uuid[] := '{}';
-  v_current_version integer;
-  v_prev_payload jsonb;
-  v_existing_user_ids uuid[] := '{}';
+  v_kept_guest_ids uuid[] := '{}';
 BEGIN
   SELECT e.group_id, e.current_version_no INTO v_group_id, v_current_version
   FROM expenses e WHERE e.id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
+
   v_prev_payload := effective_expense_payload(p_expense_id, v_current_version);
   SELECT COALESCE(array_agg((pa.el->>'userId')::uuid), '{}') INTO v_existing_user_ids
   FROM jsonb_array_elements(COALESCE(v_prev_payload->'participants', '[]'::jsonb)) AS pa(el)
   WHERE pa.el->>'kind' = 'user' AND pa.el ? 'userId';
 
   v_participants := p_payload->'participants';
+  IF v_participants IS NULL OR jsonb_typeof(v_participants) <> 'array' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+  END IF;
   v_n := jsonb_array_length(v_participants);
-  v_payers := COALESCE(p_payload->'payers', '[]'::jsonb);
-
-  DELETE FROM expense_participants WHERE expense_id = p_expense_id;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+  END IF;
 
   v_i := 0;
   WHILE v_i < v_n LOOP
@@ -678,7 +679,9 @@ BEGIN
     v_guest_id := NULL;
     v_new_guest_id := NULL;
     v_claimed_by := NULL;
+    v_claimed_version_no := NULL;
     v_display_name := NULL;
+
     IF v_participant->>'kind' = 'user' THEN
       v_user_id := (v_participant->>'userId')::uuid;
       PERFORM assert_dm_pair_allowed(v_group_id, v_user_id);
@@ -690,7 +693,7 @@ BEGIN
       v_display_name := v_participant->>'displayName';
       IF jsonb_typeof(v_participant->'guestId') = 'string' THEN
         v_guest_id := (v_participant->>'guestId')::uuid;
-        SELECT id, claimed_by INTO v_new_guest_id, v_claimed_by
+        SELECT id, claimed_by, claimed_version_no INTO v_new_guest_id, v_claimed_by, v_claimed_version_no
         FROM guests WHERE id = v_guest_id AND expense_id = p_expense_id;
         IF v_new_guest_id IS NULL THEN
           RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
@@ -699,7 +702,8 @@ BEGIN
         INSERT INTO guests (expense_id, display_name) VALUES (p_expense_id, v_display_name)
         RETURNING id INTO v_new_guest_id;
       END IF;
-      IF v_claimed_by IS NOT NULL THEN
+
+      IF v_claimed_by IS NOT NULL AND v_claimed_version_no = v_current_version THEN
         v_guest_id := NULL;
         v_user_id := v_claimed_by;
         PERFORM assert_dm_pair_allowed(v_group_id, v_user_id);
@@ -709,6 +713,7 @@ BEGIN
         END IF;
       ELSE
         v_guest_id := v_new_guest_id;
+        v_kept_guest_ids := array_append(v_kept_guest_ids, v_guest_id);
       END IF;
     ELSE
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
@@ -719,48 +724,26 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_participant';
       END IF;
       v_seen_users := array_append(v_seen_users, v_user_id);
-    END IF;
-
-    v_share := (p_payload->'shares'->v_i)::integer;
-    v_paid := 0;
-    v_j := 0;
-    WHILE v_j < jsonb_array_length(v_payers) LOOP
-      v_payer := v_payers->v_j;
-      IF (v_payer->>'participantIndex')::integer = v_i THEN
-        v_paid := v_paid + (v_payer->>'amountCents')::integer;
-      END IF;
-      v_j := v_j + 1;
-    END LOOP;
-
-    INSERT INTO expense_participants (expense_id, participant_index, kind, user_id, guest_id, share_cents, paid_cents)
-    VALUES (
-      p_expense_id, v_i,
-      CASE WHEN v_user_id IS NOT NULL THEN 'user'::participant_kind ELSE 'guest'::participant_kind END,
-      v_user_id, v_guest_id, v_share, v_paid
-    );
-
-    IF v_user_id IS NOT NULL THEN
       v_out_participants := v_out_participants || jsonb_build_object('kind', 'user', 'userId', v_user_id);
     ELSE
       v_out_participants := v_out_participants || jsonb_build_object('kind', 'guest', 'guestId', v_guest_id, 'displayName', v_display_name);
     END IF;
+
     v_i := v_i + 1;
   END LOOP;
 
-  -- An unclaimed guest with no participant slot left is unreachable; its
-  -- claim token would otherwise still redeem into group membership.
   DELETE FROM guests g
   WHERE g.expense_id = p_expense_id
     AND g.claimed_by IS NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM expense_participants ep
-      WHERE ep.expense_id = p_expense_id AND ep.guest_id = g.id
-    );
+    AND NOT (g.id = ANY (v_kept_guest_ids));
 
   v_out := jsonb_set(p_payload, '{participants}', v_out_participants);
   RETURN v_out;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.resolve_expense_participants(uuid, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_expense_participants(uuid, jsonb) TO service_role;
 
 CREATE FUNCTION public.expense_change_summary(p_expense_id uuid, p_from integer, p_to integer) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
@@ -975,11 +958,11 @@ BEGIN
   RETURN QUERY
   WITH nets AS (
     SELECT e.id AS expense_id,
-           ep.kind,
-           COALESCE(ep.user_id, ep.guest_id) AS participant_id,
-           (ep.paid_cents - ep.share_cents)::bigint AS net
+           cep.kind,
+           COALESCE(cep.user_id, cep.guest_id) AS participant_id,
+           (cep.paid_cents - cep.share_cents)::bigint AS net
       FROM public.expenses e
-      JOIN public.expense_participants ep ON ep.expense_id = e.id
+      JOIN public.current_expense_participants cep ON cep.expense_id = e.id
      WHERE e.group_id = p_group_id AND e.status = 'active'
   ),
   expense_edges AS (
