@@ -124,8 +124,12 @@ CREATE TABLE public.guests (
   display_name text NOT NULL CHECK (length(display_name) BETWEEN 1 AND 80),
   claimed_by uuid REFERENCES public.users(id),
   claimed_at timestamptz,
+  claimed_version_no integer,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((claimed_by IS NULL) = (claimed_at IS NULL))
+  CONSTRAINT guests_claim_tuple_valid CHECK (
+    (claimed_by IS NULL AND claimed_at IS NULL AND claimed_version_no IS NULL) OR
+    (claimed_by IS NOT NULL AND claimed_at IS NOT NULL AND claimed_version_no IS NOT NULL)
+  )
 );
 CREATE INDEX guests_expense_idx ON public.guests (expense_id);
 

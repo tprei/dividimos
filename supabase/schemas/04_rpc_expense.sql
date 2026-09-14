@@ -388,9 +388,11 @@ BEGIN
   WHERE id = p_expense_id
   FOR UPDATE;
 
-  SELECT payload, title, total_cents INTO v_payload, v_title, v_total_cents
+  SELECT title, total_cents INTO v_title, v_total_cents
   FROM expense_versions
   WHERE expense_id = p_expense_id AND version_no = v_version_no;
+
+  v_payload := effective_expense_payload(p_expense_id, v_version_no);
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
     SELECT 1
@@ -447,10 +449,6 @@ BEGIN
   END;
 
   v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
-  IF v_materialized IS DISTINCT FROM v_payload THEN
-    UPDATE expense_versions SET payload = v_materialized
-    WHERE expense_id = p_expense_id AND version_no = v_version_no;
-  END IF;
 
   -- Shared-history latch: the restored expense becomes visible to more than
   -- one user when a second accepted member can read it or the payload names
