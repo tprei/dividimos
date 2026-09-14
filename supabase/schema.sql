@@ -105,7 +105,11 @@ CREATE TABLE public.expenses (
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
   deleted_by uuid REFERENCES public.users(id),
-  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$')
+  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$'),
+  declined_user_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
+  CONSTRAINT expenses_declined_users_valid CHECK (
+    cardinality(declined_user_ids) <= 50 AND array_position(declined_user_ids, NULL) IS NULL
+  )
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
 -- Cursor order for history paging; occurred_on above still serves its own readers.
@@ -2392,6 +2396,7 @@ DECLARE
   v_ledger_version bigint;
   v_event_id bigint;
   v_constraint text;
+  v_declined_user_ids uuid[];
 BEGIN
   v_actor := current_user_id();
 
@@ -2407,8 +2412,8 @@ BEGIN
   PERFORM lock_group(v_group_id);
   PERFORM assert_member(v_group_id, v_actor);
 
-  SELECT status, current_version_no, creator_id, chave_acesso
-    INTO v_status, v_version_no, v_creator_id, v_chave_acesso
+  SELECT status, current_version_no, creator_id, chave_acesso, declined_user_ids
+    INTO v_status, v_version_no, v_creator_id, v_chave_acesso, v_declined_user_ids
   FROM expenses
   WHERE id = p_expense_id
   FOR UPDATE;
@@ -2430,6 +2435,20 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM unnest(COALESCE(v_declined_user_ids, '{}'::uuid[])) AS d(user_id)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM group_members gm
+      WHERE gm.group_id = v_group_id
+        AND gm.user_id = d.user_id
+        AND gm.status = 'accepted'
+    )
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invitation_not_accepted';
+  END IF;
+
   IF v_chave_acesso IS NOT NULL AND EXISTS (
     SELECT 1
     FROM expenses
@@ -2442,7 +2461,11 @@ BEGIN
   END IF;
 
   BEGIN
-    UPDATE expenses SET status = 'active', deleted_at = NULL, deleted_by = NULL
+    UPDATE expenses
+    SET status = 'active',
+        deleted_at = NULL,
+        deleted_by = NULL,
+        declined_user_ids = '{}'::uuid[]
     WHERE id = p_expense_id;
   EXCEPTION
     WHEN unique_violation THEN
@@ -3015,11 +3038,9 @@ DECLARE
   v_ledger_version bigint;
   v_invited_by uuid;
   v_kind group_kind;
-  v_expense_id uuid;
-  v_title text;
-  v_total_cents integer;
   v_event_id bigint;
   v_invalidated boolean := false;
+  v_rec record;
 BEGIN
   v_actor := current_user_id();
 
@@ -3052,29 +3073,52 @@ BEGIN
     END IF;
     DELETE FROM groups WHERE id = p_group_id;
   ELSE
-    FOR v_expense_id, v_title, v_total_cents IN
-      WITH declined_expenses AS (
-        UPDATE expenses e
-        SET status = 'deleted', deleted_at = now(), deleted_by = v_actor
-        WHERE e.group_id = p_group_id
-          AND e.status = 'active'
-          AND EXISTS (
-            SELECT 1 FROM expense_participants p
-            WHERE p.expense_id = e.id AND p.user_id = v_actor
-          )
-        RETURNING e.id, e.current_version_no
-      )
-      SELECT d.id, ev.title, ev.total_cents
-      FROM declined_expenses d
+    FOR v_rec IN
+      SELECT
+        e.id AS expense_id,
+        e.status AS expense_status,
+        e.declined_user_ids,
+        ev.title,
+        ev.total_cents
+      FROM expenses e
       JOIN expense_versions ev
-        ON ev.expense_id = d.id AND ev.version_no = d.current_version_no
+        ON ev.expense_id = e.id AND ev.version_no = e.current_version_no
+      WHERE e.group_id = p_group_id
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(ev.payload->'participants', '[]'::jsonb)) AS pp(p)
+          WHERE pp.p->>'kind' = 'user'
+            AND pp.p ? 'userId'
+            AND pp.p->>'userId' = v_actor::text
+        )
+      FOR UPDATE OF e
     LOOP
-      DELETE FROM expense_participants WHERE expense_id = v_expense_id;
-      v_event_id := emit_event(
-        p_group_id, 'expense_deleted', v_actor, v_expense_id,
-        NULL, NULL, jsonb_build_object('title', v_title, 'totalCents', v_total_cents)
-      );
-      v_invalidated := true;
+      IF v_rec.expense_status = 'active' THEN
+        UPDATE expenses
+        SET status = 'deleted',
+            deleted_at = now(),
+            deleted_by = v_actor,
+            declined_user_ids = CASE
+              WHEN v_actor = ANY(declined_user_ids) THEN declined_user_ids
+              ELSE array_append(declined_user_ids, v_actor)
+            END
+        WHERE id = v_rec.expense_id;
+
+        DELETE FROM expense_participants WHERE expense_id = v_rec.expense_id;
+
+        v_event_id := emit_event(
+          p_group_id, 'expense_deleted', v_actor, v_rec.expense_id,
+          NULL, NULL, jsonb_build_object('title', v_rec.title, 'totalCents', v_rec.total_cents)
+        );
+        v_invalidated := true;
+      ELSE
+        UPDATE expenses
+        SET declined_user_ids = CASE
+              WHEN v_actor = ANY(declined_user_ids) THEN declined_user_ids
+              ELSE array_append(declined_user_ids, v_actor)
+            END
+        WHERE id = v_rec.expense_id;
+      END IF;
     END LOOP;
 
     IF v_invalidated THEN
@@ -3088,7 +3132,6 @@ BEGIN
       PERFORM broadcast_user(v_invited_by, p_group_id);
     END IF;
   END IF;
-
 
   RETURN jsonb_build_object(
     'groupId', p_group_id,
