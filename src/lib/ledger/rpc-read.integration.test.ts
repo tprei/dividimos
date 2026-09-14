@@ -1664,5 +1664,80 @@ describe.skipIf(!isIntegrationTestReady)(
       const { error: pendingError } = await editAdding(draco.id);
       expect(pendingError).toBeNull();
     });
+
+    it("rejects adding a third user to a DM expense payload via edit_expense or create_expense", async () => {
+      const [alice, bob, carol] = await createTestUsers(3);
+      const cAlice = authenticateAs(alice);
+
+      const dmRes = await cAlice.rpc("get_or_create_dm", {
+        p_user_id: bob.id,
+      });
+      const dm = dmRes.data as { groupId: string };
+      await acceptInvitation(bob, dm.groupId);
+
+      const expense = await createExpense(alice, {
+        groupId: dm.groupId,
+        title: "DM Solo",
+        occurredOn: "2026-09-13",
+        totalCents: 1000,
+        payload: {
+          items: [],
+          participants: [{ kind: "user", userId: alice.id }],
+          shares: [1000],
+          payers: [{ participantIndex: 0, amountCents: 1000 }],
+          itemAssignments: null,
+        },
+      });
+
+      const editErr = await expectRpcError(
+        cAlice.rpc("edit_expense", {
+          p_expense_id: expense.expenseId,
+          p_expected_version_no: 1,
+          p_occurred_on: "2026-09-13",
+          p_title: "DM Solo Edited",
+          p_merchant_name: "",
+          p_expense_type: "single_amount",
+          p_total_cents: 1000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items: [],
+            participants: [
+              { kind: "user", userId: alice.id },
+              { kind: "user", userId: carol.id },
+            ],
+            shares: [500, 500],
+            payers: [{ participantIndex: 0, amountCents: 1000 }],
+            itemAssignments: null,
+          },
+        }),
+      );
+      expect(editErr).toBe("invalid_operation");
+
+      const createErr = await expectRpcError(
+        cAlice.rpc("create_expense", {
+          p_client_id: crypto.randomUUID(),
+          p_group_id: dm.groupId,
+          p_occurred_on: "2026-09-13",
+          p_title: "DM with Carol",
+          p_merchant_name: "",
+          p_expense_type: "single_amount",
+          p_total_cents: 1000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items: [],
+            participants: [
+              { kind: "user", userId: alice.id },
+              { kind: "user", userId: carol.id },
+            ],
+            shares: [500, 500],
+            payers: [{ participantIndex: 0, amountCents: 1000 }],
+            itemAssignments: null,
+          },
+        }),
+      );
+      expect(createErr).toBe("invalid_operation");
+    });
   },
 );

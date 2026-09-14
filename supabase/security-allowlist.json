@@ -44,6 +44,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.assert_dm_pair_allowed(p_group_id uuid, p_user_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal helper; called only inside SECURITY DEFINER RPCs."
+    },
     "public.assert_member(p_group_id uuid, p_user_id uuid)": {
       "anon": false,
       "authenticated": false,
