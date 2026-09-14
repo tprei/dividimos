@@ -3,6 +3,7 @@
 //
 //   node scripts/verify-migrations.mjs fresh   --base <ref> --head <ref> --artifacts <dir> [--keep]
 //   node scripts/verify-migrations.mjs upgrade --base <ref> --head <ref> --artifacts <dir> [--keep]
+//   node scripts/verify-migrations.mjs epoch   --base <ref> --head <ref> --artifacts <dir> [--keep]
 //   node scripts/verify-migrations.mjs compare --expected <catalog.json> --actual <catalog.json>
 //
 // `fresh` replays HEAD's migration files into a temporary local Supabase
@@ -10,8 +11,20 @@
 // project, seeds and observes a stable application fixture, applies only
 // HEAD's new migration files with `migration up --local` (never reset or
 // repair), re-observes, and requires every stable fact to be unchanged; it
-// then records the catalog like `fresh`. `compare` diffs two catalog
-// artifacts. Failures print `::error::<reason>` lines and exit 1.
+// then records the catalog like `fresh`. `epoch` builds the final pre-reset
+// database (base ref) and the new-epoch database (head ref) INDEPENDENTLY,
+// runs the same fixture scenario in each, and requires parity: normalized
+// symbolic observations (random ids collapsed through each run's identity
+// map), separately validated token/ciphertext/timestamp formats, and
+// COMPLETE catalog equality with no upgrade exemptions. `compare` diffs two
+// catalog artifacts. Failures print `::error::<reason>` lines and exit 1.
+//
+// `epoch` exists only for the exact manifest-authorized reset transition:
+// the CLI requires --trusted-main and reads the reviewed reset manifest from
+// that immutable ref, never from the PR checkout. Ordinary PRs verify with
+// fresh and upgrade; a reset PR cannot carry its own authorization.
+// The base tree must equal the manifest's `old` section and the head tree its
+// `new` section.
 //
 // Every subprocess runs through execFile with argument arrays; refs, paths,
 // URLs, and credentials never pass through a shell.
@@ -25,6 +38,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual, promisify } from "node:util";
 import pg from "pg";
 import { createClient } from "@supabase/supabase-js";
+import {
+  manifestMismatches,
+  readResetManifest,
+} from "./check-migration-history.mjs";
 
 const execFileP = promisify(execFile);
 
@@ -33,7 +50,14 @@ const execFileP = promisify(execFile);
 /** @typedef {{kind: CatalogKind, identity: string, definition: string}} CatalogEntry */
 /** @typedef {{postgresMajor: number, entries: CatalogEntry[]}} ApplicationCatalog */
 /** @typedef {"alice"|"bob"|"carol"|"outsider"} FixtureActor */
-/** @typedef {{database: pg.Client, admin: import("@supabase/supabase-js").SupabaseClient, actors: Record<FixtureActor, import("@supabase/supabase-js").SupabaseClient>}} FixtureContext */
+/** @typedef {Record<string, string>} FixtureIdentityMap */
+/** @typedef {{label: string, value: unknown}} FixtureObservation */
+/** @typedef {{identities: FixtureIdentityMap, observations: FixtureObservation[]}} VerificationFixture */
+/** @typedef {"token"|"ciphertext"|"timestamp"} EpochEvidenceKind */
+/** @typedef {{label: string, kind: EpochEvidenceKind, format: string, value: unknown}} EpochEvidence */
+/** @typedef {{catalog: ApplicationCatalog, identities: FixtureIdentityMap, observations: FixtureObservation[], evidence: EpochEvidence[]}} EpochSideResult */
+/** @typedef {"fresh"|"upgrade"|"epoch"} VerificationMode */
+/** @typedef {{baseRef: string, headRef: string, mode: VerificationMode, artifactDirectory: string, keep?: boolean, cwd?: string, trustedMainRef?: string}} VerificationOptions */
 
 const MIGRATIONS_DIR = "supabase/migrations";
 const CONFIG_PATH = "supabase/config.toml";
@@ -42,6 +66,28 @@ const APPLICATION_SCHEMAS = ["public", "guest_credentials"];
 const OBSERVED_GRANTEES = ["anon", "authenticated", "PUBLIC", "service_role"];
 const ACTOR_NAMES = ["alice", "bob", "carol", "outsider"];
 const RECEIPT_ACCESS_KEY = "35260927654896000136550010000927651092765109";
+// Epoch evidence validators. Token shapes come from the migrations that mint
+// them: create_invite_link stores base64url(gen_random_bytes(24)) with padding
+// trimmed (exactly 32 url-safe characters), and create_guest_claim_token
+// returns "gst1_" plus base64url(gen_random_bytes(32)) with padding trimmed
+// (32 bytes encode to 43 characters once the single "=" is stripped).
+const INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32}$/;
+const CLAIM_TOKEN_PATTERN = /^gst1_[A-Za-z0-9_-]{43}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const BASE64_PART_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+// A stored created_at is fresh by construction (both epoch databases are
+// built minutes before the scenario runs): it must parse, must not be from
+// before the run, and must not be in the future beyond clock skew.
+const EPOCH_EVIDENCE_MAX_AGE_MS = 60 * 60 * 1000;
+const EPOCH_EVIDENCE_SKEW_MS = 5 * 60 * 1000;
+// Claim tokens live 7 days (20260911200000); an expiry must be future-dated
+// but bounded so a far-future sentinel cannot pass as a real TTL.
+const EPOCH_EVIDENCE_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// The fixture seeds a fixed envelope shaped exactly like the app's
+// aes-256-gcm pix wrap (iv:tag:ciphertext, src/lib/crypto.ts) so the epoch
+// gate can assert the column preserves the envelope across the reset.
+// Randomness of real wraps is covered by src/lib/crypto.test.ts, not here.
+export const PIX_FIXTURE_CIPHERTEXT = "AAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAA==:AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=";
 
 // P3b (20260913010070) closes the lookup bypass: direct authenticated
 // lookup_user_by_handle flips to denial on purpose. The upgrade gate asserts
@@ -842,7 +888,9 @@ export async function seedVerificationFixture(context) {
     await callRpc(context.actors[actor], "complete_onboarding", {
       p_handle: `verify_${actor}`,
       p_name: actorName(actor),
-      p_pix_key_encrypted: "enc",
+      // Epoch evidence asserts the stored pix wrap keeps the app envelope
+      // shape; observations never read this column, so upgrades are unaffected.
+      p_pix_key_encrypted: PIX_FIXTURE_CIPHERTEXT,
       p_pix_key_hint: "hint",
       p_pix_key_type: "cpf",
     });
@@ -942,6 +990,10 @@ export async function seedVerificationFixture(context) {
     throw new Error(`resolve_guest_claim_token returned status ${resolved.status}, expected ready`);
   }
   await callRpc(carol, "claim_guest", { p_token: claim.token });
+  // The consumed claim token's row persists as an immutable fact; epoch
+  // evidence validates the minted format from this identity. Normalization
+  // collapses only uuid-shaped identity values, never raw tokens.
+  identities["guest:claim:token"] = claim.token;
 
   const settlement = await callRpc(bob, "record_settlement", {
     p_operation_id: randomUUID(),
@@ -1087,6 +1139,401 @@ export function compareFixtureObservations(expected, actual) {
   }
   return failures.sort(compareStrings);
 }
+/**
+ * Reads the reviewed reset manifest from the immutable trusted-main ref.
+ * Reading from the checkout would let the reset PR authorize its own
+ * migration replacement.
+ *
+ * @param {string | undefined} trustedMainRef
+ * @param {{cwd?: string}} [options]
+ * @returns {{old: Record<string, {blob: string, mode: string}>, new: Record<string, {blob: string, mode: string}>}}
+ */
+export function readTrustedResetManifest(trustedMainRef, options = {}) {
+  const { manifest, failures } = readResetManifest(trustedMainRef, { cwd: options.cwd });
+  if (failures.length > 0 || manifest === undefined) {
+    throw new Error(failures.join("\n"));
+  }
+  return manifest;
+}
+
+/**
+ * Binds an epoch base/head pair to the reviewed manifest: the pre-reset base
+ * tree must equal `old` and the new-epoch head tree `new`, by blob and mode,
+ * with no missing or extra files. History-extension rules cannot apply to a
+ * pair the reset intentionally disconnects, so this replaces them.
+ *
+ * @param {{old: Record<string, {blob: string, mode: string}>, new: Record<string, {blob: string, mode: string}>}} manifest shape-checked by readTreeResetManifest
+ * @param {MigrationFile[]} baseFiles
+ * @param {MigrationFile[]} headFiles
+ * @returns {string[]} one message per drift, empty when authorized
+ */
+export function epochAuthorizationFailures(manifest, baseFiles, headFiles) {
+  const treeMap = (files) =>
+    new Map(files.map((file) => [file.path, { blob: file.blobOid, mode: file.mode }]));
+  return [
+    ...manifestMismatches("the pre-reset base", treeMap(baseFiles), manifest.old),
+    ...manifestMismatches("the new-epoch head", treeMap(headFiles), manifest.new),
+  ];
+}
+
+function checkInviteToken(value) {
+  return typeof value === "string" && INVITE_TOKEN_PATTERN.test(value)
+    ? null
+    : `expected a 32-character url-safe invite token, found ${JSON.stringify(value)}`;
+}
+
+function checkClaimToken(value) {
+  return typeof value === "string" && CLAIM_TOKEN_PATTERN.test(value)
+    ? null
+    : `expected a gst1_ claim token, found ${JSON.stringify(value)}`;
+}
+
+// The app wraps pix keys as iv:tag:ciphertext (src/lib/crypto.ts); the shape
+// check pins the 12-byte IV and 16-byte auth tag so a truncated or re-encoded
+// column cannot pass as the same wrap.
+function checkPixEnvelope(value) {
+  if (typeof value !== "string") {
+    return `expected an iv:tag:ciphertext pix envelope, found ${JSON.stringify(value)}`;
+  }
+  const parts = value.split(":");
+  if (parts.length !== 3 || parts.some((part) => part === "" || !BASE64_PART_PATTERN.test(part))) {
+    return `expected an iv:tag:ciphertext pix envelope, found ${JSON.stringify(value)}`;
+  }
+  const [iv, tag, payload] = parts.map((part) => Buffer.from(part, "base64"));
+  if (iv.length !== 12) return `pix envelope iv decodes to ${iv.length} bytes, expected 12`;
+  if (tag.length !== 16) return `pix envelope auth tag decodes to ${tag.length} bytes, expected 16`;
+  if (payload.length === 0) return "pix envelope carries an empty ciphertext";
+  return null;
+}
+
+function epochTimestampMs(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string" || typeof value === "number") return new Date(value).getTime();
+  return NaN;
+}
+
+function checkCreatedAt(value, now) {
+  const ms = epochTimestampMs(value);
+  if (!Number.isFinite(ms)) return `expected a parseable timestamp, found ${JSON.stringify(value)}`;
+  if (ms > now + EPOCH_EVIDENCE_SKEW_MS) return "created_at is dated after the epoch run";
+  if (ms < now - EPOCH_EVIDENCE_MAX_AGE_MS) return "created_at predates the epoch run";
+  return null;
+}
+
+function checkExpiresAt(value, now) {
+  const ms = epochTimestampMs(value);
+  if (!Number.isFinite(ms)) return `expected a parseable timestamp, found ${JSON.stringify(value)}`;
+  if (ms <= now) return "claim token already expired at capture";
+  if (ms > now + EPOCH_EVIDENCE_MAX_TTL_MS) return "claim token expiry exceeds the maximum TTL";
+  return null;
+}
+
+const EPOCH_EVIDENCE_CHECKS = {
+  "invite-token": (value) => checkInviteToken(value),
+  "claim-token": (value) => checkClaimToken(value),
+  "pix-envelope": (value) => checkPixEnvelope(value),
+  "created-at": (value, now) => checkCreatedAt(value, now),
+  "expires-at": (value, now) => checkExpiresAt(value, now),
+};
+/**
+ * Validates nondeterministic epoch evidence for format and security
+ * properties on one side. Evidence values are never compared across sides;
+ * only these checks run, independently per side.
+ *
+ * @param {EpochEvidence[]} evidence
+ * @param {number} [now] reference time in epoch milliseconds
+ * @returns {string[]} one message per failure, empty when valid
+ */
+export function validateEpochEvidence(evidence, now = Date.now()) {
+  const failures = [];
+  for (const entry of evidence) {
+    const check = EPOCH_EVIDENCE_CHECKS[entry?.format];
+    if (!check) {
+      failures.push(
+        `${entry?.label ?? "unknown"}: unknown epoch evidence format ${JSON.stringify(entry?.format)}`,
+      );
+      continue;
+    }
+    const reason = check(entry.value, now);
+    if (reason !== null) failures.push(`${entry.label}: ${reason}`);
+  }
+  return failures.sort(compareStrings);
+}
+const EPOCH_EVIDENCE_SPEC = [
+  { label: "invite:token", kind: "token", format: "invite-token" },
+  { label: "guest:claim:token", kind: "token", format: "claim-token" },
+  { label: "user:alice:pix", kind: "ciphertext", format: "pix-envelope" },
+  { label: "group:main:created-at", kind: "timestamp", format: "created-at" },
+  { label: "guest:claim:expires-at", kind: "timestamp", format: "expires-at" },
+];
+const EPOCH_EVIDENCE_BY_LABEL = new Map(
+  EPOCH_EVIDENCE_SPEC.map((entry) => [entry.label, entry]),
+);
+
+function epochEvidenceShapeFailures(evidence) {
+  const failures = [];
+  const seen = new Set();
+  for (const entry of evidence) {
+    const label = entry?.label;
+    if (typeof label !== "string") {
+      failures.push(`unknown evidence entry: missing label`);
+      continue;
+    }
+    if (seen.has(label)) {
+      failures.push(`${label}: duplicate epoch evidence label`);
+      continue;
+    }
+    seen.add(label);
+    const expected = EPOCH_EVIDENCE_BY_LABEL.get(label);
+    if (expected === undefined) {
+      failures.push(`${label}: unexpected epoch evidence label`);
+      continue;
+    }
+    if (entry.kind !== expected.kind) {
+      failures.push(`${label}: expected evidence kind ${expected.kind}, found ${String(entry.kind)}`);
+    }
+    if (entry.format !== expected.format) {
+      failures.push(`${label}: expected evidence format ${expected.format}, found ${String(entry.format)}`);
+    }
+  }
+  for (const expected of EPOCH_EVIDENCE_SPEC) {
+    if (!seen.has(expected.label)) failures.push(`${expected.label}: missing epoch evidence`);
+  }
+  return failures.sort(compareStrings);
+}
+
+function epochIdentityNames(identities) {
+  const names = new Map();
+  for (const [name, value] of Object.entries(identities ?? {})) {
+    if (typeof value === "string" && UUID_PATTERN.test(value) && !names.has(value)) {
+      names.set(value, name);
+    }
+  }
+  return names;
+}
+
+// Collapses random ids to symbolic names through one side's identity map. A
+// uuid-shaped string with no mapping fails loudly: silently passing it
+// through would compare base randomness against head randomness.
+function normalizeEpochValue(value, names, label) {
+  if (typeof value === "string") {
+    const name = names.get(value);
+    if (name !== undefined) return name;
+    if (UUID_PATTERN.test(value)) {
+      throw new Error(`${label}: unmapped uuid ${value} leaks randomness into a compared observation`);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeEpochValue(item, names, label));
+  }
+  if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeEpochValue(item, names, label)]),
+    );
+  }
+  return value;
+}
+
+function normalizeEpochObservations(observations, identities) {
+  const names = epochIdentityNames(identities);
+  return sortObservations(
+    observations.map((observation) => ({
+      label: observation.label,
+      value: normalizeEpochValue(observation.value, names, observation.label),
+    })),
+  );
+}
+
+/**
+ * Compares two independently seeded epoch sides label by label after
+ * normalizing each through its own identity map. Unlike the upgrade
+ * comparison this consults no intentional-upgrade exemptions: the pre-reset
+ * tip already carries every fix, so any normalized difference is a parity
+ * failure.
+ *
+ * @param {VerificationFixture} expected pre-reset side
+ * @param {VerificationFixture} actual new-epoch side
+ * @returns {string[]} one message per difference, empty when identical
+ */
+export function compareEpochObservations(expected, actual) {
+  const failures = [];
+  const expectedByLabel = new Map(expected.observations.map((observation) => [observation.label, observation]));
+  const actualByLabel = new Map(actual.observations.map((observation) => [observation.label, observation]));
+  for (const [label, observation] of expectedByLabel) {
+    if (!actualByLabel.has(label)) {
+      failures.push(`${label}: base=${JSON.stringify(observation.value)} head=missing`);
+    }
+  }
+  for (const [label, observation] of actualByLabel) {
+    if (!expectedByLabel.has(label)) {
+      failures.push(`${label}: unexpected in head, head=${JSON.stringify(observation.value)}`);
+    }
+  }
+  for (const [label, before] of expectedByLabel) {
+    const after = actualByLabel.get(label);
+    if (!after) continue;
+    let beforeValue;
+    let afterValue;
+    try {
+      beforeValue = normalizeEpochValue(before.value, epochIdentityNames(expected.identities), `base ${label}`);
+      afterValue = normalizeEpochValue(after.value, epochIdentityNames(actual.identities), `head ${label}`);
+    } catch (error) {
+      failures.push(error.message);
+      continue;
+    }
+    if (!isDeepStrictEqual(beforeValue, afterValue)) {
+      failures.push(`${label}: base=${JSON.stringify(beforeValue)} head=${JSON.stringify(afterValue)}`);
+    }
+  }
+  return failures.sort(compareStrings);
+}
+
+/**
+ * Full epoch parity verdict for one pre-reset side against one new-epoch
+ * side: evidence formats valid on both sides, observations identical after
+ * normalization, catalogs completely equal.
+ *
+ * @param {EpochSideResult} base pre-reset side
+ * @param {EpochSideResult} head new-epoch side
+ * @param {{now?: number}} [options] reference time in epoch milliseconds
+ * @returns {string[]} one message per failure, empty on parity
+ */
+export function compareEpochResults(base, head, options = {}) {
+  const now = options.now ?? Date.now();
+  return [
+    ...epochEvidenceShapeFailures(base.evidence ?? []).map((failure) => `base evidence: ${failure}`),
+    ...epochEvidenceShapeFailures(head.evidence ?? []).map((failure) => `head evidence: ${failure}`),
+    ...validateEpochEvidence(base.evidence ?? [], now).map((failure) => `base evidence: ${failure}`),
+    ...validateEpochEvidence(head.evidence ?? [], now).map((failure) => `head evidence: ${failure}`),
+    ...compareEpochObservations(base, head),
+    ...compareApplicationCatalogs(base.catalog, head.catalog),
+  ].sort(compareStrings);
+}
+
+async function epochSingleRow(database, label, sql, params) {
+  const result = await database.query(sql, params);
+  if (result.rows.length !== 1) {
+    throw new Error(`epoch evidence ${label}: expected one row, found ${result.rows.length}`);
+  }
+  return result.rows[0];
+}
+
+/**
+ * Captures the nondeterministic values epoch validates but never compares:
+ * the minted tokens, the stored pix wrap, and the run timestamps.
+ *
+ * @param {FixtureContext} context
+ * @param {FixtureIdentityMap} identities
+ * @returns {Promise<EpochEvidence[]>}
+ */
+async function collectEpochEvidence(context, identities) {
+  const pix = await epochSingleRow(
+    context.database,
+    "user:alice:pix",
+    "select pix_key_encrypted from public.users where id = $1",
+    [identities["user:alice"]],
+  );
+  const group = await epochSingleRow(
+    context.database,
+    "group:main:created-at",
+    "select created_at from public.groups where id = $1",
+    [identities["group:main"]],
+  );
+  const claim = await epochSingleRow(
+    context.database,
+    "guest:claim:expires-at",
+    `select expires_at from guest_credentials.claim_tokens where guest_id = $1
+      order by created_at desc limit 1`,
+    [identities["guest:main"]],
+  );
+  return [
+    { label: "invite:token", kind: "token", format: "invite-token", value: identities["invite:token"] },
+    { label: "guest:claim:token", kind: "token", format: "claim-token", value: identities["guest:claim:token"] },
+    { label: "user:alice:pix", kind: "ciphertext", format: "pix-envelope", value: pix.pix_key_encrypted },
+    { label: "group:main:created-at", kind: "timestamp", format: "created-at", value: group.created_at },
+    { label: "guest:claim:expires-at", kind: "timestamp", format: "expires-at", value: claim.expires_at },
+  ];
+}
+
+/**
+ * Builds one epoch side on its own: full replay of that ref's chain in a
+ * throwaway project, the shared fixture scenario, normalized observations,
+ * evidence, and the application catalog.
+ */
+async function buildEpochSide(bin, { ref, files, role, expectedMajor, keep, artifactDirectory, cwd }) {
+  const config = await gitOut(["cat-file", "blob", `${ref}:${CONFIG_PATH}`], cwd);
+  const projectDir = await mkdtemp(join(tmpdir(), `verify-migrations-epoch-${role}-`));
+  try {
+    const migrationsDir = join(projectDir, "supabase", "migrations");
+    await mkdir(migrationsDir, { recursive: true });
+    await writeFile(join(projectDir, "supabase", "config.toml"), config);
+    await writeMigrationBlobs(ref, files, migrationsDir, cwd);
+    await startProject(bin, projectDir);
+    const env = await readProjectEnv(bin, projectDir);
+    const database = new pg.Client({ connectionString: env.db_url });
+    await database.connect();
+    try {
+      if (expectedMajor !== null) {
+        const actualServerMajor = await serverMajor(database);
+        if (actualServerMajor !== expectedMajor) {
+          throw new Error(
+            `the epoch ${role} server runs PostgreSQL ${actualServerMajor} but the refs declare ${expectedMajor}; a major version change needs its own tested toolchain PR`,
+          );
+        }
+      }
+      const context = buildFixtureContext(env, database);
+      const seed = await seedVerificationFixture(context);
+      return {
+        catalog: await captureApplicationCatalog(database),
+        identities: seed.identities,
+        observations: normalizeEpochObservations(seed.observations, seed.identities),
+        evidence: await collectEpochEvidence(context, seed.identities),
+      };
+    } finally {
+      await database.end();
+    }
+  } finally {
+    if (keep) {
+      await writeFile(join(artifactDirectory, `project-dir-epoch-${role}.txt`), `${projectDir}\n`);
+    } else {
+      await run(bin, ["stop", "--no-backup"], { cwd: projectDir }).catch((error) => {
+        console.error(`verify-migrations: supabase stop failed: ${error.message}`);
+      });
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * Runs the epoch transition check end to end and writes per-side catalog,
+ * observation, and evidence artifacts.
+ */
+async function runEpochVerification({ bin, baseRef, headRef, baseFiles, headFiles, baseMajor, headMajor, artifactDirectory, keep, cwd }) {
+  const base = await buildEpochSide(bin, {
+    ref: baseRef, files: baseFiles, role: "base", expectedMajor: baseMajor, keep, artifactDirectory, cwd,
+  });
+  const head = await buildEpochSide(bin, {
+    ref: headRef, files: headFiles, role: "head", expectedMajor: headMajor, keep, artifactDirectory, cwd,
+  });
+  for (const [role, side] of [["base", base], ["head", head]]) {
+    await writeFile(
+      join(artifactDirectory, `catalog-epoch-${role}.json`),
+      `${JSON.stringify({ postgresMajor: side.catalog.postgresMajor, entries: side.catalog.entries }, null, 2)}\n`,
+    );
+    await writeFile(
+      join(artifactDirectory, `observations-epoch-${role}.json`),
+      `${JSON.stringify(side.observations, null, 2)}\n`,
+    );
+    await writeFile(
+      join(artifactDirectory, `evidence-epoch-${role}.json`),
+      `${JSON.stringify(side.evidence, null, 2)}\n`,
+    );
+  }
+  const failures = compareEpochResults(base, head);
+  if (failures.length > 0) throw new Error(failures.join("\n"));
+  return { ...head.catalog, observations: head.observations };
+}
 
 async function startProject(bin, projectDir) {
   try {
@@ -1163,15 +1610,17 @@ function buildFixtureContext(env, database) {
 /**
  * Runs one full verification mode and writes the artifacts.
  *
- * @param {{baseRef: string, headRef: string, mode: "fresh"|"upgrade", artifactDirectory: string, keep?: boolean, cwd?: string}} options
+ * @param {VerificationOptions} options
  *   cwd scopes git operations and defaults to the process working directory
  * @returns {Promise<ApplicationCatalog & {observations?: Array<{label: string, value: unknown}>}>}
  * @throws {Error} with every accumulated failure message
  */
 export async function verifyMigrations(options) {
-  const { baseRef, headRef, mode, artifactDirectory, keep = false } = options;
+  const { baseRef, headRef, mode, artifactDirectory, keep = false, trustedMainRef } = options;
   const cwd = options.cwd ?? process.cwd();
-  if (mode !== "fresh" && mode !== "upgrade") throw new Error(`unknown mode: ${String(mode)}`);
+  if (mode !== "fresh" && mode !== "upgrade" && mode !== "epoch") {
+    throw new Error(`unknown mode: ${String(mode)}`);
+  }
   if (!baseRef) throw new Error("a --base revision is required");
   if (!headRef) throw new Error("a --head revision is required");
   if (!artifactDirectory) throw new Error("an --artifacts directory is required");
@@ -1183,7 +1632,16 @@ export async function verifyMigrations(options) {
 
   const baseFiles = await readMigrationFiles(baseRef, { cwd });
   const headFiles = await readMigrationFiles(headRef, { cwd });
-  const failures = validateMigrationHistory(baseFiles, headFiles);
+  // Epoch authorizes the pair against the reviewed manifest in immutable
+  // trusted main, never against a manifest supplied by the reset PR itself.
+  const failures =
+    mode === "epoch"
+      ? epochAuthorizationFailures(
+          readTrustedResetManifest(trustedMainRef, { cwd }),
+          baseFiles,
+          headFiles,
+        )
+      : validateMigrationHistory(baseFiles, headFiles);
   const baseMajor = await postgresMajor(baseRef, { cwd });
   const headMajor = await postgresMajor(headRef, { cwd });
   if (baseMajor !== null && headMajor !== null && baseMajor !== headMajor) {
@@ -1193,6 +1651,15 @@ export async function verifyMigrations(options) {
   }
   if (failures.length > 0) throw new Error(failures.join("\n"));
   bin = await pinnedSupabaseCli();
+
+  if (mode === "epoch") {
+    bin = await pinnedSupabaseCli();
+    await mkdir(artifactDirectory, { recursive: true });
+    return runEpochVerification({
+      bin, baseRef, headRef, baseFiles, headFiles, baseMajor, headMajor,
+      artifactDirectory, keep, cwd,
+    });
+  }
 
   const builtRef = mode === "fresh" ? headRef : baseRef;
   const config = await gitOut(["cat-file", "blob", `${builtRef}:${CONFIG_PATH}`], cwd);
@@ -1266,6 +1733,7 @@ export async function verifyMigrations(options) {
 const USAGE = `usage:
   node scripts/verify-migrations.mjs fresh   --base <ref> --head <ref> --artifacts <dir> [--keep]
   node scripts/verify-migrations.mjs upgrade --base <ref> --head <ref> --artifacts <dir> [--keep]
+  node scripts/verify-migrations.mjs epoch   --base <ref> --head <ref> --trusted-main <ref> --artifacts <dir> [--keep]
   node scripts/verify-migrations.mjs compare --expected <catalog.json> --actual <catalog.json>`;
 
 function parseArgs(argv, valueFlags, booleanFlags) {
@@ -1314,7 +1782,7 @@ async function readCatalogFile(path) {
  */
 async function main(argv) {
   const [mode, ...rest] = argv;
-  if (mode !== "fresh" && mode !== "upgrade" && mode !== "compare") {
+  if (mode !== "fresh" && mode !== "upgrade" && mode !== "epoch" && mode !== "compare") {
     console.error(USAGE);
     for (const line of [mode ? `unknown mode: ${mode}` : "missing mode"]) {
       console.error(`::error::${line}`);
@@ -1341,17 +1809,19 @@ async function main(argv) {
       console.error(`compare failed with ${failures.length} difference(s)`);
       return 1;
     }
-    const flags = parseArgs(rest, ["base", "head", "artifacts"], ["keep"]);
+    const flags = parseArgs(rest, ["base", "head", "artifacts", "trusted-main"], ["keep"]);
     const baseRef = flags.get("base");
     const headRef = flags.get("head");
+    const trustedMainRef = flags.get("trusted-main");
     const artifactDirectory = flags.get("artifacts");
     if (!baseRef || !headRef || !artifactDirectory) {
-      throw new Error("fresh and upgrade require --base, --head, and --artifacts");
+      throw new Error("fresh, upgrade, and epoch require --base, --head, and --artifacts");
     }
     const artifacts = resolve(artifactDirectory);
     await verifyMigrations({
       baseRef,
       headRef,
+      trustedMainRef,
       mode,
       artifactDirectory: artifacts,
       keep: flags.has("keep"),

@@ -47,6 +47,10 @@ jobs:
             echo "sql=false" >> "$GITHUB_OUTPUT"
           fi
 
+# Epoch verification is reserved for the manifest-authorized reset.
+# Its caller passes the immutable base ref as --trusted-main after the
+# authorization is on main; ordinary PRs continue to run the append-only
+# fresh and upgrade jobs below.
   verify-fresh:
     name: Verify fresh catalog (HEAD migrations)
     needs: changes

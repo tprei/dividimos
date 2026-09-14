@@ -1,6 +1,7 @@
 // Tests for scripts/verify-migrations.mjs: the pure logic and the CLI compare
-// mode. Nothing here starts containers or touches the network; the fresh and
-// upgrade paths run only in CI against a real Supabase project.
+// and epoch-guard modes. Nothing here starts containers or touches the
+// network; the fresh, upgrade, and epoch database builds run only in CI
+// against real Supabase projects.
 
 import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -12,10 +13,16 @@ import { fileURLToPath } from "node:url";
 
 import {
   compareApplicationCatalogs,
+  compareEpochObservations,
+  compareEpochResults,
   compareFixtureObservations,
+  epochAuthorizationFailures,
   INTENTIONAL_UPGRADES,
+  PIX_FIXTURE_CIPHERTEXT,
   postgresMajor,
   readMigrationFiles,
+  readTrustedResetManifest,
+  validateEpochEvidence,
   validateMigrationHistory,
   verifyMigrations,
 } from "./verify-migrations.mjs";
@@ -63,6 +70,8 @@ const M_C = "supabase/migrations/20260913000000_third_change.sql";
 const OID_A = "a".repeat(40);
 const OID_B = "b".repeat(40);
 const OID_C = "c".repeat(40);
+
+const RESET_MANIFEST = "supabase/migrations-reset-manifest.json";
 
 function migrationFile(version, path, blobOid, mode = "100644") {
   return { version, path, blobOid, mode };
@@ -415,6 +424,184 @@ test("the CLI compare mode exits 0 for identical catalogs", () => {
     assert.match(result.stdout, /OK: catalogs identical/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("validateEpochEvidence accepts valid token, ciphertext, and timestamp evidence", () => {
+  const now = Date.parse("2026-09-13T12:00:00.000Z");
+  const evidence = [
+    { label: "invite", format: "invite-token", value: "A".repeat(32) },
+    { label: "claim", format: "claim-token", value: `gst1_${"B".repeat(43)}` },
+    { label: "pix", format: "pix-envelope", value: PIX_FIXTURE_CIPHERTEXT },
+    { label: "created", format: "created-at", value: new Date(now - 1_000).toISOString() },
+    {
+      label: "expires",
+      format: "expires-at",
+      value: new Date(now + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+    },
+  ];
+  assert.deepEqual(validateEpochEvidence(evidence, now), []);
+});
+
+test("validateEpochEvidence rejects malformed or unsafe nondeterministic values", () => {
+  const now = Date.parse("2026-09-13T12:00:00.000Z");
+  const failures = validateEpochEvidence(
+    [
+      { label: "invite", format: "invite-token", value: "A".repeat(31) },
+      { label: "claim", format: "claim-token", value: "gst1_A" },
+      { label: "pix", format: "pix-envelope", value: "not-an-envelope" },
+      {
+        label: "created",
+        format: "created-at",
+        value: new Date(now - 60 * 60 * 1_000 - 1).toISOString(),
+      },
+      { label: "expires", format: "expires-at", value: new Date(now - 1).toISOString() },
+    ],
+    now,
+  );
+  assert.equal(failures.length, 5);
+  for (const label of ["invite", "claim", "pix", "created", "expires"]) {
+    assert.ok(failures.some((failure) => failure.startsWith(`${label}:`)));
+  }
+});
+
+test("compareEpochObservations normalizes each side through its own identity map", () => {
+  const baseAlice = "11111111-1111-4111-8111-111111111111";
+  const baseGroup = "22222222-2222-4222-8222-222222222222";
+  const headAlice = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const headGroup = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const base = {
+    identities: { "user:alice": baseAlice, "group:main": baseGroup },
+    observations: [
+      {
+        label: "ids",
+        value: { actor: baseAlice, group: baseGroup, members: [baseAlice] },
+      },
+    ],
+  };
+  const head = {
+    identities: { "user:alice": headAlice, "group:main": headGroup },
+    observations: [
+      {
+        label: "ids",
+        value: { actor: headAlice, group: headGroup, members: [headAlice] },
+      },
+    ],
+  };
+  assert.deepEqual(compareEpochObservations(base, head), []);
+});
+
+test("compareEpochObservations rejects an unmapped UUID instead of comparing randomness", () => {
+  const failures = compareEpochObservations(
+    {
+      identities: {},
+      observations: [{ label: "ids", value: "11111111-1111-4111-8111-111111111111" }],
+    },
+    {
+      identities: {},
+      observations: [{ label: "ids", value: "22222222-2222-4222-8222-222222222222" }],
+    },
+  );
+  assert.equal(failures.length, 1);
+  assert.ok(failures.every((failure) => /unmapped uuid/.test(failure)));
+});
+
+test("compareEpochResults requires evidence, normalized observations, and full catalog parity", () => {
+  const now = Date.parse("2026-09-13T12:00:00.000Z");
+  const side = (userId, groupId) => ({
+    catalog: { postgresMajor: 15, entries: [] },
+    identities: { "user:alice": userId, "group:main": groupId },
+    observations: [{ label: "ids", value: { actor: userId, group: groupId } }],
+    evidence: [
+      { label: "invite:token", kind: "token", format: "invite-token", value: "A".repeat(32) },
+      { label: "guest:claim:token", kind: "token", format: "claim-token", value: `gst1_${"B".repeat(43)}` },
+      { label: "user:alice:pix", kind: "ciphertext", format: "pix-envelope", value: PIX_FIXTURE_CIPHERTEXT },
+      { label: "group:main:created-at", kind: "timestamp", format: "created-at", value: new Date(now).toISOString() },
+      { label: "guest:claim:expires-at", kind: "timestamp", format: "expires-at", value: new Date(now + 1_000).toISOString() },
+    ],
+  });
+  const base = side("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222");
+  const head = side("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+  assert.deepEqual(compareEpochResults(base, head, { now }), []);
+
+  const changed = {
+    ...head,
+    catalog: {
+      ...head.catalog,
+      entries: [{ kind: "schema", identity: "unexpected", definition: "unexpected" }],
+    },
+    evidence: [{ label: "pix", kind: "ciphertext", format: "pix-envelope", value: "bad" }],
+  };
+  const failures = compareEpochResults(base, changed, { now });
+  assert.ok(failures.some((failure) => /head evidence: pix/.test(failure)));
+  assert.ok(failures.some((failure) => /schema: extra unexpected/.test(failure)));
+});
+
+test("epochAuthorizationFailures accepts only exact manifest blob and mode bindings", () => {
+  const oldFiles = [migrationFile("20260912000000", M_A, OID_A)];
+  const newFiles = [migrationFile("20260914000000", M_C, OID_C)];
+  const manifest = {
+    old: { [M_A]: { blob: OID_A, mode: "100644" } },
+    new: { [M_C]: { blob: OID_C, mode: "100644" } },
+  };
+  assert.deepEqual(epochAuthorizationFailures(manifest, oldFiles, newFiles), []);
+  const failures = epochAuthorizationFailures(
+    manifest,
+    oldFiles,
+    [migrationFile("20260914000000", M_C, OID_C, "100755")],
+  );
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /mode 100755/);
+});
+
+test("readTrustedResetManifest ignores a checkout manifest and reads the trusted ref", () => {
+  const repo = initRepo();
+  try {
+    const base = repo.commit({ [M_A]: "select 1;\n" }, "base");
+    const candidate = repo.commit({ [M_C]: "select 3;\n" }, "candidate");
+    const expected = {
+      old: { [M_A]: { blob: repo.blobOf(base, M_A), mode: "100644" } },
+      new: { [M_C]: { blob: repo.blobOf(candidate, M_C), mode: "100644" } },
+    };
+    const trusted = repo.commit({ [RESET_MANIFEST]: `${JSON.stringify(expected)}\n` }, "trusted");
+    repo.commit({
+      [RESET_MANIFEST]: `${JSON.stringify({ old: {}, new: {} })}\n`,
+    }, "head checkout");
+    assert.deepEqual(readTrustedResetManifest(trusted, { cwd: repo.dir }), expected);
+  } finally {
+    repo.dispose();
+  }
+});
+
+test("verifyMigrations refuses epoch mode without a trusted-main manifest", async () => {
+  const repo = initRepo();
+  try {
+    const base = repo.commit({
+      [M_A]: "select 1;\n",
+      "supabase/config.toml": 'project_id = "fixture"\n[db]\nmajor_version = 15\n',
+    }, "base");
+    const head = repo.commit({
+      [M_B]: "select 2;\n",
+      [RESET_MANIFEST]: `${JSON.stringify({ old: {}, new: {} })}\n`,
+    }, "self-authorizing head");
+    const artifacts = mkdtempSync(join(tmpdir(), "verify-migrations-epoch-artifacts-"));
+    try {
+      await assert.rejects(
+        verifyMigrations({
+          baseRef: base,
+          headRef: head,
+          trustedMainRef: base,
+          mode: "epoch",
+          artifactDirectory: artifacts,
+          cwd: repo.dir,
+        }),
+        /trusted main carries no reviewed reset manifest/,
+      );
+    } finally {
+      rmSync(artifacts, { recursive: true, force: true });
+    }
+  } finally {
+    repo.dispose();
   }
 });
 
