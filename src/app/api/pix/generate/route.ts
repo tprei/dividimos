@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -6,19 +5,13 @@ import { AppError } from "@/lib/errors";
 import { decryptPixKey } from "@/lib/crypto";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { transfersFromBalances } from "@/lib/ledger/transfers";
-import type { BalanceRow, ParticipantKind } from "@/types/ledger";
+import type { BalanceRow } from "@/types/ledger";
 import { jsonResponse } from "../response";
 
 // One byte-identical denial for every pre-edge refusal. Returning distinct
 // messages would let a caller probe whether a co-member has a key configured,
 // owes them, etc. By the time a caller has proven a real payable edge (or is
 const DENIED = { error: "Acesso negado" } as const;
-
-interface GroupBalanceDbRow {
-  kind: ParticipantKind;
-  participant_id: string;
-  net_cents: number | string;
-}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -88,15 +81,12 @@ export async function POST(request: Request) {
   // must not exceed what the caller actually owes. Requesting your own key
   // discloses no third-party secret, so self-collection skips this gate.
   if (!isSelf) {
-    // Generated Database types do not yet reflect the Phase 4 group_balances table.
-    const untypedAdmin = admin as unknown as SupabaseClient;
-    const { data: balanceRows } = await untypedAdmin
+    const { data: balanceRows } = await admin
       .from("group_balances")
       .select("kind, participant_id, net_cents")
       .eq("group_id", groupId);
 
-    const rawRows = (balanceRows ?? []) as unknown as GroupBalanceDbRow[];
-    const balances: BalanceRow[] = rawRows.map((row) => ({
+    const balances: BalanceRow[] = (balanceRows ?? []).map((row) => ({
       kind: row.kind,
       participantId: row.participant_id,
       netCents: Number(row.net_cents),

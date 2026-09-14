@@ -128,21 +128,23 @@ BEGIN
     'merchantName', v.merchant_name,
     'expenseType', v.expense_type,
     'totalCents', v.total_cents,
-    'myShareCents', COALESCE((
-      SELECT ep.share_cents FROM expense_participants ep
-      WHERE ep.expense_id = e.id AND ep.user_id = p_viewer
-    ), 0),
-    'myPaidCents', COALESCE((
-      SELECT ep.paid_cents FROM expense_participants ep
-      WHERE ep.expense_id = e.id AND ep.user_id = p_viewer
-    ), 0),
+    'myShareCents', COALESCE(part.my_share_cents, 0),
+    'myPaidCents', COALESCE(part.my_paid_cents, 0),
     'participantCount', CASE WHEN e.status = 'deleted'
       THEN jsonb_array_length(COALESCE(effective_expense_payload(e.id, e.current_version_no) -> 'participants', '[]'::jsonb))
-      ELSE (SELECT count(*)::integer FROM expense_participants ep WHERE ep.expense_id = e.id)
+      ELSE COALESCE(part.participant_count, 0)
     END
   ) INTO v_out
   FROM expenses e
   JOIN expense_versions v ON v.expense_id = e.id AND v.version_no = e.current_version_no
+  LEFT JOIN LATERAL (
+    SELECT
+      sum(cep.share_cents) FILTER (WHERE cep.user_id = p_viewer)::integer AS my_share_cents,
+      sum(cep.paid_cents) FILTER (WHERE cep.user_id = p_viewer)::integer AS my_paid_cents,
+      count(*)::integer AS participant_count
+    FROM current_expense_participants cep
+    WHERE cep.expense_id = e.id
+  ) part ON true
   WHERE e.id = p_expense_id;
   RETURN v_out;
 END;

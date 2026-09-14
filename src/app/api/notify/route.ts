@@ -161,7 +161,7 @@ export async function POST(request: Request): Promise<Response> {
     const shares = new Map<string, number>();
     if (event.kind === "expense_created" && event.expense_id && targets.length > 0) {
       const { data: participantRows } = await admin
-        .from("expense_participants")
+        .from("current_expense_participants")
         .select("user_id, share_cents")
         .eq("expense_id", event.expense_id)
         .in(
@@ -169,7 +169,7 @@ export async function POST(request: Request): Promise<Response> {
           targets.map((member) => member.userId),
         );
       for (const row of participantRows ?? []) {
-        if (row.user_id !== null) {
+        if (row.user_id !== null && row.share_cents !== null) {
           shares.set(row.user_id, row.share_cents);
         }
       }
