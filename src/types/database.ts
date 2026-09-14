@@ -128,6 +128,7 @@ export type Database = {
           expense_type: Database["public"]["Enums"]["expense_type"]
           fixed_fee_cents: number
           merchant_name: string | null
+          occurred_on: string
           payload: Json
           service_fee_bps: number
           title: string
@@ -142,6 +143,7 @@ export type Database = {
           expense_type: Database["public"]["Enums"]["expense_type"]
           fixed_fee_cents?: number
           merchant_name?: string | null
+          occurred_on: string
           payload: Json
           service_fee_bps?: number
           title: string
@@ -156,6 +158,7 @@ export type Database = {
           expense_type?: Database["public"]["Enums"]["expense_type"]
           fixed_fee_cents?: number
           merchant_name?: string | null
+          occurred_on?: string
           payload?: Json
           service_fee_bps?: number
           title?: string
@@ -198,7 +201,6 @@ export type Database = {
           deleted_by: string | null
           group_id: string
           id: string
-          occurred_on: string
           status: Database["public"]["Enums"]["expense_status"]
         }
         Insert: {
@@ -212,7 +214,6 @@ export type Database = {
           deleted_by?: string | null
           group_id: string
           id?: string
-          occurred_on: string
           status?: Database["public"]["Enums"]["expense_status"]
         }
         Update: {
@@ -226,7 +227,6 @@ export type Database = {
           deleted_by?: string | null
           group_id?: string
           id?: string
-          occurred_on?: string
           status?: Database["public"]["Enums"]["expense_status"]
         }
         Relationships: [
@@ -236,6 +236,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expenses_current_version_fk"
+            columns: ["id", "current_version_no"]
+            isOneToOne: false
+            referencedRelation: "expense_versions"
+            referencedColumns: ["expense_id", "version_no"]
           },
           {
             foreignKeyName: "expenses_deleted_by_fkey"
@@ -600,6 +607,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "guests_claimed_version_fk"
+            columns: ["expense_id", "claimed_version_no"]
+            isOneToOne: false
+            referencedRelation: "expense_versions"
+            referencedColumns: ["expense_id", "version_no"]
           },
           {
             foreignKeyName: "guests_expense_id_fkey"

@@ -93,7 +93,7 @@ BEGIN
     'versionNo', v.version_no,
     'authorId', v.author_id,
     'createdAt', to_jsonb(v.created_at),
-    'occurredOn', to_jsonb(e.occurred_on),
+    'occurredOn', to_jsonb(v.occurred_on),
     'title', v.title,
     'merchantName', v.merchant_name,
     'expenseType', v.expense_type,
@@ -104,7 +104,6 @@ BEGIN
     'changeSummary', v.change_summary
   ) INTO v_out
   FROM expense_versions v
-  JOIN expenses e ON e.id = v.expense_id
   WHERE v.expense_id = p_expense_id AND v.version_no = p_version_no;
   RETURN v_out;
 END;
@@ -121,7 +120,7 @@ BEGIN
     'groupId', e.group_id,
     'creatorId', e.creator_id,
     'status', e.status,
-    'occurredOn', to_jsonb(e.occurred_on),
+    'occurredOn', to_jsonb(v.occurred_on),
     'createdAt', to_jsonb(e.created_at),
     'versionNo', e.current_version_no,
     'title', v.title,
@@ -543,7 +542,7 @@ BEGIN
       'creatorId', e.creator_id,
       'status', e.status,
       'currentVersionNo', e.current_version_no,
-      'occurredOn', to_jsonb(e.occurred_on),
+      'occurredOn', to_jsonb(v.occurred_on),
       'createdAt', to_jsonb(e.created_at),
       'deletedAt', to_jsonb(e.deleted_at),
       'deletedBy', e.deleted_by
@@ -577,6 +576,7 @@ BEGIN
     )
   ) INTO v_out
   FROM expenses e
+  JOIN expense_versions v ON v.expense_id = e.id AND v.version_no = e.current_version_no
   WHERE e.id = p_expense_id;
   RETURN v_out;
 END;

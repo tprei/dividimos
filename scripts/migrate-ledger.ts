@@ -673,6 +673,7 @@ async function migrateExpenses(
       expenseId,
       1,
       expense.creator_id,
+      expense.created_at,
       expense.updated_at,
       expense.title,
       expense.merchant_name,
@@ -719,7 +720,6 @@ async function migrateExpenses(
       { name: "group_id" },
       { name: "creator_id" },
       { name: "status" },
-      { name: "occurred_on", expr: (placeholder) => `(${placeholder}::timestamptz)::date` },
       { name: "created_at" },
     ],
     expenseRows.map(([id, clientId, groupId, creatorId, status, createdAt]) => [
@@ -728,7 +728,6 @@ async function migrateExpenses(
       groupId,
       creatorId,
       status,
-      createdAt,
       createdAt,
     ]),
   );
@@ -739,6 +738,7 @@ async function migrateExpenses(
       { name: "expense_id" },
       { name: "version_no" },
       { name: "author_id" },
+      { name: "occurred_on", expr: (placeholder) => `(${placeholder}::timestamptz)::date` },
       { name: "created_at" },
       { name: "title" },
       { name: "merchant_name" },
