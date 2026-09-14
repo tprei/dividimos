@@ -4252,10 +4252,16 @@ CREATE POLICY group_broadcast_authz ON realtime.messages FOR SELECT TO authentic
 USING (
   CASE
     WHEN realtime.topic() LIKE 'user:%' THEN
-      substring(realtime.topic() FROM '^user:([0-9a-fA-F-]{36})$')::uuid = auth.uid()
+      substring(
+        realtime.topic()
+        FROM '^user:([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})$'
+      )::uuid = auth.uid()
     ELSE
       public.current_user_is_member(
-        substring(realtime.topic() FROM '^(?:group|chat):([0-9a-fA-F-]{36})$')::uuid
+        substring(
+          realtime.topic()
+          FROM '^(?:group|chat):([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})$'
+        )::uuid
       )
   END
 );
