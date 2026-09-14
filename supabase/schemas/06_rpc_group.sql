@@ -193,6 +193,15 @@ BEGIN
   SET status = 'accepted', accepted_at = now()
   WHERE group_id = p_group_id AND user_id = v_actor;
 
+  -- Shared-history latch: joining a group whose facts already exist makes
+  -- them shared from this moment.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = p_group_id
+    AND financial_history_shared_at IS NULL
+    AND (EXISTS (SELECT 1 FROM public.expenses WHERE group_id = p_group_id)
+         OR EXISTS (SELECT 1 FROM public.settlements WHERE group_id = p_group_id));
+
   SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = p_group_id;
 
   v_event_id := emit_event(
@@ -215,6 +224,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.decline_invitation(p_group_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -438,6 +448,7 @@ AS $$
 DECLARE
   v_actor uuid;
   v_creator_id uuid;
+  v_shared_at timestamptz;
 BEGIN
   v_actor := current_user_id();
 
@@ -458,9 +469,11 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
   END IF;
 
-  IF (SELECT count(*) FROM group_members WHERE group_id = p_group_id) > 1
-     AND (EXISTS (SELECT 1 FROM expenses WHERE group_id = p_group_id)
-          OR EXISTS (SELECT 1 FROM settlements WHERE group_id = p_group_id)) THEN
+  -- The latch remembers that financial history was shared even when every
+  -- witness has since departed; current membership alone cannot measure it.
+  SELECT financial_history_shared_at INTO v_shared_at
+  FROM groups WHERE id = p_group_id;
+  IF v_shared_at IS NOT NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'group_has_history';
   END IF;
 
@@ -469,6 +482,7 @@ BEGIN
   RETURN jsonb_build_object('groupId', p_group_id);
 END;
 $$;
+
 
 CREATE FUNCTION public.get_or_create_dm(p_user_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -762,6 +776,15 @@ BEGIN
     VALUES (v_link.group_id, v_actor, 'accepted', now());
   END IF;
 
+  -- Shared-history latch: joining a group whose facts already exist makes
+  -- them shared from this moment.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_link.group_id
+    AND financial_history_shared_at IS NULL
+    AND (EXISTS (SELECT 1 FROM public.expenses WHERE group_id = v_link.group_id)
+         OR EXISTS (SELECT 1 FROM public.settlements WHERE group_id = v_link.group_id));
+
   SELECT ledger_version INTO v_ledger_version FROM groups WHERE id = v_link.group_id;
 
   v_event_id := emit_event(
@@ -781,6 +804,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.update_profile(
   p_name text DEFAULT NULL,

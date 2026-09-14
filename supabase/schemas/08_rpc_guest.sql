@@ -273,6 +273,12 @@ BEGIN
   ON CONFLICT (group_id, user_id)
   DO UPDATE SET status = 'accepted', accepted_at = COALESCE(group_members.accepted_at, now());
 
+  -- Shared-history latch: the claim just granted membership for an existing
+  -- expense to a new user, so the expense's facts are shared from now on.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = v_rec.group_id AND financial_history_shared_at IS NULL;
+
   v_ledger_version := recompute_group_balances(v_rec.group_id);
 
   v_event_id := emit_event(
@@ -295,6 +301,7 @@ BEGIN
   );
 END;
 $$;
+
 
 -- Revoking an already-claimed guest is a no-op delete, not an error, so a
 -- member can always clear a credential that leaked.
