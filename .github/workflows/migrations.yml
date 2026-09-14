@@ -84,7 +84,7 @@ jobs:
             > src/types/database.ts
           if ! git diff --quiet -- src/types/database.ts; then
             echo "::error::src/types/database.ts does not match the database HEAD's migrations build."
-            git diff --stat -- src/types/database.ts
+            git diff -- src/types/database.ts
             exit 1
           fi
 
