@@ -1,3 +1,4 @@
+import { createCipheriv, randomBytes } from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SignJWT } from "jose";
 import type { ValidationResult } from "../src/lib/expense-money";
@@ -67,6 +68,8 @@ export interface CreateUserOptions {
   handle?: string;
   name?: string;
   pixKeyType?: "cpf" | "email" | "random";
+  pixKey?: string;
+  pixKeyHint?: string;
   onboarded?: boolean;
 }
 
@@ -103,6 +106,20 @@ function unwrap<T, E>(result: ValidationResult<T, E>, context: string): T {
   }
   return result.value;
 }
+
+function encryptPixKey(plaintext: string): string {
+  const hex = process.env.PIX_ENCRYPTION_KEY;
+  if (!hex || hex.length !== 64) {
+    return "";
+  }
+  const key = Buffer.from(hex, "hex");
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString("base64")}:${authTag.toString("base64")}:${encrypted.toString("base64")}`;
+}
+
 
 
 // ---------------------------------------------------------------------------
@@ -187,10 +204,14 @@ export class SeedHelper {
     const userId = authData.user.id;
     this.userIds.push(userId);
 
+    const rawPixKey = options.pixKey ?? (pixKeyType === "email" ? email : undefined);
+    const pixKeyEncrypted =
+      rawPixKey && process.env.PIX_ENCRYPTION_KEY ? encryptPixKey(rawPixKey) : null;
     const pixKeyHint =
-      pixKeyType === "email"
+      options.pixKeyHint ??
+      (pixKeyType === "email"
         ? `synth_${testId.slice(0, 4)}***@test.dividimos.local`
-        : `***@hint`;
+        : `***@hint`);
 
     const { error: profileError } = await this.admin
       .from("users")
@@ -199,6 +220,7 @@ export class SeedHelper {
         name,
         pix_key_type: pixKeyType,
         pix_key_hint: pixKeyHint,
+        pix_key_encrypted: pixKeyEncrypted,
         onboarded,
       })
       .eq("id", userId);

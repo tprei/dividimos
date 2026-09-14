@@ -140,12 +140,12 @@ test.describe("Settlement Flow", () => {
     await carolCtx.close();
   });
 
-  test("debtor sees the pay row on the group balances", async ({
+  test("debtor sees the pay row and generates Pix QR code for payment", async ({
     page,
     seed,
     loginAs,
   }) => {
-    const alice = await seed.createUser({ name: "Alice Pix" });
+    const alice = await seed.createUser({ name: "Alice Pix", pixKey: "alice@test.com" });
     const bob = await seed.createUser({ name: "Bob Pix" });
     const group = await seed.createGroup(alice.id, [bob.id], "Pix Test");
 
@@ -161,11 +161,29 @@ test.describe("Settlement Flow", () => {
 
     await expect(page.getByText("Saldos")).toBeVisible({ timeout: 10000 });
 
-    await expect(
-      page.getByRole("button", { name: /Você paga/i }),
-    ).toBeVisible({ timeout: 10000 });
-
+    const payButton = page.getByRole("button", { name: /Você paga/i });
+    await expect(payButton).toBeVisible({ timeout: 10000 });
     await expect(page.getByText("R$ 100,00").first()).toBeVisible();
+
+    // Click pay button to open Pix QR modal
+    await payButton.click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible({ timeout: 10000 });
+    await expect(dialog.getByText("Pagar via Pix")).toBeVisible();
+    await expect(dialog.getByText("R$ 100,00").first()).toBeVisible();
+
+    // QR code canvas is rendered
+    await expect(dialog.locator("canvas")).toBeVisible({ timeout: 15000 });
+
+    // Copia e Cola button is enabled
+    await expect(
+      dialog.getByRole("button", { name: /Copiar código Pix/i }),
+    ).toBeEnabled();
+
+    // Close modal via Escape
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
   });
 
   test("creditor sees a charge row and can record the receipt", async ({

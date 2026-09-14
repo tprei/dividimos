@@ -122,4 +122,43 @@ test.describe("Group Invite & Accept", () => {
     await expect(page.getByText("Pendente", { exact: true })).toBeVisible();
     await expect(page.getByText("Criador")).toBeVisible();
   });
+
+  test("group bill applies immediately to balances without individual bill acceptance", async ({
+    seed,
+    browser,
+  }) => {
+    const alice = await seed.createUser({ name: "Alice GroupBill" });
+    const bob = await seed.createUser({ name: "Bob GroupBill" });
+    const group = await seed.createGroup(alice.id, [bob.id], "Group Bill Skip Acceptance");
+
+    // Alice creates an expense in the group with Bob
+    await seed.createExpense(group.id, alice.id, [alice.id, bob.id], {
+      title: "Aluguel",
+      totalCents: 15000,
+      expenseType: "single_amount",
+    });
+
+    // Bob views the group page in his browser session
+    const bobCtx = await browser.newContext();
+    const bobPage = await bobCtx.newPage();
+    await loginInContext(bobCtx, bobPage, bob);
+
+    await bobPage.goto(`/app/groups/${group.id}`);
+    await bobPage.waitForLoadState("networkidle");
+
+    // Bob immediately sees the bill under Contas tab without needing to accept anything
+    await bobPage.getByRole("tab", { name: "Contas" }).click();
+    await expect(bobPage.getByText("Aluguel")).toBeVisible({ timeout: 10000 });
+
+    // Bob immediately sees his payable balance under Saldos
+    await bobPage.getByRole("tab", { name: "Saldos" }).click();
+    const payButton = bobPage.getByRole("button", { name: /Você paga/i });
+    await expect(payButton).toBeVisible({ timeout: 10000 });
+    await expect(payButton).toContainText("R$ 75,00");
+
+    // No pending bill acceptance button or state exists
+    await expect(bobPage.getByRole("button", { name: /^Aceitar$/i })).toHaveCount(0);
+
+    await bobCtx.close();
+  });
 });
