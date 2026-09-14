@@ -1,4 +1,176 @@
-CREATE FUNCTION public.create_expense(
+-- P12: Version-owned occurrence dates and deferred version foreign keys
+--
+-- Defect: Editing only the date previously rewrote every historical version's
+-- returned date because occurred_on lived on the expenses header, shadowing
+-- version history.
+--
+-- 1. Add occurred_on to expense_versions, backfill from expenses.occurred_on,
+--    then enforce NOT NULL.
+-- 2. Add deferred composite foreign keys:
+--    - expenses (id, current_version_no) -> expense_versions (expense_id, version_no) DEFERRABLE INITIALLY DEFERRED
+--    - guests (expense_id, claimed_version_no) -> expense_versions (expense_id, version_no) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
+-- 3. Replace create_expense, edit_expense, create_expense_with_group,
+--    ledger_expense_version_json, ledger_expense_summary_json, get_expense.
+-- 4. Drop expenses.occurred_on and the date-based expenses_group_idx.
+
+ALTER TABLE public.expense_versions ADD COLUMN occurred_on date;
+
+UPDATE public.expense_versions ev
+SET occurred_on = e.occurred_on
+FROM public.expenses e
+WHERE e.id = ev.expense_id;
+
+ALTER TABLE public.expense_versions ALTER COLUMN occurred_on SET NOT NULL;
+
+ALTER TABLE public.expenses
+  ADD CONSTRAINT expenses_current_version_fk
+  FOREIGN KEY (id, current_version_no)
+  REFERENCES public.expense_versions(expense_id, version_no)
+  DEFERRABLE INITIALLY DEFERRED;
+
+ALTER TABLE public.guests
+  ADD CONSTRAINT guests_claimed_version_fk
+  FOREIGN KEY (expense_id, claimed_version_no)
+  REFERENCES public.expense_versions(expense_id, version_no)
+  ON DELETE CASCADE
+  DEFERRABLE INITIALLY DEFERRED;
+
+CREATE OR REPLACE FUNCTION public.ledger_expense_version_json(p_expense_id uuid, p_version_no integer) RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_out jsonb;
+BEGIN
+  SELECT jsonb_build_object(
+    'expenseId', v.expense_id,
+    'versionNo', v.version_no,
+    'authorId', v.author_id,
+    'createdAt', to_jsonb(v.created_at),
+    'occurredOn', to_jsonb(v.occurred_on),
+    'title', v.title,
+    'merchantName', v.merchant_name,
+    'expenseType', v.expense_type,
+    'totalCents', v.total_cents,
+    'serviceFeeBasisPoints', v.service_fee_bps,
+    'fixedFeeCents', v.fixed_fee_cents,
+    'payload', effective_expense_payload(v.expense_id, v.version_no),
+    'changeSummary', v.change_summary
+  ) INTO v_out
+  FROM expense_versions v
+  WHERE v.expense_id = p_expense_id AND v.version_no = p_version_no;
+  RETURN v_out;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.ledger_expense_version_json(uuid, integer) FROM public;
+
+CREATE OR REPLACE FUNCTION public.ledger_expense_summary_json(p_expense_id uuid, p_viewer uuid) RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_out jsonb;
+BEGIN
+  SELECT jsonb_build_object(
+    'id', e.id,
+    'groupId', e.group_id,
+    'creatorId', e.creator_id,
+    'status', e.status,
+    'occurredOn', to_jsonb(v.occurred_on),
+    'createdAt', to_jsonb(e.created_at),
+    'versionNo', e.current_version_no,
+    'title', v.title,
+    'merchantName', v.merchant_name,
+    'expenseType', v.expense_type,
+    'totalCents', v.total_cents,
+    'myShareCents', COALESCE(part.my_share_cents, 0),
+    'myPaidCents', COALESCE(part.my_paid_cents, 0),
+    'participantCount', CASE WHEN e.status = 'deleted'
+      THEN jsonb_array_length(COALESCE(effective_expense_payload(e.id, e.current_version_no) -> 'participants', '[]'::jsonb))
+      ELSE COALESCE(part.participant_count, 0)
+    END
+  ) INTO v_out
+  FROM expenses e
+  JOIN expense_versions v ON v.expense_id = e.id AND v.version_no = e.current_version_no
+  LEFT JOIN LATERAL (
+    SELECT
+      sum(cep.share_cents) FILTER (WHERE cep.user_id = p_viewer)::integer AS my_share_cents,
+      sum(cep.paid_cents) FILTER (WHERE cep.user_id = p_viewer)::integer AS my_paid_cents,
+      count(*)::integer AS participant_count
+    FROM current_expense_participants cep
+    WHERE cep.expense_id = e.id
+  ) part ON true
+  WHERE e.id = p_expense_id;
+  RETURN v_out;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.ledger_expense_summary_json(uuid, uuid) FROM public;
+
+CREATE OR REPLACE FUNCTION public.get_expense(p_expense_id uuid) RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid;
+  v_group_id uuid;
+  v_out jsonb;
+BEGIN
+  v_user_id := current_user_id();
+  SELECT group_id INTO v_group_id FROM expenses WHERE id = p_expense_id;
+  IF v_group_id IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
+  END IF;
+  PERFORM assert_member(v_group_id, v_user_id);
+  SELECT jsonb_build_object(
+    'expense', jsonb_build_object(
+      'id', e.id,
+      'groupId', e.group_id,
+      'creatorId', e.creator_id,
+      'status', e.status,
+      'currentVersionNo', e.current_version_no,
+      'occurredOn', to_jsonb(v.occurred_on),
+      'createdAt', to_jsonb(e.created_at),
+      'deletedAt', to_jsonb(e.deleted_at),
+      'deletedBy', e.deleted_by
+    ),
+    'current', ledger_expense_version_json(e.id, e.current_version_no),
+    'versions', COALESCE((
+      SELECT jsonb_agg(ledger_expense_version_json(v.expense_id, v.version_no) ORDER BY v.version_no DESC)
+      FROM expense_versions v
+      WHERE v.expense_id = e.id
+    ), '[]'::jsonb),
+    'participants', COALESCE((
+      SELECT jsonb_agg(jsonb_build_object(
+        'participantIndex', ep.participant_index,
+        'kind', ep.kind,
+        'shareCents', ep.share_cents,
+        'paidCents', ep.paid_cents,
+        'user', COALESCE(ledger_user_profile_json(ep.user_id), 'null'::jsonb),
+        'guest', COALESCE((
+          SELECT jsonb_build_object('id', gst.id, 'displayName', gst.display_name, 'claimedBy', gst.claimed_by, 'claimLinkGeneration', COALESCE((SELECT ct.generation FROM guest_credentials.claim_tokens ct WHERE ct.guest_id = gst.id), 0))
+          FROM guests gst
+          WHERE gst.id = ep.guest_id
+        ), 'null'::jsonb)
+      ) ORDER BY ep.participant_index ASC)
+      FROM current_expense_participants ep
+      WHERE ep.expense_id = e.id
+    ), '[]'::jsonb),
+    'group', (
+      SELECT jsonb_build_object('id', gg.id, 'name', gg.name, 'kind', gg.kind)
+      FROM groups gg
+      WHERE gg.id = e.group_id
+    )
+  ) INTO v_out
+  FROM expenses e
+  JOIN expense_versions v ON v.expense_id = e.id AND v.version_no = e.current_version_no
+  WHERE e.id = p_expense_id;
+  RETURN v_out;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_expense(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_expense(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.create_expense(
   p_client_id uuid, p_group_id uuid, p_occurred_on date,
   p_title text, p_merchant_name text, p_expense_type expense_type,
   p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer,
@@ -150,8 +322,10 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
 
-CREATE FUNCTION public.edit_expense(
+CREATE OR REPLACE FUNCTION public.edit_expense(
   p_expense_id uuid, p_expected_version_no integer,
   p_occurred_on date, p_title text, p_merchant_name text, p_expense_type expense_type,
   p_total_cents integer, p_service_fee_bps integer, p_fixed_fee_cents integer,
@@ -277,240 +451,10 @@ BEGIN
 END;
 $$;
 
-
-CREATE FUNCTION public.delete_expense(p_expense_id uuid) RETURNS jsonb
-  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
-AS $$
-DECLARE
-  v_actor uuid;
-  v_group_id uuid;
-  v_creator_id uuid;
-  v_chave_acesso text;
-  v_status public.expense_status;
-  v_version_no integer;
-  v_title text;
-  v_total_cents integer;
-  v_ledger_version bigint;
-  v_event_id bigint;
-BEGIN
-  v_actor := current_user_id();
-
-  SELECT group_id, creator_id, chave_acesso
-    INTO v_group_id, v_creator_id, v_chave_acesso
-  FROM expenses
-  WHERE id = p_expense_id;
-  IF v_group_id IS NULL THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
-  END IF;
-
-  PERFORM lock_receipt_key(v_creator_id, v_chave_acesso);
-  PERFORM lock_group(v_group_id);
-  PERFORM assert_member(v_group_id, v_actor);
-
-  SELECT status, current_version_no, creator_id, chave_acesso
-    INTO v_status, v_version_no, v_creator_id, v_chave_acesso
-  FROM expenses
-  WHERE id = p_expense_id
-  FOR UPDATE;
-
-  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
-    SELECT 1 FROM current_expense_participants
-    WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
-  ) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
-  END IF;
-
-  IF v_status = 'deleted' THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_deleted';
-  END IF;
-
-  UPDATE expenses SET status = 'deleted', deleted_at = now(), deleted_by = v_actor
-  WHERE id = p_expense_id;
-
-  SELECT title, total_cents INTO v_title, v_total_cents
-  FROM expense_versions
-  WHERE expense_id = p_expense_id AND version_no = v_version_no;
-
-  v_ledger_version := recompute_group_balances(v_group_id);
-  v_event_id := emit_event(
-    v_group_id, 'expense_deleted', v_actor, p_expense_id,
-    NULL, NULL, jsonb_build_object('title', v_title, 'totalCents', v_total_cents)
-  );
-  PERFORM broadcast_group(v_group_id, v_ledger_version, v_event_id);
-
-  RETURN jsonb_build_object(
-    'expenseId', p_expense_id,
-    'groupId', v_group_id,
-    'versionNo', v_version_no,
-    'ledgerVersion', v_ledger_version,
-    'eventId', v_event_id
-  );
-END;
-$$;
-
-CREATE FUNCTION public.restore_expense(p_expense_id uuid) RETURNS jsonb
-  LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public
-AS $$
-DECLARE
-  v_actor uuid;
-  v_group_id uuid;
-  v_creator_id uuid;
-  v_chave_acesso text;
-  v_status public.expense_status;
-  v_version_no integer;
-  v_title text;
-  v_total_cents integer;
-  v_payload jsonb;
-  v_materialized jsonb;
-  v_ledger_version bigint;
-  v_event_id bigint;
-  v_constraint text;
-  v_declined_user_ids uuid[];
-BEGIN
-  v_actor := current_user_id();
-
-  SELECT group_id, creator_id, chave_acesso
-    INTO v_group_id, v_creator_id, v_chave_acesso
-  FROM expenses
-  WHERE id = p_expense_id;
-  IF v_group_id IS NULL THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_found';
-  END IF;
-
-  PERFORM lock_receipt_key(v_creator_id, v_chave_acesso);
-  PERFORM lock_group(v_group_id);
-  PERFORM assert_member(v_group_id, v_actor);
-
-  SELECT status, current_version_no, creator_id, chave_acesso, declined_user_ids
-    INTO v_status, v_version_no, v_creator_id, v_chave_acesso, v_declined_user_ids
-  FROM expenses
-  WHERE id = p_expense_id
-  FOR UPDATE;
-
-  SELECT title, total_cents INTO v_title, v_total_cents
-  FROM expense_versions
-  WHERE expense_id = p_expense_id AND version_no = v_version_no;
-
-  v_payload := effective_expense_payload(p_expense_id, v_version_no);
-
-  IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements(COALESCE(v_payload->'participants', '[]'::jsonb)) AS pp(p)
-    WHERE pp.p->>'kind' = 'user' AND pp.p ? 'userId'
-      AND pp.p->>'userId' = v_actor::text
-  ) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
-  END IF;
-
-  IF v_status = 'active' THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'expense_not_deleted';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1
-    FROM unnest(COALESCE(v_declined_user_ids, '{}'::uuid[])) AS d(user_id)
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM group_members gm
-      WHERE gm.group_id = v_group_id
-        AND gm.user_id = d.user_id
-        AND gm.status = 'accepted'
-    )
-  ) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invitation_not_accepted';
-  END IF;
-
-  IF v_chave_acesso IS NOT NULL AND EXISTS (
-    SELECT 1
-    FROM expenses
-    WHERE creator_id = v_creator_id
-      AND chave_acesso = v_chave_acesso
-      AND status = 'active'
-      AND id <> p_expense_id
-  ) THEN
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
-  END IF;
-
-  BEGIN
-    UPDATE expenses
-    SET status = 'active',
-        deleted_at = NULL,
-        deleted_by = NULL,
-        declined_user_ids = '{}'::uuid[]
-    WHERE id = p_expense_id;
-  EXCEPTION
-    WHEN unique_violation THEN
-      GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
-      IF v_constraint = 'expenses_creator_chave_active_idx' THEN
-        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_receipt';
-      END IF;
-      RAISE;
-  END;
-
-  v_materialized := resolve_expense_participants(p_expense_id, v_payload);
-
-  -- Shared-history latch: the restored expense becomes visible to more than
-  -- one user when a second accepted member can read it or the payload names
-  -- another invited/accepted user.
-  UPDATE public.groups
-  SET financial_history_shared_at = now()
-  WHERE id = v_group_id
-    AND financial_history_shared_at IS NULL
-    AND (
-      (SELECT count(*) FROM public.group_members
-       WHERE group_id = v_group_id AND status = 'accepted') > 1
-      OR EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements(v_materialized->'participants') AS pp(p)
-        WHERE pp.p->>'kind' = 'user'
-          AND (pp.p->>'userId')::uuid IS DISTINCT FROM v_actor
-          AND EXISTS (
-            SELECT 1 FROM public.group_members gm
-            WHERE gm.group_id = v_group_id
-              AND gm.user_id = (pp.p->>'userId')::uuid
-              AND gm.status IN ('invited', 'accepted')
-          )
-      )
-    );
-
-  v_ledger_version := recompute_group_balances(v_group_id);
-  v_event_id := emit_event(
-    v_group_id, 'expense_restored', v_actor, p_expense_id,
-    NULL, NULL, jsonb_build_object('title', v_title, 'totalCents', v_total_cents)
-  );
-  PERFORM broadcast_group(v_group_id, v_ledger_version, v_event_id);
-
-  RETURN jsonb_build_object(
-    'expenseId', p_expense_id,
-    'groupId', v_group_id,
-    'versionNo', v_version_no,
-    'ledgerVersion', v_ledger_version,
-    'eventId', v_event_id
-  );
-END;
-$$;
-
-
-REVOKE ALL ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
-GRANT EXECUTE ON FUNCTION public.create_expense(uuid, uuid, date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
 REVOKE ALL ON FUNCTION public.edit_expense(uuid, integer, date, text, text, expense_type, integer, integer, integer, jsonb) FROM public;
 GRANT EXECUTE ON FUNCTION public.edit_expense(uuid, integer, date, text, text, expense_type, integer, integer, integer, jsonb) TO authenticated;
-REVOKE ALL ON FUNCTION public.delete_expense(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.delete_expense(uuid) TO authenticated;
-REVOKE ALL ON FUNCTION public.restore_expense(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.restore_expense(uuid) TO authenticated;
 
--- Creates a group and its first expense in one transaction.
---
--- The wizard used to commit the group when the user left the participants
--- step and the expense later at submit. An error or an abandoned wizard in
--- between left a group with invited members and no bill, which is visible to
--- everyone invited. Both writes now succeed or neither does.
---
--- Idempotency is keyed on the expense's client id and checked before anything
--- is written, so a retry after a lost response returns the original pair
--- instead of creating a second group.
-CREATE FUNCTION public.create_expense_with_group(
+CREATE OR REPLACE FUNCTION public.create_expense_with_group(
   p_client_id uuid, p_group_name text, p_member_ids uuid[],
   p_occurred_on date, p_title text, p_merchant_name text,
   p_expense_type expense_type, p_total_cents integer,
@@ -575,3 +519,6 @@ $$;
 
 REVOKE ALL ON FUNCTION public.create_expense_with_group(uuid, text, uuid[], date, text, text, expense_type, integer, integer, integer, jsonb, text) FROM public;
 GRANT EXECUTE ON FUNCTION public.create_expense_with_group(uuid, text, uuid[], date, text, text, expense_type, integer, integer, integer, jsonb, text) TO authenticated;
+
+DROP INDEX IF EXISTS public.expenses_group_idx;
+ALTER TABLE public.expenses DROP COLUMN occurred_on;

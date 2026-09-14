@@ -101,7 +101,6 @@ CREATE TABLE public.expenses (
   creator_id uuid NOT NULL REFERENCES public.users(id),
   status public.expense_status NOT NULL DEFAULT 'active',
   current_version_no integer NOT NULL DEFAULT 1,
-  occurred_on date NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
   deleted_by uuid REFERENCES public.users(id),
@@ -112,8 +111,6 @@ CREATE TABLE public.expenses (
   ),
   CONSTRAINT expenses_current_version_positive CHECK (current_version_no >= 1)
 );
-CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
--- Cursor order for history paging; occurred_on above still serves its own readers.
 CREATE INDEX expenses_group_created_idx ON public.expenses (group_id, created_at DESC, id DESC);
 CREATE UNIQUE INDEX expenses_creator_chave_active_idx
   ON public.expenses (creator_id, chave_acesso)
@@ -123,6 +120,7 @@ CREATE TABLE public.expense_versions (
   expense_id uuid NOT NULL REFERENCES public.expenses(id) ON DELETE CASCADE,
   version_no integer NOT NULL CHECK (version_no >= 1),
   author_id uuid NOT NULL REFERENCES public.users(id),
+  occurred_on date NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   title text NOT NULL CHECK (length(title) BETWEEN 1 AND 160),
   merchant_name text CHECK (merchant_name IS NULL OR length(merchant_name) <= 160),
@@ -134,6 +132,11 @@ CREATE TABLE public.expense_versions (
   change_summary jsonb,
   PRIMARY KEY (expense_id, version_no)
 );
+
+ALTER TABLE public.expenses ADD CONSTRAINT expenses_current_version_fk
+  FOREIGN KEY (id, current_version_no)
+  REFERENCES public.expense_versions(expense_id, version_no)
+  DEFERRABLE INITIALLY DEFERRED;
 
 CREATE TABLE public.guests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -149,6 +152,12 @@ CREATE TABLE public.guests (
   )
 );
 CREATE INDEX guests_expense_idx ON public.guests (expense_id);
+
+ALTER TABLE public.guests ADD CONSTRAINT guests_claimed_version_fk
+  FOREIGN KEY (expense_id, claimed_version_no)
+  REFERENCES public.expense_versions(expense_id, version_no)
+  ON DELETE CASCADE
+  DEFERRABLE INITIALLY DEFERRED;
 
 CREATE TABLE public.settlements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1386,7 +1395,7 @@ BEGIN
     'versionNo', v.version_no,
     'authorId', v.author_id,
     'createdAt', to_jsonb(v.created_at),
-    'occurredOn', to_jsonb(e.occurred_on),
+    'occurredOn', to_jsonb(v.occurred_on),
     'title', v.title,
     'merchantName', v.merchant_name,
     'expenseType', v.expense_type,
@@ -1397,7 +1406,6 @@ BEGIN
     'changeSummary', v.change_summary
   ) INTO v_out
   FROM expense_versions v
-  JOIN expenses e ON e.id = v.expense_id
   WHERE v.expense_id = p_expense_id AND v.version_no = p_version_no;
   RETURN v_out;
 END;
@@ -1414,7 +1422,7 @@ BEGIN
     'groupId', e.group_id,
     'creatorId', e.creator_id,
     'status', e.status,
-    'occurredOn', to_jsonb(e.occurred_on),
+    'occurredOn', to_jsonb(v.occurred_on),
     'createdAt', to_jsonb(e.created_at),
     'versionNo', e.current_version_no,
     'title', v.title,
@@ -1836,7 +1844,7 @@ BEGIN
       'creatorId', e.creator_id,
       'status', e.status,
       'currentVersionNo', e.current_version_no,
-      'occurredOn', to_jsonb(e.occurred_on),
+      'occurredOn', to_jsonb(v.occurred_on),
       'createdAt', to_jsonb(e.created_at),
       'deletedAt', to_jsonb(e.deleted_at),
       'deletedBy', e.deleted_by
@@ -1870,6 +1878,7 @@ BEGIN
     )
   ) INTO v_out
   FROM expenses e
+  JOIN expense_versions v ON v.expense_id = e.id AND v.version_no = e.current_version_no
   WHERE e.id = p_expense_id;
   RETURN v_out;
 END;
@@ -2158,8 +2167,8 @@ BEGIN
   END IF;
 
   BEGIN
-    INSERT INTO expenses (client_id, group_id, creator_id, occurred_on, chave_acesso)
-    VALUES (p_client_id, p_group_id, v_actor, p_occurred_on, p_chave_acesso)
+    INSERT INTO expenses (client_id, group_id, creator_id, chave_acesso)
+    VALUES (p_client_id, p_group_id, v_actor, p_chave_acesso)
     RETURNING id INTO v_expense_id;
   EXCEPTION
     WHEN unique_violation THEN
@@ -2197,10 +2206,10 @@ BEGIN
     );
 
   INSERT INTO expense_versions (
-    expense_id, version_no, author_id, title, merchant_name, expense_type,
+    expense_id, version_no, author_id, occurred_on, title, merchant_name, expense_type,
     total_cents, service_fee_bps, fixed_fee_cents, payload, change_summary
   ) VALUES (
-    v_expense_id, 1, v_actor, v_title, btrim(p_merchant_name), p_expense_type,
+    v_expense_id, 1, v_actor, p_occurred_on, v_title, btrim(p_merchant_name), p_expense_type,
     p_total_cents, p_service_fee_bps, p_fixed_fee_cents, v_payload, NULL
   );
 
@@ -2320,10 +2329,10 @@ BEGIN
     );
 
   INSERT INTO expense_versions (
-    expense_id, version_no, author_id, title, merchant_name, expense_type,
+    expense_id, version_no, author_id, occurred_on, title, merchant_name, expense_type,
     total_cents, service_fee_bps, fixed_fee_cents, payload, change_summary
   ) VALUES (
-    p_expense_id, v_new_version_no, v_actor, v_title, btrim(p_merchant_name), p_expense_type,
+    p_expense_id, v_new_version_no, v_actor, p_occurred_on, v_title, btrim(p_merchant_name), p_expense_type,
     p_total_cents, p_service_fee_bps, p_fixed_fee_cents, v_payload, NULL
   );
 
@@ -2331,7 +2340,7 @@ BEGIN
   UPDATE expense_versions SET change_summary = v_change_summary
   WHERE expense_id = p_expense_id AND version_no = v_new_version_no;
 
-  UPDATE expenses SET occurred_on = p_occurred_on, current_version_no = v_new_version_no
+  UPDATE expenses SET current_version_no = v_new_version_no
   WHERE id = p_expense_id;
 
   v_ledger_version := recompute_group_balances(v_group_id);

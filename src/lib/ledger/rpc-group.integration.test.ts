@@ -779,20 +779,21 @@ describe.skipIf(!isIntegrationTestReady)(
           const groupId = crypto.randomUUID();
           const expenseId = crypto.randomUUID();
           await withPg(async (pg) => {
+            await pg.query("BEGIN");
             await pg.query(
               "insert into public.groups (id, kind, name, creator_id) " +
                 "values ($1, 'group', 'Backfill Participant', $2)",
               [groupId, u1.id],
             );
             await pg.query(
-              "insert into public.expenses (id, client_id, group_id, creator_id, occurred_on) " +
-                "values ($1, $2, $3, $4, current_date)",
+              "insert into public.expenses (id, client_id, group_id, creator_id) " +
+                "values ($1, $2, $3, $4)",
               [expenseId, crypto.randomUUID(), groupId, u1.id],
             );
             await pg.query(
               "insert into public.expense_versions " +
-                "(expense_id, version_no, author_id, title, expense_type, total_cents, payload) " +
-                "values ($1, 1, $2, 'Backfill Participant', 'single_amount', 1000, $3)",
+                "(expense_id, version_no, author_id, occurred_on, title, expense_type, total_cents, payload) " +
+                "values ($1, 1, $2, current_date, 'Backfill Participant', 'single_amount', 1000, $3)",
               [
                 expenseId,
                 u1.id,
@@ -808,6 +809,7 @@ describe.skipIf(!isIntegrationTestReady)(
                 }),
               ],
             );
+            await pg.query("COMMIT");
           });
           untrackTestGroup(groupId);
 

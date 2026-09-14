@@ -36,6 +36,7 @@ type ChangeSummary = {
 
 type ExpenseVersionJson = {
   versionNo: number;
+  occurredOn: string;
   totalCents: number;
   changeSummary: ChangeSummary | null;
   payload: {
@@ -59,6 +60,7 @@ type ExpenseDetail = {
     id: string;
     status: string;
     currentVersionNo: number;
+    occurredOn: string;
     deletedAt: string | null;
     deletedBy: string | null;
   };
@@ -537,6 +539,127 @@ describe.skipIf(!isIntegrationTestReady)("ledger expense RPCs", () => {
     expect(balances.find((row) => row.participant_id === carla.id)).toBeUndefined();
     expect(balances.find((row) => row.participant_id === alice.id)?.net_cents).toBe(1500);
     expect(balances.find((row) => row.participant_id === bruno.id)?.net_cents).toBe(-1500);
+  });
+
+  it("edit ONLY the date preserves version 1 old date and records new date on version 2", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const oldDate = "2026-08-01";
+    const newDate = "2026-08-15";
+    const payload = equalSplitPayload([alice.id, bruno.id], 2000);
+
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      occurredOn: oldDate,
+      payload,
+    });
+
+    const { error } = await callRpc(aliceClient, "edit_expense", {
+      p_expense_id: created.expenseId,
+      p_expected_version_no: 1,
+      p_occurred_on: newDate,
+      p_title: "Despesa teste",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 2000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: payload,
+    });
+    expect(error).toBeNull();
+
+    // Verify through get_expense history and current version
+    const detail = await getExpense(created.expenseId);
+    expect(detail.expense.occurredOn).toBe(newDate);
+    expect(detail.current.versionNo).toBe(2);
+    expect(detail.current.occurredOn).toBe(newDate);
+    expect(detail.versions).toHaveLength(2);
+
+    const v2 = detail.versions.find((v) => v.versionNo === 2);
+    const v1 = detail.versions.find((v) => v.versionNo === 1);
+    expect(v2?.occurredOn).toBe(newDate);
+    expect(v1?.occurredOn).toBe(oldDate);
+
+    // Verify through get_group_expenses summary header joining current
+    const { data: pageData, error: pageErr } = await callRpc(aliceClient, "get_group_expenses", {
+      p_group_id: groupId,
+      p_limit: 10,
+    });
+    expect(pageErr).toBeNull();
+    const pageObj = pageData as {
+      expenses: Array<{ id: string; occurredOn: string; versionNo: number }>;
+    };
+    const summary = pageObj.expenses.find((e) => e.id === created.expenseId);
+    expect(summary?.versionNo).toBe(2);
+    expect(summary?.occurredOn).toBe(newDate);
+  });
+
+  it("deferred foreign keys: create, edit version bump, and claim tuple deletion maintain consistency", async () => {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const guestName = "Convidado FK Test";
+    const payloadWithGuest = {
+      items: [],
+      participants: [
+        { kind: "user", userId: alice.id },
+        { kind: "guest", displayName: guestName },
+      ],
+      shares: [1000, 1000],
+      payers: [{ participantIndex: 0, amountCents: 2000 }],
+      itemAssignments: null,
+    };
+
+    // 1. Create flow works with deferred FK (expenses row inserted before expense_versions in same tx)
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 2000,
+      occurredOn: "2026-08-01",
+      payload: payloadWithGuest,
+    });
+    expect(created.expenseId).toBeDefined();
+
+    // Find the guest id
+    const detailBefore = await getExpense(created.expenseId);
+    const guestPart = detailBefore.participants.find((p) => p.kind === "guest");
+    expect(guestPart?.guest?.id).toBeDefined();
+    const guestId = guestPart!.guest!.id;
+
+    // Issue claim token and claim the guest
+    const { data: tokenData } = await callRpc(
+      aliceClient,
+      "create_guest_claim_token",
+      { p_guest_id: guestId },
+    );
+    const tokenObj = tokenData as { token: string };
+    expect(tokenObj?.token).toBeDefined();
+
+    const { error: claimErr } = await callRpc(brunoClient, "claim_guest", {
+      p_token: tokenObj.token,
+    });
+    expect(claimErr).toBeNull();
+
+    // 2. Editing bumps versions without violation
+    const { error: editErr } = await callRpc(aliceClient, "edit_expense", {
+      p_expense_id: created.expenseId,
+      p_expected_version_no: 1,
+      p_occurred_on: "2026-08-02",
+      p_title: "Despesa FK v2",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 3000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: equalSplitPayload([alice.id, bruno.id], 3000),
+    });
+    expect(editErr).toBeNull();
+
+    const detailAfter = await getExpense(created.expenseId);
+    expect(detailAfter.expense.currentVersionNo).toBe(2);
+
+    // 3. Deleting a version-cited claim tuple is consistent
+    await withPg(async (pg) => {
+      const res = await pg.query("DELETE FROM public.guests WHERE id = $1", [guestId]);
+      expect(res.rowCount).toBe(1);
+    });
   });
 
   it("edit rejects a stale p_expected_version_no", async () => {
