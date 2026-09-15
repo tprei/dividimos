@@ -102,7 +102,7 @@
       "mode": "100644"
     },
     "supabase/migrations/20260913010250_member_exclusion_and_pending_view.sql": {
-      "blob": "6494e0f973da45598c494d3e683311a5e0bd9c2e",
+      "blob": "cefd69f96f3fddac36121245c956761e0fd103d2",
       "mode": "100644"
     },
     "supabase/migrations/20260913010300_shared_financial_history.sql": {
@@ -130,7 +130,7 @@
       "mode": "100644"
     },
     "supabase/migrations/20260913010900_version_occurrence_dates.sql": {
-      "blob": "53d984f33f2f1af9e5d1733e0876660f5b9d46bd",
+      "blob": "47f81dc3e5fbbfe1cc7affa578457fadc6cec77e",
       "mode": "100644"
     }
   },
