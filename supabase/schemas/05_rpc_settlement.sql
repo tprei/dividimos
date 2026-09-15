@@ -84,6 +84,12 @@ BEGIN
   VALUES (p_operation_id, p_group_id, p_from_user_id, p_to_user_id, p_amount_cents, 'confirmed', now(), v_actor)
   RETURNING id INTO v_settlement_id;
 
+  -- Shared-history latch: any confirmed settlement is shared financial
+  -- history by definition.
+  UPDATE public.groups
+  SET financial_history_shared_at = now()
+  WHERE id = p_group_id AND financial_history_shared_at IS NULL;
+
   v_ledger_version := recompute_group_balances(p_group_id);
 
   v_subject_user_id := CASE WHEN v_actor = p_from_user_id THEN p_to_user_id ELSE p_from_user_id END;
@@ -107,6 +113,7 @@ BEGIN
   );
 END;
 $$;
+
 
 CREATE FUNCTION public.void_settlement(p_settlement_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public

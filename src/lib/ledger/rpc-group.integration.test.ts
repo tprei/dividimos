@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect, beforeAll } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { isIntegrationTestReady } from "@/test/integration-setup";
+import { isIntegrationTestReady, untrackTestGroup } from "@/test/integration-setup";
 import {
   createTestUsers,
   authenticateAs,
@@ -419,6 +421,431 @@ describe.skipIf(!isIntegrationTestReady)(
           }),
         );
         expect(deleteErr).toBe("not_a_member");
+      });
+    });
+
+    describe("shared financial history latch", () => {
+      const latchOf = (groupId: string) =>
+        withPg(async (pg) => {
+          const { rows } = await pg.query<{ shared: boolean | null }>(
+            "select (financial_history_shared_at is not null) as shared " +
+              "from public.groups where id = $1",
+            [groupId],
+          );
+          return rows[0]?.shared ?? null;
+        });
+
+      const clearLatch = (groupId: string) =>
+        withPg(async (pg) => {
+          await pg.query(
+            "update public.groups set financial_history_shared_at = null where id = $1",
+            [groupId],
+          );
+        });
+
+      const zeroNetPayload = (a: string, b: string, cents: number) => {
+        const half = cents / 2;
+        return {
+          items: [],
+          participants: [
+            { kind: "user", userId: a },
+            { kind: "user", userId: b },
+          ],
+          shares: [half, half],
+          payers: [
+            { participantIndex: 0, amountCents: half },
+            { participantIndex: 1, amountCents: half },
+          ],
+          itemAssignments: null,
+        };
+      };
+
+      it("keeps the creator from destroying history a departed member once shared", async () => {
+        const groupId = await createGroupWithMembers(u1, [u2], "Latch Anchor");
+
+        await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: zeroNetPayload(u1.id, u2.id, 1000),
+        });
+
+        const leaveAck = await rpc<MutationAck>(c2, "leave_group", {
+          p_group_id: groupId,
+        });
+        expect(leaveAck.groupId).toBe(groupId);
+
+        const deleteErr = await expectError(
+          c1.rpc("delete_group", { p_group_id: groupId }),
+        );
+        expect(deleteErr).toBe("group_has_history");
+
+        await expect(await latchOf(groupId)).toBe(true);
+
+        const facts = await withPg(async (pg) => {
+          const { rows } = await pg.query<{ id: string }>(
+            "select id from public.expenses where group_id = $1",
+            [groupId],
+          );
+          return rows;
+        });
+        expect(facts).toHaveLength(1);
+      });
+
+      it("sets the latch when an expense lands in a group with two accepted members", async () => {
+        const groupId = await createGroupWithMembers(u1, [u2], "Latch Pair");
+        await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: zeroNetPayload(u1.id, u2.id, 1000),
+        });
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("sets the latch when a solo creation names an invited user", async () => {
+        const groupId = (await createGroup(u1, "Latch Solo Named", [u2.id])).groupId;
+        await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: {
+            items: [],
+            participants: [
+              { kind: "user", userId: u1.id },
+              { kind: "user", userId: u2.id },
+            ],
+            shares: [500, 500],
+            payers: [{ participantIndex: 0, amountCents: 1000 }],
+            itemAssignments: null,
+          },
+        });
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("sets the latch when an edit names a newly invited user", async () => {
+        const groupId = (await createGroup(u1, "Latch Edit Named", [])).groupId;
+        const expense = await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: equalSplitPayload([u1.id], 1000),
+        });
+        expect(await latchOf(groupId)).toBe(false);
+
+        await rpc<MutationAck>(c1, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: u2.id,
+        });
+        await rpc<MutationAck>(c1, "edit_expense", {
+          p_expense_id: expense.expenseId,
+          p_expected_version_no: expense.versionNo,
+          p_occurred_on: new Date().toISOString().slice(0, 10),
+          p_title: "Latch Edit Named",
+          p_merchant_name: null,
+          p_expense_type: "single_amount",
+          p_total_cents: 1000,
+          p_service_fee_bps: 0,
+          p_fixed_fee_cents: 0,
+          p_payload: {
+            items: [],
+            participants: [
+              { kind: "user", userId: u1.id },
+              { kind: "user", userId: u2.id },
+            ],
+            shares: [500, 500],
+            payers: [{ participantIndex: 0, amountCents: 1000 }],
+            itemAssignments: null,
+          },
+        });
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("sets the latch when a restore reactivates facts shared with the group", async () => {
+        const groupId = (await createGroup(u1, "Latch Restore", [])).groupId;
+        const expense = await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: equalSplitPayload([u1.id], 1000),
+        });
+        await rpc<MutationAck>(c1, "delete_expense", {
+          p_expense_id: expense.expenseId,
+        });
+        await rpc<MutationAck>(c1, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: u2.id,
+        });
+        await acceptInvitation(u2, groupId);
+        await clearLatch(groupId);
+
+        await rpc<MutationAck>(c1, "restore_expense", {
+          p_expense_id: expense.expenseId,
+        });
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("sets the latch when an acceptance joins a group that already holds facts", async () => {
+        const groupId = (await createGroup(u1, "Latch Accept Facts", [])).groupId;
+        await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: equalSplitPayload([u1.id], 1000),
+        });
+        expect(await latchOf(groupId)).toBe(false);
+
+        await rpc<MutationAck>(c1, "invite_member", {
+          p_group_id: groupId,
+          p_user_id: u2.id,
+        });
+        await acceptInvitation(u2, groupId);
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("sets the latch when a link join lands on a group that already holds facts", async () => {
+        const groupId = (await createGroup(u1, "Latch Link Facts", [])).groupId;
+        await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: equalSplitPayload([u1.id], 1000),
+        });
+        expect(await latchOf(groupId)).toBe(false);
+
+        const link = await rpc<InviteLinkAck>(c1, "create_invite_link", {
+          p_group_id: groupId,
+        });
+        await rpc<MutationAck>(c3, "join_via_link", { p_token: link.token });
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("sets the latch when a guest claim grants membership for an existing expense", async () => {
+        const groupId = (await createGroup(u1, "Latch Guest Claim", [])).groupId;
+        const expense = await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: {
+            items: [],
+            participants: [
+              { kind: "user", userId: u1.id },
+              { kind: "guest", displayName: "Cobrador" },
+            ],
+            shares: [500, 500],
+            payers: [{ participantIndex: 0, amountCents: 1000 }],
+            itemAssignments: null,
+          },
+        });
+        expect(await latchOf(groupId)).toBe(false);
+
+        const view = await rpc<{
+          participants: Array<{ kind: string; guest: { id: string } | null }>;
+        }>(c1, "get_expense", { p_expense_id: expense.expenseId });
+        const guest = view.participants.find((p) => p.kind === "guest");
+        const token = await rpc<{ token: string }>(c1, "create_guest_claim_token", {
+          p_guest_id: guest?.guest?.id ?? "",
+        });
+        await rpc<unknown>(c5, "claim_guest", { p_token: token.token });
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("sets the latch when a settlement is recorded", async () => {
+        const groupId = await createGroupWithMembers(u1, [u2], "Latch Settlement");
+        await createExpense(u1, {
+          groupId,
+          totalCents: 1000,
+          payload: equalSplitPayload([u1.id, u2.id], 1000),
+        });
+        await clearLatch(groupId);
+
+        await rpc<SettlementAck>(c2, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: groupId,
+          p_from_user_id: u2.id,
+          p_to_user_id: u1.id,
+          p_amount_cents: 500,
+        });
+        expect(await latchOf(groupId)).toBe(true);
+      });
+
+      it("does not set the latch for an empty group holding only an invitation", async () => {
+        const groupId = (await createGroup(u1, "Latch Empty Invite", [u2.id])).groupId;
+        expect(await latchOf(groupId)).toBe(false);
+
+        await acceptInvitation(u2, groupId);
+        expect(await latchOf(groupId)).toBe(false);
+      });
+
+      it("does not set the latch for a zero-net solo expense and still deletes the group", async () => {
+        const groupId = (await createGroup(u1, "Latch Solo Zero", [])).groupId;
+        await createExpense(u1, {
+          groupId,
+          totalCents: 600,
+          payload: equalSplitPayload([u1.id], 600),
+        });
+        expect(await latchOf(groupId)).toBe(false);
+
+        const deleteAck = await rpc<{ groupId: string }>(c1, "delete_group", {
+          p_group_id: groupId,
+        });
+        expect(deleteAck.groupId).toBe(groupId);
+      });
+
+      describe("deletion matrix", () => {
+        it("keeps outstanding_balance ahead of group_has_history", async () => {
+          const groupId = await createGroupWithMembers(u1, [u2], "Latch Matrix Debt");
+          await createExpense(u1, {
+            groupId,
+            totalCents: 1000,
+            payload: equalSplitPayload([u1.id, u2.id], 1000),
+          });
+          expect(await latchOf(groupId)).toBe(true);
+
+          const err = await expectError(
+            c1.rpc("delete_group", { p_group_id: groupId }),
+          );
+          expect(err).toBe("outstanding_balance");
+        });
+
+        it("denies with group_has_history when only the latch applies", async () => {
+          const groupId = await createGroupWithMembers(u1, [u2], "Latch Matrix Latch");
+          await createExpense(u1, {
+            groupId,
+            totalCents: 1000,
+            payload: zeroNetPayload(u1.id, u2.id, 1000),
+          });
+          await rpc<MutationAck>(c2, "leave_group", { p_group_id: groupId });
+
+          const err = await expectError(
+            c1.rpc("delete_group", { p_group_id: groupId }),
+          );
+          expect(err).toBe("group_has_history");
+        });
+
+        it("still deletes a membered group with no facts and no latch", async () => {
+          const groupId = await createGroupWithMembers(u1, [u2], "Latch Matrix Empty");
+          expect(await latchOf(groupId)).toBe(false);
+
+          const ack = await rpc<{ groupId: string }>(c1, "delete_group", {
+            p_group_id: groupId,
+          });
+          expect(ack.groupId).toBe(groupId);
+        });
+      });
+
+      describe("financial-history backfill", () => {
+        const backfillSql = () => {
+          const path = join(
+            process.cwd(),
+            "supabase/migrations/20260913010300_shared_financial_history.sql",
+          );
+          const sql = readFileSync(path, "utf8");
+          const start = sql.indexOf("UPDATE public.groups g");
+          const end = sql.indexOf(";", start);
+          if (start < 0 || end < 0) {
+            throw new Error(
+              "backfill UPDATE not found in 20260913010300_shared_financial_history.sql",
+            );
+          }
+          return sql.slice(start, end + 1);
+        };
+
+        const runBackfill = () =>
+          withPg(async (pg) => {
+            await pg.query(backfillSql());
+          });
+
+        it("latches a surviving noncreator membership beside facts", async () => {
+          const groupId = (await createGroup(u1, "Backfill Surviving Member", [u2.id])).groupId;
+          await createExpense(u1, {
+            groupId,
+            totalCents: 1000,
+            payload: equalSplitPayload([u1.id], 1000),
+          });
+          await clearLatch(groupId);
+
+          await runBackfill();
+          expect(await latchOf(groupId)).toBe(true);
+        });
+
+        it("latches member join and leave events after the membership is gone", async () => {
+          const groupId = await createGroupWithMembers(u1, [u2], "Backfill Departed");
+          await createExpense(u1, {
+            groupId,
+            totalCents: 1000,
+            payload: zeroNetPayload(u1.id, u2.id, 1000),
+          });
+          await rpc<MutationAck>(c2, "leave_group", { p_group_id: groupId });
+          await clearLatch(groupId);
+
+          await runBackfill();
+          expect(await latchOf(groupId)).toBe(true);
+        });
+
+        it("latches a noncreator participant in the current facts", async () => {
+          const groupId = crypto.randomUUID();
+          const expenseId = crypto.randomUUID();
+          await withPg(async (pg) => {
+            await pg.query(
+              "insert into public.groups (id, kind, name, creator_id) " +
+                "values ($1, 'group', 'Backfill Participant', $2)",
+              [groupId, u1.id],
+            );
+            await pg.query(
+              "insert into public.expenses (id, client_id, group_id, creator_id, occurred_on) " +
+                "values ($1, $2, $3, $4, current_date)",
+              [expenseId, crypto.randomUUID(), groupId, u1.id],
+            );
+            await pg.query(
+              "insert into public.expense_versions " +
+                "(expense_id, version_no, author_id, title, expense_type, total_cents, payload) " +
+                "values ($1, 1, $2, 'Backfill Participant', 'single_amount', 1000, $3)",
+              [
+                expenseId,
+                u1.id,
+                JSON.stringify({
+                  items: [],
+                  participants: [
+                    { kind: "user", userId: u1.id },
+                    { kind: "user", userId: u2.id },
+                  ],
+                  shares: [500, 500],
+                  payers: [{ participantIndex: 0, amountCents: 1000 }],
+                  itemAssignments: null,
+                }),
+              ],
+            );
+          });
+          untrackTestGroup(groupId);
+
+          await runBackfill();
+          expect(await latchOf(groupId)).toBe(true);
+        });
+
+        it("does not latch an invitation that ended before any sharing", async () => {
+          const groupId = (await createGroup(u1, "Backfill Declined", [u2.id])).groupId;
+          await createExpense(u1, {
+            groupId,
+            totalCents: 1000,
+            payload: equalSplitPayload([u1.id], 1000),
+          });
+          await rpc<MutationAck>(c2, "decline_invitation", { p_group_id: groupId });
+          await clearLatch(groupId);
+
+          await runBackfill();
+          expect(await latchOf(groupId)).toBe(false);
+
+          const ack = await rpc<{ groupId: string }>(c1, "delete_group", {
+            p_group_id: groupId,
+          });
+          expect(ack.groupId).toBe(groupId);
+        });
+
+        it("does not latch solo facts with no sharing evidence", async () => {
+          const groupId = (await createGroup(u1, "Backfill Solo", [])).groupId;
+          await createExpense(u1, {
+            groupId,
+            totalCents: 600,
+            payload: equalSplitPayload([u1.id], 600),
+          });
+          await clearLatch(groupId);
+
+          await runBackfill();
+          expect(await latchOf(groupId)).toBe(false);
+        });
       });
     });
 
