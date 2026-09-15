@@ -9,9 +9,11 @@ import {
 import { isIntegrationTestReady } from "@/test/integration-setup";
 
 // Real private-channel authorization against the installed Realtime service.
-// A channel join either reaches SUBSCRIBED or ends in an error/closed state;
-// malformed topics must behave exactly like unauthorized ones — a denial,
-// never an exception surfaced as a distinct transport failure.
+// A policy denial surfaces as a join that never completes: the server logs
+// Unauthorized but sends no prompt client reply, so "denied" always means
+// the joinOutcome timeout elapsed. Malformed topics must behave exactly like
+// unauthorized ones — a denial, never an exception surfaced as a distinct
+// transport failure.
 describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
   async function realtimeClient(user: TestUser): Promise<SupabaseClient<Database>> {
     if (!user.accessToken) {
@@ -45,18 +47,37 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
     });
   }
 
+  // Joins that must succeed retry with a fresh channel: a join issued while
+  // the Realtime server is still warming its tenant connection is never
+  // evaluated (the server logs nothing for it) and looks exactly like a
+  // policy denial. Joins that must fail keep a single attempt.
+  async function joinSubscribed(
+    makeChannel: () => RealtimeChannel,
+    attemptTimeoutMs = 4000,
+    attempts = 6,
+  ): Promise<RealtimeChannel> {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const channel = makeChannel();
+      const outcome = await joinOutcome(channel, attemptTimeoutMs);
+      if (outcome === "subscribed") return channel;
+      await channel.unsubscribe();
+    }
+    throw new Error(`expected subscribed, received denied after ${attempts} attempts`);
+  }
+
   it("delivers to the owner's user topic and denies another user's", async () => {
     const [alice, bob] = await createTestUsers(2);
     const aliceClient = await realtimeClient(alice);
 
-    const own = aliceClient.channel(`user:${alice.id}`, { config: { private: true } });
-    await expect(joinOutcome(own)).resolves.toBe("subscribed");
+    const own = await joinSubscribed(
+      () => aliceClient.channel(`user:${alice.id}`, { config: { private: true } }),
+    );
     await own.unsubscribe();
 
     const other = aliceClient.channel(`user:${bob.id}`, { config: { private: true } });
     await expect(joinOutcome(other)).resolves.toBe("denied");
     await other.unsubscribe();
-  });
+  }, 60000);
 
   it("delivers group and chat topics to accepted members only", async () => {
     const [alice, bruno, outsider] = await createTestUsers(3);
@@ -64,18 +85,20 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
     const aliceClient = await realtimeClient(alice);
     const outsiderClient = await realtimeClient(outsider);
 
-    const memberGroup = aliceClient.channel(`group:${groupId}`, { config: { private: true } });
-    await expect(joinOutcome(memberGroup)).resolves.toBe("subscribed");
+    const memberGroup = await joinSubscribed(
+      () => aliceClient.channel(`group:${groupId}`, { config: { private: true } }),
+    );
     await memberGroup.unsubscribe();
 
-    const memberChat = aliceClient.channel(`chat:${groupId}`, { config: { private: true } });
-    await expect(joinOutcome(memberChat)).resolves.toBe("subscribed");
+    const memberChat = await joinSubscribed(
+      () => aliceClient.channel(`chat:${groupId}`, { config: { private: true } }),
+    );
     await memberChat.unsubscribe();
 
     const outsiderGroup = outsiderClient.channel(`group:${groupId}`, { config: { private: true } });
     await expect(joinOutcome(outsiderGroup)).resolves.toBe("denied");
     await outsiderGroup.unsubscribe();
-  });
+  }, 60000);
 
   it("denies malformed topics as plain policy denials", async () => {
     const [alice] = await createTestUsers(1);
@@ -96,15 +119,16 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
       await expect(joinOutcome(channel, 5000)).resolves.toBe("denied");
       await channel.unsubscribe();
     }
-  });
+  }, 60000);
 
   it("denies a fresh join after membership ends", async () => {
     const [alice, bruno] = await createTestUsers(2);
     const groupId = await createGroupWithMembers(alice, [bruno]);
     const brunoClient = await realtimeClient(bruno);
 
-    const before = brunoClient.channel(`group:${groupId}`, { config: { private: true } });
-    await expect(joinOutcome(before)).resolves.toBe("subscribed");
+    const before = await joinSubscribed(
+      () => brunoClient.channel(`group:${groupId}`, { config: { private: true } }),
+    );
     await before.unsubscribe();
 
     const left = await brunoClient.rpc("leave_group", { p_group_id: groupId });
@@ -113,5 +137,5 @@ describe.skipIf(!isIntegrationTestReady)("realtime topic authorization", () => {
     const after = brunoClient.channel(`group:${groupId}`, { config: { private: true } });
     await expect(joinOutcome(after)).resolves.toBe("denied");
     await after.unsubscribe();
-  });
+  }, 60000);
 });
