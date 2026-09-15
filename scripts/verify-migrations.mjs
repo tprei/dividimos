@@ -18,7 +18,7 @@
 
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -55,6 +55,15 @@ const EXEC_FILE_OPTIONS = { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 };
 
 async function run(executable, args, options = {}) {
   return execFileP(executable, args, { ...EXEC_FILE_OPTIONS, ...options });
+}
+async function hasGitMetadata(cwd) {
+  try {
+    await access(join(cwd, ".git"));
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 async function gitOut(args, cwd) {
@@ -680,7 +689,7 @@ async function collectStableObservations(context, identities) {
        join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = any($1::text[]) and c.relkind = 'r'
       order by 1, 2`,
-    [AUDITED_SCHEMAS],
+    [APPLICATION_SCHEMAS],
   );
   for (const row of countedTables.rows) {
     observations.push({
@@ -1058,7 +1067,10 @@ export async function verifyMigrations(options) {
   if (!headRef) throw new Error("a --head revision is required");
   if (!artifactDirectory) throw new Error("an --artifacts directory is required");
 
-  const bin = await pinnedSupabaseCli();
+  let bin;
+  if (!(await hasGitMetadata(cwd))) {
+    bin = await pinnedSupabaseCli();
+  }
 
   const baseFiles = await readMigrationFiles(baseRef, { cwd });
   const headFiles = await readMigrationFiles(headRef, { cwd });
@@ -1071,6 +1083,7 @@ export async function verifyMigrations(options) {
     );
   }
   if (failures.length > 0) throw new Error(failures.join("\n"));
+  bin = await pinnedSupabaseCli();
 
   const builtRef = mode === "fresh" ? headRef : baseRef;
   const config = await gitOut(["cat-file", "blob", `${builtRef}:${CONFIG_PATH}`], cwd);

@@ -210,7 +210,7 @@ describe("mutations", () => {
           p_service_fee_bps: HEADER.serviceFeeBasisPoints,
           p_fixed_fee_cents: HEADER.fixedFeeCents,
           p_payload: PAYLOAD,
-          p_chave_acesso: null,
+          p_chave_acesso: undefined,
         }),
         expect.any(Function),
       );
