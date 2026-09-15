@@ -152,6 +152,13 @@ export type Database = {
             foreignKeyName: "expense_participants_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: false
+            referencedRelation: "current_expense_participants"
+            referencedColumns: ["expense_id"]
+          },
+          {
+            foreignKeyName: "expense_participants_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
             referencedRelation: "expenses"
             referencedColumns: ["id"]
           },
@@ -221,6 +228,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_versions_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "current_expense_participants"
+            referencedColumns: ["expense_id"]
           },
           {
             foreignKeyName: "expense_versions_expense_id_fkey"
@@ -371,6 +385,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_events_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
+            referencedRelation: "current_expense_participants"
+            referencedColumns: ["expense_id"]
           },
           {
             foreignKeyName: "group_events_expense_id_fkey"
@@ -643,6 +664,13 @@ export type Database = {
             foreignKeyName: "guests_expense_id_fkey"
             columns: ["expense_id"]
             isOneToOne: false
+            referencedRelation: "current_expense_participants"
+            referencedColumns: ["expense_id"]
+          },
+          {
+            foreignKeyName: "guests_expense_id_fkey"
+            columns: ["expense_id"]
+            isOneToOne: false
             referencedRelation: "expenses"
             referencedColumns: ["id"]
           },
@@ -873,7 +901,18 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      current_expense_participants: {
+        Row: {
+          expense_id: string | null
+          guest_id: string | null
+          kind: Database["public"]["Enums"]["participant_kind"] | null
+          paid_cents: number | null
+          participant_index: number | null
+          share_cents: number | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       accept_invitation: {
