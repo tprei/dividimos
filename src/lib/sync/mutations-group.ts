@@ -121,13 +121,6 @@ function decodeGuestId(raw: unknown): ValidationResult<{ guestId: string }, Wire
   return { ok: false, issue: { code: "invalid_wire", path: ["guestId"] } };
 }
 
-function decodeUserProfileOrNull(raw: unknown): ValidationResult<UserProfile | null, WireIssue> {
-  if (raw === null) {
-    return { ok: true, value: null };
-  }
-  return decodeUserProfile(raw);
-}
-
 export async function createGroup(name: string, memberIds: string[]): Promise<MutationAck> {
   const ack = await rpc("create_group", { p_name: name, p_member_ids: memberIds }, decodeMutationAck);
   await refreshGroup(ack.groupId);
@@ -284,7 +277,32 @@ export async function updateProfile(input: {
 }
 
 export async function lookupUserByHandle(handle: string): Promise<UserProfile | null> {
-  return await rpc("lookup_user_by_handle", { p_handle: handle }, decodeUserProfileOrNull);
+  let response: Response;
+  try {
+    response = await fetch(`/api/users/lookup?handle=${encodeURIComponent(handle)}`);
+  } catch (error) {
+    throw new LedgerError("network", { cause: error });
+  }
+
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new LedgerError(response.status === 401 ? "unauthenticated" : "unknown", {
+      cause: response.status,
+    });
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (error) {
+    throw new LedgerError("invalid_wire", { cause: error });
+  }
+  const profile = isObject(body) ? body.profile : undefined;
+  const decoded = decodeUserProfile(profile);
+  if (!decoded.ok) {
+    throw new LedgerError("invalid_wire", { cause: decoded.issue });
+  }
+  return decoded.value;
 }
 
 export async function createGuestClaimToken(guestId: string): Promise<GuestClaimToken> {

@@ -42,6 +42,18 @@ const APPLICATION_SCHEMAS = ["public", "guest_credentials"];
 const OBSERVED_GRANTEES = ["anon", "authenticated", "PUBLIC", "service_role"];
 const ACTOR_NAMES = ["alice", "bob", "carol", "outsider"];
 const RECEIPT_ACCESS_KEY = "35260927654896000136550010000927651092765109";
+
+// P3b (20260913010070) closes the lookup bypass: direct authenticated
+// lookup_user_by_handle flips to denial on purpose. The upgrade gate asserts
+// exactly this named AFTER-state. The BEFORE-state is not pinned: a base
+// revision that already carries the migration legitimately seeds as denied.
+// No other privilege drift is exempt from equality.
+const LOOKUP_FLIP = {
+  label: "lookup:direct:authenticated",
+  after: "denied",
+  note: "intentional upgrade: 20260913010070 revokes browser-role execute on public.lookup_user_by_handle(text); /api/users/lookup owns the rate limit and calls it through service_role",
+};
+export const INTENTIONAL_UPGRADES = new Map([[LOOKUP_FLIP.label, LOOKUP_FLIP]]);
 const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 // 16_rpc_push.sql exposes only claim_push_subscription, which is granted to
 // service_role and explicitly revoked from authenticated clients; there is no
@@ -519,9 +531,14 @@ export async function captureApplicationCatalog(client) {
   return { postgresMajor: await serverMajor(client), entries: sortCatalogEntries(entries) };
 }
 
+async function classifyDirectLookup(client, handle) {
+  const { data, error } = await client.rpc("lookup_user_by_handle", { p_handle: handle });
+  if (!error && data && data.handle === handle) return "success";
+  if (error && /permission denied/i.test(error.message)) return "denied";
+  throw new Error(`unexpected direct lookup result: ${JSON.stringify({ data, error })}`);
+}
+
 /**
- * Compares two application catalogs for exact equality.
- *
  * @param {ApplicationCatalog} expected
  * @param {ApplicationCatalog} actual
  * @returns {string[]} one message per difference, empty when identical
@@ -742,6 +759,14 @@ async function collectStableObservations(context, identities) {
     value: receiptKey.rows[0].present,
   });
 
+  observations.push({
+    label: LOOKUP_FLIP.label,
+    value: await classifyDirectLookup(alice, "verify_bob"),
+  });
+  observations.push({
+    label: "lookup:direct:anon",
+    value: await classifyDirectLookup(context.actors.outsider, "verify_bob"),
+  });
 
   observations.push({ label: "notes:push", value: PUSH_OMITTED_NOTE });
   return observations;
@@ -972,9 +997,18 @@ export function compareFixtureObservations(expected, actual) {
     }
   }
   for (const [label, expectedValue] of expectedByLabel) {
+    if (INTENTIONAL_UPGRADES.has(label)) continue;
     const actualValue = actualByLabel.get(label);
     if (actualValue === undefined || isDeepStrictEqual(expectedValue, actualValue)) continue;
     failures.push(`${label}: before=${JSON.stringify(expectedValue)} after=${JSON.stringify(actualValue)}`);
+  }
+  for (const [label, upgrade] of INTENTIONAL_UPGRADES) {
+    const before = expectedByLabel.get(label);
+    const after = actualByLabel.get(label);
+    if (before === undefined && after === undefined) continue;
+    if (after !== upgrade.after) {
+      failures.push(`${label}: upgrade should be ${JSON.stringify(upgrade.after)}, observed after=${JSON.stringify(after)} (${upgrade.note})`);
+    }
   }
   return failures.sort(compareStrings);
 }

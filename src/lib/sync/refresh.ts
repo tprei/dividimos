@@ -250,8 +250,8 @@ export async function loadMyExpenses(cursor?: PageCursor): Promise<void> {
       rpc(
         "get_my_expenses",
         {
-          p_before_created_at: cursor?.createdAt ?? null,
-          p_before_id: cursor?.id ?? null,
+          p_before_created_at: cursor?.createdAt ?? undefined,
+          p_before_id: cursor?.id ?? undefined,
           p_limit: 50,
         },
         decodeExpensePage,
@@ -304,12 +304,12 @@ export async function loadConversation(
         "get_conversation",
         {
           p_group_id: groupId,
-          p_message_before_created_at: cursors?.messageBefore?.createdAt ?? null,
-          p_message_before_id: cursors?.messageBefore?.id ?? null,
-          p_event_before_created_at: cursors?.eventBefore?.createdAt ?? null,
+          p_message_before_created_at: cursors?.messageBefore?.createdAt ?? undefined,
+          p_message_before_id: cursors?.messageBefore?.id ?? undefined,
+          p_event_before_created_at: cursors?.eventBefore?.createdAt ?? undefined,
           p_event_before_id:
             cursors?.eventBefore === undefined || cursors.eventBefore === null
-              ? null
+              ? undefined
               : Number(cursors.eventBefore.id),
           p_limit: 50,
         },
@@ -334,8 +334,8 @@ export async function loadVendorCharges(cursor?: PageCursor): Promise<void> {
       rpc(
         "get_vendor_charges",
         {
-          p_before_created_at: cursor?.createdAt ?? null,
-          p_before_id: cursor?.id ?? null,
+          p_before_created_at: cursor?.createdAt ?? undefined,
+          p_before_id: cursor?.id ?? undefined,
           p_limit: 50,
         },
         decodeChargePage,
