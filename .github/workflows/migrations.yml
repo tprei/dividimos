@@ -95,8 +95,7 @@ jobs:
           fi
 
       - name: Assert database security invariants on the fresh database
-        run: node scripts/check-database-invariants.mjs \
-            "$(jq -r .db_url verify-artifacts/fresh/env.json)"
+        run: node scripts/check-database-invariants.mjs "$(jq -r .db_url verify-artifacts/fresh/env.json)"
 
       - name: Stop the fresh project
         if: always()
@@ -173,6 +172,9 @@ jobs:
           RATE_LIMIT_DISABLED: "0"
           INTEGRATION_STRICT: "1"
 
+      - name: Assert database security invariants on the upgraded database
+        run: node scripts/check-database-invariants.mjs "$UPGRADE_DB_URL"
+
       - name: Stop the upgraded project
         if: always()
         run: |
@@ -180,9 +182,6 @@ jobs:
             supabase stop --no-backup \
               --workdir "$(cat verify-artifacts/upgrade/project-dir.txt)"
           fi
-
-      - name: Assert database security invariants on the upgraded database
-        run: node scripts/check-database-invariants.mjs "$UPGRADE_DB_URL"
 
       - name: Upload upgrade verification artifacts
         if: always()
@@ -224,7 +223,8 @@ jobs:
           name: verification-upgrade
           path: upgrade
 
-      - run: node scripts/verify-migrations.mjs compare \
+      - run: |
+          node scripts/verify-migrations.mjs compare \
             --expected fresh/catalog.json --actual upgrade/catalog.json
 
   replay:
