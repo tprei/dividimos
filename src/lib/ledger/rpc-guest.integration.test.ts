@@ -54,6 +54,10 @@ interface PayloadParticipant {
 
 interface ExpenseDetail {
   current: { payload: { participants: PayloadParticipant[] } };
+  versions: Array<{
+    versionNo: number;
+    payload: { participants: PayloadParticipant[] };
+  }>;
   participants: Array<{
     participantIndex: number;
     kind: "user" | "guest";
@@ -768,7 +772,7 @@ describe.skipIf(!isIntegrationTestReady)(
       // 2. Guest identity unchanged (unclaimed)
       const guestRow = await withPg(async (pg) => {
         const res = await pg.query<{ claimed_by: string | null }>(
-          "SELECT claimed_by FROM public.guests WHERE id = $1",
+          "SELECT claimed_by FROM public.guests WHERE id = $1::uuid",
           [guestId],
         );
         return res.rows[0];
@@ -848,3 +852,312 @@ describe.skipIf(!isIntegrationTestReady)(
     });
   },
 );
+
+describe.skipIf(!isIntegrationTestReady)("P9 immutable guest claim facts", () => {
+  it("enforces guests_claim_tuple_valid check constraint on public.guests", async () => {
+    const [alice] = await createTestUsers(1);
+    const cAlice = authenticateAs(alice);
+    const { groupId } = await createGroup(alice, "Tuple Test Group");
+    const created = await createExpense(alice, {
+      groupId,
+      title: "Tuple Expense",
+      totalCents: 2000,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+          { kind: "guest", guestId: null, displayName: "Guest Tuple" },
+        ],
+        shares: [1000, 1000],
+        payers: [{ participantIndex: 0, amountCents: 2000 }],
+        itemAssignments: null,
+      },
+    });
+
+    const detail = await getExpenseDetail(cAlice, created.expenseId);
+    const guestId = detail.current.payload.participants[1].guestId!;
+
+    await withPg(async (pg) => {
+      // 1. Partial: claimed_by set, others null -> reject
+      await expect(
+        pg.query(
+          "UPDATE public.guests SET claimed_by = $1, claimed_at = NULL, claimed_version_no = NULL WHERE id = $2::uuid",
+          [alice.id, guestId],
+        ),
+      ).rejects.toThrow(/guests_claim_tuple_valid/);
+
+      // 2. Partial: claimed_by + claimed_at set, claimed_version_no null -> reject
+      await expect(
+        pg.query(
+          "UPDATE public.guests SET claimed_by = $1, claimed_at = now(), claimed_version_no = NULL WHERE id = $2::uuid",
+          [alice.id, guestId],
+        ),
+      ).rejects.toThrow(/guests_claim_tuple_valid/);
+
+      // 3. Partial: claimed_version_no set, others null -> reject
+      await expect(
+        pg.query(
+          "UPDATE public.guests SET claimed_by = NULL, claimed_at = NULL, claimed_version_no = 1 WHERE id = $1::uuid",
+          [guestId],
+        ),
+      ).rejects.toThrow(/guests_claim_tuple_valid/);
+
+      // 4. All set -> valid
+      await pg.query(
+        "UPDATE public.guests SET claimed_by = $1, claimed_at = now(), claimed_version_no = 1 WHERE id = $2::uuid",
+        [alice.id, guestId],
+      );
+
+      // 5. All cleared -> valid
+      await pg.query(
+        "UPDATE public.guests SET claimed_by = NULL, claimed_at = NULL, claimed_version_no = NULL WHERE id = $1::uuid",
+        [guestId],
+      );
+    });
+  });
+
+  it("claim preserves raw payload bytes in expense_versions and does not bump version", async () => {
+    const [alice, bob] = await createTestUsers(2);
+    const cAlice = authenticateAs(alice);
+    const cBob = authenticateAs(bob);
+    const { groupId } = await createGroup(alice, "Immutability Group");
+
+    const created = await createExpense(alice, {
+      groupId,
+      title: "Raw Immutability Test",
+      totalCents: 3000,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+          { kind: "guest", guestId: null, displayName: "Guest Bob" },
+        ],
+        shares: [1500, 1500],
+        payers: [{ participantIndex: 0, amountCents: 3000 }],
+        itemAssignments: null,
+      },
+    });
+
+    const detailBefore = await getExpenseDetail(cAlice, created.expenseId);
+    const guestId = detailBefore.current.payload.participants[1].guestId!;
+
+    // Query raw stored payload from expense_versions directly
+    const rawPayloadBefore = await withPg(async (pg) => {
+      const res = await pg.query<{ payload: unknown }>(
+        "SELECT payload FROM public.expense_versions WHERE expense_id = $1 AND version_no = 1",
+        [created.expenseId],
+      );
+      return res.rows[0].payload;
+    });
+
+    // Issue claim token and claim guest
+    const issued = await rpc<IssuedToken>(cAlice, "create_guest_claim_token", {
+      p_guest_id: guestId,
+    });
+    const claimAck = await rpc<ClaimAck>(cBob, "claim_guest", {
+      p_token: issued.token,
+    });
+    expect(claimAck.expenseId).toBe(created.expenseId);
+
+    // Verify raw stored payload is byte-for-byte / object identical
+    const rawPayloadAfter = await withPg(async (pg) => {
+      const res = await pg.query<{ payload: unknown }>(
+        "SELECT payload FROM public.expense_versions WHERE expense_id = $1 AND version_no = 1",
+        [created.expenseId],
+      );
+      return res.rows[0].payload;
+    });
+    expect(rawPayloadAfter).toEqual(rawPayloadBefore);
+
+    // Verify current_version_no on expense is still 1 (not bumped)
+    const expenseRow = await withPg(async (pg) => {
+      const res = await pg.query<{ current_version_no: number }>(
+        "SELECT current_version_no FROM public.expenses WHERE id = $1::uuid",
+        [created.expenseId],
+      );
+      return res.rows[0];
+    });
+    expect(expenseRow.current_version_no).toBe(1);
+
+    // Verify guest row has claimed_version_no = 1
+    const guestRow = await withPg(async (pg) => {
+      const res = await pg.query<{ claimed_by: string; claimed_version_no: number }>(
+        "SELECT claimed_by, claimed_version_no FROM public.guests WHERE id = $1::uuid",
+        [guestId],
+      );
+      return res.rows[0];
+    });
+    expect(guestRow.claimed_by).toBe(bob.id);
+    expect(guestRow.claimed_version_no).toBe(1);
+
+    // Verify same expected version (1) is still accepted on edit
+    const editAck = await rpc<EditAck>(cAlice, "edit_expense", {
+      p_expense_id: created.expenseId,
+      p_expected_version_no: 1,
+      p_occurred_on: "2026-09-01",
+      p_title: "Edited After Claim",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 3000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+          { kind: "user", userId: bob.id },
+        ],
+        shares: [1500, 1500],
+        payers: [{ participantIndex: 0, amountCents: 3000 }],
+        itemAssignments: null,
+      },
+    });
+    expect(editAck.versionNo).toBe(2);
+  });
+
+  it("claim on v2 leaves v1 guest-shaped; v3 persists resolved participants; v4 removal revokes rights", async () => {
+    const [alice, bob] = await createTestUsers(2);
+    const cAlice = authenticateAs(alice);
+    const cBob = authenticateAs(bob);
+    const { groupId } = await createGroup(alice, "Version Identity Group");
+
+    // v1: created with guest
+    const created = await createExpense(alice, {
+      groupId,
+      title: "Versioned Claim Test",
+      totalCents: 2000,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+          { kind: "guest", guestId: null, displayName: "Guest v1" },
+        ],
+        shares: [1000, 1000],
+        payers: [{ participantIndex: 0, amountCents: 2000 }],
+        itemAssignments: null,
+      },
+    });
+
+    const detail1 = await getExpenseDetail(cAlice, created.expenseId);
+    const guestId = detail1.current.payload.participants[1].guestId!;
+
+    // v2: edit title, keeping the exact guest participant
+    await rpc<EditAck>(cAlice, "edit_expense", {
+      p_expense_id: created.expenseId,
+      p_expected_version_no: 1,
+      p_occurred_on: "2026-09-01",
+      p_title: "Versioned Claim Test v2",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 2000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+          { kind: "guest", guestId, displayName: "Guest v1" },
+        ],
+        shares: [1000, 1000],
+        payers: [{ participantIndex: 0, amountCents: 2000 }],
+        itemAssignments: null,
+      },
+    });
+
+    // Bob claims guest while current version is v2 -> claimed_version_no = 2
+    const issued = await rpc<IssuedToken>(cAlice, "create_guest_claim_token", {
+      p_guest_id: guestId,
+    });
+    await rpc<ClaimAck>(cBob, "claim_guest", { p_token: issued.token });
+
+    // Effective identity check via get_expense RPC:
+    // v1 is still guest-shaped!
+    // v2 is user-shaped (Bob)!
+    const detailAfterClaim = await getExpenseDetail(cAlice, created.expenseId);
+    const v1 = detailAfterClaim.versions.find((v) => v.versionNo === 1)!;
+    const v2 = detailAfterClaim.versions.find((v) => v.versionNo === 2)!;
+    expect(v1).toBeDefined();
+    expect(v2).toBeDefined();
+    expect(v1.payload.participants[1].kind).toBe("guest");
+    expect(v1.payload.participants[1].guestId).toBe(guestId);
+
+    expect(v2.payload.participants[1].kind).toBe("user");
+    expect(v2.payload.participants[1].userId).toBe(bob.id);
+
+    // v3 edit by Bob: allowed because Bob is current participant on v2!
+    // This edit creates v3 where Bob is explicitly persisted as user in the payload.
+    const edit3 = await rpc<EditAck>(cBob, "edit_expense", {
+      p_expense_id: created.expenseId,
+      p_expected_version_no: 2,
+      p_occurred_on: "2026-09-01",
+      p_title: "Edited By Claimant v3",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 2000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+          { kind: "user", userId: bob.id },
+        ],
+        shares: [1000, 1000],
+        payers: [{ participantIndex: 0, amountCents: 2000 }],
+        itemAssignments: null,
+      },
+    });
+    expect(edit3.versionNo).toBe(3);
+
+    // v4 edit by Alice: removes Bob from participants
+    const edit4 = await rpc<EditAck>(cAlice, "edit_expense", {
+      p_expense_id: created.expenseId,
+      p_expected_version_no: 3,
+      p_occurred_on: "2026-09-01",
+      p_title: "Removed Claimant v4",
+      p_merchant_name: null,
+      p_expense_type: "single_amount",
+      p_total_cents: 2000,
+      p_service_fee_bps: 0,
+      p_fixed_fee_cents: 0,
+      p_payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+        ],
+        shares: [2000],
+        payers: [{ participantIndex: 0, amountCents: 2000 }],
+        itemAssignments: null,
+      },
+    });
+    expect(edit4.versionNo).toBe(4);
+
+    // Now Bob is no longer in v4 participants -> edit/delete fail with not_expense_party
+    const bobEditErr = await expectRpcError(
+      cBob.rpc("edit_expense", {
+        p_expense_id: created.expenseId,
+        p_expected_version_no: 4,
+        p_occurred_on: "2026-09-01",
+        p_title: "Unauthorized Edit v5",
+        p_merchant_name: "",
+        p_expense_type: "single_amount",
+        p_total_cents: 2000,
+        p_service_fee_bps: 0,
+        p_fixed_fee_cents: 0,
+        p_payload: {
+          items: [],
+          participants: [{ kind: "user", userId: alice.id }],
+          shares: [2000],
+          payers: [{ participantIndex: 0, amountCents: 2000 }],
+          itemAssignments: null,
+        },
+      }),
+    );
+    expect(bobEditErr).toBe("not_expense_party");
+
+    const bobDeleteErr = await expectRpcError(
+      cBob.rpc("delete_expense", { p_expense_id: created.expenseId }),
+    );
+    expect(bobDeleteErr).toBe("not_expense_party");
+  });
+});

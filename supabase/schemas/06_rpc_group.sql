@@ -283,7 +283,7 @@ BEGIN
       WHERE e.group_id = p_group_id
         AND EXISTS (
           SELECT 1
-          FROM jsonb_array_elements(COALESCE(ev.payload->'participants', '[]'::jsonb)) AS pp(p)
+          FROM jsonb_array_elements(COALESCE(effective_expense_payload(e.id, e.current_version_no)->'participants', '[]'::jsonb)) AS pp(p)
           WHERE pp.p->>'kind' = 'user'
             AND pp.p ? 'userId'
             AND pp.p->>'userId' = v_actor::text
