@@ -86,7 +86,7 @@ jobs:
       - name: Generated database types match HEAD's database
         run: |
           DB_URL=$(jq -r .db_url verify-artifacts/fresh/env.json)
-          supabase gen types typescript --db-url "$DB_URL" \
+          ./node_modules/.bin/supabase gen types typescript --db-url "$DB_URL" \
             > src/types/database.ts
           if ! git diff --quiet -- src/types/database.ts; then
             echo "::error::src/types/database.ts does not match the database HEAD's migrations build."
