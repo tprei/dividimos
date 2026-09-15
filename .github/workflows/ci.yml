@@ -22,6 +22,7 @@ jobs:
           node-version: 22
           cache: npm
 
+      - run: npm ci --ignore-scripts
       - run: npm test
 
       - name: Migration history checker tests
