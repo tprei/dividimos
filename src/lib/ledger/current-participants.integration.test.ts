@@ -44,19 +44,6 @@ async function callRpc<T>(
   return data as T;
 }
 
-async function fetchTableRows(expenseId: string): Promise<ParticipantRow[]> {
-  return withPg(async (pg) => {
-    const res = await pg.query<ParticipantRow>(
-      `SELECT participant_index, kind, user_id, guest_id, share_cents, paid_cents
-       FROM public.expense_participants
-       WHERE expense_id = $1
-       ORDER BY participant_index`,
-      [expenseId],
-    );
-    return res.rows;
-  });
-}
-
 async function fetchViewRows(expenseId: string): Promise<ParticipantRow[]> {
   return withPg(async (pg) => {
     const res = await pg.query<ParticipantRow>(
@@ -68,12 +55,6 @@ async function fetchViewRows(expenseId: string): Promise<ParticipantRow[]> {
     );
     return res.rows;
   });
-}
-
-async function assertViewMatchesTable(expenseId: string): Promise<void> {
-  const tableRows = await fetchTableRows(expenseId);
-  const viewRows = await fetchViewRows(expenseId);
-  expect(viewRows).toEqual(tableRows);
 }
 
 describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
@@ -88,7 +69,7 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
     groupId = await createGroupWithMembers(alice, [bob, carol], "Parity Group");
   });
 
-  it("matches materialized table for single-payer user expense", async () => {
+  it("derives participants for single-payer user expense", async () => {
     const created = await createExpense(alice, {
       groupId,
       title: "Aluguel",
@@ -98,10 +79,14 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
 
     const viewRows = await fetchViewRows(created.expenseId);
     expect(viewRows).toHaveLength(3);
-    await assertViewMatchesTable(created.expenseId);
+    expect(viewRows).toEqual([
+      { participant_index: 0, kind: "user", user_id: alice.id, guest_id: null, share_cents: 3000, paid_cents: 9000 },
+      { participant_index: 1, kind: "user", user_id: bob.id, guest_id: null, share_cents: 3000, paid_cents: 0 },
+      { participant_index: 2, kind: "user", user_id: carol.id, guest_id: null, share_cents: 3000, paid_cents: 0 },
+    ]);
   });
 
-  it("matches materialized table for multi-payer expense", async () => {
+  it("derives participants for multi-payer expense", async () => {
     const created = await createExpense(alice, {
       groupId,
       title: "Mercado",
@@ -127,10 +112,14 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
     expect(viewRows[0].paid_cents).toBe(6000);
     expect(viewRows[1].paid_cents).toBe(4000);
     expect(viewRows[2].paid_cents).toBe(0);
-    await assertViewMatchesTable(created.expenseId);
+    expect(viewRows).toEqual([
+      { participant_index: 0, kind: "user", user_id: alice.id, guest_id: null, share_cents: 3000, paid_cents: 6000 },
+      { participant_index: 1, kind: "user", user_id: bob.id, guest_id: null, share_cents: 3000, paid_cents: 4000 },
+      { participant_index: 2, kind: "user", user_id: carol.id, guest_id: null, share_cents: 4000, paid_cents: 0 },
+    ]);
   });
 
-  it("matches materialized table for unclaimed guest expense", async () => {
+  it("derives participants for unclaimed guest expense", async () => {
     const created = await createExpense(alice, {
       groupId,
       title: "Padaria",
@@ -154,10 +143,9 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
     expect(guestRow.kind).toBe("guest");
     expect(guestRow.guest_id).toBeTruthy();
     expect(guestRow.user_id).toBeNull();
-    await assertViewMatchesTable(created.expenseId);
   });
 
-  it("matches materialized table across guest claim and subsequent edits", async () => {
+  it("derives participants across guest claim and subsequent edits", async () => {
     const created = await createExpense(alice, {
       groupId,
       title: "Churrasco",
@@ -187,7 +175,6 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
       throw new Error("Guest ID not found in database for created expense");
     }
 
-    await assertViewMatchesTable(created.expenseId);
 
     const aliceClient = authenticateAs(alice);
     const tokenAck = await callRpc<TokenAck>(aliceClient, "create_guest_claim_token", {
@@ -204,7 +191,6 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
     expect(afterClaimRows[2].kind).toBe("user");
     expect(afterClaimRows[2].user_id).toBe(outsider.id);
     expect(afterClaimRows[2].guest_id).toBeNull();
-    await assertViewMatchesTable(created.expenseId);
 
     await callRpc(aliceClient, "edit_expense", {
       p_expense_id: created.expenseId,
@@ -229,7 +215,6 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
       },
     });
 
-    await assertViewMatchesTable(created.expenseId);
 
     await callRpc(aliceClient, "edit_expense", {
       p_expense_id: created.expenseId,
@@ -256,10 +241,9 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
     const removedClaimantRows = await fetchViewRows(created.expenseId);
     expect(removedClaimantRows).toHaveLength(2);
     expect(removedClaimantRows.some((r) => r.user_id === outsider.id)).toBe(false);
-    await assertViewMatchesTable(created.expenseId);
   });
 
-  it("produces zero rows for deleted expenses in both view and table", async () => {
+  it("produces zero rows for deleted expenses in view", async () => {
     const created = await createExpense(alice, {
       groupId,
       title: "Para deletar",
@@ -267,7 +251,6 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
       payload: equalSplitPayload([alice.id, bob.id], 3000),
     });
 
-    await assertViewMatchesTable(created.expenseId);
 
     const aliceClient = authenticateAs(alice);
     await callRpc(aliceClient, "delete_expense", {
@@ -275,9 +258,7 @@ describe.skipIf(!isIntegrationTestReady)("current_expense_participants", () => {
     });
 
     const viewRows = await fetchViewRows(created.expenseId);
-    const tableRows = await fetchTableRows(created.expenseId);
     expect(viewRows).toEqual([]);
-    expect(tableRows).toEqual([]);
   });
 
   it("pushes group and expense predicates into indexed scans without full payload expansion", async () => {

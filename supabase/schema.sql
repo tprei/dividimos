@@ -109,7 +109,8 @@ CREATE TABLE public.expenses (
   declined_user_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
   CONSTRAINT expenses_declined_users_valid CHECK (
     cardinality(declined_user_ids) <= 50 AND array_position(declined_user_ids, NULL) IS NULL
-  )
+  ),
+  CONSTRAINT expenses_current_version_positive CHECK (current_version_no >= 1)
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
 -- Cursor order for history paging; occurred_on above still serves its own readers.
@@ -149,22 +150,6 @@ CREATE TABLE public.guests (
 );
 CREATE INDEX guests_expense_idx ON public.guests (expense_id);
 
-CREATE TABLE public.expense_participants (
-  expense_id uuid NOT NULL REFERENCES public.expenses(id) ON DELETE CASCADE,
-  participant_index integer NOT NULL CHECK (participant_index >= 0),
-  kind public.participant_kind NOT NULL,
-  user_id uuid REFERENCES public.users(id),
-  guest_id uuid REFERENCES public.guests(id),
-  share_cents integer NOT NULL CHECK (share_cents BETWEEN 0 AND 99999999),
-  paid_cents integer NOT NULL DEFAULT 0 CHECK (paid_cents BETWEEN 0 AND 99999999),
-  PRIMARY KEY (expense_id, participant_index),
-  CHECK ((kind = 'user' AND user_id IS NOT NULL AND guest_id IS NULL) OR
-         (kind = 'guest' AND guest_id IS NOT NULL AND user_id IS NULL AND paid_cents = 0)),
-  UNIQUE (expense_id, user_id),
-  UNIQUE (expense_id, guest_id)
-);
-CREATE INDEX expense_participants_user_idx ON public.expense_participants (user_id);
-
 CREATE TABLE public.settlements (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   operation_id uuid NOT NULL UNIQUE,
@@ -187,7 +172,8 @@ CREATE TABLE public.group_balances (
   kind public.participant_kind NOT NULL,
   participant_id uuid NOT NULL,
   net_cents bigint NOT NULL,
-  PRIMARY KEY (group_id, kind, participant_id)
+  PRIMARY KEY (group_id, kind, participant_id),
+  CONSTRAINT group_balances_nonzero CHECK (net_cents <> 0)
 );
 -- net_cents > 0: participant is owed; < 0: participant owes. Zero rows are never stored.
 
@@ -250,7 +236,6 @@ ALTER TABLE public.group_invite_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.expense_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.expense_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_balances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.group_events ENABLE ROW LEVEL SECURITY;
@@ -891,12 +876,15 @@ $$;
 REVOKE ALL ON FUNCTION public.effective_expense_payload(uuid, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.effective_expense_payload(uuid, integer) TO service_role;
 
-CREATE FUNCTION public.materialize_participants(p_expense_id uuid, p_author uuid, p_payload jsonb)
+CREATE FUNCTION public.resolve_expense_participants(p_expense_id uuid, p_payload jsonb)
 RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   v_group_id uuid;
+  v_current_version integer;
+  v_prev_payload jsonb;
+  v_existing_user_ids uuid[] := '{}';
   v_participants jsonb;
   v_n integer;
   v_i integer;
@@ -904,35 +892,33 @@ DECLARE
   v_user_id uuid;
   v_guest_id uuid;
   v_new_guest_id uuid;
-  v_display_name text;
   v_claimed_by uuid;
-  v_share integer;
-  v_paid integer;
-  v_payers jsonb;
-  v_j integer;
-  v_payer jsonb;
+  v_claimed_version_no integer;
+  v_display_name text;
   v_out_participants jsonb := '[]'::jsonb;
   v_out jsonb;
   v_seen_users uuid[] := '{}';
-  v_current_version integer;
-  v_prev_payload jsonb;
-  v_existing_user_ids uuid[] := '{}';
+  v_kept_guest_ids uuid[] := '{}';
 BEGIN
   SELECT e.group_id, e.current_version_no INTO v_group_id, v_current_version
   FROM expenses e WHERE e.id = p_expense_id;
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
+
   v_prev_payload := effective_expense_payload(p_expense_id, v_current_version);
   SELECT COALESCE(array_agg((pa.el->>'userId')::uuid), '{}') INTO v_existing_user_ids
   FROM jsonb_array_elements(COALESCE(v_prev_payload->'participants', '[]'::jsonb)) AS pa(el)
   WHERE pa.el->>'kind' = 'user' AND pa.el ? 'userId';
 
   v_participants := p_payload->'participants';
+  IF v_participants IS NULL OR jsonb_typeof(v_participants) <> 'array' THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+  END IF;
   v_n := jsonb_array_length(v_participants);
-  v_payers := COALESCE(p_payload->'payers', '[]'::jsonb);
-
-  DELETE FROM expense_participants WHERE expense_id = p_expense_id;
+  IF v_n = 0 THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
+  END IF;
 
   v_i := 0;
   WHILE v_i < v_n LOOP
@@ -941,7 +927,9 @@ BEGIN
     v_guest_id := NULL;
     v_new_guest_id := NULL;
     v_claimed_by := NULL;
+    v_claimed_version_no := NULL;
     v_display_name := NULL;
+
     IF v_participant->>'kind' = 'user' THEN
       v_user_id := (v_participant->>'userId')::uuid;
       PERFORM assert_dm_pair_allowed(v_group_id, v_user_id);
@@ -953,7 +941,7 @@ BEGIN
       v_display_name := v_participant->>'displayName';
       IF jsonb_typeof(v_participant->'guestId') = 'string' THEN
         v_guest_id := (v_participant->>'guestId')::uuid;
-        SELECT id, claimed_by INTO v_new_guest_id, v_claimed_by
+        SELECT id, claimed_by, claimed_version_no INTO v_new_guest_id, v_claimed_by, v_claimed_version_no
         FROM guests WHERE id = v_guest_id AND expense_id = p_expense_id;
         IF v_new_guest_id IS NULL THEN
           RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
@@ -962,7 +950,8 @@ BEGIN
         INSERT INTO guests (expense_id, display_name) VALUES (p_expense_id, v_display_name)
         RETURNING id INTO v_new_guest_id;
       END IF;
-      IF v_claimed_by IS NOT NULL THEN
+
+      IF v_claimed_by IS NOT NULL AND v_claimed_version_no = v_current_version THEN
         v_guest_id := NULL;
         v_user_id := v_claimed_by;
         PERFORM assert_dm_pair_allowed(v_group_id, v_user_id);
@@ -972,6 +961,7 @@ BEGIN
         END IF;
       ELSE
         v_guest_id := v_new_guest_id;
+        v_kept_guest_ids := array_append(v_kept_guest_ids, v_guest_id);
       END IF;
     ELSE
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
@@ -982,48 +972,26 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'duplicate_participant';
       END IF;
       v_seen_users := array_append(v_seen_users, v_user_id);
-    END IF;
-
-    v_share := (p_payload->'shares'->v_i)::integer;
-    v_paid := 0;
-    v_j := 0;
-    WHILE v_j < jsonb_array_length(v_payers) LOOP
-      v_payer := v_payers->v_j;
-      IF (v_payer->>'participantIndex')::integer = v_i THEN
-        v_paid := v_paid + (v_payer->>'amountCents')::integer;
-      END IF;
-      v_j := v_j + 1;
-    END LOOP;
-
-    INSERT INTO expense_participants (expense_id, participant_index, kind, user_id, guest_id, share_cents, paid_cents)
-    VALUES (
-      p_expense_id, v_i,
-      CASE WHEN v_user_id IS NOT NULL THEN 'user'::participant_kind ELSE 'guest'::participant_kind END,
-      v_user_id, v_guest_id, v_share, v_paid
-    );
-
-    IF v_user_id IS NOT NULL THEN
       v_out_participants := v_out_participants || jsonb_build_object('kind', 'user', 'userId', v_user_id);
     ELSE
       v_out_participants := v_out_participants || jsonb_build_object('kind', 'guest', 'guestId', v_guest_id, 'displayName', v_display_name);
     END IF;
+
     v_i := v_i + 1;
   END LOOP;
 
-  -- An unclaimed guest with no participant slot left is unreachable; its
-  -- claim token would otherwise still redeem into group membership.
   DELETE FROM guests g
   WHERE g.expense_id = p_expense_id
     AND g.claimed_by IS NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM expense_participants ep
-      WHERE ep.expense_id = p_expense_id AND ep.guest_id = g.id
-    );
+    AND NOT (g.id = ANY (v_kept_guest_ids));
 
   v_out := jsonb_set(p_payload, '{participants}', v_out_participants);
   RETURN v_out;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.resolve_expense_participants(uuid, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.resolve_expense_participants(uuid, jsonb) TO service_role;
 
 CREATE FUNCTION public.expense_change_summary(p_expense_id uuid, p_from integer, p_to integer) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
@@ -1238,11 +1206,11 @@ BEGIN
   RETURN QUERY
   WITH nets AS (
     SELECT e.id AS expense_id,
-           ep.kind,
-           COALESCE(ep.user_id, ep.guest_id) AS participant_id,
-           (ep.paid_cents - ep.share_cents)::bigint AS net
+           cep.kind,
+           COALESCE(cep.user_id, cep.guest_id) AS participant_id,
+           (cep.paid_cents - cep.share_cents)::bigint AS net
       FROM public.expenses e
-      JOIN public.expense_participants ep ON ep.expense_id = e.id
+      JOIN public.current_expense_participants cep ON cep.expense_id = e.id
      WHERE e.group_id = p_group_id AND e.status = 'active'
   ),
   expense_edges AS (
@@ -1892,7 +1860,7 @@ BEGIN
           WHERE gst.id = ep.guest_id
         ), 'null'::jsonb)
       ) ORDER BY ep.participant_index ASC)
-      FROM expense_participants ep
+      FROM current_expense_participants ep
       WHERE ep.expense_id = e.id
     ), '[]'::jsonb),
     'group', (
@@ -2202,7 +2170,7 @@ BEGIN
       RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END;
 
-  v_payload := materialize_participants(v_expense_id, v_actor, v_payload);
+  v_payload := resolve_expense_participants(v_expense_id, v_payload);
 
   -- Shared-history latch: the new expense becomes visible to more than one
   -- user when a second accepted member can read it or the payload names
@@ -2292,7 +2260,7 @@ BEGIN
   FROM expenses WHERE id = p_expense_id;
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
@@ -2325,7 +2293,7 @@ BEGIN
   v_payload := validate_expense_payload(p_payload, p_expense_type, p_total_cents, p_service_fee_bps, p_fixed_fee_cents);
 
   v_new_version_no := v_current_version_no + 1;
-  v_payload := materialize_participants(p_expense_id, v_actor, v_payload);
+  v_payload := resolve_expense_participants(p_expense_id, v_payload);
 
   -- Shared-history latch: the new version becomes visible to more than one
   -- user when a second accepted member can read it or the payload names
@@ -2417,7 +2385,7 @@ BEGIN
   FOR UPDATE;
 
   IF v_creator_id IS DISTINCT FROM v_actor AND NOT EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = p_expense_id AND kind = 'user' AND user_id = v_actor
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_expense_party';
@@ -2429,7 +2397,6 @@ BEGIN
 
   UPDATE expenses SET status = 'deleted', deleted_at = now(), deleted_by = v_actor
   WHERE id = p_expense_id;
-  DELETE FROM expense_participants WHERE expense_id = p_expense_id;
 
   SELECT title, total_cents INTO v_title, v_total_cents
   FROM expense_versions
@@ -2551,7 +2518,7 @@ BEGIN
       RAISE;
   END;
 
-  v_materialized := materialize_participants(p_expense_id, v_actor, v_payload);
+  v_materialized := resolve_expense_participants(p_expense_id, v_payload);
 
   -- Shared-history latch: the restored expense becomes visible to more than
   -- one user when a second accepted member can read it or the payload names
@@ -3175,7 +3142,6 @@ BEGIN
             END
         WHERE id = v_rec.expense_id;
 
-        DELETE FROM expense_participants WHERE expense_id = v_rec.expense_id;
 
         v_event_id := emit_event(
           p_group_id, 'expense_deleted', v_actor, v_rec.expense_id,
@@ -4040,7 +4006,7 @@ BEGIN
   JOIN expenses e ON e.id = g.expense_id
   JOIN expense_versions ev ON ev.expense_id = e.id AND ev.version_no = e.current_version_no
   JOIN groups grp ON grp.id = e.group_id
-  LEFT JOIN expense_participants ep ON ep.expense_id = e.id AND ep.guest_id = g.id
+  LEFT JOIN current_expense_participants ep ON ep.expense_id = e.id AND ep.guest_id = g.id
   WHERE ct.token_digest = v_digest AND ct.expires_at > now();
 
   IF NOT FOUND THEN
@@ -4151,14 +4117,14 @@ BEGIN
   -- A guest dropped by a later edit keeps its row but no participant slot;
   -- redeeming that orphaned token would hand group membership to a stranger.
   IF NOT EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = v_rec.expense_id AND user_id = v_actor AND kind = 'user'
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'already_participant';
@@ -4178,12 +4144,6 @@ BEGIN
       claimed_at = now(),
       claimed_version_no = v_rec.current_version_no
   WHERE id = v_rec.id;
-
-  UPDATE expense_participants
-  SET kind = 'user',
-      user_id = v_actor,
-      guest_id = NULL
-  WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id;
 
   INSERT INTO group_members (group_id, user_id, status, accepted_at)
   VALUES (v_rec.group_id, v_actor, 'accepted', now())

@@ -1552,7 +1552,7 @@ describe("P7 decline metadata and restoration denial", () => {
 
     const row = await withPg(async (pg) => {
       const { rows } = await pg.query<{ user_id: string }>(
-        "SELECT user_id FROM public.expense_participants WHERE expense_id = $1 ORDER BY user_id",
+        "SELECT user_id FROM public.current_expense_participants WHERE expense_id = $1 ORDER BY user_id",
         [expenseId],
       );
       return rows;

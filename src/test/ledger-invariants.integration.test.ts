@@ -68,16 +68,16 @@ describe.skipIf(!isIntegrationTestReady)("assertLedgerInvariants", () => {
     await expect(assertLedgerInvariants(groupId)).rejects.toThrow(/\[3\]/);
   });
 
-  it("catches a zeroed row left in the projection", async () => {
+  it("rejects a zeroed row in the projection via group_balances_nonzero constraint", async () => {
     const { groupId } = await corruptibleGroup();
-    await withPg((client) =>
-      client.query(
-        "insert into public.group_balances (group_id, kind, participant_id, net_cents) " +
-          "values ($1, 'guest', gen_random_uuid(), 0)",
-        [groupId],
+    await expect(
+      withPg((client) =>
+        client.query(
+          "insert into public.group_balances (group_id, kind, participant_id, net_cents) " +
+            "values ($1, 'guest', gen_random_uuid(), 0)",
+          [groupId],
+        ),
       ),
-    );
-
-    await expect(assertLedgerInvariants(groupId)).rejects.toThrow(/\[2\]/);
+    ).rejects.toThrow(/group_balances_nonzero/);
   });
 });

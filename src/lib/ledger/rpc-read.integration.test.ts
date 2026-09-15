@@ -269,7 +269,6 @@ const PUBLIC_TABLES = [
   "expenses",
   "expense_versions",
   "guests",
-  "expense_participants",
   "settlements",
   "group_balances",
   "group_events",
