@@ -9,8 +9,11 @@ import {
   userCarlos,
 } from "@/test/fixtures";
 import { useBillStore, _testGetCacheState, selectPreviewDebts } from "./bill-store";
+import { getSupabaseStorageNamespace } from "@/lib/supabase/client";
 import { divisionForItem } from "@/lib/item-division";
 import type { ExpenseDetail } from "@/types/ledger";
+
+const DRAFT_STORAGE_KEY = `dividimos-draft:${getSupabaseStorageNamespace()}`;
 function setup() {
   const s = useBillStore.getState();
   s.setCurrentUser(userAlice);
@@ -1805,13 +1808,13 @@ describe("occurredOn and draft persistence", () => {
     expect(useBillStore.getState().occurredOn).toBeNull();
   });
 
-  it("persists the wizard draft to localStorage under dividimos-draft and clears it on reset", () => {
+  it("persists the wizard draft to the project-scoped localStorage key and clears it on reset", () => {
     setup();
     useBillStore.getState().createExpense("Rascunho", "single_amount");
     useBillStore.getState().updateExpense({ totalAmountInput: 4200 });
     useBillStore.getState().setOccurredOn("2026-09-06");
 
-    const persisted = JSON.parse(localStorage.getItem("dividimos-draft") ?? "{}");
+    const persisted = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? "{}");
     expect(persisted.version).toBe(2);
     expect(persisted.state.occurredOn).toBe("2026-09-06");
     expect(persisted.state.totalAmountInput).toBe(4200);
@@ -1819,7 +1822,7 @@ describe("occurredOn and draft persistence", () => {
     expect(persisted.state.currentUser).toBeUndefined();
 
     useBillStore.getState().reset();
-    const cleared = JSON.parse(localStorage.getItem("dividimos-draft") ?? "{}");
+    const cleared = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) ?? "{}");
     expect(cleared.state.expense).toBeNull();
     expect(cleared.state.occurredOn).toBeNull();
   });

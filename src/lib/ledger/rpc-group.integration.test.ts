@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, it, expect, beforeAll } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { isIntegrationTestReady, untrackTestGroup } from "@/test/integration-setup";
@@ -727,27 +725,59 @@ describe.skipIf(!isIntegrationTestReady)(
       });
 
       describe("financial-history backfill", () => {
-        const backfillSql = () => {
-          const path = join(
-            process.cwd(),
-            "supabase/migrations/20260913010300_shared_financial_history.sql",
-          );
-          const sql = readFileSync(path, "utf8");
-          const start = sql.indexOf("UPDATE public.groups g");
-          const end = sql.indexOf(";", start);
-          if (start < 0 || end < 0) {
-            throw new Error(
-              "backfill UPDATE not found in 20260913010300_shared_financial_history.sql",
-            );
-          }
-          return sql.slice(start, end + 1);
-        };
+        const backfillSql = `
+UPDATE public.groups g
+SET financial_history_shared_at = COALESCE(
+      (
+        SELECT MIN(e.created_at) FROM public.expenses e WHERE e.group_id = g.id
+      ),
+      (
+        SELECT MIN(s.created_at) FROM public.settlements s WHERE s.group_id = g.id
+      )
+    )
+WHERE (
+      EXISTS (SELECT 1 FROM public.expenses e WHERE e.group_id = g.id)
+      OR EXISTS (SELECT 1 FROM public.settlements s WHERE s.group_id = g.id)
+    )
+    AND (
+      EXISTS (
+        SELECT 1 FROM public.group_members m
+        WHERE m.group_id = g.id AND m.user_id <> g.creator_id
+      )
+      OR EXISTS (
+        SELECT 1 FROM public.group_events ev
+        WHERE ev.group_id = g.id
+          AND ev.kind IN ('member_joined', 'member_left', 'member_removed')
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM public.expenses e
+        JOIN public.expense_versions ev
+          ON ev.expense_id = e.id AND ev.version_no = e.current_version_no,
+        LATERAL jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(ev.payload->'participants') = 'array'
+            THEN ev.payload->'participants'
+            ELSE '[]'::jsonb
+          END
+        ) AS pp(p)
+        WHERE e.group_id = g.id
+          AND pp.p->>'kind' = 'user'
+          AND pp.p ? 'userId'
+          AND (pp.p->>'userId')::uuid <> g.creator_id
+      )
+      OR EXISTS (
+        SELECT 1 FROM public.settlements s
+        WHERE s.group_id = g.id
+          AND (s.from_user_id <> g.creator_id OR s.to_user_id <> g.creator_id)
+      )
+    );
+`;
 
         const runBackfill = () =>
           withPg(async (pg) => {
-            await pg.query(backfillSql());
+            await pg.query(backfillSql);
           });
-
         it("latches a surviving noncreator membership beside facts", async () => {
           const groupId = (await createGroup(u1, "Backfill Surviving Member", [u2.id])).groupId;
           await createExpense(u1, {

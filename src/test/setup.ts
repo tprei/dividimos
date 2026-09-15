@@ -4,6 +4,9 @@ import { afterEach, vi } from "vitest";
 import React from "react";
 
 vi.mock("server-only", () => ({}));
+
+process.env.NEXT_PUBLIC_SUPABASE_URL ??= "http://localhost:54321";
+
 const localStorageValues = new Map<string, string>();
 Object.defineProperty(globalThis, "localStorage", {
   configurable: true,
