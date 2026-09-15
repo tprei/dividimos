@@ -595,7 +595,7 @@ export function decodeGroupSnapshot(
     lastMessage = lmRes.value;
   }
 
-  const lastActivityAt = str(raw.lastActivityAt, [...path, "lastActivityAt"]);
+  const lastActivityAt = nullableStr(raw.lastActivityAt, [...path, "lastActivityAt"]);
   if (!lastActivityAt.ok) return lastActivityAt;
   const pairwiseEdges = arrayOf(
     raw.pairwiseEdges,

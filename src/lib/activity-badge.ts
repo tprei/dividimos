@@ -8,7 +8,7 @@ import type { GroupSnapshot } from "@/types/ledger";
 export function newestActivityAt(groups: Record<string, GroupSnapshot>): string | null {
   let newest: string | null = null;
   for (const snapshot of Object.values(groups)) {
-    if (newest === null || snapshot.lastActivityAt > newest) {
+    if (snapshot.lastActivityAt !== null && (newest === null || snapshot.lastActivityAt > newest)) {
       newest = snapshot.lastActivityAt;
     }
   }
