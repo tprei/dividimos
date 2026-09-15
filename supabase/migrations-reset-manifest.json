@@ -1,0 +1,211 @@
+{
+  "format": 1,
+  "old": {
+    "supabase/migrations/20260906000000_ledger_baseline.sql": {
+      "blob": "516eeed74333971ce2cbf396689a56d805e91afd",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260910180000_sync_drifted_functions.sql": {
+      "blob": "31c6e627d6eb9129060d3b14f3e79ce8f7947825",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911000100_748_716a.sql": {
+      "blob": "c3f982844c387660e8aff9b7fd1e79f698717b3e",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911000200_748_720a.sql": {
+      "blob": "550de79d30fa2c5e927ac3f086204665fd122018",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911000300_748_721.sql": {
+      "blob": "4da862e42913f4c74323753c302a795a6fba7f7c",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911000900_748_717a.sql": {
+      "blob": "89f78f8ee17a85028013d5e0df7b18a932701fdc",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911001000_748_717b.sql": {
+      "blob": "192201ae9d25224d01ba60f754814dfbed04cd09",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911001400_748_735b.sql": {
+      "blob": "a467c31e0de45b7e2d868815434c77dc23dea492",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911001500_748_735c.sql": {
+      "blob": "c918ce72684a0dfb822a26c24b16d8b4f4eb2693",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911002000_748_736a.sql": {
+      "blob": "98669898ff7c33bd0b34417cbf953c38f86240a6",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911003000_748_737a.sql": {
+      "blob": "8c93a6db3f4af7d4885f2f3452410f152bbade59",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911004000_748_727.sql": {
+      "blob": "0308e69a95312077029034e8c1430e83ca97b097",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911025020_744c_split_method.sql": {
+      "blob": "36aef38da983426a79ed4e79fa28dc2062ceea30",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911071419_746a_create_expense_with_group.sql": {
+      "blob": "3c74e448b36854f6a46651b3d94d24b1d65a7e96",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911120000_decline_clears_participants.sql": {
+      "blob": "127d2a572cf13a31b636d7fa1e60e281159e539e",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911130000_quantity_integrality.sql": {
+      "blob": "753ca9ff245bcbc52f84c329060b5124b22d60ba",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260911200000_guest_claim_token_ttl.sql": {
+      "blob": "ed8e30e6412e0e04c95942f6cc6ead5f1e78abc6",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260912100000_record_settlement_overpay.sql": {
+      "blob": "981bd6e919730653f482f81e422212682142f0d0",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260912110000_repair_expense_validator.sql": {
+      "blob": "0a42baa8f00a9bf8bfc12849b0a7948421cadf74",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260912110010_repair_delete_expense_lock.sql": {
+      "blob": "ee28fda521adc4732a67f9af4eacd5b3157edf00",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010000_receipt_helper_privileges.sql": {
+      "blob": "46069c10a5f0dcbab6f2b5fafebd546769ebe454",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010060_combined_create_replay_lock.sql": {
+      "blob": "d40037f60ecf11297ea2836d84f2595c9a151b7a",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010070_profile_lookup_service_role.sql": {
+      "blob": "71c96883b409827cd7af67a35eef09a8768c4d12",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010100_guest_credential_locking.sql": {
+      "blob": "76b2b410b977a00a6f7af83f6ff9ca3b80148efc",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010200_dm_membership_boundaries.sql": {
+      "blob": "15bf3c3cbc701460a52f5acbea0aefb431391288",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010250_member_exclusion_and_pending_view.sql": {
+      "blob": "cefd69f96f3fddac36121245c956761e0fd103d2",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010300_shared_financial_history.sql": {
+      "blob": "8d3d40ea1bd947c6aba779fd7167f82108ce6b00",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010400_declined_expense_restoration.sql": {
+      "blob": "52ba9f204d68c5880b56545b950e3c23282cf715",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010500_realtime_topic_authorization.sql": {
+      "blob": "f749dc65a48deb197047c9bda8da49fbe2aac27e",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010600_immutable_guest_claim_facts.sql": {
+      "blob": "7b99fb513dc1fb3d30cf2d658a9a90a68592cce5",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010700_derived_participant_reads.sql": {
+      "blob": "57c0abc6118e172f1f5ff86d3673eb94b11bd9c5",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010800_remove_participant_projection.sql": {
+      "blob": "1ca5544d4cc747b013c34e7083e9c02f1c2a0112",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260913010900_version_occurrence_dates.sql": {
+      "blob": "47f81dc3e5fbbfe1cc7affa578457fadc6cec77e",
+      "mode": "100644"
+    }
+  },
+  "new": {
+    "supabase/migrations/20260914000000_security_and_types.sql": {
+      "blob": "917ab038bf9187d04e2045a51c3a45a7f4de3f3e",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000100_profiles_and_groups.sql": {
+      "blob": "4109570cf9712bae5be958fe8fbc045c4d978e0f",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000200_expense_facts_and_credentials.sql": {
+      "blob": "21960d0d44da48ba18d4c12532acd013e2bc9673",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000300_settlements_activity_and_support.sql": {
+      "blob": "64a83a47fdaac7cb04c85991e9b394ce934bcb8e",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000400_membership_and_event_helpers.sql": {
+      "blob": "0b5aac6b8edd2bec14b8a15588dfb0c005242af3",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000500_expense_payload_validation.sql": {
+      "blob": "fea1a512eee7f3b12f652db287f8dc79516d6e2f",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000600_expense_identity_and_change_summary.sql": {
+      "blob": "ef577274951ca7c98558cdc63109b4524b5dfe43",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000700_balance_projection_and_transfers.sql": {
+      "blob": "d7af8baf42ba0b6c248d40cab262aeac4da83f22",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000800_read_serializers.sql": {
+      "blob": "4abc3e6013da372842cd39353a58cd540f44d070",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914000900_read_rpcs.sql": {
+      "blob": "3c3680ad4b920b07f476cd5f08955d28705e03d8",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001000_group_membership_rpcs.sql": {
+      "blob": "69f8927bfdbd5123c58aeab0e513af72f66ebc98",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001100_invite_link_and_profile_rpcs.sql": {
+      "blob": "4659175d8840bd274935158560d31746b8123e3f",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001200_expense_rpcs.sql": {
+      "blob": "7541f1b7870662bfb9d47c77e29c67c6e66b9dff",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001300_settlement_and_nudge_rpcs.sql": {
+      "blob": "06cbf1bf53fb1a1a55cc8300c87f5bbf78286803",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001400_guest_claim_rpcs.sql": {
+      "blob": "37dad840ac7b9e50a6f0894d44c672e3c14b1d27",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001500_chat_and_vendor_charge_rpcs.sql": {
+      "blob": "2c3c1045ca6d5ad6252a4f8cacebcee443317418",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001600_push_and_rate_limit_rpcs.sql": {
+      "blob": "e3dd5096ad2ac4abc8765cd9e802231b2302a622",
+      "mode": "100644"
+    },
+    "supabase/migrations/20260914001700_auth_triggers_and_realtime.sql": {
+      "blob": "ae1046790483bc63ad54729e35c1750637f7fb23",
+      "mode": "100644"
+    }
+  }
+}

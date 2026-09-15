@@ -47,6 +47,10 @@ jobs:
             echo "sql=false" >> "$GITHUB_OUTPUT"
           fi
 
+# Epoch verification is reserved for the manifest-authorized reset.
+# Its caller passes the immutable base ref as --trusted-main after the
+# authorization is on main; ordinary PRs continue to run the append-only
+# fresh and upgrade jobs below.
   verify-fresh:
     name: Verify fresh catalog (HEAD migrations)
     needs: changes
@@ -86,7 +90,7 @@ jobs:
       - name: Generated database types match HEAD's database
         run: |
           DB_URL=$(jq -r .db_url verify-artifacts/fresh/env.json)
-          ./node_modules/.bin/supabase gen types typescript --db-url "$DB_URL" \
+          supabase gen types typescript --db-url "$DB_URL" \
             > src/types/database.ts
           if ! git diff --quiet -- src/types/database.ts; then
             echo "::error::src/types/database.ts does not match the database HEAD's migrations build."

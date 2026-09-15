@@ -26,9 +26,13 @@
 // landed on the base branch after this PR started still collides correctly.
 
 import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const MIGRATIONS_DIR = "supabase/migrations";
-const RESET_MANIFEST_PATH = "supabase/migrations-reset-manifest.json";
+// Shared with scripts/verify-migrations.mjs, which imports this path to bind
+// its epoch mode to the exact manifest-authorized reset transition.
+export const RESET_MANIFEST_PATH = "supabase/migrations-reset-manifest.json";
 const VERSION_PATTERN = /^(\d{14})_/;
 const REGULAR_FILE_MODES = new Set(["100644", "100755"]);
 const BLOB_PATTERN = /^[0-9a-f]{40}$/;
@@ -81,7 +85,7 @@ function migrationBlobMap(sha) {
   return map;
 }
 
-function resetManifestShapeFailures(manifest) {
+export function resetManifestShapeFailures(manifest) {
   if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
     return [`${RESET_MANIFEST_PATH} on trusted main is not a reset manifest object`];
   }
@@ -119,11 +123,13 @@ function resetManifestShapeFailures(manifest) {
 }
 
 /**
- * The reset manifest is read only from the trusted main commit supplied by
- * the trusted workflow. Returns null when absent there.
+ * Reads and validates the reset manifest from the trusted main commit.
+ *
  * @param {string | undefined} trustedMainSha
+ * @param {{cwd?: string}} [options]
+ * @returns {{manifest?: object, failures: string[]}}
  */
-function readResetManifest(trustedMainSha) {
+export function readResetManifest(trustedMainSha, options = {}) {
   if (!trustedMainSha) {
     return { failures: ["no --trusted-main commit was supplied, so no reset can be authorized"] };
   }
@@ -131,7 +137,7 @@ function readResetManifest(trustedMainSha) {
   try {
     raw = gitText(
       ["cat-file", "blob", `${trustedMainSha}:${RESET_MANIFEST_PATH}`],
-      { stdio: "pipe" },
+      { stdio: "pipe", cwd: options.cwd },
     );
   } catch {
     return { failures: [`trusted main carries no reviewed reset manifest at ${RESET_MANIFEST_PATH}`] };
@@ -148,7 +154,8 @@ function readResetManifest(trustedMainSha) {
 
 // Compares a live tree map against a manifest section and returns one failure
 // per missing, extra, modified, or wrongly-moded file.
-function manifestMismatches(label, treeMap, manifestSection) {
+// Also imported by scripts/verify-migrations.mjs epoch mode.
+export function manifestMismatches(label, treeMap, manifestSection) {
   const failures = [];
   for (const [path, entry] of Object.entries(manifestSection)) {
     const found = treeMap.get(path);
@@ -342,4 +349,8 @@ function main() {
   process.exit(1);
 }
 
-main();
+// Guarded so scripts/verify-migrations.mjs can import the manifest helpers
+// without running the history gate; CLI behavior is unchanged.
+if (import.meta.url === pathToFileURL(resolve(process.argv[1] ?? "")).href) {
+  main();
+}
