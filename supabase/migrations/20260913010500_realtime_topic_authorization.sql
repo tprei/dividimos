@@ -1,17 +1,9 @@
--- Topic ids are matched as uuids: a malformed topic yields a clean denial
--- instead of an "invalid input syntax for type uuid" during policy evaluation.
-CREATE FUNCTION public.current_user_is_member(p_group_id uuid) RETURNS boolean
-  LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM group_members
-    WHERE group_id = p_group_id AND user_id = auth.uid() AND status = 'accepted'
-  )
-$$;
-
-REVOKE ALL ON FUNCTION public.current_user_is_member(uuid) FROM public;
-GRANT EXECUTE ON FUNCTION public.current_user_is_member(uuid) TO authenticated;
-
+-- Strict topic parsing: the previous permissive character-class regexes
+-- ([0-9a-fA-F-]{36}) matched 36 hyphens and then died on the uuid cast,
+-- raising an error instead of denying. The exact UUID grammar below never
+-- matches a malformed topic, so the cast only ever sees valid text and every
+-- malformed topic falls through to a plain policy denial. Authorization
+-- rules for valid topics are unchanged.
 DROP POLICY IF EXISTS group_broadcast_authz ON realtime.messages;
 CREATE POLICY group_broadcast_authz ON realtime.messages FOR SELECT TO authenticated
 USING (
