@@ -346,8 +346,9 @@ describe.skipIf(!isIntegrationTestReady)("ledger simulation", () => {
 });
 
 /**
- * create_expense assigns guest ids server-side, so the model reads them back
- * once. Every amount in the model is still the one the test sent.
+ * create_expense assigns guest ids server-side and materializes them into the
+ * current version payload, so the model reads that payload back once. Every
+ * amount in the model is still the one the test sent.
  */
 async function resolveGuestIds(
   expenseId: string,
@@ -356,22 +357,26 @@ async function resolveGuestIds(
   if (!payload.participants.some((participant) => participant.kind === "guest")) {
     return payload;
   }
-  const guestIds = await withPg(async (client) => {
-    const result = await client.query<{ participant_index: number; guest_id: string }>(
-      "select participant_index, guest_id from public.expense_participants " +
-        "where expense_id = $1 and guest_id is not null order by participant_index",
+  const storedParticipants = await withPg(async (client) => {
+    const result = await client.query<{ participants: ExpensePayload["participants"] }>(
+      "select stored.payload->'participants' as participants " +
+        "from expense_versions stored " +
+        "join expenses expense on expense.id = stored.expense_id " +
+        "and expense.current_version_no = stored.version_no " +
+        "where stored.expense_id = $1",
       [expenseId],
     );
-    return result.rows;
+    return result.rows[0].participants;
   });
-  let cursor = 0;
   return {
     ...payload,
-    participants: payload.participants.map((participant) => {
+    participants: payload.participants.map((participant, index) => {
       if (participant.kind !== "guest") return participant;
-      const resolved = guestIds[cursor];
-      cursor += 1;
-      return { ...participant, guestId: resolved.guest_id };
+      const stored = storedParticipants[index];
+      if (stored.kind !== "guest" || stored.guestId === null) {
+        throw new Error(`guest slot ${index} unresolved in stored payload`);
+      }
+      return { ...participant, guestId: stored.guestId };
     }),
   };
 }
