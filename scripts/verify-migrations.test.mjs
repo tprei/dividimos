@@ -17,6 +17,7 @@ import {
   compareEpochResults,
   compareFixtureObservations,
   epochAuthorizationFailures,
+  epochExtensionFailures,
   INTENTIONAL_UPGRADES,
   PIX_FIXTURE_CIPHERTEXT,
   postgresMajor,
@@ -592,6 +593,59 @@ test("readTrustedResetManifest ignores a checkout manifest and reads the trusted
       [RESET_MANIFEST]: `${JSON.stringify({ old: {}, new: {} })}\n`,
     }, "head checkout");
     assert.deepEqual(readTrustedResetManifest(trusted, { cwd: repo.dir }), expected);
+  } finally {
+    repo.dispose();
+  }
+});
+
+test("epochExtensionFailures reports the reset transition on a pre-reset base", async () => {
+  const repo = initRepo();
+  try {
+    const base = repo.commit({ [M_A]: "select 1;\n" }, "pre-reset base");
+    const head = repo.commit({ [M_C]: "select 3;\n" }, "new epoch");
+    const trusted = repo.commit({
+      [RESET_MANIFEST]: `${JSON.stringify({
+        old: { [M_A]: { blob: repo.blobOf(base, M_A), mode: "100644" } },
+        new: { [M_C]: { blob: repo.blobOf(head, M_C), mode: "100644" } },
+      })}\n`,
+    }, "trusted");
+    assert.equal(
+      await epochExtensionFailures({
+        baseRef: base,
+        headRef: head,
+        trustedMainRef: trusted,
+        cwd: repo.dir,
+      }),
+      null,
+    );
+  } finally {
+    repo.dispose();
+  }
+});
+
+test("epochExtensionFailures accepts an append-only PR stacked on the new epoch", async () => {
+  const repo = initRepo();
+  try {
+    const base = repo.commit({ [M_A]: "select 1;\n" }, "pre-reset base");
+    repo.run(["rm", "--quiet", M_A]);
+    const epoch = repo.commit({ [M_C]: "select 3;\n" }, "new epoch");
+    const trusted = repo.commit({
+      [RESET_MANIFEST]: `${JSON.stringify({
+        old: { [M_A]: { blob: repo.blobOf(base, M_A), mode: "100644" } },
+        new: { [M_C]: { blob: repo.blobOf(epoch, M_C), mode: "100644" } },
+      })}\n`,
+    }, "trusted");
+    const later = "supabase/migrations/20260914000000_fourth_change.sql";
+    const extension = repo.commit({ [later]: "select 4;\n" }, "extends the epoch");
+    assert.deepEqual(
+      await epochExtensionFailures({
+        baseRef: epoch,
+        headRef: extension,
+        trustedMainRef: trusted,
+        cwd: repo.dir,
+      }),
+      [],
+    );
   } finally {
     repo.dispose();
   }

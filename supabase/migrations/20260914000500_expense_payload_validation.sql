@@ -1,6 +1,4 @@
-set check_function_bodies = off;
-
-CREATE OR REPLACE FUNCTION public.validate_expense_payload(p jsonb, p_expense_type expense_type, p_total integer, p_fee_bps integer, p_fixed_fee integer)
+CREATE FUNCTION public.validate_expense_payload(p jsonb, p_expense_type expense_type, p_total integer, p_fee_bps integer, p_fixed_fee integer)
 RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$

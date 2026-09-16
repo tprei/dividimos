@@ -48,13 +48,13 @@ Operations that cannot run inside a single transaction (external calls, push dis
 
 - Inspect the current live definition before editing: `select pg_get_functiondef('public.foo(argtypes)'::regprocedure);`
 - Apply locally with the pinned project binary (`./node_modules/.bin/supabase migration up --local`), never a global CLI of a different version.
-- Run the focused behavior coverage for anything you touched: schema changes with semantic logic require integration tests (happy path, denial for non-members, the specific guarded edge).
+- Run the focused behavior coverage for anything you touched: migration changes with semantic logic require integration tests (happy path, denial for non-members, the specific guarded edge).
 - Regenerate `src/types/database.ts` from the final live database when contracts change; never hand-maintain it.
-- The blocking gates are fresh replay, populated upgrade, and the security/privilege check. A migration is not done until all three pass against your change.
+- The blocking gates are fresh replay, trusted-epoch comparison, generated-type equality, the integration contract suite, and the security/privilege check. A migration is not done until all required gates pass against the change.
 
-## Current workflow during the declaration transition
+## Migration workflow
 
-Until the declaration retirement lands, authors still update the declarative sources in `supabase/schemas/*.sql`, regenerate the baseline (`./scripts/build-baseline.sh`), and produce the forward migration through the existing workflow. Migration-only authorship is the cutover target, not today's rule; this guide will be updated at that cutover.
+The ordered files in `supabase/migrations/` are the database source of truth. Create a new timestamped migration with `supabase migration new <name>`, write complete definitions, and run `supabase db reset --local` to replay the full history. The CI migration workflow verifies fresh replay, the trusted reset manifest, generated types, integration behavior, and database security invariants. The retired `supabase/schemas/` declarations and `supabase/schema.sql` snapshot are not inputs.
 
 These rules govern newly authored SQL. Do not rename, reformat, or repair frozen predecessor files to satisfy them; existing defects belong to their named forward-fix PRs.
 
