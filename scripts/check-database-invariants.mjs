@@ -366,10 +366,35 @@ function auditFailures(state, allowlist) {
   return failures;
 }
 
+function redactedTargetProblem(databaseUrl) {
+  // Reports only the URL scheme and host: user, password, and database name
+  // stay out of logs.
+  try {
+    const parsed = new URL(databaseUrl);
+    if (!/^postgres(ql)?:$/.test(parsed.protocol) || !parsed.hostname) {
+      return `invalid database URL (protocol=${JSON.stringify(parsed.protocol)} host=${JSON.stringify(parsed.hostname)})`;
+    }
+    return null;
+  } catch {
+    return "invalid database URL (unparseable)";
+  }
+}
+
 async function main() {
-  const databaseUrl = process.argv[2] ?? process.env.SUPABASE_DB_URL;
+  const rawInput = process.argv[2] ?? process.env.SUPABASE_DB_URL;
+  // The CI step passes the URL through shell command substitution. A stray
+  // backslash continuation in the workflow once folded (YAML) into a leading
+  // space, which pg-connection-string parses relative to its internal
+  // `postgres://base` dummy base and resolves hostname `base`. Trim so
+  // surrounding whitespace can never change the connection target.
+  const databaseUrl = rawInput?.trim();
   if (!databaseUrl) {
     console.error("usage: check-database-invariants.mjs <database-url>");
+    process.exit(2);
+  }
+  const targetProblem = redactedTargetProblem(databaseUrl);
+  if (targetProblem) {
+    console.error(`::error::${targetProblem}`);
     process.exit(2);
   }
 

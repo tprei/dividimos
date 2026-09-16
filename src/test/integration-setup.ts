@@ -7,6 +7,29 @@ import { afterAll, beforeAll, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { Client } from "pg";
 
+const REQUIRED_ENV_VARS = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+] as const;
+
+const missingEnvVars = REQUIRED_ENV_VARS.filter(
+  (name) => typeof process.env[name] !== "string" || process.env[name] === "",
+);
+
+// Integration CI sets INTEGRATION_STRICT=1 to fail closed instead of
+// silently skipping every suite: an unprovisioned workflow must be red,
+// not green. Stricter than hasRequiredEnv below, which keeps the legacy
+// skip behavior: an empty value counts as missing only in strict mode.
+if (process.env.INTEGRATION_STRICT === "1" && missingEnvVars.length > 0) {
+  console.error(
+    "::error::Integration execution requires NEXT_PUBLIC_SUPABASE_URL, " +
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY " +
+      `(missing: ${missingEnvVars.join(", ")})`,
+  );
+  process.exit(1);
+}
+
 const hasRequiredEnv =
   typeof process.env.NEXT_PUBLIC_SUPABASE_URL === "string" &&
   typeof process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY === "string" &&
