@@ -61,28 +61,57 @@ export async function completeOnboarding(
   if (profile.me.onboarded) redirect(safeRedirect(destination));
   const handleValue = formData.get("handle");
   const nameValue = formData.get("name");
-  const pixKeyValue = formData.get("pixKey");
-  const pixKeyTypeValue = formData.get("pixKeyType");
+  const intentValue = formData.get("intent");
 
   if (
     typeof handleValue !== "string" ||
     typeof nameValue !== "string" ||
-    typeof pixKeyValue !== "string" ||
-    typeof pixKeyTypeValue !== "string" ||
     handleValue.trim() === "" ||
-    nameValue.trim() === "" ||
-    pixKeyValue.trim() === ""
+    nameValue.trim() === ""
   ) {
     return { error: "Dados incompletos" };
   }
 
   const handle = handleValue.trim().toLowerCase();
   const name = nameValue.trim();
-  const pixKey = pixKeyValue.trim();
   if (!/^[a-z0-9_]{3,30}$/.test(handle)) {
     return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados." };
   }
   if (name.length > 80) return { error: "Nome inválido." };
+
+  if (intentValue === "skip") {
+    const { error } = await supabase.rpc("update_profile", {
+      p_handle: handle,
+      p_name: name,
+    });
+
+    if (error != null) {
+      if (error.message === "handle_taken") {
+        return { error: "Handle já em uso. Escolha outro." };
+      }
+      if (error.message === "invalid_handle") {
+        return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados." };
+      }
+      if (error.message === "invalid_name") {
+        return { error: "Nome inválido." };
+      }
+      return { error: "Não foi possível salvar sua conta. Tente novamente." };
+    }
+
+    redirect(safeRedirect(destination));
+  }
+
+  const pixKeyValue = formData.get("pixKey");
+  const pixKeyTypeValue = formData.get("pixKeyType");
+  if (
+    typeof pixKeyValue !== "string" ||
+    typeof pixKeyTypeValue !== "string" ||
+    pixKeyValue.trim() === ""
+  ) {
+    return { error: "Dados incompletos" };
+  }
+
+  const pixKey = pixKeyValue.trim();
   if (!isPixKeyType(pixKeyTypeValue)) {
     return { error: "Tipo de chave Pix inválido." };
   }

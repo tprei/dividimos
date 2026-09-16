@@ -180,12 +180,26 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
     });
   };
 
-  const inferredKeyLabel =
-    userEmail && pixKeyType === "email"
-      ? "Identificamos seu e-mail como chave Pix"
-      : null;
+  const handleSkip = () => {
+    const formData = new FormData();
+    formData.set("intent", "skip");
+    formData.set("handle", handle);
+    formData.set("name", name.trim());
 
-  const showInferredBanner = inferredKeyLabel && pixKeyType === "email";
+    startTransition(async () => {
+      const result = await action(formData);
+      if (result?.error) {
+        if (result.error.includes("Handle") || result.error.includes("Nome")) {
+          setStep("profile");
+          setHandleError(result.error);
+        } else {
+          setPixError(result.error);
+        }
+      }
+    });
+  };
+
+  const showEmailSuggestion = Boolean(userEmail) && pixKeyType === "email" && !customPixInput;
 
   const steps: OnboardStep[] = ["profile", "pix"];
   const currentIndex = steps.indexOf(step);
@@ -296,14 +310,16 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                   Coloca sua chave Pix pra receber dos amigos.
                 </p>
 
-                {showInferredBanner && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mt-4 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary"
-                  >
-                    {inferredKeyLabel}
-                  </motion.div>
+                {showEmailSuggestion && userEmail && (
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => handleEmailInput(userEmail)}
+                      className="rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary-text transition-colors hover:bg-primary/20"
+                    >
+                      Usar meu e-mail
+                    </button>
+                  </div>
                 )}
 
                 <div className="mt-6 flex flex-wrap gap-2">
@@ -367,6 +383,9 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                   </p>
                 </div>
 
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Você só precisa de uma chave Pix pra receber dos amigos. Pode cadastrar agora ou depois, no seu perfil.
+                </p>
                 <div className="mt-6 flex gap-3">
                   <Button
                     variant="outline"
@@ -386,6 +405,15 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     {!isPending && <ArrowRight className="h-4 w-4" />}
                   </Button>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSkip}
+                  disabled={isPending}
+                  className="mt-3 w-full text-muted-foreground hover:text-foreground rounded-lg"
+                >
+                  Pular por agora
+                </Button>
               </motion.div>
             )}
           </AnimatePresence>

@@ -26,6 +26,37 @@ async function advanceToPixStep(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Chave Pix" });
 }
 
+describe("OnboardForm Pix skip", () => {
+  beforeEach(() => {
+    action.mockClear();
+  });
+
+  it("renders contract copy and Pular por agora on the Pix step", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} />);
+
+    await advanceToPixStep(user);
+
+    expect(
+      screen.getByText("Você só precisa de uma chave Pix pra receber dos amigos. Pode cadastrar agora ou depois, no seu perfil."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pular por agora" })).toBeInTheDocument();
+  });
+
+  it("submits skip intent without a Pix key", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} />);
+
+    await advanceToPixStep(user);
+    await user.click(screen.getByRole("button", { name: "Pular por agora" }));
+
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    const formData = action.mock.calls[0][0] as FormData;
+    expect(formData.get("intent")).toBe("skip");
+    expect(formData.get("handle")).toBe("ana_costa");
+  });
+});
+
 describe("OnboardForm phone Pix key", () => {
   beforeEach(() => {
     action.mockClear();
