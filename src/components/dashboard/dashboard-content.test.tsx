@@ -201,6 +201,38 @@ describe("DashboardContent", () => {
     expect(screen.getByRole("heading", { name: "A receber" })).toBeInTheDocument();
   });
 
+  it("renders up to 3 recent bills with Ver todas link when bills exist", () => {
+    seedStore([
+      snapshot({
+        group: { id: "g1", name: "Praia" },
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+      }),
+    ]);
+    useAppStore.setState({
+      expenses: {
+        "e1": { id: "e1", groupId: "g1", creatorId: me.id, status: "active", occurredOn: "2026-09-10", createdAt: "2026-09-10T00:00:00Z", versionNo: 1, title: "Churrasco", merchantName: null, expenseType: "single_amount", totalCents: 23690, myShareCents: 7897, myPaidCents: 23690, participantCount: 3 },
+        "e2": { id: "e2", groupId: "g1", creatorId: me.id, status: "active", occurredOn: "2026-09-11", createdAt: "2026-09-11T00:00:00Z", versionNo: 1, title: "Uber", merchantName: null, expenseType: "single_amount", totalCents: 4850, myShareCents: 2425, myPaidCents: 0, participantCount: 2 },
+      },
+      myExpenses: { ids: ["e1", "e2"], cursor: null, complete: true, total: 2 },
+    });
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Contas recentes")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver todas" })).toHaveAttribute("href", "/app/bills");
+    expect(screen.getByText("Churrasco")).toBeInTheDocument();
+    expect(screen.getByText("Uber")).toBeInTheDocument();
+  });
+
+  it("does not render Contas recentes section when myExpenses is empty", () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+    render(<DashboardContent />);
+
+    expect(screen.queryByText("Contas recentes")).not.toBeInTheDocument();
+  });
+
   it("keeps the skeleton visible before hydration", () => {
     useAppStore.setState({ hydrated: false, me });
     render(<DashboardContent />);

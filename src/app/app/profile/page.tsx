@@ -10,6 +10,7 @@ import {
   Moon,
   Pencil,
   QrCode,
+  Receipt,
   Shield,
   X,
 } from "lucide-react";
@@ -372,6 +373,20 @@ function AuthenticatedProfilePage({
               <span className="font-medium">Notificações</span>
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-2xl border bg-card divide-y divide-border">
+          <Link
+            href="/app/bills"
+            className="flex items-center justify-between p-4 transition-colors hover:bg-muted/50"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Receipt className="size-4" />
+              </div>
+              <span className="text-sm font-medium">Minhas contas</span>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground" />
           </Link>
         </div>
       </motion.div>

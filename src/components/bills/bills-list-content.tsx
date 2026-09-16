@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Loader2, Receipt, Search } from "lucide-react";
+import { Loader2, Receipt, Search, Zap } from "lucide-react";
+import { ChargeHistoryList } from "@/components/dashboard/charge-history-list";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -70,6 +71,7 @@ export function BillsListContent() {
   );
   const read = useAppStore((s) => s.reads[MY_EXPENSES_READ_KEY] ?? IDLE_READ);
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"contas" | "cobrancas">("contas");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -170,6 +172,33 @@ export function BillsListContent() {
         </p>
       </motion.div>
 
+      <div className="mt-5 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1" role="tablist" aria-label="Tipo de histórico">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "contas"}
+          onClick={() => setTab("contas")}
+          className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors ${tab === "contas" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+        >
+          <Receipt className="size-4" />
+          Contas
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "cobrancas"}
+          onClick={() => setTab("cobrancas")}
+          className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors ${tab === "cobrancas" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+        >
+          <Zap className="size-4" />
+          Cobranças
+        </button>
+      </div>
+
+      {tab === "cobrancas" ? (
+        <ChargeHistoryList />
+      ) : (
+      <>
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -257,6 +286,8 @@ export function BillsListContent() {
         )}
       </motion.div>
 
+      </>
+      )}
       <Dialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
