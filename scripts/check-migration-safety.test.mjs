@@ -450,6 +450,39 @@ test("a DO block body is live DDL, not a masked definition", () => {
   );
 });
 
+test("table DDL inside a DO block is seen by every anchored rule", () => {
+  const sql = [
+    "DO $$",
+    "BEGIN",
+    "  IF NOT EXISTS (SELECT 1 FROM pg_attribute WHERE attname = 'flag') THEN",
+    "    ALTER TABLE public.groups ADD COLUMN flag boolean DEFAULT random();",
+    "    UPDATE public.groups SET flag = false;",
+    "  END IF;",
+    "END",
+    "$$;",
+    "",
+  ].join("\n");
+  const findings = checkMigration(NEW_FILE, sql, BASE_VERSIONS);
+  assert.deepEqual(
+    findings.map((finding) => [finding.rule, finding.line]).sort(),
+    [
+      ["ddl/volatile-default", 4],
+      ["lock/missing-lock-timeout", 4],
+      ["mix/backfill-with-ddl", 5],
+    ],
+  );
+});
+
+test("DROP COLUMN IF EXISTS names the column, not IF", () => {
+  const sql = [
+    "-- supersedes: public.report_lines.note introduced 20260912000000",
+    "SET lock_timeout = '5s';",
+    "ALTER TABLE public.report_lines DROP COLUMN IF EXISTS note;",
+    "",
+  ].join("\n");
+  assert.deepEqual(checkMigration(NEW_FILE, sql, BASE_VERSIONS), []);
+});
+
 test("RENAME COLUMN needs a supersede directive", () => {
   const sql = [
     "SET lock_timeout = '5s';",

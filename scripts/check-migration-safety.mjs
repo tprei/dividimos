@@ -109,11 +109,12 @@ function lex(sql) {
       }
       const body = sql.slice(bodyStart, closeIndex);
       // A DO block runs at apply time, so its body is live DDL, not a stored
-      // definition, and the rules must see it.
+      // definition. Its statements must stand alone for the anchored rules,
+      // so every block opener that precedes a statement becomes a separator.
       const executesImmediately = /(^|;)\s*DO\s*$/i.test(
         code.slice(statementStart),
       );
-      const kept = executesImmediately ? body : blank(body);
+      const kept = executesImmediately ? exposeBlockBody(body) : blank(body);
       emit(tag + kept + tag, tag + kept + tag);
       i = closeIndex + tag.length;
       continue;
@@ -131,6 +132,10 @@ function lex(sql) {
   }
 
   return { code, literals, comments, unterminatedDollarQuote };
+}
+
+function exposeBlockBody(body) {
+  return body.replace(/\b(BEGIN|THEN|ELSE|LOOP)\b/gi, ";");
 }
 
 /**
@@ -516,7 +521,7 @@ export function checkMigration(file, sql, baseVersions) {
 
     if (table !== null) {
       const dropColumn = text.match(
-        /\bDROP\s+(?:COLUMN\s+)?(?!DEFAULT\b|NOT\b|CONSTRAINT\b|EXPRESSION\b|IDENTITY\b)([a-z0-9_"]+)/i,
+        /\bDROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?(?!DEFAULT\b|NOT\b|CONSTRAINT\b|EXPRESSION\b|IDENTITY\b)([a-z0-9_"]+)/i,
       );
       const retype = text.match(
         /\bALTER\s+(?:COLUMN\s+)?([a-z0-9_"]+)\s+(?:SET\s+DATA\s+)?TYPE\b/i,
