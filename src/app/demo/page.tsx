@@ -253,7 +253,7 @@ export default function DemoPage() {
         <div className="mx-auto flex h-16 max-w-lg items-center justify-between px-4">
           <div className="flex items-center gap-2.5">
             <Logo size="sm" />
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary-text">
               Demo
             </span>
           </div>
@@ -272,10 +272,10 @@ export default function DemoPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
-            <p className="text-sm text-white/70">Total da conta</p>
+          <div className="rounded-2xl gradient-primary p-5 text-primary-foreground shadow-lg shadow-primary/20">
+            <p className="text-sm text-primary-foreground/75">Total da conta</p>
             <p className="mt-1 text-3xl font-bold tabular-nums">{formatBRL(grandTotal)}</p>
-            <div className="mt-2 flex gap-4 text-sm text-white/70">
+            <div className="mt-2 flex gap-4 text-sm text-primary-foreground/75">
               <span className="flex items-center gap-1">
                 <Receipt className="h-3.5 w-3.5" />
                 {items.length} itens
@@ -284,7 +284,7 @@ export default function DemoPage() {
                 <Users className="h-3.5 w-3.5" />
                 {DEMO_USERS.length} pessoas
               </span>
-              <span className="flex items-center gap-1 text-white/50 text-xs italic">
+              <span className="flex items-center gap-1 text-primary-foreground/60 text-xs italic">
                 Fogo de Chao - Jardins
               </span>
             </div>
@@ -315,7 +315,7 @@ export default function DemoPage() {
               >
                 {tab.label}
                 {tab.key === "payment" && pendingCount > 0 && !allSettled && (
-                  <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
+                  <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary-text">
                     {pendingCount}
                   </span>
                 )}
@@ -442,7 +442,7 @@ export default function DemoPage() {
                               <div className="p-4">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-center gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary-text">
                                       {payer?.name.charAt(0) || "?"}
                                     </div>
                                     <div>
@@ -546,10 +546,10 @@ export default function DemoPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3, duration: 0.4 }}
-          className="rounded-3xl gradient-primary p-8 text-white text-center shadow-xl shadow-primary/20"
+          className="rounded-3xl gradient-primary p-8 text-primary-foreground text-center shadow-xl shadow-primary/20"
         >
           <h2 className="text-xl font-bold">Bora rachar com a galera?</h2>
-          <p className="mt-2 text-sm text-white/80">
+          <p className="mt-2 text-sm text-primary-foreground/80">
             Entra aí e comece a rachar as contas sem drama.
           </p>
           <Link href="/auth">

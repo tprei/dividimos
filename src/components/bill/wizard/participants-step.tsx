@@ -86,7 +86,7 @@ export function ParticipantsStep({
         <>
       {selectedGroup ? (
         <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
-          <div className="rounded-xl bg-primary/10 p-2 text-primary">
+          <div className="rounded-xl bg-primary/10 p-2 text-primary-text">
             <Users2 className="h-4 w-4" />
           </div>
           <div className="flex-1">
@@ -115,7 +115,7 @@ export function ParticipantsStep({
                 onClick={() => onSelectGroup(g.group.id)}
                 className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/30"
               >
-                <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                <div className="rounded-xl bg-primary/10 p-2 text-primary-text">
                   <Users2 className="h-4 w-4" />
                 </div>
                 <div className="flex-1">
@@ -146,7 +146,7 @@ export function ParticipantsStep({
                 <p className="text-sm font-medium">{me.name}</p>
                 <p className="text-xs text-muted-foreground">@{me.handle}</p>
               </div>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary-text">Você</span>
             </div>
             {memberRows.map((m) => {
               const isChecked = participants.some((p) => p.id === m.userId);
@@ -184,7 +184,7 @@ export function ParticipantsStep({
                 <p className="text-xs text-muted-foreground">@{p.handle}</p>
               </div>
               {p.id === me.id ? (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">Você</span>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary-text">Você</span>
               ) : (
                 <button onClick={() => onRemoveParticipant(p.id)} aria-label={`Remover ${p.name}`} className="rounded-lg p-1 text-muted-foreground hover:text-destructive">
                   <X className="h-4 w-4" />

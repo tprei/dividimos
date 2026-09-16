@@ -126,7 +126,7 @@ export function PayerStep({
         </p>
         <div className="mt-2 rounded-xl bg-primary/5 px-4 py-3">
           <p className="text-xs text-muted-foreground">Total da conta</p>
-          <p className="text-xl font-bold tabular-nums text-primary">
+          <p className="text-xl font-bold tabular-nums text-primary-text">
             {formatBRL(grandTotal)}
           </p>
         </div>
@@ -154,7 +154,7 @@ export function PayerStep({
                   className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${
                     isSelected
                       ? "bg-primary text-primary-foreground"
-                      : "bg-primary/10 text-primary"
+                      : "bg-primary/10 text-primary-text"
                   }`}
                 >
                   {isSelected ? <Check className="h-4 w-4" /> : user.name.charAt(0)}
@@ -165,14 +165,14 @@ export function PayerStep({
                     <motion.p
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      className="text-xs text-primary"
+                      className="text-xs text-primary-text"
                     >
                       Pagou tudo — {formatBRL(grandTotal)}
                     </motion.p>
                   )}
                 </div>
                 {isSelected && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary-text">
                     Pagou tudo
                   </span>
                 )}
@@ -255,13 +255,13 @@ export function PayerStep({
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary-text">
                             {user.name.charAt(0)}
                           </span>
                           <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
                         </div>
                         <div className="text-right">
-                          <span className="text-sm font-bold tabular-nums text-primary">
+                          <span className="text-sm font-bold tabular-nums text-primary-text">
                             {percentLabel(basisPoints)}%
                           </span>
                           <span className="ml-2 text-xs text-muted-foreground tabular-nums">
@@ -286,7 +286,7 @@ export function PayerStep({
                           onClick={() => {
                             setPercentage(user.id, percentText(remainingBasisPoints));
                           }}
-                          className="mt-1.5 text-xs font-medium text-primary"
+                          className="mt-1.5 text-xs font-medium text-primary-text"
                         >
                           Preencher restante ({percentLabel(remainingBasisPoints)}%)
                         </button>
@@ -340,7 +340,7 @@ export function PayerStep({
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary-text">
                     {user.name.charAt(0)}
                   </span>
                   <PersonLabel name={user.name} handle={user.handle} className="flex-1" nameClassName="text-sm font-medium" />
@@ -348,7 +348,7 @@ export function PayerStep({
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-8 text-xs gap-1 text-primary border-primary/30"
+                      className="h-8 text-xs gap-1 text-primary-text border-primary/30"
                       onClick={() => handleFillRemaining(user.id)}
                     >
                       Restante ({formatBRL(remaining)})

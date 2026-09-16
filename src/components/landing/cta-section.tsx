@@ -12,10 +12,10 @@ export function CTASection() {
       whileInView={{ opacity: 1, scale: 1 }}
       viewport={{ once: true }}
       transition={{ duration: 0.5 }}
-      className="rounded-3xl gradient-primary p-10 text-white shadow-xl shadow-primary/20"
+      className="rounded-3xl gradient-primary p-10 text-primary-foreground shadow-xl shadow-primary/20"
     >
       <h2 className="text-2xl font-bold sm:text-3xl">Bora rachar?</h2>
-      <p className="mx-auto mt-3 max-w-sm text-white/80">
+      <p className="mx-auto mt-3 max-w-sm text-primary-foreground/80">
         Entra aí, é de graça.
       </p>
       <Link href="/app">
