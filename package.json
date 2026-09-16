@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint --max-warnings 0",
     "icons": "node scripts/generate-icons.mjs",
+    "check:migrations": "node scripts/check-migration-safety.mjs --paths",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.mts",

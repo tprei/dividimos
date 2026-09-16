@@ -44,6 +44,8 @@ const PROTECTED_CI_PATHS = [
   "scripts/check-migration-history.mjs",
   "scripts/check-migration-history.test.mjs",
   "scripts/check-database-invariants.mjs",
+  "scripts/check-migration-safety.mjs",
+  "scripts/check-migration-safety.test.mjs",
   "scripts/verify-migrations.mjs",
   "scripts/verify-migrations.test.mjs",
   "supabase/config.toml",
