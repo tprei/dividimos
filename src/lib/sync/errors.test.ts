@@ -25,6 +25,10 @@ describe("errors", () => {
     expect(codeFromMessage("no_debt")).toBe("no_debt");
     expect(codeFromMessage("nudge_cooldown")).toBe("nudge_cooldown");
     expect(codeFromMessage("guest_already_claimed")).toBe("guest_already_claimed");
+    expect(codeFromMessage("member_excluded")).toBe("member_excluded");
+    expect(ledgerErrorMessage(new LedgerError("member_excluded"))).toBe(
+      "Essa pessoa foi removida do grupo.",
+    );
     expect(ledgerErrorMessage(new LedgerError("guest_already_claimed"))).toBe(
       "Esse convidado já foi vinculado a alguém.",
     );

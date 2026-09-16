@@ -229,6 +229,13 @@ BEGIN
 
   PERFORM assert_dm_pair_allowed(v_rec.group_id, v_actor);
 
+  IF EXISTS (
+    SELECT 1 FROM group_member_exclusions
+    WHERE group_id = v_rec.group_id AND user_id = v_actor
+  ) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'member_excluded';
+  END IF;
+
   UPDATE guests
   SET claimed_by = v_actor,
       claimed_at = now()

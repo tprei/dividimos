@@ -209,6 +209,28 @@ describe("decodeBootstrap", () => {
     }
   });
 
+  it("accepts a pending group snapshot with lastActivityAt: null", () => {
+    const pendingSnapshot = {
+      ...fixture.groups[0],
+      balances: [],
+      guests: [],
+      settlements: [],
+      pairwiseEdges: [],
+      recentExpenses: [],
+      expenseCount: 0,
+      unreadCount: 0,
+      lastMessage: null,
+      lastEventId: 0,
+      lastActivityAt: null,
+    };
+    const pendingBootstrap = { ...fixture, groups: [pendingSnapshot] };
+    const result = decodeBootstrap(pendingBootstrap);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.groups[0].lastActivityAt).toBeNull();
+    }
+  });
+
   it("rejects a pairwiseEdges entry with a non-integer amount", () => {
     const invalid = JSON.parse(JSON.stringify(fixture));
     invalid.groups[0].pairwiseEdges[0].amountCents = 15.5;

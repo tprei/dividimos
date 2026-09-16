@@ -56,6 +56,14 @@ CREATE TABLE public.group_members (
 );
 CREATE INDEX group_members_user_idx ON public.group_members (user_id) WHERE status = 'accepted';
 
+CREATE TABLE public.group_member_exclusions (
+  group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  excluded_by uuid NOT NULL REFERENCES public.users(id),
+  excluded_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (group_id, user_id)
+);
+
 CREATE TABLE public.group_invite_links (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
@@ -224,4 +232,5 @@ ALTER TABLE public.group_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversation_reads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.group_member_exclusions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guest_credentials.claim_tokens ENABLE ROW LEVEL SECURITY;

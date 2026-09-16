@@ -324,12 +324,24 @@ test("compareFixtureObservations accepts a base that already carries the lookup 
   assert.deepEqual(failures, []);
 });
 
-test("the intentional upgrade list names the lookup flip, noncanonical DM repair, and its row-count effect", () => {
+test("the intentional upgrade list names the lookup flip, both DM repairs, and the exclusion table", () => {
   assert.deepEqual([...INTENTIONAL_UPGRADES.keys()], [
     "lookup:direct:authenticated",
     "dm:noncanonical-members",
     "db:count:public.group_members",
+    "db:count:public.group_member_exclusions",
   ]);
+});
+
+test("compareFixtureObservations accepts a reviewed migration introducing an empty table", () => {
+  const failures = compareFixtureObservations(
+    [{ label: "db:count:public.groups", value: 3 }],
+    [
+      { label: "db:count:public.groups", value: 3 },
+      { label: "db:count:public.group_member_exclusions", value: 0 },
+    ],
+  );
+  assert.deepEqual(failures, []);
 });
 
 test("compareFixtureObservations accepts the DM repair deleting exactly one membership row", () => {
