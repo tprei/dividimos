@@ -23,7 +23,7 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, ac
           variant="ghost"
           size="icon-lg"
           aria-label="Voltar"
-          className="-ml-2 rounded-full"
+          className="-ml-2 min-h-11 min-w-11"
           onClick={onBack ?? (() => router.back())}
         >
           <ArrowLeft className="size-5" />
@@ -32,7 +32,7 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, ac
       {leading}
       <div className="min-w-0 flex-1">
         {eyebrow && (
-          <p className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          <p className="truncate text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
             {eyebrow}
           </p>
         )}

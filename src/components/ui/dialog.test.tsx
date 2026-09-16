@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { render, act, screen } from "@testing-library/react";
 import React from "react";
 import {
   runBackHandlers,
   __resetBackHandlerStackForTests,
 } from "@/lib/capacitor/back-handler";
-import { Dialog } from "./dialog";
+import { Dialog, DialogContent } from "./dialog";
 
 vi.mock("@base-ui/react/dialog", async () => {
   const actual = await vi.importActual<typeof import("@base-ui/react/dialog")>(
@@ -93,5 +93,16 @@ describe("Dialog back-handler integration", () => {
     });
 
     expect(claimed!).toBe(false);
+  });
+});
+
+describe("DialogContent close button", () => {
+  it("names the close button Fechar in PT-BR", () => {
+    render(
+      <Dialog open>
+        <DialogContent>conteúdo</DialogContent>
+      </Dialog>,
+    );
+    expect(screen.getByRole("button", { name: "Fechar" })).toBeInTheDocument();
   });
 });

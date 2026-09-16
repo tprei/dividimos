@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 function signedTone(cents: number): string {
   if (cents < 0) return "text-destructive";
-  if (cents > 0) return "text-success";
+  if (cents > 0) return "text-success-text";
   return "";
 }
 

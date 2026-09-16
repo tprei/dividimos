@@ -64,7 +64,7 @@ export function UserAvatar({ name, avatarUrl, size = "md", className, priority, 
     ) : (
       <div
         className={cn(
-          "flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary",
+          "flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary-text",
           sizeClass,
           className,
         )}

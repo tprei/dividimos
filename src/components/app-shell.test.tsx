@@ -302,7 +302,7 @@ describe("AppShell navigation", () => {
     render(<AppShell><div>content</div></AppShell>);
 
     const label = screen.getByText("Conversas");
-    expect(label.className).toContain("text-primary");
+    expect(label.className).toMatch(/text-primary(-text)?/);
   });
 });
 
