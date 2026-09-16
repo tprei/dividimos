@@ -114,6 +114,9 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
         });
         paymentKey.current = crypto.randomUUID();
         setPaymentStatus("confirmed");
+        toast.success(
+          "Pagamento registrado! O comprovante já está na conversa e os saldos foram atualizados.",
+        );
         window.setTimeout(() => {
           setPaymentOpen(false);
           setPaymentStatus("idle");
@@ -267,7 +270,9 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
             currentUserHandle={me.handle}
             counterparties={paymentCounterparties}
             onConfirm={handleRegisterPayment}
-            onDismiss={() => setPaymentOpen(false)}
+            onDismiss={() => {
+              if (paymentStatus !== "confirming") setPaymentOpen(false);
+            }}
             status={paymentStatus}
             errorMessage={paymentError}
           />

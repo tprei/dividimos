@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, DollarSign, Loader2, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import { useBackHandler } from "@/hooks/use-back-handler";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
@@ -71,10 +72,30 @@ export function QuickChargeSheet({
   status = "idle",
   errorMessage,
 }: QuickChargeSheetProps) {
-  useBackHandler(true, onDismiss);
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
   const [descriptionEdited, setDescriptionEdited] = useState(false);
+  const [showPending, setShowPending] = useState(false);
+
+  const guardedDismiss = useCallback(() => {
+    if (status === "confirming") return true;
+    onDismiss();
+    return true;
+  }, [status, onDismiss]);
+  useBackHandler(true, guardedDismiss);
+
+  useEffect(() => {
+    if (status !== "confirming") return undefined;
+    const timer = window.setTimeout(() => setShowPending(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [status]);
+  const [prevStatus, setPrevStatus] = useState<QuickChargeStatus>(status);
+  if (status !== prevStatus) {
+    setPrevStatus(status);
+    if (status !== "confirming") {
+      setShowPending(false);
+    }
+  }
   const [payerIsSelf, setPayerIsSelf] = useState(true);
 
   const autoDescription = useMemo(
@@ -124,6 +145,7 @@ export function QuickChargeSheet({
       exit={{ opacity: 0, y: 8, scale: 0.97 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       className="rounded-2xl border bg-card p-4"
+      aria-busy={status === "confirming"}
       data-testid="quick-charge-sheet"
     >
       <div className="mb-3 flex items-center justify-between">
@@ -137,8 +159,9 @@ export function QuickChargeSheet({
         </div>
         <button
           type="button"
-          onClick={onDismiss}
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={guardedDismiss}
+          disabled={status === "confirming"}
+          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           aria-label="Fechar"
           data-testid="quick-charge-dismiss"
         >
@@ -155,7 +178,6 @@ export function QuickChargeSheet({
           <CurrencyInput
             valueCents={amountCents}
             onChangeCents={setAmountCents}
-            aria-label="Valor total"
             className="w-32 text-3xl font-bold"
             autoFocus
             data-testid="quick-charge-amount"
@@ -222,6 +244,26 @@ export function QuickChargeSheet({
         </div>
       )}
 
+      {showPending && status === "confirming" && (
+        <div
+          className="mb-3 rounded-xl border border-warning/30 bg-warning/10 p-3"
+          data-testid="quick-charge-pending"
+        >
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            OPERAÇÃO PENDENTE
+          </p>
+          <p className="mt-1 text-sm font-semibold">Ainda aguardando confirmação</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            A conexão demorou mais que o esperado. Não se preocupe: se o pagamento foi
+            processado, ele aparecerá aqui na conversa. Você pode sair agora sem duplicar o
+            registro.
+          </p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={onDismiss}>
+            Sair por enquanto
+          </Button>
+        </div>
+      )}
+
       <div className="flex gap-2">
         <Button
           variant="outline"
@@ -236,17 +278,27 @@ export function QuickChargeSheet({
         </Button>
         <Button
           size="sm"
-          className="flex-1"
+          className={cn(
+            "flex-1 rounded-lg transition-colors",
+            isConfirmed && "bg-success text-success-foreground hover:bg-success/90",
+          )}
           onClick={handleConfirm}
           disabled={isDisabled}
           data-testid="quick-charge-confirm"
         >
           {isConfirming ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            <>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              Enviando…
+            </>
+          ) : isConfirmed ? (
+            <>
+              <Check className="mr-1.5 h-3.5 w-3.5" />
+              {payerIsSelf ? "Cobrado!" : "Registrado!"}
+            </>
           ) : (
-            <Check className="mr-1.5 h-3.5 w-3.5" />
+            payerIsSelf ? "Cobrar" : "Registrar"
           )}
-          {isConfirming ? "Enviando…" : payerIsSelf ? "Cobrar" : "Registrar"}
         </Button>
       </div>
     </motion.div>

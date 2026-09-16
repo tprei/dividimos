@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Banknote, Check, Loader2, X } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
@@ -8,6 +8,7 @@ import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import { useBackHandler } from "@/hooks/use-back-handler";
 
 export type GroupPaymentStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -46,7 +47,6 @@ export function GroupRegisterPaymentSheet({
   status = "idle",
   errorMessage,
 }: GroupRegisterPaymentSheetProps) {
-  useBackHandler(true, onDismiss);
   const [amountCents, setAmountCents] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(
     counterparties[0]?.id ?? null,
@@ -62,6 +62,27 @@ export function GroupRegisterPaymentSheet({
   );
 
   const [allowOverpay, setAllowOverpay] = useState(false);
+  const [showPending, setShowPending] = useState(false);
+
+  const guardedDismiss = useCallback(() => {
+    if (status === "confirming") return true;
+    onDismiss();
+    return true;
+  }, [status, onDismiss]);
+  useBackHandler(true, guardedDismiss);
+
+  useEffect(() => {
+    if (status !== "confirming") return undefined;
+    const timer = window.setTimeout(() => setShowPending(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [status]);
+  const [prevStatus, setPrevStatus] = useState<GroupPaymentStatus>(status);
+  if (status !== prevStatus) {
+    setPrevStatus(status);
+    if (status !== "confirming") {
+      setShowPending(false);
+    }
+  }
 
   const capCents = counterparty
     ? payerIsSelf
@@ -95,6 +116,7 @@ export function GroupRegisterPaymentSheet({
       exit={{ opacity: 0, y: 8, scale: 0.97 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       className="rounded-2xl border bg-card p-4"
+      aria-busy={status === "confirming"}
       data-testid="group-payment-sheet"
     >
       <div className="mb-3 flex items-center justify-between">
@@ -108,8 +130,9 @@ export function GroupRegisterPaymentSheet({
         </div>
         <button
           type="button"
-          onClick={onDismiss}
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={guardedDismiss}
+          disabled={status === "confirming"}
+          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           aria-label="Fechar"
           data-testid="group-payment-dismiss"
         >
@@ -260,20 +283,49 @@ export function GroupRegisterPaymentSheet({
           {errorMessage}
         </div>
       )}
+      {showPending && status === "confirming" && (
+        <div
+          className="mb-3 rounded-xl border border-warning/30 bg-warning/10 p-3"
+          data-testid="group-payment-pending"
+        >
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+            OPERAÇÃO PENDENTE
+          </p>
+          <p className="mt-1 text-sm font-semibold">Ainda aguardando confirmação</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            A conexão demorou mais que o esperado. Não se preocupe: se o pagamento foi
+            processado, ele aparecerá aqui na conversa. Você pode sair agora sem duplicar o
+            registro.
+          </p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={onDismiss}>
+            Sair por enquanto
+          </Button>
+        </div>
+      )}
 
       <Button
         size="sm"
-        className="w-full"
+        className={cn(
+          "w-full rounded-lg transition-colors",
+          isConfirmed && "bg-success text-success-foreground hover:bg-success/90",
+        )}
         onClick={handleConfirm}
         disabled={isDisabled}
         data-testid="group-payment-confirm"
       >
         {isConfirming ? (
-          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          <>
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            Registrando…
+          </>
+        ) : isConfirmed ? (
+          <>
+            <Check className="mr-1.5 h-3.5 w-3.5" />
+            Registrado!
+          </>
         ) : (
-          <Check className="mr-1.5 h-3.5 w-3.5" />
+          "Registrar"
         )}
-        {isConfirming ? "Registrando…" : "Registrar"}
       </Button>
     </motion.div>
   );

@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { GroupRegisterPaymentSheet } from "./group-register-payment-sheet";
+import {
+  runBackHandlers,
+  __resetBackHandlerStackForTests,
+} from "@/lib/capacitor/back-handler";
+import {
+  GroupRegisterPaymentSheet,
+  type GroupPaymentStatus,
+} from "./group-register-payment-sheet";
 
 const MEMBERS = [
   { id: "user-bob", name: "Bob Santos", handle: "bob", owedByMeCents: 5000, owedToMeCents: 2500 },
@@ -9,8 +16,9 @@ const MEMBERS = [
 ];
 
 function renderSheet(
-  status?: "confirming",
+  status?: GroupPaymentStatus,
   counterparties = MEMBERS,
+  onDismiss = vi.fn(),
 ) {
   const onConfirm = vi.fn();
   render(
@@ -18,11 +26,11 @@ function renderSheet(
       currentUserHandle="alice"
       counterparties={counterparties}
       onConfirm={onConfirm}
-      onDismiss={vi.fn()}
+      onDismiss={onDismiss}
       status={status}
     />,
   );
-  return { onConfirm, user: userEvent.setup() };
+  return { onConfirm, onDismiss, user: userEvent.setup() };
 }
 
 function setAmountText(value: string) {
@@ -32,6 +40,71 @@ function setAmountText(value: string) {
 }
 
 describe("GroupRegisterPaymentSheet", () => {
+  beforeEach(() => {
+    __resetBackHandlerStackForTests();
+  });
+
+  it("does not call onDismiss when X button is clicked while confirming", () => {
+    const onDismiss = vi.fn();
+    renderSheet("confirming", undefined, onDismiss);
+
+    const closeBtn = screen.getByTestId("group-payment-dismiss");
+    expect(closeBtn).toBeDisabled();
+    expect(closeBtn.className).toContain("disabled:cursor-not-allowed");
+    expect(closeBtn.className).toContain("disabled:opacity-40");
+    fireEvent.click(closeBtn);
+
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("renders Registrado! and success styling when status is confirmed", () => {
+    renderSheet("confirmed");
+
+    const confirmBtn = screen.getByTestId("group-payment-confirm");
+    expect(confirmBtn).toHaveTextContent("Registrado!");
+    expect(confirmBtn.className).toContain("bg-success");
+  });
+
+  it("consumes back navigation without dismissing during confirming status", () => {
+    const onDismiss = vi.fn();
+    renderSheet("confirming", undefined, onDismiss);
+
+    const consumed = runBackHandlers();
+    expect(consumed).toBe(true);
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("sets aria-busy on the sheet wrapper while confirming", () => {
+    renderSheet("confirming");
+    expect(screen.getByTestId("group-payment-sheet")).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("shows pending state after 15s when confirming and allows exit via Sair por enquanto", () => {
+    vi.useFakeTimers();
+    try {
+      const onDismiss = vi.fn();
+      renderSheet("confirming", undefined, onDismiss);
+
+      expect(screen.queryByTestId("group-payment-pending")).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(15000);
+      });
+
+      expect(screen.getByTestId("group-payment-pending")).toBeInTheDocument();
+      expect(screen.getByText("OPERAÇÃO PENDENTE")).toBeInTheDocument();
+      expect(screen.getByText("Ainda aguardando confirmação")).toBeInTheDocument();
+      expect(
+        screen.getByText(/A conexão demorou mais que o esperado/),
+      ).toBeInTheDocument();
+
+      const exitBtn = screen.getByRole("button", { name: "Sair por enquanto" });
+      fireEvent.click(exitBtn);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("reports the chosen member, direction, and amount in cents", async () => {
     const { onConfirm, user } = renderSheet();
 

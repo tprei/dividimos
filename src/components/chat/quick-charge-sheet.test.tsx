@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  runBackHandlers,
+  __resetBackHandlerStackForTests,
+} from "@/lib/capacitor/back-handler";
 import { QuickChargeSheet } from "./quick-charge-sheet";
 
 const defaultProps = {
@@ -180,6 +184,10 @@ describe("QuickChargeSheet", () => {
     expect(onConfirm.mock.calls[0][0].title).toBe("Pizza");
   });
 
+  beforeEach(() => {
+    __resetBackHandlerStackForTests();
+  });
+
   describe("status states", () => {
     it("shows loading state when confirming", () => {
       renderSheet({ status: "confirming" });
@@ -187,6 +195,77 @@ describe("QuickChargeSheet", () => {
       expect(screen.getByTestId("quick-charge-confirm")).toBeDisabled();
       expect(screen.getByTestId("quick-charge-edit")).toBeDisabled();
       expect(screen.getByTestId("quick-charge-confirm")).toHaveTextContent("Enviando…");
+      expect(screen.getByTestId("quick-charge-sheet")).toHaveAttribute("aria-busy", "true");
+    });
+
+    it("does not call onDismiss when X button is clicked while confirming", () => {
+      const onDismiss = vi.fn();
+      renderSheet({ status: "confirming", onDismiss });
+
+      const closeBtn = screen.getByTestId("quick-charge-dismiss");
+      expect(closeBtn).toBeDisabled();
+      expect(closeBtn.className).toContain("disabled:cursor-not-allowed");
+      expect(closeBtn.className).toContain("disabled:opacity-40");
+      fireEvent.click(closeBtn);
+
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
+
+    it("consumes back navigation without dismissing during confirming status", () => {
+      const onDismiss = vi.fn();
+      renderSheet({ status: "confirming", onDismiss });
+
+      const consumed = runBackHandlers();
+      expect(consumed).toBe(true);
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
+
+    it("renders Cobrado! and success styling when status is confirmed and payer is self", () => {
+      renderSheet({ status: "confirmed" });
+
+      const confirmBtn = screen.getByTestId("quick-charge-confirm");
+      expect(confirmBtn).toBeDisabled();
+      expect(confirmBtn).toHaveTextContent("Cobrado!");
+      expect(confirmBtn.className).toContain("bg-success");
+    });
+
+    it("renders Registrado! and success styling when status is confirmed and payer is other", async () => {
+      const user = userEvent.setup();
+      const { rerender } = renderSheet({ status: "idle" });
+      await user.click(screen.getByTestId("quick-charge-payer-other"));
+      rerender(<QuickChargeSheet {...defaultProps} status="confirmed" />);
+
+      const confirmBtn = screen.getByTestId("quick-charge-confirm");
+      expect(confirmBtn).toBeDisabled();
+      expect(confirmBtn).toHaveTextContent("Registrado!");
+      expect(confirmBtn.className).toContain("bg-success");
+    });
+
+    it("shows pending state after 15s when confirming and allows exit via Sair por enquanto", () => {
+      vi.useFakeTimers();
+      try {
+        const onDismiss = vi.fn();
+        renderSheet({ status: "confirming", onDismiss });
+
+        expect(screen.queryByTestId("quick-charge-pending")).not.toBeInTheDocument();
+
+        act(() => {
+          vi.advanceTimersByTime(15000);
+        });
+
+        expect(screen.getByTestId("quick-charge-pending")).toBeInTheDocument();
+        expect(screen.getByText("OPERAÇÃO PENDENTE")).toBeInTheDocument();
+        expect(screen.getByText("Ainda aguardando confirmação")).toBeInTheDocument();
+        expect(
+          screen.getByText(/A conexão demorou mais que o esperado/),
+        ).toBeInTheDocument();
+
+        const exitBtn = screen.getByRole("button", { name: "Sair por enquanto" });
+        fireEvent.click(exitBtn);
+        expect(onDismiss).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("disables buttons when confirmed", () => {
