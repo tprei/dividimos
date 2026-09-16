@@ -35,6 +35,7 @@ jobs:
               scripts/check-migration-history.test.mjs \
               scripts/verify-migrations.mjs \
               scripts/verify-migrations.test.mjs \
+              scripts/migrate-ledger.ts \
               src/test/integration-setup.ts \
               src/test/db-race-barrier.ts \
               src/types/database.ts \
@@ -85,6 +86,7 @@ jobs:
         run: |
           node scripts/verify-migrations.mjs fresh \
             --base "refs/remotes/pr/base" --head HEAD \
+            --trusted-main "$BASE_SHA" \
             --artifacts verify-artifacts/fresh --keep
 
       - name: Generated database types match HEAD's database
@@ -165,7 +167,14 @@ jobs:
             --artifacts verify-artifacts/epoch --keep
 
       - name: Export the new epoch endpoints
+        id: endpoints
         run: |
+          if [ ! -f verify-artifacts/epoch/project-dir-epoch-head.txt ]; then
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+            echo "the base already carries the reviewed epoch; no epoch database to exercise"
+            exit 0
+          fi
+          echo "verified=true" >> "$GITHUB_OUTPUT"
           HEAD_DIR=$(cat verify-artifacts/epoch/project-dir-epoch-head.txt)
           pushd "$HEAD_DIR" >/dev/null
           status_json=$(supabase status --output json)
@@ -178,6 +187,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Run the integration contract suite on the new epoch
+        if: steps.endpoints.outputs.verified == 'true'
         run: npm run test:integration
         env:
           PIX_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -185,6 +195,7 @@ jobs:
           INTEGRATION_STRICT: "1"
 
       - name: Assert database security invariants on the new epoch
+        if: steps.endpoints.outputs.verified == 'true'
         run: node scripts/check-database-invariants.mjs "$SUPABASE_DB_URL"
 
       - name: Stop the epoch projects

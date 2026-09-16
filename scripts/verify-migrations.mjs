@@ -1196,6 +1196,28 @@ export function epochAuthorizationFailures(manifest, baseFiles, headFiles) {
   ];
 }
 
+/**
+ * Decides whether an epoch invocation faces the reviewed reset transition or a
+ * PR stacked on top of a base that already carries the new epoch. The reset is
+ * a single transition: once the base tree equals the manifest's `new` section
+ * there is no pre-reset database left to compare, and the pair is an ordinary
+ * append-only extension that `fresh` and the history gate already cover.
+ *
+ * @param {{baseRef: string, headRef: string, trustedMainRef?: string, cwd?: string}} options
+ * @returns {Promise<string[] | null>} null when the reset transition applies,
+ *   otherwise the append-only failures of the extension (empty when clean)
+ */
+export async function epochExtensionFailures({ baseRef, headRef, trustedMainRef, cwd }) {
+  const manifest = readTrustedResetManifest(trustedMainRef, { cwd });
+  const baseFiles = await readMigrationFiles(baseRef, { cwd });
+  const baseMap = new Map(
+    baseFiles.map((file) => [file.path, { blob: file.blobOid, mode: file.mode }]),
+  );
+  if (manifestMismatches("the base", baseMap, manifest.new).length > 0) return null;
+  const headFiles = await readMigrationFiles(headRef, { cwd });
+  return validateMigrationHistory(baseFiles, headFiles);
+}
+
 function checkInviteToken(value) {
   return typeof value === "string" && INVITE_TOKEN_PATTERN.test(value)
     ? null
@@ -1662,16 +1684,24 @@ export async function verifyMigrations(options) {
 
   const baseFiles = await readMigrationFiles(baseRef, { cwd });
   const headFiles = await readMigrationFiles(headRef, { cwd });
-  // Epoch authorizes the pair against the reviewed manifest in immutable
-  // trusted main, never against a manifest supplied by the reset PR itself.
-  const failures =
-    mode === "epoch"
-      ? epochAuthorizationFailures(
-          readTrustedResetManifest(trustedMainRef, { cwd }),
-          baseFiles,
-          headFiles,
-        )
-      : validateMigrationHistory(baseFiles, headFiles);
+  // A reset disconnects base from head on purpose, so append-only rules
+  // cannot judge that one pair; it authorizes against the reviewed manifest
+  // in immutable trusted main instead, never against a manifest the reset PR
+  // supplies for itself. A caller that passes --trusted-main on a base which
+  // already carries the new epoch is an ordinary extension, so the
+  // append-only rules still apply to it.
+  const manifest =
+    mode === "epoch" || trustedMainRef !== undefined
+      ? readTrustedResetManifest(trustedMainRef, { cwd })
+      : null;
+  const baseMap = new Map(
+    baseFiles.map((file) => [file.path, { blob: file.blobOid, mode: file.mode }]),
+  );
+  const resetTransition =
+    manifest !== null && manifestMismatches("the base", baseMap, manifest.new).length > 0;
+  const failures = resetTransition
+    ? epochAuthorizationFailures(manifest, baseFiles, headFiles)
+    : validateMigrationHistory(baseFiles, headFiles);
   const baseMajor = await postgresMajor(baseRef, { cwd });
   const headMajor = await postgresMajor(headRef, { cwd });
   if (baseMajor !== null && headMajor !== null && baseMajor !== headMajor) {
@@ -1850,6 +1880,21 @@ async function main(argv) {
     const artifactDirectory = flags.get("artifacts");
     if (!baseRef || !headRef || !artifactDirectory) {
       throw new Error("fresh, upgrade, and epoch require --base, --head, and --artifacts");
+    }
+    if (mode === "epoch") {
+      const extension = await epochExtensionFailures({
+        baseRef,
+        headRef,
+        trustedMainRef,
+      });
+      if (extension !== null) {
+        if (extension.length > 0) throw new Error(extension.join("\n"));
+        console.log(
+          "OK: the base already carries the reviewed epoch and head only extends it; " +
+            "the reset transition was verified on the reset PR",
+        );
+        return 0;
+      }
     }
     const artifacts = resolve(artifactDirectory);
     await verifyMigrations({
