@@ -359,6 +359,7 @@ export function PayerStep({
                       <CurrencyInput
                         valueCents={userCents}
                         onChangeCents={(cents) => handleLocalChange(user.id, cents)}
+                        aria-label={`Valor pago por ${user.name}`}
                         maxCents={grandTotal}
                         className="h-8 w-24 text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                       />

@@ -353,6 +353,7 @@ export function PixQrModal({
                         valueCents={paymentCents}
                         maxCents={amountCents}
                         onChangeCents={setPaymentCents}
+                        aria-label="Editar valor"
                         className="h-12 w-40 text-3xl font-bold text-primary"
                       />
                     </label>

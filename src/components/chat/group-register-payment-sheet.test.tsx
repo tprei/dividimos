@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import userEvent, { type UserEvent } from "@testing-library/user-event";
+import userEvent from "@testing-library/user-event";
 import { GroupRegisterPaymentSheet } from "./group-register-payment-sheet";
 
 const MEMBERS = [
@@ -25,9 +25,10 @@ function renderSheet(
   return { onConfirm, user: userEvent.setup() };
 }
 
-async function typeAmount(user: UserEvent, digits: string) {
-  await user.click(screen.getByRole("textbox", { name: "Valor do pagamento" }));
-  await user.keyboard(digits);
+function setAmountText(value: string) {
+  fireEvent.change(screen.getByRole("textbox", { name: "Valor do pagamento" }), {
+    target: { value },
+  });
 }
 
 describe("GroupRegisterPaymentSheet", () => {
@@ -35,7 +36,7 @@ describe("GroupRegisterPaymentSheet", () => {
     const { onConfirm, user } = renderSheet();
 
     await user.click(screen.getByTestId("group-payment-member-user-carol"));
-    await typeAmount(user, "300");
+    setAmountText("3,00");
     await user.click(screen.getByTestId("group-payment-confirm"));
 
     expect(onConfirm).toHaveBeenCalledWith({
@@ -49,7 +50,7 @@ describe("GroupRegisterPaymentSheet", () => {
   it("reverses the direction when the other member paid", async () => {
     const { onConfirm, user } = renderSheet();
 
-    await typeAmount(user, "50");
+    setAmountText("0,50");
     await user.click(screen.getByTestId("group-payment-payer-other"));
     await user.click(screen.getByTestId("group-payment-confirm"));
 
@@ -138,7 +139,7 @@ describe("GroupRegisterPaymentSheet", () => {
   it("clamps the amount down when flipping payer direction reduces the cap", async () => {
     const { onConfirm, user } = renderSheet();
 
-    await typeAmount(user, "4000");
+    setAmountText("40,00");
     await user.click(screen.getByTestId("group-payment-payer-other"));
 
     const input = screen.getByTestId("group-payment-amount") as HTMLInputElement;

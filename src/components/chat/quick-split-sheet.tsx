@@ -228,6 +228,7 @@ export function QuickSplitSheet({
                 <CurrencyInput
                   valueCents={totalCents}
                   onChangeCents={setTotalCents}
+                  aria-label="Valor total"
                   disabled={isDisabled}
                   className="min-w-0 flex-1 text-2xl font-bold h-14"
                   data-testid="quick-split-amount"

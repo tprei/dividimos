@@ -160,6 +160,7 @@ export function VoiceExpenseModal({
               <CurrencyInput
                 valueCents={amountCents}
                 onChangeCents={setAmountCents}
+                aria-label="Valor total"
                 autoFocus
                 className="flex-1 h-8 px-2.5 py-1 text-base md:text-sm rounded-lg border border-input bg-transparent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />

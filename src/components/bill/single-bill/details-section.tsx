@@ -119,6 +119,7 @@ export function SingleBillDetails({
             <CurrencyInput
               valueCents={totalCents}
               onChangeCents={onTotalChange}
+              aria-label="Valor total"
               className="h-14 min-w-0 flex-1 text-4xl font-semibold font-mono tabular-nums"
             />
           </label>

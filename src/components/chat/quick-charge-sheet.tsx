@@ -155,6 +155,7 @@ export function QuickChargeSheet({
           <CurrencyInput
             valueCents={amountCents}
             onChangeCents={setAmountCents}
+            aria-label="Valor total"
             className="w-32 text-3xl font-bold"
             autoFocus
             data-testid="quick-charge-amount"

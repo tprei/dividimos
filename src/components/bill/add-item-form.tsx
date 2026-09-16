@@ -128,6 +128,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
               <CurrencyInput
                 valueCents={priceCents}
                 onChangeCents={setPriceCents}
+                aria-label="Preço unitário"
                 className="flex-1 h-8 px-2.5 py-1 text-base md:text-sm text-left"
               />
             </div>

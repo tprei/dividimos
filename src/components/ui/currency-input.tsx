@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MAX_EXPENSE_CENTS } from "@/lib/expense-money";
 import { cn } from "@/lib/utils";
 
@@ -25,29 +25,74 @@ function formatCentsDisplay(cents: number): string {
 }
 
 /**
- * Lenient as-you-type parse to integer cents without float arithmetic.
- * Accepts optional thousands dots and a comma decimal separator; returns null
- * for empty or non-numeric input. Final validation against the product cap and
- * grammar happens through the shared `parseExpenseCentsText` parser at the
- * owning form boundary.
+ * Strict decimal-text parse to integer cents without float arithmetic.
+ * Trims whitespace and an optional leading R$. Accepts a pt-BR comma decimal
+ * (10,50 / 10,5 / ,50), a single ungrouped dot decimal with 1-2 trailing
+ * digits (10.50 / 10.5 / .50), and dot thousands grouping (1.234 / 1.234,56).
+ * Rejects malformed grouping (1.23.456), excess decimals (10,505), repeated
+ * separators (10,,50), and negative signs. Returns null for unparseable text;
+ * empty text is the caller's 0, not a parse result.
  */
-function parseBrazilianToCents(value: string): number | null {
-  const stripped = value.replace(/[^\d,]/g, "");
-  if (stripped === "" || stripped === ",") return null;
-  const commaIndex = stripped.indexOf(",");
-  if (commaIndex === -1) {
-    const intPart = parseInt(stripped, 10);
+export function parseBrazilianToCents(value: string): number | null {
+  let text = value.trim();
+  if (text === "") return null;
+  if (text.startsWith("R$")) {
+    text = text.slice(2).trim();
+    if (text === "") return null;
+  }
+  if (text.startsWith("-") || text.startsWith("+")) return null;
+
+  const commaCount = (text.match(/,/g) ?? []).length;
+  const dotCount = (text.match(/\./g) ?? []).length;
+  if (commaCount > 1) return null;
+  if (commaCount === 1 && dotCount > 0) {
+    const [intRaw, fracRaw] = text.split(",");
+    if (!/^\d{1,3}(\.\d{3})*$/.test(intRaw) || intRaw === "") return null;
+    if (!/^\d{1,2}$/.test(fracRaw)) return null;
+    const intPart = parseInt(intRaw.replace(/\./g, ""), 10);
+    if (!Number.isSafeInteger(intPart)) return null;
+    const intCents = intPart * 100;
+    if (!Number.isSafeInteger(intCents)) return null;
+    const frac = parseInt(fracRaw.padEnd(2, "0"), 10);
+    if (!Number.isSafeInteger(frac)) return null;
+    return intCents + frac;
+  }
+  if (commaCount === 1) {
+    const [intRaw, fracRaw] = text.split(",");
+    if (intRaw !== "" && !/^\d+$/.test(intRaw)) return null;
+    if (!/^\d{1,2}$/.test(fracRaw)) return null;
+    const intPart = intRaw === "" ? 0 : parseInt(intRaw, 10);
+    if (!Number.isSafeInteger(intPart)) return null;
+    const intCents = intPart * 100;
+    if (!Number.isSafeInteger(intCents)) return null;
+    const frac = parseInt(fracRaw.padEnd(2, "0"), 10);
+    if (!Number.isSafeInteger(frac)) return null;
+    return intCents + frac;
+  }
+  if (dotCount === 0) {
+    if (!/^\d+$/.test(text)) return null;
+    const intPart = parseInt(text, 10);
     if (!Number.isSafeInteger(intPart)) return null;
     const cents = intPart * 100;
     return Number.isSafeInteger(cents) ? cents : null;
   }
-  const intRaw = stripped.slice(0, commaIndex).replace(/\./g, "");
-  const fracRaw = stripped.slice(commaIndex + 1);
+  if (/^\d{1,3}(\.\d{3})+$/.test(text)) {
+    const intPart = parseInt(text.replace(/\./g, ""), 10);
+    if (!Number.isSafeInteger(intPart)) return null;
+    const cents = intPart * 100;
+    return Number.isSafeInteger(cents) ? cents : null;
+  }
+  const dotIndex = text.indexOf(".");
+  if (text.indexOf(".", dotIndex + 1) !== -1) return null;
+  const intRaw = text.slice(0, dotIndex);
+  const fracRaw = text.slice(dotIndex + 1);
+  if (intRaw !== "" && !/^\d+$/.test(intRaw)) return null;
+  if (!/^\d{1,2}$/.test(fracRaw)) return null;
   const intPart = intRaw === "" ? 0 : parseInt(intRaw, 10);
   if (!Number.isSafeInteger(intPart)) return null;
   const intCents = intPart * 100;
   if (!Number.isSafeInteger(intCents)) return null;
-  const frac = parseInt(fracRaw.slice(0, 2).padEnd(2, "0"), 10);
+  const frac = parseInt(fracRaw.padEnd(2, "0"), 10);
   if (!Number.isSafeInteger(frac)) return null;
   return intCents + frac;
 }
@@ -62,107 +107,59 @@ export function CurrencyInput({
   autoFocus,
   ...rest
 }: CurrencyInputProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
 
-  // Candidates outside [0, upper] are never committed via onChangeCents (no
-  // store mutation) — they are held here as a local, uncommitted display
-  // override so the user can see what they typed. A valid candidate clears the
-  // override and commits normally. No clamped maximum ever appears.
+  // Uncommitted text the user typed: valid parses commit through
+  // onChangeCents and clear the override; invalid or over-cap text stays
+  // visible with aria-invalid until corrected. Never clamped, never repaired.
   const [rawOverride, setRawOverride] = useState<string | null>(null);
 
-  // A prop-driven value change (hydration/reset/reload) always restores
-  // canonical valid text, discarding any stale uncommitted override.
+  // A prop-driven value change (hydration/reset/reload) restores canonical
+  // valid text, discarding any stale uncommitted override.
   const [prevValueCents, setPrevValueCents] = useState(valueCents);
   if (valueCents !== prevValueCents) {
     setPrevValueCents(valueCents);
     setRawOverride(null);
   }
   useEffect(() => {
-    const isValid = rawOverride === null;
-    onValidityChange?.(isValid);
+    onValidityChange?.(rawOverride === null);
   }, [rawOverride, onValidityChange]);
 
-  const commitOrOverride = useCallback(
-    (candidateCents: number, displayText: string) => {
-      if (candidateCents >= 0 && candidateCents <= upper) {
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value;
+      if (raw === "") {
         setRawOverride(null);
-        onChangeCents(candidateCents);
+        onChangeCents(0);
+        return;
+      }
+      const cents = parseBrazilianToCents(raw);
+      if (cents !== null && cents >= 0 && cents <= upper) {
+        setRawOverride(null);
+        onChangeCents(cents);
       } else {
-        setRawOverride(displayText);
+        setRawOverride(raw);
       }
     },
     [upper, onChangeCents],
   );
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (disabled) return;
-
-      const base = rawOverride !== null ? (parseBrazilianToCents(rawOverride) ?? valueCents) : valueCents;
-
-      if (e.key === "Backspace") {
-        e.preventDefault();
-        const next = Math.max(0, Math.floor(base / 10));
-        commitOrOverride(next, formatCentsDisplay(next));
-        return;
-      }
-
-      if (e.key >= "0" && e.key <= "9") {
-        e.preventDefault();
-        const digit = parseInt(e.key, 10);
-        const next = base * 10 + digit;
-        commitOrOverride(next, formatCentsDisplay(next));
-        return;
-      }
-    },
-    [valueCents, rawOverride, disabled, commitOrOverride],
-  );
-
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const raw = e.target.value;
-      const cents = parseBrazilianToCents(raw);
-      if (cents !== null) {
-        commitOrOverride(cents, raw);
-      }
-    },
-    [commitOrOverride],
-  );
-
-  const handleFocus = useCallback(() => {
-    const el = inputRef.current;
-    if (el) {
-      requestAnimationFrame(() => {
-        el.setSelectionRange(el.value.length, el.value.length);
-      });
-    }
+  const handleBlur = useCallback(() => {
+    setRawOverride((current) => {
+      if (current === null) return current;
+      return parseBrazilianToCents(current) !== null ? null : current;
+    });
   }, []);
-
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLInputElement>) => {
-      e.preventDefault();
-      const text = e.clipboardData.getData("text");
-      const cents = parseBrazilianToCents(text);
-      if (cents !== null) {
-        commitOrOverride(cents, text);
-      }
-    },
-    [commitOrOverride],
-  );
 
   const isInvalid = rawOverride !== null;
 
   return (
     <input
-      ref={inputRef}
       type="text"
       inputMode="decimal"
       value={rawOverride ?? formatCentsDisplay(valueCents)}
-      onKeyDown={handleKeyDown}
       onChange={handleChange}
-      onFocus={handleFocus}
-      onPaste={handlePaste}
+      onBlur={handleBlur}
       disabled={disabled}
       autoFocus={autoFocus}
       aria-invalid={isInvalid || undefined}
