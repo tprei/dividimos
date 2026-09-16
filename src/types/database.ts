@@ -119,65 +119,6 @@ export type Database = {
           },
         ]
       }
-      expense_participants: {
-        Row: {
-          expense_id: string
-          guest_id: string | null
-          kind: Database["public"]["Enums"]["participant_kind"]
-          paid_cents: number
-          participant_index: number
-          share_cents: number
-          user_id: string | null
-        }
-        Insert: {
-          expense_id: string
-          guest_id?: string | null
-          kind: Database["public"]["Enums"]["participant_kind"]
-          paid_cents?: number
-          participant_index: number
-          share_cents: number
-          user_id?: string | null
-        }
-        Update: {
-          expense_id?: string
-          guest_id?: string | null
-          kind?: Database["public"]["Enums"]["participant_kind"]
-          paid_cents?: number
-          participant_index?: number
-          share_cents?: number
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "expense_participants_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "current_expense_participants"
-            referencedColumns: ["expense_id"]
-          },
-          {
-            foreignKeyName: "expense_participants_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_participants_guest_id_fkey"
-            columns: ["guest_id"]
-            isOneToOne: false
-            referencedRelation: "guests"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "expense_participants_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       expense_versions: {
         Row: {
           author_id: string
@@ -1338,14 +1279,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      materialize_participants: {
-        Args: {
-          p_expense_id: string
-          p_author: string
-          p_payload: Json
-        }
-        Returns: Json
-      }
       pairwise_from_nets: {
         Args: {
           p_kinds: Database["public"]["Enums"]["participant_kind"][]
@@ -1393,6 +1326,13 @@ export type Database = {
         Args: {
           p_group_id: string
           p_user_id: string
+        }
+        Returns: Json
+      }
+      resolve_expense_participants: {
+        Args: {
+          p_expense_id: string
+          p_payload: Json
         }
         Returns: Json
       }

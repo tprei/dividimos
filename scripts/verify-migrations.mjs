@@ -68,11 +68,17 @@ const EXCLUSION_TABLE_INTRODUCED = {
   after: 0,
   note: "intentional upgrade: 20260913010250 introduces group_member_exclusions; bases predating it cannot seed the table, so its count label appears empty after the upgrade",
 };
+const PARTICIPANT_COPY_RETIRED = {
+  label: "db:count:public.expense_participants",
+  removed: true,
+  note: "intentional upgrade: 20260913010800 retires the writable participant copy; participants are derived from version facts from then on",
+};
 export const INTENTIONAL_UPGRADES = new Map([
   [LOOKUP_FLIP.label, LOOKUP_FLIP],
   [DM_NONCANONICAL_REPAIR.label, DM_NONCANONICAL_REPAIR],
   [DM_MEMBER_COUNT_REPAIR.label, DM_MEMBER_COUNT_REPAIR],
   [EXCLUSION_TABLE_INTRODUCED.label, EXCLUSION_TABLE_INTRODUCED],
+  [PARTICIPANT_COPY_RETIRED.label, PARTICIPANT_COPY_RETIRED],
 ]);
 const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 // 16_rpc_push.sql exposes only claim_push_subscription, which is granted to
@@ -1061,6 +1067,9 @@ export function compareFixtureObservations(expected, actual) {
   const actualByLabel = new Map(actual.map((observation) => [observation.label, observation.value]));
   for (const [label, value] of expectedByLabel) {
     if (!actualByLabel.has(label)) {
+      // A reviewed migration may retire an observable that cannot exist
+      // after the upgrade (a dropped projection table's count).
+      if (INTENTIONAL_UPGRADES.get(label)?.removed === true) continue;
       failures.push(`${label}: before=${JSON.stringify(value)} after=missing`);
     }
   }

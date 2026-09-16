@@ -100,7 +100,7 @@ BEGIN
   JOIN expenses e ON e.id = g.expense_id
   JOIN expense_versions ev ON ev.expense_id = e.id AND ev.version_no = e.current_version_no
   JOIN groups grp ON grp.id = e.group_id
-  LEFT JOIN expense_participants ep ON ep.expense_id = e.id AND ep.guest_id = g.id
+  LEFT JOIN current_expense_participants ep ON ep.expense_id = e.id AND ep.guest_id = g.id
   WHERE ct.token_digest = v_digest AND ct.expires_at > now();
 
   IF NOT FOUND THEN
@@ -211,14 +211,14 @@ BEGIN
   -- A guest dropped by a later edit keeps its row but no participant slot;
   -- redeeming that orphaned token would hand group membership to a stranger.
   IF NOT EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_token';
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM expense_participants
+    SELECT 1 FROM current_expense_participants
     WHERE expense_id = v_rec.expense_id AND user_id = v_actor AND kind = 'user'
   ) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'already_participant';
@@ -238,12 +238,6 @@ BEGIN
       claimed_at = now(),
       claimed_version_no = v_rec.current_version_no
   WHERE id = v_rec.id;
-
-  UPDATE expense_participants
-  SET kind = 'user',
-      user_id = v_actor,
-      guest_id = NULL
-  WHERE expense_id = v_rec.expense_id AND guest_id = v_rec.id;
 
   INSERT INTO group_members (group_id, user_id, status, accepted_at)
   VALUES (v_rec.group_id, v_actor, 'accepted', now())

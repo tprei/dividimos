@@ -567,7 +567,7 @@ BEGIN
           WHERE gst.id = ep.guest_id
         ), 'null'::jsonb)
       ) ORDER BY ep.participant_index ASC)
-      FROM expense_participants ep
+      FROM current_expense_participants ep
       WHERE ep.expense_id = e.id
     ), '[]'::jsonb),
     'group', (
