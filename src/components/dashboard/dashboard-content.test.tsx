@@ -52,6 +52,38 @@ vi.mock("@/components/pwa/install-prompt", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/app",
+}));
+
+vi.mock("@/lib/sync/client", () => ({
+  getSupabase: () => ({
+    auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
+  }),
+  getAuthGeneration: () => 1,
+  advanceAuthGeneration: () => 1,
+  rpc: vi.fn(),
+}));
+
+vi.mock("@/lib/sync/auth", () => ({
+  attachAuthListener: () => () => {},
+}));
+
+vi.mock("@/lib/sync/bootstrap", () => ({
+  runBootstrap: vi.fn().mockResolvedValue(undefined),
+  attachVisibilityRefresh: () => () => {},
+}));
+
+vi.mock("@/lib/sync/realtime", () => ({
+  startRealtime: () => () => {},
+}));
+
+vi.mock("@/lib/push/native-registration", () => ({
+  invalidateNativeRegistration: vi.fn(),
+  registerNativePushToken: vi.fn(),
+}));
+
+vi.mock("@/lib/push/native-consent", () => ({
+  hasNativePushConsent: () => false,
 }));
 
 vi.mock("next/link", () => ({
@@ -61,6 +93,7 @@ vi.mock("next/link", () => ({
 }));
 
 import { DashboardContent } from "./dashboard-content";
+import { AppShell } from "@/components/app-shell";
 
 const me: Me = {
   id: "user-1",
@@ -433,7 +466,15 @@ describe("DashboardContent", () => {
       ],
     });
     seedStore([invitation]);
-    render(<DashboardContent />);
+    useAppStore.setState({
+      bootstrapStatus: "ready",
+      lastBootstrappedAccountId: me.id,
+    });
+    render(
+      <AppShell>
+        <DashboardContent />
+      </AppShell>,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Notificações, 1 não lidas" }));
     expect(await screen.findByText("Convite · Convite")).toBeInTheDocument();

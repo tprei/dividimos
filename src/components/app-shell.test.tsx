@@ -317,9 +317,10 @@ describe("AppShell navigation", () => {
     mockPathname.mockReturnValue("/app/activity");
     render(<AppShell><div>content</div></AppShell>);
 
-    for (const name of ["Buscar", "Atividade", "Configurações"]) {
+    for (const name of ["Buscar", "Configurações"]) {
       expect(screen.getByRole("link", { name })).toBeInTheDocument();
     }
+    expect(screen.getByRole("button", { name: /Notificações/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Atualizar" })).toBeInTheDocument();
   });
 
@@ -523,19 +524,20 @@ describe("AppShell activity bell", () => {
     });
   });
 
-  it("renders the activity bell link", () => {
+  it("renders the unified bell button that opens notifications", () => {
     render(<AppShell><div>content</div></AppShell>);
 
-    const bellLink = screen.getByLabelText("Atividade");
-    expect(bellLink).toBeDefined();
-    expect(bellLink.getAttribute("href")).toBe("/app/activity");
+    const bell = screen.getByRole("button", { name: "Notificações" });
+    expect(bell).toBeDefined();
+    fireEvent.click(bell);
+    expect(screen.getByText("Notificações")).toBeDefined();
   });
 
   it("shows the badge for activity this account has not seen", () => {
     useAppStore.setState({ groups: { g1: groupAt("2026-02-01T10:00:00.000Z") } });
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(screen.getByLabelText("Atividade").querySelector("span")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Notificações" }).querySelector("span")).not.toBeNull();
   });
 
   it("hides the badge once this account has seen the newest activity", () => {
@@ -545,7 +547,7 @@ describe("AppShell activity bell", () => {
     });
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(screen.getByLabelText("Atividade").querySelector("span")).toBeNull();
+    expect(screen.getByRole("button", { name: "Notificações" }).querySelector("span")).toBeNull();
   });
 
   it("does not credit one account with another account's view", () => {
@@ -555,7 +557,7 @@ describe("AppShell activity bell", () => {
     });
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(screen.getByLabelText("Atividade").querySelector("span")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Notificações" }).querySelector("span")).not.toBeNull();
   });
 
   it("does not mark activity viewed merely by visiting the route", () => {

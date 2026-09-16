@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronRight, Plus, QrCode, Receipt, ScanLine, Search, Zap } from "lucide-react";
+import { ChevronRight, Plus, QrCode, Receipt, ScanLine, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
@@ -8,7 +8,6 @@ import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import { selectHomeMode, selectRecentBills } from "@/components/dashboard/home-selectors";
-import { NotificationsSheet } from "@/components/dashboard/notifications-sheet";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { Money } from "@/components/shared/money";
@@ -27,7 +26,6 @@ import { ledgerErrorMessage, LedgerError } from "@/lib/sync/errors";
 import { recordSettlement } from "@/lib/sync/mutations";
 import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
-import { selectPendingInvitations } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
 
 const PixQrModal = dynamic(
@@ -54,7 +52,6 @@ export function DashboardContent() {
   const hydrated = useAppStore((state) => state.hydrated);
   const rows = useAppStore(selectDebtRows);
   const homeMode = useAppStore(selectHomeMode);
-  const invitations = useAppStore(selectPendingInvitations);
   const recentBills = useMemo(
     () => selectRecentBills({ expenses, groups, me, myExpenses }, 3),
     [expenses, groups, me, myExpenses],
@@ -65,7 +62,6 @@ export function DashboardContent() {
     mode: "pay" | "collect";
   } | null>(null);
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const owes = rows.filter((row) => row.direction === "owes");
   const owed = rows.filter((row) => row.direction === "owed");
@@ -182,23 +178,6 @@ export function DashboardContent() {
           >
             <Search className="size-5" aria-hidden="true" />
           </Link>
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            className="relative min-h-11 min-w-11 rounded-full"
-            aria-label={`Notificações${invitations.length > 0 ? `, ${invitations.length} não lidas` : ""}`}
-            onClick={() => setNotificationsOpen(true)}
-          >
-            <Bell className="size-5" aria-hidden="true" />
-            {invitations.length > 0 && (
-              <span
-                aria-hidden="true"
-                className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white"
-              >
-                {invitations.length}
-              </span>
-            )}
-          </Button>
         </div>
       </div>
       <ScreenHeader
@@ -399,13 +378,6 @@ export function DashboardContent() {
           </div>
         </section>
       )}
-
-      <NotificationsSheet
-        open={notificationsOpen}
-        onOpenChange={setNotificationsOpen}
-        invitations={invitations}
-        meId={me.id}
-      />
 
       {selectedDebt && (
         <CounterpartyDialog
