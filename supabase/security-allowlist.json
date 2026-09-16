@@ -164,6 +164,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.effective_expense_payload(p_expense_id uuid, p_version_no integer)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal ledger helper; called only inside ledger RPCs."
+    },
     "public.emit_event(p_group_id uuid, p_kind event_kind, p_actor uuid, p_expense_id uuid, p_settlement_id uuid, p_subject_user_id uuid, p_payload jsonb)": {
       "anon": false,
       "authenticated": false,

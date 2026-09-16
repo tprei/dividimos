@@ -565,6 +565,69 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.effective_expense_payload(p_expense_id uuid, p_version_no integer)
+RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_payload jsonb;
+  v_participants jsonb;
+  v_new_participants jsonb;
+BEGIN
+  SELECT payload INTO v_payload
+  FROM expense_versions
+  WHERE expense_id = p_expense_id AND version_no = p_version_no;
+
+  IF v_payload IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  v_participants := v_payload->'participants';
+  IF v_participants IS NULL OR jsonb_typeof(v_participants) <> 'array' THEN
+    RETURN v_payload;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(v_participants) AS p
+    JOIN guests g
+      ON g.id = (p->>'guestId')::uuid
+     AND g.expense_id = p_expense_id
+     AND g.claimed_version_no = p_version_no
+     AND g.claimed_by IS NOT NULL
+    WHERE p->>'kind' = 'guest'
+      AND p ? 'guestId'
+      AND (p->>'guestId') ~ '^[0-9a-fA-F-]{36}$'
+  ) THEN
+    RETURN v_payload;
+  END IF;
+
+  SELECT jsonb_agg(
+    CASE
+      WHEN p->>'kind' = 'guest'
+       AND p ? 'guestId'
+       AND (p->>'guestId') ~ '^[0-9a-fA-F-]{36}$'
+       AND g.claimed_by IS NOT NULL
+      THEN jsonb_build_object('kind', 'user', 'userId', g.claimed_by)
+      ELSE p
+    END
+    ORDER BY ord
+  )
+  INTO v_new_participants
+  FROM jsonb_array_elements(v_participants) WITH ORDINALITY AS t(p, ord)
+  LEFT JOIN guests g
+    ON (p->>'kind' = 'guest' AND p ? 'guestId' AND (p->>'guestId') ~ '^[0-9a-fA-F-]{36}$')
+   AND g.id = (p->>'guestId')::uuid
+   AND g.expense_id = p_expense_id
+   AND g.claimed_version_no = p_version_no;
+
+  RETURN jsonb_set(v_payload, '{participants}', COALESCE(v_new_participants, '[]'::jsonb));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.effective_expense_payload(uuid, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.effective_expense_payload(uuid, integer) TO service_role;
+
 CREATE FUNCTION public.materialize_participants(p_expense_id uuid, p_author uuid, p_payload jsonb)
 RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -597,8 +660,7 @@ BEGIN
   IF v_group_id IS NULL THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
-  SELECT payload INTO v_prev_payload FROM expense_versions
-  WHERE expense_id = p_expense_id AND version_no = v_current_version;
+  v_prev_payload := effective_expense_payload(p_expense_id, v_current_version);
   SELECT COALESCE(array_agg((pa.el->>'userId')::uuid), '{}') INTO v_existing_user_ids
   FROM jsonb_array_elements(COALESCE(v_prev_payload->'participants', '[]'::jsonb)) AS pa(el)
   WHERE pa.el->>'kind' = 'user' AND pa.el ? 'userId';
@@ -706,6 +768,8 @@ AS $$
 DECLARE
   r_old expense_versions;
   r_new expense_versions;
+  v_old_payload jsonb;
+  v_new_payload jsonb;
   v_old_ids uuid[];
   v_new_ids uuid[];
   v_added uuid[];
@@ -734,7 +798,10 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_payload';
   END IF;
 
-  v_participants := r_old.payload->'participants';
+  v_old_payload := effective_expense_payload(p_expense_id, p_from);
+  v_new_payload := effective_expense_payload(p_expense_id, p_to);
+
+  v_participants := v_old_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_i := 0;
   WHILE v_i < v_n LOOP
@@ -745,7 +812,7 @@ BEGIN
     v_old_ids := array_append(v_old_ids, v_pid);
     v_i := v_i + 1;
   END LOOP;
-  v_participants := r_new.payload->'participants';
+  v_participants := v_new_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_i := 0;
   WHILE v_i < v_n LOOP
@@ -774,9 +841,9 @@ BEGIN
     v_i := v_i + 1;
   END LOOP;
 
-  v_old_payers := r_old.payload->'payers';
-  v_new_payers := r_new.payload->'payers';
-  v_participants := r_old.payload->'participants';
+  v_old_payers := v_old_payload->'payers';
+  v_new_payers := v_new_payload->'payers';
+  v_participants := v_old_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_j := 0;
   WHILE v_j < jsonb_array_length(v_old_payers) LOOP
@@ -789,7 +856,7 @@ BEGIN
     v_old_total := v_old_total + (v_payer->>'amountCents')::bigint;
     v_j := v_j + 1;
   END LOOP;
-  v_participants := r_new.payload->'participants';
+  v_participants := v_new_payload->'participants';
   v_n := jsonb_array_length(v_participants);
   v_j := 0;
   WHILE v_j < jsonb_array_length(v_new_payers) LOOP
