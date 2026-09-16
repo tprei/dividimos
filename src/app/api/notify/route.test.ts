@@ -241,7 +241,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("expense_versions", {
       data: { title: "Jantar" },
     });
-    adminMock.onTable("expense_participants", {
+    adminMock.onTable("current_expense_participants", {
       data: [
         { user_id: "bruno", share_cents: 5000 },
         { user_id: "carol", share_cents: 5000 },
@@ -379,7 +379,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("expense_versions", {
       data: { title: "Jantar" },
     });
-    adminMock.onTable("expense_participants", {
+    adminMock.onTable("current_expense_participants", {
       data: [{ user_id: "carol", share_cents: 5000 }],
     });
 
@@ -507,7 +507,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("expense_versions", {
       data: { title: "Jantar" },
     });
-    adminMock.onTable("expense_participants", {
+    adminMock.onTable("current_expense_participants", {
       data: [
         { user_id: "bruno", share_cents: 5000 },
         { user_id: "carol", share_cents: 5000 },
@@ -635,7 +635,7 @@ describe("POST /api/notify", () => {
     adminMock.onTable("expense_versions", {
       data: { title: "Jantar" },
     });
-    adminMock.onTable("expense_participants", {
+    adminMock.onTable("current_expense_participants", {
       data: [{ user_id: "bruno", share_cents: 12345 }],
     });
 

@@ -92,11 +92,11 @@ BEGIN
   INSERT INTO group_balances (group_id, kind, participant_id, net_cents)
   SELECT p_group_id, kind, participant_id, SUM(delta)
   FROM (
-    SELECT ep.kind, COALESCE(ep.user_id, ep.guest_id) AS participant_id,
-           (ep.paid_cents - ep.share_cents)::bigint AS delta
-    FROM expense_participants ep
-    JOIN expenses e ON e.id = ep.expense_id
-    WHERE e.group_id = p_group_id AND e.status = 'active'
+    SELECT cep.kind, COALESCE(cep.user_id, cep.guest_id) AS participant_id,
+           (cep.paid_cents - cep.share_cents)::bigint AS delta
+    FROM current_expense_participants cep
+    JOIN expenses e ON e.id = cep.expense_id
+    WHERE e.group_id = p_group_id
     UNION ALL
     SELECT 'user'::participant_kind, s.from_user_id, s.amount_cents::bigint FROM settlements s
      WHERE s.group_id = p_group_id AND s.status = 'confirmed'
