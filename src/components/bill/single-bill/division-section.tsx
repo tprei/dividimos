@@ -17,7 +17,6 @@ import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } fro
 import { formatBRL } from "@/lib/currency";
 import {
   centsText,
-  clampPercentDigits,
   computeDivision,
   divisionInvalidInputText,
   FULL_PERCENT_BASIS_POINTS,
@@ -234,13 +233,13 @@ export function SingleBillDivision({
                       value={mode === "percent" ? percentValues[person.id] : fixedValues[person.id]}
                       onChange={(event) => {
                         if (mode === "percent") {
-                          onPercentTextChange(person.id, clampPercentDigits(event.target.value.replace(/\D/g, "")));
+                          onPercentTextChange(person.id, event.target.value);
                         } else {
                           onFixedTextChange(person.id, event.target.value);
                         }
                       }}
                       onFocus={() => setLastTouchedId(person.id)}
-                      inputMode={mode === "percent" ? "numeric" : "decimal"}
+                      inputMode="decimal"
                       aria-label={mode === "percent" ? `Percentual de ${person.name}` : `Valor de ${person.name}`}
                       className="h-11 w-24 rounded-lg bg-card text-right font-mono tabular-nums"
                       placeholder={mode === "percent" ? "0" : "0,00"}

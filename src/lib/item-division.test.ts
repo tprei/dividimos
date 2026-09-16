@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  clampPercentDigits,
   computeDivision,
   divisionForItem,
   divisionStatusText,
@@ -68,21 +67,11 @@ describe("divisionStatusText", () => {
 
   it("names the accepted format when a field cannot be parsed", () => {
     expect(divisionStatusText({ ok: false, reason: "invalid_input" }, "percent")).toBe(
-      "Informe percentuais inteiros de 0 a 100.",
+      "Informe percentuais de 0 a 100 com até duas casas decimais.",
     );
     expect(divisionStatusText({ ok: false, reason: "invalid_input" }, "fixed")).toBe(
       "Informe valores em reais com até duas casas decimais.",
     );
-  });
-});
-
-describe("clampPercentDigits", () => {
-  it("caps typed digits at 100 and leaves valid input alone", () => {
-    expect(clampPercentDigits("150")).toBe("100");
-    expect(clampPercentDigits("9999")).toBe("100");
-    expect(clampPercentDigits("7")).toBe("7");
-    expect(clampPercentDigits("100")).toBe("100");
-    expect(clampPercentDigits("")).toBe("");
   });
 });
 

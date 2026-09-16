@@ -15,7 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
-import { allocateByWeights, allocateEvenly } from "@/lib/expense-money";
+import { allocateByWeights, allocateEvenly, parseAllocationPercentText } from "@/lib/expense-money";
+import { percentText } from "@/lib/item-division";
 import type { SplitType } from "@/types";
 import type { UserProfile } from "@/types/ledger";
 
@@ -45,7 +46,7 @@ const SPLIT_METHODS: { key: SplitType; icon: React.ElementType; label: string }[
   { key: "fixed", icon: Hash, label: "Fixo" },
 ];
 
-const WHOLE_PERCENT_RE = /^\d+$/;
+const FULL_PERCENT = 10_000;
 
 export function QuickSplitSheet({
   open,
@@ -74,11 +75,11 @@ export function QuickSplitSheet({
   const isConfirmed = status === "confirmed";
   const isDisabled = isConfirming || isConfirmed;
 
-  const percentageParse = useMemo((): number | null => {
+  const percentageBasisPoints = useMemo((): number | null => {
     if (splitMethod !== "percentage") return null;
-    if (myPercentage !== "" && !WHOLE_PERCENT_RE.test(myPercentage)) return null;
-    const percent = Number(myPercentage);
-    return percent > 100 ? null : percent;
+    if (myPercentage === "") return 0;
+    const parsed = parseAllocationPercentText(myPercentage);
+    return parsed.ok ? parsed.value : null;
   }, [splitMethod, myPercentage]);
 
   const computeShares = useCallback((): Array<{ userId: string; shareAmountCents: number }> | null => {
@@ -95,10 +96,10 @@ export function QuickSplitSheet({
     }
 
     if (splitMethod === "percentage") {
-      if (percentageParse === null) return null;
+      if (percentageBasisPoints === null) return null;
       const amountsRes = allocateByWeights(totalCents, [
-        percentageParse,
-        100 - percentageParse,
+        percentageBasisPoints,
+        FULL_PERCENT - percentageBasisPoints,
       ]);
       if (!amountsRes.ok) return null;
       const amounts = amountsRes.value;
@@ -118,7 +119,7 @@ export function QuickSplitSheet({
     }
 
     return null;
-  }, [totalCents, splitMethod, participants, percentageParse, myFixedCents, currentUserId, counterparty.id]);
+  }, [totalCents, splitMethod, participants, percentageBasisPoints, myFixedCents, currentUserId, counterparty.id]);
 
   const shares = computeShares();
 
@@ -129,12 +130,14 @@ export function QuickSplitSheet({
   }, [title, totalCents, shares]);
 
   const percentageWarning = useMemo(() => {
-    if (splitMethod !== "percentage" || percentageParse !== null) return null;
-    if (!WHOLE_PERCENT_RE.test(myPercentage)) {
-      return "Porcentagem deve ser um número inteiro de 0% a 100%";
-    }
-    return "Porcentagem deve estar entre 0% e 100%";
-  }, [splitMethod, percentageParse, myPercentage]);
+    if (splitMethod !== "percentage" || percentageBasisPoints !== null) return null;
+    const digitsOnly = myPercentage.replace(/[^\d]/g, "");
+    if (digitsOnly === "") return "Porcentagem deve estar entre 0% e 100%";
+    const outOfRange = Number(digitsOnly) > 100;
+    return outOfRange
+      ? "Porcentagem deve estar entre 0% e 100%"
+      : "Porcentagem deve estar entre 0% e 100% com até duas casas decimais.";
+  }, [splitMethod, percentageBasisPoints, myPercentage]);
 
   const fixedWarning = useMemo(() => {
     if (splitMethod !== "fixed" || totalCents <= 0) return null;
@@ -301,7 +304,7 @@ export function QuickSplitSheet({
                           inputMode="decimal"
                           placeholder="50"
                           value={myPercentage}
-                          onChange={(e) => setMyPercentage(e.target.value.replace(/[^\d,]/g, ""))}
+                          onChange={(e) => setMyPercentage(e.target.value)}
                           disabled={isDisabled}
                           className="h-8 text-right text-sm"
                           data-testid="quick-split-my-percentage"
@@ -317,7 +320,7 @@ export function QuickSplitSheet({
                     <div className="flex items-center gap-3">
                       <span className="text-sm flex-1">{participants[1].name}</span>
                       <span className="text-sm tabular-nums w-20 text-right">
-                        {percentageParse === null ? "—" : `${100 - percentageParse}%`}
+                        {percentageBasisPoints === null ? "—" : `${percentText(FULL_PERCENT - percentageBasisPoints)}%`}
                       </span>
                       {shares && (
                         <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">
