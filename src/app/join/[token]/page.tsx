@@ -1,8 +1,8 @@
 import { ArrowLeft, Users } from "lucide-react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { JoinActions } from "./join-actions";
+import { inviteInvalidMessage, inviteReasonKind, parseInvitePreview } from "./invite-preview";
 
 export default async function JoinPage({
   params,
@@ -12,21 +12,19 @@ export default async function JoinPage({
   const { token } = await params;
   const supabase = await createClient();
 
-  const { data: previewData } = await supabase.rpc("preview_invite_link", {
+  const { data: previewData, error: previewError } = await supabase.rpc("preview_invite_link", {
     p_token: token,
   });
 
-  const preview = previewData as {
-    groupName: string | null;
-    memberCount: number | null;
-    creatorName: string | null;
-    valid: boolean;
-  } | null;
+  if (previewError) {
+    throw new Error(`preview_invite_link failed: ${previewError.message}`);
+  }
 
-  // The RPC failed to return anything at all; only then is this a 404.
-  if (!preview) notFound();
-
-  const isInvalid = !preview.valid || !preview.groupName;
+  const preview = parseInvitePreview(previewData);
+  const isInvalid = preview === null || !preview.valid || !preview.groupName;
+  const invalidMessage = isInvalid
+    ? inviteInvalidMessage(preview ? inviteReasonKind(preview) : "invalid")
+    : null;
 
   const { data: claimsData } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(claimsData?.claims?.sub);
@@ -43,36 +41,41 @@ export default async function JoinPage({
         <h1 className="font-semibold">Entrar no grupo</h1>
       </div>
 
-      <div className="mt-6 rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
-        <p className="text-sm text-gradient-foreground/80">Convite para o grupo</p>
-        <p className="mt-2 text-3xl font-bold">
-          {isInvalid ? "Convite indisponível" : preview.groupName}
-        </p>
-        {!isInvalid && (
-          <div className="mt-3 flex gap-4 text-sm text-gradient-foreground/80">
-            <span className="flex items-center gap-1">
-              <Users className="h-3.5 w-3.5" />
-              Convite de {preview.creatorName ?? "Alguém"}
-            </span>
+      {isInvalid ? (
+        <div role="alert" className="mt-6 rounded-2xl border bg-card p-5 text-center">
+          <p className="text-base font-semibold">{invalidMessage}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Peça um novo link a quem convidou você.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-6 rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
+            <p className="text-sm text-gradient-foreground/80">Convite para o grupo</p>
+            <p className="mt-2 text-3xl font-bold">{preview.groupName}</p>
+            <div className="mt-3 flex gap-4 text-sm text-gradient-foreground/80">
+              <span className="flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" />
+                Convite de {preview.creatorName ?? "Alguém"}
+              </span>
+            </div>
           </div>
-        )}
-      </div>
 
-      <div className="mt-5 rounded-2xl border bg-card p-5">
-        {!isInvalid && (
-          <div className="rounded-xl bg-muted/50 p-3">
-            <p className="text-sm">
-              Ao entrar, você poderá ver e criar despesas neste grupo.
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Todos os membros podem dividir contas entre si.
-            </p>
+          <div className="mt-5 rounded-2xl border bg-card p-5">
+            <div className="rounded-xl bg-muted/50 p-3">
+              <p className="text-sm">
+                Ao entrar, você poderá ver e criar despesas neste grupo.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Todos os membros podem dividir contas entre si.
+              </p>
+            </div>
           </div>
-        )}
-      </div>
-      <div className="mt-5">
-        <JoinActions token={token} isAuthenticated={isAuthenticated} isInvalid={isInvalid} />
-      </div>
+          <div className="mt-5">
+            <JoinActions token={token} isAuthenticated={isAuthenticated} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

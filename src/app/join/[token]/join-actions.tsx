@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, LogIn, UserPlus } from "lucide-react";
+import { Loader2, LogIn, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,25 +9,12 @@ import { createClient } from "@/lib/supabase/client";
 interface JoinActionsProps {
   token: string;
   isAuthenticated: boolean;
-  isInvalid?: boolean;
 }
 
-export function JoinActions({ token, isAuthenticated, isInvalid }: JoinActionsProps) {
+export function JoinActions({ token, isAuthenticated }: JoinActionsProps) {
   const router = useRouter();
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (isInvalid) {
-    const reason = "Este convite não é mais válido.";
-
-    return (
-      <div className="flex flex-col items-center rounded-2xl border border-dashed bg-muted/30 p-6 text-center">
-        <AlertCircle className="h-6 w-6 text-muted-foreground" />
-        <p className="mt-3 text-sm font-medium">Convite indisponível</p>
-        <p className="mt-1 text-xs text-muted-foreground">{reason}</p>
-      </div>
-    );
-  }
 
   if (!isAuthenticated) {
     return (
@@ -93,7 +80,7 @@ export function JoinActions({ token, isAuthenticated, isInvalid }: JoinActionsPr
         Entrar no grupo
       </Button>
       {error && (
-        <p className="text-center text-xs text-destructive">{error}</p>
+        <p role="alert" className="text-center text-xs text-destructive">{error}</p>
       )}
     </div>
   );
