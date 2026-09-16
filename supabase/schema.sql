@@ -2433,6 +2433,15 @@ DECLARE
 BEGIN
   v_actor := current_user_id();
 
+  -- Serialize retries on the client-supplied identity before looking for an
+  -- existing expense. Without this lock, two concurrent retries both miss
+  -- the pre-check, both create their own group, and the loser then replays
+  -- the winner's expense against its own doomed group, which rolls back
+  -- with invalid_argument instead of the replay ack the caller deserves.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('create_expense_with_group:' || p_client_id::text, 0)
+  );
+
   SELECT id, group_id, status, current_version_no
     INTO v_existing_id, v_existing_group_id, v_existing_status, v_existing_version_no
   FROM expenses WHERE client_id = p_client_id;
