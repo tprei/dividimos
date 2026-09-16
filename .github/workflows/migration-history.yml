@@ -83,6 +83,9 @@ jobs:
     name: Merged main keeps applied migrations intact
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -93,8 +96,30 @@ jobs:
         with:
           node-version: 22
 
+      - name: Read the merged PR's authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The PR-side gate trusts the 'trusted-ci-change' label, which only
+          # a maintainer can grant. The merged PR keeps that label, so the
+          # post-merge re-verification reads the same authorization instead
+          # of failing every merge that legitimately touched CI files.
+          # curl -f keeps this fail-closed: an API error blocks the merge
+          # status rather than silently widening it.
+          LABELLED="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            | jq 'any(.[]; [.labels[]?.name] | index("trusted-ci-change"))')"
+          echo "ALLOW_CI_CHANGES=$LABELLED" >> "$GITHUB_ENV"
+
       - name: Re-verify the merge from main's own trusted copy
         run: |
           BEFORE="$(git rev-parse HEAD~1)"
-          node scripts/check-migration-history.mjs \
-            "$BEFORE" HEAD --trusted-main HEAD
+          if [ "$ALLOW_CI_CHANGES" = "true" ]; then
+            node scripts/check-migration-history.mjs \
+              "$BEFORE" HEAD --trusted-main HEAD --allow-ci-changes
+          else
+            node scripts/check-migration-history.mjs \
+              "$BEFORE" HEAD --trusted-main HEAD
+          fi
