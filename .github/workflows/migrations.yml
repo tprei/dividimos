@@ -33,6 +33,8 @@ jobs:
               scripts/check-database-invariants.mjs \
               scripts/check-migration-history.mjs \
               scripts/check-migration-history.test.mjs \
+              scripts/check-migration-safety.mjs \
+              scripts/check-migration-safety.test.mjs \
               scripts/verify-migrations.mjs \
               scripts/verify-migrations.test.mjs \
               scripts/migrate-ledger.ts \
@@ -47,6 +49,27 @@ jobs:
           else
             echo "sql=false" >> "$GITHUB_OUTPUT"
           fi
+
+  migration-safety:
+    name: New migrations pass the safety rules
+    needs: changes
+    if: needs.changes.outputs.sql == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Check newly added migrations
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-migration-safety.mjs "$BASE_SHA" HEAD
 
 # Epoch verification is reserved for the manifest-authorized reset.
 # Its caller passes the immutable base ref as --trusted-main after the
