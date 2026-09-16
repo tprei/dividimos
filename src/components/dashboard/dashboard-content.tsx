@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Plus, ScanLine, Search, Zap } from "lucide-react";
+import { Bell, Plus, QrCode, ScanLine, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useState } from "react";
@@ -45,9 +45,13 @@ const QuickChargeModal = dynamic(
   { ssr: false, loading: () => <ModalLoadingSkeleton /> },
 );
 
+export type HomeMode = "first-use" | "outstanding" | "settled";
+
 export function DashboardContent() {
   const me = useMe();
   const hydrated = useAppStore((state) => state.hydrated);
+  const groups = useAppStore((state) => state.groups);
+  const myExpenses = useAppStore((state) => state.myExpenses);
   const rows = useAppStore(selectDebtRows);
   const invitations = useAppStore(selectPendingInvitations);
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
@@ -71,6 +75,12 @@ export function DashboardContent() {
   const owesTotal = owes.reduce((sum, row) => sum + row.amountCents, 0);
   const owedTotal = owed.reduce((sum, row) => sum + row.amountCents, 0);
   const net = owedTotal - owesTotal;
+  const homeMode: HomeMode =
+    owes.length > 0 || owed.length > 0
+      ? "outstanding"
+      : Object.keys(groups).length === 0 && myExpenses.ids.length === 0
+        ? "first-use"
+        : "settled";
 
   const handleMarkPaid = async (amountCents: number, operationId: string) => {
     if (!me || !pixTarget) throw new LedgerError("unauthenticated");
@@ -269,6 +279,35 @@ export function DashboardContent() {
         </div>
       </div>
 
+      {homeMode === "first-use" ? (
+        <div className="mx-4 mt-7 rounded-2xl border bg-card p-6 text-center shadow-xs">
+          <h2 className="text-base font-semibold">Comece por aqui</h2>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Crie uma conta pra rachar ou entre num grupo por convite.
+          </p>
+          <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+            <Link
+              href="/app/bill/new"
+              className={cn(buttonVariants({ variant: "default" }), "min-h-11 rounded-lg gap-2 font-medium")}
+            >
+              <Plus className="size-4" />
+              Nova conta
+            </Link>
+            <Link
+              href="/app/scan-invite"
+              className={cn(buttonVariants({ variant: "outline" }), "min-h-11 rounded-lg gap-2 font-medium")}
+            >
+              <QrCode className="size-4" />
+              Ler convite
+            </Link>
+          </div>
+        </div>
+      ) : homeMode === "settled" ? (
+        <div className="mx-4 mt-7 rounded-2xl border bg-card p-4">
+          <p className="text-sm font-medium text-foreground">Tudo em dia por aqui</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Nenhuma pendência no momento.</p>
+        </div>
+      ) : (
       <div className="space-y-6 px-4 pt-7" data-tour="debt-lists">
         <section>
           <SectionHeading
@@ -276,17 +315,13 @@ export function DashboardContent() {
             trailing={<Money cents={owesTotal} className="text-destructive" />}
           />
           <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
-            {owes.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-muted-foreground">Tudo em dia</p>
-            ) : (
-              owes.map((row) => (
-                <DebtRowButton
-                  key={`${row.groupId}-${row.counterpartyId}`}
-                  row={row}
-                  onSelect={setSelectedDebt}
-                />
-              ))
-            )}
+            {owes.map((row) => (
+              <DebtRowButton
+                key={`${row.groupId}-${row.counterpartyId}`}
+                row={row}
+                onSelect={setSelectedDebt}
+              />
+            ))}
           </div>
         </section>
 
@@ -296,20 +331,17 @@ export function DashboardContent() {
             trailing={<Money cents={owedTotal} className="text-success" />}
           />
           <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
-            {owed.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-muted-foreground">Tudo em dia</p>
-            ) : (
-              owed.map((row) => (
-                <DebtRowButton
-                  key={`${row.groupId}-${row.counterpartyId}`}
-                  row={row}
-                  onSelect={setSelectedDebt}
-                />
-              ))
-            )}
+            {owed.map((row) => (
+              <DebtRowButton
+                key={`${row.groupId}-${row.counterpartyId}`}
+                row={row}
+                onSelect={setSelectedDebt}
+              />
+            ))}
           </div>
         </section>
       </div>
+      )}
 
       <NotificationsSheet
         open={notificationsOpen}

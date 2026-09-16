@@ -126,6 +126,43 @@ describe("DashboardContent", () => {
     useAppStore.getState().reset();
   });
 
+  it("renders first-use onboarding card when user has zero groups and zero expenses", () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Comece por aqui")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Comece por aqui" })).toBeInTheDocument();
+    const novaLinks = screen.getAllByRole("link", { name: /Nova conta/ });
+    expect(novaLinks.some((link) => link.getAttribute("href") === "/app/bill/new")).toBe(true);
+    expect(screen.getByRole("link", { name: /Ler convite/ })).toHaveAttribute("href", "/app/scan-invite");
+    expect(screen.queryByText("Tudo em dia")).not.toBeInTheDocument();
+  });
+
+  it("renders settled affirmative state when user has groups but zero debt", () => {
+    seedStore([snapshot({ balances: [] })]);
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Tudo em dia por aqui")).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma pendência no momento.")).toBeInTheDocument();
+  });
+
+  it("renders debt lists when debts exist", () => {
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    expect(screen.getAllByText("A pagar").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("A receber").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Comece por aqui")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tudo em dia por aqui")).not.toBeInTheDocument();
+  });
+
   it("keeps the skeleton visible before hydration", () => {
     useAppStore.setState({ hydrated: false, me });
     render(<DashboardContent />);
