@@ -53,7 +53,21 @@ const LOOKUP_FLIP = {
   after: "denied",
   note: "intentional upgrade: 20260913010070 revokes browser-role execute on public.lookup_user_by_handle(text); /api/users/lookup owns the rate limit and calls it through service_role",
 };
-export const INTENTIONAL_UPGRADES = new Map([[LOOKUP_FLIP.label, LOOKUP_FLIP]]);
+const DM_NONCANONICAL_REPAIR = {
+  label: "dm:noncanonical-members",
+  after: 0,
+  note: "intentional upgrade: 20260913010200 deletes noncanonical DM memberships; bases predating it seed with 1 vulnerable extra member, bases carrying it never seed one",
+};
+const DM_MEMBER_COUNT_REPAIR = {
+  label: "db:count:public.group_members",
+  dropsBy: 1,
+  note: "intentional upgrade: 20260913010200 deletes exactly the seeded noncanonical DM invitation; on bases that already enforce the canonical pair nothing is seeded and the count is stable",
+};
+export const INTENTIONAL_UPGRADES = new Map([
+  [LOOKUP_FLIP.label, LOOKUP_FLIP],
+  [DM_NONCANONICAL_REPAIR.label, DM_NONCANONICAL_REPAIR],
+  [DM_MEMBER_COUNT_REPAIR.label, DM_MEMBER_COUNT_REPAIR],
+]);
 const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 // 16_rpc_push.sql exposes only claim_push_subscription, which is granted to
 // service_role and explicitly revoked from authenticated clients; there is no
@@ -61,6 +75,7 @@ const START_ARGS = ["start", "-x", "vector,imgproxy,logflare,edge-runtime"];
 // of faking a subscription.
 const PUSH_OMITTED_NOTE =
   "omitted: 16_rpc_push.sql exposes only claim_push_subscription, a service_role RPC; there is no authenticated push RPC to exercise";
+
 
 const SCRIPT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const EXEC_FILE_OPTIONS = { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 };
@@ -745,7 +760,32 @@ async function collectStableObservations(context, identities) {
   });
 
   const dm = await callRpc(alice, "get_group", { p_group_id: identities["group:dm"] });
-  observations.push({ label: "dm:members", value: memberStatusEntries(dm, identities) });
+  // The canonical pair's membership state is this label's contract; any
+  // noncanonical row is exactly what dm:noncanonical-members observes (and
+  // what 20260913010200 deletes), so it must not leak into the pair view.
+  const dmPair = await context.database.query(
+    "select dm_user_a, dm_user_b from public.groups where id = $1",
+    [identities["group:dm"]],
+  );
+  const pair = new Set([dmPair.rows[0].dm_user_a, dmPair.rows[0].dm_user_b]);
+  const dmCanonical = {
+    ...dm,
+    members: dm.members.filter((member) => pair.has(member.userId)),
+  };
+  observations.push({ label: "dm:members", value: memberStatusEntries(dmCanonical, identities) });
+
+  const noncanonical = await context.database.query(
+    `select count(*)::int as count
+       from public.group_members gm
+       join public.groups g on g.id = gm.group_id
+      where g.kind = 'dm'
+        and gm.user_id is distinct from g.dm_user_a
+        and gm.user_id is distinct from g.dm_user_b`,
+  );
+  observations.push({
+    label: "dm:noncanonical-members",
+    value: noncanonical.rows[0].count,
+  });
 
   const receiptKey = await context.database.query(
     "select (chave_acesso is not null) as present from expenses where id = $1",
@@ -815,11 +855,11 @@ export async function seedVerificationFixture(context) {
   const bobId = identities["user:bob"];
   const carolId = identities["user:carol"];
 
-  // Identity resolution stays off the lookup RPC: browser roles lost direct
-  // execution in 20260913010070, so an authenticated call would break on any
-  // base that already carries the flip. The seeded profile is asserted at
-  // the schema level instead, and the observation classifier records the
-  // browser-role flip.
+  // Identity resolution stays off the lookup RPC entirely: browser roles
+  // lost direct execution in 20260913010070 and service_role only gained it
+  // there, so any RPC-based resolution would break one side of an upgrade.
+  // The seeded profile is asserted at the schema level instead, and the
+  // observation classifier below records the browser-role flip.
   const bobProfileRow = await context.database.query(
     "select handle from public.users where id = $1",
     [bobId],
@@ -958,6 +998,25 @@ export async function seedVerificationFixture(context) {
     p_content: "verify-dm-1",
   });
 
+
+  // Seed the vulnerable A/B/C state THROUGH the RPC: inviting a third user
+  // into the DM succeeds exactly on bases that predate 20260913010200 and
+  // fails with invalid_operation on bases that already enforce the canonical
+  // pair, so the fixture reproduces the pre-repair state only where it could
+  // really exist, and the upgrade's repair deletes exactly that invitation.
+  identities["dm:vulnerable"] = "no";
+  try {
+    await callRpc(alice, "invite_member", {
+      p_group_id: dm.groupId,
+      p_user_id: identities["user:outsider"],
+    });
+    identities["dm:vulnerable"] = "yes";
+  } catch (error) {
+    if (!/invalid_operation/.test(String(error?.message ?? error))) {
+      throw error;
+    }
+  }
+
   // preview_invite_link is granted to anon as well as authenticated; signing
   // the outsider out makes the preview exercise the anon-reachable path.
   await context.actors.outsider.auth.signOut();
@@ -1014,6 +1073,14 @@ export function compareFixtureObservations(expected, actual) {
     const before = expectedByLabel.get(label);
     const after = actualByLabel.get(label);
     if (before === undefined && after === undefined) continue;
+    if (upgrade.dropsBy !== undefined) {
+      if (before === after) continue;
+      if (typeof before === "number" && typeof after === "number" && before - after === upgrade.dropsBy) {
+        continue;
+      }
+      failures.push(`${label}: repair should delete exactly ${upgrade.dropsBy} row(s), observed before=${JSON.stringify(before)} after=${JSON.stringify(after)} (${upgrade.note})`);
+      continue;
+    }
     if (after !== upgrade.after) {
       failures.push(`${label}: upgrade should be ${JSON.stringify(upgrade.after)}, observed after=${JSON.stringify(after)} (${upgrade.note})`);
     }

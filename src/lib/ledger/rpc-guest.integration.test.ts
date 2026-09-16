@@ -696,5 +696,53 @@ describe.skipIf(!isIntegrationTestReady)(
       });
       expect(memberCount).toBe(0);
     });
+
+    it("rejects claiming a guest in a DM when claimant is outside the canonical pair", async () => {
+      const [alice, bob, carol] = await createTestUsers(3);
+      const cAlice = authenticateAs(alice);
+      const cBob = authenticateAs(bob);
+      const cCarol = authenticateAs(carol);
+
+      const dm = await rpc<{ groupId: string }>(cAlice, "get_or_create_dm", {
+        p_user_id: bob.id,
+      });
+      await rpc(cBob, "accept_invitation", { p_group_id: dm.groupId });
+
+      const created = await createExpense(alice, {
+        groupId: dm.groupId,
+        title: "DM Guest Lunch",
+        totalCents: 4000,
+        payload: {
+          items: [],
+          participants: [
+            { kind: "user", userId: alice.id },
+            { kind: "guest", guestId: null, displayName: "Guest in DM" },
+          ],
+          shares: [2000, 2000],
+          payers: [{ participantIndex: 0, amountCents: 4000 }],
+          itemAssignments: null,
+        },
+      });
+
+      const detail = await getExpenseDetail(cAlice, created.expenseId);
+      const guest = detail.current.payload.participants[1];
+      if (guest.kind !== "guest" || !guest.guestId) {
+        throw new Error("Fixture failure: guest was not materialized");
+      }
+
+      const issued = await rpc<IssuedToken>(cAlice, "create_guest_claim_token", {
+        p_guest_id: guest.guestId,
+      });
+
+      const carolErr = await expectRpcError(
+        cCarol.rpc("claim_guest", { p_token: issued.token }),
+      );
+      expect(carolErr).toBe("invalid_operation");
+
+      const claimAck = await rpc<ClaimAck>(cBob, "claim_guest", {
+        p_token: issued.token,
+      });
+      expect(claimAck.groupId).toBe(dm.groupId);
+    });
   },
 );

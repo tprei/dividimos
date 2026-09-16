@@ -619,6 +619,7 @@ BEGIN
     v_display_name := NULL;
     IF v_participant->>'kind' = 'user' THEN
       v_user_id := (v_participant->>'userId')::uuid;
+      PERFORM assert_dm_pair_allowed(v_group_id, v_user_id);
       IF NOT is_member_or_invited(v_group_id, v_user_id)
          AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';
@@ -639,6 +640,7 @@ BEGIN
       IF v_claimed_by IS NOT NULL THEN
         v_guest_id := NULL;
         v_user_id := v_claimed_by;
+        PERFORM assert_dm_pair_allowed(v_group_id, v_user_id);
         IF NOT is_member_or_invited(v_group_id, v_user_id)
            AND NOT (v_user_id = ANY (v_existing_user_ids)) THEN
           RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_a_member';

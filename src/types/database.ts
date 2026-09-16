@@ -830,6 +830,13 @@ export type Database = {
         }
         Returns: Json
       }
+      assert_dm_pair_allowed: {
+        Args: {
+          p_group_id: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       assert_member: {
         Args: {
           p_group_id: string

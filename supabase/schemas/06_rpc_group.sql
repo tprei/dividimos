@@ -65,6 +65,25 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION public.assert_dm_pair_allowed(p_group_id uuid, p_user_id uuid) RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_kind group_kind;
+  v_user_a uuid;
+  v_user_b uuid;
+BEGIN
+  SELECT kind, dm_user_a, dm_user_b
+  INTO v_kind, v_user_a, v_user_b
+  FROM groups
+  WHERE id = p_group_id;
+
+  IF v_kind = 'dm' AND (p_user_id IS DISTINCT FROM v_user_a AND p_user_id IS DISTINCT FROM v_user_b) THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_operation';
+  END IF;
+END;
+$$;
+
 CREATE FUNCTION public.invite_member(p_group_id uuid, p_user_id uuid) RETURNS jsonb
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
@@ -82,6 +101,7 @@ BEGIN
 
   PERFORM lock_group(p_group_id);
   PERFORM assert_member(p_group_id, v_actor);
+  PERFORM assert_dm_pair_allowed(p_group_id, p_user_id);
 
   IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_user_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'user_not_found';
@@ -337,6 +357,8 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_creator';
   END IF;
 
+  PERFORM assert_member(p_group_id, v_actor);
+
   IF p_user_id = v_creator_id THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_argument';
   END IF;
@@ -398,6 +420,8 @@ BEGIN
   IF v_creator_id <> v_actor THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'not_creator';
   END IF;
+
+  PERFORM assert_member(p_group_id, v_actor);
 
   IF EXISTS (SELECT 1 FROM group_balances WHERE group_id = p_group_id) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'outstanding_balance';
@@ -654,6 +678,8 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'invalid_link';
   END IF;
 
+  PERFORM assert_dm_pair_allowed(v_link.group_id, v_actor);
+
   SELECT status INTO v_status FROM group_members
   WHERE group_id = v_link.group_id AND user_id = v_actor
   FOR UPDATE;
@@ -808,3 +834,5 @@ GRANT EXECUTE ON FUNCTION public.join_via_link(text) TO authenticated;
 
 REVOKE ALL ON FUNCTION public.update_profile(text, text, jsonb) FROM public;
 GRANT EXECUTE ON FUNCTION public.update_profile(text, text, jsonb) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.assert_dm_pair_allowed(uuid, uuid) FROM public, anon, authenticated;

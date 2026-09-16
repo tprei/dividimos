@@ -324,8 +324,75 @@ test("compareFixtureObservations accepts a base that already carries the lookup 
   assert.deepEqual(failures, []);
 });
 
-test("the intentional upgrade list names only the lookup flip", () => {
-  assert.deepEqual([...INTENTIONAL_UPGRADES.keys()], ["lookup:direct:authenticated"]);
+test("the intentional upgrade list names the lookup flip, noncanonical DM repair, and its row-count effect", () => {
+  assert.deepEqual([...INTENTIONAL_UPGRADES.keys()], [
+    "lookup:direct:authenticated",
+    "dm:noncanonical-members",
+    "db:count:public.group_members",
+  ]);
+});
+
+test("compareFixtureObservations accepts the DM repair deleting exactly one membership row", () => {
+  const failures = compareFixtureObservations(
+    [
+      { label: "db:count:public.group_members", value: 8 },
+      { label: "dm:noncanonical-members", value: 1 },
+    ],
+    [
+      { label: "db:count:public.group_members", value: 7 },
+      { label: "dm:noncanonical-members", value: 0 },
+    ],
+  );
+  assert.deepEqual(failures, []);
+});
+
+test("compareFixtureObservations accepts a stable count when the base already enforces the pair", () => {
+  const failures = compareFixtureObservations(
+    [{ label: "db:count:public.group_members", value: 7 }],
+    [{ label: "db:count:public.group_members", value: 7 }],
+  );
+  assert.deepEqual(failures, []);
+});
+
+test("compareFixtureObservations rejects a membership count that drops by more than the repair deletes", () => {
+  const failures = compareFixtureObservations(
+    [{ label: "db:count:public.group_members", value: 8 }],
+    [{ label: "db:count:public.group_members", value: 5 }],
+  );
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /repair should delete exactly 1 row/);
+});
+
+test("compareFixtureObservations accepts the noncanonical DM repair upgrade", () => {
+  const failures = compareFixtureObservations(
+    [
+      { label: "dm:noncanonical-members", value: 1 },
+      { label: "db:count:expenses", value: 2 },
+    ],
+    [
+      { label: "dm:noncanonical-members", value: 0 },
+      { label: "db:count:expenses", value: 2 },
+    ],
+  );
+  assert.deepEqual(failures, []);
+});
+
+test("compareFixtureObservations rejects when noncanonical DM members remain after upgrade", () => {
+  const failures = compareFixtureObservations(
+    [{ label: "dm:noncanonical-members", value: 1 }],
+    [{ label: "dm:noncanonical-members", value: 1 }],
+  );
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /dm:noncanonical-members/);
+  assert.match(failures[0], /upgrade should be 0/);
+});
+
+test("compareFixtureObservations accepts a base that already has 0 noncanonical DM members", () => {
+  const failures = compareFixtureObservations(
+    [{ label: "dm:noncanonical-members", value: 0 }],
+    [{ label: "dm:noncanonical-members", value: 0 }],
+  );
+  assert.deepEqual(failures, []);
 });
 
 test("the CLI compare mode exits 0 for identical catalogs", () => {
