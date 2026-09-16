@@ -625,6 +625,7 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
             open={splitSheetOpen}
             onClose={() => setSplitSheetOpen(false)}
             currentUserId={me.id}
+            currentUserHandle={me.handle}
             counterparty={counterparty}
             onConfirm={handleQuickSplitConfirm}
             status={splitStatus}
