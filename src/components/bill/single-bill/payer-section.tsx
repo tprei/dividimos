@@ -9,15 +9,22 @@ export function SingleBillPayerSection({
   payers,
   hasPayer,
   onPayerSelect,
+  hasGuests,
 }: {
   participants: User[];
   payers: ExpensePayer[];
   hasPayer: boolean;
   onPayerSelect: (userId: string) => void;
+  hasGuests?: boolean;
 }) {
   return (
     <section className="space-y-2">
       <h2 className="text-sm leading-5 font-semibold">Quem pagou</h2>
+      {hasGuests && (
+        <p className="text-xs text-muted-foreground">
+          Convidados não podem pagar a conta — selecione uma pessoa com conta no Dividimos.
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         {participants.map((participant) => {
           const selected = payers.some((payer) => payer.userId === participant.id && payer.amountCents > 0);

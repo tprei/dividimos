@@ -1,7 +1,16 @@
 "use client";
 
 import { AnimatePresence } from "framer-motion";
-import { MessageSquare, Share2, UserPlus, UsersRound } from "lucide-react";
+import { MessageSquare, Share2, UserPlus, Users, UsersRound } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +39,9 @@ const UNAVAILABLE_CODES: Record<string, true> = {
 
 export function GroupDetailContent({ groupId }: { groupId: string }) {
   const router = useRouter();
+  const { accept, decline, pendingGroupId } = useInvitationActions();
+  const [confirmDecline, setConfirmDecline] = useState(false);
+  const [isDeclining, setIsDeclining] = useState(false);
   const hydrated = useAppStore((s) => s.hydrated);
   const meId = useAppStore((s) => s.me?.id ?? null);
   const snapshot = useAppStore((s) => s.groups[groupId]);
@@ -102,6 +114,96 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   }
 
   const members = snapshot.members;
+  const myMember = members.find((m) => m.userId === meId);
+  const isPending = myMember?.status === "invited";
+  const inviter = members.find(
+    (m) => m.userId === (myMember?.invitedBy ?? snapshot.group.creatorId),
+  );
+  const inviterName = inviter?.user.name ?? "Alguém";
+
+  if (isPending) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <ScreenHeader
+          back
+          title={snapshot.group.name}
+          onBack={() => router.push("/app/groups")}
+        />
+        <div className="mt-5 rounded-2xl gradient-primary p-5 text-primary-foreground shadow-lg shadow-primary/20">
+          <p className="text-sm text-primary-foreground/75">Convite para o grupo</p>
+          <p className="mt-2 text-2xl font-bold">{snapshot.group.name}</p>
+          <div className="mt-3 flex gap-4 text-sm text-primary-foreground/75">
+            <span className="flex items-center gap-1">
+              <Users className="size-3.5" />
+              Convite de {inviterName}
+            </span>
+          </div>
+        </div>
+        <div className="mt-3 rounded-2xl border bg-card p-4 text-sm">
+          {inviterName} convidou você para este grupo. Aceite para participar da conversa e dos acertos.
+        </div>
+        <div className="mt-3 flex gap-2">
+          <Button
+            variant="ghost"
+            className="min-h-11 flex-1 rounded-lg"
+            onClick={() => setConfirmDecline(true)}
+          >
+            Recusar
+          </Button>
+          <Button
+            className="min-h-11 flex-1 rounded-lg"
+            disabled={pendingGroupId === groupId}
+            onClick={() => {
+              void accept(groupId);
+            }}
+          >
+            Aceitar
+          </Button>
+        </div>
+
+        <Dialog
+          open={confirmDecline}
+          onOpenChange={(open) => {
+            if (!open) setConfirmDecline(false);
+          }}
+        >
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Recusar convite?</DialogTitle>
+              <DialogDescription>
+                Você precisará de um novo convite para voltar.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setConfirmDecline(false)}
+                disabled={isDeclining}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  setIsDeclining(true);
+                  try {
+                    await decline(groupId);
+                    router.replace("/app/groups");
+                  } finally {
+                    setIsDeclining(false);
+                  }
+                }}
+                disabled={isDeclining}
+              >
+                {isDeclining ? "Recusando…" : "Recusar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
   const accepted = members.filter((m) => m.status === "accepted");
   const isCreator = meId === snapshot.group.creatorId;
   const isAcceptedMember = accepted.some((m) => m.userId === meId);

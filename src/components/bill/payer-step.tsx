@@ -34,6 +34,7 @@ interface PayerStepProps {
   onSplitPaymentEqually: (userIds: string[]) => void;
   onSetPayerAmount: (userId: string, amountCents: number) => void;
   onRemovePayerEntry: (userId: string) => void;
+  hasGuests?: boolean;
 }
 
 
@@ -45,6 +46,7 @@ export function PayerStep({
   onSplitPaymentEqually,
   onSetPayerAmount,
   onRemovePayerEntry,
+  hasGuests,
 }: PayerStepProps) {
   const [multiMode, setMultiMode] = useState(payers.length > 1);
   const [paymentInputMode, setPaymentInputMode] = useState<"fixed" | "percentage">("fixed");
@@ -120,6 +122,11 @@ export function PayerStep({
 
   return (
     <div className="space-y-4">
+      {hasGuests && (
+        <p className="text-xs text-muted-foreground">
+          Convidados não podem pagar a conta — selecione uma pessoa com conta no Dividimos.
+        </p>
+      )}
       <div>
         <p className="text-sm text-muted-foreground">
           Quem pagou a conta?

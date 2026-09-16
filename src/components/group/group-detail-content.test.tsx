@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GroupDetailContent } from "./group-detail-content";
 import { LedgerError } from "@/lib/sync/errors";
@@ -17,6 +17,17 @@ const routerMock = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMock,
 }));
+
+const mockAccept = vi.fn();
+const mockDecline = vi.fn();
+vi.mock("@/hooks/use-invitation-actions", () => ({
+  useInvitationActions: () => ({
+    accept: mockAccept,
+    decline: mockDecline,
+    pendingGroupId: null,
+  }),
+}));
+
 
 vi.mock("react-hot-toast", () => ({
   default: { success: vi.fn(), error: vi.fn() },
@@ -333,5 +344,144 @@ describe("GroupDetailContent", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Membros" }));
     await userEvent.click(screen.getByRole("button", { name: "Convidar por @handle" }));
     expect(screen.getByText("Convidar por @handle")).toBeInTheDocument();
+  });
+  it("renders pending invite view when viewer status is invited", () => {
+    const snap = snapshot();
+    // user-3 is invited by user-1 (Alice)
+    useAppStore.setState({
+      hydrated: true,
+      me: {
+        id: "user-3",
+        handle: "dave",
+        name: "Dave Lima",
+        avatarUrl: null,
+        email: "dave@example.com",
+        pixKeyType: null,
+        pixKeyHint: null,
+        onboarded: true,
+        notificationPreferences: {},
+      },
+      groups: { [groupId]: snap },
+      groupOrder: [groupId],
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    // Shows hero card and info card
+    expect(screen.getByText("Convite para o grupo")).toBeInTheDocument();
+    expect(screen.getAllByText("Viagem").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Convite de Alice")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Alice convidou você para este grupo. Aceite para participar da conversa e dos acertos.",
+      ),
+    ).toBeInTheDocument();
+
+    // Has Accept and Decline buttons
+    expect(screen.getByRole("button", { name: "Aceitar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recusar" })).toBeInTheDocument();
+
+    // Does NOT render tabs or empty state or Tudo liquidado
+    expect(screen.queryByRole("tab", { name: "Saldos" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Contas" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Membros" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Tudo liquidado!")).not.toBeInTheDocument();
+  });
+
+  it("accepting an invitation updates state and renders tabs in place", async () => {
+    const user = userEvent.setup();
+    const snap = snapshot();
+    const meDave = {
+      id: "user-3",
+      handle: "dave",
+      name: "Dave Lima",
+      avatarUrl: null,
+      email: "dave@example.com",
+      pixKeyType: null,
+      pixKeyHint: null,
+      onboarded: true,
+      notificationPreferences: {},
+    };
+
+    useAppStore.setState({
+      hydrated: true,
+      me: meDave,
+      groups: { [groupId]: snap },
+      groupOrder: [groupId],
+    });
+
+    mockAccept.mockImplementationOnce(async (id: string) => {
+      // Simulate hook refreshing snapshot in store to status: accepted
+      const current = useAppStore.getState().groups[id];
+      if (current) {
+        useAppStore.setState({
+          groups: {
+            [id]: {
+              ...current,
+              members: current.members.map((m) =>
+                m.userId === meDave.id ? { ...m, status: "accepted" as const } : m,
+              ),
+            },
+          },
+        });
+      }
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    expect(screen.getByText("Convite para o grupo")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Aceitar" }));
+
+    expect(mockAccept).toHaveBeenCalledWith(groupId);
+
+    // After acceptance, full group tabs render in place
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Saldos" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Contas" })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Membros" })).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Convite para o grupo")).not.toBeInTheDocument();
+  });
+
+  it("clicking Recusar opens confirmation dialog and confirming calls decline and redirects", async () => {
+    const user = userEvent.setup();
+    const snap = snapshot();
+    useAppStore.setState({
+      hydrated: true,
+      me: {
+        id: "user-3",
+        handle: "dave",
+        name: "Dave Lima",
+        avatarUrl: null,
+        email: "dave@example.com",
+        pixKeyType: null,
+        pixKeyHint: null,
+        onboarded: true,
+        notificationPreferences: {},
+      },
+      groups: { [groupId]: snap },
+      groupOrder: [groupId],
+    });
+
+    render(<GroupDetailContent groupId={groupId} />);
+
+    // Click Recusar button on view
+    await user.click(screen.getByRole("button", { name: "Recusar" }));
+
+    // Dialog opens
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Recusar convite?")).toBeInTheDocument();
+    expect(
+      screen.getByText("Você precisará de um novo convite para voltar."),
+    ).toBeInTheDocument();
+
+    const dialog = screen.getByRole("dialog");
+    const confirmDeclineBtn = within(dialog).getByRole("button", { name: "Recusar" });
+    await user.click(confirmDeclineBtn);
+
+    expect(mockDecline).toHaveBeenCalledWith(groupId);
+    await waitFor(() => {
+      expect(routerMock.replace).toHaveBeenCalledWith("/app/groups");
+    });
   });
 });

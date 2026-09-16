@@ -345,4 +345,49 @@ describe("InviteByHandlePanel", () => {
       expect(screen.getByText("Já tá no grupo")).toBeInTheDocument();
     });
   });
+  it("renders pending and guest explanatory legends when pending members or guests exist", () => {
+    render(
+      <GroupMembersSection
+        snapshot={snapshot()}
+        meId={meId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Pendente: a pessoa foi convidada, mas ainda não aceitou. Enquanto o convite está pendente, ela não participa da conversa.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Convidados são pessoas sem conta no Dividimos. Elas recebem um link para confirmar a participação e ver a parte delas; não podem pagar ou ser marcadas como pagadoras no app.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("does not render legends when there are no pending members or guests", () => {
+    const snap = snapshot({
+      members: [
+        member(creatorId, "Carol Criadora", "accepted"),
+        member(meId, "Eu Mesmo", "accepted"),
+      ],
+      guests: [],
+    });
+
+    render(
+      <GroupMembersSection
+        snapshot={snap}
+        meId={meId}
+        onDepart={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/Pendente: a pessoa foi convidada/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Convidados são pessoas sem conta no Dividimos/),
+    ).not.toBeInTheDocument();
+  });
 });
