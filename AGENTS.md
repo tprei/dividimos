@@ -49,6 +49,7 @@ AI code must be easy for a human to audit.
 - All hooks must run before any early returns (React rules of hooks).
 - **Never use `eslint-disable`, `eslint-disable-next-line`, or `eslint-disable-line` comments.** Fix the underlying code instead. For `exhaustive-deps`, use `useCallback`/`useRef` to stabilize references. For `no-explicit-any`, add proper types. If a lint rule is genuinely wrong for the project, change the ESLint config.
 - Gate dev-only code behind `process.env.NODE_ENV === "production"` checks.
+- Before writing or reviewing SQL migrations, follow `agent-guidance/WRITING_MIGRATIONS.md`.
 - Follow the writing guides in `agent-guidance/writing/WRITING_TYPESCRIPT.md` and `agent-guidance/writing/STACKED_DIFFS.md`.
 
 ## Domain-Driven Design
