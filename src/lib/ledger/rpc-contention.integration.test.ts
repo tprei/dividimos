@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-
+import { Client } from "pg";
 import { forceLockContentionRace } from "@/test/db-race-barrier";
 import {
   authenticateAs,
@@ -8,6 +8,7 @@ import {
   createGroupWithMembers,
   createTestUsers,
   equalSplitPayload,
+  getBalances,
   withPg,
   type TestUser,
 } from "@/test/integration-helpers";
@@ -532,6 +533,311 @@ describe.skipIf(!isIntegrationTestReady)("ledger RPCs under forced lock contenti
       expect(state.claimedBy).toBeNull();
       expect(state.membership).toBeNull();
     }
+  });
+
+  /** Proves a backend is genuinely queued on a lock (not just slow). */
+  async function waitForLockWait(
+    monitor: Client,
+    queryPattern: string,
+    timeoutMs = 5000,
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const { rows } = await monitor.query<{ wait_event_type: string | null }>(
+        "select wait_event_type from pg_stat_activity " +
+          "where pid <> pg_backend_pid() and state = 'active' and query ilike $1",
+        [`%${queryPattern}%`],
+      );
+      if (rows.some((row) => row.wait_event_type === "Lock")) return true;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    return false;
+  }
+
+  async function guestWithToken(): Promise<{
+    groupId: string;
+    guestId: string;
+    token: string;
+  }> {
+    const groupId = await createGroupWithMembers(alice, [bruno]);
+    const created = await createExpense(alice, {
+      groupId,
+      totalCents: 6000,
+      payload: {
+        items: [],
+        participants: [
+          { kind: "user", userId: alice.id },
+          { kind: "user", userId: bruno.id },
+          { kind: "guest", guestId: null, displayName: "Convidada" },
+        ],
+        shares: [2000, 2000, 2000],
+        payers: [{ participantIndex: 0, amountCents: 6000 }],
+        itemAssignments: null,
+      },
+    });
+    const guestId = await withPg(async (client) => {
+      const rows = await client.query<{ id: string }>(
+        "select id from public.guests where expense_id = $1",
+        [created.expenseId],
+      );
+      return rows.rows[0].id;
+    });
+    const issued = await rpcOk<{ token: string }>(
+      aliceClient,
+      "create_guest_claim_token",
+      { p_guest_id: guestId },
+    );
+    return { groupId, guestId, token: issued.token };
+  }
+
+  it("lets exactly one of two concurrent claimants win the same token", async () => {
+    const dave = (await createTestUsers(1))[0];
+    const daveClient = authenticateAs(dave);
+    const { groupId, guestId, token } = await guestWithToken();
+
+    const { result, contention } = await forceLockContentionRace(
+      databaseUrl,
+      {
+        lockSql: LOCK_GROUP_SQL,
+        lockParams: [groupId],
+        queryContains: ["claim_guest"],
+        expectedRacers: 2,
+      },
+      () =>
+        Promise.allSettled([
+          carlaClient.rpc("claim_guest", { p_token: token }),
+          daveClient.rpc("claim_guest", { p_token: token }),
+        ]),
+    );
+
+    expect(contention.observed).toBe(true);
+    const outcomes = summarize(result);
+    expectNoLeakedInternals(outcomes);
+    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
+    expect(outcomes.find((outcome) => !outcome.ok)?.message).toBe("already_claimed");
+
+    const state = await withPg(async (client) => {
+      const guest = await client.query<{ claimed_by: string | null }>(
+        "select claimed_by from public.guests where id = $1",
+        [guestId],
+      );
+      const members = await client.query<{ user_id: string }>(
+        "select user_id from public.group_members where group_id = $1",
+        [groupId],
+      );
+      return { claimedBy: guest.rows[0]?.claimed_by ?? null, members: members.rows };
+    });
+    expect([carla.id, dave.id]).toContain(state.claimedBy);
+    const winnerMemberRows = state.members.filter((row) => row.user_id === state.claimedBy);
+    const loserMemberRows = state.members.filter(
+      (row) => row.user_id === (state.claimedBy === carla.id ? dave.id : carla.id),
+    );
+    expect(winnerMemberRows).toHaveLength(1);
+    expect(loserMemberRows).toHaveLength(0);
+  });
+
+  it("fails the claim with invalid_token when a revoke commits while the claim waits on the group lock", async () => {
+    const { groupId, guestId, token } = await guestWithToken();
+    const beforeBalances = await getBalances(groupId);
+
+    const holder = new Client(databaseUrl);
+    const monitor = new Client(databaseUrl);
+    await holder.connect();
+    await monitor.connect();
+    try {
+      await holder.query("begin");
+      await holder.query(LOCK_GROUP_SQL, [groupId]);
+      const claimPromise = Promise.resolve().then(() => carlaClient.rpc("claim_guest", { p_token: token }));
+      expect(await waitForLockWait(monitor, "claim_guest")).toBe(true);
+
+      // The holder already owns the group lock, so revoke runs inside this
+      // transaction without self-deadlock and deletes the credential.
+      await holder.query("select set_config('request.jwt.claim.sub', $1, true)", [bruno.id]);
+      await holder.query("select public.revoke_guest_claim_token($1)", [guestId]);
+      await holder.query("commit");
+
+      const claim = await claimPromise;
+      expect(claim.error?.message).toBe("invalid_token");
+    } finally {
+      await holder.query("rollback").catch(() => {});
+      await holder.end();
+      await monitor.end();
+    }
+
+    const state = await withPg(async (client) => {
+      const guest = await client.query<{ claimed_by: string | null }>(
+        "select claimed_by from public.guests where id = $1",
+        [guestId],
+      );
+      const member = await client.query<{ count: string }>(
+        "select count(*) as count from public.group_members where group_id = $1 and user_id = $2",
+        [groupId, carla.id],
+      );
+      return { claimedBy: guest.rows[0]?.claimed_by ?? null, memberCount: Number(member.rows[0].count) };
+    });
+    expect(state.claimedBy).toBeNull();
+    expect(state.memberCount).toBe(0);
+    expect(await getBalances(groupId)).toEqual(beforeBalances);
+  });
+
+  it("fails the old token with invalid_token when a rotation commits while the claim waits, then the new token claims", async () => {
+    const { groupId, guestId, token: oldToken } = await guestWithToken();
+
+    const holder = new Client(databaseUrl);
+    const monitor = new Client(databaseUrl);
+    await holder.connect();
+    await monitor.connect();
+    let newToken = "";
+    try {
+      await holder.query("begin");
+      await holder.query(LOCK_GROUP_SQL, [groupId]);
+      const claimPromise = Promise.resolve().then(() => carlaClient.rpc("claim_guest", { p_token: oldToken }));
+      expect(await waitForLockWait(monitor, "claim_guest")).toBe(true);
+
+      await holder.query("select set_config('request.jwt.claim.sub', $1, true)", [alice.id]);
+      const rotated = await holder.query<{ create_guest_claim_token: { token: string } }>(
+        "select public.create_guest_claim_token($1)",
+        [guestId],
+      );
+      newToken = rotated.rows[0].create_guest_claim_token.token;
+      expect(newToken).not.toBe(oldToken);
+      await holder.query("commit");
+
+      const claim = await claimPromise;
+      expect(claim.error?.message).toBe("invalid_token");
+    } finally {
+      await holder.query("rollback").catch(() => {});
+      await holder.end();
+      await monitor.end();
+    }
+
+    const claimed = await withPg(async (client) => {
+      const guest = await client.query<{ claimed_by: string | null }>(
+        "select claimed_by from public.guests where id = $1",
+        [guestId],
+      );
+      return guest.rows[0]?.claimed_by ?? null;
+    });
+    expect(claimed).toBeNull();
+
+    const newClaim = await carlaClient.rpc("claim_guest", { p_token: newToken });
+    expect(newClaim.error).toBeNull();
+  });
+
+  it("fails the claim with invalid_token when the token expires while the claim waits on the group lock", async () => {
+    const { groupId, guestId, token } = await guestWithToken();
+    await withPg((client) =>
+      client.query(
+        "update guest_credentials.claim_tokens " +
+          "set expires_at = clock_timestamp() + interval '500 milliseconds' " +
+          "where guest_id = $1",
+        [guestId],
+      ),
+    );
+
+    const holder = new Client(databaseUrl);
+    const monitor = new Client(databaseUrl);
+    await holder.connect();
+    await monitor.connect();
+    try {
+      await holder.query("begin");
+      await holder.query(LOCK_GROUP_SQL, [groupId]);
+      const claimPromise = Promise.resolve().then(() => carlaClient.rpc("claim_guest", { p_token: token }));
+      expect(await waitForLockWait(monitor, "claim_guest")).toBe(true);
+
+      // Wait for wall-clock expiry while the claim is provably queued.
+      const expired = await monitor
+        .query<{ expired: boolean }>(
+          "select clock_timestamp() > expires_at as expired " +
+            "from guest_credentials.claim_tokens where guest_id = $1",
+          [guestId],
+        )
+        .then(async (first) => {
+          if (first.rows[0]?.expired) return true;
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          const second = await monitor.query<{ expired: boolean }>(
+            "select clock_timestamp() > expires_at as expired " +
+              "from guest_credentials.claim_tokens where guest_id = $1",
+            [guestId],
+          );
+          return second.rows[0]?.expired === true;
+        });
+      expect(expired).toBe(true);
+
+      await holder.query("commit");
+      const claim = await claimPromise;
+      expect(claim.error?.message).toBe("invalid_token");
+    } finally {
+      await holder.query("rollback").catch(() => {});
+      await holder.end();
+      await monitor.end();
+    }
+
+    const state = await withPg(async (client) => {
+      const member = await client.query<{ count: string }>(
+        "select count(*) as count from public.group_members where group_id = $1 and user_id = $2",
+        [groupId, carla.id],
+      );
+      return Number(member.rows[0].count);
+    });
+    expect(state).toBe(0);
+  });
+
+  it("fails the claim with invalid_token when an edit removes the guest while the claim waits on the group lock", async () => {
+    const seeded = await guestWithToken();
+    const expenseId = await withPg(async (client) => {
+      const rows = await client.query<{ expense_id: string }>(
+        "select expense_id from public.guests where id = $1",
+        [seeded.guestId],
+      );
+      return rows.rows[0].expense_id;
+    });
+
+    const holder = new Client(databaseUrl);
+    const monitor = new Client(databaseUrl);
+    await holder.connect();
+    await monitor.connect();
+    try {
+      await holder.query("begin");
+      await holder.query(LOCK_GROUP_SQL, [seeded.groupId]);
+      const claimPromise = Promise.resolve().then(() => carlaClient.rpc("claim_guest", { p_token: seeded.token }));
+      expect(await waitForLockWait(monitor, "claim_guest")).toBe(true);
+
+      const args = editArgs(expenseId, 1, 6000, equalSplitPayload([alice.id, bruno.id], 6000));
+      await holder.query("select set_config('request.jwt.claim.sub', $1, true)", [alice.id]);
+      await holder.query(
+        "select public.edit_expense($1, $2, $3, $4, $5, $6::public.expense_type, $7, $8, $9, $10::jsonb)",
+        [
+          args.p_expense_id,
+          args.p_expected_version_no,
+          args.p_occurred_on,
+          args.p_title,
+          args.p_merchant_name,
+          args.p_expense_type,
+          args.p_total_cents,
+          args.p_service_fee_bps,
+          args.p_fixed_fee_cents,
+          JSON.stringify(args.p_payload),
+        ],
+      );
+      await holder.query("commit");
+
+      const claim = await claimPromise;
+      expect(claim.error?.message).toBe("invalid_token");
+    } finally {
+      await holder.query("rollback").catch(() => {});
+      await holder.end();
+      await monitor.end();
+    }
+
+    const state = await withPg(async (client) => {
+      const member = await client.query<{ count: string }>(
+        "select count(*) as count from public.group_members where group_id = $1 and user_id = $2",
+        [seeded.groupId, carla.id],
+      );
+      return Number(member.rows[0].count);
+    });
+    expect(state).toBe(0);
   });
 
   it("keeps one active receipt when a restore races a create with the same chave", async () => {

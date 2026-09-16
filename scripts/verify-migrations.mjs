@@ -815,9 +815,17 @@ export async function seedVerificationFixture(context) {
   const bobId = identities["user:bob"];
   const carolId = identities["user:carol"];
 
-  const bobProfile = await callRpc(alice, "lookup_user_by_handle", { p_handle: "verify_bob" });
-  if (!bobProfile || bobProfile.handle !== "verify_bob") {
-    throw new Error(`lookup_user_by_handle did not return bob: ${JSON.stringify(bobProfile)}`);
+  // Identity resolution stays off the lookup RPC: browser roles lost direct
+  // execution in 20260913010070, so an authenticated call would break on any
+  // base that already carries the flip. The seeded profile is asserted at
+  // the schema level instead, and the observation classifier records the
+  // browser-role flip.
+  const bobProfileRow = await context.database.query(
+    "select handle from public.users where id = $1",
+    [bobId],
+  );
+  if (bobProfileRow.rows[0]?.handle !== "verify_bob") {
+    throw new Error(`seeded bob profile missing: ${JSON.stringify(bobProfileRow.rows)}`);
   }
 
   const group = await callRpc(alice, "create_group", { p_name: "Verify Group", p_member_ids: [] });
