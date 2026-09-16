@@ -89,7 +89,11 @@ CREATE TABLE public.expenses (
   created_at timestamptz NOT NULL DEFAULT now(),
   deleted_at timestamptz,
   deleted_by uuid REFERENCES public.users(id),
-  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$')
+  chave_acesso text CHECK (chave_acesso IS NULL OR chave_acesso ~ '^[0-9]{44}$'),
+  declined_user_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
+  CONSTRAINT expenses_declined_users_valid CHECK (
+    cardinality(declined_user_ids) <= 50 AND array_position(declined_user_ids, NULL) IS NULL
+  )
 );
 CREATE INDEX expenses_group_idx ON public.expenses (group_id, occurred_on DESC, created_at DESC);
 -- Cursor order for history paging; occurred_on above still serves its own readers.

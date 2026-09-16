@@ -29,6 +29,10 @@ describe("errors", () => {
     expect(ledgerErrorMessage(new LedgerError("group_has_history"))).toBe(
       "Esse grupo já tem contas ou pagamentos e não pode ser apagado.",
     );
+    expect(codeFromMessage("invitation_not_accepted")).toBe("invitation_not_accepted");
+    expect(ledgerErrorMessage(new LedgerError("invitation_not_accepted"))).toBe(
+      "Alguém recusou o convite e ainda não entrou no grupo.",
+    );
     expect(codeFromMessage("member_excluded")).toBe("member_excluded");
     expect(ledgerErrorMessage(new LedgerError("member_excluded"))).toBe(
       "Essa pessoa foi removida do grupo.",

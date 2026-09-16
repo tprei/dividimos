@@ -238,6 +238,7 @@ export type Database = {
           created_at: string
           creator_id: string
           current_version_no: number
+          declined_user_ids: string[]
           deleted_at: string | null
           deleted_by: string | null
           group_id: string
@@ -251,6 +252,7 @@ export type Database = {
           created_at?: string
           creator_id: string
           current_version_no?: number
+          declined_user_ids?: string[]
           deleted_at?: string | null
           deleted_by?: string | null
           group_id: string
@@ -264,6 +266,7 @@ export type Database = {
           created_at?: string
           creator_id?: string
           current_version_no?: number
+          declined_user_ids?: string[]
           deleted_at?: string | null
           deleted_by?: string | null
           group_id?: string
