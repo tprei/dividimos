@@ -91,8 +91,7 @@ function renderInit(overrides: Partial<Parameters<typeof useWizardInit>[0]> = {}
       },
       me,
       step: "participants",
-      selectedGroupId: null,
-      onSetSelectedGroupId: vi.fn(),
+      onSetPendingGroupId: vi.fn(),
       onSetBillType: vi.fn(),
       onSetStep: vi.fn(),
       onSetIsEditing: vi.fn(),
@@ -224,9 +223,15 @@ describe("selectDraftForType", () => {
     expect(after.items).toHaveLength(0);
   });
 
-  it("attaches a group chosen after the draft started", () => {
-    selectDraftForType(useBillStore.getState(), "itemized", null);
+  it("seeds a group chosen before the draft started", () => {
     selectDraftForType(useBillStore.getState(), "itemized", "group-1");
     expect(useBillStore.getState().expense?.groupId).toBe("group-1");
+  });
+
+  it("preserves expense.groupId across step transitions when returning to type step and re-selecting itemized", () => {
+    const store = useBillStore.getState();
+    store.createExpense("Churrasco", "itemized", undefined, "group-praia");
+    selectDraftForType(useBillStore.getState(), "itemized", null);
+    expect(useBillStore.getState().expense?.groupId).toBe("group-praia");
   });
 });

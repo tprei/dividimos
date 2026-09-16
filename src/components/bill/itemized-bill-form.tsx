@@ -148,12 +148,9 @@ export function ItemizedBillForm({
     onExpandItem: setExpandedId,
   });
 
-  const [groupSelection, setGroupSelection] = useState<string | null>(selectedGroupId);
   const handleGroupSelect = (value: string | null) => {
-    setGroupSelection(value);
     const groupId = value === "create" || value === "dm" ? null : value;
     onSelectGroup(groupId);
-    store.updateExpense({ groupId: groupId ?? "" });
   };
 
   const handleAmountChange = (itemId: string, text: string) => {
@@ -216,10 +213,10 @@ export function ItemizedBillForm({
         store={store}
         expense={expense}
         occurredOn={occurredOn}
-        groupValue={selectedGroupId ?? groupSelection}
+        groupValue={selectedGroupId}
+        titleRef={titleRef}
         dmEligible={dmEligible}
         accountReady={accountReady}
-        titleRef={titleRef}
         section={section}
         onSectionChange={setSection}
         amountInputs={amountInputs}
