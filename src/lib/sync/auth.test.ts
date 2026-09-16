@@ -62,6 +62,9 @@ beforeEach(async () => {
   vi.clearAllMocks();
   handlers.length = 0;
   useAppStore.getState().reset();
+  const { useBillStore } = await import("@/stores/bill-store");
+  useBillStore.getState().reset();
+  window.localStorage.clear();
   // Listener-driven re-bootstraps must not consume a queued response; only the
   // requests a test explicitly resolves are allowed to settle.
   vi.mocked(rpc).mockImplementation(() => new Promise(() => {}) as never);
@@ -195,6 +198,70 @@ describe("bootstrap account epoch", () => {
     await Promise.all([pending, next]);
 
     expect(useAppStore.getState().me?.id).toBe("user-b");
+    detach();
+  });
+});
+
+describe("bill draft account isolation", () => {
+  it("SIGNED_OUT clears the in-memory draft and archives the account draft", async () => {
+    const { useBillStore } = await import("@/stores/bill-store");
+    useBillStore.getState().reset();
+    useBillStore.getState().setCurrentUser({
+      id: "user-a",
+      email: "a@example.com",
+      handle: "alice",
+      name: "Alice",
+      pixKeyType: "email",
+      pixKeyHint: "",
+      onboarded: true,
+      createdAt: "",
+    });
+    useBillStore.getState().createExpense("Churrasco", "itemized");
+    useBillStore.getState().addItem({
+      description: "Carne",
+      quantity: 1000,
+      unitPriceCents: 9000,
+      totalPriceCents: 9000,
+    });
+
+    const detach = attachAuthListener(() => {}, () => {});
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+    emit("SIGNED_OUT", null);
+
+    expect(useBillStore.getState().expense).toBeNull();
+    expect(useBillStore.getState().items).toHaveLength(0);
+    expect(window.localStorage.getItem("dividimos-draft:user-a")).not.toBeNull();
+    detach();
+  });
+
+  it("switching A -> B -> A isolates drafts and restores A on return", async () => {
+    const { useBillStore } = await import("@/stores/bill-store");
+    useBillStore.getState().reset();
+    window.localStorage.clear();
+    const detach = attachAuthListener(() => {}, () => {});
+
+    useBillStore.getState().setCurrentUser({
+      id: "user-a",
+      email: "a@example.com",
+      handle: "alice",
+      name: "Alice",
+      pixKeyType: "email",
+      pixKeyHint: "",
+      onboarded: true,
+      createdAt: "",
+    });
+    useBillStore.getState().createExpense("Churrasco", "itemized");
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
+    emit("SIGNED_IN", "user-a");
+
+    emit("SIGNED_IN", "user-b");
+    expect(useBillStore.getState().expense).toBeNull();
+    expect(window.localStorage.getItem("dividimos-draft:user-a")).not.toBeNull();
+    useBillStore.getState().createExpense("Passeio", "itemized");
+
+    emit("SIGNED_IN", "user-a");
+    await useBillStore.persist.rehydrate();
+    expect(useBillStore.getState().expense?.title).toBe("Churrasco");
     detach();
   });
 });

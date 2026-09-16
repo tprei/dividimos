@@ -1,4 +1,6 @@
 import { useAppStore } from "@/stores/app-store";
+import { useBillStore } from "@/stores/bill-store";
+import { archiveCurrentDraft, restoreAccountDraft } from "@/lib/bill-draft-isolation";
 import { runBootstrap } from "./bootstrap";
 import {
   advanceAuthGeneration,
@@ -31,6 +33,8 @@ export function attachAuthListener(
     if (disposed) return;
     if (event === "SIGNED_OUT") {
       const signedOutUserId = priorUserId();
+      archiveCurrentDraft(signedOutUserId);
+      useBillStore.getState().reset();
       observedUserId = null;
       advanceAuthGeneration();
       invalidateNativeRegistration();
@@ -56,11 +60,15 @@ export function attachAuthListener(
       return;
     }
 
+    const previousUserId = priorUserId();
     observedUserId = nextUserId;
     advanceAuthGeneration();
     invalidateNativeRegistration();
     invalidateSyncReads();
     clearPendingVendorChargeCancellations();
+    archiveCurrentDraft(previousUserId);
+    useBillStore.getState().reset();
+    restoreAccountDraft(nextUserId);
     useAppStore.getState().reset();
     runBootstrap().catch(onError);
   });
