@@ -302,7 +302,32 @@ describe("AppShell navigation", () => {
     render(<AppShell><div>content</div></AppShell>);
 
     const label = screen.getByText("Conversas");
-    expect(label.className).toContain("text-primary");
+    expect(label.className).toContain("text-primary-text");
+
+    const tab = screen.getByRole("link", { name: /Conversas/ });
+    expect(tab).toHaveAttribute("aria-current", "page");
+  });
+
+  it("names the center action Nova conta with a visible Nova label", () => {
+    render(<AppShell><div>content</div></AppShell>);
+
+    const action = screen.getByRole("link", { name: "Nova conta" });
+    expect(action).toBeInTheDocument();
+    expect(screen.getByText("Nova")).toBeInTheDocument();
+  });
+
+  it("gives header utility buttons 44px targets", () => {
+    mockPathname.mockReturnValue("/app/activity");
+    render(<AppShell><div>content</div></AppShell>);
+
+    for (const name of ["Buscar", "Atividade", "Configurações"]) {
+      const button = screen.getByRole("link", { name });
+      expect(button.className).toContain("min-h-11");
+      expect(button.className).toContain("min-w-11");
+    }
+    const refresh = screen.getByRole("button", { name: "Atualizar" });
+    expect(refresh.className).toContain("min-h-11");
+    expect(refresh.className).toContain("min-w-11");
   });
 });
 
