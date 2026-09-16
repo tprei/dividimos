@@ -6,7 +6,7 @@ import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { cn } from "@/lib/utils";
 
-export default function ProfileError({
+export default function RootError({
   error,
   reset,
 }: {
@@ -14,19 +14,19 @@ export default function ProfileError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[ProfileError]", error);
+    console.error("[RootError]", error);
   }, [error]);
 
   return (
-    <div className="flex min-h-[80vh] flex-col items-center justify-center px-4">
+    <div className="flex min-h-[60vh] flex-col items-center justify-center px-4">
       <SyncErrorState
         title="Não foi possível carregar"
-        message="Não foi possível carregar este perfil. Tente novamente em instantes."
+        message="Não foi possível carregar esta página. Tente novamente em instantes."
         onRetry={reset}
       />
       <Link
-        href="/"
-        className={cn(buttonVariants({ variant: "outline" }), "mt-2 w-full max-w-sm min-h-11 rounded-lg")}
+        href="/app"
+        className={cn(buttonVariants({ variant: "outline" }), "mt-2 w-full max-w-xs min-h-11 rounded-lg")}
       >
         Voltar ao início
       </Link>
