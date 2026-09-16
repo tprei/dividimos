@@ -38,8 +38,7 @@ test.describe("Home quick charge and Pix amount editing", () => {
     await dialog.getByRole("button", { name: /^Editar valor/ }).click();
     const amountInput = dialog.getByRole("textbox", { name: "Editar valor" });
     await expect(amountInput).toBeFocused();
-    for (let i = 0; i < 8; i++) await amountInput.press("Backspace");
-    await amountInput.pressSequentially("2000");
+    await amountInput.fill("20,00");
     await amountInput.press("Enter");
 
     await expect(dialog.getByRole("button", { name: /Editar valor, R\$\s*20,00/ })).toBeVisible();

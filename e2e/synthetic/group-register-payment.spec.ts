@@ -23,7 +23,7 @@ test.describe("Group register payment", () => {
     await page.getByRole("button", { name: "Registrar pagamento" }).click();
     const amount = page.getByRole("textbox", { name: "Valor do pagamento" });
     await amount.click();
-    await amount.pressSequentially("3000");
+    await amount.fill("30,00");
     await page.getByRole("button", { name: /^Registrar$|Confirmar/ }).click();
 
     await expect(page.getByText(/Você pagou/)).toBeVisible({ timeout: 15000 });
