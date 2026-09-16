@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import {
   compareApplicationCatalogs,
   compareFixtureObservations,
+  INTENTIONAL_UPGRADES,
   postgresMajor,
   readMigrationFiles,
   validateMigrationHistory,
@@ -289,6 +290,42 @@ test("compareFixtureObservations reports an unexpected label", () => {
   );
   assert.equal(failures.length, 1);
   assert.match(failures[0], /surprise/);
+});
+
+test("compareFixtureObservations accepts the named lookup success-to-denial upgrade", () => {
+  const failures = compareFixtureObservations(
+    [
+      { label: "lookup:direct:authenticated", value: "success" },
+      { label: "db:count:expenses", value: 2 },
+    ],
+    [
+      { label: "lookup:direct:authenticated", value: "denied" },
+      { label: "db:count:expenses", value: 2 },
+    ],
+  );
+  assert.deepEqual(failures, []);
+});
+
+test("compareFixtureObservations rejects when the lookup denial never lands", () => {
+  const failures = compareFixtureObservations(
+    [{ label: "lookup:direct:authenticated", value: "success" }],
+    [{ label: "lookup:direct:authenticated", value: "success" }],
+  );
+  assert.equal(failures.length, 1);
+  assert.match(failures[0], /lookup:direct:authenticated/);
+  assert.match(failures[0], /upgrade should be "denied"/);
+});
+
+test("compareFixtureObservations accepts a base that already carries the lookup denial", () => {
+  const failures = compareFixtureObservations(
+    [{ label: "lookup:direct:authenticated", value: "denied" }],
+    [{ label: "lookup:direct:authenticated", value: "denied" }],
+  );
+  assert.deepEqual(failures, []);
+});
+
+test("the intentional upgrade list names only the lookup flip", () => {
+  assert.deepEqual([...INTENTIONAL_UPGRADES.keys()], ["lookup:direct:authenticated"]);
 });
 
 test("the CLI compare mode exits 0 for identical catalogs", () => {
