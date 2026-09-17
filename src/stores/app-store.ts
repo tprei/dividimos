@@ -246,8 +246,17 @@ export function migrateAppState(persisted: unknown): AppStateData {
   for (const [id, value] of Object.entries(persistedGroups)) {
     if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
     const snapshot = value as GroupSnapshot;
+    const members = Array.isArray(snapshot.members)
+      ? snapshot.members.map((member) => ({
+          ...member,
+          user: member?.user
+            ? { ...member.user, isBot: member.user.isBot ?? false }
+            : member?.user,
+        }))
+      : [];
     groups[id] = {
       ...snapshot,
+      members,
       expenseCount: snapshot.expenseCount ?? 0,
       pairwiseEdges: snapshot.pairwiseEdges ?? [],
     };
@@ -270,7 +279,12 @@ export function migrateAppState(persisted: unknown): AppStateData {
       : {};
   const activity: AppStateData["activity"] = {
     items: Array.isArray(persistedActivity.items)
-      ? (persistedActivity.items as GroupEvent[])
+      ? (persistedActivity.items as GroupEvent[]).map((event) => ({
+          ...event,
+          actor: event?.actor
+            ? { ...event.actor, isBot: event.actor.isBot ?? false }
+            : event?.actor,
+        }))
       : [],
     oldestId: typeof persistedActivity.oldestId === "number" ? persistedActivity.oldestId : null,
     complete: typeof persistedActivity.complete === "boolean" ? persistedActivity.complete : false,
@@ -289,8 +303,20 @@ export function migrateAppState(persisted: unknown): AppStateData {
       value !== null && typeof value === "object" && !Array.isArray(value)
         ? (value as Partial<ConversationState>)
         : {};
-    const messages = Array.isArray(cached.messages) ? (cached.messages as ChatMessage[]) : [];
-    const events = Array.isArray(cached.events) ? (cached.events as GroupEvent[]) : [];
+    const rawMessages = Array.isArray(cached.messages) ? (cached.messages as ChatMessage[]) : [];
+    const messages = rawMessages.map((msg) => ({
+      ...msg,
+      sender: msg?.sender
+        ? { ...msg.sender, isBot: msg.sender.isBot ?? false }
+        : msg?.sender,
+    }));
+    const rawEvents = Array.isArray(cached.events) ? (cached.events as GroupEvent[]) : [];
+    const events = rawEvents.map((event) => ({
+      ...event,
+      actor: event?.actor
+        ? { ...event.actor, isBot: event.actor.isBot ?? false }
+        : event?.actor,
+    }));
     const paired =
       cached.messagesComplete !== undefined && cached.eventsComplete !== undefined;
     conversations[groupId] = paired
@@ -326,6 +352,21 @@ export function migrateAppState(persisted: unknown): AppStateData {
     !Array.isArray(root.expenseDetails)
       ? (root.expenseDetails as Record<string, ExpenseDetail>)
       : {};
+  const expenseDetails: Record<string, ExpenseDetail> = {};
+  for (const [id, value] of Object.entries(persistedExpenseDetails)) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+    const detail = value as ExpenseDetail;
+    const participants = Array.isArray(detail.participants)
+      ? detail.participants.map((p) => ({
+          ...p,
+          user: p?.user ? { ...p.user, isBot: p.user.isBot ?? false } : p?.user,
+        }))
+      : [];
+    expenseDetails[id] = {
+      ...detail,
+      participants,
+    };
+  }
   const groupOrder = Array.isArray(root.groupOrder)
     ? root.groupOrder.filter((id): id is string => typeof id === "string")
     : [];
@@ -351,13 +392,13 @@ export function migrateAppState(persisted: unknown): AppStateData {
 
   return {
     ...initialData,
-    me: legacy.me ?? null,
+    me: legacy.me ? { ...legacy.me, isBot: legacy.me.isBot ?? false } : null,
     groups,
     groupOrder,
     expenseLists,
     myExpenses: normalizeExpenseList(root.myExpenses),
     expenses: persistedExpenses,
-    expenseDetails: persistedExpenseDetails,
+    expenseDetails,
     activity,
     activityViewedAt,
     conversations,
@@ -669,7 +710,7 @@ export const useAppStore = create<AppState>()(
       },
       skipHydration: true,
       migrate: migrateAppState,
-      version: 3,
+      version: 4,
     },
   ),
 );

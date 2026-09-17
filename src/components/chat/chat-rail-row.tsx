@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 export type ChatRailMarker =
   | { kind: "expense" | "payment" | "message" }
-  | { kind: "avatar"; name: string; avatarUrl: string | null };
+  | { kind: "avatar"; name: string; avatarUrl: string | null; isBot: boolean };
 
 export function formatRailTime(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString("pt-BR", {
@@ -32,6 +32,7 @@ export function ChatRailRow({ time, marker, children }: ChatRailRowProps) {
           <UserAvatar
             name={marker.name}
             avatarUrl={marker.avatarUrl}
+            isBot={marker.isBot}
             size="xs"
             className="absolute -left-[11.5px] top-0 ring-2 ring-background"
           />

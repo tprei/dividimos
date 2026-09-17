@@ -11,6 +11,7 @@ import {
   decodeGuestParticipant,
   decodeInviteLink,
   decodeInvitePreview,
+  decodeMe,
   decodeMutationAck,
   decodeUserProfile,
   decodeUserProfileOrNull,
@@ -411,9 +412,56 @@ describe("additional wire decoders", () => {
     expect(decodeUserProfile(user)).toEqual({ ok: true, value: user });
   });
 
-  it("rejects a user profile without isBot", () => {
+  it("decodes a user profile without isBot defaulting to false", () => {
     const user = { id: "u-1", handle: "bob", name: "Bob", avatarUrl: null };
-    expect(decodeUserProfile(user).ok).toBe(false);
+    expect(decodeUserProfile(user)).toEqual({
+      ok: true,
+      value: { id: "u-1", handle: "bob", name: "Bob", avatarUrl: null, isBot: false },
+    });
+  });
+
+  it("rejects a user profile with non-boolean isBot with path ending isBot", () => {
+    const user = { id: "u-1", handle: "bob", name: "Bob", avatarUrl: null, isBot: "yes" };
+    const result = decodeUserProfile(user);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path.at(-1)).toBe("isBot");
+    }
+  });
+
+  const meFixture = {
+    id: "user-1",
+    handle: "alice",
+    name: "Alice",
+    avatarUrl: null,
+    isBot: false,
+    email: "alice@example.com",
+    pixKeyType: "email",
+    pixKeyHint: "al***@example.com",
+    onboarded: true,
+    notificationPreferences: {
+      expenses: true,
+      settlements: false,
+    },
+  };
+
+  it("decodes me without isBot defaulting to false", () => {
+    const rawMe = { ...meFixture };
+    delete (rawMe as Record<string, unknown>).isBot;
+    const result = decodeMe(rawMe);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.isBot).toBe(false);
+    }
+  });
+
+  it("rejects me with non-boolean isBot with path ending isBot", () => {
+    const rawMe = { ...meFixture, isBot: "yes" };
+    const result = decodeMe(rawMe);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issue.path.at(-1)).toBe("isBot");
+    }
   });
 
   it("decodes group event with arbitrary json payload", () => {

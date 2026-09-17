@@ -28,8 +28,8 @@ const sizePx = {
   lg: 56,
 };
 
-const badgeClasses = {
-  xs: "size-2.5",
+// Suppressed for size="xs": at 24px, a 10px badge leaves an unreadable ~6px glyph.
+const badgeClasses: Record<"sm" | "md" | "lg", string> = {
   sm: "size-3",
   md: "size-3.5",
   lg: "size-4.5",
@@ -73,10 +73,10 @@ export function UserAvatar({ name, avatarUrl, size = "md", className, priority, 
       </div>
     );
 
-  if (!isBot) return avatar;
+  if (!isBot || size === "xs") return avatar;
 
   return (
-    <span className="relative inline-flex shrink-0">
+    <span className="relative flex shrink-0">
       {avatar}
       <Bot
         role="img"

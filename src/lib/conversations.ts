@@ -9,6 +9,7 @@ export interface ConversationRowData {
   title: string;
   avatarName: string;
   avatarUrl: string | null;
+  avatarIsBot: boolean;
   href: string;
   preview: string | null;
   previewIsMine: boolean;
@@ -64,6 +65,7 @@ export function conversationRow(
       title: counterparty.user.name,
       avatarName: counterparty.user.name,
       avatarUrl: counterparty.user.avatarUrl,
+      avatarIsBot: counterparty.user.isBot,
       href: `/app/conversations/${counterparty.userId}`,
       preview: lastMessage?.content ?? null,
       previewIsMine: lastMessage?.senderId === meId,
@@ -85,6 +87,7 @@ export function conversationRow(
     title: snapshot.group.name,
     avatarName: snapshot.group.name,
     avatarUrl: null,
+    avatarIsBot: false,
     href: `/app/groups/${snapshot.group.id}/chat`,
     preview: lastMessage?.content ?? "Sem mensagens",
     previewIsMine: lastMessage?.senderId === meId,

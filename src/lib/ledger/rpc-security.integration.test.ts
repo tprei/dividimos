@@ -45,3 +45,23 @@ describe.skipIf(!isIntegrationTestReady)("receipt helper privilege contract", ()
     expect(error).toBeNull();
   });
 });
+
+describe.skipIf(!isIntegrationTestReady)("user column privileges", () => {
+  it("denies authenticated user from updating their own is_bot flag", async () => {
+    const user = await createTestUser();
+    const client = authenticateAs(user);
+    const { error } = await client
+      .from("users")
+      .update({ is_bot: true })
+      .eq("id", user.id);
+    expect(error).not.toBeNull();
+
+    const { data: row, error: readError } = await adminClient!
+      .from("users")
+      .select("is_bot")
+      .eq("id", user.id)
+      .single();
+    expect(readError).toBeNull();
+    expect(row?.is_bot).toBe(false);
+  });
+});

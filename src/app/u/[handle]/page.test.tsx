@@ -74,7 +74,7 @@ describe("/u/[handle]", () => {
 
     const html = await renderPage("daniel");
 
-    expect(html).toContain("Bot verificado");
+    expect(html).toMatch(/>\s*Bot verificado\s*</);
   });
 
   it("renders the self branch for the profile owner", async () => {

@@ -669,4 +669,41 @@ describe("migrateAppState", () => {
       total: null,
     });
   });
+
+  it("defaults isBot to false for users persisted before the field existed", () => {
+    const legacyMe = {
+      id: "u1",
+      handle: "alice",
+      name: "Alice",
+      avatarUrl: null,
+      customAvatarUrl: null,
+      primaryGroupId: null,
+      defaultCurrency: "EUR",
+      locale: "en",
+      timeZone: "UTC",
+    };
+    const legacyMember = {
+      user: {
+        id: "u2",
+        handle: "bob",
+        name: "Bob",
+        avatarUrl: null,
+      },
+      role: "member" as const,
+      joinedAt: "2026-01-01T00:00:00Z",
+    };
+
+    const migrated = migrateAppState({
+      me: legacyMe,
+      groups: {
+        g1: {
+          ...snapshot("g1", []),
+          members: [legacyMember],
+        },
+      },
+    });
+
+    expect(migrated.me?.isBot).toBe(false);
+    expect(migrated.groups.g1?.members[0]?.user.isBot).toBe(false);
+  });
 });

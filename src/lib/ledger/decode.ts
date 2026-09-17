@@ -117,7 +117,6 @@ const ME_KEYS = [
   "handle",
   "name",
   "avatarUrl",
-  "isBot",
   "email",
   "pixKeyType",
   "pixKeyHint",
@@ -125,12 +124,16 @@ const ME_KEYS = [
   "notificationPreferences",
 ] as const;
 
+// The client ships before the migration emits isBot, and older server
+// responses lack the key. We tolerate missing isBot during the deploy window.
+const ME_OPTIONAL_KEYS = ["isBot"] as const;
+
 export function decodeMe(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<Me, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, ME_KEYS, path);
+  const k = exactKeys(raw, ME_KEYS, path, ME_OPTIONAL_KEYS);
   if (!k.ok) return k;
 
   const uid = id(raw.id, [...path, "id"]);
@@ -141,8 +144,12 @@ export function decodeMe(
   if (!n.ok) return n;
   const a = nullableStr(raw.avatarUrl, [...path, "avatarUrl"]);
   if (!a.ok) return a;
-  const isBot = bool(raw.isBot, [...path, "isBot"]);
-  if (!isBot.ok) return isBot;
+  let isBot = false;
+  if ("isBot" in raw) {
+    const b = bool(raw.isBot, [...path, "isBot"]);
+    if (!b.ok) return b;
+    isBot = b.value;
+  }
   const em = str(raw.email, [...path, "email"]);
   if (!em.ok) return em;
 
@@ -178,7 +185,7 @@ export function decodeMe(
     handle: h.value,
     name: n.value,
     avatarUrl: a.value,
-    isBot: isBot.value,
+    isBot,
     email: em.value,
     pixKeyType,
     pixKeyHint: pkh.value,

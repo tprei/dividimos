@@ -26,6 +26,14 @@ const dan: UserProfile = {
   isBot: false,
 };
 
+const botUser: UserProfile = {
+  id: "user-bot",
+  handle: "dividimos-bot",
+  name: "Dividimos Bot",
+  avatarUrl: null,
+  isBot: true,
+};
+
 function member(groupId: string, user: UserProfile) {
   return {
     groupId,
@@ -147,6 +155,18 @@ describe("conversationRow", () => {
     });
 
     expect(conversationRow(snapshot, me.id)).toBeNull();
+  });
+
+  it("sets avatarIsBot from the DM counterparty or false for groups", () => {
+    const groupSnapshot = makeSnapshot("group");
+    const dmSnapshot = makeSnapshot("dm");
+    const botDmSnapshot = makeSnapshot("dm", {
+      members: [member("dm-1", me), member("dm-1", botUser)],
+    });
+
+    expect(conversationRow(groupSnapshot, me.id)?.avatarIsBot).toBe(false);
+    expect(conversationRow(dmSnapshot, me.id)?.avatarIsBot).toBe(false);
+    expect(conversationRow(botDmSnapshot, me.id)?.avatarIsBot).toBe(true);
   });
 });
 

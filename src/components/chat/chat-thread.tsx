@@ -60,7 +60,12 @@ function messageMarker(
   meId: string,
 ): ChatRailMarker {
   if (message.senderId !== meId && !isSameRun(previous, message)) {
-    return { kind: "avatar", name: message.sender.name, avatarUrl: message.sender.avatarUrl };
+    return {
+      kind: "avatar",
+      name: message.sender.name,
+      avatarUrl: message.sender.avatarUrl,
+      isBot: message.sender.isBot,
+    };
   }
   return { kind: "message" };
 }
