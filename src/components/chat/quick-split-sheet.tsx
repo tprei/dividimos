@@ -67,6 +67,13 @@ export function QuickSplitSheet({
   const [myFixedCents, setMyFixedCents] = useState(0);
   const [payerId, setPayerId] = useState<string>(currentUserId);
 
+  // The sheet stays mounted, so every open resets to the documented default payer.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setPayerId(currentUserId);
+  }
+
   const participants = useMemo(
     () => [
       { id: currentUserId, name: "Você" },
@@ -191,7 +198,7 @@ export function QuickSplitSheet({
             }
           }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md rounded-t-3xl bg-card p-6 pb-24 sm:pb-6 sm:rounded-3xl"
+          className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-card p-6 pb-8 sm:pb-6 sm:rounded-3xl"
           data-testid="quick-split-sheet"
         >
           <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted/80 sm:hidden" />
@@ -252,32 +259,36 @@ export function QuickSplitSheet({
 
             <div>
               <div className="mb-1.5 block text-xs font-medium text-muted-foreground">Quem pagou?</div>
-              <div className="flex gap-2">
+              <div role="radiogroup" aria-label="Quem pagou?" className="flex gap-2">
                 <button
                   type="button"
+                  role="radio"
+                  aria-checked={payerId === currentUserId}
                   onClick={() => setPayerId(currentUserId)}
                   disabled={isDisabled}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
+                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                     payerId === currentUserId
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-background text-muted-foreground hover:border-primary/30"
                   }`}
                   data-testid="quick-split-payer-self"
                 >
-                  <PersonLabel name="Você" handle={currentUserHandle} nameClassName="text-sm" />
+                  <PersonLabel name="Você" handle={currentUserHandle} nameClassName="text-sm truncate" />
                 </button>
                 <button
                   type="button"
+                  role="radio"
+                  aria-checked={payerId === counterparty.id}
                   onClick={() => setPayerId(counterparty.id)}
                   disabled={isDisabled}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
+                  className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-50 ${
                     payerId === counterparty.id
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border bg-background text-muted-foreground hover:border-primary/30"
                   }`}
                   data-testid="quick-split-payer-other"
                 >
-                  <PersonLabel name={counterparty.name} handle={counterparty.handle} nameClassName="text-sm" />
+                  <PersonLabel name={participants[1].name} handle={counterparty.handle} nameClassName="text-sm truncate" />
                 </button>
               </div>
             </div>
@@ -451,14 +462,14 @@ export function QuickSplitSheet({
             <div className="flex gap-2 pt-1">
               <Button
                 variant="ghost"
-                className="flex-1"
+                className="min-h-11 flex-1"
                 onClick={handleClose}
                 disabled={isDisabled}
               >
                 Cancelar
               </Button>
               <Button
-                className="flex-1 gap-2"
+                className="min-h-11 flex-1 gap-2"
                 onClick={handleConfirm}
                 disabled={!isValid || isDisabled}
                 aria-busy={isConfirming}

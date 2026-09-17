@@ -270,7 +270,7 @@ describe("QuickSplitSheet", () => {
 
   it("reports the current user as the payer and still confirms them as payer", async () => {
     const { user, onConfirm } = renderSheet();
-    expect(screen.getByTestId("quick-split-payer-self")).toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-self")).toBeChecked();
 
     fillForm("Pizza", "50,00");
     await user.click(screen.getByTestId("quick-split-confirm"));
@@ -282,8 +282,8 @@ describe("QuickSplitSheet", () => {
   it("allows selecting counterparty as payer and reports counterparty payerId on confirm", async () => {
     const { user, onConfirm } = renderSheet();
     await user.click(screen.getByTestId("quick-split-payer-other"));
-    expect(screen.getByTestId("quick-split-payer-other")).toHaveClass("border-primary");
-    expect(screen.getByTestId("quick-split-payer-self")).not.toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
+    expect(screen.getByTestId("quick-split-payer-self")).not.toBeChecked();
 
     fillForm("Pizza", "60,00");
     await user.click(screen.getByTestId("quick-split-confirm"));
@@ -310,23 +310,23 @@ describe("QuickSplitSheet", () => {
     const { user } = renderSheet();
     fillForm("Pizza", "100,00");
     await user.click(screen.getByTestId("quick-split-payer-other"));
-    expect(screen.getByTestId("quick-split-payer-other")).toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
 
     await user.click(screen.getByTestId("split-method-percentage"));
-    expect(screen.getByTestId("quick-split-payer-other")).toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
 
     await user.click(screen.getByTestId("split-method-fixed"));
-    expect(screen.getByTestId("quick-split-payer-other")).toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
 
     await user.click(screen.getByTestId("split-method-equal"));
-    expect(screen.getByTestId("quick-split-payer-other")).toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
   });
 
   it("preserves selected payer across error state and keeps confirm enabled for retry", async () => {
     const { user, rerender } = renderSheet();
     fillForm("Pizza", "100,00");
     await user.click(screen.getByTestId("quick-split-payer-other"));
-    expect(screen.getByTestId("quick-split-payer-other")).toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
 
     rerender(
       <QuickSplitSheet
@@ -341,8 +341,37 @@ describe("QuickSplitSheet", () => {
     );
 
     expect(screen.getByTestId("quick-split-error")).toHaveTextContent("Falha ao salvar divisão");
-    expect(screen.getByTestId("quick-split-payer-other")).toHaveClass("border-primary");
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
     expect(screen.getByTestId("quick-split-confirm")).toBeEnabled();
+  });
+
+  it("resets the payer to the viewer when the sheet reopens", async () => {
+    const { user, rerender } = renderSheet();
+    fillForm("Pizza", "100,00");
+    await user.click(screen.getByTestId("quick-split-payer-other"));
+    expect(screen.getByTestId("quick-split-payer-other")).toBeChecked();
+
+    rerender(
+      <QuickSplitSheet
+        open={false}
+        onClose={vi.fn()}
+        currentUserId={CURRENT_USER}
+        counterparty={COUNTERPARTY}
+        onConfirm={vi.fn()}
+      />,
+    );
+    rerender(
+      <QuickSplitSheet
+        open
+        onClose={vi.fn()}
+        currentUserId={CURRENT_USER}
+        counterparty={COUNTERPARTY}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("quick-split-payer-self")).toBeChecked();
+    expect(screen.getByTestId("quick-split-payer-other")).not.toBeChecked();
   });
 
   it("renders handles when provided", () => {
