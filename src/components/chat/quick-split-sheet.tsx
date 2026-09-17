@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
 import { allocateByWeights, allocateEvenly, parseAllocationPercentText } from "@/lib/expense-money";
-import { percentText } from "@/lib/item-division";
+import { FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
 import type { SplitType } from "@/types";
 import type { UserProfile } from "@/types/ledger";
 
@@ -45,8 +45,6 @@ const SPLIT_METHODS: { key: SplitType; icon: React.ElementType; label: string }[
   { key: "percentage", icon: Percent, label: "%" },
   { key: "fixed", icon: Hash, label: "Fixo" },
 ];
-
-const FULL_PERCENT = 10_000;
 
 export function QuickSplitSheet({
   open,
@@ -99,7 +97,7 @@ export function QuickSplitSheet({
       if (percentageBasisPoints === null) return null;
       const amountsRes = allocateByWeights(totalCents, [
         percentageBasisPoints,
-        FULL_PERCENT - percentageBasisPoints,
+        FULL_PERCENT_BASIS_POINTS - percentageBasisPoints,
       ]);
       if (!amountsRes.ok) return null;
       const amounts = amountsRes.value;
@@ -131,12 +129,10 @@ export function QuickSplitSheet({
 
   const percentageWarning = useMemo(() => {
     if (splitMethod !== "percentage" || percentageBasisPoints !== null) return null;
-    const digitsOnly = myPercentage.replace(/[^\d]/g, "");
-    if (digitsOnly === "") return "Porcentagem deve estar entre 0% e 100%";
-    const outOfRange = Number(digitsOnly) > 100;
-    return outOfRange
-      ? "Porcentagem deve estar entre 0% e 100%"
-      : "Porcentagem deve estar entre 0% e 100% com até duas casas decimais.";
+    const parsed = parseAllocationPercentText(myPercentage);
+    return parsed.ok === false && parsed.issue.code === "out_of_range"
+      ? "Use de 0% a 100%"
+      : "Use de 0% a 100%, com até duas casas";
   }, [splitMethod, percentageBasisPoints, myPercentage]);
 
   const fixedWarning = useMemo(() => {
@@ -233,7 +229,7 @@ export function QuickSplitSheet({
                   valueCents={totalCents}
                   onChangeCents={setTotalCents}
                   disabled={isDisabled}
-                  className="flex-1 text-2xl font-bold h-14"
+                  className="min-w-0 flex-1 text-2xl font-bold h-14"
                   data-testid="quick-split-amount"
                 />
               </div>
@@ -298,7 +294,7 @@ export function QuickSplitSheet({
                   <div className="rounded-xl border bg-card/50 p-3 space-y-3">
                     <div className="flex items-center gap-3">
                       <span className="text-sm flex-1">Você</span>
-                      <div className="flex items-center gap-1 w-20">
+                      <div className="flex items-center gap-1 w-24">
                         <Input
                           type="text"
                           inputMode="decimal"
@@ -306,30 +302,39 @@ export function QuickSplitSheet({
                           value={myPercentage}
                           onChange={(e) => setMyPercentage(e.target.value)}
                           disabled={isDisabled}
-                          className="h-8 text-right text-sm"
+                          className="h-11 text-right text-base"
+                          aria-invalid={percentageWarning ? true : undefined}
+                          aria-describedby="quick-split-percent-error"
                           data-testid="quick-split-my-percentage"
                         />
                         <span className="text-sm text-muted-foreground">%</span>
                       </div>
                       {shares && (
-                        <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">
+                        <span className="text-sm font-semibold tabular-nums w-20 text-right">
                           {formatBRL(shares[0].shareAmountCents)}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-sm flex-1">{participants[1].name}</span>
-                      <span className="text-sm tabular-nums w-20 text-right">
-                        {percentageBasisPoints === null ? "—" : `${percentText(FULL_PERCENT - percentageBasisPoints)}%`}
-                      </span>
+                      <div className="flex items-center gap-1 w-24">
+                        <span className="w-full text-right text-sm tabular-nums">
+                          {percentageBasisPoints === null
+                            ? "—"
+                            : percentText(FULL_PERCENT_BASIS_POINTS - percentageBasisPoints).replace(/,00$/, "")}
+                        </span>
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </div>
                       {shares && (
-                        <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">
+                        <span className="text-sm font-semibold tabular-nums w-20 text-right">
                           {formatBRL(shares[1].shareAmountCents)}
                         </span>
                       )}
                     </div>
                     {percentageWarning && (
-                      <p className="text-xs text-warning-foreground">{percentageWarning}</p>
+                      <p className="text-xs text-destructive" id="quick-split-percent-error">
+                        {percentageWarning}
+                      </p>
                     )}
                   </div>
                 )}

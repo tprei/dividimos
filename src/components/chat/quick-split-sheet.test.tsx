@@ -191,7 +191,7 @@ describe("QuickSplitSheet", () => {
     await user.click(screen.getByTestId("split-method-percentage"));
     setInput("quick-split-my-percentage", "110");
 
-    expect(screen.getByText("Porcentagem deve estar entre 0% e 100%")).toBeInTheDocument();
+    expect(screen.getByText("Use de 0% a 100%")).toBeInTheDocument();
   });
 
   it("shows warning when fixed amount exceeds total", async () => {
@@ -209,7 +209,7 @@ describe("QuickSplitSheet", () => {
     await user.click(screen.getByTestId("split-method-percentage"));
     setInput("quick-split-my-percentage", "12,5");
 
-    expect(screen.getByText("87,50%")).toBeInTheDocument();
+    expect(screen.getByText("87,50")).toBeInTheDocument();
     expect(screen.getByText("R$ 11,25")).toBeInTheDocument();
     expect(screen.getByText("R$ 78,75")).toBeInTheDocument();
     expect(screen.getByTestId("quick-split-confirm")).toBeEnabled();
@@ -229,8 +229,19 @@ describe("QuickSplitSheet", () => {
     setInput("quick-split-my-percentage", "150");
 
     expect(screen.getByTestId("quick-split-my-percentage")).toHaveValue("150");
-    expect(screen.getByText("Porcentagem deve estar entre 0% e 100%")).toBeInTheDocument();
+    expect(screen.getByTestId("quick-split-my-percentage")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("Use de 0% a 100%")).toBeInTheDocument();
     expect(screen.getByTestId("quick-split-confirm")).toBeDisabled();
+  });
+
+  it("reports excess precision as a format problem instead of an out-of-range one", async () => {
+    const { user } = renderSheet();
+    fillForm("X", "50,00");
+    await user.click(screen.getByTestId("split-method-percentage"));
+    setInput("quick-split-my-percentage", "33,335");
+
+    expect(screen.getByText("Use de 0% a 100%, com até duas casas")).toBeInTheDocument();
+    expect(screen.queryByText("Use de 0% a 100%")).not.toBeInTheDocument();
   });
 
   it("splits whole percentages with an exact-sum result", async () => {
@@ -238,6 +249,8 @@ describe("QuickSplitSheet", () => {
     fillForm("X", "10,01");
     await user.click(screen.getByTestId("split-method-percentage"));
     setInput("quick-split-my-percentage", "33");
+    expect(screen.getByText("67")).toBeInTheDocument();
+    expect(screen.queryByText("67,00")).not.toBeInTheDocument();
     await user.click(screen.getByTestId("quick-split-confirm"));
 
     const result = onConfirm.mock.calls[0][0];
