@@ -77,7 +77,7 @@ describe("scan-replacement & scan-commit", () => {
     expect(oldDraftKey).toBeDefined();
 
     // Verify localStorage has the old draft
-    const oldPersistedJson = localStorage.getItem("dividimos-draft");
+    const oldPersistedJson = localStorage.getItem(useBillStore.persist.getOptions().name ?? "");
     expect(oldPersistedJson).not.toBeNull();
     const oldPersisted = JSON.parse(oldPersistedJson!);
     expect(oldPersisted.state.expense.expenseType).toBe("single_amount");
@@ -132,7 +132,7 @@ describe("scan-replacement & scan-commit", () => {
     expect(nextState.receiptAccessKey).toBeNull();
 
     // Verify localStorage snapshot reflects the new complete state without intermediate states
-    const nextPersistedJson = localStorage.getItem("dividimos-draft");
+    const nextPersistedJson = localStorage.getItem(useBillStore.persist.getOptions().name ?? "");
     expect(nextPersistedJson).not.toBeNull();
     const nextPersisted = JSON.parse(nextPersistedJson!);
     expect(nextPersisted.state.expense.expenseType).toBe("itemized");
