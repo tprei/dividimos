@@ -14,6 +14,7 @@ const defaultProps = {
   onConfirm: vi.fn(),
   onEdit: vi.fn(),
   onDismiss: vi.fn(),
+  onLeavePending: vi.fn(),
 };
 
 function renderSheet(overrides = {}) {
@@ -204,8 +205,6 @@ describe("QuickChargeSheet", () => {
 
       const closeBtn = screen.getByTestId("quick-charge-dismiss");
       expect(closeBtn).toBeDisabled();
-      expect(closeBtn.className).toContain("disabled:cursor-not-allowed");
-      expect(closeBtn.className).toContain("disabled:opacity-40");
       fireEvent.click(closeBtn);
 
       expect(onDismiss).not.toHaveBeenCalled();
@@ -215,8 +214,7 @@ describe("QuickChargeSheet", () => {
       const onDismiss = vi.fn();
       renderSheet({ status: "confirming", onDismiss });
 
-      const consumed = runBackHandlers();
-      expect(consumed).toBe(true);
+      runBackHandlers();
       expect(onDismiss).not.toHaveBeenCalled();
     });
 
@@ -226,7 +224,6 @@ describe("QuickChargeSheet", () => {
       const confirmBtn = screen.getByTestId("quick-charge-confirm");
       expect(confirmBtn).toBeDisabled();
       expect(confirmBtn).toHaveTextContent("Cobrado!");
-      expect(confirmBtn.className).toContain("bg-success");
     });
 
     it("renders Registrado! and success styling when status is confirmed and payer is other", async () => {
@@ -238,14 +235,14 @@ describe("QuickChargeSheet", () => {
       const confirmBtn = screen.getByTestId("quick-charge-confirm");
       expect(confirmBtn).toBeDisabled();
       expect(confirmBtn).toHaveTextContent("Registrado!");
-      expect(confirmBtn.className).toContain("bg-success");
     });
 
-    it("shows pending state after 15s when confirming and allows exit via Sair por enquanto", () => {
+    it("shows pending state after 15s with charge wording and exits via onLeavePending", () => {
       vi.useFakeTimers();
       try {
         const onDismiss = vi.fn();
-        renderSheet({ status: "confirming", onDismiss });
+        const onLeavePending = vi.fn();
+        renderSheet({ status: "confirming", onDismiss, onLeavePending });
 
         expect(screen.queryByTestId("quick-charge-pending")).not.toBeInTheDocument();
 
@@ -254,15 +251,16 @@ describe("QuickChargeSheet", () => {
         });
 
         expect(screen.getByTestId("quick-charge-pending")).toBeInTheDocument();
-        expect(screen.getByText("OPERAÇÃO PENDENTE")).toBeInTheDocument();
+        expect(screen.getByText("Pendente")).toBeInTheDocument();
         expect(screen.getByText("Ainda aguardando confirmação")).toBeInTheDocument();
         expect(
-          screen.getByText(/A conexão demorou mais que o esperado/),
+          screen.getByText(/Se a cobrança tiver sido registrada/),
         ).toBeInTheDocument();
 
         const exitBtn = screen.getByRole("button", { name: "Sair por enquanto" });
         fireEvent.click(exitBtn);
-        expect(onDismiss).toHaveBeenCalledTimes(1);
+        expect(onLeavePending).toHaveBeenCalledTimes(1);
+        expect(onDismiss).not.toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
       }

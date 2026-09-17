@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Check, DollarSign, Loader2, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,10 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import { useBackHandler } from "@/hooks/use-back-handler";
+import {
+  PendingOperationNotice,
+  usePendingOperation,
+} from "@/components/chat/pending-operation";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export type QuickChargeStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -21,6 +25,7 @@ export interface QuickChargeSheetProps {
   onConfirm: (result: ChatExpenseResult) => void;
   onEdit: (result: ChatExpenseResult) => void;
   onDismiss: () => void;
+  onLeavePending: () => void;
   status?: QuickChargeStatus;
   errorMessage?: string;
 }
@@ -69,34 +74,17 @@ export function QuickChargeSheet({
   onConfirm,
   onEdit,
   onDismiss,
+  onLeavePending,
   status = "idle",
   errorMessage,
 }: QuickChargeSheetProps) {
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
   const [descriptionEdited, setDescriptionEdited] = useState(false);
-  const [showPending, setShowPending] = useState(false);
-
-  const guardedDismiss = useCallback(() => {
-    if (status === "confirming") return true;
-    onDismiss();
-    return true;
-  }, [status, onDismiss]);
-  useBackHandler(true, guardedDismiss);
-
-  useEffect(() => {
-    if (status !== "confirming") return undefined;
-    const timer = window.setTimeout(() => setShowPending(true), 15000);
-    return () => window.clearTimeout(timer);
-  }, [status]);
-  const [prevStatus, setPrevStatus] = useState<QuickChargeStatus>(status);
-  if (status !== prevStatus) {
-    setPrevStatus(status);
-    if (status !== "confirming") {
-      setShowPending(false);
-    }
-  }
   const [payerIsSelf, setPayerIsSelf] = useState(true);
+
+  const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
+  useBackHandler(true, guardedDismiss);
 
   const autoDescription = useMemo(
     () => buildDescription(amountCents, counterpartyName, payerIsSelf),
@@ -178,6 +166,7 @@ export function QuickChargeSheet({
           <CurrencyInput
             valueCents={amountCents}
             onChangeCents={setAmountCents}
+            aria-label="Valor total"
             className="w-32 text-3xl font-bold"
             autoFocus
             data-testid="quick-charge-amount"
@@ -244,25 +233,12 @@ export function QuickChargeSheet({
         </div>
       )}
 
-      {showPending && status === "confirming" && (
-        <div
-          className="mb-3 rounded-xl border border-warning/30 bg-warning/10 p-3"
-          data-testid="quick-charge-pending"
-        >
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-            OPERAÇÃO PENDENTE
-          </p>
-          <p className="mt-1 text-sm font-semibold">Ainda aguardando confirmação</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            A conexão demorou mais que o esperado. Não se preocupe: se o pagamento foi
-            processado, ele aparecerá aqui na conversa. Você pode sair agora sem duplicar o
-            registro.
-          </p>
-          <Button variant="outline" size="sm" className="mt-2" onClick={onDismiss}>
-            Sair por enquanto
-          </Button>
-        </div>
-      )}
+      <PendingOperationNotice
+        show={showPending && status === "confirming"}
+        body="A conexão está demorando. Se a cobrança tiver sido registrada, ela aparece aqui na conversa — sair agora não duplica nada."
+        onLeave={onLeavePending}
+        testId="quick-charge-pending"
+      />
 
       <div className="flex gap-2">
         <Button

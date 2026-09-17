@@ -265,7 +265,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
         />
       </div>
       {paymentOpen && paymentCounterparties.length > 0 && (
-        <div className="px-4 pb-2">
+        <div className="shrink-0 px-4 pb-2">
           <GroupRegisterPaymentSheet
             currentUserHandle={me.handle}
             counterparties={paymentCounterparties}
@@ -273,6 +273,7 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
             onDismiss={() => {
               if (paymentStatus !== "confirming") setPaymentOpen(false);
             }}
+            onLeavePending={() => setPaymentOpen(false)}
             status={paymentStatus}
             errorMessage={paymentError}
           />
@@ -283,10 +284,12 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           <button
             type="button"
             onClick={() => {
+              if (paymentStatus === "confirming") return;
               setPaymentStatus("idle");
               setPaymentError(undefined);
               setPaymentOpen((prev) => !prev);
             }}
+            disabled={paymentStatus === "confirming"}
             className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
           >
             <Banknote className="h-3.5 w-3.5" />

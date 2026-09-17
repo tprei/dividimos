@@ -614,7 +614,10 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
                   currentUserHandle={me.handle}
                   onConfirm={handleQuickChargeConfirm}
                   onEdit={handleEditDraft}
-                  onDismiss={() => setChargeSheetOpen(false)}
+                  onDismiss={() => {
+                    if (chargeStatus !== "confirming") setChargeSheetOpen(false);
+                  }}
+                  onLeavePending={() => setChargeSheetOpen(false)}
                   status={chargeStatus}
                   errorMessage={chargeError}
                 />
@@ -633,12 +636,14 @@ export function ConversationPageClient({ counterpartyId }: ConversationPageClien
           />
           <ConversationQuickActions
             onCharge={() => {
+              if (chargeStatus === "confirming") return;
               setSplitSheetOpen(false);
               setChargeStatus("idle");
               setChargeError(undefined);
               setChargeSheetOpen((prev) => !prev);
             }}
             onSplit={() => {
+              if (chargeStatus === "confirming") return;
               setChargeSheetOpen(false);
               setSplitStatus("idle");
               setSplitError(undefined);
