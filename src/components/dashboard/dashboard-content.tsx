@@ -161,7 +161,7 @@ export function DashboardContent() {
 
   const openQuickCharge = () => {
     setSelectedDebt(null);
-    if (!me?.pixKeyHint) {
+    if (!me.pixKeyHint) {
       setMissingKeyOpen(true);
       return;
     }
@@ -408,22 +408,30 @@ export function DashboardContent() {
       )}
 
       <Dialog open={missingKeyOpen} onOpenChange={setMissingKeyOpen}>
-        <DialogContent className="max-w-sm rounded-3xl bg-card p-6 text-center">
+        <DialogContent className="rounded-xl bg-card p-6 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary-text">
             <QrCode className="size-6" />
           </div>
-          <DialogTitle className="mt-4 text-base font-bold">Pra receber, você precisa de uma chave Pix.</DialogTitle>
-          <DialogDescription className="mt-1 text-sm text-muted-foreground">
-            Leva um minuto — e só quem recebe precisa dela.
-          </DialogDescription>
-          <div className="mt-6 space-y-2">
+          <div className="space-y-1">
+            <DialogTitle className="text-base font-bold">
+              Pra receber, você precisa de uma chave Pix.
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Leva um minuto — e só quem recebe precisa dela.
+            </DialogDescription>
+          </div>
+          <div className="space-y-2">
             <Link
               href="/app/profile"
               className="flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
             >
               Cadastrar agora
             </Link>
-            <Button variant="ghost" className="w-full rounded-lg" size="lg" onClick={() => setMissingKeyOpen(false)}>
+            <Button
+              variant="ghost"
+              className="min-h-11 w-full rounded-lg"
+              onClick={() => setMissingKeyOpen(false)}
+            >
               Agora não
             </Button>
           </div>

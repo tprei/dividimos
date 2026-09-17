@@ -38,9 +38,29 @@ describe("OnboardForm Pix skip", () => {
     await advanceToPixStep(user);
 
     expect(
-      screen.getByText("Você só precisa de uma chave Pix pra receber dos amigos. Pode cadastrar agora ou depois, no seu perfil."),
+      screen.getByText("Pode cadastrar agora ou depois, no seu perfil."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pular por agora" })).toBeInTheDocument();
+  });
+
+  it("offers the e-mail only as an explicit chip and never pre-fills the key", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} />);
+
+    await advanceToPixStep(user);
+
+    const input = screen.getByPlaceholderText("ana@example.com");
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Começar a usar/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /Usar meu e-mail/i }));
+    expect(input).toHaveValue("ana@example.com");
+    expect(screen.queryByRole("button", { name: /Usar meu e-mail/i })).not.toBeInTheDocument();
+
+    await user.clear(input);
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Começar a usar/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Usar meu e-mail/i })).toBeInTheDocument();
   });
 
   it("submits skip intent without a Pix key", async () => {

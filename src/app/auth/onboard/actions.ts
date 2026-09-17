@@ -23,6 +23,19 @@ function sessionError(): OnboardingActionResult {
   return { error: "Sessão expirada" };
 }
 
+function onboardingRpcError(message: string): OnboardingActionResult {
+  if (message === "handle_taken") {
+    return { error: "Handle já em uso. Escolha outro." };
+  }
+  if (message === "invalid_handle") {
+    return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados." };
+  }
+  if (message === "invalid_name") {
+    return { error: "Nome inválido." };
+  }
+  return { error: "Não foi possível salvar sua conta. Tente novamente." };
+}
+
 export async function completeOnboarding(
   expectedUserId: string,
   destination: string,
@@ -85,18 +98,7 @@ export async function completeOnboarding(
       p_name: name,
     });
 
-    if (error != null) {
-      if (error.message === "handle_taken") {
-        return { error: "Handle já em uso. Escolha outro." };
-      }
-      if (error.message === "invalid_handle") {
-        return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados." };
-      }
-      if (error.message === "invalid_name") {
-        return { error: "Nome inválido." };
-      }
-      return { error: "Não foi possível salvar sua conta. Tente novamente." };
-    }
+    if (error != null) return onboardingRpcError(error.message);
 
     redirect(safeRedirect(destination));
   }
@@ -127,15 +129,7 @@ export async function completeOnboarding(
     p_pix_key_type: pixKeyTypeValue,
   });
 
-  if (error != null) {
-    if (error.message === "handle_taken") {
-      return { error: "Handle já em uso. Escolha outro." };
-    }
-    if (error.message === "invalid_handle") {
-      return { error: "Handle inválido. Use 3 a 30 caracteres: letras, números e sublinhados." };
-    }
-    return { error: "Não foi possível salvar sua conta. Tente novamente." };
-  }
+  if (error != null) return onboardingRpcError(error.message);
 
   redirect(safeRedirect(destination));
 }
