@@ -350,6 +350,7 @@ describe("useWizardSubmit", () => {
     });
 
     expect(ok).toBe(false);
+    expect(router.push).not.toHaveBeenCalled();
     // The draft survives with its client id, so a retry is the same write.
     expect(useBillStore.getState().draftKey).toBe(draftKey);
     expect(useBillStore.getState().expense?.title).toBe("Jantar");

@@ -29,7 +29,7 @@ const options: {
     type: "itemized",
     icon: ScanLine,
     title: "Vários itens",
-    subtitle: "Conta com itens, cada um no que comeu",
+    subtitle: "Cada um paga o que comeu",
     examples: "Restaurante, bar, mercado, delivery",
   },
 ];

@@ -95,6 +95,7 @@ export function ItemizedBillForm({
     serviceFeeText(store.expense?.serviceFeeBasisPoints ?? 0),
   );
   const [amountInputs, setAmountInputs] = useState<Record<string, string>>({});
+  const [pickerSentinel, setPickerSentinel] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const focusTitlePending = useRef(false);
 
@@ -149,8 +150,13 @@ export function ItemizedBillForm({
   });
 
   const handleGroupSelect = (value: string | null) => {
-    const groupId = value === "create" || value === "dm" ? null : value;
-    onSelectGroup(groupId);
+    if (value === "create" || value === "dm") {
+      setPickerSentinel(value);
+      onSelectGroup(null);
+      return;
+    }
+    setPickerSentinel(null);
+    onSelectGroup(value);
   };
 
   const handleAmountChange = (itemId: string, text: string) => {
@@ -213,7 +219,7 @@ export function ItemizedBillForm({
         store={store}
         expense={expense}
         occurredOn={occurredOn}
-        groupValue={selectedGroupId}
+        groupValue={selectedGroupId ?? pickerSentinel}
         titleRef={titleRef}
         dmEligible={dmEligible}
         accountReady={accountReady}

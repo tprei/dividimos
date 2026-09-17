@@ -96,7 +96,7 @@ function NewBillPageContent() {
     }
   }, []);
 
-  const selectedGroupId = store.expense?.groupId ? store.expense.groupId : (pendingGroupId ?? null);
+  const selectedGroupId = store.expense ? (store.expense.groupId || null) : pendingGroupId;
 
   useWizardInit({
     modes,
@@ -299,6 +299,7 @@ function NewBillPageContent() {
       const billStore = useBillStore.getState();
       if (billStore.expense) {
         billStore.updateExpense({ groupId: groupId ?? "" });
+        setPendingGroupId(null);
       } else {
         setPendingGroupId(groupId);
       }
@@ -394,7 +395,7 @@ function NewBillPageContent() {
       <SingleBillForm
         me={me}
         groups={groupSnapshots}
-        initialGroupId={selectedGroupId ?? (store.expense?.groupId || null)}
+        initialGroupId={selectedGroupId}
         isDmMode={isDmMode}
         isEditing={isEditing}
         hasContactPicker={hasContactPicker}
