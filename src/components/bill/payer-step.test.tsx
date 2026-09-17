@@ -72,6 +72,8 @@ describe("PayerStep percentage mode", () => {
 
     await setPercent("Ana", 40);
 
+    // The other two seeds carry the half-up residue of the prior split, so
+    // the shortfall is deterministic at 59,99%, not a rounded 60%.
     expect(screen.getByText(/faltam 59,99% para completar 100%/)).toBeInTheDocument();
   });
 
