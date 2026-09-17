@@ -218,7 +218,7 @@ export function SingleBillForm({
             type="button"
             size="lg"
             className="h-12 w-full text-base font-bold"
-            disabled={!canSubmit || submitting || submitBlockedReason !== null}
+            disabled={!canSubmit || submitting || Boolean(submitBlockedReason)}
             onClick={() => void handleSubmit()}
             aria-describedby="single-bill-division-status"
           >
