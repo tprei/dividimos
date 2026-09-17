@@ -11,6 +11,7 @@ import { getDraftOwner, setDraftOwner } from "@/lib/bill-draft-isolation";
 import type { ExpenseDetail, Me, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
 import type { Step, WizardModes } from "./wizard-modes";
+import { writeDraftIntent } from "./use-draft-intent";
 
 function profileToUser(profile: UserProfile): User {
   return {
@@ -205,6 +206,12 @@ export function useWizardInit({
       billStore.hydrateFromDetail(detail, snapshot?.members ?? []);
 
       const hydrated = useBillStore.getState();
+      writeDraftIntent({
+        kind: "edit",
+        expenseId: editId,
+        expectedVersionNo: detail.expense.currentVersionNo,
+        draftKey: hydrated.draftKey,
+      });
       onSetIsEditing(true);
       onSetBillType(hydrated.expense?.expenseType ?? "single_amount");
 

@@ -2,8 +2,9 @@ import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
-import type { GroupSnapshot, Me } from "@/types/ledger";
+import type { ExpenseDetail, ExpenseVersion, GroupSnapshot, Me } from "@/types/ledger";
 import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
+import { readDraftIntent } from "./use-draft-intent";
 import { setDraftOwner } from "@/lib/bill-draft-isolation";
 
 vi.mock("react-hot-toast", () => ({ default: { error: vi.fn() } }));
@@ -166,7 +167,84 @@ describe("useWizardInit chat actors", () => {
     expect(participantIds).toContain(other.id);
     expect(useBillStore.getState().expense).not.toBeNull();
   });
+
+  it("records edit draft intent when hydrating an existing expense for editing", () => {
+    const editId = "exp-edit-1";
+    const currentVersion: ExpenseVersion = {
+      expenseId: editId,
+      versionNo: 3,
+      authorId: me.id,
+      createdAt: "2026-09-01T00:00:00Z",
+      changeSummary: null,
+      occurredOn: "2026-09-01",
+      title: "Almoço de Trabalho",
+      merchantName: null,
+      expenseType: "single_amount",
+      totalCents: 6000,
+      serviceFeeBasisPoints: 0,
+      fixedFeeCents: 0,
+      payload: {
+        items: [],
+        itemAssignments: [],
+        participants: [{ kind: "user", userId: me.id }],
+        shares: [6000],
+        payers: [{ participantIndex: 0, amountCents: 6000 }],
+      },
+    };
+
+    useAppStore.setState({
+      me,
+      groups: { "group-1": groupSnapshot() },
+      groupOrder: ["group-1"],
+      expenseDetails: {
+        [editId]: {
+          expense: {
+            id: editId,
+            groupId: "group-1",
+            creatorId: me.id,
+            status: "active",
+            currentVersionNo: 3,
+            occurredOn: "2026-09-01",
+            createdAt: "2026-09-01T00:00:00Z",
+            deletedAt: null,
+            deletedBy: null,
+          },
+          current: currentVersion,
+          versions: [currentVersion],
+          participants: [
+            {
+              participantIndex: 0,
+              kind: "user",
+              user: me,
+              guest: null,
+              shareCents: 6000,
+              paidCents: 6000,
+            },
+          ],
+          group: { id: "group-1", name: "Amigos", kind: "group" },
+        } satisfies ExpenseDetail,
+      },
+    });
+
+    renderInit({
+      modes: {
+        dm: null,
+        chatDraft: null,
+        editExpenseId: editId,
+        entryGroupId: "group-1",
+        entryStep: null,
+      },
+    });
+
+    const intent = readDraftIntent();
+    expect(intent).toMatchObject({
+      kind: "edit",
+      expenseId: editId,
+      expectedVersionNo: 3,
+    });
+  });
 });
+
 
 describe("draft ownership", () => {
   it("resets the live draft when another account owns the persisted one", () => {

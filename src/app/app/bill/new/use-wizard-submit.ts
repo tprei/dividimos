@@ -10,6 +10,7 @@ import { useAppStore } from "@/stores/app-store";
 import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
 import { useBillStore } from "@/stores/bill-store";
 import type { User } from "@/types";
+import { clearDraftIntent, readDraftIntent } from "./use-draft-intent";
 
 async function inviteMissingMembers(groupId: string, participants: User[]): Promise<void> {
   const snapshot = useAppStore.getState().groups[groupId];
@@ -113,13 +114,22 @@ export function useWizardSubmit({
       try {
         const { header, payload } = result.value;
         if (editExpenseId) {
+          const intent = readDraftIntent();
+          const fallbackVersion =
+            intent?.kind === "edit" &&
+            (intent.expenseId === state.expense?.id || intent.expenseId === editExpenseId)
+              ? intent.expectedVersionNo
+              : null;
+          const versionNo = expectedVersionNo ?? fallbackVersion ?? 0;
+
           await editExpense({
             expenseId: editExpenseId,
-            expectedVersionNo: expectedVersionNo ?? 0,
+            expectedVersionNo: versionNo,
             header,
             payload,
           });
           useBillStore.getState().reset();
+          clearDraftIntent();
           router.push(`/app/bill/${editExpenseId}`);
           return true;
         }
@@ -153,6 +163,7 @@ export function useWizardSubmit({
         }
 
         useBillStore.getState().reset();
+        clearDraftIntent();
         router.push(`/app/bill/${ack.expenseId ?? ""}`);
         return true;
       } catch (error) {
