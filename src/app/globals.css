@@ -27,6 +27,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -83,6 +84,7 @@
   --accent-foreground: oklch(0.25 0.08 195);
 
   --destructive: oklch(0.56 0.24 350);
+  --destructive-text: oklch(0.50 0.22 350);
 
   --success: oklch(0.70 0.19 155);
   --success-foreground: oklch(0.18 0.04 155);
@@ -92,7 +94,13 @@
   --warning-foreground: oklch(0.25 0.05 75);
 
   --income: oklch(0.70 0.19 155);
-  --income-foreground: oklch(0.99 0 0);
+  --income-foreground: oklch(0.18 0.04 155);
+
+  /* Gradient end stops: darker, hue-rotated companions of --primary / --income / --warning.
+     Theme-independent on purpose so hero surfaces look the same in light and dark. */
+  --gradient-primary-end: oklch(0.68 0.17 65);
+  --gradient-income-end: oklch(0.62 0.17 145);
+  --gradient-warm-end: oklch(0.65 0.2 45);
 
   --overdue: oklch(0.56 0.24 350);
   --overdue-foreground: oklch(0.99 0 0);
@@ -145,10 +153,11 @@
   --accent-foreground: oklch(0.80 0.12 195);
 
   --destructive: oklch(0.62 0.24 350);
+  --destructive-text: oklch(0.66 0.22 350);
 
   --success: oklch(0.72 0.19 155);
   --success-foreground: oklch(0.18 0.04 155);
-  --success-text: oklch(0.72 0.19 155);
+  --success-text: var(--success);
 
   --warning: oklch(0.78 0.15 75);
   --warning-foreground: oklch(0.88 0.09 75);
@@ -216,18 +225,18 @@
     border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   }
   .gradient-primary {
-    background: linear-gradient(135deg, var(--primary), color-mix(in oklab, var(--primary) 85%, black));
+    background: linear-gradient(135deg, var(--primary), var(--gradient-primary-end));
   }
   .gradient-income {
-    background: linear-gradient(135deg, var(--income), color-mix(in oklab, var(--income) 85%, black));
+    background: linear-gradient(135deg, var(--income), var(--gradient-income-end));
   }
   .gradient-warm {
-    background: linear-gradient(135deg, var(--warning), color-mix(in oklab, var(--warning) 85%, black));
+    background: linear-gradient(135deg, var(--warning), var(--gradient-warm-end));
   }
   .gradient-mesh {
     background:
       radial-gradient(at 20% 20%, color-mix(in oklab, var(--primary) 15%, transparent) 0px, transparent 50%),
-      radial-gradient(at 80% 80%, color-mix(in oklab, var(--success) 10%, transparent) 0px, transparent 50%),
+      radial-gradient(at 80% 80%, color-mix(in oklab, var(--income) 10%, transparent) 0px, transparent 50%),
       radial-gradient(at 50% 50%, color-mix(in oklab, var(--warning) 8%, transparent) 0px, transparent 50%);
   }
   .logo-split-left {
