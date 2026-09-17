@@ -1,0 +1,69 @@
+name: Ambient Synthetic
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ambient-prod
+  cancel-in-progress: false
+
+jobs:
+  ambient:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      CI: "true"
+      AMBIENT_SUPABASE_URL: ${{ secrets.AMBIENT_SUPABASE_URL }}
+      AMBIENT_SUPABASE_ANON_KEY: ${{ secrets.AMBIENT_SUPABASE_ANON_KEY }}
+      AMBIENT_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.AMBIENT_SUPABASE_SERVICE_ROLE_KEY }}
+      AMBIENT_SUPABASE_JWT_SECRET: ${{ secrets.AMBIENT_SUPABASE_JWT_SECRET }}
+      AMBIENT_BASE_URL: ${{ vars.AMBIENT_BASE_URL }}
+      AMBIENT_GOOGLE_CLIENT_ID: ${{ vars.AMBIENT_GOOGLE_CLIENT_ID }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Probes and troupe
+        id: vitest
+        timeout-minutes: 6
+        run: npm run test:ambient
+
+      # The later steps run even when vitest failed so one run reports every
+      # failure at once. Nothing is marked continue-on-error: a failed step
+      # still fails the job.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        if: ${{ !cancelled() }}
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: ${{ !cancelled() && steps.playwright-cache.outputs.cache-hit != 'true' }}
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright deps (cache hit)
+        if: ${{ !cancelled() && steps.playwright-cache.outputs.cache-hit == 'true' }}
+        run: npx playwright install-deps chromium
+
+      - name: Web smoke
+        id: web
+        if: ${{ !cancelled() }}
+        timeout-minutes: 4
+        run: npm run test:ambient:web

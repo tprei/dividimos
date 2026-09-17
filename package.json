@@ -23,6 +23,8 @@
     "test:synthetic": "playwright test --project=synthetic",
     "test:synthetic:ui": "playwright test --project=synthetic --ui",
     "test:synthetic:headed": "playwright test --project=synthetic --headed",
+    "test:ambient": "vitest run --config vitest.ambient.config.mts",
+    "test:ambient:web": "playwright test --config playwright.ambient.config.ts",
     "prepare": "git config core.hooksPath .githooks",
     "cap:sync": "npx cap sync",
     "cap:dev:android": "CAPACITOR_DEV=true npx cap sync android && npx cap run android",

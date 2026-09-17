@@ -135,7 +135,7 @@ export class SeedHelper {
     }
   }
 
-  private async mintAccessToken(
+  async mintAccessToken(
     userId: string,
     email: string,
     role: string = "authenticated",
@@ -666,8 +666,13 @@ export class SeedHelper {
 
     throw new Error(
       `SeedHelper.authenticateAs: no cached session for userId=${userId}. ` +
-        `Only users created via SeedHelper.createUser are supported.`,
+        `The user must have been registered via createUser or registerSession.`,
     );
+  }
+
+  /** Adopt a session for a user this helper did not create; cleanup() never touches it. */
+  registerSession(user: SeededUser): void {
+    this.sessionCache.set(user.id, user.accessToken);
   }
 
   // -----------------------------------------------------------------------
