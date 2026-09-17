@@ -61,6 +61,7 @@ export function QuickChargeModal({
   const [phase, setPhase] = useState<"input" | "qr" | "success">("input");
   const [copiaECola, setCopiaECola] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
@@ -138,6 +139,7 @@ export function QuickChargeModal({
       setPhase("input");
       setCopiaECola("");
       setCopied(false);
+      setCopyFailed(false);
       setError("");
       setIsConfirming(false);
       setConfirmedAmount(0);
@@ -164,6 +166,7 @@ export function QuickChargeModal({
     setPhase("qr");
     setLoading(true);
     setError("");
+    setCopyFailed(false);
 
     const controller = new AbortController();
     const operation: ChargeOperation = {
@@ -253,11 +256,21 @@ export function QuickChargeModal({
   }, [copiaECola]);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(copiaECola);
-    haptics.success();
-    setCopied(true);
-    toast.success("Código Pix copiado!");
-    setTimeout(() => setCopied(false), 2000);
+    if (!copiaECola) return;
+    try {
+      await navigator.clipboard.writeText(copiaECola);
+      haptics.success();
+      setCopied(true);
+      setCopyFailed(false);
+      toast.success("Código Pix copiado!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error(
+        "Não foi possível copiar. Use o código abaixo para copiar manualmente.",
+      );
+      haptics.error();
+      setCopyFailed(true);
+    }
   };
 
   const closeModal = useCallback(() => {
@@ -267,6 +280,7 @@ export function QuickChargeModal({
     }
     abandonGeneration();
     setPhase("input");
+    setCopyFailed(false);
     setIsConfirming(false);
     onClose();
   }, [abandonGeneration, onClose]);
@@ -517,6 +531,11 @@ export function QuickChargeModal({
                       </>
                     )}
                   </Button>
+                  {copyFailed && copiaECola && (
+                    <p className="break-all rounded-lg border border-border bg-muted/60 p-2.5 font-mono text-xs select-all">
+                      {copiaECola}
+                    </p>
+                  )}
                   <Button
                     onClick={handleConfirm}
                     className="w-full gap-2"
