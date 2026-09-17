@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
 import { SingleBillForm } from "@/components/bill/single-bill-form";
@@ -37,7 +37,8 @@ import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences
 import { useClientOnly, useMounted } from "@/hooks/use-client-only";
 import { meToLegacyUser } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
-import type { GroupSnapshot } from "@/types/ledger";
+import type { ExpenseDetail, GroupSnapshot, UserProfile } from "@/types/ledger";
+import { ExpenseConflictPanel } from "@/components/bill/wizard/expense-conflict-panel";
 import type { ExpenseType, User } from "@/types";
 import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
 import {
@@ -56,6 +57,11 @@ const TypeStep = dynamic(
   { ssr: false },
 );
 
+type ExpenseConflict =
+  | { status: "none" }
+  | { status: "loading" }
+  | { status: "ready"; detail: ExpenseDetail }
+  | { status: "error"; message: string };
 function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "items") return "items";
   if (step === "split" || step === "participants") return "split";
@@ -117,6 +123,8 @@ function NewBillPageContent() {
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
   const [confirmations, updateConfirmations] = useConfirmationPreferences(me?.id ?? "");
   const [resumedEditExpenseId, setResumedEditExpenseId] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<ExpenseConflict>({ status: "none" });
+  const [editBaseVersionNo, setEditBaseVersionNo] = useState<number | null>(null);
   const [dismissedThisMount, setDismissedThisMount] = useState(false);
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [discardDialogMode, setDiscardDialogMode] = useState<DiscardDraftMode>("type-switch");
@@ -165,6 +173,12 @@ function NewBillPageContent() {
     reviewingScan,
     onSelectGroupDefault: handleSelectGroup,
   });
+
+  useEffect(() => {
+    if (editBaseVersionNo === null && editDetail?.expense.currentVersionNo !== undefined) {
+      setEditBaseVersionNo(editDetail.expense.currentVersionNo);
+    }
+  }, [editBaseVersionNo, editDetail?.expense.currentVersionNo]);
 
   useWizardInit({
     modes,
@@ -466,8 +480,11 @@ function NewBillPageContent() {
     if (intent?.kind === "edit" && intent.expenseId === draft.id) {
       setIsEditing(true);
       setResumedEditExpenseId(intent.expenseId);
+      if (editBaseVersionNo === null && intent.expectedVersionNo !== null) {
+        setEditBaseVersionNo(intent.expectedVersionNo);
+      }
     }
-  }, []);
+  }, [editBaseVersionNo]);
 
   const draftSummary = useMemo(() => {
     const isItemized = store.expense?.expenseType === "itemized";
@@ -515,27 +532,46 @@ function NewBillPageContent() {
     setDiscardDialogOpen(false);
   }, []);
 
-  const onStaleReload = useCallback(async () => {
-    const editId = modes.editExpenseId;
+  const handleStaleVersion = useCallback(async () => {
+    const editId = modes.editExpenseId ?? resumedEditExpenseId;
     if (!editId) return;
+    setConflict({ status: "loading" });
     try {
       await refreshExpense(editId);
     } catch (e) {
-      toast.error(ledgerErrorMessage(e));
+      setConflict({
+        status: "error",
+        message: ledgerErrorMessage(e),
+      });
       return;
     }
     const detail = useAppStore.getState().expenseDetails[editId];
-    if (!detail) return;
-    const snapshot = useAppStore.getState().groups[detail.expense.groupId];
-    useBillStore.getState().hydrateFromDetail(detail, snapshot?.members ?? []);
-    toast.success("Conta atualizada.");
-  }, [modes.editExpenseId]);
+    if (!detail) {
+      setConflict({
+        status: "error",
+        message: "Não foi possível carregar a versão mais recente.",
+      });
+      return;
+    }
+    setConflict({ status: "ready", detail });
+  }, [modes.editExpenseId, resumedEditExpenseId]);
+
+  const handleAcceptConflict = useCallback(() => {
+    const editId = modes.editExpenseId ?? resumedEditExpenseId;
+    if (!editId || conflict.status !== "ready") return;
+    const candidate = conflict.detail;
+    if (candidate.expense.id !== editId) return;
+    const snapshot = useAppStore.getState().groups[candidate.expense.groupId];
+    useBillStore.getState().hydrateFromDetail(candidate, snapshot?.members ?? []);
+    setEditBaseVersionNo(candidate.expense.currentVersionNo);
+    setConflict({ status: "none" });
+  }, [modes.editExpenseId, resumedEditExpenseId, conflict]);
 
   const { submitting, submit } = useWizardSubmit({
     router,
     editExpenseId: modes.editExpenseId ?? resumedEditExpenseId,
-    expectedVersionNo: editDetail?.expense.currentVersionNo ?? null,
-    onStaleReload,
+    expectedVersionNo: editBaseVersionNo,
+    onStaleVersion: handleStaleVersion,
   });
 
   const submitItemized = useCallback(async (): Promise<boolean> => {
@@ -589,7 +625,19 @@ function NewBillPageContent() {
 
   if (!isTypeStep && billType === "itemized") {
     return (
-      <ItemizedBillForm
+      <>
+        {conflict.status !== "none" && (
+          <div className="mx-auto max-w-lg px-4 pt-4">
+            <ExpenseConflictPanel
+              status={conflict.status}
+              detail={conflict.status === "ready" ? conflict.detail : null}
+              errorMessage={conflict.status === "error" ? conflict.message : undefined}
+              onRetry={handleStaleVersion}
+              onAccept={handleAcceptConflict}
+            />
+          </div>
+        )}
+        <ItemizedBillForm
         me={me}
         groups={groupSnapshots}
         selectedGroupId={selectedGroupId}
@@ -610,12 +658,25 @@ function NewBillPageContent() {
         submitting={submitting}
         initialSection={itemizedSectionFor(step)}
       />
+      </>
     );
   }
 
   if (isSingleFlow) {
     return (
-      <SingleBillForm
+      <>
+        {conflict.status !== "none" && (
+          <div className="mx-auto max-w-lg px-4 pt-4">
+            <ExpenseConflictPanel
+              status={conflict.status}
+              detail={conflict.status === "ready" ? conflict.detail : null}
+              errorMessage={conflict.status === "error" ? conflict.message : undefined}
+              onRetry={handleStaleVersion}
+              onAccept={handleAcceptConflict}
+            />
+          </div>
+        )}
+        <SingleBillForm
         me={me}
         groups={groupSnapshots}
         initialGroupId={selectedGroupId}
@@ -627,6 +688,7 @@ function NewBillPageContent() {
         submit={submit}
         submitting={submitting}
       />
+      </>
     );
   }
 
