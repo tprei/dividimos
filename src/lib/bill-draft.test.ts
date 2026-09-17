@@ -130,10 +130,10 @@ describe("hasMeaningfulDraft", () => {
     expect(hasMeaningfulDraft(state, meId)).toBe(true);
   });
 
-  it("returns true when occurredOn is set", () => {
+  it("returns false when only occurredOn is set — a bare date is not authorship (#877)", () => {
     const state = createBaselineItemized();
     state.occurredOn = "2026-09-17";
-    expect(hasMeaningfulDraft(state, meId)).toBe(true);
+    expect(hasMeaningfulDraft(state, meId)).toBe(false);
   });
 
   it("returns true for single_amount with only totalAmountInput 5000", () => {

@@ -4,7 +4,7 @@ import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { ExpenseDetail, ExpenseVersion, GroupSnapshot, Me } from "@/types/ledger";
 import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
-import { readDraftIntent } from "./use-draft-intent";
+import { readDraftIntent } from "@/lib/draft-intent";
 import { setDraftOwner } from "@/lib/bill-draft-isolation";
 
 vi.mock("react-hot-toast", () => ({ default: { error: vi.fn() } }));

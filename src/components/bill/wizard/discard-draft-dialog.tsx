@@ -33,28 +33,37 @@ export function DiscardDraftDialog({
   onDiscard,
   onKeep,
 }: DiscardDraftDialogProps) {
+  const itemized = isItemized ?? itemCount > 0;
+  const itemsLabel = itemized
+    ? itemCount === 1
+      ? "1 item"
+      : `${itemCount} itens`
+    : null;
+  const detail = [itemsLabel, formatBRL(totalCents)].filter(Boolean).join(", ");
+
   const title =
     mode === "type-switch"
       ? `Descartar a conta «${draftTitle}» em rascunho?`
-      : "Substituir a conta em rascunho?";
+      : mode === "voice"
+        ? "Substituir a conta em rascunho?"
+        : "Descartar o rascunho?";
 
   let body: string;
   if (mode === "voice") {
-    body = `Gravar por voz vai substituir «${draftTitle}» (${itemCount} itens, ${formatBRL(totalCents)}). O rascunho atual será descartado.`;
+    body = `Gravar por voz vai substituir «${draftTitle}»${detail ? ` (${detail})` : ""}. O rascunho atual será descartado.`;
+  } else if (mode === "banner-discard") {
+    body = `Se descartar, você perde o que já preencheu${detail ? ` (${detail})` : ""}. Não dá pra desfazer.`;
+  } else if (itemized) {
+    body = `Trocar o tipo de conta apaga ${itemsLabel} (${formatBRL(totalCents)}) do rascunho. O rascunho atual será descartado.`;
   } else {
-    const itemized = isItemized ?? itemCount > 0;
-    if (itemized) {
-      body = `Trocar o tipo de conta apaga os ${itemCount} itens (${formatBRL(totalCents)}) do rascunho. O rascunho atual será descartado.`;
-    } else {
-      body = `Trocar o tipo de conta apaga o valor de ${formatBRL(totalCents)} e quem divide do rascunho. O rascunho atual será descartado.`;
-    }
+    body = `Trocar o tipo de conta apaga o valor de ${formatBRL(totalCents)} e quem divide do rascunho. O rascunho atual será descartado.`;
   }
 
   return (
     <Dialog open={open} dismissable={false}>
       <DialogContent
         showCloseButton={false}
-        className="w-full max-w-sm rounded-3xl bg-card p-6"
+
       >
         <DialogHeader className="text-left space-y-2">
           <DialogTitle className="text-lg font-bold">

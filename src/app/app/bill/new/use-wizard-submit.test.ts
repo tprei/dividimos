@@ -5,7 +5,7 @@ import { useBillStore } from "@/stores/bill-store";
 import { userAlice, userBob } from "@/test/fixtures";
 import { LedgerError } from "@/lib/sync/errors";
 import { planGroup, useWizardSubmit } from "./use-wizard-submit";
-import { readDraftIntent, writeDraftIntent } from "./use-draft-intent";
+import { readDraftIntent, writeDraftIntent } from "@/lib/draft-intent";
 
 const { mockCreateExpense, mockCreateExpenseWithGroup, mockEditExpense } = vi.hoisted(() => ({
   mockCreateExpense: vi.fn(),

@@ -9,6 +9,7 @@ describe("DraftResumeBanner", () => {
     render(
       <DraftResumeBanner
         title="Mercado Semanal"
+        itemCount={3}
         totalCents={totalCents}
         onContinue={vi.fn()}
         onDiscardRequest={vi.fn()}
@@ -37,6 +38,7 @@ describe("DraftResumeBanner", () => {
     render(
       <DraftResumeBanner
         title="Jantar"
+        itemCount={1}
         totalCents={5000}
         onContinue={onContinue}
         onDiscardRequest={onDiscardRequest}
@@ -58,6 +60,7 @@ describe("DraftResumeBanner", () => {
     render(
       <DraftResumeBanner
         title="Almoço"
+        itemCount={2}
         totalCents={3000}
         onContinue={onContinue}
         onDiscardRequest={onDiscardRequest}
@@ -69,5 +72,21 @@ describe("DraftResumeBanner", () => {
 
     expect(onDiscardRequest).toHaveBeenCalledOnce();
     expect(onContinue).not.toHaveBeenCalled();
+  });
+
+  it("describes an unnamed itemized draft by its contents instead of the default title", () => {
+    render(
+      <DraftResumeBanner
+        title={null}
+        itemCount={1}
+        totalCents={2200}
+        onContinue={vi.fn()}
+        onDiscardRequest={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Continuar de onde você parou: 1 item" }),
+    ).toBeInTheDocument();
   });
 });

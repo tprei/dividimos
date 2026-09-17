@@ -22,7 +22,7 @@ describe("DiscardDraftDialog", () => {
       screen.getByRole("heading", { name: "Descartar a conta «Churrasco» em rascunho?" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Trocar o tipo de conta apaga os 4 itens.*84,50.*do rascunho/),
+      screen.getByText(/Trocar o tipo de conta apaga 4 itens.*84,50.*do rascunho/),
     ).toBeInTheDocument();
   });
 
@@ -84,8 +84,28 @@ describe("DiscardDraftDialog", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Substituir a conta em rascunho?" }),
+      screen.getByRole("heading", { name: "Descartar o rascunho?" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Se descartar, você perde o que já preencheu \(2 itens,.*45,00\)\. Não dá pra desfazer\./),
+    ).toBeInTheDocument();
+  });
+
+  it("drops the item clause for a single-amount draft and pluralises one item", () => {
+    render(
+      <DiscardDraftDialog
+        open={true}
+        draftTitle="Aluguel"
+        itemCount={0}
+        totalCents={150000}
+        mode="banner-discard"
+        isItemized={false}
+        onDiscard={vi.fn()}
+        onKeep={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/perde o que já preencheu \(R\$.*1\.500,00\)\. Não dá pra desfazer\./)).toBeInTheDocument();
   });
 
   it("calls onKeep when clicking Manter rascunho", async () => {

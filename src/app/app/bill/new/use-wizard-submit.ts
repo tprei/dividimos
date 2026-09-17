@@ -10,7 +10,7 @@ import { useAppStore } from "@/stores/app-store";
 import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
 import { useBillStore } from "@/stores/bill-store";
 import type { User } from "@/types";
-import { clearDraftIntent, readDraftIntent } from "./use-draft-intent";
+import { clearDraftIntent, readDraftIntent } from "@/lib/draft-intent";
 
 async function inviteMissingMembers(groupId: string, participants: User[]): Promise<void> {
   const snapshot = useAppStore.getState().groups[groupId];

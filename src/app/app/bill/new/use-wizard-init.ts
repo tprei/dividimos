@@ -11,7 +11,7 @@ import { getDraftOwner, setDraftOwner } from "@/lib/bill-draft-isolation";
 import type { ExpenseDetail, Me, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
 import type { Step, WizardModes } from "./wizard-modes";
-import { writeDraftIntent } from "./use-draft-intent";
+import { writeDraftIntent } from "@/lib/draft-intent";
 
 function profileToUser(profile: UserProfile): User {
   return {

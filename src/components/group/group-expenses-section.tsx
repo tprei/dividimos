@@ -21,7 +21,7 @@ import { useBillStore } from "@/stores/bill-store";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { hasMeaningfulDraft } from "@/lib/bill-draft";
 import { DiscardDraftDialog } from "@/components/bill/wizard/discard-draft-dialog";
-import { writeDraftIntent } from "@/app/app/bill/new/use-draft-intent";
+import { writeDraftIntent } from "@/lib/draft-intent";
 
 interface GroupExpensesSectionProps {
   groupId: string;

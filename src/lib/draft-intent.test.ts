@@ -5,9 +5,9 @@ import {
   readDraftIntent,
   writeDraftIntent,
   type DraftIntent,
-} from "./use-draft-intent";
+} from "./draft-intent";
 
-describe("useDraftIntent storage operations", () => {
+describe("draftIntent storage operations", () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -26,38 +26,34 @@ describe("useDraftIntent storage operations", () => {
   it("writes and reads an edit intent", () => {
     const intent: DraftIntent = {
       kind: "edit",
-      expenseId: "exp-456",
-      expectedVersionNo: 3,
-      draftKey: "draft-key-456",
+      expenseId: "exp-123",
+      expectedVersionNo: 2,
+      draftKey: "draft-key-123",
     };
     writeDraftIntent(intent);
 
     expect(readDraftIntent()).toEqual(intent);
   });
 
-  it("clears intent and returns null on corrupted JSON", () => {
-    window.localStorage.setItem(DRAFT_INTENT_KEY, "not-valid-json{");
+  it("clears intent from storage", () => {
+    writeDraftIntent({ kind: "create", draftKey: "draft-key-123" });
+    clearDraftIntent();
 
+    expect(readDraftIntent()).toBeNull();
+  });
+
+  it("handles corrupted storage safely by removing invalid json and returning null", () => {
+    window.localStorage.setItem(DRAFT_INTENT_KEY, "invalid-json");
     expect(readDraftIntent()).toBeNull();
     expect(window.localStorage.getItem(DRAFT_INTENT_KEY)).toBeNull();
   });
 
-  it("clears intent and returns null on invalid shape", () => {
+  it("rejects malformed payload shapes and clears key", () => {
     window.localStorage.setItem(
       DRAFT_INTENT_KEY,
-      JSON.stringify({ kind: "edit", expenseId: "", expectedVersionNo: -1 }),
+      JSON.stringify({ kind: "unknown", draftKey: "draft-1" }),
     );
-
     expect(readDraftIntent()).toBeNull();
     expect(window.localStorage.getItem(DRAFT_INTENT_KEY)).toBeNull();
-  });
-
-  it("clearDraftIntent removes the key from localStorage", () => {
-    writeDraftIntent({ kind: "create", draftKey: "draft-key-789" });
-    expect(window.localStorage.getItem(DRAFT_INTENT_KEY)).not.toBeNull();
-
-    clearDraftIntent();
-    expect(window.localStorage.getItem(DRAFT_INTENT_KEY)).toBeNull();
-    expect(readDraftIntent()).toBeNull();
   });
 });

@@ -25,7 +25,7 @@ import {
   clearDraftIntent,
   readDraftIntent,
   writeDraftIntent,
-} from "./use-draft-intent";
+} from "@/lib/draft-intent";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -286,7 +286,8 @@ function NewBillPageContent() {
         const billStore = useBillStore.getState();
         billStore.setCurrentUser(meToLegacyUser(me));
         selectDraftForType(billStore, type, pendingGroupId);
-        writeDraftIntent({ kind: "create", draftKey: billStore.draftKey });
+        // Read the key from the store AFTER the transition: selectDraftForType can rotate it.
+        writeDraftIntent({ kind: "create", draftKey: useBillStore.getState().draftKey });
         setPendingGroupId(null);
       }
       setStep("info");
@@ -421,7 +422,7 @@ function NewBillPageContent() {
         }
       }
 
-      writeDraftIntent({ kind: "create", draftKey: billStore.draftKey });
+      writeDraftIntent({ kind: "create", draftKey: useBillStore.getState().draftKey });
       setBillType(result.expenseType);
       setStep(result.expenseType === "itemized" ? "split" : "info");
     },
@@ -467,6 +468,21 @@ function NewBillPageContent() {
       setResumedEditExpenseId(intent.expenseId);
     }
   }, []);
+
+  const draftSummary = useMemo(() => {
+    const isItemized = store.expense?.expenseType === "itemized";
+    const named = store.expense?.title || null;
+    return {
+      // A draft that never got a name shows its contents, not the default placeholder.
+      title: named,
+      fallbackTitle: isItemized ? "Nova conta" : "Conta sem título",
+      itemCount: store.items.length,
+      totalCents: isItemized
+        ? useBillStore.getState().getGrandTotal()
+        : store.totalAmountInput,
+      isItemized,
+    };
+  }, [store.expense?.expenseType, store.expense?.title, store.items.length, store.totalAmountInput]);
 
   const handleBannerDiscardRequest = useCallback(() => {
     setDiscardDialogMode("banner-discard");
@@ -634,15 +650,9 @@ function NewBillPageContent() {
       {isTypeStep && mounted && me && store.expense && hasMeaningfulDraft(store, me.id) && !dismissedThisMount && !reviewingScan && (
         <div className="mt-4">
           <DraftResumeBanner
-            title={
-              store.expense.title ||
-              (store.expense.expenseType === "itemized" ? "Nova conta" : "Conta sem título")
-            }
-            totalCents={
-              store.expense.expenseType === "itemized"
-                ? useBillStore.getState().getGrandTotal()
-                : store.totalAmountInput
-            }
+            title={draftSummary.title}
+            itemCount={draftSummary.itemCount}
+            totalCents={draftSummary.totalCents}
             onContinue={handleResumeDraft}
             onDiscardRequest={handleBannerDiscardRequest}
           />
@@ -703,16 +713,9 @@ function NewBillPageContent() {
       />
       <DiscardDraftDialog
         open={discardDialogOpen}
-        draftTitle={
-          store.expense?.title ||
-          (store.expense?.expenseType === "itemized" ? "Nova conta" : "Conta sem título")
-        }
-        itemCount={store.items.length}
-        totalCents={
-          store.expense?.expenseType === "itemized"
-            ? useBillStore.getState().getGrandTotal()
-            : store.totalAmountInput
-        }
+        draftTitle={draftSummary.title ?? draftSummary.fallbackTitle}
+        itemCount={draftSummary.itemCount}
+        totalCents={draftSummary.totalCents}
         mode={discardDialogMode}
         isItemized={store.expense?.expenseType === "itemized"}
         onDiscard={handleDiscardConfirm}

@@ -10,7 +10,7 @@ import {
   clearDraftIntent,
   readDraftIntent,
   writeDraftIntent,
-} from "./use-draft-intent";
+} from "@/lib/draft-intent";
 import type { User } from "@/types";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 
@@ -60,7 +60,8 @@ describe("Draft resume and discard behaviors", () => {
 
     render(
       <DraftResumeBanner
-        title={liveState.expense?.title || "Conta sem título"}
+        title={liveState.expense?.title || null}
+        itemCount={liveState.items.length}
         totalCents={liveState.totalAmountInput}
         onContinue={onContinue}
         onDiscardRequest={onDiscardRequest}
