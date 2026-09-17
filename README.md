@@ -291,18 +291,30 @@ npm run test:soak:integration # Integration tests with the properties at 150 run
 ./scripts/dev-setup.sh       # One-command local setup
 supabase migration new <name>  # Create a new timestamped migration
 supabase db reset --local      # Replay every committed migration
+npm run db:assert-ref         # Fail unless Supabase is linked to the production ref
 ```
 
-## Deploying database changes
+## Production configuration
 
-After a reviewed migration reaches `main`, link the target Supabase project and apply pending migrations from that checkout:
+Everything needed to rebuild the production wiring, without secret values. Secret values live only in Vercel, GitHub, and the Supabase dashboard.
+
+- Supabase project `sfclcrjeckixhpjfmrox`, region `sa-east-1`. Auth: Google provider only, `site_url = https://www.dividimos.ai`; the redirect allow list lives in Dashboard > Authentication > URL Configuration. JWT signing: ES256 in use; the legacy HS256 key stays enabled because `e2e/seed-helper.ts` mints HS256 sessions for the synthetic tests (`mintAccessToken`).
+- Google OAuth web client id: `483045443985-tgldqmpqpg1467da1een2svcprvclmib.apps.googleusercontent.com` (GCP project `pixwise-491111`).
+- Firebase project `dividimos-7b394`, Android app id `1:570870283359:android:da3f10adf8f417f6b6afea`.
+- Vercel project `dividimos` (team `tpreis-projects`) env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PIX_ENCRYPTION_KEY`, `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_EMAIL`, `FCM_PRIVATE_KEY`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GEMINI_API_KEY`. `DEV_LOGIN_SECRET` is never set in production.
+- GitHub Actions secrets: `GOOGLE_SERVICES_JSON`, `ANDROID_KEYSTORE_BASE64`, `KEYSTORE_STORE_PASSWORD`, `KEYSTORE_KEY_ALIAS`, `KEYSTORE_KEY_PASSWORD`, `DEV_LOGIN_SECRET` (CI synthetic only).
+
+### Deploying database changes
+
+After a reviewed migration reaches `main`, a human applies it from a checkout linked to production:
 
 ```bash
-supabase link --project-ref <project-ref>
-supabase db push
+npm run db:assert-ref                  # fails unless supabase/.temp/project-ref is sfclcrjeckixhpjfmrox; its error explains how to link
+supabase db push --linked --dry-run    # read the plan
+supabase db push --linked              # apply
 ```
 
-`supabase db push` applies migrations that are not recorded in the target project's migration history. It does not replace an existing database with the reset sequence. For an intentional migration-epoch replacement, use a new or restored isolated Supabase project, replay the complete migration directory there, verify the catalog and integration suite, then switch the deployment to that project. Never run both the retired and replacement initial sequences against the same database.
+`supabase db push` applies migrations that are not recorded in the target project's migration history. It does not replace an existing database with the reset sequence. For an intentional migration-epoch replacement, use a new or restored isolated Supabase project, replay the complete migration directory there, verify the catalog and integration suite, then switch the deployment to that project. Never run both the retired and replacement initial sequences against the same database. Agents never run these commands.
 
 ## CI
 CI runs on every pull request and on push to `main` across several workflows in `.github/workflows/`:
