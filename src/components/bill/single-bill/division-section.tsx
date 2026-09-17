@@ -258,10 +258,15 @@ export function SingleBillDivision({
                         ? `Percentual deslizante de ${person.name}`
                         : `Valor deslizante de ${person.name}`
                     }
+                    ariaValuetext={
+                      mode === "percent"
+                        ? `${percentSliderValues[person.id] ?? 0}%`
+                        : formatBRL(fixedSliderValues[person.id] ?? 0)
+                    }
                     className="basis-full"
                     min={0}
                     max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS / 100 : fixedRemaining.byId[person.id] ?? 0}
-                    step={mode === "percent" ? 1 : "any"}
+                    step={1}
                     snap={mode === "percent" ? { step: 5, threshold: 2 } : undefined}
                     value={
                       mode === "percent"

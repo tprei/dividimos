@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useInvitedUserIds } from "@/hooks/use-invited-user-ids";
 import { allocateEvenly, parseAllocationPercentText, parseExpenseCentsText } from "@/lib/expense-money";
+import { formatBRL } from "@/lib/currency";
 import {
   FULL_PERCENT_BASIS_POINTS,
   centsText,
@@ -389,10 +390,15 @@ export function ItemDivisionEditor({
                     ? `Percentual deslizante de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
                     : `Valor deslizante de ${participant.name}${participant.handle ? ` (@${participant.handle})` : ""} em ${itemName}`
                 }
+                ariaValuetext={
+                  mode === "percent"
+                    ? `${percentSliderValues[participant.id]}%`
+                    : formatBRL(fixedSliderValues[participant.id])
+                }
                 className="basis-full"
                 min={0}
                 max={mode === "percent" ? FULL_PERCENT_BASIS_POINTS / 100 : itemCents}
-                step={mode === "percent" ? 1 : "any"}
+                step={1}
                 snap={mode === "percent" ? { step: 5, threshold: 2 } : undefined}
                 value={mode === "percent" ? percentSliderValues[participant.id] : fixedSliderValues[participant.id]}
                 onChange={(next) => {

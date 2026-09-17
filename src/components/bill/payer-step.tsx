@@ -309,6 +309,7 @@ export function PayerStep({
                         step="1"
                         value={Math.round(basisPoints / 100)}
                         aria-label={`Percentual pago por ${user.name}`}
+                        aria-valuetext={`${Math.round(basisPoints / 100)}%`}
                         onChange={(e) => {
                           setPercentage(user.id, percentText(Number(e.target.value) * 100));
                         }}
@@ -413,8 +414,10 @@ export function PayerStep({
                     type="range"
                     min="0"
                     max={grandTotal}
-                    step={100}
+                    step={1}
                     value={sliderValue}
+                    aria-label={`Valor pago por ${user.name}`}
+                    aria-valuetext={formatBRL(sliderValue)}
                     onChange={(e) => {
                       const cents = parseInt(e.target.value);
                       handleLocalChange(user.id, cents);

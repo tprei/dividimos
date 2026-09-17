@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChangeEvent, CSSProperties, PointerEvent } from "react";
+import type { ChangeEvent, CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import { haptics } from "@/hooks/use-haptics";
 import { cn } from "@/lib/utils";
 
@@ -11,12 +11,13 @@ export interface DivisionSliderSnap {
 
 export interface DivisionSliderProps {
   ariaLabel: string;
+  ariaValuetext: string;
   className?: string;
   max: number;
   min: number;
   onChange: (value: number) => void;
   snap?: DivisionSliderSnap;
-  step?: number | "any";
+  step?: number;
   value: number;
 }
 
@@ -29,12 +30,13 @@ function clamp(value: number, min: number, max: number): number {
 
 export function DivisionSlider({
   ariaLabel,
+  ariaValuetext,
   className,
   max,
   min,
   onChange,
   snap,
-  step = "any",
+  step = 1,
   value,
 }: DivisionSliderProps) {
   const span = max - min;
@@ -45,6 +47,24 @@ export function DivisionSlider({
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     onChange(clamp(Math.round(Number(event.target.value)), min, max));
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // Page keys move a tenth of the range (never less than one step), so paging
+    // a R$ 120,00 item in fixed mode jumps R$ 12,00 rather than 10 centavos.
+    const pageStep = Math.max(step, Math.round(span / 10));
+    let next: number | null = null;
+    if (event.key === "PageDown") {
+      next = value - pageStep;
+    } else if (event.key === "PageUp") {
+      next = value + pageStep;
+    }
+    if (next === null) return;
+    event.preventDefault();
+    const clamped = clamp(next, min, max);
+    if (clamped !== value) {
+      onChange(clamped);
+    }
   };
 
   const handleRelease = (event: PointerEvent<HTMLInputElement>) => {
@@ -81,8 +101,10 @@ export function DivisionSlider({
       step={step}
       value={value}
       onChange={handleChange}
+      onKeyDown={handleKeyDown}
       onPointerUp={handleRelease}
       aria-label={ariaLabel}
+      aria-valuetext={ariaValuetext}
       style={fillStyle}
       className={cn(
         "min-h-11 w-full touch-none",

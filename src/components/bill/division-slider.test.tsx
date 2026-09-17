@@ -18,6 +18,7 @@ function renderSlider(initial = 5000, props: Partial<DivisionSliderProps> = {}) 
   const onChange = vi.fn();
   function Harness() {
     const [value, setValue] = useState(initial);
+    const { ariaValuetext = `${value}`, ...restProps } = props;
     return (
       <DivisionSlider
         ariaLabel="Parcela"
@@ -28,7 +29,8 @@ function renderSlider(initial = 5000, props: Partial<DivisionSliderProps> = {}) 
           onChange(next);
           setValue(next);
         }}
-        {...props}
+        ariaValuetext={ariaValuetext}
+        {...restProps}
       />
     );
   }
@@ -114,5 +116,36 @@ describe("DivisionSlider", () => {
     fireEvent.change(slider, { target: { value: "5300" } });
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(haptics.tap).not.toHaveBeenCalled();
+  });
+  it("renders aria-valuetext and defaults to step 1", () => {
+    const { slider } = renderSlider(33, { ariaValuetext: "33%" });
+    expect(slider).toHaveAttribute("aria-valuetext", "33%");
+    expect(slider).toHaveAttribute("step", "1");
+  });
+
+  it("moves a tenth of the range on PageUp and PageDown without snapping", () => {
+    const { onChange, slider } = renderSlider(0, {
+      max: 1250,
+      snap: { step: 5, threshold: 2 },
+    });
+    fireEvent.keyDown(slider, { key: "PageUp" });
+    expect(onChange).toHaveBeenCalledWith(125);
+    expect(slider).toHaveValue("125");
+
+    fireEvent.keyDown(slider, { key: "PageDown" });
+    expect(onChange).toHaveBeenLastCalledWith(0);
+    expect(slider).toHaveValue("0");
+  });
+
+  it("clamps PageUp and PageDown to bounds", () => {
+    const { onChange, slider } = renderSlider(5, { min: 0, max: 100 });
+    fireEvent.keyDown(slider, { key: "PageDown" });
+    expect(onChange).toHaveBeenCalledWith(0);
+    expect(slider).toHaveValue("0");
+
+    fireEvent.change(slider, { target: { value: "95" } });
+    fireEvent.keyDown(slider, { key: "PageUp" });
+    expect(onChange).toHaveBeenLastCalledWith(100);
+    expect(slider).toHaveValue("100");
   });
 });

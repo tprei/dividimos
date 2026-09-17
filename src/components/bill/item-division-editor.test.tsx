@@ -4,6 +4,7 @@ import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot } from "@/types/ledger";
 import { ItemDivisionEditor, type ItemDivisionParticipant } from "./item-division-editor";
+import { formatBRL } from "@/lib/currency";
 
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: {
@@ -289,6 +290,29 @@ describe("ItemDivisionEditor", () => {
     expect(brunoInput.value).toBe("0,005");
     fireEvent.click(screen.getByRole("button", { name: "Pronto" }));
     expect(onSave).not.toHaveBeenCalled();
+  });
+  it("announces slider values with units and exact step 1 in both modes", () => {
+    renderEditor();
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+    const anaPercentSlider = screen.getByRole("slider", {
+      name: "Percentual deslizante de Ana (@ana) em Picanha",
+    });
+    expect(anaPercentSlider).toHaveAttribute("step", "1");
+    fireEvent.change(screen.getByLabelText("Percentual de Ana (@ana) em Picanha"), {
+      target: { value: "33" },
+    });
+    expect(anaPercentSlider).toHaveAttribute("aria-valuetext", "33%");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Fixo" }));
+    const anaFixedSlider = screen.getByRole("slider", {
+      name: "Valor deslizante de Ana (@ana) em Picanha",
+    });
+    expect(anaFixedSlider).toHaveAttribute("step", "1");
+    fireEvent.change(screen.getByLabelText("Valor fixo de Ana (@ana) em Picanha"), {
+      target: { value: "12,50" },
+    });
+    expect(anaFixedSlider).toHaveAttribute("aria-valuetext", formatBRL(1250));
+    expect(anaFixedSlider).toHaveValue("1250");
   });
 });
 
