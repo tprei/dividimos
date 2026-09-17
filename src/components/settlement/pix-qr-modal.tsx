@@ -253,7 +253,8 @@ export function PixQrModal({
     >
       <DialogContent
         showCloseButton={!isSettling && !showSuccess}
-        className="w-full max-w-md rounded-3xl bg-card p-0"
+        initialFocus={false}
+        className="sm:max-w-md rounded-3xl bg-card p-0"
       >
         <AnimatePresence mode="wait">
           {showSuccess ? (
@@ -263,7 +264,7 @@ export function PixQrModal({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="relative flex flex-col items-center px-6 py-8"
+              className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto overscroll-contain px-6 py-4"
             >
               <DialogTitle className="sr-only">Pagamento registrado</DialogTitle>
               <ConfettiBurst />
@@ -308,7 +309,7 @@ export function PixQrModal({
                   variant="outline"
                   size="lg"
                   onClick={handleSuccessClose}
-                  className="gap-2"
+                  className="gap-2 min-h-11"
                 >
                   Fechar
                 </Button>
@@ -321,199 +322,201 @@ export function PixQrModal({
               exit={{ opacity: 0 }}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 overscroll-contain" data-testid="pix-qr-body">
-              <div className="text-center">
-                <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-gradient-foreground shadow-lg shadow-primary/20"
-                >
-                  <QrCode className="h-7 w-7" />
-                </motion.div>
-                <DialogTitle className="mt-4 text-lg font-bold">
-                  {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
-                </DialogTitle>
-                <DialogDescription className="mt-1 text-sm text-muted-foreground">
-                  {mode === "collect" ? "de" : "para"}{" "}
-                  <span className="font-medium text-foreground">{recipientName}</span>
-                </DialogDescription>
+              <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
+                <div className="text-center">
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-gradient-foreground shadow-lg shadow-primary/20"
+                  >
+                    <QrCode className="h-7 w-7" />
+                  </motion.div>
+                  <DialogTitle className="mt-4 text-lg font-bold">
+                    {mode === "collect" ? "Cobrar via Pix" : "Pagar via Pix"}
+                  </DialogTitle>
+                  <DialogDescription className="mt-1 text-sm text-muted-foreground">
+                    {mode === "collect" ? "de" : "para"}{" "}
+                    <span className="font-medium text-foreground">{recipientName}</span>
+                  </DialogDescription>
 
-                <div className="mt-3">
-                  {editingAmount ? (
-                    <label
-                      className="flex items-center justify-center gap-1 text-3xl font-bold tabular-nums text-primary-text"
-                      onBlur={commitAmount}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === "Escape") commitAmount();
-                      }}
-                    >
-                      <span className="sr-only">Editar valor</span>
-                      <span aria-hidden="true">R$</span>
-                      <CurrencyInput
-                        autoFocus
-                        valueCents={paymentCents}
-                        maxCents={amountCents}
-                        onChangeCents={setPaymentCents}
-                        aria-label="Editar valor"
-                        className="h-12 w-40 text-3xl font-bold text-primary-text"
-                      />
-                    </label>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setEditingAmount(true)}
-                      disabled={isSettling}
-                      aria-label={`Editar valor, ${formatBRL(paymentCents)}`}
-                      className="inline-flex items-center gap-2 rounded-lg px-2 text-3xl font-bold tabular-nums text-primary transition-colors hover:bg-primary/10"
-                    >
-                      {formatBRL(paymentCents)}
-                      <Pencil className="size-4 text-muted-foreground" aria-hidden="true" />
-                    </button>
-                  )}
-                  <input
-                    type="range"
-                    min={sliderMin}
-                    max={amountCents}
-                    step={sliderStep}
-                    value={paymentCents}
-                    onChange={handleSliderChange}
-                    disabled={isSettling}
-                    className="mt-3 w-full"
-                    aria-label="Valor do pagamento"
-                  />
-                  {snapPoints.length > 0 && amountCents > sliderMin && (
-                    <div className="relative mx-[11px] h-2">
-                      {snapPoints.map((v) => (
-                        <div
-                          key={v}
-                          className="absolute top-0 w-0.5 h-1.5 rounded-full bg-muted-foreground/30"
-                          style={{
-                            left: `${((v - sliderMin) / (amountCents - sliderMin)) * 100}%`,
-                          }}
+                  <div className="mt-3">
+                    {editingAmount ? (
+                      <label
+                        className="flex items-center justify-center gap-1 text-3xl font-bold tabular-nums text-primary-text"
+                        onBlur={commitAmount}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === "Escape") commitAmount();
+                        }}
+                      >
+                        <span className="sr-only">Editar valor</span>
+                        <span aria-hidden="true">R$</span>
+                        <CurrencyInput
+                          autoFocus
+                          valueCents={paymentCents}
+                          maxCents={amountCents}
+                          onChangeCents={setPaymentCents}
+                          aria-label="Editar valor"
+                          className="h-12 w-40 text-3xl font-bold text-primary-text"
                         />
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="mt-2 flex justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentCents(amountCents)}
-                      disabled={isSettling || paymentCents === amountCents}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                        paymentCents === amountCents
-                          ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                          : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      } disabled:opacity-50`}
-                    >
-                      Tudo: {formatBRL(amountCents)}
-                    </button>
-                    {halfCents !== amountCents && (
+                      </label>
+                    ) : (
                       <button
                         type="button"
-                        onClick={() => setPaymentCents(halfCents)}
-                        disabled={isSettling || paymentCents === halfCents}
-                        className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                          paymentCents === halfCents
-                            ? "bg-primary/15 text-primary ring-1 ring-primary/30"
-                            : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                        } disabled:opacity-50`}
+                        onClick={() => setEditingAmount(true)}
+                        disabled={isSettling}
+                        aria-label={`Editar valor, ${formatBRL(paymentCents)}`}
+                        className="inline-flex items-center gap-2 rounded-lg px-2 text-3xl font-bold tabular-nums text-primary-text transition-colors hover:bg-primary/10"
                       >
-                        Metade: {formatBRL(halfCents)}
+                        {formatBRL(paymentCents)}
+                        <Pencil className="size-4 text-muted-foreground" aria-hidden="true" />
                       </button>
                     )}
-                  </div>
+                    <input
+                      type="range"
+                      min={sliderMin}
+                      max={amountCents}
+                      step={sliderStep}
+                      value={paymentCents}
+                      onChange={handleSliderChange}
+                      disabled={isSettling}
+                      className="mt-3 w-full"
+                      aria-label="Valor do pagamento"
+                    />
+                    {snapPoints.length > 0 && amountCents > sliderMin && (
+                      <div className="relative mx-[11px] h-2">
+                        {snapPoints.map((v) => (
+                          <div
+                            key={v}
+                            className="absolute top-0 w-0.5 h-1.5 rounded-full bg-muted-foreground/30"
+                            style={{
+                              left: `${((v - sliderMin) / (amountCents - sliderMin)) * 100}%`,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
 
-                  {!isFullPayment && isValidAmount && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Resta depois do Pix: {formatBRL(amountCents - paymentCents)}
-                    </p>
+                    <div className="mt-2 flex justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentCents(amountCents)}
+                        disabled={isSettling}
+                        aria-pressed={paymentCents === amountCents}
+                        className={`min-h-11 rounded-full px-4 text-xs font-medium transition-all ${
+                          paymentCents === amountCents
+                            ? "bg-primary/15 text-primary-text ring-1 ring-primary/30"
+                            : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary-text"
+                        } disabled:opacity-50`}
+                      >
+                        Tudo: {formatBRL(amountCents)}
+                      </button>
+                      {halfCents !== amountCents && (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentCents(halfCents)}
+                          disabled={isSettling}
+                          aria-pressed={paymentCents === halfCents}
+                          className={`min-h-11 rounded-full px-4 text-xs font-medium transition-all ${
+                            paymentCents === halfCents
+                              ? "bg-primary/15 text-primary-text ring-1 ring-primary/30"
+                              : "bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary-text"
+                          } disabled:opacity-50`}
+                        >
+                          Metade: {formatBRL(halfCents)}
+                        </button>
+                      )}
+                    </div>
+
+                    {!isFullPayment && isValidAmount && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Resta depois do Pix: {formatBRL(amountCents - paymentCents)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                >
+                  {payloadLoading ? (
+                    <div className="flex h-[240px] w-[240px] items-center justify-center">
+                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : copiaECola ? (
+                    <canvas ref={paintQr} />
+                  ) : (
+                    <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
+                      <QrCode className="h-12 w-12 text-muted-foreground/30" />
+                      <p className="text-sm text-muted-foreground">
+                        {payloadError
+                          ? "Não deu pra gerar o QR agora. Tenta de novo."
+                          : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
+                      </p>
+                    </div>
                   )}
-                </div>
-              </div>
+                </motion.div>
 
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
-              >
-                {payloadLoading ? (
-                  <div className="flex h-[240px] w-[240px] items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Shield className="h-3 w-3" />
+                    <span>
+                      {copiaECola
+                        ? "Lê o QR code ou copia o código e cola no app do banco."
+                        : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
+                    </span>
                   </div>
-                ) : copiaECola ? (
-                  <canvas ref={paintQr} />
-                ) : (
-                  <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
-                    <QrCode className="h-12 w-12 text-muted-foreground/30" />
-                    <p className="text-sm text-muted-foreground">
-                      {payloadError
-                        ? "Não deu pra gerar o QR agora. Tenta de novo."
-                        : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
-                    </p>
-                  </div>
-                )}
-              </motion.div>
-
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Shield className="h-3 w-3" />
-                  <span>
-                    {copiaECola
-                      ? "Lê o QR code ou copia o código e cola no app do banco."
-                      : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
-                  </span>
-                </div>
               </div>
 
               <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
                 <div className="space-y-2.5">
-                <Button
-                  onClick={handleCopy}
-                  variant="outline"
-                  className="w-full gap-2"
-                  size="lg"
-                  disabled={!copiaECola || isSettling}
-                >
-                  {copied ? (
-                    <>
-                      <motion.span
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                      >
-                        <Check className="h-4 w-4 text-success" />
-                      </motion.span>
-                      Copiado!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4" />
-                      Copiar código Pix
-                    </>
-                  )}
-                </Button>
-                <Button
-                  onClick={handlePayment}
-                  className="w-full gap-2"
-                  size="lg"
-                  disabled={!isValidAmount || isSettling}
-                >
-                  {isSettling ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Registrando...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4" />
-                      {mode === "collect"
-                        ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(paymentCents)}`
-                        : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(paymentCents)}`}
-                    </>
-                  )}
-                </Button>
+                  <Button
+                    onClick={handleCopy}
+                    variant="outline"
+                    className="w-full gap-2 min-h-11"
+                    size="lg"
+                    disabled={!copiaECola || isSettling}
+                  >
+                    {copied ? (
+                      <>
+                        <motion.span
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                        >
+                          <Check className="h-4 w-4 text-success" />
+                        </motion.span>
+                        Copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        Copiar código Pix
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={handlePayment}
+                    className="w-full gap-2 min-h-11"
+                    size="lg"
+                    disabled={!isValidAmount || isSettling}
+                  >
+                    {isSettling ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Registrando...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4" />
+                        {mode === "collect"
+                          ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(paymentCents)}`
+                          : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(paymentCents)}`}
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
             </motion.div>

@@ -147,112 +147,112 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto">
 
-          <div className="mt-2">
-            <div className="flex items-center gap-1.5 rounded-lg border border-input bg-transparent px-2.5">
-              <span className="text-sm text-muted-foreground">@</span>
-              <input
-                autoFocus
-                placeholder="buscar por handle"
-                value={handleInput}
-                onChange={(e) => setHandleInput(e.target.value.replace(/ /g, "."))}
-                className="h-9 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              />
-              {searching ? (
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              ) : (
-                <Search className="h-4 w-4 text-muted-foreground" />
+            <div className="mt-2">
+              <div className="flex items-center gap-1.5 rounded-lg border border-input bg-transparent px-2.5">
+                <span className="text-sm text-muted-foreground">@</span>
+                <input
+                  autoFocus
+                  placeholder="buscar por handle"
+                  value={handleInput}
+                  onChange={(e) => setHandleInput(e.target.value.replace(/ /g, "."))}
+                  className="h-9 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                />
+                {searching ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <Search className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+
+              {showSearchSection && (
+                <div className="mt-3">
+                  {searching && (
+                    <p className="text-sm text-muted-foreground">Buscando...</p>
+                  )}
+                  {!searching && searchResult === "not_found" && (
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum usuário encontrado com @{handleInput.trim().replace(/^@/, "")}
+                    </p>
+                  )}
+                  {!searching &&
+                    searchResult &&
+                    searchResult !== "not_found" && (
+                      <button
+                        type="button"
+                        onClick={() => void handleSelect(searchResult.id)}
+                        disabled={creatingId !== null}
+                        className="flex w-full items-center gap-3 rounded-xl border bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
+                      >
+                        <UserAvatar
+                          name={searchResult.name}
+                          avatarUrl={searchResult.avatarUrl}
+                          size="sm"
+                          isBot={searchResult.isBot}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{searchResult.name}</p>
+                          <p className="text-xs text-muted-foreground">@{searchResult.handle}</p>
+                          {hasExistingDm(searchResult.id) ? (
+                            <p className="text-xs text-muted-foreground">Conversa já existe</p>
+                          ) : (
+                            knownContacts.every((c) => c.id !== searchResult.id) && (
+                              <div className="mt-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                                <TriangleAlert className="h-3 w-3" />
+                                Novo contato — será necessário confirmar o convite
+                              </div>
+                            )
+                          )}
+                        </div>
+                        {creatingId === searchResult.id && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </button>
+                    )}
+                </div>
               )}
             </div>
 
-            {showSearchSection && (
-              <div className="mt-3">
-                {searching && (
-                  <p className="text-sm text-muted-foreground">Buscando...</p>
-                )}
-                {!searching && searchResult === "not_found" && (
-                  <p className="text-sm text-muted-foreground">
-                    Nenhum usuário encontrado com @{handleInput.trim().replace(/^@/, "")}
-                  </p>
-                )}
-                {!searching &&
-                  searchResult &&
-                  searchResult !== "not_found" && (
+            {(knownContacts.length > 0) && (
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Conhecidos
+                </p>
+                <div className="space-y-1">
+                  {knownContacts.map((contact) => (
                     <button
+                      key={contact.id}
                       type="button"
-                      onClick={() => void handleSelect(searchResult.id)}
+                      onClick={() => void handleSelect(contact.id)}
                       disabled={creatingId !== null}
-                      className="flex w-full items-center gap-3 rounded-xl border bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
+                      className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
                     >
-                      <UserAvatar
-                        name={searchResult.name}
-                        avatarUrl={searchResult.avatarUrl}
-                        size="sm"
-                        isBot={searchResult.isBot}
-                      />
+                      <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" isBot={contact.isBot} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{searchResult.name}</p>
-                        <p className="text-xs text-muted-foreground">@{searchResult.handle}</p>
-                        {hasExistingDm(searchResult.id) ? (
-                          <p className="text-xs text-muted-foreground">Conversa já existe</p>
-                        ) : (
-                          knownContacts.every((c) => c.id !== searchResult.id) && (
-                            <div className="mt-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                              <TriangleAlert className="h-3 w-3" />
-                              Novo contato — será necessário confirmar o convite
-                            </div>
-                          )
-                        )}
+                        <p className="truncate text-sm font-medium">{contact.name}</p>
+                        <p className="text-xs text-muted-foreground">@{contact.handle}</p>
                       </div>
-                      {creatingId === searchResult.id && (
+                      {creatingId === contact.id && (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                       )}
                     </button>
-                  )}
+                  ))}
+                </div>
               </div>
             )}
-          </div>
 
-          {(knownContacts.length > 0) && (
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Conhecidos
-              </p>
-              <div className="space-y-1">
-                {knownContacts.map((contact) => (
-                  <button
-                    key={contact.id}
-                    type="button"
-                    onClick={() => void handleSelect(contact.id)}
-                    disabled={creatingId !== null}
-                    className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
-                  >
-                    <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" isBot={contact.isBot} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{contact.name}</p>
-                      <p className="text-xs text-muted-foreground">@{contact.handle}</p>
-                    </div>
-                    {creatingId === contact.id && (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    )}
-                  </button>
-                ))}
+            {knownContacts.length === 0 && !showSearchSection && (
+              <div className="mt-4 py-4 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Busque por @handle para iniciar uma conversa
+                </p>
               </div>
-            </div>
-          )}
+            )}
 
-          {knownContacts.length === 0 && !showSearchSection && (
-            <div className="mt-4 py-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                Busque por @handle para iniciar uma conversa
-              </p>
+            <div className="mt-4">
+              <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>
+                Cancelar
+              </Button>
             </div>
-          )}
-
-          <div className="mt-4">
-            <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-          </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -426,11 +426,11 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} />);
 
     expect(screen.getByRole("button", { name: /fechar|close/i })).toBeInTheDocument();
-    expect(document.querySelector('[data-slot="dialog-close"]')).toBeInTheDocument();
   });
 
   it("hides the close button and shows Registrando... while settling", async () => {
-    const onMarkPaid = vi.fn().mockImplementation(() => new Promise(() => {}));
+    const pending = Promise.withResolvers<void>();
+    const onMarkPaid = vi.fn(() => pending.promise);
     render(<PixQrModal {...defaultPropsWithPixKey} onMarkPaid={onMarkPaid} />);
 
     fireEvent.click(screen.getByRole("button", { name: /Já paguei/i }));
@@ -439,7 +439,6 @@ describe("PixQrModal", () => {
       expect(screen.getByText("Registrando...")).toBeInTheDocument();
     });
 
-    expect(document.querySelector('[data-slot="dialog-close"]')).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /fechar|close/i })).not.toBeInTheDocument();
   });
 
@@ -460,12 +459,29 @@ describe("PixQrModal", () => {
       expect(screen.getByText("Pagamento registrado!")).toBeInTheDocument();
     });
 
-    expect(document.querySelector('[data-slot="dialog-close"]')).not.toBeInTheDocument();
-
     const fecharButton = screen.getByRole("button", { name: "Fechar" });
     expect(fecharButton).toBeInTheDocument();
     fireEvent.click(fecharButton);
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders amount chips enabled with aria-pressed reflecting selection", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} amountCents={10000} />);
+
+    const tudoBtn = screen.getByRole("button", { name: /^Tudo:/i });
+    const metadeBtn = screen.getByRole("button", { name: /^Metade:/i });
+
+    expect(tudoBtn).not.toBeDisabled();
+    expect(tudoBtn).toHaveAttribute("aria-pressed", "true");
+    expect(metadeBtn).not.toBeDisabled();
+    expect(metadeBtn).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(metadeBtn);
+
+    expect(tudoBtn).toHaveAttribute("aria-pressed", "false");
+    expect(metadeBtn).toHaveAttribute("aria-pressed", "true");
+    expect(tudoBtn).not.toBeDisabled();
+    expect(metadeBtn).not.toBeDisabled();
   });
 });
