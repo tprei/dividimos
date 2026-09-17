@@ -20,7 +20,6 @@ export default function RootError({
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center px-4">
       <SyncErrorState
-        title="Não foi possível carregar"
         message="Não foi possível carregar esta página. Tente novamente em instantes."
         onRetry={reset}
       />

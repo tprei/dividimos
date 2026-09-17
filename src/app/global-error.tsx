@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 export default function GlobalError({
   error,
   reset,
@@ -7,6 +9,10 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    console.error("[GlobalError]", error);
+  }, [error]);
+
   return (
     <html lang="pt-BR">
       <body className="bg-background font-sans text-foreground">
@@ -22,9 +28,6 @@ export default function GlobalError({
           >
             Tentar novamente
           </button>
-          {error?.digest ? (
-            <p className="mt-3 text-xs text-muted-foreground">Código: {error.digest}</p>
-          ) : null}
         </main>
       </body>
     </html>

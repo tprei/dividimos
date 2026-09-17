@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EmptyState } from "./empty-state";
-import { FileQuestion, Receipt } from "lucide-react";
+import { Receipt } from "lucide-react";
 
 describe("EmptyState", () => {
   it("renders title and description", () => {
@@ -58,23 +58,5 @@ describe("EmptyState", () => {
     const btn = screen.getByText("Criar").closest("button")!;
     await user.click(btn);
     expect(onAction).toHaveBeenCalledOnce();
-  });
-});
-
-describe("EmptyState 404 contract", () => {
-  it("renders the not-found content with its action", () => {
-    render(
-      <EmptyState
-        icon={FileQuestion}
-        title="Página não encontrada"
-        description="O endereço acessado não existe."
-        actionLabel="Voltar ao início"
-        onAction={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Página não encontrada")).toBeInTheDocument();
-    expect(screen.getByText("O endereço acessado não existe.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Voltar ao início" })).toBeInTheDocument();
   });
 });

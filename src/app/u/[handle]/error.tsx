@@ -20,7 +20,6 @@ export default function ProfileError({
   return (
     <div className="flex min-h-[80vh] flex-col items-center justify-center px-4">
       <SyncErrorState
-        title="Não foi possível carregar"
         message="Não foi possível carregar este perfil. Tente novamente em instantes."
         onRetry={reset}
       />
