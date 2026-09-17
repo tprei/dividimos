@@ -2,7 +2,9 @@ import { ArrowLeft, Users } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { JoinActions } from "./join-actions";
-import { inviteInvalidMessage, inviteReasonKind, parseInvitePreview } from "./invite-preview";
+import { buttonVariants } from "@/components/ui/button-variants";
+import { cn } from "@/lib/utils";
+import { INVALID_INVITE_MESSAGE, parseInvitePreview } from "./invite-preview";
 
 export default async function JoinPage({
   params,
@@ -22,15 +24,12 @@ export default async function JoinPage({
 
   const preview = parseInvitePreview(previewData);
   const isInvalid = preview === null || !preview.valid || !preview.groupName;
-  const invalidMessage = isInvalid
-    ? inviteInvalidMessage(preview ? inviteReasonKind(preview) : "invalid")
-    : null;
 
   const { data: claimsData } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(claimsData?.claims?.sub);
 
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
+    <div className="mx-auto w-full max-w-lg px-4 py-6">
       <div className="flex items-center gap-3">
         <Link
           href="/"
@@ -43,10 +42,16 @@ export default async function JoinPage({
 
       {isInvalid ? (
         <div role="alert" className="mt-6 rounded-2xl border bg-card p-5 text-center">
-          <p className="text-base font-semibold">{invalidMessage}</p>
+          <p className="text-base font-semibold">{INVALID_INVITE_MESSAGE}</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Peça um novo link a quem convidou você.
           </p>
+          <Link
+            href={isAuthenticated ? "/app" : "/auth"}
+            className={cn(buttonVariants({ variant: "default" }), "mt-5 min-h-11 w-full rounded-lg")}
+          >
+            {isAuthenticated ? "Ir para o início" : "Entrar no Dividimos"}
+          </Link>
         </div>
       ) : (
         <>
