@@ -31,14 +31,15 @@ export function ReplaceDraftDialog({
     <Dialog open={open} dismissable={false}>
       <DialogContent
         showCloseButton={false}
-        className="w-full max-w-sm rounded-3xl bg-card p-6"
+        className="rounded-2xl bg-card p-5"
       >
         <DialogHeader className="text-left space-y-2">
           <DialogTitle className="text-lg font-bold">
             Substituir a conta em rascunho?
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            A nota escaneada vai substituir «{draftTitle}» ({itemCount} itens,{" "}
+            A nota escaneada vai substituir «{draftTitle}» (
+            {itemCount > 0 ? `${itemCount} ${itemCount === 1 ? "item" : "itens"}, ` : ""}
             <Money cents={totalCents} />). O rascunho atual será descartado.
           </DialogDescription>
         </DialogHeader>

@@ -19,14 +19,14 @@ import { hasMeaningfulDraft } from "@/lib/bill-draft";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
-import { useBillStore, type Guest } from "@/stores/bill-store";
+import { useBillStore } from "@/stores/bill-store";
 import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
 import { useMe } from "@/hooks/use-me";
 import { useClientOnly, useMounted } from "@/hooks/use-client-only";
 import { meToLegacyUser } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
-import type { GroupSnapshot, UserProfile } from "@/types/ledger";
+import type { GroupSnapshot } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
 import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
 import {
@@ -35,25 +35,15 @@ import { parseWizardModes, type Step } from "./wizard-modes";
 import { planGroup, todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
 import { buildScanDraftCandidate, type ScanDraftCandidate } from "./scan-replacement";
 import { commitScanReplacement } from "./scan-commit";
+import {
+  profileToUser,
+  useScanDraftContext,
+} from "./use-scan-draft-context";
 
 const TypeStep = dynamic(
   () => import("@/components/bill/wizard/type-step").then((m) => ({ default: m.TypeStep })),
   { ssr: false },
 );
-
-function profileToUser(profile: UserProfile): User {
-  return {
-    id: profile.id,
-    email: "",
-    handle: profile.handle,
-    name: profile.name,
-    pixKeyType: "email",
-    pixKeyHint: "",
-    avatarUrl: profile.avatarUrl ?? undefined,
-    onboarded: true,
-    createdAt: "",
-  };
-}
 
 function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "items") return "items";
@@ -61,12 +51,6 @@ function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "payer") return "payment";
   if (step === "summary") return "review";
   return "account";
-}
-
-interface ScanDraftContext {
-  groupId: string | null;
-  participants: User[];
-  guests: Guest[];
 }
 
 interface PreConfirmSnapshot {
@@ -111,12 +95,49 @@ function NewBillPageContent() {
   const [isDmMode, setIsDmMode] = useState(false);
   const [reviewingScan, setReviewingScan] = useState(false);
   const [reviewClearSignal, setReviewClearSignal] = useState(0);
-  const [scanDraftContext, setScanDraftContext] = useState<ScanDraftContext | null>(null);
   const [pendingCandidate, setPendingCandidate] = useState<ScanDraftCandidate | null>(null);
   const [preConfirmSnapshot, setPreConfirmSnapshot] = useState<PreConfirmSnapshot | null>(null);
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
 
   const selectedGroupId = store.expense ? (store.expense.groupId || null) : pendingGroupId;
+
+  const handleSelectGroup = useCallback(
+    (groupId: string | null) => {
+      const billStore = useBillStore.getState();
+      if (billStore.expense) {
+        billStore.updateExpense({ groupId: groupId ?? "" });
+        setPendingGroupId(null);
+      } else {
+        setPendingGroupId(groupId);
+      }
+      for (const p of [...billStore.participants]) {
+        if (p.id !== me?.id) billStore.removeParticipant(p.id);
+      }
+      if (!groupId || !me) return;
+      const snapshot = useAppStore.getState().groups[groupId];
+      if (!snapshot) return;
+      for (const member of snapshot.members) {
+        if (member.userId === me.id || member.status !== "accepted") continue;
+        billStore.addParticipant(profileToUser(member.user));
+      }
+    },
+    [me],
+  );
+
+  const {
+    scanDraftContext,
+    setScanDraftContext,
+    onSelectGroup: onScanSelectGroup,
+    onAddParticipant: onScanAddParticipant,
+    onRemoveParticipant: onScanRemoveParticipant,
+    onAddGuest: onScanAddGuest,
+    onRemoveGuest: onScanRemoveGuest,
+    addGuestContacts,
+  } = useScanDraftContext({
+    me,
+    reviewingScan,
+    onSelectGroupDefault: handleSelectGroup,
+  });
 
   useWizardInit({
     modes,
@@ -148,28 +169,13 @@ function NewBillPageContent() {
       toast.error("Nenhum contato com telefone selecionado.");
       return;
     }
-    if (reviewingScan) {
-      setScanDraftContext((prev) => {
-        if (!prev) return prev;
-        const newGuests: Guest[] = result.contacts.map((c) => ({
-          id: `guest_${crypto.randomUUID()}`,
-          name: c.name || c.phone,
-          phone: c.phone,
-          remoteId: null,
-        }));
-        return { ...prev, guests: [...prev.guests, ...newGuests] };
-      });
-    } else {
-      for (const c of result.contacts) {
-        useBillStore.getState().addGuest(c.name || c.phone, c.phone);
-      }
-    }
+    addGuestContacts(result.contacts);
     toast.success(
       result.contacts.length === 1
         ? "Contato adicionado como convidado."
         : `${result.contacts.length} contatos adicionados como convidados.`,
     );
-  }, [reviewingScan]);
+  }, [addGuestContacts]);
 
   const isTypeStep = step === "type";
   const isSingleFlow =
@@ -231,7 +237,7 @@ function NewBillPageContent() {
         guests: [],
       });
     },
-    [me, scanGroup],
+    [me, scanGroup, setScanDraftContext],
   );
 
   const defaultGroupName = useMemo(() => {
@@ -259,8 +265,6 @@ function NewBillPageContent() {
 
   const handleReviewSubmit = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     if (!me) return;
-</antml,parameter>
-<parameter name="i">Dropping both superseded blocks
 
     const liveStore = useBillStore.getState();
     const candidate = buildScanDraftCandidate({
@@ -292,36 +296,20 @@ function NewBillPageContent() {
     setPendingCandidate(candidate);
     setPreConfirmSnapshot(snapshot);
     setReplaceDialogOpen(true);
-  }, [me, scanDraftContext, scanGroup]);
+  }, [me, scanDraftContext, scanGroup, setScanDraftContext]);
 
   const handleKeepDraft = useCallback(() => {
+    toast.success("Rascunho mantido. A nota escaneada foi descartada.");
     setReplaceDialogOpen(false);
     setPendingCandidate(null);
     setPreConfirmSnapshot(null);
     setReviewClearSignal((s) => s + 1);
     setReviewingScan(false);
     setScanDraftContext(null);
-  }, []);
+  }, [setScanDraftContext]);
 
   const handleReplaceDraft = useCallback(() => {
     if (!pendingCandidate) return;
-
-    const liveStore = useBillStore.getState();
-    const currentSnapshot: PreConfirmSnapshot = {
-      expenseId: liveStore.expense?.id ?? "",
-      itemCount: liveStore.items.length,
-      totalCents: liveStore.getGrandTotal(),
-      draftTitle: liveStore.expense?.title || "Nova conta",
-    };
-
-    if (
-      currentSnapshot.expenseId !== preConfirmSnapshot?.expenseId ||
-      currentSnapshot.itemCount !== preConfirmSnapshot?.itemCount ||
-      currentSnapshot.totalCents !== preConfirmSnapshot?.totalCents
-    ) {
-      setPreConfirmSnapshot(currentSnapshot);
-      return;
-    }
 
     commitScanReplacement(pendingCandidate);
     setReplaceDialogOpen(false);
@@ -331,7 +319,7 @@ function NewBillPageContent() {
     setStep("items");
     setReviewingScan(false);
     setScanDraftContext(null);
-  }, [pendingCandidate, preConfirmSnapshot]);
+  }, [pendingCandidate, setScanDraftContext]);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!me) return;
@@ -384,29 +372,6 @@ function NewBillPageContent() {
     onStaleReload,
   });
 
-  const handleSelectGroup = useCallback(
-    (groupId: string | null) => {
-      const billStore = useBillStore.getState();
-      if (billStore.expense) {
-        billStore.updateExpense({ groupId: groupId ?? "" });
-        setPendingGroupId(null);
-      } else {
-        setPendingGroupId(groupId);
-      }
-      for (const p of [...billStore.participants]) {
-        if (p.id !== me?.id) billStore.removeParticipant(p.id);
-      }
-      if (!groupId || !me) return;
-      const snapshot = useAppStore.getState().groups[groupId];
-      if (!snapshot) return;
-      for (const member of snapshot.members) {
-        if (member.userId === me.id || member.status !== "accepted") continue;
-        billStore.addParticipant(profileToUser(member.user));
-      }
-    },
-    [me],
-  );
-
   const submitItemized = useCallback(async (): Promise<boolean> => {
     if (!me) return false;
     return submit(() => planGroup({
@@ -431,6 +396,7 @@ function NewBillPageContent() {
     setCreateGroupEnabled(true);
     setCreateGroupName("");
   };
+
   if (!mounted || !me) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6" aria-busy="true">
@@ -547,73 +513,11 @@ function NewBillPageContent() {
             createGroup: { enabled: createGroupEnabled, name: createGroupName },
             onToggleCreateGroup: setCreateGroupEnabled,
             onCreateGroupName: setCreateGroupName,
-            onSelectGroup: reviewingScan
-              ? (groupId) => {
-                  setScanDraftContext((prev) => {
-                    if (!prev) return prev;
-                    if (!groupId || !me) {
-                      return {
-                        ...prev,
-                        groupId: null,
-                        participants: [meToLegacyUser(me)],
-                      };
-                    }
-                    const snapshot = useAppStore.getState().groups[groupId];
-                    const members = (snapshot?.members ?? [])
-                      .filter((m) => m.userId !== me.id && m.status === "accepted")
-                      .map((m) => profileToUser(m.user));
-                    return {
-                      ...prev,
-                      groupId,
-                      participants: [meToLegacyUser(me), ...members],
-                    };
-                  });
-                }
-              : handleSelectGroup,
-            onAddParticipant: reviewingScan
-              ? (profile) => {
-                  setScanDraftContext((prev) => {
-                    if (!prev) return prev;
-                    const u = profileToUser(profile);
-                    if (prev.participants.some((p) => p.id === u.id)) return prev;
-                    return { ...prev, participants: [...prev.participants, u] };
-                  });
-                }
-              : (profile) => useBillStore.getState().addParticipant(profileToUser(profile)),
-            onRemoveParticipant: reviewingScan
-              ? (id) => {
-                  setScanDraftContext((prev) => {
-                    if (!prev) return prev;
-                    return {
-                      ...prev,
-                      participants: prev.participants.filter((p) => p.id !== id),
-                    };
-                  });
-                }
-              : (id) => useBillStore.getState().removeParticipant(id),
-            onAddGuest: reviewingScan
-              ? (name, phone) => {
-                  const id = `guest_${crypto.randomUUID()}`;
-                  setScanDraftContext((prev) => {
-                    if (!prev) return prev;
-                    return {
-                      ...prev,
-                      guests: [...prev.guests, { id, name, phone, remoteId: null }],
-                    };
-                  });
-                }
-              : (name, phone) => useBillStore.getState().addGuest(name, phone),
-            onRemoveGuest: reviewingScan
-              ? (id) => {
-                  setScanDraftContext((prev) => {
-                    if (!prev) return prev;
-                    return {
-                      ...prev,
-                      guests: prev.guests.filter((g) => g.id !== id),
-                    };
-                  });
-                }
-              : (id) => useBillStore.getState().removeGuest(id),
+            onSelectGroup: onScanSelectGroup,
+            onAddParticipant: onScanAddParticipant,
+            onRemoveParticipant: onScanRemoveParticipant,
+            onAddGuest: onScanAddGuest,
+            onRemoveGuest: onScanRemoveGuest,
             hasContactPicker,
             onPickContacts: handlePickContacts,
           }}

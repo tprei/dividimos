@@ -6,11 +6,7 @@ import type { ScanDraftCandidate } from "./scan-replacement";
  *
  * Persist partialize (bill-store.ts:1283-1295) observes a single snapshot,
  * guaranteeing a single atomic localStorage write with no intermediate states.
- *
- * SWAP POINT:
- * This UI-side setState is a substitute for the frozen store action
- * `replaceFromReceiptScan`. When the freeze on bill-store.ts lifts,
- * swap this implementation to delegate directly to `useBillStore.getState().replaceFromReceiptScan(candidate)`.
+ * Note: frozen store; setState is the deliberate seam for atomic draft replacement.
  */
 export function commitScanReplacement(candidate: ScanDraftCandidate): void {
   useBillStore.setState({
