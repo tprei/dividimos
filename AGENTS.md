@@ -128,6 +128,7 @@ Production is Supabase project `sfclcrjeckixhpjfmrox` (dividimos, sa-east-1), Ve
 - `gh secret delete`, `gh variable delete`, deleting workflows.
 - Deleting or editing OAuth clients in `pixwise-491111`, deleting the Firebase Android app, rotating the Android keystore.
 - Any `pg_dump`/`psql` against production.
+- The `synthetic-prod` label and its open issue are managed by the ambient reporter; agents must not delete, relabel, edit, or close them by hand.
 
 Rules:
 

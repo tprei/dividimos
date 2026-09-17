@@ -324,6 +324,8 @@ Scheduled synthetic validation against the production deployment (`.github/workf
 - GitHub Actions repository variables: `AMBIENT_BASE_URL`, `AMBIENT_GOOGLE_CLIENT_ID`.
 - The legacy HS256 JWT secret stays enabled because minted sessions depend on it.
 
+- Optional GitHub Actions secrets: `ALERT_TELEGRAM_BOT_TOKEN` (bot token for the ambient failure alert; without it the Telegram sink is disabled and the reporter only maintains the `synthetic-prod` issue) and `ALERT_TELEGRAM_CHAT_ID` (chat that receives the alert when a run goes red or recovers).
+
 ## CI
 CI runs on every pull request and on push to `main` across several workflows in `.github/workflows/`:
 
