@@ -123,12 +123,13 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
 
   if (isPending) {
     return (
-      <div className="mx-auto max-w-lg px-4 py-6">
+      <div className="mx-auto flex min-h-[calc(100dvh-9rem)] max-w-lg flex-col px-4 py-6">
         <ScreenHeader
           back
           title={snapshot.group.name}
           onBack={() => router.push("/app/groups")}
         />
+        <div className="my-auto">
         <div className="mt-5 rounded-2xl gradient-primary p-5 text-primary-foreground shadow-lg shadow-primary/20">
           <p className="text-sm text-primary-foreground/75">Convite para o grupo</p>
           <p className="mt-2 text-2xl font-bold">{snapshot.group.name}</p>
@@ -144,7 +145,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
         </div>
         <div className="mt-3 flex gap-2">
           <Button
-            variant="ghost"
+            variant="outline"
             className="min-h-11 flex-1 rounded-lg"
             onClick={() => setConfirmDecline(true)}
           >
@@ -159,6 +160,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           >
             Aceitar
           </Button>
+        </div>
         </div>
 
         <Dialog
@@ -177,6 +179,7 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
             <DialogFooter>
               <Button
                 variant="outline"
+                className="min-h-11"
                 onClick={() => setConfirmDecline(false)}
                 disabled={isDeclining}
               >
@@ -184,11 +187,12 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
               </Button>
               <Button
                 variant="destructive"
+                className="min-h-11"
                 onClick={async () => {
                   setIsDeclining(true);
                   try {
-                    await decline(groupId);
-                    router.replace("/app/groups");
+                    const declined = await decline(groupId);
+                    if (declined) router.replace("/app/groups");
                   } finally {
                     setIsDeclining(false);
                   }

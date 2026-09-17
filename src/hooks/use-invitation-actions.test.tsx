@@ -86,7 +86,7 @@ describe("useInvitationActions", () => {
 
     const { result } = renderHook(() => useInvitationActions());
 
-    let accept!: Promise<void>;
+    let accept!: Promise<boolean>;
     await act(async () => {
       accept = result.current.accept("g1");
     });
@@ -101,6 +101,7 @@ describe("useInvitationActions", () => {
     });
 
     expect(mockToast.success).toHaveBeenCalledWith("Convite aceito");
+    expect(await accept).toBe(true);
     expect(result.current.pendingGroupId).toBeNull();
   });
 
@@ -110,10 +111,12 @@ describe("useInvitationActions", () => {
 
     const { result } = renderHook(() => useInvitationActions());
 
+    let ok = true;
     await act(async () => {
-      await result.current.accept("g1");
+      ok = await result.current.accept("g1");
     });
 
+    expect(ok).toBe(false);
     expect(mockToast.error).toHaveBeenCalledWith("Essa pessoa não tem convite pendente.");
     expect(mockToast.success).not.toHaveBeenCalled();
     expect(useAppStore.getState().groups).toBe(groupsBefore);
@@ -130,10 +133,12 @@ describe("useInvitationActions", () => {
 
     const { result } = renderHook(() => useInvitationActions());
 
+    let declined = false;
     await act(async () => {
-      await result.current.decline("g1");
+      declined = await result.current.decline("g1");
     });
 
+    expect(declined).toBe(true);
     expect(mockDecline).toHaveBeenCalledWith("g1");
     expect(mockToast.success).toHaveBeenCalledWith("Convite recusado");
     expect(result.current.pendingGroupId).toBeNull();
@@ -145,10 +150,12 @@ describe("useInvitationActions", () => {
 
     const { result } = renderHook(() => useInvitationActions());
 
+    let declined = true;
     await act(async () => {
-      await result.current.decline("g1");
+      declined = await result.current.decline("g1");
     });
 
+    expect(declined).toBe(false);
     expect(mockToast.error).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar.");
     expect(mockToast.success).not.toHaveBeenCalled();
     expect(useAppStore.getState().groups).toBe(groupsBefore);

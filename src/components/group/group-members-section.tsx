@@ -227,11 +227,9 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
                 </div>
               ))}
             </div>
-            {snapshot.guests.length > 0 && (
-              <p className="text-xs text-muted-foreground mt-2">
-                Convidados são pessoas sem conta no Dividimos. Elas recebem um link para confirmar a participação e ver a parte delas; não podem pagar ou ser marcadas como pagadoras no app.
-              </p>
-            )}
+            <p className="text-xs text-muted-foreground mt-2">
+              Convidados são pessoas sem conta no Dividimos. Elas recebem um link para confirmar a participação e ver a parte delas; não podem pagar ou ser marcadas como pagadoras no app.
+            </p>
           </div>
         )}
 

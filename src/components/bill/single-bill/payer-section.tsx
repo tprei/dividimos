@@ -1,5 +1,6 @@
 "use client";
 
+import { GUEST_PAYER_NOTICE } from "@/components/bill/payer-copy";
 import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import type { ExpensePayer, User } from "@/types";
@@ -21,9 +22,7 @@ export function SingleBillPayerSection({
     <section className="space-y-2">
       <h2 className="text-sm leading-5 font-semibold">Quem pagou</h2>
       {hasGuests && (
-        <p className="text-xs text-muted-foreground">
-          Convidados não podem pagar a conta — selecione uma pessoa com conta no Dividimos.
-        </p>
+        <p className="text-xs text-muted-foreground">{GUEST_PAYER_NOTICE}</p>
       )}
       <div className="flex flex-wrap gap-2">
         {participants.map((participant) => {

@@ -34,7 +34,7 @@ export function TransferRow({
     (transfer.fromId === meId && to.isPending) || (transfer.toId === meId && from.isPending);
   const guestInvolved = from.isGuest || to.isGuest;
   const iPay = transfer.fromId === meId && !to.isPending && !guestInvolved;
-  const iReceive = transfer.toId === meId && transfer.fromKind === "user" && !from.isPending && !guestInvolved;
+  const iReceive = transfer.toId === meId && transfer.fromKind === "user" && !from.isPending;
   const actionable = iPay || iReceive;
   let statusLabel = "Outro acerto";
   if (iPay) statusLabel = "Você paga";

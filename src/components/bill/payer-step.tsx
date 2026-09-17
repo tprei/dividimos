@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, Hash, Percent, Split, Users } from "lucide-react";
 import { startTransition, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
+import { GUEST_PAYER_NOTICE } from "@/components/bill/payer-copy";
 import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -123,9 +124,7 @@ export function PayerStep({
   return (
     <div className="space-y-4">
       {hasGuests && (
-        <p className="text-xs text-muted-foreground">
-          Convidados não podem pagar a conta — selecione uma pessoa com conta no Dividimos.
-        </p>
+        <p className="text-xs text-muted-foreground">{GUEST_PAYER_NOTICE}</p>
       )}
       <div>
         <p className="text-sm text-muted-foreground">

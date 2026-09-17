@@ -477,6 +477,7 @@ describe("GroupDetailContent", () => {
 
     const dialog = screen.getByRole("dialog");
     const confirmDeclineBtn = within(dialog).getByRole("button", { name: "Recusar" });
+    mockDecline.mockResolvedValue(true);
     await user.click(confirmDeclineBtn);
 
     expect(mockDecline).toHaveBeenCalledWith(groupId);
