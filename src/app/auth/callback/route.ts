@@ -23,6 +23,6 @@ export async function GET(request: Request) {
 
   const failUrl = new URL("/auth", origin);
   failUrl.searchParams.set("error", "callback_failed");
-  if (next && next !== "/") failUrl.searchParams.set("next", next);
+  if (next !== "/") failUrl.searchParams.set("next", next);
   return NextResponse.redirect(failUrl.toString());
 }

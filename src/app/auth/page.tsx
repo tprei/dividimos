@@ -124,11 +124,11 @@ function AuthPageContent() {
                     {error === "callback_failed" && !dismissedError && (
                       <div
                         role="alert"
-                        className="mb-4 flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/10 p-3.5 text-left"
+                        className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/10 p-3.5 text-left"
                       >
                         <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
                         <div className="flex-1">
-                          <p className="text-xs font-semibold text-destructive">
+                          <p className="text-sm font-semibold text-destructive">
                             Não conseguimos concluir a entrada com o Google.
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
@@ -144,7 +144,7 @@ function AuthPageContent() {
                             params.delete("error");
                             router.replace(params.toString() ? `/auth?${params.toString()}` : "/auth");
                           }}
-                          className="rounded p-0.5 text-destructive/70 hover:text-destructive"
+                          className="-mr-2 -mt-2 flex size-11 shrink-0 items-center justify-center rounded-lg text-destructive/70 hover:bg-destructive/10 hover:text-destructive"
                         >
                           <X className="size-4" />
                         </button>
