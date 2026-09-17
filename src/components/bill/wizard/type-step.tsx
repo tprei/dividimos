@@ -22,8 +22,9 @@ export interface TypeStepProps {
   occurredOn: string;
   /** Id of the signed-in account; a change invalidates any pending scan attempt. */
   accountId: string | null;
+  reviewClearSignal?: number;
   onTypeSelect: (type: ExpenseType) => void;
-  onScanConfirm: (result: ReceiptOcrResult, occurredOn: string) => void;
+  onReviewSubmit: (result: ReceiptOcrResult, occurredOn: string) => void;
   onVoiceConfirm: (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => void;
   onReviewingChange: (reviewing: boolean) => void;
   onManageParticipants: () => void;
@@ -41,8 +42,9 @@ export function TypeStep({
   occurredOn,
   participants,
   accountId,
+  reviewClearSignal = 0,
   onTypeSelect,
-  onScanConfirm,
+  onReviewSubmit,
   onVoiceConfirm,
   onReviewingChange,
   onManageParticipants,
@@ -131,6 +133,14 @@ export function TypeStep({
     return () => onReviewingChange(false);
   }, [reviewing, onReviewingChange]);
 
+  const lastClearSignalRef = useRef(reviewClearSignal);
+  useEffect(() => {
+    if (reviewClearSignal !== lastClearSignalRef.current) {
+      lastClearSignalRef.current = reviewClearSignal;
+      resetScanState();
+    }
+  }, [reviewClearSignal, resetScanState]);
+
   const handleScanProcess = useCallback(async (file: File) => {
     const previous = attemptRef.current;
     previous?.controller.abort();
@@ -163,9 +173,8 @@ export function TypeStep({
 
 
   const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
-    setScanResult(null);
-    onScanConfirm(result, occurredOn);
-  }, [onScanConfirm]);
+    onReviewSubmit(result, occurredOn);
+  }, [onReviewSubmit]);
 
   const handleScanCancel = useCallback(() => {
     setScanResult(null);

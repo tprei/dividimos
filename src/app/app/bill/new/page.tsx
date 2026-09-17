@@ -4,20 +4,22 @@ import { X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import { ItemizedBillForm, type ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 import { ParticipantsDialog } from "@/components/bill/itemized/participants-dialog";
 import { SingleBillForm } from "@/components/bill/single-bill-form";
 import type { ResolvedParticipant } from "@/components/bill/voice-expense-modal";
 import type { ItemDivisionParticipant } from "@/components/bill/item-division-editor";
 import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
+import { ReplaceDraftDialog } from "@/components/bill/wizard/replace-draft-dialog";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
+import { hasMeaningfulDraft } from "@/lib/bill-draft";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
-import { useBillStore } from "@/stores/bill-store";
+import { useBillStore, type Guest } from "@/stores/bill-store";
 import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
 import { useMe } from "@/hooks/use-me";
@@ -31,6 +33,8 @@ import {
 } from "@/lib/bill-draft-isolation";
 import { parseWizardModes, type Step } from "./wizard-modes";
 import { planGroup, todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
+import { buildScanDraftCandidate, type ScanDraftCandidate } from "./scan-replacement";
+import { commitScanReplacement } from "./scan-commit";
 
 const TypeStep = dynamic(
   () => import("@/components/bill/wizard/type-step").then((m) => ({ default: m.TypeStep })),
@@ -52,10 +56,24 @@ function profileToUser(profile: UserProfile): User {
 }
 
 function itemizedSectionFor(step: Step): ItemizedSectionKey {
+  if (step === "items") return "items";
   if (step === "split" || step === "participants") return "split";
   if (step === "payer") return "payment";
   if (step === "summary") return "review";
   return "account";
+}
+
+interface ScanDraftContext {
+  groupId: string | null;
+  participants: User[];
+  guests: Guest[];
+}
+
+interface PreConfirmSnapshot {
+  expenseId: string;
+  itemCount: number;
+  totalCents: number;
+  draftTitle: string;
 }
 
 function NewBillPageContent() {
@@ -92,11 +110,11 @@ function NewBillPageContent() {
   const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [isDmMode, setIsDmMode] = useState(false);
   const [reviewingScan, setReviewingScan] = useState(false);
-  useEffect(() => {
-    if (!useBillStore.getState().occurredOn) {
-      useBillStore.getState().setOccurredOn(todayIsoDate());
-    }
-  }, []);
+  const [reviewClearSignal, setReviewClearSignal] = useState(0);
+  const [scanDraftContext, setScanDraftContext] = useState<ScanDraftContext | null>(null);
+  const [pendingCandidate, setPendingCandidate] = useState<ScanDraftCandidate | null>(null);
+  const [preConfirmSnapshot, setPreConfirmSnapshot] = useState<PreConfirmSnapshot | null>(null);
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
 
   const selectedGroupId = store.expense ? (store.expense.groupId || null) : pendingGroupId;
 
@@ -130,15 +148,28 @@ function NewBillPageContent() {
       toast.error("Nenhum contato com telefone selecionado.");
       return;
     }
-    for (const c of result.contacts) {
-      useBillStore.getState().addGuest(c.name || c.phone, c.phone);
+    if (reviewingScan) {
+      setScanDraftContext((prev) => {
+        if (!prev) return prev;
+        const newGuests: Guest[] = result.contacts.map((c) => ({
+          id: `guest_${crypto.randomUUID()}`,
+          name: c.name || c.phone,
+          phone: c.phone,
+          remoteId: null,
+        }));
+        return { ...prev, guests: [...prev.guests, ...newGuests] };
+      });
+    } else {
+      for (const c of result.contacts) {
+        useBillStore.getState().addGuest(c.name || c.phone, c.phone);
+      }
     }
     toast.success(
       result.contacts.length === 1
         ? "Contato adicionado como convidado."
         : `${result.contacts.length} contatos adicionados como convidados.`,
     );
-  }, []);
+  }, [reviewingScan]);
 
   const isTypeStep = step === "type";
   const isSingleFlow =
@@ -155,9 +186,11 @@ function NewBillPageContent() {
   const scanGroup = selectedGroup ?? (
     modes.entryGroupId ? groups[modes.entryGroupId] ?? null : null
   );
+  const activeParticipants = reviewingScan && scanDraftContext ? scanDraftContext.participants : store.participants;
+  const activeGuests = reviewingScan && scanDraftContext ? scanDraftContext.guests : store.guests;
   const scanParticipants = useMemo<ItemDivisionParticipant[]>(() => {
     if (!me) return [];
-    const others = store.participants.filter((participant) => participant.id !== me.id);
+    const others = activeParticipants.filter((participant) => participant.id !== me.id);
     return [
       { id: me.id, name: me.name, handle: me.handle, avatarUrl: me.avatarUrl ?? null, isGuest: false },
       ...others.map((participant) => ({
@@ -167,7 +200,7 @@ function NewBillPageContent() {
         avatarUrl: participant.avatarUrl ?? null,
         isGuest: false,
       })),
-      ...store.guests.map((guest) => ({
+      ...activeGuests.map((guest) => ({
         id: guest.id,
         name: guest.name,
         handle: null,
@@ -175,21 +208,28 @@ function NewBillPageContent() {
         isGuest: true,
       })),
     ];
-  }, [me, store.participants, store.guests]);
+  }, [me, activeParticipants, activeGuests]);
 
   const [scanParticipantsOpen, setScanParticipantsOpen] = useState(false);
 
   const handleReviewingChange = useCallback(
     (reviewing: boolean) => {
       setReviewingScan(reviewing);
-      if (!reviewing || !me) return;
-      const billStore = useBillStore.getState();
-      billStore.setCurrentUser(meToLegacyUser(me));
-      billStore.createExpense("", "itemized", undefined, scanGroup?.group.id);
+      if (!reviewing) {
+        setScanDraftContext(null);
+        return;
+      }
+      if (!me) return;
+      const initialParticipants: User[] = [meToLegacyUser(me)];
       for (const member of scanGroup?.members ?? []) {
         if (member.userId === me.id || member.status !== "accepted") continue;
-        billStore.addParticipant(profileToUser(member.user));
+        initialParticipants.push(profileToUser(member.user));
       }
+      setScanDraftContext({
+        groupId: scanGroup?.group.id ?? null,
+        participants: initialParticipants,
+        guests: [],
+      });
     },
     [me, scanGroup],
   );
@@ -216,36 +256,82 @@ function NewBillPageContent() {
     }
     setStep("info");
   }, [me, pendingGroupId]);
-  const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
-    setBillType("itemized");
-    if (!me) return;
-    const billStore = useBillStore.getState();
-    {
-      billStore.setCurrentUser(meToLegacyUser(me));
-      if (!billStore.expense) {
-        billStore.createExpense("", "itemized", undefined, scanGroup?.group.id);
-      }
-      billStore.updateExpense({
-        title: result.merchant || "Nota escaneada",
-        merchantName: result.merchant || undefined,
-        groupId: scanGroup?.group.id ?? "",
-        serviceFeePercent: result.serviceFeeBasisPoints / 100,
-        serviceFeeBasisPoints: result.serviceFeeBasisPoints,
-        fixedFees: result.fixedFeesCents,
-      });
 
-      for (const item of result.items) {
-        billStore.addItem({
-          description: item.description,
-          quantity: item.quantity,
-          unitPriceCents: item.unitPriceCents,
-          totalPriceCents: item.totalCents,
-        });
-      }
+  const handleReviewSubmit = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
+    if (!me) return;
+</antml,parameter>
+<parameter name="i">Dropping both superseded blocks
+
+    const liveStore = useBillStore.getState();
+    const candidate = buildScanDraftCandidate({
+      result,
+      occurredOn,
+      groupId: scanDraftContext?.groupId ?? scanGroup?.group.id ?? null,
+      participants: scanDraftContext?.participants ?? [meToLegacyUser(me)],
+      guests: scanDraftContext?.guests ?? [],
+      creatorId: me.id,
+      nowIso: new Date().toISOString(),
+    });
+
+    if (!hasMeaningfulDraft(liveStore, me.id)) {
+      commitScanReplacement(candidate);
+      setBillType("itemized");
+      setStep("items");
+      setReviewingScan(false);
+      setScanDraftContext(null);
+      return;
     }
-    billStore.setOccurredOn(occurredOn);
-    setStep("split");
-  }, [me, scanGroup]);
+
+    const snapshot: PreConfirmSnapshot = {
+      expenseId: liveStore.expense?.id ?? "",
+      itemCount: liveStore.items.length,
+      totalCents: liveStore.getGrandTotal(),
+      draftTitle: liveStore.expense?.title || "Nova conta",
+    };
+
+    setPendingCandidate(candidate);
+    setPreConfirmSnapshot(snapshot);
+    setReplaceDialogOpen(true);
+  }, [me, scanDraftContext, scanGroup]);
+
+  const handleKeepDraft = useCallback(() => {
+    setReplaceDialogOpen(false);
+    setPendingCandidate(null);
+    setPreConfirmSnapshot(null);
+    setReviewClearSignal((s) => s + 1);
+    setReviewingScan(false);
+    setScanDraftContext(null);
+  }, []);
+
+  const handleReplaceDraft = useCallback(() => {
+    if (!pendingCandidate) return;
+
+    const liveStore = useBillStore.getState();
+    const currentSnapshot: PreConfirmSnapshot = {
+      expenseId: liveStore.expense?.id ?? "",
+      itemCount: liveStore.items.length,
+      totalCents: liveStore.getGrandTotal(),
+      draftTitle: liveStore.expense?.title || "Nova conta",
+    };
+
+    if (
+      currentSnapshot.expenseId !== preConfirmSnapshot?.expenseId ||
+      currentSnapshot.itemCount !== preConfirmSnapshot?.itemCount ||
+      currentSnapshot.totalCents !== preConfirmSnapshot?.totalCents
+    ) {
+      setPreConfirmSnapshot(currentSnapshot);
+      return;
+    }
+
+    commitScanReplacement(pendingCandidate);
+    setReplaceDialogOpen(false);
+    setPendingCandidate(null);
+    setPreConfirmSnapshot(null);
+    setBillType("itemized");
+    setStep("items");
+    setReviewingScan(false);
+    setScanDraftContext(null);
+  }, [pendingCandidate, preConfirmSnapshot]);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!me) return;
@@ -439,8 +525,9 @@ function NewBillPageContent() {
           }))}
           participants={scanParticipants}
           occurredOn={store.occurredOn ?? todayIsoDate()}
+          reviewClearSignal={reviewClearSignal}
           onTypeSelect={handleTypeSelect}
-          onScanConfirm={handleScanConfirm}
+          onReviewSubmit={handleReviewSubmit}
           onVoiceConfirm={handleVoiceConfirm}
           onReviewingChange={handleReviewingChange}
           onManageParticipants={() => setScanParticipantsOpen(true)}
@@ -453,23 +540,93 @@ function NewBillPageContent() {
           description="Escolha quem divide esta conta."
           participants={{
             me,
-            participants: store.participants,
-            guests: store.guests,
-            selectedGroupId,
+            participants: reviewingScan && scanDraftContext ? scanDraftContext.participants : store.participants,
+            guests: reviewingScan && scanDraftContext ? scanDraftContext.guests : store.guests,
+            selectedGroupId: reviewingScan && scanDraftContext ? scanDraftContext.groupId : selectedGroupId,
             groups: groupSnapshots,
             createGroup: { enabled: createGroupEnabled, name: createGroupName },
             onToggleCreateGroup: setCreateGroupEnabled,
             onCreateGroupName: setCreateGroupName,
-            onSelectGroup: handleSelectGroup,
-            onAddParticipant: (profile) => useBillStore.getState().addParticipant(profileToUser(profile)),
-            onRemoveParticipant: (id) => useBillStore.getState().removeParticipant(id),
-            onAddGuest: (name, phone) => useBillStore.getState().addGuest(name, phone),
-            onRemoveGuest: (id) => useBillStore.getState().removeGuest(id),
+            onSelectGroup: reviewingScan
+              ? (groupId) => {
+                  setScanDraftContext((prev) => {
+                    if (!prev) return prev;
+                    if (!groupId || !me) {
+                      return {
+                        ...prev,
+                        groupId: null,
+                        participants: [meToLegacyUser(me)],
+                      };
+                    }
+                    const snapshot = useAppStore.getState().groups[groupId];
+                    const members = (snapshot?.members ?? [])
+                      .filter((m) => m.userId !== me.id && m.status === "accepted")
+                      .map((m) => profileToUser(m.user));
+                    return {
+                      ...prev,
+                      groupId,
+                      participants: [meToLegacyUser(me), ...members],
+                    };
+                  });
+                }
+              : handleSelectGroup,
+            onAddParticipant: reviewingScan
+              ? (profile) => {
+                  setScanDraftContext((prev) => {
+                    if (!prev) return prev;
+                    const u = profileToUser(profile);
+                    if (prev.participants.some((p) => p.id === u.id)) return prev;
+                    return { ...prev, participants: [...prev.participants, u] };
+                  });
+                }
+              : (profile) => useBillStore.getState().addParticipant(profileToUser(profile)),
+            onRemoveParticipant: reviewingScan
+              ? (id) => {
+                  setScanDraftContext((prev) => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      participants: prev.participants.filter((p) => p.id !== id),
+                    };
+                  });
+                }
+              : (id) => useBillStore.getState().removeParticipant(id),
+            onAddGuest: reviewingScan
+              ? (name, phone) => {
+                  const id = `guest_${crypto.randomUUID()}`;
+                  setScanDraftContext((prev) => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      guests: [...prev.guests, { id, name, phone, remoteId: null }],
+                    };
+                  });
+                }
+              : (name, phone) => useBillStore.getState().addGuest(name, phone),
+            onRemoveGuest: reviewingScan
+              ? (id) => {
+                  setScanDraftContext((prev) => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      guests: prev.guests.filter((g) => g.id !== id),
+                    };
+                  });
+                }
+              : (id) => useBillStore.getState().removeGuest(id),
             hasContactPicker,
             onPickContacts: handlePickContacts,
           }}
         />
       )}
+      <ReplaceDraftDialog
+        open={replaceDialogOpen}
+        draftTitle={preConfirmSnapshot?.draftTitle ?? "Nova conta"}
+        itemCount={preConfirmSnapshot?.itemCount ?? 0}
+        totalCents={preConfirmSnapshot?.totalCents ?? 0}
+        onReplace={handleReplaceDraft}
+        onKeep={handleKeepDraft}
+      />
     </div>
   );
 }
