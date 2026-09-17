@@ -6,12 +6,14 @@ import { startTransition, useState } from "react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { GUEST_PAYER_NOTICE } from "@/components/bill/payer-copy";
 import { PersonLabel } from "@/components/shared/person-label";
+import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { haptics } from "@/hooks/use-haptics";
 import { formatBRL } from "@/lib/currency";
 import {
   allocateByBasisPoints,
+  allocateByWeights,
   allocateEvenly,
   parseAllocationPercentText,
 } from "@/lib/expense-money";
@@ -51,6 +53,7 @@ export function PayerStep({
 }: PayerStepProps) {
   const [multiMode, setMultiMode] = useState(payers.length > 1);
   const [paymentInputMode, setPaymentInputMode] = useState<"fixed" | "percentage">("fixed");
+  const [choosingSinglePayer, setChoosingSinglePayer] = useState(false);
   const [localAmounts, setLocalAmounts] = useState<Map<string, number>>(() => {
     if (payers.length > 1) {
       const m = new Map<string, number>();
@@ -95,6 +98,29 @@ export function PayerStep({
 
   // Percentages only produce payer amounts when they sum to exactly 100%; while
   // they do not, the store must hold no payer set rather than a stale one.
+  function changePaymentInputMode(next: "fixed" | "percentage"): void {
+    if (next === "percentage") {
+      const seed = new Map<string, string>();
+      if (grandTotal > 0) {
+        const amounts = participants.map((p) => payerMap.get(p.id) ?? 0);
+        const paidSum = amounts.reduce((s, c) => s + c, 0);
+        if (paidSum === grandTotal) {
+          const bps = allocateByWeights(FULL_PERCENT_BASIS_POINTS, amounts); // exact case: deterministic apportion of 10000bp
+          if (bps.ok) participants.forEach((p, i) => seed.set(p.id, percentText(bps.value[i])));
+        } else {
+          participants.forEach((p) => {           // partial/over: integer half-up bp, true sum preserved
+            const c = payerMap.get(p.id) ?? 0;
+            if (c > 0) seed.set(p.id, percentText(Math.floor((c * FULL_PERCENT_BASIS_POINTS + Math.floor(grandTotal / 2)) / grandTotal)));
+          });
+        }
+      } // grandTotal === 0 → empty fields, no division by zero
+      setLocalPercentages(seed);
+    } else {
+      setLocalAmounts(new Map(payers.filter((p) => p.amountCents > 0).map((p) => [p.userId, p.amountCents])));
+    }
+    setPaymentInputMode(next);
+  }
+
   const applyPercentages = (next: Map<string, string>) => {
     setLocalPercentages(next);
     const weights = participants.map((p) => percentBasisPoints(next.get(p.id)));
@@ -205,10 +231,7 @@ export function PayerStep({
               size="sm"
               className="text-xs"
               onClick={() => {
-                setMultiMode(false);
-                if (payers.length > 0) {
-                  onSetPayerFull(payers[0].userId);
-                }
+                setChoosingSinglePayer(true);
               }}
             >
               Voltar para um pagador
@@ -224,7 +247,7 @@ export function PayerStep({
                 key={m.key}
                 onClick={() => {
                   haptics.selectionChanged();
-                  setPaymentInputMode(m.key);
+                  changePaymentInputMode(m.key);
                 }}
                 className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all ${
                   paymentInputMode === m.key
@@ -375,7 +398,7 @@ export function PayerStep({
                 {!showFillRemaining && (
                   <div className="mt-2">
                     <AmountQuickAdd
-                      increments={[5, 10, 50, 100]}
+                      increments={[1, 5, 10, 50]}
                       valueCents={userCents}
                       onChangeCents={(cents) => handleLocalChange(user.id, cents)}
                     />
@@ -438,6 +461,40 @@ export function PayerStep({
               )}
             </AnimatePresence>
           </div>}
+          {choosingSinglePayer && (
+            <div className="rounded-2xl border bg-card p-4 space-y-2">
+              <p className="text-sm font-bold">Quem pagou tudo?</p>
+              {participants.map((user) => (
+                <button
+                  key={user.id}
+                  type="button"
+                  onClick={() => {
+                    haptics.selectionChanged();
+                    onSetPayerFull(user.id);
+                    setMultiMode(false);
+                    setChoosingSinglePayer(false);
+                  }}
+                  className="w-full flex items-center justify-between rounded-xl border p-3 hover:border-primary/50 text-left transition-colors"
+                >
+                  <span className="flex items-center gap-3">
+                    <UserAvatar name={user.name} avatarUrl={user.avatarUrl} size="sm" />
+                    <PersonLabel name={user.name} handle={user.handle} nameClassName="text-sm font-medium" />
+                  </span>
+                  <span className="text-sm font-bold tabular-nums text-primary-text">
+                    {formatBRL(grandTotal)}
+                  </span>
+                </button>
+              ))}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs"
+                onClick={() => setChoosingSinglePayer(false)}
+              >
+                Cancelar
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

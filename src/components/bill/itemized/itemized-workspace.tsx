@@ -114,6 +114,14 @@ export function ItemizedWorkspace({
         ? `Faltam ${formatBRL(remainingCents)} para dividir entre os itens.`
         : "Há itens com divisão incompleta.";
     }
+    if (section === "payment") {
+      const paidTotal = store.payers.reduce((s, p) => s + p.amountCents, 0);
+      if (store.payers.length === 0) return "Selecione quem pagou.";
+      const diff = grandTotal - paidTotal;
+      if (diff > 0) return `Faltam ${formatBRL(diff)} para bater com o total.`;
+      if (diff < 0) return `Excede ${formatBRL(-diff)} do total.`;
+      return null;
+    }
     if (section === "review" && issues.length > 0) return issues[0].message;
     return null;
   })();

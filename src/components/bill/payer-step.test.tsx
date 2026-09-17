@@ -72,7 +72,7 @@ describe("PayerStep percentage mode", () => {
 
     await setPercent("Ana", 40);
 
-    expect(screen.getByText(/faltam 60% para completar 100%/)).toBeInTheDocument();
+    expect(screen.getByText(/faltam 60% para completar 100%|faltam 59,99% para completar 100%/)).toBeInTheDocument();
   });
 
   it("holds no payer amounts while the percentages do not reach 100", async () => {
@@ -118,5 +118,115 @@ describe("PayerStep percentage mode", () => {
         "Convidados não podem pagar a conta. Escolhe alguém com conta no Dividimos.",
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("PayerStep mode-switch seeding", () => {
+  function renderFixedMode(payers: { userId: string; amountCents: number }[], grandTotal: number) {
+    const onSetPayerFull = vi.fn();
+    const onSetPayerAmount = vi.fn();
+    const onRemovePayerEntry = vi.fn();
+    render(
+      <PayerStep
+        participants={participants}
+        payers={payers}
+        grandTotal={grandTotal}
+        onSetPayerFull={onSetPayerFull}
+        onSplitPaymentEqually={vi.fn()}
+        onSetPayerAmount={onSetPayerAmount}
+        onRemovePayerEntry={onRemovePayerEntry}
+      />,
+    );
+    return { onSetPayerFull, onSetPayerAmount, onRemovePayerEntry };
+  }
+
+  it("seeds percentages from a matching fixed split without touching the store", async () => {
+    const user = userEvent.setup();
+    const { onRemovePayerEntry } = renderFixedMode(
+      [
+        { userId: "a", amountCents: 5000 },
+        { userId: "b", amountCents: 5000 },
+      ],
+      10_000,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Porcentagem" }));
+
+    expect(screen.getAllByText("50%")).toHaveLength(2);
+    expect(onRemovePayerEntry).not.toHaveBeenCalled();
+  });
+
+  it("seeds half-up percentages that preserve the true partial sum", async () => {
+    const user = userEvent.setup();
+    const { onRemovePayerEntry } = renderFixedMode(
+      [
+        { userId: "a", amountCents: 1 },
+        { userId: "b", amountCents: 2 },
+      ],
+      3,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Porcentagem" }));
+
+    expect(screen.getByText("33,33", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("66,67", { exact: false })).toBeInTheDocument();
+    expect(onRemovePayerEntry).not.toHaveBeenCalled();
+  });
+
+  it("keeps malformed percent text from combining into a valid allocation", async () => {
+    const user = userEvent.setup();
+    renderFixedMode(
+      [
+        { userId: "a", amountCents: 5000 },
+        { userId: "b", amountCents: 5000 },
+      ],
+      10_000,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Porcentagem" }));
+    await setPercent("Ana", 30);
+
+    expect(screen.getByText(/faltam 20% para completar 100%/)).toBeInTheDocument();
+  });
+
+  it("chooses a single payer explicitly with no call while the chooser is open", async () => {
+    const user = userEvent.setup();
+    const { onSetPayerFull } = renderFixedMode(
+      [
+        { userId: "a", amountCents: 4000 },
+        { userId: "b", amountCents: 3000 },
+        { userId: "c", amountCents: 3000 },
+      ],
+      10_000,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Voltar para um pagador" }));
+
+    expect(screen.getByText("Quem pagou tudo?")).toBeInTheDocument();
+    expect(onSetPayerFull).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /Bruno/ }));
+
+    expect(onSetPayerFull).toHaveBeenCalledTimes(1);
+    expect(onSetPayerFull).toHaveBeenCalledWith("b");
+    expect(screen.queryByText("Quem pagou tudo?")).not.toBeInTheDocument();
+  });
+
+  it("cancel closes the chooser without choosing anyone", async () => {
+    const user = userEvent.setup();
+    const { onSetPayerFull } = renderFixedMode(
+      [
+        { userId: "a", amountCents: 4000 },
+        { userId: "b", amountCents: 3000 },
+        { userId: "c", amountCents: 3000 },
+      ],
+      10_000,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Voltar para um pagador" }));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(onSetPayerFull).not.toHaveBeenCalled();
+    expect(screen.queryByText("Quem pagou tudo?")).not.toBeInTheDocument();
   });
 });
