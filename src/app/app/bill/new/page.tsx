@@ -28,9 +28,6 @@ import type { GroupSnapshot, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
 import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
 import {
-  createDraftScope,
-  isDraftScopeValid,
-  setDraftOwner as setDraftOwnerForBill,
 } from "@/lib/bill-draft-isolation";
 import { parseWizardModes, type Step } from "./wizard-modes";
 import { planGroup, todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
@@ -215,7 +212,6 @@ function NewBillPageContent() {
       const billStore = useBillStore.getState();
       billStore.setCurrentUser(meToLegacyUser(me));
       selectDraftForType(billStore, type, pendingGroupId);
-      setDraftOwnerForBill(me.id);
       setPendingGroupId(null);
     }
     setStep("info");
@@ -223,10 +219,8 @@ function NewBillPageContent() {
   const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     setBillType("itemized");
     if (!me) return;
-    const scope = createDraftScope(me.id);
-    if (!isDraftScopeValid(scope, me.id)) return;
     const billStore = useBillStore.getState();
-    if (me) {
+    {
       billStore.setCurrentUser(meToLegacyUser(me));
       if (!billStore.expense) {
         billStore.createExpense("", "itemized", undefined, scanGroup?.group.id);
@@ -255,8 +249,6 @@ function NewBillPageContent() {
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!me) return;
-    const scope = createDraftScope(me.id);
-    if (!isDraftScopeValid(scope, me.id)) return;
     const billStore = useBillStore.getState();
     billStore.setCurrentUser(meToLegacyUser(me));
     billStore.hydrateFromVoice(result, selectedGroupId ?? undefined);

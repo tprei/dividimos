@@ -69,6 +69,10 @@ export function attachAuthListener(
     archiveCurrentDraft(previousUserId);
     useBillStore.getState().reset();
     restoreAccountDraft(nextUserId);
+    // The archived payload was written to the persist key by hand; pull it into
+    // the in-memory store so the first mutation does not overwrite it with the
+    // just-reset state.
+    void useBillStore.persist.rehydrate();
     useAppStore.getState().reset();
     runBootstrap().catch(onError);
   });

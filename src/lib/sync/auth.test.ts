@@ -206,6 +206,10 @@ describe("bill draft account isolation", () => {
   it("SIGNED_OUT clears the in-memory draft and archives the account draft", async () => {
     const { useBillStore } = await import("@/stores/bill-store");
     useBillStore.getState().reset();
+    window.localStorage.clear();
+    const detach = attachAuthListener(() => {}, () => {});
+    emit("SIGNED_IN", "user-a");
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
     useBillStore.getState().setCurrentUser({
       id: "user-a",
       email: "a@example.com",
@@ -224,8 +228,6 @@ describe("bill draft account isolation", () => {
       totalPriceCents: 9000,
     });
 
-    const detach = attachAuthListener(() => {}, () => {});
-    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
     emit("SIGNED_OUT", null);
 
     expect(useBillStore.getState().expense).toBeNull();
@@ -239,6 +241,8 @@ describe("bill draft account isolation", () => {
     useBillStore.getState().reset();
     window.localStorage.clear();
     const detach = attachAuthListener(() => {}, () => {});
+    emit("SIGNED_IN", "user-a");
+    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
 
     useBillStore.getState().setCurrentUser({
       id: "user-a",
@@ -251,8 +255,6 @@ describe("bill draft account isolation", () => {
       createdAt: "",
     });
     useBillStore.getState().createExpense("Churrasco", "itemized");
-    useAppStore.getState().applyBootstrap(bootstrapFor("user-a"));
-    emit("SIGNED_IN", "user-a");
 
     emit("SIGNED_IN", "user-b");
     expect(useBillStore.getState().expense).toBeNull();
@@ -260,7 +262,6 @@ describe("bill draft account isolation", () => {
     useBillStore.getState().createExpense("Passeio", "itemized");
 
     emit("SIGNED_IN", "user-a");
-    await useBillStore.persist.rehydrate();
     expect(useBillStore.getState().expense?.title).toBe("Churrasco");
     detach();
   });

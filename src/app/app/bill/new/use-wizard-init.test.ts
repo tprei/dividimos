@@ -169,7 +169,7 @@ describe("useWizardInit chat actors", () => {
 });
 
 describe("draft ownership", () => {
-  it("drops a late scan result if the authenticated user changed during OCR", () => {
+  it("resets the live draft when another account owns the persisted one", () => {
     const store = useBillStore.getState();
     store.setCurrentUser({
       id: "user-a",

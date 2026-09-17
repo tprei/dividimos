@@ -45,7 +45,9 @@ export function archiveCurrentDraft(userId: string | null): void {
     removeRaw(OWNER_KEY);
     return;
   }
-  const live = serializeLiveDraft() ?? readRaw(LIVE_DRAFT_KEY);
+  // An ownerless (legacy) draft is never assigned to the account leaving the
+  // device; it is dropped instead.
+  const live = getDraftOwner() === userId ? serializeLiveDraft() : null;
   if (live !== null) {
     writeRaw(archiveKey(userId), live);
   } else {
@@ -55,25 +57,15 @@ export function archiveCurrentDraft(userId: string | null): void {
   removeRaw(OWNER_KEY);
 }
 
+// Serializes through the store's own persist config so the archived envelope
+// and the live persist key can never drift apart.
 function serializeLiveDraft(): string | null {
   const state = useBillStore.getState();
   if (state.expense === null) return readRaw(LIVE_DRAFT_KEY);
+  const { partialize, version } = useBillStore.persist.getOptions();
+  if (!partialize) return readRaw(LIVE_DRAFT_KEY);
   try {
-    return JSON.stringify({
-      state: {
-        expense: state.expense,
-        totalAmountInput: state.totalAmountInput,
-        participants: state.participants,
-        guests: state.guests,
-        items: state.items,
-        payers: state.payers,
-        splits: state.splits,
-        billSplits: state.billSplits,
-        occurredOn: state.occurredOn,
-        receiptAccessKey: state.receiptAccessKey,
-      },
-      version: 2,
-    });
+    return JSON.stringify({ state: partialize(state), version });
   } catch {
     return readRaw(LIVE_DRAFT_KEY);
   }
@@ -91,25 +83,3 @@ export function restoreAccountDraft(userId: string): void {
   setDraftOwner(userId);
 }
 
-export interface DraftScope {
-  userId: string;
-  generation: number;
-}
-
-let generationCounter = 0;
-
-export function createDraftScope(userId: string): DraftScope {
-  generationCounter += 1;
-  return { userId, generation: generationCounter };
-}
-
-export function isDraftScopeValid(
-  scope: DraftScope,
-  currentUserId: string | null,
-): boolean {
-  return (
-    currentUserId !== null &&
-    scope.userId === currentUserId &&
-    getDraftOwner() === currentUserId
-  );
-}
