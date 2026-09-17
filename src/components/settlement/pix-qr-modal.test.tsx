@@ -505,11 +505,24 @@ describe("PixQrModal", () => {
   });
 
   it("paints the QR on disclosure expand without issuing a fetch", async () => {
-    const mockFetch = vi.fn();
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ copiaECola: "br-code-10000" }),
+    });
     global.fetch = mockFetch;
-    render(<PixQrModal {...defaultPropsWithPixKey} />);
+    render(<PixQrModal {...defaultPropsWithFetch} />);
 
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ }),
+      ).toBeInTheDocument();
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    mockFetch.mockClear();
     vi.mocked(QRCode.toCanvas).mockClear();
+
     fireEvent.click(
       screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ }),
     );
@@ -531,6 +544,9 @@ describe("PixQrModal", () => {
       screen.queryByRole("button", { name: /Mostrar QR code/ }),
     ).not.toBeInTheDocument();
     expect(
+      screen.queryByText("2. Registre aqui no Dividimos"),
+    ).not.toBeInTheDocument();
+    expect(
       screen.getByText("Registrar não transfere dinheiro — apenas confirma que ele te pagou por fora."),
     ).toBeInTheDocument();
   });
@@ -538,6 +554,11 @@ describe("PixQrModal", () => {
   it("shows the pay expectation line in pay mode", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} />);
 
+    expect(
+      screen.getByText("2. Registre aqui no Dividimos"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Lê o QR code/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sem QR code/)).not.toBeInTheDocument();
     expect(
       screen.getByText("Registrar não transfere dinheiro — apenas confirma que você pagou por fora."),
     ).toBeInTheDocument();

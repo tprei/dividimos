@@ -324,7 +324,7 @@ export function PixQrModal({
               exit={{ opacity: 0 }}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
+              <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-4 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
                 <div className="text-center">
                   <motion.div
                     initial={{ scale: 0.8, opacity: 0 }}
@@ -442,14 +442,14 @@ export function PixQrModal({
                 <div className="mt-6 text-left">
                   <p className="text-sm font-bold text-foreground">1. Pague no app do seu banco</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Copie a chave Pix Copia e Cola e conclua o pagamento no seu banco.
+                    Copia o código Pix e conclui o pagamento no app do teu banco.
                   </p>
                   <button
                     type="button"
                     aria-expanded={showPayQr}
                     aria-controls="pix-qr-region"
                     onClick={() => setShowPayQr((v) => !v)}
-                    className="mt-2 text-xs font-medium text-primary rounded-lg"
+                    className="mt-2 inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary-text underline underline-offset-2"
                   >
                     {showPayQr ? "Ocultar QR code" : "Mostrar QR code para pagar com outro celular"}
                   </button>
@@ -490,18 +490,18 @@ export function PixQrModal({
                 ) : null}
               </div>
 
-              <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-                <Shield className="h-3 w-3" />
-                <span>
-                  {copiaECola
-                    ? "Lê o QR code ou copia o código e cola no app do banco."
-                    : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
-                </span>
-              </div>
+              {!copiaECola && (
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Shield className="h-3 w-3" />
+                  <span>Sem QR code? Combine o valor por fora e registra aqui embaixo.</span>
+                </div>
+              )}
 
               <div className="mt-6 text-left">
-                <p className="text-sm font-bold text-foreground">2. Registre aqui no Dividimos</p>
-                <p className="mt-1 text-xs text-muted-foreground text-center">
+                {copiaECola && mode === "pay" && (
+                  <p className="text-sm font-bold text-foreground">2. Registre aqui no Dividimos</p>
+                )}
+                <p className="mt-1 text-sm text-muted-foreground">
                   {mode === "collect"
                     ? "Registrar não transfere dinheiro — apenas confirma que ele te pagou por fora."
                     : "Registrar não transfere dinheiro — apenas confirma que você pagou por fora."}
@@ -509,7 +509,7 @@ export function PixQrModal({
               </div>
               </div>
 
-              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)]">
                 <div className="space-y-2.5">
                   <Button
                     onClick={handleCopy}
