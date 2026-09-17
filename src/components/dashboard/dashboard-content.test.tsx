@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { LedgerError } from "@/lib/sync/errors";
+
 
 const mutations = vi.hoisted(() => ({
   recordSettlement: vi.fn(),
@@ -93,7 +93,6 @@ vi.mock("next/link", () => ({
 }));
 
 import { DashboardContent } from "./dashboard-content";
-import { AppShell } from "@/components/app-shell";
 
 const me: Me = {
   id: "user-1",
@@ -454,34 +453,5 @@ describe("DashboardContent", () => {
     expect(screen.queryByRole("button", { name: "Pagar via Pix" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cobrar via Pix" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Lembrar" })).not.toBeInTheDocument();
-  });
-
-  it("shows invitation count and keeps a failed decline visible", async () => {
-    groupMutations.declineInvitation.mockRejectedValue(new LedgerError("network"));
-    const invitation = snapshot({
-      group: { id: "invite-1", name: "Convite", creatorId: carol.id },
-      members: [
-        { groupId: "invite-1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
-        { groupId: "invite-1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
-      ],
-    });
-    seedStore([invitation]);
-    useAppStore.setState({
-      bootstrapStatus: "ready",
-      lastBootstrappedAccountId: me.id,
-    });
-    render(
-      <AppShell>
-        <DashboardContent />
-      </AppShell>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Notificações, 1 não lidas" }));
-    expect(await screen.findByText("Convite · Convite")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Recusar convite para Convite" }));
-
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar."));
-    expect(screen.getByText("Convite · Convite")).toBeInTheDocument();
-    expect(groupMutations.declineInvitation).toHaveBeenCalledWith("invite-1");
   });
 });

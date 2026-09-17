@@ -41,7 +41,7 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, ac
         <h1 className="truncate text-2xl leading-tight font-bold tracking-tight">{title}</h1>
       </div>
       {(action || shellActions) && (
-        <div className="flex items-center gap-1">
+        <div className="-mr-2 flex items-center gap-1.5">
           {action}
           {shellActions}
         </div>

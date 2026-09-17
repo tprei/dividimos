@@ -527,7 +527,7 @@ describe("AppShell activity bell", () => {
   it("renders the unified bell button that opens notifications", () => {
     render(<AppShell><div>content</div></AppShell>);
 
-    const bell = screen.getByRole("button", { name: "Notificações" });
+    const bell = screen.getByRole("button", { name: /Notificações/ });
     expect(bell).toBeDefined();
     fireEvent.click(bell);
     expect(screen.getByText("Notificações")).toBeDefined();
@@ -537,7 +537,7 @@ describe("AppShell activity bell", () => {
     useAppStore.setState({ groups: { g1: groupAt("2026-02-01T10:00:00.000Z") } });
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(screen.getByRole("button", { name: "Notificações" }).querySelector("span")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Notificações/ }).querySelector("span")).not.toBeNull();
   });
 
   it("hides the badge once this account has seen the newest activity", () => {
@@ -547,7 +547,7 @@ describe("AppShell activity bell", () => {
     });
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(screen.getByRole("button", { name: "Notificações" }).querySelector("span")).toBeNull();
+    expect(screen.getByRole("button", { name: /Notificações/ }).querySelector("span")).toBeNull();
   });
 
   it("does not credit one account with another account's view", () => {
@@ -557,7 +557,7 @@ describe("AppShell activity bell", () => {
     });
     render(<AppShell><div>content</div></AppShell>);
 
-    expect(screen.getByRole("button", { name: "Notificações" }).querySelector("span")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Notificações/ }).querySelector("span")).not.toBeNull();
   });
 
   it("does not mark activity viewed merely by visiting the route", () => {

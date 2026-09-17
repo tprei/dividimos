@@ -11,6 +11,7 @@ import { selectHomeMode, selectRecentBills } from "@/components/dashboard/home-s
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
 import { Money } from "@/components/shared/money";
+import { useScreenHeaderActions } from "@/components/shared/screen-header-actions";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { SectionHeading } from "@/components/shared/section-heading";
 import {
@@ -69,6 +70,7 @@ export function DashboardContent() {
   const owedTotal = owed.reduce((sum, row) => sum + row.amountCents, 0);
   const net = owedTotal - owesTotal;
 
+  const headerActions = useScreenHeaderActions();
   if (!hydrated || !me) {
     return (
       <div className="px-4 py-6">
@@ -166,7 +168,7 @@ export function DashboardContent() {
     <div className="mx-auto max-w-lg pb-8">
       <div className="flex items-center justify-between px-4 pt-4">
         <Logo size="sm" />
-        <div className="flex items-center gap-1">
+        <div className="-mr-2 flex items-center gap-1.5">
           <InstallPrompt />
           <Link
             href="/app/search"
@@ -178,6 +180,7 @@ export function DashboardContent() {
           >
             <Search className="size-5" aria-hidden="true" />
           </Link>
+          {headerActions}
         </div>
       </div>
       <ScreenHeader

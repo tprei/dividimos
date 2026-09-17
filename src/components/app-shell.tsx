@@ -277,28 +277,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return hasUnreadActivity(newestActivityAt(groups), activityViewedAt[me.id]);
   }, [knownGood, me, groups, activityViewedAt]);
 
-  const unifiedBell = (
-    <button
-      type="button"
-      aria-label={`Notificações${invitations.length > 0 ? `, ${invitations.length} não lidas` : ""}`}
-      onClick={() => {
-        haptics.tap();
-        setNotificationsOpen(true);
-      }}
-      className="relative flex min-h-11 min-w-11 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-    >
-      <Bell className="size-5" aria-hidden="true" />
-      {invitations.length > 0 ? (
-        <span
-          aria-hidden="true"
-          className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white"
-        >
-          {invitations.length}
-        </span>
-      ) : (
-        unread && <span aria-hidden="true" className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
-      )}
-    </button>
+  const unifiedBell = useMemo(
+    () => (
+      <button
+        type="button"
+        aria-label={`Notificações${invitations.length > 0 ? `, ${invitations.length} convite${invitations.length > 1 ? "s" : ""}` : ""}${unread ? ", atividade nova" : ""}`}
+        onClick={() => {
+          haptics.tap();
+          setNotificationsOpen(true);
+        }}
+        className="relative flex min-h-11 min-w-11 items-center justify-center rounded-full text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <Bell className="size-5" aria-hidden="true" />
+        {invitations.length > 0 && (
+          <span
+            aria-hidden="true"
+            className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground"
+          >
+            {invitations.length}
+          </span>
+        )}
+        {unread && <span aria-hidden="true" className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-primary" />}
+      </button>
+    ),
+    [invitations.length, unread],
   );
 
   useEffect(() => {
@@ -411,7 +413,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <Search className="h-4 w-4" />
                 </Link>
-                {unifiedBell}
                 <Link
                   href="/app/settings"
                   aria-label="Configurações"
@@ -431,6 +432,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <RefreshCw className="h-4 w-4" />
                   )}
                 </button>
+                {unifiedBell}
               </div>
             </div>
           </header>
@@ -453,7 +455,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
           >
-            <ScreenHeaderActionsContext.Provider value={usesScreenHeader(pathname) ? unifiedBell : null}>
+            <ScreenHeaderActionsContext.Provider
+              value={
+                usesScreenHeader(pathname) &&
+                  !pathname.startsWith("/app/bill/new") &&
+                  pathname !== "/app"
+                  ? unifiedBell
+                  : null
+              }
+            >
               {children}
             </ScreenHeaderActionsContext.Provider>
           </main>
@@ -464,7 +474,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             open={notificationsOpen}
             onOpenChange={setNotificationsOpen}
             invitations={invitations}
-            meId={me?.id ?? ""}
+            meId={me.id}
           />
 
           <NavBar />
