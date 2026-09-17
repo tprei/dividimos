@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
+import { centsToBasisPoints,
   computeDivision,
   divisionForItem,
   divisionStatusText,
@@ -157,5 +157,18 @@ describe("recomputeDivisionShares", () => {
         { participantId: "b", cents: 50 },
       ],
     });
+  });
+});
+
+describe("centsToBasisPoints", () => {
+  it("converts a centavo share to integer half-up basis points", () => {
+    expect(centsToBasisPoints(100, 1_000)).toBe(1_000);
+    expect(centsToBasisPoints(200, 1_000)).toBe(2_000);
+    expect(centsToBasisPoints(1, 3)).toBe(3_333);
+    expect(centsToBasisPoints(2, 3)).toBe(6_667);
+  });
+
+  it("returns zero for a non-positive total", () => {
+    expect(centsToBasisPoints(500, 0)).toBe(0);
   });
 });

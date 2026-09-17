@@ -17,7 +17,7 @@ import {
   allocateEvenly,
   parseAllocationPercentText,
 } from "@/lib/expense-money";
-import { FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
+import { centsToBasisPoints, FULL_PERCENT_BASIS_POINTS, percentText } from "@/lib/item-division";
 import type { UserProfile } from "@/types";
 
 function percentBasisPoints(text: string | undefined): number {
@@ -99,6 +99,7 @@ export function PayerStep({
   // Percentages only produce payer amounts when they sum to exactly 100%; while
   // they do not, the store must hold no payer set rather than a stale one.
   function changePaymentInputMode(next: "fixed" | "percentage"): void {
+    if (next === paymentInputMode) return;
     if (next === "percentage") {
       const seed = new Map<string, string>();
       if (grandTotal > 0) {
@@ -110,13 +111,16 @@ export function PayerStep({
         } else {
           participants.forEach((p) => {           // partial/over: integer half-up bp, true sum preserved
             const c = payerMap.get(p.id) ?? 0;
-            if (c > 0) seed.set(p.id, percentText(Math.floor((c * FULL_PERCENT_BASIS_POINTS + Math.floor(grandTotal / 2)) / grandTotal)));
+            if (c > 0) seed.set(p.id, percentText(centsToBasisPoints(c, grandTotal)));
           });
         }
       } // grandTotal === 0 → empty fields, no division by zero
       setLocalPercentages(seed);
     } else {
-      setLocalAmounts(new Map(payers.filter((p) => p.amountCents > 0).map((p) => [p.userId, p.amountCents])));
+      // While percentages were incomplete the store held no payer set, so
+      // fall back to the amounts the user actually typed in fixed mode.
+      const stored = payers.filter((p) => p.amountCents > 0).map((p) => [p.userId, p.amountCents] as const);
+      setLocalAmounts(stored.length > 0 ? new Map(stored) : localAmounts);
     }
     setPaymentInputMode(next);
   }
@@ -398,7 +402,7 @@ export function PayerStep({
                 {!showFillRemaining && (
                   <div className="mt-2">
                     <AmountQuickAdd
-                      increments={[1, 5, 10, 50]}
+                      increments={[5, 10, 50, 100]}
                       valueCents={userCents}
                       onChangeCents={(cents) => handleLocalChange(user.id, cents)}
                     />

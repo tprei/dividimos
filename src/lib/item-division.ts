@@ -203,3 +203,12 @@ export function divisionStatusText(division: DivisionComputation, mode: ItemDivi
   const money = formatBRL(Math.abs(division.remainder));
   return division.remainder > 0 ? `Faltam ${money} para fechar o item.` : `Excede ${money} do valor do item.`;
 }
+
+/**
+ * Integer half-up basis points for a centavo share of a total: the seeded
+ * percentages always sum to the true share (never re-rounded by consumers).
+ */
+export function centsToBasisPoints(cents: number, totalCents: number): number {
+  if (totalCents <= 0) return 0;
+  return Math.floor((cents * FULL_PERCENT_BASIS_POINTS + Math.floor(totalCents / 2)) / totalCents);
+}

@@ -72,7 +72,7 @@ describe("PayerStep percentage mode", () => {
 
     await setPercent("Ana", 40);
 
-    expect(screen.getByText(/faltam 60% para completar 100%|faltam 59,99% para completar 100%/)).toBeInTheDocument();
+    expect(screen.getByText(/faltam 59,99% para completar 100%/)).toBeInTheDocument();
   });
 
   it("holds no payer amounts while the percentages do not reach 100", async () => {
@@ -156,24 +156,26 @@ describe("PayerStep mode-switch seeding", () => {
     expect(onRemovePayerEntry).not.toHaveBeenCalled();
   });
 
-  it("seeds half-up percentages that preserve the true partial sum", async () => {
+  it("seeds integer percentages from a partial fixed allocation", async () => {
     const user = userEvent.setup();
     const { onRemovePayerEntry } = renderFixedMode(
       [
-        { userId: "a", amountCents: 1 },
-        { userId: "b", amountCents: 2 },
+        { userId: "a", amountCents: 100 },
+        { userId: "b", amountCents: 200 },
       ],
-      3,
+      1_000,
     );
 
     await user.click(screen.getByRole("button", { name: "Porcentagem" }));
 
-    expect(screen.getByText("33,33", { exact: false })).toBeInTheDocument();
-    expect(screen.getByText("66,67", { exact: false })).toBeInTheDocument();
+    // Partial fixed allocation (300 of 1000) seeds 10%/20%, preserving the
+    // 1:2 ratio without inventing a complete split.
+    expect(screen.getByLabelText("Percentual pago por Ana")).toHaveValue("10");
+    expect(screen.getByLabelText("Percentual pago por Bruno")).toHaveValue("20");
     expect(onRemovePayerEntry).not.toHaveBeenCalled();
   });
 
-  it("keeps malformed percent text from combining into a valid allocation", async () => {
+  it("replaces a seeded percentage and reports the new shortfall", async () => {
     const user = userEvent.setup();
     renderFixedMode(
       [
