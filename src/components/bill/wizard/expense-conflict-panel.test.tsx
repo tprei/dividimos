@@ -96,7 +96,7 @@ describe("ExpenseConflictPanel", () => {
     expect(cta).toBeEnabled();
   });
 
-  it("error renders ONLY retry banner and does not render summary; clicking Tentar novamente calls onRetry", async () => {
+  it("error keeps the alert and the loaded summary visible with a retry that calls onRetry", async () => {
     const user = userEvent.setup();
     const onRetry = vi.fn();
 
@@ -116,15 +116,15 @@ describe("ExpenseConflictPanel", () => {
     const retryBtn = screen.getByRole("button", { name: /tentar novamente/i });
     expect(retryBtn).toBeInTheDocument();
 
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // The conflict never silently disappears: the alert persists and any
+    // server version already loaded stays on screen.
+    expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(screen.queryByText("VERSÃO MAIS RECENTE")).not.toBeInTheDocument();
     expect(screen.queryByText("Jantar Especial")).not.toBeInTheDocument();
+    // The accept path stays visible but disabled until a retry succeeds.
     expect(
-      screen.queryByText("Isso substitui suas alterações pela versão mais recente."),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Carregar versão mais recente" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: /Carregar versão mais recente/ }),
+    ).toBeDisabled();
 
     await user.click(retryBtn);
     expect(onRetry).toHaveBeenCalledOnce();

@@ -62,6 +62,7 @@ export interface ItemizedWorkspaceProps {
   onFooter: () => void;
   isEditing: boolean;
   submitting: boolean;
+  conflictBlocked?: boolean;
 }
 
 export function ItemizedWorkspace({
@@ -95,6 +96,7 @@ export function ItemizedWorkspace({
   onFooter,
   isEditing,
   submitting,
+  conflictBlocked,
 }: ItemizedWorkspaceProps) {
   const participantCount = participants.participants.length + participants.guests.length;
 
@@ -103,6 +105,9 @@ export function ItemizedWorkspace({
   // "Criar conta" hides which step was wrong, so each section states its own
   // blocker where it can be fixed.
   const blocked = ((): string | null => {
+    if (conflictBlocked) {
+      return "Resolva o aviso de versão antes de salvar.";
+    }
     if (section === "account" && !accountReady) {
       return "Dê um nome à conta e inclua pelo menos duas pessoas.";
     }

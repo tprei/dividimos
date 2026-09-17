@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/shared/money";
@@ -38,33 +39,11 @@ export function ExpenseConflictPanel({
   onAccept,
   className,
 }: ExpenseConflictPanelProps) {
-  if (status === "error") {
-    return (
-      <div
-        className={cn(
-          "rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-destructive",
-          className,
-        )}
-      >
-        <p className="text-sm font-medium">
-          Não foi possível carregar a versão mais recente.
-        </p>
-        {errorMessage && errorMessage !== "Não foi possível carregar a versão mais recente." && (
-          <p className="mt-1 text-xs opacity-90">{errorMessage}</p>
-        )}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-2 gap-2 rounded-lg"
-          onClick={onRetry}
-        >
-          <RefreshCw className="h-4 w-4" />
-          Tentar novamente
-        </Button>
-      </div>
-    );
-  }
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Move screen-reader and keyboard focus to the panel when a conflict appears.
+    ref.current?.focus();
+  }, []);
 
   const isReady = status === "ready";
   const title =
@@ -77,9 +56,8 @@ export function ExpenseConflictPanel({
   )?.user?.name;
 
   return (
-    <div className={cn("space-y-4", className)}>
+    <div ref={ref} tabIndex={-1} role="alert" className={cn("space-y-4 outline-none", className)}>
       <div
-        role="alert"
         className="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-foreground"
       >
         <div className="flex items-start gap-3">
@@ -94,6 +72,28 @@ export function ExpenseConflictPanel({
           </div>
         </div>
       </div>
+
+      {status === "error" && (
+        <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-destructive">
+          <p className="text-sm font-medium">
+            Não foi possível carregar a versão mais recente.
+          </p>
+          {errorMessage && errorMessage !== "Não foi possível carregar a versão mais recente." && (
+            <p className="mt-1 text-xs opacity-90">{errorMessage}</p>
+          )}
+          <p className="mt-1 text-xs opacity-90">Suas edições continuam salvas neste rascunho.</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="mt-2 gap-2 rounded-lg"
+            onClick={onRetry}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Tentar novamente
+          </Button>
+        </div>
+      )}
 
       {isReady && detail && (
         <div className="rounded-2xl border bg-card p-4">

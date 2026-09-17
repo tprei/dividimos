@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, type ReactNode, useMemo, useState } from "react";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 
 import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
@@ -37,6 +37,8 @@ export interface SingleBillFormProps {
   onBack: () => void;
   submit: (planGroup: () => Promise<GroupPlan>) => Promise<boolean>;
   submitting: boolean;
+  conflictPanel?: ReactNode;
+  submitBlockedReason?: string | null;
 }
 
 export function SingleBillForm({
@@ -50,6 +52,8 @@ export function SingleBillForm({
   onBack,
   submit,
   submitting,
+  conflictPanel,
+  submitBlockedReason,
 }: SingleBillFormProps) {
   const store = useBillStore(
     useShallow((state) => ({
@@ -136,6 +140,7 @@ export function SingleBillForm({
         eyebrow="Valor único"
         title={isEditing ? "Editar conta" : "Nova conta"}
       />
+      {conflictPanel}
       <SingleBillStageTabs stage={stage} divisaoEnabled={contaValid} onSelect={setStage} />
       {stage === "conta" ? (
         <SingleBillDetails
@@ -213,7 +218,7 @@ export function SingleBillForm({
             type="button"
             size="lg"
             className="h-12 w-full text-base font-bold"
-            disabled={!canSubmit || submitting}
+            disabled={!canSubmit || submitting || submitBlockedReason !== null}
             onClick={() => void handleSubmit()}
             aria-describedby="single-bill-division-status"
           >
@@ -228,6 +233,11 @@ export function SingleBillForm({
               "Criar conta"
             )}
           </Button>
+        )}
+        {submitBlockedReason && (
+          <p className="mb-2 text-center text-xs font-medium text-muted-foreground" role="status">
+            {submitBlockedReason}
+          </p>
         )}
       </footer>
     </div>

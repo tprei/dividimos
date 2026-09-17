@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
 import { ScreenHeader } from "@/components/shared/screen-header";
 import { ItemizedWorkspace } from "@/components/bill/itemized/itemized-workspace";
@@ -35,6 +35,8 @@ export interface ItemizedBillFormProps {
   isEditing?: boolean;
   submitting?: boolean;
   initialSection?: ItemizedSectionKey;
+  conflictPanel?: ReactNode;
+  conflictBlocked?: boolean;
 }
 
 const SECTION_ORDER: ItemizedSectionKey[] = ["account", "items", "split", "payment", "review"];
@@ -63,6 +65,8 @@ export function ItemizedBillForm({
   isEditing = false,
   submitting = false,
   initialSection = "account",
+  conflictPanel,
+  conflictBlocked = false,
 }: ItemizedBillFormProps) {
   const store = useBillStore(
     useShallow((state) => ({
@@ -215,7 +219,9 @@ export function ItemizedBillForm({
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col pb-20">
       <ScreenHeader back onBack={onBack} eyebrow="Nova conta" title="Conta detalhada" />
+      {conflictPanel}
       <ItemizedWorkspace
+        conflictBlocked={conflictBlocked}
         store={store}
         expense={expense}
         occurredOn={occurredOn}
