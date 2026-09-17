@@ -84,17 +84,15 @@ function NavBar() {
                 href={item.href}
                 aria-label="Nova conta"
                 onClick={() => haptics.tap()}
-                className="min-h-11 min-w-11 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="-mt-5 flex flex-col items-center gap-0.5 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <motion.div
                   whileTap={{ scale: 0.92 }}
-                  className="gradient-primary -mt-5 flex h-14 w-14 flex-col items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
+                  className="gradient-primary flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
                 >
                   <item.icon className="h-6 w-6 text-primary-foreground" strokeWidth={2.5} />
-                  <span className="mt-0.5 text-[10px] font-bold leading-none text-primary-foreground">
-                    Nova
-                  </span>
                 </motion.div>
+                <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
               </Link>
             );
           }
@@ -107,7 +105,7 @@ function NavBar() {
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               onClick={() => haptics.tap()}
-              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <motion.div whileTap={{ scale: 0.9 }} className="relative">
                 <item.icon
@@ -125,7 +123,7 @@ function NavBar() {
               >
                 {item.label}
               </span>
-              {isActive && <span className="mt-0.5 h-0.5 w-4 rounded-full bg-primary-text" />}
+              <span className={`mt-0.5 h-0.5 w-4 rounded-full ${isActive ? "bg-primary-text" : "bg-transparent"}`} />
             </Link>
           );
         })}
@@ -363,9 +361,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={retryBootstrap}
                 disabled={retrying}
-                className="min-h-11 text-xs font-medium text-primary-text transition-colors hover:text-primary-text/80 disabled:opacity-50"
+                className="-my-2 px-2 py-2 text-xs font-medium text-primary-text transition-colors hover:text-primary-text/80 disabled:opacity-50"
               >
-                {retrying ? "Atualizando..." : "Atualizar"}
+                {retrying ? "Atualizando..." : "Tentar novamente"}
               </button>
             </div>
           )}

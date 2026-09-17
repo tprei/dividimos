@@ -198,7 +198,7 @@ function AuthenticatedProfilePage({
             {!editingProfile && (
               <button
                 onClick={startEditProfile}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                className="-m-2 flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground"
                 aria-label="Editar perfil"
               >
                 <Pencil className="h-4 w-4" />
