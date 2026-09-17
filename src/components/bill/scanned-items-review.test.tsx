@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { todayIsoDate } from "@/app/app/bill/new/use-wizard-submit";
@@ -33,7 +33,7 @@ const makeResult = (overrides?: Partial<ReceiptOcrResult>): ReceiptOcrResult => 
   ],
   serviceFeeBasisPoints: 1000,
   fixedFeesCents: 0,
-  totalCents: 6900,
+  totalCents: 7590,
   ...overrides,
 });
 
@@ -221,5 +221,15 @@ describe("ScannedItemsReview", () => {
     // 79,00 total with nothing explaining the difference.
     expect(screen.getByText("Taxa impressa na nota")).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*10,00/)).toBeInTheDocument();
+  });
+
+  it("surfaces the printed total when it disagrees with the item-derived total", () => {
+    renderReview(makeResult({ totalCents: 7690 }));
+    expect(screen.getByText(/Na nota o total impresso é/)).toBeInTheDocument();
+
+    cleanup();
+
+    renderReview(makeResult({ totalCents: 7590 }));
+    expect(screen.queryByText(/Na nota o total impresso é/)).toBeNull();
   });
 });

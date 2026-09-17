@@ -56,14 +56,12 @@ describe("processReceiptScan", () => {
 
     expect(result).toEqual(mockOcrResult);
 
-    // Verify fetch was called with correct endpoint and method
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("/api/receipt/ocr");
     expect(init?.method).toBe("POST");
     expect(init?.headers).toEqual({ "Content-Type": "application/json" });
 
-    // Verify the body contains base64 image and mimeType
     const body = JSON.parse(init?.body as string);
     expect(body.mimeType).toBe("image/jpeg");
     expect(typeof body.image).toBe("string");
@@ -188,6 +186,51 @@ describe("processReceiptScan", () => {
     };
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(emptyResult), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const file = createMockFile();
+    const pending = processReceiptScan(file);
+    await expect(pending).rejects.toBeInstanceOf(ReceiptInvalidError);
+    await expect(pending).rejects.toThrow("Não encontramos itens na nota");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("accepts a receipt whose printed total disagrees with the item sum", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ...mockOcrResult, totalCents: 4999 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const file = createMockFile();
+    const result = await processReceiptScan(file);
+    expect(result.totalCents).toBe(4999);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("rejects a receipt whose line arithmetic is broken", async () => {
+    const brokenLineResult: ReceiptOcrResult = {
+      merchant: "Bar do Zeca",
+      items: [
+        {
+          description: "X",
+          quantity: 2,
+          unitPriceCents: 1000,
+          totalCents: 2500,
+        },
+      ],
+      serviceFeeBasisPoints: 0,
+      fixedFeesCents: 0,
+      totalCents: 2500,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(brokenLineResult), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
