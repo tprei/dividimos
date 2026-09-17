@@ -374,19 +374,16 @@ function AuthenticatedProfilePage({
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </Link>
-        </div>
-        <div className="mt-4 overflow-hidden rounded-2xl border bg-card divide-y divide-border">
+          <Separator />
           <Link
             href="/app/bills"
             className="flex items-center justify-between p-4 transition-colors hover:bg-muted/50"
           >
             <div className="flex items-center gap-3">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Receipt className="size-4" />
-              </div>
-              <span className="text-sm font-medium">Minhas contas</span>
+              <Receipt className="h-5 w-5 text-muted-foreground" />
+              <span className="font-medium">Minhas contas</span>
             </div>
-            <ChevronRight className="size-4 text-muted-foreground" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </Link>
         </div>
       </motion.div>

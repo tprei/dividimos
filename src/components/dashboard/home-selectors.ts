@@ -1,7 +1,8 @@
 import { selectDebtRows } from "@/lib/ledger/debt-rows";
 import type { AppState } from "@/stores/app-store";
+import type { GroupSnapshot } from "@/types/ledger";
 
-export type HomeMode = "first-use" | "outstanding" | "settled";
+type HomeMode = "first-use" | "outstanding" | "settled";
 
 export function selectHomeMode(state: AppState): HomeMode {
   const rows = selectDebtRows(state);
@@ -28,4 +29,48 @@ export function selectHomeMode(state: AppState): HomeMode {
   }
 
   return "settled";
+}
+
+export function formatOccurredOn(occurredOn: string): string {
+  const [year, month, day] = occurredOn.split("-");
+  if (!year || !month || !day) return occurredOn;
+  return `${day}/${month}/${year}`;
+}
+
+export function groupNameOf(snapshot: GroupSnapshot | undefined, meId: string): string {
+  if (!snapshot) return "";
+  if (snapshot.group.kind === "dm") {
+    const other = snapshot.members.find((m) => m.userId !== meId);
+    if (other) return other.user.name;
+  }
+  return snapshot.group.name;
+}
+
+export interface RecentBillItem {
+  id: string;
+  title: string;
+  totalCents: number;
+  occurredOn: string;
+  groupName: string;
+}
+
+type RecentBillsState = Pick<AppState, "expenses" | "groups" | "me" | "myExpenses">;
+
+export function selectRecentBills(state: RecentBillsState, limit = 3): RecentBillItem[] {
+  const me = state.me;
+  if (!me) return [];
+  const result: RecentBillItem[] = [];
+  for (const id of state.myExpenses.ids) {
+    if (result.length >= limit) break;
+    const exp = state.expenses[id];
+    if (!exp || exp.status === "deleted") continue;
+    result.push({
+      id: exp.id,
+      title: exp.title,
+      totalCents: exp.totalCents,
+      occurredOn: formatOccurredOn(exp.occurredOn),
+      groupName: groupNameOf(state.groups[exp.groupId], me.id),
+    });
+  }
+  return result;
 }
