@@ -17,12 +17,14 @@ const me: UserProfile = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
 };
 const bob: UserProfile = {
   id: "user-2",
   handle: "bob",
   name: "Bob Silva",
   avatarUrl: null,
+  isBot: false,
 };
 
 function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {

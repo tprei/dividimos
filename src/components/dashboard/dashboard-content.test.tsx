@@ -67,6 +67,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -74,8 +75,8 @@ const me: Me = {
   notificationPreferences: {},
 };
 
-const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
-const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null };
+const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
+const dave = { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null, isBot: false };
 const meWithPixKey: Me = { ...me, pixKeyHint: "a****@banco.com" };
 type SnapshotOverrides = Omit<Partial<GroupSnapshot>, "group"> & {
   group?: Partial<GroupSnapshot["group"]>;

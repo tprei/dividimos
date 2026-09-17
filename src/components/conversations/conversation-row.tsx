@@ -55,6 +55,7 @@ export function ConversationRow({ row }: { row: ConversationRowData }) {
               avatarUrl={row.speaker.avatarUrl}
               size="xs"
               className="h-[18px] w-[18px] flex-none text-[8px]"
+              isBot={row.speaker.isBot}
             />
           )}
           <span

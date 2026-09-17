@@ -33,6 +33,7 @@ export interface SeededUser {
   pixKeyType: "cpf" | "email" | "random";
   pixKeyHint: string;
   onboarded: boolean;
+  isBot: boolean;
   accessToken: string;
   refreshToken: string;
 }
@@ -246,6 +247,7 @@ export class SeedHelper {
       pixKeyType,
       pixKeyHint,
       onboarded,
+      isBot: false,
       accessToken,
       refreshToken,
     };

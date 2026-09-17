@@ -127,7 +127,7 @@ export function arrayOf<T>(
   return ok(result);
 }
 
-const USER_PROFILE_KEYS = ["id", "handle", "name", "avatarUrl"] as const;
+const USER_PROFILE_KEYS = ["id", "handle", "name", "avatarUrl", "isBot"] as const;
 
 export function decodeUserProfile(
   raw: unknown,
@@ -144,7 +144,9 @@ export function decodeUserProfile(
   if (!n.ok) return n;
   const a = nullableStr(raw.avatarUrl, [...path, "avatarUrl"]);
   if (!a.ok) return a;
-  return ok({ id: i.value, handle: h.value, name: n.value, avatarUrl: a.value });
+  const b = bool(raw.isBot, [...path, "isBot"]);
+  if (!b.ok) return b;
+  return ok({ id: i.value, handle: h.value, name: n.value, avatarUrl: a.value, isBot: b.value });
 }
 
 export function decodeUserProfileOrNull(

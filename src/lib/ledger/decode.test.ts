@@ -25,6 +25,7 @@ describe("decodeBootstrap", () => {
       handle: "alice",
       name: "Alice",
       avatarUrl: null,
+      isBot: false,
       email: "alice@example.com",
       pixKeyType: "email",
       pixKeyHint: "al***@example.com",
@@ -58,6 +59,7 @@ describe("decodeBootstrap", () => {
               handle: "alice",
               name: "Alice",
               avatarUrl: null,
+              isBot: false,
             },
           },
         ],
@@ -404,8 +406,14 @@ describe("additional wire decoders", () => {
       handle: "bob",
       name: "Bob",
       avatarUrl: "https://example.com/a.png",
+      isBot: false,
     };
     expect(decodeUserProfile(user)).toEqual({ ok: true, value: user });
+  });
+
+  it("rejects a user profile without isBot", () => {
+    const user = { id: "u-1", handle: "bob", name: "Bob", avatarUrl: null };
+    expect(decodeUserProfile(user).ok).toBe(false);
   });
 
   it("decodes group event with arbitrary json payload", () => {
@@ -419,7 +427,7 @@ describe("additional wire decoders", () => {
       subjectUserId: null,
       payload: { title: "Dinner", totalCents: 5000, customData: [1, 2, 3] },
       createdAt: "2026-09-01T00:00:00.000Z",
-      actor: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null },
+      actor: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null, isBot: false },
       expenseTitle: "Dinner",
     };
     const result = decodeGroupEvent(event);
@@ -434,7 +442,7 @@ describe("additional wire decoders", () => {
       senderId: "u-1",
       content: "Hello",
       createdAt: "2026-09-01T00:00:00.000Z",
-      sender: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null },
+      sender: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null, isBot: false },
     };
     expect(decodeChatMessage(msg).ok).toBe(true);
 
@@ -553,7 +561,7 @@ describe("additional wire decoders", () => {
           kind: "user",
           shareCents: 1000,
           paidCents: 1000,
-          user: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null },
+          user: { id: "u-1", handle: "u1", name: "User 1", avatarUrl: null, isBot: false },
           guest: null,
         },
       ],

@@ -78,6 +78,7 @@ const mockMe: Me = {
   handle: "alice",
   name: "Alice Test",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: "cpf",
   pixKeyHint: "***.456.789-**",

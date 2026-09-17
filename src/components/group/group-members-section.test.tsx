@@ -58,7 +58,7 @@ function member(
     status,
     invitedBy: null,
     acceptedAt: null,
-    user: { id: userId, handle: name.toLowerCase(), name, avatarUrl: null },
+    user: { id: userId, handle: name.toLowerCase(), name, avatarUrl: null, isBot: false },
   };
 }
 
@@ -258,6 +258,7 @@ describe("InviteByHandlePanel", () => {
       handle: "dave",
       name: "Dave Lima",
       avatarUrl: null,
+      isBot: false,
     };
     vi.mocked(lookupUserByHandle).mockResolvedValue(profile);
     vi.mocked(inviteMember).mockResolvedValue({
@@ -323,6 +324,7 @@ describe("InviteByHandlePanel", () => {
       handle: "carol",
       name: "Carol",
       avatarUrl: null,
+      isBot: false,
     };
     vi.mocked(lookupUserByHandle).mockResolvedValue(profile);
 

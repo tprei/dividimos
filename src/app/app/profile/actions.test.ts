@@ -33,6 +33,7 @@ function mockUser(id: string): Me {
     handle: "testuser",
     name: "Test User",
     avatarUrl: null,
+    isBot: false,
     email: "test@example.com",
     pixKeyType: null,
     pixKeyHint: null,

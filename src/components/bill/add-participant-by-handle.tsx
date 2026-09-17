@@ -141,7 +141,7 @@ export function AddParticipantByHandle({
 
       {state.status === "found" && (
         <div className="mt-3 flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
-          <UserAvatar name={state.profile.name} avatarUrl={state.profile.avatarUrl} size="sm" />
+          <UserAvatar name={state.profile.name} avatarUrl={state.profile.avatarUrl} size="sm" isBot={state.profile.isBot} />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{state.profile.name}</p>
             <p className="text-xs text-muted-foreground">@{state.profile.handle}</p>

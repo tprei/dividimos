@@ -8,6 +8,7 @@ const carolProfile: UserProfile = {
   handle: "carol",
   name: "Carol Souza",
   avatarUrl: null,
+  isBot: false,
 };
 
 const daveProfile: UserProfile = {
@@ -15,6 +16,7 @@ const daveProfile: UserProfile = {
   handle: "dave",
   name: "Dave Lima",
   avatarUrl: null,
+  isBot: false,
 };
 
 function userParticipant(index: number, user: UserProfile): Participant {

@@ -116,7 +116,7 @@ export function makeUserParticipant(
   index: number,
   shareCents: number,
   paidCents = 0,
-  user = { id: "user-alice", handle: "alice", name: "Alice Silva", avatarUrl: null },
+  user = { id: "user-alice", handle: "alice", name: "Alice Silva", avatarUrl: null, isBot: false },
 ): Participant {
   return { participantIndex: index, kind: "user", shareCents, paidCents, user, guest: null };
 }
@@ -136,7 +136,7 @@ export function makeGroupMember(userId: string, name: string): GroupMember {
     status: "accepted",
     invitedBy: null,
     acceptedAt: "2026-08-01T00:00:00Z",
-    user: { id: userId, handle: name.toLowerCase().split(" ")[0], name, avatarUrl: null },
+    user: { id: userId, handle: name.toLowerCase().split(" ")[0], name, avatarUrl: null, isBot: false },
   };
 }
 

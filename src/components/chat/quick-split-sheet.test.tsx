@@ -10,6 +10,7 @@ const COUNTERPARTY: UserProfile = {
   handle: "maria",
   name: "Maria Silva",
   avatarUrl: null,
+  isBot: false,
 };
 
 function renderSheet(overrides: Partial<Parameters<typeof QuickSplitSheet>[0]> = {}) {

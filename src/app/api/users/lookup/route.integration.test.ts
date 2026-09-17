@@ -135,12 +135,13 @@ describe.skipIf(!isIntegrationTestReady)("users lookup route boundary", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { profile: Record<string, unknown> };
     expect(Object.keys(body)).toEqual(["profile"]);
-    expect(Object.keys(body.profile)).toEqual(["id", "handle", "name", "avatarUrl"]);
+    expect(Object.keys(body.profile)).toEqual(["id", "handle", "name", "avatarUrl", "isBot"]);
     expect(body.profile).toEqual({
       id: target.id,
       handle: target.handle,
       name: target.name,
       avatarUrl: null,
+      isBot: false,
     });
   });
 

@@ -37,6 +37,7 @@ const ME: Me = {
   handle: "me_user",
   name: "Eu Mesmo",
   avatarUrl: null,
+  isBot: false,
   email: "me@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -49,6 +50,7 @@ const OTHER: UserProfile = {
   handle: "amigo",
   name: "Amigo",
   avatarUrl: null,
+  isBot: false,
 };
 
 function payloadFor(totalCents: number): ExpensePayload {

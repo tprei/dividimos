@@ -778,6 +778,7 @@ export type Database = {
           email: string
           handle: string
           id: string
+          is_bot: boolean
           name: string
           notification_preferences: Json
           onboarded: boolean
@@ -792,6 +793,7 @@ export type Database = {
           email: string
           handle: string
           id: string
+          is_bot?: boolean
           name: string
           notification_preferences?: Json
           onboarded?: boolean
@@ -806,6 +808,7 @@ export type Database = {
           email?: string
           handle?: string
           id?: string
+          is_bot?: boolean
           name?: string
           notification_preferences?: Json
           onboarded?: boolean

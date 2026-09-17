@@ -40,6 +40,7 @@ const me: Me = {
   handle: "me",
   name: "Eu Mesmo",
   avatarUrl: null,
+  isBot: false,
   email: "me@example.com",
   pixKeyType: "email",
   pixKeyHint: "me@example.com",
@@ -56,6 +57,7 @@ const alice: UserProfile = {
   handle: "alice",
   name: "Alice",
   avatarUrl: null,
+  isBot: false,
 };
 
 const bob: UserProfile = {
@@ -63,6 +65,7 @@ const bob: UserProfile = {
   handle: "bob",
   name: "Bob",
   avatarUrl: null,
+  isBot: false,
 };
 
 const groupNormal: GroupSnapshot = {

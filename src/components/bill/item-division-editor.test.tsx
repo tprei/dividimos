@@ -300,7 +300,7 @@ describe("ItemDivisionEditor pending invite", () => {
           status: "invited",
           invitedBy: "u1",
           acceptedAt: null,
-          user: { id: "u2", handle: "bruno", name: "Bruno", avatarUrl: null },
+          user: { id: "u2", handle: "bruno", name: "Bruno", avatarUrl: null, isBot: false },
         },
       ],
       balances: [],

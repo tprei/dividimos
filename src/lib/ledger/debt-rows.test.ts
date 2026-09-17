@@ -8,6 +8,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice",
   avatarUrl: "https://example.com/alice.png",
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -16,7 +17,7 @@ const me: Me = {
 };
 
 function profile(id: string, name: string, avatarUrl: string | null): UserProfile {
-  return { id, handle: name.toLowerCase(), name, avatarUrl };
+  return { id, handle: name.toLowerCase(), name, avatarUrl, isBot: false };
 }
 
 function balance(kind: BalanceRow["kind"], participantId: string, netCents: number): BalanceRow {

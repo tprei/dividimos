@@ -7,6 +7,7 @@ const me: UserProfile = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
 };
 
 const carol: UserProfile = {
@@ -14,6 +15,7 @@ const carol: UserProfile = {
   handle: "carol",
   name: "Carol Souza",
   avatarUrl: null,
+  isBot: false,
 };
 
 const dan: UserProfile = {
@@ -21,6 +23,7 @@ const dan: UserProfile = {
   handle: "dan",
   name: "Dan Lima",
   avatarUrl: null,
+  isBot: false,
 };
 
 function member(groupId: string, user: UserProfile) {

@@ -14,7 +14,7 @@ import { parseClaimQrCode } from "@/lib/claim-qr";
 import { parseGroupInviteQrCode, parseProfileQrCode } from "@/lib/invite-qr";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { joinViaLink, lookupUserByHandle } from "@/lib/sync/mutations-group";
-import type { UserProfile } from "@/types";
+import type { UserProfile } from "@/types/ledger";
 
 export default function ScanInvitePage() {
   const router = useRouter();
@@ -94,7 +94,7 @@ export default function ScanInvitePage() {
         {scannedProfile ? (
           <div className="grid gap-4 rounded-2xl border bg-card p-5 text-center">
             <div className="flex flex-col items-center gap-2">
-              <UserAvatar name={scannedProfile.name} avatarUrl={scannedProfile.avatarUrl ?? null} size="lg" />
+              <UserAvatar name={scannedProfile.name} avatarUrl={scannedProfile.avatarUrl ?? null} size="lg" isBot={scannedProfile.isBot} />
               <p className="text-base font-semibold">{scannedProfile.name}</p>
               <p className="text-sm text-muted-foreground">@{scannedProfile.handle}</p>
             </div>

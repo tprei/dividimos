@@ -22,6 +22,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -72,6 +73,7 @@ function member(userId: string, status: MemberStatus, invitedBy: string | null =
       handle: `${userId}-handle`,
       name: `User ${userId}`,
       avatarUrl: null,
+      isBot: false,
     },
   };
 }
@@ -309,7 +311,7 @@ describe("selectDmMembership", () => {
               status: status as "invited" | "accepted",
               invitedBy: "user-other",
               acceptedAt: null,
-              user: { id: meId, handle: "me", name: "Eu", avatarUrl: null },
+              user: { id: meId, handle: "me", name: "Eu", avatarUrl: null, isBot: false },
             },
           ],
     balances: [],

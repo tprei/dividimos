@@ -117,6 +117,7 @@ const ME_KEYS = [
   "handle",
   "name",
   "avatarUrl",
+  "isBot",
   "email",
   "pixKeyType",
   "pixKeyHint",
@@ -140,6 +141,8 @@ export function decodeMe(
   if (!n.ok) return n;
   const a = nullableStr(raw.avatarUrl, [...path, "avatarUrl"]);
   if (!a.ok) return a;
+  const isBot = bool(raw.isBot, [...path, "isBot"]);
+  if (!isBot.ok) return isBot;
   const em = str(raw.email, [...path, "email"]);
   if (!em.ok) return em;
 
@@ -175,6 +178,7 @@ export function decodeMe(
     handle: h.value,
     name: n.value,
     avatarUrl: a.value,
+    isBot: isBot.value,
     email: em.value,
     pixKeyType,
     pixKeyHint: pkh.value,

@@ -186,6 +186,7 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
                         name={searchResult.name}
                         avatarUrl={searchResult.avatarUrl}
                         size="sm"
+                        isBot={searchResult.isBot}
                       />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{searchResult.name}</p>
@@ -224,7 +225,7 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
                     disabled={creatingId !== null}
                     className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-50"
                   >
-                    <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" />
+                    <UserAvatar name={contact.name} avatarUrl={contact.avatarUrl} size="sm" isBot={contact.isBot} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{contact.name}</p>
                       <p className="text-xs text-muted-foreground">@{contact.handle}</p>

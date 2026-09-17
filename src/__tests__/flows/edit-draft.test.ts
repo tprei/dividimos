@@ -40,7 +40,7 @@ describe("Edit Expense Flow", () => {
       }),
       participants: [
         makeUserParticipant(0, 5500, 11000),
-        makeUserParticipant(1, 5500, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null }),
+        makeUserParticipant(1, 5500, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null, isBot: false }),
       ],
     });
 
@@ -112,7 +112,7 @@ describe("Edit Expense Flow", () => {
       }),
       participants: [
         makeUserParticipant(0, 100000, 200000),
-        makeUserParticipant(1, 100000, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null }),
+        makeUserParticipant(1, 100000, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null, isBot: false }),
       ],
     });
 
@@ -165,7 +165,7 @@ describe("Edit Expense Flow", () => {
       }),
       participants: [
         makeUserParticipant(0, 5500, 11000),
-        makeUserParticipant(1, 5500, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null }),
+        makeUserParticipant(1, 5500, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null, isBot: false }),
       ],
     });
     useBillStore.getState().hydrateFromDetail(detail, []);

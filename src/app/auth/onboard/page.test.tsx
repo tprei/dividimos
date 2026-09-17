@@ -10,6 +10,7 @@ const me: Me = {
   handle: "ana_costa",
   name: "Ana Costa",
   avatarUrl: null,
+  isBot: false,
   email: "ana@example.com",
   pixKeyType: null,
   pixKeyHint: null,

@@ -1686,7 +1686,7 @@ describe("hydrateFromDetail", () => {
       versions: [current],
       participants: [
         makeUserParticipant(0, 4000, 10000),
-        makeUserParticipant(1, 6000, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null }),
+        makeUserParticipant(1, 6000, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null, isBot: false }),
       ],
       group: { id: "group-2", name: "Casa", kind: "group" },
     };
@@ -1738,7 +1738,7 @@ describe("hydrateFromDetail", () => {
       versions: [current],
       participants: [
         makeUserParticipant(0, 2500, 5000),
-        makeUserParticipant(1, 2500, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null }),
+        makeUserParticipant(1, 2500, 0, { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null, isBot: false }),
       ],
       group: { id: "group-1", name: "Amigos", kind: "group" },
     };

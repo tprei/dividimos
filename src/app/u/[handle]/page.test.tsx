@@ -36,7 +36,7 @@ vi.mock("./profile-actions", () => ({
 
 import PublicProfilePage from "./page";
 
-const PROFILE = { id: "user-bob", handle: "daniel", name: "Daniel Santos", avatarUrl: null };
+const PROFILE = { id: "user-bob", handle: "daniel", name: "Daniel Santos", avatarUrl: null, isBot: false };
 
 function renderPage(handle: string): Promise<string> {
   return Promise.resolve({ handle }).then((params) =>
@@ -65,6 +65,16 @@ describe("/u/[handle]", () => {
     expect(html).toContain("Dividir uma conta com Daniel Santos");
     expect(html).toContain("Enviar mensagem para Daniel Santos");
     expect(html).not.toContain("Criar conta");
+    expect(html).not.toContain("Bot verificado");
+  });
+
+  it("renders the Bot verificado pill for bot profiles", async () => {
+    mocks.lookupProfile.mockResolvedValueOnce({ ...PROFILE, isBot: true });
+    mocks.getClaims.mockResolvedValueOnce({ data: { claims: { sub: "user-alice" } } });
+
+    const html = await renderPage("daniel");
+
+    expect(html).toContain("Bot verificado");
   });
 
   it("renders the self branch for the profile owner", async () => {

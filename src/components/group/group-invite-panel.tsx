@@ -131,6 +131,7 @@ export function InviteByHandlePanel({ groupId, members, onClose, onInvited }: In
             name={lookupResult.name}
             avatarUrl={lookupResult.avatarUrl}
             size="sm"
+            isBot={lookupResult.isBot}
           />
           <div className="flex-1">
             <p className="text-sm font-medium">{lookupResult.name}</p>

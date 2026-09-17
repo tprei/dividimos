@@ -18,6 +18,7 @@ const ME: Me = {
   handle: "me_user",
   name: "Eu Mesmo",
   avatarUrl: null,
+  isBot: false,
   email: "me@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -33,7 +34,7 @@ function message(id: string, createdAt: string): ChatMessage {
     senderId: "user-other",
     content: "oi",
     createdAt,
-    sender: { id: "user-other", handle: "outro", name: "Outro", avatarUrl: null },
+    sender: { id: "user-other", handle: "outro", name: "Outro", avatarUrl: null, isBot: false },
   };
 }
 

@@ -30,6 +30,7 @@ export function InvitationCard({
             size="sm"
             name={inviter.user.name}
             avatarUrl={inviter.user.avatarUrl}
+            isBot={inviter.user.isBot}
           />
         )}
         <div className="min-w-0 flex-1">

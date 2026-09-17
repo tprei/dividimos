@@ -62,6 +62,7 @@ function optInOnThisDevice(): void {
       email: "native@example.com",
       name: "Native",
       avatarUrl: null,
+      isBot: false,
       onboarded: true,
       pixKeyHint: null,
       pixKeyType: null,

@@ -23,6 +23,7 @@ function signIn(id: string): void {
       name: id,
       email: `${id}@example.com`,
       avatarUrl: null,
+      isBot: false,
       pixKeyType: null,
       pixKeyHint: null,
       onboarded: true,

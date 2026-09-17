@@ -85,6 +85,7 @@ function makeMe(id: string, prefs?: NotificationPreferences): Me {
     handle: id,
     name: id,
     avatarUrl: null,
+    isBot: false,
     pixKeyType: "email",
     pixKeyHint: "",
     onboarded: true,

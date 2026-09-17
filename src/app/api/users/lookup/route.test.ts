@@ -14,7 +14,7 @@ vi.mock("@/lib/profile-lookup", async (importOriginal) => {
 
 import { GET } from "./route";
 
-const PROFILE = { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null };
+const PROFILE = { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null, isBot: false };
 
 beforeEach(() => {
   mockLookupProfile.mockReset();

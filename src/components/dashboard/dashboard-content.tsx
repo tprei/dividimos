@@ -199,7 +199,7 @@ export function DashboardContent() {
             aria-label="Seu perfil"
             className="shrink-0 rounded-full ring-2 ring-primary/25 transition-shadow hover:ring-primary/50"
           >
-            <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="md" priority />
+            <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="md" priority isBot={me.isBot} />
           </Link>
         }
       />
