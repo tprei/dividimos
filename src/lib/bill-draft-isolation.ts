@@ -1,10 +1,14 @@
 import { useBillStore } from "@/stores/bill-store";
 
-const LIVE_DRAFT_KEY = "dividimos-draft";
+// The live key belongs to the bill store's persist config (it carries the
+// Supabase storage namespace); derive it so a rename there cannot strand drafts.
+function liveDraftKey(): string {
+  return useBillStore.persist.getOptions().name ?? "dividimos-draft";
+}
 const OWNER_KEY = "dividimos-draft-owner";
 
 function archiveKey(userId: string): string {
-  return `${LIVE_DRAFT_KEY}:${userId}`;
+  return `${liveDraftKey()}:${userId}`;
 }
 
 function readRaw(key: string): string | null {
@@ -41,7 +45,7 @@ export function setDraftOwner(userId: string): void {
 
 export function archiveCurrentDraft(userId: string | null): void {
   if (userId === null) {
-    removeRaw(LIVE_DRAFT_KEY);
+    removeRaw(liveDraftKey());
     removeRaw(OWNER_KEY);
     return;
   }
@@ -53,7 +57,7 @@ export function archiveCurrentDraft(userId: string | null): void {
   } else {
     removeRaw(archiveKey(userId));
   }
-  removeRaw(LIVE_DRAFT_KEY);
+  removeRaw(liveDraftKey());
   removeRaw(OWNER_KEY);
 }
 
@@ -61,24 +65,24 @@ export function archiveCurrentDraft(userId: string | null): void {
 // and the live persist key can never drift apart.
 function serializeLiveDraft(): string | null {
   const state = useBillStore.getState();
-  if (state.expense === null) return readRaw(LIVE_DRAFT_KEY);
+  if (state.expense === null) return readRaw(liveDraftKey());
   const { partialize, version } = useBillStore.persist.getOptions();
-  if (!partialize) return readRaw(LIVE_DRAFT_KEY);
+  if (!partialize) return readRaw(liveDraftKey());
   try {
     return JSON.stringify({ state: partialize(state), version });
   } catch {
-    return readRaw(LIVE_DRAFT_KEY);
+    return readRaw(liveDraftKey());
   }
 }
 
 export function restoreAccountDraft(userId: string): void {
   const archived = readRaw(archiveKey(userId));
   if (archived !== null) {
-    writeRaw(LIVE_DRAFT_KEY, archived);
+    writeRaw(liveDraftKey(), archived);
     removeRaw(archiveKey(userId));
     removeRaw(OWNER_KEY);
   } else {
-    removeRaw(LIVE_DRAFT_KEY);
+    removeRaw(liveDraftKey());
   }
   setDraftOwner(userId);
 }

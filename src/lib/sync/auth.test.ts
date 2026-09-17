@@ -232,7 +232,7 @@ describe("bill draft account isolation", () => {
 
     expect(useBillStore.getState().expense).toBeNull();
     expect(useBillStore.getState().items).toHaveLength(0);
-    expect(window.localStorage.getItem("dividimos-draft:user-a")).not.toBeNull();
+    expect(window.localStorage.getItem(`${useBillStore.persist.getOptions().name}:user-a`)).not.toBeNull();
     detach();
   });
 
@@ -258,7 +258,7 @@ describe("bill draft account isolation", () => {
 
     emit("SIGNED_IN", "user-b");
     expect(useBillStore.getState().expense).toBeNull();
-    expect(window.localStorage.getItem("dividimos-draft:user-a")).not.toBeNull();
+    expect(window.localStorage.getItem(`${useBillStore.persist.getOptions().name}:user-a`)).not.toBeNull();
     useBillStore.getState().createExpense("Passeio", "itemized");
 
     emit("SIGNED_IN", "user-a");
