@@ -8,6 +8,12 @@ const mutations = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/sync/mutations", () => mutations);
 
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock("react-hot-toast", () => ({ default: toastMocks }));
+
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
     <a href={href} data-testid="link">
@@ -82,9 +88,96 @@ describe("EventCard", () => {
     expect(screen.queryByTestId("event-reject-settlement")).toBeNull();
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
+    expect(mutations.voidSettlement).not.toHaveBeenCalled();
+    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
     await waitFor(() => {
       expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
     });
+    expect(toastMocks.success).toHaveBeenCalledWith("Pagamento desfeito");
+  });
+
+  it("opens confirmation dialog when Desfazer is clicked without invoking voidSettlement", async () => {
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+
+    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
+    expect(screen.getByText(/Bob Silva pagou Você\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/O registro ficará marcado como Desfeito e os saldos atuais serão recalculados\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/O Pix em si não é estornado — combine a devolução diretamente com a outra pessoa\./),
+    ).toBeInTheDocument();
+    expect(mutations.voidSettlement).not.toHaveBeenCalled();
+  });
+
+  it("closes dialog without calling voidSettlement when Cancelar is clicked", async () => {
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/Desfazer o registro de/)).not.toBeInTheDocument();
+    });
+    expect(mutations.voidSettlement).not.toHaveBeenCalled();
+  });
+
+  it("calls voidSettlement when Desfazer registro is confirmed and handles error gracefully", async () => {
+    mutations.voidSettlement.mockRejectedValueOnce(new Error("Falha na rede"));
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+
+    await waitFor(() => {
+      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
+    });
+    await waitFor(() => {
+      expect(toastMocks.error).toHaveBeenCalled();
+    });
+    expect(screen.getByRole("button", { name: "Desfazer registro" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancelar" })).not.toBeDisabled();
   });
 
   it("offers Desfazer to the payer as well", () => {

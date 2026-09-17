@@ -18,6 +18,12 @@ vi.mock("@/lib/sync/mutations", () => ({
   }),
 }));
 
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock("react-hot-toast", () => ({ default: toastMocks }));
+
 vi.mock("next/link", () => ({
   default: ({
     children,
@@ -325,7 +331,7 @@ describe("ActivityContent", () => {
     });
   });
 
-  it("shows 'Desfazer' on an active settlement and voids it", async () => {
+  it("shows 'Desfazer' on an active settlement and opens confirmation dialog without invoking voidSettlement", async () => {
     useAppStore.setState({
       groups: {
         "group-1": groupNormal,
@@ -333,14 +339,79 @@ describe("ActivityContent", () => {
       },
     });
     render(<ActivityContent />);
-    const undoButton = screen.getByRole("button", { name: /Desfazer/i });
+    const undoButton = screen.getByTestId("activity-undo-settlement");
     expect(undoButton).toBeInTheDocument();
 
     fireEvent.click(undoButton);
 
+    expect(voidSettlement).not.toHaveBeenCalled();
+    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
+    expect(screen.getByText(/Bob pagou você\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/O registro ficará marcado como Desfeito e os saldos atuais serão recalculados\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/O Pix em si não é estornado — combine a devolução diretamente com a outra pessoa\./),
+    ).toBeInTheDocument();
+  });
+
+  it("closes confirmation dialog without calling voidSettlement when Cancelar is clicked in activity feed", async () => {
+    useAppStore.setState({
+      groups: {
+        "group-1": groupNormal,
+        "group-dm": { ...groupDm, settlements: [activeSettlement] },
+      },
+    });
+    render(<ActivityContent />);
+    fireEvent.click(screen.getByTestId("activity-undo-settlement"));
+    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/Desfazer o registro de/)).not.toBeInTheDocument();
+    });
+    expect(voidSettlement).not.toHaveBeenCalled();
+  });
+
+  it("voids settlement when Desfazer registro is confirmed in dialog", async () => {
+    useAppStore.setState({
+      groups: {
+        "group-1": groupNormal,
+        "group-dm": { ...groupDm, settlements: [activeSettlement] },
+      },
+    });
+    render(<ActivityContent />);
+    fireEvent.click(screen.getByTestId("activity-undo-settlement"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+
     await waitFor(() => {
       expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789");
     });
+    expect(toastMocks.success).toHaveBeenCalledWith("Pagamento desfeito");
+  });
+
+  it("handles error gracefully when voidSettlement fails from activity dialog", async () => {
+    vi.mocked(voidSettlement).mockRejectedValueOnce(new Error("Erro de rede"));
+    useAppStore.setState({
+      groups: {
+        "group-1": groupNormal,
+        "group-dm": { ...groupDm, settlements: [activeSettlement] },
+      },
+    });
+    render(<ActivityContent />);
+    fireEvent.click(screen.getByTestId("activity-undo-settlement"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+
+    await waitFor(() => {
+      expect(voidSettlement).toHaveBeenCalledWith("group-dm", "sett-789");
+    });
+    await waitFor(() => {
+      expect(toastMocks.error).toHaveBeenCalled();
+    });
+    expect(screen.getByRole("button", { name: "Desfazer registro" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancelar" })).not.toBeDisabled();
   });
 
   it("does not show 'Desfazer' once the settlement is voided and gone from the snapshot", () => {

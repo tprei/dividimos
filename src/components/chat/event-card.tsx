@@ -10,6 +10,7 @@ import { describeEvent } from "@/lib/ledger/event-copy";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { cn } from "@/lib/utils";
+import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import type { GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
 
 const EXPENSE_KINDS: Record<string, true> = {
@@ -73,6 +74,7 @@ interface EventCardProps {
 
 export function EventCard({ event, groupId, meId, settlement, latestStatus, nameOf }: EventCardProps) {
   const [busy, setBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "");
   const copy = describeEvent(event, {
     actorName,
@@ -156,6 +158,8 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
     setBusy(true);
     try {
       await voidSettlement(groupId, settlementId);
+      toast.success("Pagamento desfeito");
+      setConfirmOpen(false);
     } catch (error) {
       toast.error(ledgerErrorMessage(error));
     } finally {
@@ -195,7 +199,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
               size="sm"
               variant="outline"
               className="h-8 flex-1 gap-1.5 text-xs"
-              onClick={() => void handleVoid()}
+              onClick={() => setConfirmOpen(true)}
               disabled={busy}
               data-testid="event-undo-settlement"
             >
@@ -205,6 +209,17 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           </div>
         )}
       </div>
+      <VoidSettlementDialog
+        open={confirmOpen && canUndo}
+        amountCents={amountCents}
+        payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
+        recipientName={toUserId ? nameOf(toUserId) : "Alguém"}
+        busy={busy}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          void handleVoid();
+        }}
+      />
     </div>
   );
 }
