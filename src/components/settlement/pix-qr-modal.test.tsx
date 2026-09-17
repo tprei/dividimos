@@ -395,6 +395,12 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithFetch} />);
 
     await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ })).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ }),
+    );
+    await waitFor(() => {
       expect(QRCode.toCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "br-code-10000",
@@ -483,5 +489,57 @@ describe("PixQrModal", () => {
     expect(metadeBtn).toHaveAttribute("aria-pressed", "true");
     expect(tudoBtn).not.toBeDisabled();
     expect(metadeBtn).not.toBeDisabled();
+  });
+
+  it("collapses the pay QR behind a disclosure with no canvas or fetch on open", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} />);
+
+    const disclosure = screen.getByRole("button", {
+      name: /Mostrar QR code para pagar com outro celular/,
+    });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(disclosure).toHaveAttribute("aria-controls", "pix-qr-region");
+    expect(QRCode.toCanvas).not.toHaveBeenCalled();
+    expect(screen.getByText("1. Pague no app do seu banco")).toBeInTheDocument();
+    expect(screen.getByText(/Registrar não transfere dinheiro/)).toBeInTheDocument();
+  });
+
+  it("paints the QR on disclosure expand without issuing a fetch", async () => {
+    const mockFetch = vi.fn();
+    global.fetch = mockFetch;
+    render(<PixQrModal {...defaultPropsWithPixKey} />);
+
+    vi.mocked(QRCode.toCanvas).mockClear();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ }),
+    );
+
+    await waitFor(() => {
+      expect(QRCode.toCanvas).toHaveBeenCalledTimes(1);
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /Ocultar QR code/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("renders the collect QR immediately with the collect expectation line", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} mode="collect" />);
+
+    expect(QRCode.toCanvas).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: /Mostrar QR code/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Registrar não transfere dinheiro — apenas confirma que ele te pagou por fora."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the pay expectation line in pay mode", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} />);
+
+    expect(
+      screen.getByText("Registrar não transfere dinheiro — apenas confirma que você pagou por fora."),
+    ).toBeInTheDocument();
   });
 });

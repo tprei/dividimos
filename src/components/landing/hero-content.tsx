@@ -57,7 +57,7 @@ export function HeroContent() {
           animate="visible"
           className="mt-5 text-lg text-muted-foreground"
         >
-          Lê a nota, cada um marca o que comeu, e a galera paga no Pix na hora. Sem banco, sem enrolação.
+          Lê a nota, cada um marca o que comeu, e a galera paga no Pix pelo app do banco. Sem planilha, sem enrolação.
         </motion.p>
 
         <motion.div

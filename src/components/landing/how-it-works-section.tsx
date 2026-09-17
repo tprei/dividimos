@@ -121,7 +121,7 @@ const steps = [
   },
   {
     title: "Pague",
-    desc: "QR code Pix gerado com o valor certinho. Copia, cola, tá pago.",
+    desc: "QR code Pix com o valor certinho. Copie o código, pague no app do banco e registre aqui.",
     illustration: QrPhoneIllustration,
     accent: "text-chart-3",
     bg: "bg-chart-3/5",

@@ -74,6 +74,7 @@ export function PixQrModal({
   const [fetched, setFetched] = useState<FetchedPayload | null>(null);
   const [payloadError, setPayloadError] = useState(false);
   const [payloadLoading, setPayloadLoading] = useState(false);
+  const [showPayQr, setShowPayQr] = useState(false);
 
   const isFullPayment = paymentCents >= amountCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= amountCents;
@@ -123,6 +124,7 @@ export function PixQrModal({
   useEffect(() => {
     if (open && !isSettling) {
       setPaymentCents(amountCents);
+      setShowPayQr(false);
       setShowSuccess(false);
       setSettledAmountCents(0);
     }
@@ -436,38 +438,75 @@ export function PixQrModal({
                   </div>
                 </div>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
-                >
-                  {payloadLoading ? (
-                    <div className="flex h-[240px] w-[240px] items-center justify-center">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : copiaECola ? (
+                {copiaECola && mode === "pay" && (
+                <div className="mt-6 text-left">
+                  <p className="text-sm font-bold text-foreground">1. Pague no app do seu banco</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Copie a chave Pix Copia e Cola e conclua o pagamento no seu banco.
+                  </p>
+                  <button
+                    type="button"
+                    aria-expanded={showPayQr}
+                    aria-controls="pix-qr-region"
+                    onClick={() => setShowPayQr((v) => !v)}
+                    className="mt-2 text-xs font-medium text-primary rounded-lg"
+                  >
+                    {showPayQr ? "Ocultar QR code" : "Mostrar QR code para pagar com outro celular"}
+                  </button>
+                </div>
+              )}
+              <div id="pix-qr-region">
+                {(showPayQr || mode === "collect") && copiaECola ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                  >
                     <canvas ref={paintQr} />
-                  ) : (
-                    <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
-                      <QrCode className="h-12 w-12 text-muted-foreground/30" />
-                      <p className="text-sm text-muted-foreground">
-                        {payloadError
-                          ? "Não deu pra gerar o QR agora. Tenta de novo."
-                          : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
-                      </p>
-                    </div>
-                  )}
-                </motion.div>
+                  </motion.div>
+                ) : !copiaECola ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                  >
+                    {payloadLoading ? (
+                      <div className="flex h-[240px] w-[240px] items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
+                        <QrCode className="h-12 w-12 text-muted-foreground/30" />
+                        <p className="text-sm text-muted-foreground">
+                          {payloadError
+                            ? "Não deu pra gerar o QR agora. Tenta de novo."
+                            : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
+                        </p>
+                      </div>
+                    )}
+                  </motion.div>
+                ) : null}
+              </div>
 
-                  <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-                    <Shield className="h-3 w-3" />
-                    <span>
-                      {copiaECola
-                        ? "Lê o QR code ou copia o código e cola no app do banco."
-                        : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
-                    </span>
-                  </div>
+              <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                <Shield className="h-3 w-3" />
+                <span>
+                  {copiaECola
+                    ? "Lê o QR code ou copia o código e cola no app do banco."
+                    : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
+                </span>
+              </div>
+
+              <div className="mt-6 text-left">
+                <p className="text-sm font-bold text-foreground">2. Registre aqui no Dividimos</p>
+                <p className="mt-1 text-xs text-muted-foreground text-center">
+                  {mode === "collect"
+                    ? "Registrar não transfere dinheiro — apenas confirma que ele te pagou por fora."
+                    : "Registrar não transfere dinheiro — apenas confirma que você pagou por fora."}
+                </p>
+              </div>
               </div>
 
               <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
