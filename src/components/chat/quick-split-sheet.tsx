@@ -57,6 +57,7 @@ export function QuickSplitSheet({
 }: QuickSplitSheetProps) {
   const [title, setTitle] = useState("");
   const [totalCents, setTotalCents] = useState(0);
+  const [isAmountValid, setIsAmountValid] = useState(true);
   const [splitMethod, setSplitMethod] = useState<SplitType>("equal");
   const [myPercentage, setMyPercentage] = useState("50");
   const [myFixedCents, setMyFixedCents] = useState(0);
@@ -122,10 +123,10 @@ export function QuickSplitSheet({
   const shares = computeShares();
 
   const isValid = useMemo(() => {
-    if (!title.trim() || totalCents <= 0 || !shares) return false;
+    if (!title.trim() || totalCents <= 0 || !shares || !isAmountValid) return false;
     const sum = shares.reduce((s, sh) => s + sh.shareAmountCents, 0);
     return Math.abs(sum - totalCents) <= 1;
-  }, [title, totalCents, shares]);
+  }, [title, totalCents, shares, isAmountValid]);
 
   const percentageWarning = useMemo(() => {
     if (splitMethod !== "percentage" || percentageBasisPoints !== null) return null;
@@ -221,19 +222,25 @@ export function QuickSplitSheet({
 
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Valor total (R$)
+                Valor total
               </label>
-              <div className="flex items-center justify-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 h-14">
+              <div className="flex items-center justify-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 has-[input[aria-invalid]]:border-destructive has-[input[aria-invalid]]:ring-3 has-[input[aria-invalid]]:ring-destructive/20 h-14">
                 <span className="pl-3 text-lg font-bold text-muted-foreground">R$</span>
                 <CurrencyInput
                   valueCents={totalCents}
                   onChangeCents={setTotalCents}
+                  onValidityChange={setIsAmountValid}
                   aria-label="Valor total"
                   disabled={isDisabled}
                   className="min-w-0 flex-1 text-2xl font-bold h-14"
                   data-testid="quick-split-amount"
                 />
               </div>
+              {!isAmountValid && (
+                <p className="mt-1 text-xs text-destructive">
+                  Valor inválido. Escreva assim: 10,50
+                </p>
+              )}
             </div>
 
             <div>
@@ -271,28 +278,34 @@ export function QuickSplitSheet({
               </div>
             </div>
 
-            {totalCents > 0 && (
+            {(totalCents > 0 || !isAmountValid) && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-2"
                 data-testid="quick-split-preview"
               >
-                {splitMethod === "equal" && shares && (
-                  <div className="rounded-xl border bg-card/50 p-3">
-                    {participants.map((p, i) => (
-                      <div key={p.id} className="flex items-center justify-between py-1 text-sm">
-                        <span>{p.name}</span>
-                        <span className="font-semibold tabular-nums">
-                          {formatBRL(shares[i].shareAmountCents)}
-                        </span>
-                      </div>
-                    ))}
+                {splitMethod === "equal" && (
+                  <div className="rounded-xl border bg-card/50 p-3 min-h-[88px] flex flex-col justify-center">
+                    {isAmountValid && shares ? (
+                      participants.map((p, i) => (
+                        <div key={p.id} className="flex items-center justify-between py-1 text-sm">
+                          <span>{p.name}</span>
+                          <span className="font-semibold tabular-nums">
+                            {formatBRL(shares[i].shareAmountCents)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-center text-xs text-destructive">
+                        Valor inválido. Escreva assim: 10,50
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {splitMethod === "percentage" && (
-                  <div className="rounded-xl border bg-card/50 p-3 space-y-3">
+                  <div className="rounded-xl border bg-card/50 p-3 space-y-3 min-h-[88px]">
                     <div className="flex items-center gap-3">
                       <span className="text-sm flex-1">Você</span>
                       <div className="flex items-center gap-1 w-24">
@@ -310,7 +323,7 @@ export function QuickSplitSheet({
                         />
                         <span className="text-sm text-muted-foreground">%</span>
                       </div>
-                      {shares && (
+                      {shares && isAmountValid && (
                         <span className="text-sm font-semibold tabular-nums w-20 text-right">
                           {formatBRL(shares[0].shareAmountCents)}
                         </span>
@@ -326,12 +339,17 @@ export function QuickSplitSheet({
                         </span>
                         <span className="text-sm text-muted-foreground">%</span>
                       </div>
-                      {shares && (
+                      {shares && isAmountValid && (
                         <span className="text-sm font-semibold tabular-nums w-20 text-right">
                           {formatBRL(shares[1].shareAmountCents)}
                         </span>
                       )}
                     </div>
+                    {!isAmountValid && (
+                      <p className="text-xs text-destructive">
+                        Valor inválido. Escreva assim: 10,50
+                      </p>
+                    )}
                     {percentageWarning && (
                       <p className="text-xs text-destructive" id="quick-split-percent-error">
                         {percentageWarning}
@@ -350,6 +368,7 @@ export function QuickSplitSheet({
                           valueCents={myFixedCents}
                           onChangeCents={setMyFixedCents}
                           disabled={isDisabled}
+                          aria-label="Seu valor fixo"
                           className="h-8 w-full text-right text-sm rounded-lg border border-input bg-transparent px-2.5 py-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                           data-testid="quick-split-my-fixed"
                         />

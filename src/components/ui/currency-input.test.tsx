@@ -75,7 +75,7 @@ describe("CurrencyInput", () => {
     const input = screen.getByTestId("ci") as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: "10.5" } });
-    expect(input.value).toBe("10,50");
+    expect(input.value).toBe("10.5");
     fireEvent.blur(input);
     expect(input.value).toBe("10,50");
   });
@@ -88,6 +88,19 @@ describe("CurrencyInput", () => {
     expect(input.value).toBe("10,505");
     fireEvent.blur(input);
     expect(input.value).toBe("10,505");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("keeps over-cap text visible on blur without silently reverting", () => {
+    render(<Wrapper initial={1000} maxCents={5000} />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "100,00" } });
+    expect(input.value).toBe("100,00");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.blur(input);
+    expect(input.value).toBe("100,00");
     expect(input).toHaveAttribute("aria-invalid", "true");
   });
 

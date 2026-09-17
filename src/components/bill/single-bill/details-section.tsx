@@ -114,7 +114,6 @@ export function SingleBillDetails({
       <div className="flex flex-col gap-6 px-4 pb-4">
         <div className="flex flex-col gap-2">
           <label className="flex items-center justify-center rounded-xl border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-            <span className="sr-only">Valor total</span>
             <span className="pl-4 text-lg font-bold text-muted-foreground">R$</span>
             <CurrencyInput
               valueCents={totalCents}

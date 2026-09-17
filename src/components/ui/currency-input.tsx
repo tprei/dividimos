@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { MAX_EXPENSE_CENTS } from "@/lib/expense-money";
 import { cn } from "@/lib/utils";
 
-interface CurrencyInputProps {
+interface CurrencyInputProps
+  extends Omit<React.ComponentProps<"input">, "value" | "onChange"> {
   valueCents: number;
   onChangeCents: (cents: number) => void;
   maxCents?: number;
@@ -33,7 +34,7 @@ function formatCentsDisplay(cents: number): string {
  * separators (10,,50), and negative signs. Returns null for unparseable text;
  * empty text is the caller's 0, not a parse result.
  */
-export function parseBrazilianToCents(value: string): number | null {
+function parseBrazilianToCents(value: string): number | null {
   let text = value.trim();
   if (text === "") return null;
   if (text.startsWith("R$")) {
@@ -105,61 +106,99 @@ export function CurrencyInput({
   disabled = false,
   className,
   autoFocus,
+  onFocus,
+  onBlur,
+  placeholder = "0,00",
   ...rest
 }: CurrencyInputProps) {
   const upper = maxCents != null ? Math.min(maxCents, MAX_EXPENSE_CENTS) : MAX_EXPENSE_CENTS;
 
-  // Uncommitted text the user typed: valid parses commit through
-  // onChangeCents and clear the override; invalid or over-cap text stays
-  // visible with aria-invalid until corrected. Never clamped, never repaired.
-  const [rawOverride, setRawOverride] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState<string | null>(null);
+  const [override, setOverride] = useState<string | null>(null);
+  const [committedCents, setCommittedCents] = useState(valueCents);
 
-  // A prop-driven value change (hydration/reset/reload) restores canonical
-  // valid text, discarding any stale uncommitted override.
   const [prevValueCents, setPrevValueCents] = useState(valueCents);
   if (valueCents !== prevValueCents) {
     setPrevValueCents(valueCents);
-    setRawOverride(null);
+    if (valueCents !== committedCents) {
+      setEditingText(null);
+      setOverride(null);
+    }
   }
+
+  const isInvalid = override !== null;
+
   useEffect(() => {
-    onValidityChange?.(rawOverride === null);
-  }, [rawOverride, onValidityChange]);
+    onValidityChange?.(!isInvalid);
+  }, [isInvalid, onValidityChange]);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
+      setEditingText(raw);
       if (raw === "") {
-        setRawOverride(null);
+        setOverride(null);
+        setCommittedCents(0);
         onChangeCents(0);
         return;
       }
       const cents = parseBrazilianToCents(raw);
       if (cents !== null && cents >= 0 && cents <= upper) {
-        setRawOverride(null);
+        setOverride(null);
+        setCommittedCents(cents);
         onChangeCents(cents);
       } else {
-        setRawOverride(raw);
+        setOverride(raw);
       }
     },
     [upper, onChangeCents],
   );
 
-  const handleBlur = useCallback(() => {
-    setRawOverride((current) => {
-      if (current === null) return current;
-      return parseBrazilianToCents(current) !== null ? null : current;
-    });
-  }, []);
+  const handleBlur = useCallback(
+    (e: React.FocusEvent<HTMLInputElement>) => {
+      const current = editingText ?? (valueCents === 0 ? "" : formatCentsDisplay(valueCents));
+      if (current === "") {
+        setEditingText(null);
+        setOverride(null);
+      } else {
+        const parsed = parseBrazilianToCents(current);
+        if (parsed !== null && parsed >= 0 && parsed <= upper) {
+          setEditingText(null);
+          setOverride(null);
+        } else {
+          setEditingText(current);
+          setOverride(current);
+        }
+      }
+      onBlur?.(e);
+    },
+    [editingText, valueCents, upper, onBlur],
+  );
 
-  const isInvalid = rawOverride !== null;
+  const handleFocus = useCallback(
+    (e: React.FocusEvent<HTMLInputElement>) => {
+      e.currentTarget.select();
+      onFocus?.(e);
+    },
+    [onFocus],
+  );
+
+  const displayValue =
+    editingText !== null
+      ? editingText
+      : valueCents === 0
+        ? ""
+        : formatCentsDisplay(valueCents);
 
   return (
     <input
       type="text"
       inputMode="decimal"
-      value={rawOverride ?? formatCentsDisplay(valueCents)}
+      value={displayValue}
+      placeholder={placeholder}
       onChange={handleChange}
       onBlur={handleBlur}
+      onFocus={handleFocus}
       disabled={disabled}
       autoFocus={autoFocus}
       aria-invalid={isInvalid || undefined}
