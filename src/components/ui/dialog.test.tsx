@@ -97,12 +97,12 @@ describe("Dialog back-handler integration", () => {
 });
 
 describe("DialogContent close button", () => {
-  it("names the close button Fechar in PT-BR", () => {
+  it("names the icon close button in PT-BR, distinct from a footer Fechar", () => {
     render(
       <Dialog open>
         <DialogContent>conteúdo</DialogContent>
       </Dialog>,
     );
-    expect(screen.getByRole("button", { name: "Fechar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fechar diálogo" })).toBeInTheDocument();
   });
 });

@@ -25,7 +25,7 @@ export function Money({
   label?: string;
 }) {
   return (
-    <span aria-label={label} className={cn("font-mono font-medium tabular-nums", signed && signedTone(cents), className)}>
+    <span aria-label={label} className={cn("font-sans font-semibold tabular-nums tracking-tight", signed && signedTone(cents), className)}>
       {signed && signPrefix(cents)}
       {formatBRL(Math.abs(cents))}
     </span>

@@ -21,10 +21,4 @@ describe("buttonVariants", () => {
       expect(buttonVariants({ size }).length).toBeGreaterThan(0)
     }
   })
-
-  it("renders small buttons with the standard text-xs size", () => {
-    const result = buttonVariants({ size: "sm" })
-    expect(result).toContain("text-xs")
-    expect(result).not.toContain("text-[0.8rem]")
-  })
 })

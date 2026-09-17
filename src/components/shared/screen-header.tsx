@@ -23,7 +23,7 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, ac
           variant="ghost"
           size="icon-lg"
           aria-label="Voltar"
-          className="-ml-2 min-h-11 min-w-11"
+          className="rounded-full"
           onClick={onBack ?? (() => router.back())}
         >
           <ArrowLeft className="size-5" />
@@ -36,7 +36,7 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, ac
             {eyebrow}
           </p>
         )}
-        <h1 className="truncate text-[22px] leading-tight font-bold tracking-tight">{title}</h1>
+        <h1 className="truncate text-2xl leading-tight font-bold tracking-tight">{title}</h1>
       </div>
       {action}
     </header>
