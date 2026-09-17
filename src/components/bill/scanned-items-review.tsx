@@ -275,6 +275,12 @@ export function ScannedItemsReview({
               </span>
               <Money cents={totalCents} className="text-base font-bold" />
             </div>
+            {result.totalCents > 0 && result.totalCents !== totalCents && (
+              <p className="pb-2 text-xs leading-4 text-muted-foreground">
+                Na nota o total impresso é{" "}
+                <Money cents={result.totalCents} className="text-xs" />. Confira os itens antes de continuar.
+              </p>
+            )}
             {!totalWithinCap && (
               <p className="pb-2 text-xs leading-4 text-destructive">
                 O total excede o limite permitido.

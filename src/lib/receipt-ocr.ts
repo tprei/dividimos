@@ -3,6 +3,11 @@ import {
   parseExpenseCents,
   parseServiceFeeBasisPoints,
 } from "@/lib/expense-money";
+import {
+  computeExpenseLineTotalCents,
+  parseExpenseQuantity,
+  unitPriceCentsForLineTotal,
+} from "@/lib/expense-quantity";
 
 /** Timeout for the Gemini API call in milliseconds. */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -19,7 +24,7 @@ export interface ReceiptItem {
 }
 
 /** Structured result from receipt OCR. Fees are already integer basis
- * points/cents at this boundary (issue #477); no float percent survives
+ * points/cents at this boundary; no float percent survives
  * past this module. */
 export interface ReceiptOcrResult {
   merchant: string | null;
@@ -157,29 +162,49 @@ export async function parseReceiptImage(
 
   const merchant = typeof parsed.merchant === "string" ? parsed.merchant : null;
 
-  // Keep only items with both a stated unit price and a stated line total
-  // (issue #477: never solve a non-unique inverse from quantity + one value).
   const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
   const items: ReceiptItem[] = [];
   for (const raw of rawItems) {
     if (typeof raw !== "object" || raw === null) continue;
     const r = raw as Record<string, unknown>;
     const description = typeof r.description === "string" ? r.description.trim() : "";
-    const quantity =
-      typeof r.quantity === "number" && Number.isFinite(r.quantity) && r.quantity > 0
-        ? r.quantity
-        : 0;
-    const unitPrice = parseExpenseCents(r.unitPriceCents, "positive");
+    const quantity = parseExpenseQuantity(r.quantity);
     const lineTotal = parseExpenseCents(r.totalCents, "positive");
-    if (!description || quantity === 0 || !unitPrice.ok || !lineTotal.ok) {
+    if (!description || !quantity.ok || !lineTotal.ok) {
       continue;
     }
-    items.push({
-      description,
-      quantity,
-      unitPriceCents: unitPrice.value,
-      totalCents: lineTotal.value,
-    });
+    const printedUnit = parseExpenseCents(r.unitPriceCents, "positive");
+    const printedLine = printedUnit.ok
+      ? computeExpenseLineTotalCents(quantity.value, printedUnit.value)
+      : null;
+    if (printedUnit.ok && printedLine?.ok && printedLine.value === lineTotal.value) {
+      items.push({
+        description,
+        quantity: r.quantity as number,
+        unitPriceCents: printedUnit.value,
+        totalCents: lineTotal.value,
+      });
+      continue;
+    }
+    // The printed line total is the amount that gets split, so it wins.
+    // A unit price that cannot reproduce it is replaced by one that can;
+    // when no unit price can, the line becomes one unit at the printed total.
+    const derivedUnit = unitPriceCentsForLineTotal(quantity.value as number, lineTotal.value as number);
+    if (derivedUnit !== null) {
+      items.push({
+        description,
+        quantity: r.quantity as number,
+        unitPriceCents: derivedUnit,
+        totalCents: lineTotal.value,
+      });
+    } else {
+      items.push({
+        description,
+        quantity: 1,
+        unitPriceCents: lineTotal.value,
+        totalCents: lineTotal.value,
+      });
+    }
   }
 
   const serviceFee = parseServiceFeeBasisPoints(

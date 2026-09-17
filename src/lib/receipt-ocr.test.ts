@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ReceiptOcrResult } from "./receipt-ocr";
+import {
+  computeExpenseLineTotalCents,
+  parseExpenseQuantity,
+} from "./expense-quantity";
+import { brandExpenseCents } from "./expense-money";
 
 // Mock the @google/genai module
 const mockGenerateContent = vi.fn();
@@ -53,6 +58,7 @@ describe("parseReceiptImage", () => {
 
     expect(result).toEqual(validResult);
   });
+
   it("preserves fixed fees reported separately from the service percentage", async () => {
     const receiptWithFixedFee = {
       ...validResult,
@@ -101,7 +107,7 @@ describe("parseReceiptImage", () => {
     expect(callArgs.config.temperature).toBe(0);
   });
 
-  it("drops an item whose unit price is not an exact integer instead of rounding it (issue #477: never fabricate)", async () => {
+  it("keeps the printed line total and derives the unit price when the printed unit price is not usable", async () => {
     const resultWithFloats = {
       merchant: "Test",
       items: [
@@ -121,10 +127,14 @@ describe("parseReceiptImage", () => {
 
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
-    // Root totalCents is a valid integer in this fixture and passes through
-    // unchanged; only the item with a non-integer unitPriceCents is dropped.
     expect(result.totalCents).toBe(1376);
-    expect(result.items).toHaveLength(0);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual({
+      description: "Item A",
+      quantity: 1,
+      unitPriceCents: 1251,
+      totalCents: 1251,
+    });
   });
 
   it("drops an item with zero/negative quantity instead of clamping it", async () => {
@@ -150,7 +160,7 @@ describe("parseReceiptImage", () => {
     expect(result.items).toHaveLength(0);
   });
 
-  it("drops an item missing unitPriceCents instead of deriving it from quantity + total", async () => {
+  it("derives the unit price from quantity and printed line total when the receipt prints no unit price", async () => {
     const resultMissingUnit = {
       merchant: "Test",
       items: [{ description: "Item A", quantity: 2, totalCents: 2000 }],
@@ -163,7 +173,80 @@ describe("parseReceiptImage", () => {
 
     const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
 
-    expect(result.items).toHaveLength(0);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual({
+      description: "Item A",
+      quantity: 2,
+      unitPriceCents: 1000,
+      totalCents: 2000,
+    });
+  });
+
+  it("keeps the printed line total when quantity × unit price disagrees with it", async () => {
+    const picanhaResult = {
+      merchant: "Churrascaria",
+      items: [
+        {
+          description: "Picanha",
+          quantity: 0.532,
+          unitPriceCents: 3990,
+          totalCents: 2122,
+        },
+      ],
+      serviceFeeBasisPoints: 0,
+      totalCents: 2122,
+    };
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify(picanhaResult),
+    });
+
+    const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].description).toBe("Picanha");
+    expect(result.items[0].quantity).toBe(0.532);
+    expect(result.items[0].totalCents).toBe(2122);
+
+    const qty = parseExpenseQuantity(0.532);
+    expect(qty.ok).toBe(true);
+    if (!qty.ok) return;
+
+    const lineTotal = computeExpenseLineTotalCents(
+      qty.value,
+      brandExpenseCents(result.items[0].unitPriceCents),
+    );
+    expect(lineTotal.ok).toBe(true);
+    if (!lineTotal.ok) return;
+    expect(lineTotal.value).toBe(2122);
+  });
+
+  it("falls back to a single unit at the printed total when no unit price can reproduce it", async () => {
+    const resultUnreproducible = {
+      merchant: "Test",
+      items: [
+        {
+          description: "Água",
+          quantity: 3000,
+          unitPriceCents: 1,
+          totalCents: 1,
+        },
+      ],
+      serviceFeeBasisPoints: 0,
+      totalCents: 1,
+    };
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify(resultUnreproducible),
+    });
+
+    const result = await parseReceiptImage(fakeBase64, fakeMimeType, fakeApiKey);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual({
+      description: "Água",
+      quantity: 1,
+      unitPriceCents: 1,
+      totalCents: 1,
+    });
   });
 
   it("throws when Gemini returns empty response", async () => {

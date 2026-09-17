@@ -1,5 +1,5 @@
 import { compressImage } from "@/lib/image-utils";
-import { decodeExpenseResult } from "@/lib/expense-money";
+import { computeServiceFeeCents, decodeExpenseResult } from "@/lib/expense-money";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 
 /**
@@ -67,22 +67,30 @@ export class ReceiptInvalidError extends Error {
   }
 }
 
+const EMPTY_RECEIPT_MESSAGE =
+  "Não encontramos itens na nota. Tente outra foto ou adicione manualmente.";
+
 /**
- * Validate a raw receipt candidate through the same #477 exact reconciliation
- * `decodeExpenseResult` applies before mounting `ScannedItemsReview`. Every
- * OCR receipt is `itemized` -- never inferred as `single_amount`. A
- * scan that found zero items is never a legitimate single-total receipt; per
- * #477 part 1, `scan_review` is itemized-only and "empty/zero or missing
- * root total is a safe scan error before review." Passing the true
- * `itemized` type here (instead of inferring `single_amount` from an empty
- * item array) lets the decoder reject that case outright rather than
- * silently mounting an undetailed, unreviewed single-amount expense.
+ * Validate the OCR candidate against the same money contract the wizard
+ * saves with. The grand total is derived from the items and fees, never
+ * from the printed receipt total: the review screen recomputes it from the
+ * items and shows the printed total only as a reference the user can check.
+ * A scan with no items is rejected because the review screen has no way to
+ * add one.
  */
 function assertReconciledReceipt(result: ReceiptOcrResult): ReceiptOcrResult {
+  if (result.items.length === 0) {
+    throw new ReceiptInvalidError(EMPTY_RECEIPT_MESSAGE);
+  }
+  const subtotalCents = result.items.reduce((sum, item) => sum + item.totalCents, 0);
+  const serviceFee = computeServiceFeeCents(subtotalCents, result.serviceFeeBasisPoints);
+  if (!serviceFee.ok) {
+    throw new ReceiptInvalidError();
+  }
   const decoded = decodeExpenseResult("ocr", "scan_review", {
     merchantName: result.merchant,
     expenseType: "itemized",
-    totalAmountCents: result.totalCents,
+    totalAmountCents: subtotalCents + serviceFee.value + result.fixedFeesCents,
     serviceFeeBasisPoints: result.serviceFeeBasisPoints,
     fixedFeesCents: result.fixedFeesCents,
     items: result.items.map((item) => ({
