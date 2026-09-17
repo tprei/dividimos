@@ -45,21 +45,31 @@ export function VoidSettlementDialog({
           </DialogTitle>
           <DialogDescription className="space-y-2">
             <span className="block">
-              {payerName} pagou {recipientName}.
+              {payerName.charAt(0).toUpperCase() + payerName.slice(1)} pagou {recipientName}.
             </span>
             <span className="block">
               O registro ficará marcado como Desfeito e os saldos atuais serão recalculados.
             </span>
-            <span className="mt-2 block rounded-xl border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning-foreground">
+            <span className="mt-2 block rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-foreground">
               O Pix em si não é estornado — combine a devolução diretamente com a outra pessoa.
             </span>
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel} disabled={busy}>
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            disabled={busy}
+            className="min-h-11 w-full"
+          >
             Cancelar
           </Button>
-          <Button variant="destructive" onClick={onConfirm} disabled={busy}>
+          <Button
+            variant="destructive"
+            onClick={onConfirm}
+            disabled={busy}
+            className="min-h-11 w-full"
+          >
             {busy ? "Desfazendo…" : "Desfazer registro"}
           </Button>
         </DialogFooter>

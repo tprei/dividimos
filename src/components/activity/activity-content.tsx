@@ -180,7 +180,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
     </div>
   );
 
-  const dialog = (
+  const dialog = canUndo ? (
     <VoidSettlementDialog
       open={confirmOpen && canUndo}
       amountCents={amountCents}
@@ -192,7 +192,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
         void handleConfirmUndo();
       }}
     />
-  );
+  ) : null;
 
   if (event.expenseId) {
     return (

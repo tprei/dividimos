@@ -198,7 +198,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
             <Button
               size="sm"
               variant="outline"
-              className="h-8 flex-1 gap-1.5 text-xs"
+              className="min-h-11 flex-1 gap-1.5 text-xs"
               onClick={() => setConfirmOpen(true)}
               disabled={busy}
               data-testid="event-undo-settlement"
@@ -209,17 +209,19 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           </div>
         )}
       </div>
-      <VoidSettlementDialog
-        open={confirmOpen && canUndo}
-        amountCents={amountCents}
-        payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
-        recipientName={toUserId ? nameOf(toUserId) : "Alguém"}
-        busy={busy}
-        onCancel={() => setConfirmOpen(false)}
-        onConfirm={() => {
-          void handleVoid();
-        }}
-      />
+      {canUndo && (
+        <VoidSettlementDialog
+          open={confirmOpen && canUndo}
+          amountCents={amountCents}
+          payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
+          recipientName={toUserId ? nameOf(toUserId) : "Alguém"}
+          busy={busy}
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => {
+            void handleVoid();
+          }}
+        />
+      )}
     </div>
   );
 }

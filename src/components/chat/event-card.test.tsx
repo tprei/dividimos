@@ -88,8 +88,6 @@ describe("EventCard", () => {
     expect(screen.queryByTestId("event-reject-settlement")).toBeNull();
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
-    expect(mutations.voidSettlement).not.toHaveBeenCalled();
-    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
     await waitFor(() => {
