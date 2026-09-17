@@ -284,7 +284,7 @@ export default function DemoPage() {
                 <Users className="h-3.5 w-3.5" />
                 {DEMO_USERS.length} pessoas
               </span>
-              <span className="flex items-center gap-1 text-primary-foreground/60 text-xs italic">
+              <span className="flex items-center gap-1 text-primary-foreground/80 text-xs italic">
                 Fogo de Chao - Jardins
               </span>
             </div>

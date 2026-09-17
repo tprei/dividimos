@@ -241,7 +241,7 @@ export function ClaimPageClient() {
 
           <div className="mt-5 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary-text">
                 {preview.groupName.charAt(0) || "G"}
               </div>
               <div>
