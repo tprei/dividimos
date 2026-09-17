@@ -252,8 +252,8 @@ export function PixQrModal({
       modal
     >
       <DialogContent
-        showCloseButton={false}
-        className="w-full max-w-md rounded-3xl bg-card p-6 pb-24 sm:pb-6"
+        showCloseButton={!isSettling && !showSuccess}
+        className="w-full max-w-md rounded-3xl bg-card p-0"
       >
         <AnimatePresence mode="wait">
           {showSuccess ? (
@@ -263,7 +263,7 @@ export function PixQrModal({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ type: "spring", stiffness: 400, damping: 25 }}
-              className="relative flex flex-col items-center py-8"
+              className="relative flex flex-col items-center px-6 py-8"
             >
               <DialogTitle className="sr-only">Pagamento registrado</DialogTitle>
               <ConfettiBurst />
@@ -319,7 +319,9 @@ export function PixQrModal({
               key="form"
               initial={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              className="flex min-h-0 flex-1 flex-col"
             >
+              <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 overscroll-contain" data-testid="pix-qr-body">
               <div className="text-center">
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
@@ -455,7 +457,18 @@ export function PixQrModal({
                 )}
               </motion.div>
 
-              <div className="mt-5 space-y-2.5">
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Shield className="h-3 w-3" />
+                  <span>
+                    {copiaECola
+                      ? "Lê o QR code ou copia o código e cola no app do banco."
+                      : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
+                  </span>
+                </div>
+              </div>
+
+              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+                <div className="space-y-2.5">
                 <Button
                   onClick={handleCopy}
                   variant="outline"
@@ -501,15 +514,7 @@ export function PixQrModal({
                     </>
                   )}
                 </Button>
-              </div>
-
-              <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-                <Shield className="h-3 w-3" />
-                <span>
-                  {copiaECola
-                    ? "Lê o QR code ou copia o código e cola no app do banco."
-                    : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
-                </span>
+                </div>
               </div>
             </motion.div>
           )}

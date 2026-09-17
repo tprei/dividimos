@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useClientOnly } from "@/hooks/use-client-only";
@@ -136,14 +137,17 @@ export function GuestInviteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <DialogTitle className="text-lg font-bold">
-          Convidar {guest.displayName}
-        </DialogTitle>
-        <DialogDescription>
-          Parte de {formatBRL(shareCents)} em {expenseTitle}
-        </DialogDescription>
-        <div className="grid gap-2">
+      <DialogContent>
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-lg font-bold">
+            Convidar {guest.displayName}
+          </DialogTitle>
+          <DialogDescription>
+            Parte de {formatBRL(shareCents)} em {expenseTitle}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid gap-2">
           {claimUrl && (
             <p className="break-all font-mono text-xs text-muted-foreground">
               {claimUrl}
@@ -259,6 +263,7 @@ export function GuestInviteDialog({
               Revogar link
             </Button>
           )}
+        </div>
         </div>
       </DialogContent>
     </Dialog>

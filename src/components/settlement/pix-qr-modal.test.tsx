@@ -422,4 +422,50 @@ describe("PixQrModal", () => {
       );
     });
   });
+  it("renders a visible close button while idle and dismissible", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} />);
+
+    expect(screen.getByRole("button", { name: /fechar|close/i })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="dialog-close"]')).toBeInTheDocument();
+  });
+
+  it("hides the close button and shows Registrando... while settling", async () => {
+    const onMarkPaid = vi.fn().mockImplementation(() => new Promise(() => {}));
+    render(<PixQrModal {...defaultPropsWithPixKey} onMarkPaid={onMarkPaid} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Já paguei/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Registrando...")).toBeInTheDocument();
+    });
+
+    expect(document.querySelector('[data-slot="dialog-close"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /fechar|close/i })).not.toBeInTheDocument();
+  });
+
+  it("hides the modal close button in success state and fires onClose on Fechar", async () => {
+    const onClose = vi.fn();
+    const onMarkPaid = vi.fn().mockResolvedValue(undefined);
+    render(
+      <PixQrModal
+        {...defaultPropsWithPixKey}
+        onClose={onClose}
+        onMarkPaid={onMarkPaid}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Já paguei/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Pagamento registrado!")).toBeInTheDocument();
+    });
+
+    expect(document.querySelector('[data-slot="dialog-close"]')).not.toBeInTheDocument();
+
+    const fecharButton = screen.getByRole("button", { name: "Fechar" });
+    expect(fecharButton).toBeInTheDocument();
+    fireEvent.click(fecharButton);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

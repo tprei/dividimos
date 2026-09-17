@@ -94,11 +94,12 @@ export function CounterpartyDialog({
         }}
         modal
       >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl bg-card p-5">
+        <DialogContent className="rounded-3xl bg-card p-5">
           <DialogTitle className="pr-8 text-lg font-bold">{row.counterpartyName}</DialogTitle>
           <DialogDescription>
             {group} · {direction} {formatBRL(row.amountCents)}
           </DialogDescription>
+          <div className="min-h-0 flex-1 overflow-y-auto">
           {row.counterpartyKind === "guest" ? (
             <div className="flex flex-col items-center">
               <GuestBadge />
@@ -154,6 +155,7 @@ export function CounterpartyDialog({
               )}
             </div>
           )}
+          </div>
         </DialogContent>
       </Dialog>
       {inviteTarget && (

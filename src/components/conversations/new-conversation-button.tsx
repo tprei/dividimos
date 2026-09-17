@@ -141,10 +141,11 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent>
+          <DialogHeader className="shrink-0">
             <DialogTitle>Nova conversa</DialogTitle>
           </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto">
 
           <div className="mt-2">
             <div className="flex items-center gap-1.5 rounded-lg border border-input bg-transparent px-2.5">
@@ -251,6 +252,7 @@ export function NewConversationButton({ inline = false }: { inline?: boolean }) 
             <Button variant="outline" className="w-full" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
+          </div>
           </div>
         </DialogContent>
       </Dialog>

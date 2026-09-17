@@ -82,7 +82,7 @@ describe("Dialog back-handler integration", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
-  it("does not claim the back event when dismissable=false (returns false)", () => {
+  it("claims the back event when dismissable=false (returns true)", () => {
     const onOpenChange = vi.fn();
 
     render(<Dialog open={true} onOpenChange={onOpenChange} dismissable={false} />);
@@ -92,7 +92,8 @@ describe("Dialog back-handler integration", () => {
       claimed = runBackHandlers();
     });
 
-    expect(claimed!).toBe(false);
+    expect(claimed!).toBe(true);
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 });
 

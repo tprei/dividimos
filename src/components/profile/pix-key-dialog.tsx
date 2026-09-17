@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -115,10 +116,13 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <DialogTitle className="text-lg font-bold">Chave Pix</DialogTitle>
-        <DialogDescription>Usada para receber pagamentos.</DialogDescription>
-        <div className="grid gap-4">
+      <DialogContent>
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-lg font-bold">Chave Pix</DialogTitle>
+          <DialogDescription>Usada para receber pagamentos.</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid gap-4">
           <div className="grid gap-2">
             <span id="pix-type-label" className="text-sm font-medium">
               Tipo
@@ -183,6 +187,7 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
           >
             {isSaving ? "Salvando..." : "Salvar"}
           </Button>
+        </div>
         </div>
       </DialogContent>
     </Dialog>
