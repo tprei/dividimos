@@ -92,7 +92,7 @@ function NavBar() {
                   whileTap={{ scale: 0.92 }}
                   className="gradient-primary flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
                 >
-                  <item.icon className="h-6 w-6 text-primary-foreground" strokeWidth={2.5} />
+                  <item.icon className="h-6 w-6 text-gradient-foreground" strokeWidth={2.5} />
                 </motion.div>
                 <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
               </Link>

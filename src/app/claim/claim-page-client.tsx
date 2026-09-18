@@ -197,7 +197,7 @@ export function ClaimPageClient() {
       ) : preview.kind === "sign_in_required" ? (
         <div className="flex flex-col items-center rounded-2xl border bg-card p-8 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <LogIn className="h-6 w-6 text-primary" />
+            <LogIn className="h-6 w-6 text-primary-text" />
           </div>
           <h1 className="mt-4 text-lg font-bold">Entre para confirmar</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -228,20 +228,20 @@ export function ClaimPageClient() {
         </div>
       ) : (
         <>
-          <div className="rounded-2xl gradient-primary p-5 text-white shadow-lg shadow-primary/20">
-            <div className="flex items-center gap-2 text-white/70">
+          <div className="rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
+            <div className="flex items-center gap-2 text-gradient-foreground/80">
               <Receipt className="h-4 w-4" />
               <p className="text-sm">{preview.expenseTitle}</p>
             </div>
             <p className="mt-2 text-3xl font-bold tabular-nums">
               {formatBRL(preview.shareCents)}
             </p>
-            <p className="mt-1 text-sm text-white/70">Sua parte na conta</p>
+            <p className="mt-1 text-sm text-gradient-foreground/80">Sua parte na conta</p>
           </div>
 
           <div className="mt-5 rounded-2xl border bg-card p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary-text">
                 {preview.groupName.charAt(0) || "G"}
               </div>
               <div>

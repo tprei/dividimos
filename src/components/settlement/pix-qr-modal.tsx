@@ -325,7 +325,7 @@ export function PixQrModal({
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-white shadow-lg shadow-primary/20"
+                  className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-gradient-foreground shadow-lg shadow-primary/20"
                 >
                   <QrCode className="h-7 w-7" />
                 </motion.div>
@@ -340,7 +340,7 @@ export function PixQrModal({
                 <div className="mt-3">
                   {editingAmount ? (
                     <label
-                      className="flex items-center justify-center gap-1 text-3xl font-bold tabular-nums text-primary"
+                      className="flex items-center justify-center gap-1 text-3xl font-bold tabular-nums text-primary-text"
                       onBlur={commitAmount}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === "Escape") commitAmount();
@@ -354,7 +354,7 @@ export function PixQrModal({
                         maxCents={amountCents}
                         onChangeCents={setPaymentCents}
                         aria-label="Editar valor"
-                        className="h-12 w-40 text-3xl font-bold text-primary"
+                        className="h-12 w-40 text-3xl font-bold text-primary-text"
                       />
                     </label>
                   ) : (

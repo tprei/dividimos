@@ -445,12 +445,12 @@ export function QuickChargeModal({
                       stiffness: 400,
                       damping: 20,
                     }}
-                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-white shadow-lg shadow-primary/20"
+                    className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-gradient-foreground shadow-lg shadow-primary/20"
                   >
                     <QrCode className="h-7 w-7" />
                   </motion.div>
                   <h2 className="mt-4 text-lg font-bold">Cobrar via Pix</h2>
-                  <p className="mt-1 text-3xl font-bold tabular-nums text-primary">
+                  <p className="mt-1 text-3xl font-bold tabular-nums text-primary-text">
                     {formatBRL(amountCents)}
                   </p>
                   {description && (

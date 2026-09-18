@@ -50,6 +50,7 @@
   --color-income-foreground: var(--income-foreground);
   --color-overdue: var(--overdue);
   --color-overdue-foreground: var(--overdue-foreground);
+  --color-gradient-foreground: var(--gradient-foreground);
   --color-surface: var(--surface);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -101,6 +102,8 @@
   --gradient-primary-end: oklch(0.68 0.17 65);
   --gradient-income-end: oklch(0.62 0.17 145);
   --gradient-warm-end: oklch(0.65 0.2 45);
+  /* Text on gradient hero surfaces: white in both themes, matching the theme-independent end stops. */
+  --gradient-foreground: oklch(0.99 0 0);
 
   --overdue: oklch(0.56 0.24 350);
   --overdue-foreground: oklch(0.99 0 0);
