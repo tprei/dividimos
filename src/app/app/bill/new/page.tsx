@@ -14,11 +14,9 @@ import { ScanSkeletonLoader } from "@/components/bill/scan-skeleton-loader";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
-import { getOrCreateDm } from "@/lib/sync/mutations-group";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
-import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
 import { useBillStore } from "@/stores/bill-store";
 import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
@@ -30,7 +28,7 @@ import type { GroupSnapshot, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
 import { selectDraftForType, useWizardInit } from "./use-wizard-init";
 import { parseWizardModes, type Step } from "./wizard-modes";
-import { todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
+import { planGroup, todayIsoDate, useWizardSubmit } from "./use-wizard-submit";
 
 const TypeStep = dynamic(
   () => import("@/components/bill/wizard/type-step").then((m) => ({ default: m.TypeStep })),
@@ -84,7 +82,7 @@ function NewBillPageContent() {
 
   const [billType, setBillType] = useState<ExpenseType | null>(null);
   const [step, setStep] = useState<Step>("type");
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [createGroupEnabled, setCreateGroupEnabled] = useState(true);
   const [createGroupName, setCreateGroupName] = useState("");
@@ -92,19 +90,19 @@ function NewBillPageContent() {
   const hasContactPicker = useClientOnly(isContactPickerSupported);
   const [isDmMode, setIsDmMode] = useState(false);
   const [reviewingScan, setReviewingScan] = useState(false);
-
   useEffect(() => {
     if (!useBillStore.getState().occurredOn) {
       useBillStore.getState().setOccurredOn(todayIsoDate());
     }
   }, []);
 
+  const selectedGroupId = store.expense ? (store.expense.groupId || null) : pendingGroupId;
+
   useWizardInit({
     modes,
     me,
     step,
-    selectedGroupId,
-    onSetSelectedGroupId: setSelectedGroupId,
+    onSetPendingGroupId: setPendingGroupId,
     onSetBillType: setBillType,
     onSetStep: setStep,
     onSetIsEditing: setIsEditing,
@@ -210,15 +208,14 @@ function NewBillPageContent() {
     if (me) {
       const billStore = useBillStore.getState();
       billStore.setCurrentUser(meToLegacyUser(me));
-      selectDraftForType(billStore, type, selectedGroupId);
+      selectDraftForType(billStore, type, pendingGroupId);
+      setPendingGroupId(null);
     }
     setStep("info");
-  }, [me, selectedGroupId]);
-
+  }, [me, pendingGroupId]);
   const handleScanConfirm = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     setBillType("itemized");
     const billStore = useBillStore.getState();
-    if (scanGroup) setSelectedGroupId(scanGroup.group.id);
     if (me) {
       billStore.setCurrentUser(meToLegacyUser(me));
       if (!billStore.expense) {
@@ -299,9 +296,13 @@ function NewBillPageContent() {
 
   const handleSelectGroup = useCallback(
     (groupId: string | null) => {
-      setSelectedGroupId(groupId);
       const billStore = useBillStore.getState();
-      billStore.updateExpense({ groupId: groupId ?? "" });
+      if (billStore.expense) {
+        billStore.updateExpense({ groupId: groupId ?? "" });
+        setPendingGroupId(null);
+      } else {
+        setPendingGroupId(groupId);
+      }
       for (const p of [...billStore.participants]) {
         if (p.id !== me?.id) billStore.removeParticipant(p.id);
       }
@@ -316,41 +317,15 @@ function NewBillPageContent() {
     [me],
   );
 
-  const planGroup = useCallback(async (): Promise<GroupPlan> => {
-    if (selectedGroupId) return { kind: "existing", groupId: selectedGroupId };
-    if (!me) return { kind: "invalid" };
-    const state = useBillStore.getState();
-    const otherParticipants = state.participants.filter((participant) => participant.id !== me.id);
-    const hasGuests = state.guests.length > 0;
-    const needsGroup = otherParticipants.length > 0 || hasGuests;
-    if (!needsGroup) return { kind: "none" };
-    if (otherParticipants.length === 1 && !hasGuests) {
-      try {
-        const dm = await getOrCreateDm(otherParticipants[0].id);
-        setSelectedGroupId(dm.groupId);
-        useBillStore.getState().updateExpense({ groupId: dm.groupId });
-        return { kind: "existing", groupId: dm.groupId };
-      } catch (error) {
-        toast.error(ledgerErrorMessage(error));
-        return { kind: "invalid" };
-      }
-    }
-    if (!createGroupEnabled) {
-      toast.error("Escolha um grupo existente ou deixe \"Criar grupo\" marcado.");
-      return { kind: "invalid" };
-    }
-    // Described, not created: the submit writes the group with the bill.
-    return {
-      kind: "create",
-      name: createGroupName.trim() || defaultGroupName || "Novo grupo",
-      memberIds: otherParticipants.map((participant) => participant.id),
-    };
-  }, [selectedGroupId, me, createGroupEnabled, createGroupName, defaultGroupName]);
-
   const submitItemized = useCallback(async (): Promise<boolean> => {
     if (!me) return false;
-    return submit(planGroup);
-  }, [me, planGroup, submit]);
+    return submit(() => planGroup({
+      meId: me.id,
+      createGroupEnabled,
+      createGroupName,
+      defaultGroupName,
+    }));
+  }, [me, submit, createGroupEnabled, createGroupName, defaultGroupName]);
 
   const goBack = () => {
     if (isDmMode && modes.dm) {
@@ -363,11 +338,9 @@ function NewBillPageContent() {
     }
     setStep("type");
     setBillType(null);
-    setSelectedGroupId(null);
     setCreateGroupEnabled(true);
     setCreateGroupName("");
   };
-
   if (!mounted || !me) {
     return (
       <div className="mx-auto max-w-lg px-4 py-6" aria-busy="true">
@@ -422,7 +395,7 @@ function NewBillPageContent() {
       <SingleBillForm
         me={me}
         groups={groupSnapshots}
-        initialGroupId={selectedGroupId ?? (store.expense?.groupId || null)}
+        initialGroupId={selectedGroupId}
         isDmMode={isDmMode}
         isEditing={isEditing}
         hasContactPicker={hasContactPicker}
@@ -483,7 +456,7 @@ function NewBillPageContent() {
             createGroup: { enabled: createGroupEnabled, name: createGroupName },
             onToggleCreateGroup: setCreateGroupEnabled,
             onCreateGroupName: setCreateGroupName,
-            onSelectGroup: setSelectedGroupId,
+            onSelectGroup: handleSelectGroup,
             onAddParticipant: (profile) => useBillStore.getState().addParticipant(profileToUser(profile)),
             onRemoveParticipant: (id) => useBillStore.getState().removeParticipant(id),
             onAddGuest: (name, phone) => useBillStore.getState().addGuest(name, phone),

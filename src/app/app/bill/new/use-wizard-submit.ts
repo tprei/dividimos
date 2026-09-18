@@ -4,7 +4,7 @@ import { createElement, useCallback, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { buildExpensePayload } from "@/lib/ledger/payload";
 import { createExpense, createExpenseWithGroup, editExpense } from "@/lib/sync/mutations";
-import { inviteMember } from "@/lib/sync/mutations-group";
+import { getOrCreateDm, inviteMember } from "@/lib/sync/mutations-group";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import type { GroupPlan } from "@/components/bill/single-bill/use-group-resolution";
@@ -41,13 +41,49 @@ function payloadIssueMessage(issue: { code: string }): string {
   }
   return "Confira os valores da conta";
 }
-
 export interface WizardSubmitInput {
   router: { push: (url: string) => void };
   editExpenseId: string | null;
   expectedVersionNo: number | null;
   /** Re-fetches the detail and re-hydrates the wizard after a stale_version. */
   onStaleReload: () => Promise<void>;
+}
+
+export interface GroupPlanInput {
+  meId: string | null;
+  createGroupEnabled: boolean;
+  createGroupName: string;
+  defaultGroupName: string;
+}
+
+export async function planGroup(input: GroupPlanInput): Promise<GroupPlan> {
+  const currentGroupId = useBillStore.getState().expense?.groupId;
+  if (currentGroupId) return { kind: "existing", groupId: currentGroupId };
+  if (!input.meId) return { kind: "invalid" };
+  const state = useBillStore.getState();
+  const otherParticipants = state.participants.filter((participant) => participant.id !== input.meId);
+  const hasGuests = state.guests.length > 0;
+  const needsGroup = otherParticipants.length > 0 || hasGuests;
+  if (!needsGroup) return { kind: "none" };
+  if (otherParticipants.length === 1 && !hasGuests) {
+    try {
+      const dm = await getOrCreateDm(otherParticipants[0].id);
+      useBillStore.getState().updateExpense({ groupId: dm.groupId });
+      return { kind: "existing", groupId: dm.groupId };
+    } catch (error) {
+      toast.error(ledgerErrorMessage(error));
+      return { kind: "invalid" };
+    }
+  }
+  if (!input.createGroupEnabled) {
+    toast.error("Escolha um grupo existente ou deixe \"Criar grupo\" marcado.");
+    return { kind: "invalid" };
+  }
+  return {
+    kind: "create",
+    name: input.createGroupName.trim() || input.defaultGroupName || "Novo grupo",
+    memberIds: otherParticipants.map((participant) => participant.id),
+  };
 }
 
 export function useWizardSubmit({

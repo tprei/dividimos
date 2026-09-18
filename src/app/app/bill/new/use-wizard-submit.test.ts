@@ -4,12 +4,16 @@ import type { ReactElement } from "react";
 import { useBillStore } from "@/stores/bill-store";
 import { userAlice, userBob } from "@/test/fixtures";
 import { LedgerError } from "@/lib/sync/errors";
-import { useWizardSubmit } from "./use-wizard-submit";
+import { planGroup, useWizardSubmit } from "./use-wizard-submit";
 
 const { mockCreateExpense, mockCreateExpenseWithGroup, mockEditExpense } = vi.hoisted(() => ({
   mockCreateExpense: vi.fn(),
   mockCreateExpenseWithGroup: vi.fn(),
   mockEditExpense: vi.fn(),
+}));
+
+const { mockGetOrCreateDm } = vi.hoisted(() => ({
+  mockGetOrCreateDm: vi.fn(),
 }));
 
 vi.mock("@/lib/sync/mutations", () => ({
@@ -18,6 +22,9 @@ vi.mock("@/lib/sync/mutations", () => ({
   editExpense: mockEditExpense,
 }));
 
+vi.mock("@/lib/sync/mutations-group", () => ({
+  getOrCreateDm: mockGetOrCreateDm,
+}));
 const mockToast = vi.hoisted(() => ({
   error: vi.fn(),
   custom: vi.fn(),
@@ -347,5 +354,18 @@ describe("useWizardSubmit", () => {
     // The draft survives with its client id, so a retry is the same write.
     expect(useBillStore.getState().draftKey).toBe(draftKey);
     expect(useBillStore.getState().expense?.title).toBe("Jantar");
+  });
+
+  it("planGroup targets store expense.groupId without DM auto-targeting when 1 counterparty is present", async () => {
+    setupValidSingleExpense();
+    useBillStore.getState().updateExpense({ groupId: "group-praia" });
+    const plan = await planGroup({
+      meId: userAlice.id,
+      createGroupEnabled: true,
+      createGroupName: "",
+      defaultGroupName: "",
+    });
+    expect(plan).toEqual({ kind: "existing", groupId: "group-praia" });
+    expect(mockGetOrCreateDm).not.toHaveBeenCalled();
   });
 });

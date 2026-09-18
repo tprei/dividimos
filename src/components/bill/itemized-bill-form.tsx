@@ -95,6 +95,7 @@ export function ItemizedBillForm({
     serviceFeeText(store.expense?.serviceFeeBasisPoints ?? 0),
   );
   const [amountInputs, setAmountInputs] = useState<Record<string, string>>({});
+  const [pickerSentinel, setPickerSentinel] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const focusTitlePending = useRef(false);
 
@@ -148,12 +149,14 @@ export function ItemizedBillForm({
     onExpandItem: setExpandedId,
   });
 
-  const [groupSelection, setGroupSelection] = useState<string | null>(selectedGroupId);
   const handleGroupSelect = (value: string | null) => {
-    setGroupSelection(value);
-    const groupId = value === "create" || value === "dm" ? null : value;
-    onSelectGroup(groupId);
-    store.updateExpense({ groupId: groupId ?? "" });
+    if (value === "create" || value === "dm") {
+      setPickerSentinel(value);
+      onSelectGroup(null);
+      return;
+    }
+    setPickerSentinel(null);
+    onSelectGroup(value);
   };
 
   const handleAmountChange = (itemId: string, text: string) => {
@@ -216,10 +219,10 @@ export function ItemizedBillForm({
         store={store}
         expense={expense}
         occurredOn={occurredOn}
-        groupValue={selectedGroupId ?? groupSelection}
+        groupValue={selectedGroupId ?? pickerSentinel}
+        titleRef={titleRef}
         dmEligible={dmEligible}
         accountReady={accountReady}
-        titleRef={titleRef}
         section={section}
         onSectionChange={setSection}
         amountInputs={amountInputs}
