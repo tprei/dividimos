@@ -248,14 +248,20 @@ export async function notify(report, ctx) {
   async function updateBoard() {
     const chat = await call("getChat", {});
     const pinned = chat?.pinned_message;
-    const pinnedText = pinned?.caption ?? pinned?.text ?? "";
-    const isOurs = typeof pinned?.message_id === "number" && pinnedText.includes(BOARD_MARK);
+    const pinnedCaption = pinned?.caption ?? pinned?.text ?? "";
+    const isOurs = typeof pinned?.message_id === "number" && pinnedCaption.includes(BOARD_MARK);
     const entities = pinned?.caption_entities ?? pinned?.entities ?? [];
     const link = entities.find((entity) => entity.type === "text_link");
     const pinnedIds = isOurs ? parseBoardIds(link?.url) : [];
-    const expected = Math.max(boardShots.length, 1);
+    // A photo board carries its text in caption, a text board in text. Editing
+    // across those kinds is refused by Telegram, so a run that switches kind
+    // (the web smoke captured nothing, or captured a different number of
+    // screens) posts a fresh board instead of provoking a 400 first.
+    const pinnedIsPhoto = typeof pinned?.caption === "string";
+    const wantsPhoto = boardShots.length > 0;
+    const sameKind = isOurs && pinnedIsPhoto === wantsPhoto;
 
-    if (isOurs && pinnedIds.length === expected) {
+    if (sameKind && pinnedIds.length === Math.max(boardShots.length, 1)) {
       try {
         await editBoard(pinnedIds);
         return;

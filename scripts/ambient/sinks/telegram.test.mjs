@@ -67,12 +67,15 @@ function greenReport(paths, diary = ["Ana paid R$ 87,40 for \"Churrasco\", split
   };
 }
 
+// A board pinned by an earlier run. A photo board keeps its text in caption
+// with caption_entities, a text board in text with entities, which is how the
+// sink tells the two kinds apart.
 function ourBoard(report, ids) {
-  return {
-    message_id: ids[0],
-    caption: boardText(report, now, ids),
-    caption_entities: [{ type: "text_link", url: `${report.runUrl}#board=${ids.join(",")}` }],
-  };
+  const text = boardText(report, now, ids);
+  const entity = { type: "text_link", url: `${report.runUrl}#board=${ids.join(",")}` };
+  return report.screenshots.length > 0
+    ? { message_id: ids[0], caption: text, caption_entities: [entity] }
+    : { message_id: ids[0], text, entities: [entity] };
 }
 
 test("parseBoardIds reads the ids the board hid in its run link", () => {
@@ -135,6 +138,45 @@ test("an unchanged photo keeps the board instead of reposting it", async () => {
     assert.deepEqual(
       tg.calls.map((c) => c.method),
       ["getChat", "editMessageMedia", "editMessageMedia", "editMessageMedia"],
+    );
+  } finally {
+    png.dispose();
+  }
+});
+
+test("a run without screenshots replaces a photo board instead of editing it", async () => {
+  const report = greenReport([]);
+  // A photo board keeps its text in caption; editMessageText on it is refused,
+  // so the kind change has to be noticed before the call, not after.
+  const tg = fakeTelegram({
+    pinned: {
+      message_id: 901,
+      caption: boardText(report, now, [901]),
+      caption_entities: [{ type: "text_link", url: "https://ci/r/8#board=901" }],
+    },
+  });
+  await notify(report, { env, openIssue: null, fetch: tg.fetch, now });
+  assert.deepEqual(
+    tg.calls.map((c) => c.method),
+    ["getChat", "sendMessage", "editMessageText", "pinChatMessage"],
+  );
+});
+
+test("a run with screenshots replaces a text board instead of editing it", async () => {
+  const png = tempPngs(2);
+  try {
+    const report = greenReport(png.paths);
+    const tg = fakeTelegram({
+      pinned: {
+        message_id: 901,
+        text: boardText({ ...report, screenshots: [] }, now, [901]),
+        entities: [{ type: "text_link", url: "https://ci/r/8#board=901" }],
+      },
+    });
+    await notify(report, { env, openIssue: null, fetch: tg.fetch, now });
+    assert.deepEqual(
+      tg.calls.map((c) => c.method),
+      ["getChat", "sendMediaGroup", "editMessageCaption", "pinChatMessage"],
     );
   } finally {
     png.dispose();
