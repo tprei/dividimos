@@ -1,4 +1,6 @@
 import { useAppStore } from "@/stores/app-store";
+import { useBillStore } from "@/stores/bill-store";
+import { archiveCurrentDraft, restoreAccountDraft } from "@/lib/bill-draft-isolation";
 import { runBootstrap } from "./bootstrap";
 import {
   advanceAuthGeneration,
@@ -31,6 +33,8 @@ export function attachAuthListener(
     if (disposed) return;
     if (event === "SIGNED_OUT") {
       const signedOutUserId = priorUserId();
+      archiveCurrentDraft(signedOutUserId);
+      useBillStore.getState().reset();
       observedUserId = null;
       advanceAuthGeneration();
       invalidateNativeRegistration();
@@ -56,11 +60,19 @@ export function attachAuthListener(
       return;
     }
 
+    const previousUserId = priorUserId();
     observedUserId = nextUserId;
     advanceAuthGeneration();
     invalidateNativeRegistration();
     invalidateSyncReads();
     clearPendingVendorChargeCancellations();
+    archiveCurrentDraft(previousUserId);
+    useBillStore.getState().reset();
+    restoreAccountDraft(nextUserId);
+    // The archived payload was written to the persist key by hand; pull it into
+    // the in-memory store so the first mutation does not overwrite it with the
+    // just-reset state.
+    void useBillStore.persist.rehydrate();
     useAppStore.getState().reset();
     runBootstrap().catch(onError);
   });

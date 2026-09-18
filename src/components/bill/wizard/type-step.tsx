@@ -107,6 +107,7 @@ export function TypeStep({
   useLayoutEffect(() => {
     if (!accountChanged) return;
     resetScanState();
+    setVoiceResult(null);
     setShowScanner(false);
   }, [accountChanged, resetScanState]);
 

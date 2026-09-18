@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { GroupSnapshot, Me } from "@/types/ledger";
-import { selectDraftForType, useWizardInit } from "./use-wizard-init";
+import { ensureDraftOwnedBy, selectDraftForType, useWizardInit } from "./use-wizard-init";
+import { setDraftOwner } from "@/lib/bill-draft-isolation";
 
 vi.mock("react-hot-toast", () => ({ default: { error: vi.fn() } }));
 vi.mock("@/lib/sync/refresh", () => ({ refreshExpense: vi.fn() }));
@@ -164,6 +165,27 @@ describe("useWizardInit chat actors", () => {
     const participantIds = useBillStore.getState().participants.map((p) => p.id);
     expect(participantIds).toContain(other.id);
     expect(useBillStore.getState().expense).not.toBeNull();
+  });
+});
+
+describe("draft ownership", () => {
+  it("resets the live draft when another account owns the persisted one", () => {
+    const store = useBillStore.getState();
+    store.setCurrentUser({
+      id: "user-a",
+      email: "a@example.com",
+      handle: "alice",
+      name: "Alice",
+      pixKeyType: "email",
+      pixKeyHint: "",
+      onboarded: true,
+      createdAt: "",
+    });
+    store.createExpense("Churrasco", "itemized");
+    setDraftOwner("user-a");
+
+    ensureDraftOwnedBy("user-b");
+    expect(useBillStore.getState().expense).toBeNull();
   });
 });
 

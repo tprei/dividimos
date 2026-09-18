@@ -7,6 +7,7 @@ import { refreshExpense } from "@/lib/sync/refresh";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
+import { getDraftOwner, setDraftOwner } from "@/lib/bill-draft-isolation";
 import type { ExpenseDetail, Me, UserProfile } from "@/types/ledger";
 import type { ExpenseType, User } from "@/types";
 import type { Step, WizardModes } from "./wizard-modes";
@@ -90,6 +91,16 @@ export interface WizardInitInput {
   onSetStep: (step: Step) => void;
   onSetIsEditing: (isEditing: boolean) => void;
   onSetIsDmMode: (isDm: boolean) => void;
+}
+
+
+export function ensureDraftOwnedBy(meId: string | null): void {
+  if (meId === null) return;
+  if (getDraftOwner() === meId) return;
+  if (useBillStore.getState().expense !== null) {
+    useBillStore.getState().reset();
+  }
+  setDraftOwner(meId);
 }
 
 export function useWizardInit({
