@@ -8,6 +8,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -15,7 +16,7 @@ const me: Me = {
   notificationPreferences: {},
 };
 
-const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
+const carol = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
 
 function snapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {
   const base: GroupSnapshot = {
