@@ -32,12 +32,15 @@ export function TransferRow({
 }: TransferRowProps) {
   const pendingCounterparty =
     (transfer.fromId === meId && to.isPending) || (transfer.toId === meId && from.isPending);
-  const iPay = transfer.fromId === meId && !to.isPending;
+  const guestInvolved = from.isGuest || to.isGuest;
+  const iPay = transfer.fromId === meId && !to.isPending && !guestInvolved;
   const iReceive = transfer.toId === meId && transfer.fromKind === "user" && !from.isPending;
   const actionable = iPay || iReceive;
   let statusLabel = "Outro acerto";
   if (iPay) statusLabel = "Você paga";
   else if (iReceive) statusLabel = "Cobrar";
+  else if (guestInvolved && (transfer.fromId === meId || transfer.toId === meId))
+    statusLabel = "Combinar fora do app";
   else if (pendingCounterparty) statusLabel = "Aguardando o convite";
   const rowLabel = `${statusLabel}: ${from.name} paga ${formatBRL(transfer.amountCents)} para ${to.name}`;
   const content = (

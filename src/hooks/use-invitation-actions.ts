@@ -9,8 +9,8 @@ import {
 } from "@/lib/sync/mutations-group";
 
 export interface InvitationActions {
-  accept: (groupId: string) => Promise<void>;
-  decline: (groupId: string) => Promise<void>;
+  accept: (groupId: string) => Promise<boolean>;
+  decline: (groupId: string) => Promise<boolean>;
   pendingGroupId: string | null;
 }
 
@@ -22,8 +22,10 @@ export function useInvitationActions(): InvitationActions {
     try {
       await acceptInvitation(groupId);
       toast.success("Convite aceito");
+      return true;
     } catch (err) {
       toast.error(ledgerErrorMessage(err));
+      return false;
     } finally {
       setPendingGroupId(null);
     }
@@ -34,8 +36,10 @@ export function useInvitationActions(): InvitationActions {
     try {
       await declineInvitation(groupId);
       toast.success("Convite recusado");
+      return true;
     } catch (err) {
       toast.error(ledgerErrorMessage(err));
+      return false;
     } finally {
       setPendingGroupId(null);
     }

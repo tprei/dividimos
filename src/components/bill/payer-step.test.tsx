@@ -98,4 +98,25 @@ describe("PayerStep percentage mode", () => {
     expect(screen.queryByText("R$\u00a050,00")).not.toBeInTheDocument();
     expect(screen.getAllByText("—")).toHaveLength(participants.length);
   });
+
+  it("renders explainer when hasGuests is true", () => {
+    render(
+      <PayerStep
+        participants={participants}
+        payers={[{ userId: "a", amountCents: 10000 }]}
+        grandTotal={10000}
+        onSetPayerFull={vi.fn()}
+        onSplitPaymentEqually={vi.fn()}
+        onSetPayerAmount={vi.fn()}
+        onRemovePayerEntry={vi.fn()}
+        hasGuests={true}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Convidados não podem pagar a conta. Escolhe alguém com conta no Dividimos.",
+      ),
+    ).toBeInTheDocument();
+  });
 });

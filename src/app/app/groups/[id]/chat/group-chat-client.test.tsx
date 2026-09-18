@@ -24,9 +24,19 @@ vi.mock("react-hot-toast", () => ({
   default: { error: vi.fn() },
 }));
 
+const mockPush = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: vi.fn(), push: mockPush }),
   useParams: () => ({ id: "group-1" }),
+}));
+
+const mockAccept = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/hooks/use-invitation-actions", () => ({
+  useInvitationActions: () => ({
+    accept: mockAccept,
+    decline: vi.fn(),
+    pendingGroupId: null,
+  }),
 }));
 
 vi.mock("next/link", () => ({
@@ -210,5 +220,36 @@ describe("GroupChatClient", () => {
       expect(screen.getByRole("link", { name: "Ver grupo" })).toBeInTheDocument();
     });
     expect(mutations.markRead).not.toHaveBeenCalled();
+  });
+  it("renders pending membership gate and action buttons when user is not accepted", () => {
+    const snapshot = makeSnapshot({
+      members: [
+        {
+          groupId: "group-1",
+          userId: me.id,
+          status: "invited",
+          invitedBy: null,
+          acceptedAt: null,
+          user: me,
+        },
+      ],
+    });
+    seed(snapshot);
+
+    render(<GroupChatClient groupId="group-1" />);
+    expect(
+      screen.getByText("Aceite o convite do grupo para participar da conversa."),
+    ).toBeInTheDocument();
+
+    const acceptBtn = screen.getByRole("button", { name: "Aceitar convite" });
+    const backBtn = screen.getByRole("button", { name: "Voltar ao grupo" });
+    expect(acceptBtn).toBeInTheDocument();
+    expect(backBtn).toBeInTheDocument();
+
+    fireEvent.click(acceptBtn);
+    expect(mockAccept).toHaveBeenCalledWith("group-1");
+
+    fireEvent.click(backBtn);
+    expect(mockPush).toHaveBeenCalledWith("/app/groups/group-1");
   });
 });

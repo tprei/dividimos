@@ -287,7 +287,36 @@ describe("GroupSettlementView", () => {
     expect(within(guestRow).queryByText("@bruno")).not.toBeInTheDocument();
     expect(screen.getByText("Convidado")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Cobrar/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Outro acerto")).toBeInTheDocument();
+    expect(screen.getByText("Combinar fora do app")).toBeInTheDocument();
+    expect(guestRow.tagName.toLowerCase()).toBe("div");
+  });
+
+  it("renders guest creditor rows as non-clickable 'Combinar fora do app'", () => {
+    const guestSnapshot = snapshot({
+      members: [
+        member("user-3", "carlos", "Carlos Souza"),
+      ],
+      balances: [
+        { kind: "user", participantId: "user-3", netCents: -4000 },
+        { kind: "guest", participantId: "guest-1", netCents: 4000 },
+      ],
+      guests: [{ id: "guest-1", displayName: "Bruno", expenseId: "e1" }],
+      pairwiseEdges: [
+        { fromKind: "user", fromId: "user-3", toId: "guest-1", amountCents: 4000 },
+      ],
+    });
+    seed(guestSnapshot, "user-3");
+
+    render(
+      <GroupSettlementView groupId={groupId} snapshot={guestSnapshot} meId="user-3" />,
+    );
+
+    const guestRow = document.getElementById("transfer-user-3-guest-1")!;
+    expect(within(guestRow).getByText("Bruno")).toBeInTheDocument();
+    expect(screen.getByText("Convidado")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Você paga/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Combinar fora do app")).toBeInTheDocument();
+    expect(guestRow.tagName.toLowerCase()).toBe("div");
   });
 
   it("selecting a graph edge highlights and announces the matching transfer row", async () => {

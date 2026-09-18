@@ -188,6 +188,12 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
           </motion.div>
         ))}
 
+        {snapshot.members.some((m) => m.status === "invited") && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Pendente: a pessoa foi convidada, mas ainda não aceitou. Enquanto o convite está pendente, ela não participa da conversa.
+          </p>
+        )}
+
         {snapshot.guests.length > 0 && (
           <div className="pt-2">
             <div className="space-y-2">
@@ -221,6 +227,9 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
                 </div>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Convidados são pessoas sem conta no Dividimos. Elas recebem um link para confirmar a participação e ver a parte delas; não podem pagar ou ser marcadas como pagadoras no app.
+            </p>
           </div>
         )}
 

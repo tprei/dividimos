@@ -174,6 +174,7 @@ export function SingleBillForm({
             payers={store.payers}
             hasPayer={hasPayer}
             onPayerSelect={store.setPayerFull}
+            hasGuests={store.guests.length > 0}
           />
           <SingleBillDivision
             totalCents={totalCents}

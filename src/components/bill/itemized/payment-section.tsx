@@ -11,6 +11,7 @@ export interface PaymentSectionProps {
   onSplitPaymentEqually: (userIds: string[]) => void;
   onSetPayerAmount: (userId: string, amountCents: number) => void;
   onRemovePayerEntry: (userId: string) => void;
+  hasGuests?: boolean;
 }
 
 export function PaymentSection({
@@ -21,6 +22,7 @@ export function PaymentSection({
   onSplitPaymentEqually,
   onSetPayerAmount,
   onRemovePayerEntry,
+  hasGuests,
 }: PaymentSectionProps) {
   return (
     <div className="px-4 py-3">
@@ -32,6 +34,7 @@ export function PaymentSection({
         onSplitPaymentEqually={onSplitPaymentEqually}
         onSetPayerAmount={onSetPayerAmount}
         onRemovePayerEntry={onRemovePayerEntry}
+        hasGuests={hasGuests}
       />
     </div>
   );

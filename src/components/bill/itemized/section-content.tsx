@@ -124,6 +124,7 @@ export function SectionContent({
         onSplitPaymentEqually={onSplitPaymentEqually}
         onSetPayerAmount={onSetPayerAmount}
         onRemovePayerEntry={onRemovePayerEntry}
+        hasGuests={guests.length > 0}
       />
     );
   }

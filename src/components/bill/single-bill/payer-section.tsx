@@ -1,5 +1,6 @@
 "use client";
 
+import { GUEST_PAYER_NOTICE } from "@/components/bill/payer-copy";
 import { PersonLabel } from "@/components/shared/person-label";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import type { ExpensePayer, User } from "@/types";
@@ -9,15 +10,20 @@ export function SingleBillPayerSection({
   payers,
   hasPayer,
   onPayerSelect,
+  hasGuests,
 }: {
   participants: User[];
   payers: ExpensePayer[];
   hasPayer: boolean;
   onPayerSelect: (userId: string) => void;
+  hasGuests?: boolean;
 }) {
   return (
     <section className="space-y-2">
       <h2 className="text-sm leading-5 font-semibold">Quem pagou</h2>
+      {hasGuests && (
+        <p className="text-xs text-muted-foreground">{GUEST_PAYER_NOTICE}</p>
+      )}
       <div className="flex flex-wrap gap-2">
         {participants.map((participant) => {
           const selected = payers.some((payer) => payer.userId === participant.id && payer.amountCents > 0);

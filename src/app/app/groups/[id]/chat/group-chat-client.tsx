@@ -2,7 +2,9 @@
 
 import { Banknote, Loader2, UsersRound } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { useInvitationActions } from "@/hooks/use-invitation-actions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { ChatInput } from "@/components/chat/chat-input";
@@ -28,12 +30,15 @@ export interface GroupChatClientProps {
 
 
 export function GroupChatClient({ groupId }: GroupChatClientProps) {
+  const router = useRouter();
+  const { accept, pendingGroupId } = useInvitationActions();
   const me = useAppStore((state) => state.me);
   const snapshot = useAppStore((state) => selectGroup(state, groupId));
   const conversation = useAppStore((state) => state.conversations[groupId]);
   const loadedRef = useRef<Set<string>>(new Set());
-  const loadedKey = me ? `${me.id}:${groupId}` : null;
   const myStatus = snapshot?.members.find((member) => member.userId === me?.id)?.status;
+  // Status is part of the dedupe key so accepting the invite inside the chat re-runs the load.
+  const loadedKey = me ? `${me.id}:${groupId}:${myStatus ?? "none"}` : null;
 
   const accepted = useMemo(
     () => snapshot?.members.filter((member) => member.status === "accepted") ?? [],
@@ -185,10 +190,28 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
     return (
       <div className="flex h-full flex-col">
         <ScreenHeader back title={snapshot.group.name} />
-        <div className="flex flex-1 items-center justify-center px-6 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
           <p className="text-sm text-muted-foreground">
             Aceite o convite do grupo para participar da conversa.
           </p>
+          <div className="flex flex-col gap-2 w-full max-w-xs">
+            <Button
+              className="min-h-11 rounded-lg"
+              disabled={pendingGroupId === groupId}
+              onClick={() => {
+                void accept(groupId);
+              }}
+            >
+              Aceitar convite
+            </Button>
+            <Button
+              variant="ghost"
+              className="min-h-11 rounded-lg"
+              onClick={() => router.push(`/app/groups/${groupId}`)}
+            >
+              Voltar ao grupo
+            </Button>
+          </div>
         </div>
       </div>
     );
