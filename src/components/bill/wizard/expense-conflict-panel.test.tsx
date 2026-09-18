@@ -52,7 +52,7 @@ function makeDetail(overrides: Partial<ExpenseDetail["current"]> = {}): ExpenseD
         kind: "user",
         shareCents: 11845,
         paidCents: 23690,
-        user: { id: "u1", name: "Alice", handle: "alice", avatarUrl: null },
+        user: { id: "u1", name: "Alice", handle: "alice", avatarUrl: null, isBot: false },
         guest: null,
       },
       {
@@ -60,7 +60,7 @@ function makeDetail(overrides: Partial<ExpenseDetail["current"]> = {}): ExpenseD
         kind: "user",
         shareCents: 11845,
         paidCents: 0,
-        user: { id: "u2", name: "Bob", handle: "bob", avatarUrl: null },
+        user: { id: "u2", name: "Bob", handle: "bob", avatarUrl: null, isBot: false },
         guest: null,
       },
     ],
