@@ -395,6 +395,12 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithFetch} />);
 
     await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Mostrar QR code" })).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mostrar QR code" }),
+    );
+    await waitFor(() => {
       expect(QRCode.toCanvas).toHaveBeenCalledWith(
         expect.anything(),
         "br-code-10000",
@@ -483,5 +489,84 @@ describe("PixQrModal", () => {
     expect(metadeBtn).toHaveAttribute("aria-pressed", "true");
     expect(tudoBtn).not.toBeDisabled();
     expect(metadeBtn).not.toBeDisabled();
+  });
+
+  it("collapses the pay QR behind a disclosure with no canvas or fetch on open", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} />);
+
+    const disclosure = screen.getByRole("button", {
+      name: "Mostrar QR code",
+    });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(disclosure).toHaveAttribute("aria-controls", "pix-qr-region");
+    expect(QRCode.toCanvas).not.toHaveBeenCalled();
+    expect(screen.queryByText("1. Pague no app do seu banco")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("paints the QR on disclosure expand without issuing a fetch", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ copiaECola: "br-code-10000" }),
+    });
+    global.fetch = mockFetch;
+    render(<PixQrModal {...defaultPropsWithFetch} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Mostrar QR code" }),
+      ).toBeInTheDocument();
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    mockFetch.mockClear();
+    vi.mocked(QRCode.toCanvas).mockClear();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mostrar QR code" }),
+    );
+
+    await waitFor(() => {
+      expect(QRCode.toCanvas).toHaveBeenCalledTimes(1);
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /Ocultar QR code/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("renders the collect QR immediately with the collect expectation line", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} mode="collect" />);
+
+    expect(QRCode.toCanvas).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: /Mostrar QR code/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("2. Registre aqui no Dividimos"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Registrar não move dinheiro, só marca que ele te pagou por fora."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the pay expectation line in pay mode", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} />);
+
+    expect(
+      screen.queryByText("2. Registre aqui no Dividimos"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Lê o QR code/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sem QR code/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.",
+      ),
+    ).toBeInTheDocument();
   });
 });

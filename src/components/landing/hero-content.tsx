@@ -33,7 +33,7 @@ export function HeroContent() {
     <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
       <div className="max-w-xl">
         <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary-text">
             <Zap className="h-3 w-3" />
             Pix na hora, sem enrolação
           </span>
@@ -44,7 +44,7 @@ export function HeroContent() {
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="mt-6 text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl"
+          className="mt-6 text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl"
         >
           Racha a conta{" "}
           <span className="text-primary">sem drama</span>
@@ -57,7 +57,7 @@ export function HeroContent() {
           animate="visible"
           className="mt-5 text-lg text-muted-foreground"
         >
-          Lê a nota, cada um marca o que comeu, e a galera paga no Pix na hora. Sem banco, sem enrolação.
+          Lê a nota, cada um marca o que comeu, e a galera paga no Pix pelo app do banco. Sem planilha, sem cobrança chata.
         </motion.p>
 
         <motion.div

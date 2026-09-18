@@ -74,6 +74,7 @@ export function PixQrModal({
   const [fetched, setFetched] = useState<FetchedPayload | null>(null);
   const [payloadError, setPayloadError] = useState(false);
   const [payloadLoading, setPayloadLoading] = useState(false);
+  const [showPayQr, setShowPayQr] = useState(false);
 
   const isFullPayment = paymentCents >= amountCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= amountCents;
@@ -123,6 +124,7 @@ export function PixQrModal({
   useEffect(() => {
     if (open && !isSettling) {
       setPaymentCents(amountCents);
+      setShowPayQr(false);
       setShowSuccess(false);
       setSettledAmountCents(0);
     }
@@ -322,7 +324,7 @@ export function PixQrModal({
               exit={{ opacity: 0 }}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
+              <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-4 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
                 <div className="text-center">
                   <motion.div
                     initial={{ scale: 0.8, opacity: 0 }}
@@ -436,41 +438,75 @@ export function PixQrModal({
                   </div>
                 </div>
 
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.15 }}
-                  className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
-                >
-                  {payloadLoading ? (
-                    <div className="flex h-[240px] w-[240px] items-center justify-center">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : copiaECola ? (
-                    <canvas ref={paintQr} />
-                  ) : (
-                    <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
-                      <QrCode className="h-12 w-12 text-muted-foreground/30" />
-                      <p className="text-sm text-muted-foreground">
-                        {payloadError
-                          ? "Não deu pra gerar o QR agora. Tenta de novo."
-                          : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
-                      </p>
-                    </div>
-                  )}
-                </motion.div>
-
-                  <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-                    <Shield className="h-3 w-3" />
-                    <span>
-                      {copiaECola
-                        ? "Lê o QR code ou copia o código e cola no app do banco."
-                        : "Sem QR code? Combine o valor por fora e registra aqui embaixo."}
-                    </span>
+                {copiaECola && mode === "pay" && (
+                  <div className="mt-5 text-left">
+                    <p className="text-sm text-muted-foreground">
+                      Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 min-h-11 gap-2 rounded-full px-4"
+                      aria-expanded={showPayQr}
+                      aria-controls="pix-qr-region"
+                      onClick={() => setShowPayQr((v) => !v)}
+                    >
+                      <QrCode className="h-4 w-4" />
+                      {showPayQr ? "Ocultar QR code" : "Mostrar QR code"}
+                    </Button>
                   </div>
+                )}
+              <div id="pix-qr-region">
+                {(showPayQr || mode === "collect") && copiaECola ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                  >
+                    <canvas ref={paintQr} />
+                  </motion.div>
+                ) : !copiaECola ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                  >
+                    {payloadLoading ? (
+                      <div className="flex h-[240px] w-[240px] items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
+                        <QrCode className="h-12 w-12 text-muted-foreground/30" />
+                        <p className="text-sm text-muted-foreground">
+                          {payloadError
+                            ? "Não deu pra gerar o QR agora. Tenta de novo."
+                            : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
+                        </p>
+                      </div>
+                    )}
+                  </motion.div>
+                ) : null}
               </div>
 
-              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+              {!copiaECola && (
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Shield className="h-3 w-3" />
+                  <span>Sem QR code? Combine o valor por fora e registra aqui embaixo.</span>
+                </div>
+              )}
+
+                {mode === "collect" && (
+                  <p className="mt-5 text-sm text-muted-foreground">
+                    Registrar não move dinheiro, só marca que ele te pagou por fora.
+                  </p>
+                )}
+              </div>
+
+              <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)]">
                 <div className="space-y-2.5">
                   <Button
                     onClick={handleCopy}
