@@ -121,6 +121,7 @@ jobs:
             ambient-shots
             ambient-video.mp4
             ambient-diary.txt
+            test-results/**/*.webm
           if-no-files-found: ignore
           retention-days: 7
 
