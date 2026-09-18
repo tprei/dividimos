@@ -18,14 +18,13 @@ describe("DraftResumeBanner", () => {
 
     const banner = screen.getByRole("status");
     expect(banner).toBeInTheDocument();
-    expect(screen.getByText("RASCUNHO PENDENTE")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", {
-        name: "Continuar de onde você parou: «Mercado Semanal»",
+        name: "Continuar de onde você parou?",
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Rascunho salvo neste navegador — ainda não é uma conta no grupo."),
+      screen.getByText("«Mercado Semanal» · ainda não está no grupo"),
     ).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*125,50/)).toBeInTheDocument();
   });
@@ -74,7 +73,7 @@ describe("DraftResumeBanner", () => {
     expect(onContinue).not.toHaveBeenCalled();
   });
 
-  it("describes an unnamed itemized draft by its contents instead of the default title", () => {
+  it("describes an unnamed draft with 1 item", () => {
     render(
       <DraftResumeBanner
         title={null}
@@ -86,7 +85,39 @@ describe("DraftResumeBanner", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Continuar de onde você parou: 1 item" }),
+      screen.getByText("1 item · ainda não está no grupo"),
+    ).toBeInTheDocument();
+  });
+
+  it("describes an unnamed draft with multiple items", () => {
+    render(
+      <DraftResumeBanner
+        title={null}
+        itemCount={3}
+        totalCents={4500}
+        onContinue={vi.fn()}
+        onDiscardRequest={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("3 itens · ainda não está no grupo"),
+    ).toBeInTheDocument();
+  });
+
+  it("describes an unnamed empty draft", () => {
+    render(
+      <DraftResumeBanner
+        title={null}
+        itemCount={0}
+        totalCents={0}
+        onContinue={vi.fn()}
+        onDiscardRequest={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Ainda não está no grupo"),
     ).toBeInTheDocument();
   });
 });
