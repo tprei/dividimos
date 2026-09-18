@@ -1197,9 +1197,25 @@ export function epochAuthorizationFailures(manifest, baseFiles, headFiles) {
 }
 
 /**
+ * True when every file the manifest's `new` section authorizes is present in
+ * the tree with the same blob and mode. Files appended after the reset landed
+ * are allowed: they are what append-only history checks exist for. Only a
+ * missing or altered reviewed file means the tree predates the reset.
+ *
+ * @param {Map<string, {blob: string, mode: string}>} treeMap
+ * @param {Record<string, {blob: string, mode: string}>} newSection
+ */
+export function carriesEpoch(treeMap, newSection) {
+  return Object.entries(newSection).every(([path, entry]) => {
+    const found = treeMap.get(path);
+    return found !== undefined && found.blob === entry.blob && found.mode === entry.mode;
+  });
+}
+
+/**
  * Decides whether an epoch invocation faces the reviewed reset transition or a
  * PR stacked on top of a base that already carries the new epoch. The reset is
- * a single transition: once the base tree equals the manifest's `new` section
+ * a single transition: once the base tree carries the manifest's `new` section
  * there is no pre-reset database left to compare, and the pair is an ordinary
  * append-only extension that `fresh` and the history gate already cover.
  *
@@ -1213,7 +1229,7 @@ export async function epochExtensionFailures({ baseRef, headRef, trustedMainRef,
   const baseMap = new Map(
     baseFiles.map((file) => [file.path, { blob: file.blobOid, mode: file.mode }]),
   );
-  if (manifestMismatches("the base", baseMap, manifest.new).length > 0) return null;
+  if (!carriesEpoch(baseMap, manifest.new)) return null;
   const headFiles = await readMigrationFiles(headRef, { cwd });
   return validateMigrationHistory(baseFiles, headFiles);
 }
@@ -1697,8 +1713,7 @@ export async function verifyMigrations(options) {
   const baseMap = new Map(
     baseFiles.map((file) => [file.path, { blob: file.blobOid, mode: file.mode }]),
   );
-  const resetTransition =
-    manifest !== null && manifestMismatches("the base", baseMap, manifest.new).length > 0;
+  const resetTransition = manifest !== null && !carriesEpoch(baseMap, manifest.new);
   const failures = resetTransition
     ? epochAuthorizationFailures(manifest, baseFiles, headFiles)
     : validateMigrationHistory(baseFiles, headFiles);
