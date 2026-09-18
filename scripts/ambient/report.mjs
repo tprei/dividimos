@@ -17,6 +17,7 @@ import * as telegram from "./sinks/telegram.mjs";
  *   failures: AmbientFailure[],
  *   diary: string[],
  *   screenshots: AmbientScreenshot[],
+ *   video: string | null,
  *   runUrl: string,
  * }} AmbientReport */
 /** @typedef {{ env: NodeJS.ProcessEnv, openIssue: { number: number } | null, fetch?: typeof fetch, now?: Date }} SinkContext */
@@ -228,6 +229,20 @@ async function listPngs(dir) {
 }
 
 /**
+ * The workflow encodes Playwright's recording of the phone walk into
+ * ambient-video.mp4. Missing file means the smoke never got that far.
+ * @returns {Promise<string | null>}
+ */
+export async function collectVideo() {
+  try {
+    await readFile("ambient-video.mp4");
+    return "ambient-video.mp4";
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Collects failures, delivers them through every configured sink, and
  * returns the exit code. Isolation rules: a failing issue lookup falls back
  * to no open issue (the next red run opens a fresh one), a throwing sink is
@@ -257,6 +272,7 @@ export async function main(env = process.env) {
     failures,
     diary: collectDiary(env),
     screenshots: await collectScreenshots(),
+    video: await collectVideo(),
     runUrl: `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`,
   };
 
@@ -277,6 +293,7 @@ export async function main(env = process.env) {
       failures: failures.length,
       diary: report.diary.length,
       screenshots: report.screenshots.length,
+      video: report.video !== null,
     }),
   );
 

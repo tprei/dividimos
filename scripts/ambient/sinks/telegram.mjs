@@ -12,7 +12,8 @@ import { readFileSync } from "node:fs";
 
 const BOARD_MARK = "Dividimos · production";
 const TIME_ZONE = "America/Sao_Paulo";
-const MAX_BOARD_PHOTOS = 4;
+// One recording plus the four stills of the walk; Telegram allows ten.
+const MAX_BOARD_MEDIA = 5;
 const MAX_ALERT_PHOTOS = 10;
 const API = "https://api.telegram.org";
 
@@ -59,13 +60,18 @@ function failureLines(report) {
 }
 
 /**
- * The run link carries the board's own message ids as a fragment so the next
- * run can edit the same album instead of posting a new one.
+ * The run link carries the board's own message ids and media layout as a
+ * fragment so the next run can edit the same album instead of posting a new
+ * one. The layout is one letter per message ("v" video, "p" photo): editing
+ * a photo into a video slot is rejected by Telegram, so a changed layout has
+ * to replace the board rather than try.
  * @param {string} runUrl
  * @param {number[]} boardIds
+ * @param {string} layout
  */
-function runLink(runUrl, boardIds) {
-  const href = boardIds.length > 0 ? `${runUrl}#board=${boardIds.join(",")}` : runUrl;
+function runLink(runUrl, boardIds, layout = "") {
+  const href =
+    boardIds.length > 0 ? `${runUrl}#board=${boardIds.join(",")}&media=${layout}` : runUrl;
   return `<a href="${href}">view run</a>`;
 }
 
@@ -74,12 +80,20 @@ function runLink(runUrl, boardIds) {
  * @returns {number[]}
  */
 export function parseBoardIds(url) {
-  const match = /#board=([\d,]+)$/.exec(url ?? "");
+  const match = /#board=([\d,]+)/.exec(url ?? "");
   if (!match) return [];
   return match[1]
     .split(",")
     .map((part) => Number(part))
     .filter((id) => Number.isInteger(id) && id > 0);
+}
+
+/**
+ * @param {string | undefined} url
+ * @returns {string}
+ */
+export function parseBoardLayout(url) {
+  return /[#&]media=([vp]*)/.exec(url ?? "")?.[1] ?? "";
 }
 
 // A photo caption is capped at 1024 characters and Telegram rejects the whole
@@ -91,14 +105,15 @@ const CAPTION_LIMIT = 1024;
  * @param {AmbientReport} report
  * @param {Date} now
  * @param {number[]} [boardIds]
+ * @param {string} [layout]
  * @returns {string}
  */
-export function boardText(report, now, boardIds = []) {
+export function boardText(report, now, boardIds = [], layout = "") {
   const green = report.status === "green";
   const head = `${green ? "🟢" : "🔴"} <b>${BOARD_MARK} ${green ? "healthy" : "failing"}</b>`;
   const foot = [
     `🕒 Last check <b>${formatCheckedAt(now)}</b> (BRT)`,
-    `🔁 Every 30 min · ${runLink(report.runUrl, boardIds)}`,
+    `🔁 Every 30 min · ${runLink(report.runUrl, boardIds, layout)}`,
   ];
   const body = green
     ? report.diary.map((fact) => `• ${escapeHtml(fact)}`)
@@ -134,6 +149,13 @@ export function alertText(report) {
 /** @param {string} path */
 function photoBlob(path) {
   return new Blob([readFileSync(path)], { type: "image/png" });
+}
+
+/** @param {{ kind: "video" | "photo", path: string }} item */
+function mediaBlob(item) {
+  return new Blob([readFileSync(item.path)], {
+    type: item.kind === "video" ? "video/mp4" : "image/png",
+  });
 }
 
 /**
@@ -180,10 +202,16 @@ export async function notify(report, ctx) {
 
   const html = { parse_mode: "HTML", link_preview_options: { is_disabled: true } };
 
-  const boardShots = report.screenshots
-    .filter((shot) => !shot.failure)
-    .slice(0, MAX_BOARD_PHOTOS)
-    .map((shot) => shot.path);
+  // The recording of the phone walk leads the board, then the stills. The
+  // layout travels with the ids so the next run knows whether it can edit.
+  /** @type {{ kind: "video" | "photo", path: string }[]} */
+  const boardMedia = [
+    ...(report.video ? [{ kind: /** @type {const} */ ("video"), path: report.video }] : []),
+    ...report.screenshots
+      .filter((shot) => !shot.failure)
+      .map((shot) => ({ kind: /** @type {const} */ ("photo"), path: shot.path })),
+  ].slice(0, MAX_BOARD_MEDIA);
+  const boardLayout = boardMedia.map((item) => item.kind[0]).join("");
 
   if (report.transition === "went_red" || report.transition === "recovered") {
     await sendAlert();
@@ -202,7 +230,13 @@ export async function notify(report, ctx) {
         : [];
 
     if (alertShots.length >= 2) {
-      await call("sendMediaGroup", mediaGroupForm(alertShots, alertText(report)));
+      await call(
+        "sendMediaGroup",
+        mediaGroupForm(
+          alertShots.map((path) => ({ kind: /** @type {const} */ ("photo"), path })),
+          alertText(report),
+        ),
+      );
       return;
     }
     if (alertShots.length === 1) {
@@ -228,19 +262,19 @@ export async function notify(report, ctx) {
   }
 
   /**
-   * @param {string[]} paths
+   * @param {{ kind: "video" | "photo", path: string }[]} items
    * @param {string} caption
    */
-  function mediaGroupForm(paths, caption) {
+  function mediaGroupForm(items, caption) {
     const form = new FormData();
-    const media = paths.map((path, index) => ({
-      type: "photo",
+    const media = items.map((item, index) => ({
+      type: item.kind,
       media: `attach://f${index}`,
       ...(index === 0 ? { caption, parse_mode: "HTML" } : {}),
     }));
     form.set("media", JSON.stringify(media));
-    paths.forEach((path, index) => {
-      form.set(`f${index}`, photoBlob(path), `f${index}.png`);
+    items.forEach((item, index) => {
+      form.set(`f${index}`, mediaBlob(item), `f${index}.${item.kind === "video" ? "mp4" : "png"}`);
     });
     return form;
   }
@@ -253,18 +287,32 @@ export async function notify(report, ctx) {
     const entities = pinned?.caption_entities ?? pinned?.entities ?? [];
     const link = entities.find((entity) => entity.type === "text_link");
     const pinnedIds = isOurs ? parseBoardIds(link?.url) : [];
-    const expected = Math.max(boardShots.length, 1);
+    const pinnedLayout = isOurs ? parseBoardLayout(link?.url) : "";
 
-    if (isOurs && pinnedIds.length === expected) {
-      try {
-        await editBoard(pinnedIds);
-        return;
-      } catch (error) {
-        // A board the bot can no longer edit is replaced, not left stale.
-        console.error(error);
+    if (isOurs && pinnedIds.length === Math.max(boardMedia.length, 1)) {
+      // Same number of messages and the same photo/video order: the board can
+      // be refreshed where it already sits.
+      if (pinnedLayout === boardLayout) {
+        try {
+          await editBoard(pinnedIds);
+          return;
+        } catch (error) {
+          // A board the bot can no longer edit is replaced, not left stale.
+          console.error(error);
+        }
       }
     }
     await postBoard();
+    // One board per chat: the copy this run replaced is removed instead of
+    // left scrolling by as another unread bubble.
+    for (const id of pinnedIds) {
+      try {
+        await call("deleteMessage", { message_id: id });
+      } catch (error) {
+        // Messages older than Telegram's delete window simply stay.
+        console.error(error);
+      }
+    }
   }
 
   /**
@@ -280,35 +328,32 @@ export async function notify(report, ctx) {
 
   /** @param {number[]} ids */
   async function editBoard(ids) {
-    if (boardShots.length === 0) {
+    const caption = boardText(report, ctx.now ?? new Date(), ids, boardLayout);
+    if (boardMedia.length === 0) {
       try {
-        await call("editMessageText", {
-          message_id: ids[0],
-          text: boardText(report, ctx.now ?? new Date(), ids),
-          ...html,
-        });
+        await call("editMessageText", { message_id: ids[0], text: caption, ...html });
       } catch (error) {
         if (!isUnchanged(error)) throw error;
       }
       return;
     }
-    const caption = boardText(report, ctx.now ?? new Date(), ids);
     for (const [index, id] of ids.entries()) {
+      const item = boardMedia[index];
       const form = new FormData();
       form.set("message_id", String(id));
       form.set(
         "media",
         JSON.stringify({
-          type: "photo",
+          type: item.kind,
           media: "attach://board",
           ...(index === 0 ? { caption, parse_mode: "HTML" } : {}),
         }),
       );
-      form.set("board", photoBlob(boardShots[index]), "board.png");
+      form.set("board", mediaBlob(item), `board.${item.kind === "video" ? "mp4" : "png"}`);
       try {
         await call("editMessageMedia", form);
       } catch (error) {
-        // An unchanged sibling photo is fine; only the captioned first
+        // An unchanged sibling shot is fine; only the captioned first
         // message failing means the board did not refresh.
         if (!isUnchanged(error)) throw error;
       }
@@ -321,7 +366,7 @@ export async function notify(report, ctx) {
     // That second call is best-effort: a board without ids is still correct,
     // it just gets replaced instead of edited on the next run.
     const now = ctx.now ?? new Date();
-    if (boardShots.length === 0) {
+    if (boardMedia.length === 0) {
       const sent = await call("sendMessage", {
         text: boardText(report, now, []),
         disable_notification: true,
@@ -330,38 +375,44 @@ export async function notify(report, ctx) {
       await stamp(() =>
         call("editMessageText", {
           message_id: sent.message_id,
-          text: boardText(report, now, [sent.message_id]),
+          text: boardText(report, now, [sent.message_id], boardLayout),
           ...html,
         }),
       );
       await pin(sent.message_id);
       return;
     }
-    if (boardShots.length === 1) {
+    if (boardMedia.length === 1) {
+      const [item] = boardMedia;
       const form = new FormData();
-      form.set("photo", photoBlob(boardShots[0]), "board.png");
+      const method = item.kind === "video" ? "sendVideo" : "sendPhoto";
+      form.set(
+        item.kind === "video" ? "video" : "photo",
+        mediaBlob(item),
+        `board.${item.kind === "video" ? "mp4" : "png"}`,
+      );
       form.set("caption", boardText(report, now, []));
       form.set("parse_mode", "HTML");
       form.set("disable_notification", "true");
-      const sent = await call("sendPhoto", form);
+      const sent = await call(method, form);
       await stamp(() =>
         call("editMessageCaption", {
           message_id: sent.message_id,
-          caption: boardText(report, now, [sent.message_id]),
+          caption: boardText(report, now, [sent.message_id], boardLayout),
           parse_mode: "HTML",
         }),
       );
       await pin(sent.message_id);
       return;
     }
-    const form = mediaGroupForm(boardShots, boardText(report, now, []));
+    const form = mediaGroupForm(boardMedia, boardText(report, now, []));
     form.set("disable_notification", "true");
     const sent = await call("sendMediaGroup", form);
     const ids = sent.map((message) => message.message_id);
     await stamp(() =>
       call("editMessageCaption", {
         message_id: ids[0],
-        caption: boardText(report, now, ids),
+        caption: boardText(report, now, ids, boardLayout),
         parse_mode: "HTML",
       }),
     );

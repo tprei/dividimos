@@ -90,6 +90,34 @@ jobs:
         timeout-minutes: 4
         run: npm run test:ambient:web
 
+      # Playwright records the phone walk as webm; Telegram wants h264 mp4.
+      # A run that never reached the browser simply has nothing to encode.
+      - name: Encode the run recording
+        if: ${{ !cancelled() && steps.config.outputs.configured == 'true' }}
+        run: |
+          recording=$(find test-results -name '*.webm' -print -quit 2>/dev/null || true)
+          if [ -z "$recording" ]; then
+            echo "::notice::no recording to encode"
+            exit 0
+          fi
+          ffmpeg -y -loglevel error -i "$recording" \
+            -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
+            -c:v libx264 -preset veryfast -crf 28 -pix_fmt yuv420p -movflags +faststart \
+            ambient-video.mp4
+          ls -l ambient-video.mp4
+
+      - name: Upload the run media
+        if: ${{ !cancelled() && steps.config.outputs.configured == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ambient-media
+          path: |
+            ambient-shots
+            ambient-video.mp4
+            ambient-diary.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Ensure synthetic-prod label
         if: ${{ !cancelled() && steps.config.outputs.configured == 'true' }}
         env:

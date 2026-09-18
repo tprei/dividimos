@@ -13,6 +13,7 @@ import {
   collectDiary,
   collectFailures,
   collectScreenshots,
+  collectVideo,
   main,
   redactFailures,
   resolveTransition,
@@ -91,6 +92,18 @@ test("collectScreenshots finds run shots and failure shots with the right flags"
       { path: join(process.cwd(), "ambient-shots", "2-expenses.png"), failure: false },
       { path: join(process.cwd(), "test-results", "web-spec-chromium", "test-failed-1.png"), failure: true },
     ]);
+  } finally {
+    temp.dispose();
+  }
+});
+
+test("collectVideo reports the encoded recording only when it exists", async () => {
+  const temp = inTempDir();
+  try {
+    assert.equal(await collectVideo(), null);
+
+    writeFileSync(join(process.cwd(), "ambient-video.mp4"), "mp4");
+    assert.equal(await collectVideo(), "ambient-video.mp4");
   } finally {
     temp.dispose();
   }
