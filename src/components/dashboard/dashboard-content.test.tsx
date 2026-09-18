@@ -126,6 +126,81 @@ describe("DashboardContent", () => {
     useAppStore.getState().reset();
   });
 
+  it("renders first-use onboarding card when user has zero groups and zero expenses", () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Comece por aqui")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Comece por aqui" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Crie uma conta pra rachar ou entre num grupo pelo convite."),
+    ).toBeInTheDocument();
+    const novaLinks = screen.getAllByRole("link", { name: /Nova conta/ });
+    expect(novaLinks.some((link) => link.getAttribute("href") === "/app/bill/new")).toBe(true);
+    expect(screen.getByRole("link", { name: /Ler convite/ })).toHaveAttribute("href", "/app/scan-invite");
+    expect(screen.queryByText("Tudo em dia")).not.toBeInTheDocument();
+    expect(screen.queryByText("A pagar")).not.toBeInTheDocument();
+    expect(screen.queryByText("A receber")).not.toBeInTheDocument();
+    // Quick actions stay reachable on first use (home-quick-charge synthetic contract).
+    expect(screen.getByText("Escanear nota")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeInTheDocument();
+    expect(document.querySelector("[data-tour='debt-lists']")?.contains(screen.getByText("Comece por aqui"))).toBe(true);
+  });
+
+  it("renders settled affirmative state when user has groups but zero debt", () => {
+    seedStore([snapshot({ balances: [] })]);
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Tudo em dia por aqui")).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma pendência no momento.")).toBeInTheDocument();
+    expect(document.querySelector("[data-tour='debt-lists']")?.contains(screen.getByText("Tudo em dia por aqui"))).toBe(true);
+  });
+
+  it("renders debt lists when debts exist", () => {
+    // Single-direction fixture: only owes
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+      }),
+    ]);
+    const { unmount } = render(<DashboardContent />);
+
+    expect(screen.getByRole("heading", { name: "A pagar" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "A receber" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Comece por aqui")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tudo em dia por aqui")).not.toBeInTheDocument();
+
+    unmount();
+
+    // Two-direction fixture: both owes and owed
+    seedStore([
+      snapshot({
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+      }),
+      snapshot({
+        group: { id: "g2", name: "Almoço" },
+        members: [
+          { groupId: "g2", userId: me.id, status: "accepted", invitedBy: null, acceptedAt: null, user: me },
+          { groupId: "g2", userId: dave.id, status: "accepted", invitedBy: null, acceptedAt: null, user: dave },
+        ],
+        balances: [
+          { kind: "user", participantId: me.id, netCents: 3000 },
+          { kind: "user", participantId: dave.id, netCents: -3000 },
+        ],
+      }),
+    ]);
+    render(<DashboardContent />);
+
+    expect(screen.getByRole("heading", { name: "A pagar" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "A receber" })).toBeInTheDocument();
+  });
+
   it("keeps the skeleton visible before hydration", () => {
     useAppStore.setState({ hydrated: false, me });
     render(<DashboardContent />);

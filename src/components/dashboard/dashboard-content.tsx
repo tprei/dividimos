@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Plus, ScanLine, Search, Zap } from "lucide-react";
+import { Bell, Plus, QrCode, ScanLine, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useState } from "react";
@@ -28,6 +28,7 @@ import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
 import { selectPendingInvitations } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
+import { selectHomeMode } from "@/components/dashboard/home-selectors";
 
 const PixQrModal = dynamic(
   () =>
@@ -49,6 +50,7 @@ export function DashboardContent() {
   const me = useMe();
   const hydrated = useAppStore((state) => state.hydrated);
   const rows = useAppStore(selectDebtRows);
+  const homeMode = useAppStore(selectHomeMode);
   const invitations = useAppStore(selectPendingInvitations);
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [pixTarget, setPixTarget] = useState<{
@@ -207,108 +209,146 @@ export function DashboardContent() {
       <div
         className="gradient-mesh mx-4 mt-2 flex items-start gap-4 rounded-3xl border border-primary/15 p-4"
       >
-        <div className="min-w-0 flex-1" data-tour="balance-card">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="min-w-0 flex-1 overflow-hidden" data-tour="balance-card">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
             Saldo geral
           </p>
           <Money
             cents={net}
             signed
-            className="text-4xl"
+            className="block text-[28px] leading-tight"
             label={`Saldo geral ${formatBRL(net)}`}
           />
-          <div className="mt-4 flex gap-8">
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                A pagar
-              </p>
-              <Money cents={owesTotal} className="text-destructive" />
+          {homeMode !== "first-use" && (
+            <div className="mt-4 flex gap-8">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                  A pagar
+                </p>
+                <Money
+                  cents={owesTotal}
+                  className={owesTotal > 0 ? "text-destructive" : "text-muted-foreground"}
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                  A receber
+                </p>
+                <Money cents={owedTotal} className="text-success" />
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                A receber
-              </p>
-              <Money cents={owedTotal} className="text-success" />
-            </div>
-          </div>
+          )}
         </div>
         <div className="flex shrink-0 flex-col gap-2" data-tour="quick-actions">
-          <Link
-            href="/app/bill/new?scan=true"
-            className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "min-h-11 justify-start px-3 text-xs",
-              "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
-            )}
-          >
-            <ScanLine className="size-4 shrink-0 text-primary" aria-hidden="true" />
-            Escanear nota
-          </Link>
-          <Link
-            href="/app/bill/new"
-            className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "min-h-11 justify-start px-3 text-xs",
-              "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
-            )}
-          >
-            <Plus className="size-4 shrink-0 text-primary" aria-hidden="true" />
-            Nova conta
-          </Link>
-          <Button
-            variant="outline"
-            size="sm"
-            className="min-h-11 justify-start px-3 text-xs border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10"
-            onClick={openQuickCharge}
-            disabled={!me.pixKeyHint}
-            title={me.pixKeyHint ? undefined : "Cadastre uma chave Pix no perfil"}
-          >
-            <Zap className="size-4 shrink-0" aria-hidden="true" />
-            Cobrar rápido
-          </Button>
-        </div>
+            <Link
+              href="/app/bill/new?scan=true"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "min-h-11 justify-start px-3 text-xs",
+                "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
+              )}
+            >
+              <ScanLine className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              Escanear nota
+            </Link>
+            <Link
+              href="/app/bill/new"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "min-h-11 justify-start px-3 text-xs",
+                "border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10",
+              )}
+            >
+              <Plus className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              Nova conta
+            </Link>
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-h-11 justify-start px-3 text-xs border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10"
+              onClick={openQuickCharge}
+              disabled={!me.pixKeyHint}
+              title={me.pixKeyHint ? undefined : "Cadastre uma chave Pix no perfil"}
+            >
+              <Zap className="size-4 shrink-0" aria-hidden="true" />
+              Cobrar rápido
+            </Button>
+          </div>
       </div>
 
       <div className="space-y-6 px-4 pt-7" data-tour="debt-lists">
-        <section>
-          <SectionHeading
-            title="A pagar"
-            trailing={<Money cents={owesTotal} className="text-destructive" />}
-          />
-          <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
-            {owes.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-muted-foreground">Tudo em dia</p>
-            ) : (
-              owes.map((row) => (
-                <DebtRowButton
-                  key={`${row.groupId}-${row.counterpartyId}`}
-                  row={row}
-                  onSelect={setSelectedDebt}
-                />
-              ))
-            )}
+        {homeMode === "first-use" ? (
+          <div className="rounded-2xl border bg-card p-5 text-center">
+            <h2 className="text-base font-semibold">Comece por aqui</h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Crie uma conta pra rachar ou entre num grupo pelo convite.
+            </p>
+            <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+              <Link
+                href="/app/bill/new"
+                className={cn(buttonVariants({ variant: "default" }), "min-h-11 rounded-lg gap-2 font-medium")}
+              >
+                <Plus className="size-4" />
+                Nova conta
+              </Link>
+              <Link
+                href="/app/scan-invite"
+                className={cn(buttonVariants({ variant: "outline" }), "min-h-11 rounded-lg gap-2 font-medium")}
+              >
+                <QrCode className="size-4" />
+                Ler convite
+              </Link>
+            </div>
           </div>
-        </section>
+        ) : homeMode === "settled" ? (
+          <div className="rounded-2xl border bg-card p-5">
+            <p className="text-sm font-medium text-foreground">Tudo em dia por aqui</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Nenhuma pendência no momento.</p>
+          </div>
+        ) : (
+          <>
+            {owes.length > 0 && (
+              <section>
+                <SectionHeading
+                  title="A pagar"
+                  trailing={
+                    <Money
+                      cents={owesTotal}
+                      className={owesTotal > 0 ? "text-destructive" : "text-muted-foreground"}
+                    />
+                  }
+                />
+                <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
+                  {owes.map((row) => (
+                    <DebtRowButton
+                      key={`${row.groupId}-${row.counterpartyId}`}
+                      row={row}
+                      onSelect={setSelectedDebt}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
 
-        <section>
-          <SectionHeading
-            title="A receber"
-            trailing={<Money cents={owedTotal} className="text-success" />}
-          />
-          <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
-            {owed.length === 0 ? (
-              <p className="px-4 py-3 text-sm text-muted-foreground">Tudo em dia</p>
-            ) : (
-              owed.map((row) => (
-                <DebtRowButton
-                  key={`${row.groupId}-${row.counterpartyId}`}
-                  row={row}
-                  onSelect={setSelectedDebt}
+            {owed.length > 0 && (
+              <section>
+                <SectionHeading
+                  title="A receber"
+                  trailing={<Money cents={owedTotal} className="text-success" />}
                 />
-              ))
+                <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
+                  {owed.map((row) => (
+                    <DebtRowButton
+                      key={`${row.groupId}-${row.counterpartyId}`}
+                      row={row}
+                      onSelect={setSelectedDebt}
+                    />
+                  ))}
+                </div>
+              </section>
             )}
-          </div>
-        </section>
+          </>
+        )}
       </div>
 
       <NotificationsSheet
