@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Plus, Users, X } from "lucide-react";
+import { Bot, ChevronRight, Plus, Users, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -14,6 +14,7 @@ import { ScreenHeader } from "@/components/shared/screen-header";
 import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { isBotGroup } from "@/lib/bot-group";
 import { formatBRL } from "@/lib/currency";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { createGroup } from "@/lib/sync/mutations-group";
@@ -46,15 +47,25 @@ function GroupRow({
     name: member.user.name,
     avatarUrl: member.user.avatarUrl,
   }));
+  const botGroup = isBotGroup(snapshot.members, meId);
 
   return (
     <Link
       href={`/app/groups/${snapshot.group.id}`}
-      aria-label={`${snapshot.group.name}, ${accepted.length} membros, ${snapshot.expenseCount} contas, ${balanceDescription}`}
-      className="flex min-h-16 w-full items-center gap-3 px-4 py-2"
+      aria-label={`${snapshot.group.name}, ${accepted.length} membros, ${snapshot.expenseCount} contas, ${balanceDescription}${botGroup ? ", grupo de bots" : ""}`}
+      className={
+        botGroup
+          ? "flex min-h-16 w-full items-center gap-3 border-l-2 border-gold bg-gold/5 px-4 py-2"
+          : "flex min-h-16 w-full items-center gap-3 px-4 py-2"
+      }
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] font-semibold">{snapshot.group.name}</p>
+        <p className="flex items-center gap-1.5 truncate text-[15px] font-semibold">
+          {botGroup && <Bot className="size-3.5 shrink-0 text-gold" aria-hidden="true" />}
+          <span className={botGroup ? "truncate text-gold" : "truncate"}>
+            {snapshot.group.name}
+          </span>
+        </p>
         <p className="truncate text-xs text-muted-foreground">
           {accepted.length} membros · {snapshot.expenseCount} contas
         </p>

@@ -58,6 +58,7 @@ function member(
   name: string,
   status: "invited" | "accepted",
   invitedBy: string | null = null,
+  isBot = false,
 ) {
   return {
     groupId: "",
@@ -65,7 +66,7 @@ function member(
     status,
     invitedBy,
     acceptedAt: null,
-    user: { id: userId, handle: name.toLowerCase(), name, avatarUrl: null, isBot: false },
+    user: { id: userId, handle: name.toLowerCase(), name, avatarUrl: null, isBot },
   };
 }
 
@@ -190,6 +191,30 @@ describe("GroupsListContent", () => {
 
     expect(screen.getByText("A receber")).toBeInTheDocument();
     expect(screen.getByText("Em dia")).toBeInTheDocument();
+  });
+
+  it("marks a group of bots and leaves a human group alone", () => {
+    seed([
+      snapshot("g1", {
+        group: { name: "Bots da casa" },
+        members: [
+          member("user-1", "Alice", "accepted"),
+          member("bot-1", "Ana", "accepted", null, true),
+        ],
+      }),
+      snapshot("g2", {
+        group: { name: "Viagem" },
+        members: [
+          member("user-1", "Alice", "accepted"),
+          member("user-9", "Bruno", "accepted"),
+        ],
+      }),
+    ]);
+
+    render(<GroupsListContent />);
+
+    expect(screen.getByRole("link", { name: /Bots da casa.*grupo de bots/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Viagem.*grupo de bots/ })).not.toBeInTheDocument();
   });
 
   it("renders a payable signed balance", () => {
