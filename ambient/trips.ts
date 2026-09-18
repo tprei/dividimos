@@ -26,6 +26,11 @@ import { firstName, note } from "./diary";
 
 export const TRIP_GROUP_PREFIX = "Viagem dos bots";
 
+// Trip start and trip settled always get a line; this caps the per-step
+// facts so the board's diary keeps room for the rest of the run.
+const DIARY_NOTES_PER_RUN = 2;
+
+
 export interface ExpenseRecord {
   expenseId: string;
   clientId: string;
@@ -61,6 +66,8 @@ export interface TripContext {
   tripIndex: number;
   members: SeededUser[];
   state: TripState;
+  /** Step facts this run may still write to the diary, across chapters. */
+  notesLeft: number;
 }
 
 export interface CreateSpec {
@@ -347,7 +354,54 @@ function closeSettlementCount(ctx: TripContext): number {
   return count;
 }
 
-function isDone(ctx: TripContext, step: TripStep, restorable: Set<string>): boolean {
+/**
+ * Index of the last step that left durable evidence behind. A delete and a
+ * restore leave none once they cancel out (restore_expense clears
+ * deleted_at), so progress past them is read from the steps that do: a
+ * created expense, an edit's version bump, a settlement, a void.
+ */
+function durableIndex(ctx: TripContext, trip: Trip): number {
+  let last = -1;
+  trip.steps.forEach((step, index) => {
+    switch (step.kind) {
+      case "create":
+        if (ctx.state.expenses.some((e) => e.clientId === factId(ctx.groupId, step.key))) {
+          last = index;
+        }
+        break;
+      case "edit": {
+        const clientId = factId(ctx.groupId, step.targetKey);
+        const target = ctx.state.expenses.find((e) => e.clientId === clientId);
+        if (target && target.versionNo > 1) last = index;
+        break;
+      }
+      case "settle":
+        if (settlementFor(ctx, step.key)) last = index;
+        break;
+      case "void":
+        if (settlementFor(ctx, step.targetKey)?.status === "voided") last = index;
+        break;
+      default:
+        break;
+    }
+  });
+  return last;
+}
+
+function isDone(
+  ctx: TripContext,
+  step: TripStep,
+  index: number,
+  durable: number,
+  restorable: Set<string>,
+): boolean {
+  // The close only ends when nothing is owed, whatever else has happened.
+  if (step.kind === "settleAll") {
+    return projectTransfers(ctx.state.facts).length === 0;
+  }
+  if (index <= durable) {
+    return true;
+  }
   switch (step.kind) {
     case "create":
       return ctx.state.expenses.some(
@@ -360,11 +414,10 @@ function isDone(ctx: TripContext, step: TripStep, restorable: Set<string>): bool
     case "restore":
       return restorable.has(step.targetKey) && expenseFor(ctx, step.targetKey).status === "active";
     case "settle":
-      return settlementFor(ctx, step.key) !== undefined;
+      // Nothing left between these two counts as settled, not as pending.
+      return settlementFor(ctx, step.key) !== undefined || step.amount(ctx) < 1;
     case "void":
       return settlementFor(ctx, step.targetKey)?.status === "voided";
-    case "settleAll":
-      return projectTransfers(ctx.state.facts).length === 0;
     case "probe":
       return false;
   }
@@ -373,21 +426,22 @@ function isDone(ctx: TripContext, step: TripStep, restorable: Set<string>): bool
 /** Steps still to run, in script order. Probes never count as pending. */
 export function pendingSteps(ctx: TripContext, trip: Trip): TripStep[] {
   const restorable = new Set<string>();
+  const durable = durableIndex(ctx, trip);
   const pending: TripStep[] = [];
-  for (const step of trip.steps) {
-    if (step.kind === "probe") continue;
+  trip.steps.forEach((step, index) => {
+    if (step.kind === "probe") return;
     try {
-      if (isDone(ctx, step, restorable)) {
+      if (isDone(ctx, step, index, durable, restorable)) {
         if (step.kind === "delete") restorable.add(step.targetKey);
-        continue;
+        return;
       }
     } catch {
       // A step whose target does not exist yet is pending by definition.
       pending.push(step);
-      continue;
+      return;
     }
     pending.push(step);
-  }
+  });
   return pending;
 }
 
@@ -456,22 +510,22 @@ export async function runPendingSteps(
 ): Promise<number> {
   const restorable = new Set<string>();
   let executed = 0;
-  let notesLeft = 2;
 
-  for (const step of trip.steps) {
+  for (const [index, step] of trip.steps.entries()) {
     if (step.kind === "probe") {
       // Probes assert a guardrail without writing a fact, and only make
       // sense once everything before them has actually happened.
-      if (pendingSteps(ctx, trip).some((pending) => trip.steps.indexOf(pending) < trip.steps.indexOf(step))) {
-        continue;
-      }
+      const earlierPending = pendingSteps(ctx, trip).some(
+        (pending) => trip.steps.indexOf(pending) < index,
+      );
+      if (earlierPending) continue;
       await step.run(ctx);
       continue;
     }
 
     let done = false;
     try {
-      done = isDone(ctx, step, restorable);
+      done = isDone(ctx, step, index, durableIndex(ctx, trip), restorable);
     } catch {
       done = false;
     }
@@ -513,12 +567,12 @@ export async function runPendingSteps(
           },
           step.key,
         );
-        if (notesLeft > 0) {
+        if (ctx.notesLeft > 0) {
           note(
             `${firstName(ctx.troupe.bots, ctx.members[step.actor].id)} paid ` +
               `${formatBRL(spec.totalCents)} for "${spec.title}", split ${spec.participants.length} ways`,
           );
-          notesLeft -= 1;
+          ctx.notesLeft -= 1;
         }
         break;
       }
@@ -580,12 +634,12 @@ export async function runPendingSteps(
           amountCents,
           step.allowOverpay ?? false,
         );
-        if (notesLeft > 0) {
+        if (ctx.notesLeft > 0) {
           note(
             `${firstName(ctx.troupe.bots, ctx.members[step.from].id)} settled ` +
               `${formatBRL(amountCents)} with ${firstName(ctx.troupe.bots, ctx.members[step.to].id)}`,
           );
-          notesLeft -= 1;
+          ctx.notesLeft -= 1;
         }
         break;
       }
@@ -682,6 +736,7 @@ export async function findOrStartTrip(
       tripIndex,
       members: troupe.bots.slice(0, trip.memberCount),
       state: await replayTrip(troupe, newest.id),
+      notesLeft: DIARY_NOTES_PER_RUN,
     };
     if (pendingSteps(ctx, trip).length > 0 || newest.name.includes(todayUtc)) {
       return ctx;
@@ -708,6 +763,7 @@ export async function findOrStartTrip(
     tripIndex,
     members,
     state: await replayTrip(troupe, group.id),
+    notesLeft: DIARY_NOTES_PER_RUN,
   };
 }
 

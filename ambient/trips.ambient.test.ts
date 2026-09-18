@@ -19,7 +19,7 @@ import {
 
 const MAX_TRIP_FACTS = 12;
 
-function simulate(trip: Trip): LedgerFact[] {
+function simulate(trip: Trip): TripContext {
   const members = Array.from({ length: trip.memberCount }, (_, index) => ({
     id: `0000000${index}-0000-4000-8000-00000000000${index}`,
   }));
@@ -163,19 +163,57 @@ function simulate(trip: Trip): LedgerFact[] {
     }
   }
 
-  return ctx.state.facts;
+  return ctx;
 }
 
 describe("trip scripts", () => {
   for (const trip of TRIPS) {
     it(`${trip.name} settles every balance to zero`, () => {
-      const facts = simulate(trip);
+      const facts = simulate(trip).state.facts;
 
       expect(projectBalances(facts)).toEqual([]);
       expect(facts.length).toBeLessThanOrEqual(MAX_TRIP_FACTS);
       expect(facts.length).toBeGreaterThan(0);
     });
+
+    // Without this, a finished trip looks unfinished forever: a restore
+    // clears the deleted marker, and a settlement that had nothing to pay
+    // leaves no fact. Either one would keep the arc replaying every run and
+    // never let the next day's trip start.
+    it(`${trip.name} reports nothing left to do once it is over`, () => {
+      expect(pendingSteps(simulate(trip), trip)).toEqual([]);
+    });
   }
+
+  // An overpay earlier in an arc can leave a later settlement with nothing
+  // to pay. That has to count as done, or the trip never ends.
+  it("treats a settlement with nothing to pay as done", () => {
+    const trip: Trip = {
+      name: "Café rápido",
+      memberCount: 2,
+      steps: [
+        {
+          key: "c1",
+          kind: "create",
+          actor: 0,
+          spec: () => ({
+            title: "Café",
+            totalCents: 500,
+            participants: [0, 1],
+            shares: [250, 250],
+            payers: [{ participantIndex: 0, amountCents: 500 }],
+          }),
+        },
+        { key: "s1", kind: "settle", actor: 1, from: 1, to: 0, amount: () => 0 },
+        { key: "close", kind: "settleAll" },
+      ],
+    };
+
+    const ctx = simulate(trip);
+
+    expect(pendingSteps(ctx, trip)).toEqual([]);
+    expect(projectBalances(ctx.state.facts)).toEqual([]);
+  });
 });
 
 describe("bot trips", () => {
