@@ -322,6 +322,20 @@ describe("AppShell navigation", () => {
     }
     expect(screen.getByRole("button", { name: "Atualizar" })).toBeInTheDocument();
   });
+
+  it("hides navigation bar inside the expense wizard", () => {
+    mockPathname.mockReturnValue("/app/bill/new");
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("renders navigation bar on group screens", () => {
+    mockPathname.mockReturnValue("/app/groups/x");
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(screen.getByRole("navigation")).toBeInTheDocument();
+  });
 });
 
 describe("AppShell haptics", () => {
@@ -577,6 +591,15 @@ describe("AppShell keyboard padding", () => {
 
   it("removes pb-20 padding from main when keyboard is open", () => {
     mockKeyboardVisible.mockReturnValue(true);
+    render(<AppShell><div>content</div></AppShell>);
+
+    const main = document.querySelector("main")!;
+    expect(main.className).not.toContain("pb-20");
+  });
+
+  it("removes pb-20 padding from main inside the expense wizard", () => {
+    mockKeyboardVisible.mockReturnValue(false);
+    mockPathname.mockReturnValue("/app/bill/new");
     render(<AppShell><div>content</div></AppShell>);
 
     const main = document.querySelector("main")!;

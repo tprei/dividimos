@@ -38,6 +38,8 @@ import { loadActivity } from "@/lib/sync/refresh";
 import { selectUnreadTotal } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
 
+const WIZARD_PREFIX = "/app/bill/new";
+
 const navItems = [
   { href: "/app", icon: Home, label: "Início" },
   {
@@ -46,7 +48,7 @@ const navItems = [
     label: "Conversas",
     badge: true as const,
   },
-  { href: "/app/bill/new", icon: Plus, label: "Nova", primary: true },
+  { href: WIZARD_PREFIX, icon: Plus, label: "Nova", primary: true },
   { href: "/app/groups", icon: Users, label: "Grupos" },
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
@@ -63,7 +65,7 @@ function NavBar() {
   const keyboardOpen = useKeyboardVisible();
   const unreadTotal = useAppStore(selectUnreadTotal);
 
-  if (keyboardOpen) return null;
+  if (keyboardOpen || pathname.startsWith(WIZARD_PREFIX)) return null;
 
   return (
     <nav
@@ -187,6 +189,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const keyboardOpen = useKeyboardVisible();
+  const navHidden = keyboardOpen || pathname.startsWith(WIZARD_PREFIX);
   const [refreshing, setRefreshing] = useState(false);
 
   const hydrated = useAppStore((s) => s.hydrated);
@@ -426,7 +429,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
 
           <main
-            className={cn("flex-1 overflow-y-auto", !keyboardOpen && "pb-20")}
+            className={cn("flex-1 overflow-y-auto", !navHidden && "pb-20")}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
