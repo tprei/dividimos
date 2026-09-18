@@ -417,7 +417,7 @@ export function DashboardContent() {
               Pra receber, você precisa de uma chave Pix.
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              Leva um minuto — e só quem recebe precisa dela.
+              Leva um minuto, e só quem recebe precisa dela.
             </DialogDescription>
           </div>
           <div className="space-y-2">
