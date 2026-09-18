@@ -135,12 +135,13 @@ describe("QuickSplitSheet", () => {
     expect(result.shares[1]).toEqual({ userId: COUNTERPARTY.id, shareAmountCents: 3000 });
   });
 
-  it("switches to fixed split and shows input", async () => {
+  it("switches to fixed split and shows input with accessible name", async () => {
     const { user } = renderSheet();
     fillForm("Uber", "30,00");
     await user.click(screen.getByTestId("split-method-fixed"));
 
     expect(screen.getByTestId("quick-split-my-fixed")).toBeInTheDocument();
+    expect(screen.getByLabelText("Seu valor fixo")).toBeInTheDocument();
   });
 
   it("calls onConfirm with fixed split shares", async () => {
@@ -256,6 +257,14 @@ describe("QuickSplitSheet", () => {
     const result = onConfirm.mock.calls[0][0];
     expect(result.splitType).toBe("percentage");
     expect(result.shares[0].shareAmountCents + result.shares[1].shareAmountCents).toBe(1001);
+  });
+
+  it("flags malformed total amount and blocks confirmation", () => {
+    renderSheet();
+    fillForm("Pizza", "1.23.456");
+
+    expect(screen.getAllByText("Valor inválido. Escreva assim: 10,50").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId("quick-split-confirm")).toBeDisabled();
   });
 
   it("reports the current user as the payer and still confirms them as payer", async () => {

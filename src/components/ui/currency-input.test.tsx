@@ -3,54 +3,108 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { CurrencyInput } from "./currency-input";
 import { useState } from "react";
 
-function Wrapper({ initial = 0 }: { initial?: number }) {
+function Wrapper({ initial = 0, maxCents }: { initial?: number; maxCents?: number }) {
   const [cents, setCents] = useState(initial);
-  return <CurrencyInput valueCents={cents} onChangeCents={setCents} data-testid="ci" />;
+  return <CurrencyInput valueCents={cents} onChangeCents={setCents} maxCents={maxCents} data-testid="ci" />;
 }
 
 describe("CurrencyInput", () => {
-  it("responds to keyDown digit events (ATM-style)", () => {
-    render(<Wrapper />);
+  it("parses dot decimal 10.50 and 10.5 as 1050 cents identically to 10,50", () => {
+    const onChangeCents = vi.fn();
+    render(<CurrencyInput valueCents={0} onChangeCents={onChangeCents} data-testid="ci" />);
     const input = screen.getByTestId("ci") as HTMLInputElement;
-    expect(input.value).toBe("0,00");
 
-    fireEvent.keyDown(input, { key: "5" });
-    expect(input.value).toBe("0,05");
+    fireEvent.change(input, { target: { value: "10.50" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(1050);
 
-    fireEvent.keyDown(input, { key: "0" });
-    expect(input.value).toBe("0,50");
+    fireEvent.change(input, { target: { value: "10.5" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(1050);
 
-    fireEvent.keyDown(input, { key: "0" });
-    expect(input.value).toBe("5,00");
-
-    fireEvent.keyDown(input, { key: "0" });
-    expect(input.value).toBe("50,00");
+    fireEvent.change(input, { target: { value: "10,50" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(1050);
   });
 
-  it("handles backspace", () => {
-    render(<Wrapper initial={5000} />);
+  it("replaces entire text on select-all without ATM digit shifting", () => {
+    const onChangeCents = vi.fn();
+    render(<CurrencyInput valueCents={5000} onChangeCents={onChangeCents} data-testid="ci" />);
     const input = screen.getByTestId("ci") as HTMLInputElement;
     expect(input.value).toBe("50,00");
 
-    fireEvent.keyDown(input, { key: "Backspace" });
-    expect(input.value).toBe("5,00");
-
-    fireEvent.keyDown(input, { key: "Backspace" });
-    expect(input.value).toBe("0,50");
+    fireEvent.change(input, { target: { value: "10,50" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(1050);
+    expect(input).not.toHaveAttribute("aria-invalid");
   });
 
-  it("responds to change events with Brazilian format", () => {
+  it("rejects malformed grouping 1.23.456 without silent repair", () => {
+    const onChangeCents = vi.fn();
+    render(<CurrencyInput valueCents={0} onChangeCents={onChangeCents} data-testid="ci" />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "1.23.456" } });
+    expect(onChangeCents).not.toHaveBeenCalled();
+    expect(input.value).toBe("1.23.456");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("accepts bare decimals ,50 and .50 as 50 cents", () => {
+    const onChangeCents = vi.fn();
+    render(<CurrencyInput valueCents={0} onChangeCents={onChangeCents} data-testid="ci" />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: ",50" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(50);
+
+    fireEvent.change(input, { target: { value: ".50" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(50);
+  });
+
+  it("parses thousands grouping 1.234 and 1.234,56 exactly", () => {
+    const onChangeCents = vi.fn();
+    render(<CurrencyInput valueCents={0} onChangeCents={onChangeCents} data-testid="ci" />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "1.234" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(123400);
+
+    fireEvent.change(input, { target: { value: "1.234,56" } });
+    expect(onChangeCents).toHaveBeenLastCalledWith(123456);
+  });
+
+  it("canonicalizes valid text to Brazilian format on blur", () => {
     render(<Wrapper />);
     const input = screen.getByTestId("ci") as HTMLInputElement;
 
-    fireEvent.change(input, { target: { value: "42,50" } });
-    expect(input.value).toBe("42,50");
+    fireEvent.change(input, { target: { value: "10.5" } });
+    expect(input.value).toBe("10.5");
+    fireEvent.blur(input);
+    expect(input.value).toBe("10,50");
+  });
+
+  it("keeps malformed text visible on blur", () => {
+    render(<Wrapper />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "10,505" } });
+    expect(input.value).toBe("10,505");
+    fireEvent.blur(input);
+    expect(input.value).toBe("10,505");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("keeps over-cap text visible on blur without silently reverting", () => {
+    render(<Wrapper initial={1000} maxCents={5000} />);
+    const input = screen.getByTestId("ci") as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: "100,00" } });
     expect(input.value).toBe("100,00");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.blur(input);
+    expect(input.value).toBe("100,00");
+    expect(input).toHaveAttribute("aria-invalid", "true");
   });
 
-  it("does not commit an out-of-range value — no store mutation, invalid state exposed (#477)", () => {
+  it("does not commit an over-cap value and clears it after a valid edit", () => {
     function MaxWrapper() {
       const [cents, setCents] = useState(0);
       return <CurrencyInput valueCents={cents} onChangeCents={setCents} maxCents={5000} data-testid="ci" />;
@@ -59,13 +113,9 @@ describe("CurrencyInput", () => {
     const input = screen.getByTestId("ci") as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: "100,00" } });
-    // Raw typed text is still shown (uncommitted override) and flagged
-    // invalid, but the committed store value never mutated — no clamp,
-    // no silent commit of an out-of-range value.
     expect(input.value).toBe("100,00");
-    expect(input).toHaveAttribute("aria-invalid");
+    expect(input).toHaveAttribute("aria-invalid", "true");
 
-    // A subsequent in-range edit commits normally and clears the override.
     fireEvent.change(input, { target: { value: "30,00" } });
     expect(input.value).toBe("30,00");
     expect(input).not.toHaveAttribute("aria-invalid");
@@ -96,30 +146,10 @@ describe("CurrencyInput", () => {
     const input = screen.getByTestId("ci") as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: "999999,00" } });
-    expect(input).toHaveAttribute("aria-invalid");
+    expect(input).toHaveAttribute("aria-invalid", "true");
 
     fireEvent.click(screen.getByTestId("reset"));
     expect(input.value).toBe("20,00");
-    expect(input).not.toHaveAttribute("aria-invalid");
-  });
-
-  it("backspace from an invalid override recovers to a valid committed value", () => {
-    function MaxWrapper() {
-      const [cents, setCents] = useState(0);
-      return <CurrencyInput valueCents={cents} onChangeCents={setCents} maxCents={500} data-testid="ci" />;
-    }
-    render(<MaxWrapper />);
-    const input = screen.getByTestId("ci") as HTMLInputElement;
-
-    // 0 -> 9 (9c) -> 99 (99c) -> 999 (over 500=invalid override)
-    fireEvent.keyDown(input, { key: "9" });
-    fireEvent.keyDown(input, { key: "9" });
-    fireEvent.keyDown(input, { key: "9" });
-    expect(input).toHaveAttribute("aria-invalid");
-
-    // Backspace off the last digit: 999 -> 99 (within 500)
-    fireEvent.keyDown(input, { key: "Backspace" });
-    expect(input.value).toBe("0,99");
     expect(input).not.toHaveAttribute("aria-invalid");
   });
 });

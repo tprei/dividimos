@@ -15,8 +15,7 @@ test.describe("Expenses with a pending invitee", () => {
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("button", { name: /Valor único/ }).click();
-    await page.getByRole("textbox", { name: "Valor total R$" }).click();
-    await page.keyboard.type("8000");
+    await page.getByRole("textbox", { name: "Valor total" }).fill("80,00");
     await page.getByRole("textbox", { name: "Nome" }).fill("Jantar pendente");
 
     await page.getByRole("button", { name: /Participantes/ }).click();
