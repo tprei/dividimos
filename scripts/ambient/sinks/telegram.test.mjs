@@ -26,7 +26,7 @@ function tempPngs(count) {
 
 // Records each call as { method, body }: parsed JSON for JSON calls, a plain
 // object of field names for multipart, with blobs reduced to their size.
-function fakeTelegram({ pinned, failEdit = false, sentIds = [901, 902, 903] } = {}) {
+function fakeTelegram({ pinned, editError, sentIds = [901, 902, 903] } = {}) {
   const calls = [];
   const fetch = async (url, init) => {
     const method = String(url).split("/").pop();
@@ -40,10 +40,8 @@ function fakeTelegram({ pinned, failEdit = false, sentIds = [901, 902, 903] } = 
       body = JSON.parse(String(init.body));
     }
     calls.push({ method, body });
-    if ((method === "editMessageMedia" || method === "editMessageText") && failEdit) {
-      return new Response(JSON.stringify({ ok: false, description: "message can't be edited" }), {
-        status: 400,
-      });
+    if ((method === "editMessageMedia" || method === "editMessageText") && editError) {
+      return new Response(JSON.stringify({ ok: false, description: editError }), { status: 400 });
     }
     let result = true;
     if (method === "getChat") result = { id: 42, pinned_message: pinned };
@@ -123,6 +121,26 @@ test("a green album run edits the pinned album in place, one edit per photo", as
   }
 });
 
+test("an unchanged photo keeps the board instead of reposting it", async () => {
+  const png = tempPngs(3);
+  try {
+    const report = greenReport(png.paths);
+    // Telegram rejects a re-upload of identical bytes, which is what the
+    // siblings are whenever a screen did not change between runs.
+    const tg = fakeTelegram({
+      pinned: ourBoard(report, [11, 12, 13]),
+      editError: "Bad Request: message is not modified: specified new message content is the same",
+    });
+    await notify(report, { env, openIssue: null, fetch: tg.fetch, now });
+    assert.deepEqual(
+      tg.calls.map((c) => c.method),
+      ["getChat", "editMessageMedia", "editMessageMedia", "editMessageMedia"],
+    );
+  } finally {
+    png.dispose();
+  }
+});
+
 test("a different screenshot count replaces the album and pins the new one", async () => {
   const png = tempPngs(2);
   try {
@@ -175,7 +193,10 @@ test("without screenshots the board stays a text message", async () => {
 
 test("an unedited board is replaced and re-pinned", async () => {
   const report = greenReport([]);
-  const tg = fakeTelegram({ pinned: ourBoard(report, [11]), failEdit: true });
+  const tg = fakeTelegram({
+    pinned: ourBoard(report, [11]),
+    editError: "message can't be edited",
+  });
   await notify(report, { env, openIssue: null, fetch: tg.fetch, now });
   assert.deepEqual(
     tg.calls.map((c) => c.method),

@@ -267,14 +267,29 @@ export async function notify(report, ctx) {
     await postBoard();
   }
 
+  /**
+   * Telegram answers "message is not modified" when a photo the run
+   * re-uploaded is byte-identical to the one already there, which happens
+   * whenever a screen did not change. The board is then already correct, so
+   * that answer counts as done rather than as a reason to replace it.
+   * @param {unknown} error
+   */
+  function isUnchanged(error) {
+    return error instanceof Error && error.message.includes("message is not modified");
+  }
+
   /** @param {number[]} ids */
   async function editBoard(ids) {
     if (boardShots.length === 0) {
-      await call("editMessageText", {
-        message_id: ids[0],
-        text: boardText(report, ctx.now ?? new Date(), ids),
-        ...html,
-      });
+      try {
+        await call("editMessageText", {
+          message_id: ids[0],
+          text: boardText(report, ctx.now ?? new Date(), ids),
+          ...html,
+        });
+      } catch (error) {
+        if (!isUnchanged(error)) throw error;
+      }
       return;
     }
     const caption = boardText(report, ctx.now ?? new Date(), ids);
@@ -290,7 +305,13 @@ export async function notify(report, ctx) {
         }),
       );
       form.set("board", photoBlob(boardShots[index]), "board.png");
-      await call("editMessageMedia", form);
+      try {
+        await call("editMessageMedia", form);
+      } catch (error) {
+        // An unchanged sibling photo is fine; only the captioned first
+        // message failing means the board did not refresh.
+        if (!isUnchanged(error)) throw error;
+      }
     }
   }
 
