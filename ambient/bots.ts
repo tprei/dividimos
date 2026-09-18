@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SeedHelper, type SeededUser } from "../e2e/seed-helper";
+import { note } from "./diary";
 import { type AmbientEnv, readAmbientEnv } from "./env";
 
 export interface BotSpec {
@@ -18,6 +19,12 @@ export const BOT_SPECS: readonly BotSpec[] = [
 export const BOT_EMAIL_DOMAIN = "bots.dividimos.ai";
 export const BOT_GROUP_NAME = "Bots da casa";
 export const MAX_ACTIVE_BOT_EXPENSES = 60;
+
+// The human who watches the troupe. He joins a bot group while it still owes
+// something and is removed once it is square, so a finished group stops
+// showing up in his app. Override with AMBIENT_OWNER_HANDLE, or set it empty
+// to keep every bot group private.
+export const OWNER_HANDLE = process.env.AMBIENT_OWNER_HANDLE ?? "tprei";
 
 export interface Troupe {
   env: AmbientEnv;
@@ -244,5 +251,112 @@ export async function ensureTroupe(): Promise<Troupe> {
     }
   }
 
-  return { env, admin, seed, bots, groupId };
+  const troupe: Troupe = { env, admin, seed, bots, groupId };
+
+  const owner = await syncOwnerMembership(troupe, groupId);
+  if (owner === "joined") {
+    note(`@${OWNER_HANDLE} joined ${BOT_GROUP_NAME} to watch the bots`);
+  } else if (owner === "removed") {
+    note(`${BOT_GROUP_NAME} is square, so @${OWNER_HANDLE} was let go`);
+  }
+
+  return troupe;
+}
+
+interface UserIdRow {
+  id: string;
+}
+
+interface MemberStatusRow {
+  status: string;
+}
+
+async function findOwnerId(admin: SupabaseClient): Promise<string | null> {
+  if (OWNER_HANDLE.length === 0) return null;
+  const { data, error } = await admin
+    .from("users")
+    .select("id")
+    .eq("handle", OWNER_HANDLE)
+    .maybeSingle<UserIdRow>();
+  if (error) {
+    throw new Error(`ambient: lookup owner @${OWNER_HANDLE} failed: ${error.message}`);
+  }
+  return data?.id ?? null;
+}
+
+/**
+ * A group is settled when nobody owes anybody: recompute_group_balances keeps
+ * a row only for a participant with a non-zero net, so no user rows means
+ * square. That is the condition for letting the owner go.
+ */
+async function isSettled(troupe: Troupe, groupId: string): Promise<boolean> {
+  const { count, error } = await troupe.admin
+    .from("group_balances")
+    .select("participant_id", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .eq("kind", "user");
+  if (error) {
+    throw new Error(`ambient: count balances failed: ${error.message}`);
+  }
+  return (count ?? 0) === 0;
+}
+
+/**
+ * Keeps the owner in a bot group exactly while it has money in flight: joins
+ * him when there is something to watch, removes him once the group is square
+ * so it leaves his list. Returns what happened, for the run diary.
+ *
+ * Reads and writes go through the same RPCs a person's app would call, so the
+ * membership row, the events, and the broadcasts are the real thing. The
+ * owner's own session is minted for the one call only he may make, accepting
+ * his invitation.
+ */
+export async function syncOwnerMembership(
+  troupe: Troupe,
+  groupId: string,
+): Promise<"joined" | "removed" | "watching" | "absent" | "skipped"> {
+  const ownerId = await findOwnerId(troupe.admin);
+  if (ownerId === null) return "absent";
+
+  const { data: memberRow, error: memberError } = await troupe.admin
+    .from("group_members")
+    .select("status")
+    .eq("group_id", groupId)
+    .eq("user_id", ownerId)
+    .maybeSingle<MemberStatusRow>();
+  if (memberError) {
+    throw new Error(`ambient: lookup owner membership failed: ${memberError.message}`);
+  }
+
+  const settled = await isSettled(troupe, groupId);
+
+  if (memberRow === null) {
+    // An empty group has nothing to show yet, and a settled one is already
+    // over: joining either would only add noise.
+    if (settled) return "skipped";
+    await troupe.seed.inviteMember(troupe.bots[0].id, groupId, ownerId);
+    const ownerClient = await troupe.seed.authenticateAs(ownerId);
+    const { error: acceptError } = await ownerClient.rpc("accept_invitation", {
+      p_group_id: groupId,
+    });
+    if (acceptError) {
+      throw new Error(`ambient: owner accept_invitation failed: ${acceptError.message}`);
+    }
+    return "joined";
+  }
+
+  if (!settled) return "watching";
+
+  const creatorClient = await troupe.seed.authenticateAs(troupe.bots[0].id);
+  const { error: removeError } = await creatorClient.rpc("remove_member", {
+    p_group_id: groupId,
+    p_user_id: ownerId,
+  });
+  if (removeError) {
+    // The RPC guards the same condition from inside the transaction, so a
+    // balance created between the check and the call keeps him in.
+    if (removeError.message === "outstanding_balance") return "watching";
+    throw new Error(`ambient: remove_member failed: ${removeError.message}`);
+  }
+  return "removed";
 }

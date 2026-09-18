@@ -53,7 +53,12 @@ test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
     await page.goto(`${groupUrl.pathname}/chat`);
     const input = page.getByPlaceholder("Mensagem...");
     await expect(input).toBeVisible({ timeout: 20000 });
-    const message = `passei aqui pelo celular ${new Date().toISOString().slice(11, 16)}`;
+    // The text has to be unique per run: two runs in the same minute used to
+    // leave two identical bubbles, and the locator then matched both and
+    // failed strict mode. The run id is unique per run, and the seconds keep
+    // local runs apart too.
+    const stamp = process.env.GITHUB_RUN_ID ?? String(Date.now());
+    const message = `passei aqui pelo celular ${new Date().toISOString().slice(11, 19)} #${stamp.slice(-6)}`;
     await input.fill(message);
     await page.getByRole("button", { name: "Enviar mensagem" }).click();
     await expect(page.getByText(message)).toBeVisible({ timeout: 20000 });
