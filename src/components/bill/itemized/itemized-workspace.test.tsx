@@ -52,6 +52,7 @@ function renderPaymentGate(payers: ExpensePayer[], grandTotal: number) {
           handle: "ana",
           name: "Ana",
           avatarUrl: null,
+          isBot: false,
           email: "a@test.com",
           pixKeyType: null,
           pixKeyHint: null,
