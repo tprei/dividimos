@@ -85,6 +85,66 @@ interface BalanceCountRow {
   group_id: string;
 }
 
+interface JourneyMemberRow {
+  user_id: string;
+  status: string;
+}
+
+interface GroupCreatorRow {
+  creator_id: string;
+}
+
+/**
+ * Makes every bot of this episode an accepted member of the group.
+ *
+ * create_group accepts only the creator and leaves the rest invited, and the
+ * pool outlives a run, so a later episode with a different first member reads
+ * the group as an invited viewer. ledger_group_snapshot_json answers that
+ * viewer with empty balances by design, which the model then reads as
+ * divergence. Accepting is driven by the stored status, so this is safe to
+ * repeat and repairs a group left half-joined by an earlier run.
+ */
+async function acceptJourneyMembers(
+  troupe: Troupe,
+  groupId: string,
+  members: SeededUser[],
+): Promise<void> {
+  const { data: group, error: groupError } = await troupe.admin
+    .from("groups")
+    .select("creator_id")
+    .eq("id", groupId)
+    .maybeSingle<GroupCreatorRow>();
+  if (groupError || !group) {
+    throw new Error(`journey group creator lookup failed: ${groupError?.message ?? "missing"}`);
+  }
+
+  const { data: rows, error: rowsError } = await troupe.admin
+    .from("group_members")
+    .select("user_id,status")
+    .eq("group_id", groupId)
+    .returns<JourneyMemberRow[]>();
+  if (rowsError) {
+    throw new Error(`journey membership lookup failed: ${rowsError.message}`);
+  }
+  const status = new Map((rows ?? []).map((row) => [row.user_id, row.status]));
+
+  for (const member of members) {
+    if (!status.has(member.id)) {
+      await troupe.seed.inviteMember(group.creator_id, groupId, member.id);
+      status.set(member.id, "invited");
+    }
+    if (status.get(member.id) === "accepted") continue;
+    const client = await troupe.seed.authenticateAs(member.id);
+    const { error } = await client.rpc("accept_invitation", { p_group_id: groupId });
+    if (error) {
+      throw new Error(
+        `journey accept_invitation failed for ${member.handle}: ${error.message}`,
+      );
+    }
+    status.set(member.id, "accepted");
+  }
+}
+
 /**
  * Picks the journey group to use: the emptiest of the pool, preferring one
  * with no outstanding balance, and creating a new one while the pool is
@@ -116,6 +176,7 @@ export async function findOrCreateJourneyGroup(
       `New journey group "${name}" opened by ` +
         members.map((member) => firstName(troupe.bots, member.id)).join(", "),
     );
+    await acceptJourneyMembers(troupe, group.id, members);
     return { groupId: group.id, groupName: name };
   }
 
@@ -135,6 +196,7 @@ export async function findOrCreateJourneyGroup(
   const unsettled = new Set((owing ?? []).map((row) => row.group_id));
   const settled = groups.find((group) => !unsettled.has(group.id));
   const chosen = settled ?? groups[0];
+  await acceptJourneyMembers(troupe, chosen.id, members);
   return { groupId: chosen.id, groupName: chosen.name };
 }
 
