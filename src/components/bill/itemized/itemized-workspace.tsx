@@ -106,7 +106,7 @@ export function ItemizedWorkspace({
   // blocker where it can be fixed.
   const blocked = ((): string | null => {
     if (conflictBlocked) {
-      return "Resolva o aviso de versão antes de salvar.";
+      return "Carregue a versão mais recente pra salvar.";
     }
     if (section === "account" && !accountReady) {
       return "Dê um nome à conta e inclua pelo menos duas pessoas.";

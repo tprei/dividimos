@@ -1,204 +1,142 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { useBillStore } from "@/stores/bill-store";
 import { ExpenseConflictPanel } from "./expense-conflict-panel";
 import type { ExpenseDetail } from "@/types/ledger";
 
-const mockDetail: ExpenseDetail = {
-  expense: {
-    id: "exp-1",
-    groupId: "group-1",
-    creatorId: "user-1",
-    status: "active",
-    currentVersionNo: 2,
-    occurredOn: "2026-09-17",
-    createdAt: "2026-09-17T12:00:00Z",
-    deletedAt: null,
-    deletedBy: null,
-  },
-  current: {
-    expenseId: "exp-1",
-    versionNo: 2,
-    authorId: "user-2",
-    createdAt: "2026-09-17T12:00:00Z",
-    occurredOn: "2026-09-17",
-    title: "Jantar Especial",
-    merchantName: "Restaurante",
-    expenseType: "single_amount",
-    totalCents: 15000,
-    serviceFeeBasisPoints: 0,
-    fixedFeeCents: 0,
-    changeSummary: null,
-    payload: {
-      items: [],
-      participants: [],
-      shares: [7500, 7500],
-      payers: [{ participantIndex: 0, amountCents: 15000 }],
-      itemAssignments: null,
+function makeDetail(overrides: Partial<ExpenseDetail["current"]> = {}): ExpenseDetail {
+  return {
+    expense: {
+      id: "exp-1",
+      groupId: "group-1",
+      creatorId: "u1",
+      status: "active",
+      currentVersionNo: 2,
+      occurredOn: "2026-09-17",
+      createdAt: "2026-09-17T12:00:00Z",
+      deletedAt: null,
+      deletedBy: null,
     },
-  },
-  versions: [],
-  participants: [
-    {
-      participantIndex: 0,
-      kind: "user",
-      shareCents: 7500,
-      paidCents: 15000,
-      user: { id: "u1", name: "Alice", handle: "alice", avatarUrl: null },
-      guest: null,
+    current: {
+      expenseId: "exp-1",
+      versionNo: 2,
+      authorId: "u2",
+      createdAt: "2026-09-17T12:00:00Z",
+      occurredOn: "2026-09-17",
+      title: "Churrasco atualizado",
+      merchantName: null,
+      expenseType: "single_amount",
+      totalCents: 23690,
+      serviceFeeBasisPoints: 0,
+      fixedFeeCents: 0,
+      changeSummary: {
+        title: ["Churrasco", "Churrasco atualizado"],
+        totalCents: [20000, 23690],
+        participantsAdded: [],
+        participantsRemoved: [],
+        payersChanged: false,
+      },
+      payload: {
+        items: [],
+        participants: [],
+        shares: [11845, 11845],
+        payers: [{ participantIndex: 0, amountCents: 23690 }],
+        itemAssignments: null,
+      },
+      ...overrides,
     },
-    {
-      participantIndex: 1,
-      kind: "user",
-      shareCents: 7500,
-      paidCents: 0,
-      user: { id: "u2", name: "Bob", handle: "bob", avatarUrl: null },
-      guest: null,
-    },
-  ],
-  group: {
-    id: "group-1",
-    name: "Amigos",
-    kind: "group",
-  },
-};
+    versions: [],
+    participants: [
+      {
+        participantIndex: 0,
+        kind: "user",
+        shareCents: 11845,
+        paidCents: 23690,
+        user: { id: "u1", name: "Alice", handle: "alice", avatarUrl: null },
+        guest: null,
+      },
+      {
+        participantIndex: 1,
+        kind: "user",
+        shareCents: 11845,
+        paidCents: 0,
+        user: { id: "u2", name: "Bob", handle: "bob", avatarUrl: null },
+        guest: null,
+      },
+    ],
+    group: { id: "group-1", name: "Amigos", kind: "group" },
+  };
+}
 
 describe("ExpenseConflictPanel", () => {
-  it("ready renders title, description, summary Money from detail, consequence line, and enabled CTA", () => {
-    render(
-      <ExpenseConflictPanel
-        status="ready"
-        detail={mockDetail}
-        onRetry={vi.fn()}
-        onAccept={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(
-      screen.getByText("Esta conta foi alterada por outra pessoa enquanto você editava."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Suas alterações não podem ser salvas por cima da versão atual."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("VERSÃO MAIS RECENTE")).toBeInTheDocument();
-    expect(screen.getByText("Jantar Especial")).toBeInTheDocument();
-    expect(screen.getAllByText(/150,00/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText("Bob")).toBeInTheDocument();
-    expect(
-      screen.getByText("Isso substitui suas alterações pela versão mais recente."),
-    ).toBeInTheDocument();
-
-    const cta = screen.getByRole("button", { name: "Carregar versão mais recente" });
-    expect(cta).toBeInTheDocument();
-    expect(cta).toBeEnabled();
-  });
-
-  it("error keeps the alert and the loaded summary visible with a retry that calls onRetry", async () => {
-    const user = userEvent.setup();
-    const onRetry = vi.fn();
-
-    render(
-      <ExpenseConflictPanel
-        status="error"
-        detail={mockDetail}
-        errorMessage="Falha ao sincronizar"
-        onRetry={onRetry}
-        onAccept={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText("Não foi possível carregar a versão mais recente."),
-    ).toBeInTheDocument();
-    const retryBtn = screen.getByRole("button", { name: /tentar novamente/i });
-    expect(retryBtn).toBeInTheDocument();
-
-    // The conflict never silently disappears: the alert persists and any
-    // server version already loaded stays on screen.
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.queryByText("VERSÃO MAIS RECENTE")).not.toBeInTheDocument();
-    expect(screen.queryByText("Jantar Especial")).not.toBeInTheDocument();
-    // The accept path stays visible but disabled until a retry succeeds.
-    expect(
-      screen.getByRole("button", { name: /Carregar versão mais recente/ }),
-    ).toBeDisabled();
-
-    await user.click(retryBtn);
-    expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it("accept-while-ready fires onAccept", async () => {
-    const user = userEvent.setup();
+  it("names the author and lists what changed in a single card", async () => {
     const onAccept = vi.fn();
-
     render(
       <ExpenseConflictPanel
         status="ready"
-        detail={mockDetail}
+        detail={makeDetail()}
         onRetry={vi.fn()}
         onAccept={onAccept}
       />,
     );
 
-    const cta = screen.getByRole("button", { name: "Carregar versão mais recente" });
-    await user.click(cta);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveFocus();
+    expect(
+      screen.getByRole("heading", { name: "Bob alterou esta conta enquanto você editava" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Bob mudou o nome de “Churrasco” para “Churrasco atualizado”"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Bob mudou o total de R$ 200,00 para R$ 236,90"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^Editado em /)).toBeInTheDocument();
+    expect(screen.getByText("Carregar substitui o que você digitou.")).toBeInTheDocument();
+    // The per-participant share table is gone: only the change summary remains.
+    expect(screen.queryByText("R$ 118,45")).not.toBeInTheDocument();
 
-    expect(onAccept).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "Carregar versão mais recente" }));
+    expect(onAccept).toHaveBeenCalledTimes(1);
   });
 
-  it("onAccept while ready updates store and base version, preserving local fields during preview", async () => {
-    const user = userEvent.setup();
-    const store = useBillStore.getState();
-    store.reset();
-    store.createExpense("Rascunho Local", "single_amount");
-    store.updateExpense({ totalAmountInput: 5000 });
-
-    let editBaseVersionNo = 1;
-
-    const handleAccept = () => {
-      useBillStore.getState().hydrateFromDetail(mockDetail, []);
-      editBaseVersionNo = mockDetail.expense.currentVersionNo;
-    };
-
+  it("falls back to a generic heading and sentence when the author is unknown", () => {
     render(
       <ExpenseConflictPanel
         status="ready"
-        detail={mockDetail}
-        onRetry={vi.fn()}
-        onAccept={handleAccept}
-      />,
-    );
-
-    // Preview keeps local fields intact and base version unchanged (v1)
-    expect(useBillStore.getState().expense?.title).toBe("Rascunho Local");
-    expect(useBillStore.getState().totalAmountInput).toBe(5000);
-    expect(editBaseVersionNo).toBe(1);
-
-    const cta = screen.getByRole("button", { name: "Carregar versão mais recente" });
-    await user.click(cta);
-
-    // After accept: store is hydrated and base version updated to candidate.currentVersionNo (v2)
-    expect(editBaseVersionNo).toBe(2);
-    expect(useBillStore.getState().expense?.title).toBe("Jantar Especial");
-    expect(useBillStore.getState().totalAmountInput).toBe(15000);
-  });
-
-  it("loading renders warning and disabled CTA with spinner label", () => {
-    render(
-      <ExpenseConflictPanel
-        status="loading"
-        detail={null}
+        detail={makeDetail({ authorId: "someone-else", changeSummary: null })}
         onRetry={vi.fn()}
         onAccept={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("alert")).toBeInTheDocument();
-    expect(screen.queryByText("VERSÃO MAIS RECENTE")).not.toBeInTheDocument();
-    const cta = screen.getByRole("button", { name: /carregando/i });
-    expect(cta).toBeDisabled();
+    expect(
+      screen.getByRole("heading", { name: "Esta conta mudou enquanto você editava" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Alguém editou a conta")).toBeInTheDocument();
+  });
+
+  it("disables the action while the latest version is loading", () => {
+    render(
+      <ExpenseConflictPanel status="loading" detail={null} onRetry={vi.fn()} onAccept={vi.fn()} />,
+    );
+
+    expect(screen.getByText("Carregando a versão mais recente...")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Carregando/ })).toBeDisabled();
+  });
+
+  it("turns the action into a retry when loading failed", async () => {
+    const onRetry = vi.fn();
+    const onAccept = vi.fn();
+    render(
+      <ExpenseConflictPanel status="error" detail={null} onRetry={onRetry} onAccept={onAccept} />,
+    );
+
+    expect(
+      screen.getByText("Não deu pra carregar a versão mais recente. Suas edições continuam aqui."),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Tentar de novo" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onAccept).not.toHaveBeenCalled();
   });
 });

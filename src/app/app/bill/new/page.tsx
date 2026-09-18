@@ -61,7 +61,7 @@ type ExpenseConflict =
   | { status: "none" }
   | { status: "loading" }
   | { status: "ready"; detail: ExpenseDetail }
-  | { status: "error"; message: string };
+  | { status: "error" };
 function itemizedSectionFor(step: Step): ItemizedSectionKey {
   if (step === "items") return "items";
   if (step === "split" || step === "participants") return "split";
@@ -538,18 +538,13 @@ function NewBillPageContent() {
     try {
       await refreshExpense(editId);
     } catch (e) {
-      setConflict({
-        status: "error",
-        message: ledgerErrorMessage(e),
-      });
+      toast.error(ledgerErrorMessage(e));
+      setConflict({ status: "error" });
       return;
     }
     const detail = useAppStore.getState().expenseDetails[editId];
     if (!detail) {
-      setConflict({
-        status: "error",
-        message: "Não foi possível carregar a versão mais recente.",
-      });
+      setConflict({ status: "error" });
       return;
     }
     setConflict({ status: "ready", detail });
@@ -581,7 +576,6 @@ function NewBillPageContent() {
       <ExpenseConflictPanel
         status={conflict.status}
         detail={conflict.status === "ready" ? conflict.detail : null}
-        errorMessage={conflict.status === "error" ? conflict.message : undefined}
         onRetry={handleStaleVersion}
         onAccept={handleAcceptConflict}
       />
@@ -589,7 +583,7 @@ function NewBillPageContent() {
   ) : null;
   const conflictBlockedReason =
     conflict.status !== "none"
-      ? "Esta conta mudou no grupo. Resolva o aviso acima antes de salvar."
+      ? "Carregue a versão mais recente pra salvar."
       : null;
 
   const { submitting, submit } = useWizardSubmit({
