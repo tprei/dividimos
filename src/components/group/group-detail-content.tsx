@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence } from "framer-motion";
-import { MessageSquare, Share2, UserPlus, Users, UsersRound } from "lucide-react";
+import { Bot, MessageSquare, Share2, UserPlus, Users, UsersRound } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,7 @@ import { GroupRowSkeleton } from "@/components/shared/skeleton";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePrefetchRoutes } from "@/hooks/use-prefetch-routes";
+import { isBotGroup } from "@/lib/bot-group";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
 import { refreshGroup } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
@@ -243,6 +244,13 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           </div>
         }
       />
+
+      {isBotGroup(members, meId ?? "") && (
+        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 text-xs font-semibold text-gold">
+          <Bot className="size-3.5" aria-hidden="true" />
+          Grupo de bots
+        </p>
+      )}
 
       <NotificationPrompt />
 

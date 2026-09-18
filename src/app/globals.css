@@ -46,6 +46,8 @@
   --color-success-text: var(--success-text);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
   --color-income: var(--income);
   --color-income-foreground: var(--income-foreground);
   --color-overdue: var(--overdue);
@@ -93,6 +95,11 @@
 
   --warning: oklch(0.75 0.15 75);
   --warning-foreground: oklch(0.25 0.05 75);
+
+  /* Bot-run groups. Deeper and less orange than warning, so a golden row
+     reads as "the bots live here" and never as "something needs attention". */
+  --gold: oklch(0.62 0.12 88);
+  --gold-foreground: oklch(0.99 0 0);
 
   --income: oklch(0.70 0.19 155);
   --income-foreground: oklch(0.18 0.04 155);
@@ -164,6 +171,9 @@
 
   --warning: oklch(0.78 0.15 75);
   --warning-foreground: oklch(0.88 0.09 75);
+
+  --gold: oklch(0.82 0.13 88);
+  --gold-foreground: oklch(0.22 0.05 88);
 
   --income: oklch(0.72 0.19 155);
   --income-foreground: oklch(0.18 0.04 155);
