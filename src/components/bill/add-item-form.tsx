@@ -101,7 +101,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
               onClick={decrement}
               disabled={quantity <= 1000}
               aria-label="Diminuir quantidade"
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted disabled:opacity-30"
+              className="relative flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:bg-muted disabled:opacity-30"
             >
               <Minus className="h-3 w-3" />
             </button>
@@ -112,7 +112,7 @@ export function AddItemForm({ onAdd, onCancel }: AddItemFormProps) {
               type="button"
               onClick={increment}
               aria-label="Aumentar quantidade"
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted"
+              className="relative flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:bg-muted"
             >
               <Plus className="h-3 w-3" />
             </button>

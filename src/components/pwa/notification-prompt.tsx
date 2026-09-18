@@ -96,7 +96,7 @@ export function NotificationPrompt() {
           {!isNative && (
             <button
               onClick={handleDismiss}
-              className="rounded-lg p-1 text-muted-foreground hover:text-foreground"
+              className="-m-2 flex size-11 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"
               aria-label="Fechar"
             >
               <X className="h-4 w-4" />

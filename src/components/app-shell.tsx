@@ -38,6 +38,8 @@ import { loadActivity } from "@/lib/sync/refresh";
 import { selectUnreadTotal } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
 
+const WIZARD_PREFIX = "/app/bill/new";
+
 const navItems = [
   { href: "/app", icon: Home, label: "Início" },
   {
@@ -46,7 +48,7 @@ const navItems = [
     label: "Conversas",
     badge: true as const,
   },
-  { href: "/app/bill/new", icon: Plus, label: "Nova", primary: true },
+  { href: WIZARD_PREFIX, icon: Plus, label: "Nova", primary: true },
   { href: "/app/groups", icon: Users, label: "Grupos" },
   { href: "/app/profile", icon: User, label: "Perfil" },
 ];
@@ -63,7 +65,7 @@ function NavBar() {
   const keyboardOpen = useKeyboardVisible();
   const unreadTotal = useAppStore(selectUnreadTotal);
 
-  if (keyboardOpen) return null;
+  if (keyboardOpen || pathname.startsWith(WIZARD_PREFIX)) return null;
 
   return (
     <nav
@@ -79,13 +81,20 @@ function NavBar() {
 
           if (item.primary) {
             return (
-              <Link key={item.href} href={item.href} onClick={() => haptics.tap()}>
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-label="Nova conta"
+                onClick={() => haptics.tap()}
+                className="-mt-5 flex flex-col items-center gap-0.5 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
                 <motion.div
                   whileTap={{ scale: 0.92 }}
-                  className="gradient-primary -mt-5 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
+                  className="gradient-primary flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg shadow-primary/30"
                 >
-                  <item.icon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                  <item.icon className="h-6 w-6 text-primary-foreground" strokeWidth={2.5} />
                 </motion.div>
+                <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
               </Link>
             );
           }
@@ -96,25 +105,27 @@ function NavBar() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               onClick={() => haptics.tap()}
-              className="flex flex-col items-center gap-0.5"
+              className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <motion.div whileTap={{ scale: 0.9 }} className="relative">
                 <item.icon
                   className={`h-5 w-5 transition-colors ${
-                    isActive ? "text-primary" : "text-muted-foreground"
+                    isActive ? "text-primary-text" : "text-muted-foreground"
                   }`}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
                 {showBadge && <UnreadBadge count={unreadTotal} />}
               </motion.div>
               <span
-                className={`text-[10px] font-medium transition-colors ${
-                  isActive ? "text-primary" : "text-muted-foreground"
+                className={`text-xs font-medium transition-colors ${
+                  isActive ? "text-primary-text" : "text-muted-foreground"
                 }`}
               >
                 {item.label}
               </span>
+              <span className={`mt-0.5 h-0.5 w-4 rounded-full ${isActive ? "bg-primary-text" : "bg-transparent"}`} />
             </Link>
           );
         })}
@@ -178,6 +189,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const keyboardOpen = useKeyboardVisible();
+  const navHidden = keyboardOpen || pathname.startsWith(WIZARD_PREFIX);
   const [refreshing, setRefreshing] = useState(false);
 
   const hydrated = useAppStore((s) => s.hydrated);
@@ -352,9 +364,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={retryBootstrap}
                 disabled={retrying}
-                className="text-xs font-medium text-primary transition-colors hover:text-primary/80 disabled:opacity-50"
+                className="-my-2 px-2 py-2 text-xs font-medium text-primary-text transition-colors hover:text-primary-text/80 disabled:opacity-50"
               >
-                {retrying ? "Atualizando..." : "Atualizar"}
+                {retrying ? "Atualizando..." : "Tentar novamente"}
               </button>
             </div>
           )}
@@ -366,13 +378,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <InstallPrompt />
                 <Link
                   href="/app/search"
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Buscar"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <Search className="h-4 w-4" />
                 </Link>
                 <Link
                   href="/app/activity"
-                  className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="relative flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                   aria-label="Atividade"
                 >
                   <Bell className="h-4 w-4" />
@@ -382,14 +395,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </Link>
                 <Link
                   href="/app/settings"
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Configurações"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <Settings className="h-4 w-4" />
                 </Link>
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  aria-label="Atualizar"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
                 >
                   {refreshing ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -414,7 +429,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
 
           <main
-            className={cn("flex-1 overflow-y-auto", !keyboardOpen && "pb-20")}
+            className={cn("flex-1 overflow-y-auto", !navHidden && "pb-20")}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}

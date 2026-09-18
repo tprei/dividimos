@@ -164,7 +164,7 @@ describe("AppShell hydration & auth lifecycle", () => {
     render(<AppShell><div>content</div></AppShell>);
 
     expect(screen.getByText("content")).toBeDefined();
-    expect(screen.getByRole("button", { name: /Atualizar/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Tentar novamente/ })).toBeDefined();
   });
 
   it("never routes to onboarding while the profile is unproven", () => {
@@ -301,8 +301,40 @@ describe("AppShell navigation", () => {
     mockPathname.mockReturnValue("/app/conversations");
     render(<AppShell><div>content</div></AppShell>);
 
-    const label = screen.getByText("Conversas");
-    expect(label.className).toContain("text-primary");
+    const tab = screen.getByRole("link", { name: /Conversas/ });
+    expect(tab).toHaveAttribute("aria-current", "page");
+  });
+
+  it("names the center action Nova conta with a visible Nova label", () => {
+    render(<AppShell><div>content</div></AppShell>);
+
+    const action = screen.getByRole("link", { name: "Nova conta" });
+    expect(action).toBeInTheDocument();
+    expect(screen.getByText("Nova")).toBeInTheDocument();
+  });
+
+  it("names every header utility control", () => {
+    mockPathname.mockReturnValue("/app/activity");
+    render(<AppShell><div>content</div></AppShell>);
+
+    for (const name of ["Buscar", "Atividade", "Configurações"]) {
+      expect(screen.getByRole("link", { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("button", { name: "Atualizar" })).toBeInTheDocument();
+  });
+
+  it("hides navigation bar inside the expense wizard", () => {
+    mockPathname.mockReturnValue("/app/bill/new");
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  it("renders navigation bar on group screens", () => {
+    mockPathname.mockReturnValue("/app/groups/x");
+    render(<AppShell><div>content</div></AppShell>);
+
+    expect(screen.getByRole("navigation")).toBeInTheDocument();
   });
 });
 
@@ -559,6 +591,15 @@ describe("AppShell keyboard padding", () => {
 
   it("removes pb-20 padding from main when keyboard is open", () => {
     mockKeyboardVisible.mockReturnValue(true);
+    render(<AppShell><div>content</div></AppShell>);
+
+    const main = document.querySelector("main")!;
+    expect(main.className).not.toContain("pb-20");
+  });
+
+  it("removes pb-20 padding from main inside the expense wizard", () => {
+    mockKeyboardVisible.mockReturnValue(false);
+    mockPathname.mockReturnValue("/app/bill/new");
     render(<AppShell><div>content</div></AppShell>);
 
     const main = document.querySelector("main")!;
