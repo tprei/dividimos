@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ActivityContent } from "./activity-content";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { loadActivity } from "@/lib/sync/refresh";
@@ -345,13 +345,15 @@ describe("ActivityContent", () => {
     fireEvent.click(undoButton);
 
     expect(voidSettlement).not.toHaveBeenCalled();
-    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
-    expect(screen.getByText(/Bob pagou você\./)).toBeInTheDocument();
+    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("Bob")).toBeInTheDocument();
+    expect(dialog.getByText("você")).toBeInTheDocument();
     expect(
-      screen.getByText(/O registro ficará marcado como Desfeito e os saldos atuais serão recalculados\./),
+      screen.getByText(/O registro fica marcado como Desfeito e os saldos são recalculados na hora\./),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/O Pix em si não é estornado — combine a devolução diretamente com a outra pessoa\./),
+      screen.getByText(/O Pix em si não é estornado\. Combina a devolução direto com a outra pessoa\./),
     ).toBeInTheDocument();
   });
 
@@ -364,11 +366,11 @@ describe("ActivityContent", () => {
     });
     render(<ActivityContent />);
     fireEvent.click(screen.getByTestId("activity-undo-settlement"));
-    expect(screen.getByText(/Desfazer o registro de/)).toBeInTheDocument();
+    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
     await waitFor(() => {
-      expect(screen.queryByText(/Desfazer o registro de/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Desfazer este registro\?/)).not.toBeInTheDocument();
     });
     expect(voidSettlement).not.toHaveBeenCalled();
   });

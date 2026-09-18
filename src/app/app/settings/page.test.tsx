@@ -63,13 +63,16 @@ vi.mock("@/components/ui/switch", () => ({
   Switch: ({
     checked,
     onCheckedChange,
+    "aria-label": ariaLabel,
   }: {
     checked?: boolean;
     onCheckedChange?: (value: boolean) => void;
+    "aria-label"?: string;
   }) => (
     <button
       type="button"
       role="switch"
+      aria-label={ariaLabel}
       aria-checked={checked ?? false}
       onClick={() => onCheckedChange?.(!(checked ?? false))}
     />
@@ -77,6 +80,7 @@ vi.mock("@/components/ui/switch", () => ({
 }));
 
 import SettingsPage from "./page";
+import { readConfirmationPreferences } from "@/lib/confirmation-preferences";
 
 function makeMe(id: string, prefs?: NotificationPreferences): Me {
   return {
@@ -133,6 +137,28 @@ describe("SettingsPage", () => {
     const sws = screen.getAllByRole("switch");
     expect(sws[0]).toHaveAttribute("aria-checked", "true");
     expect(sws[1]).toHaveAttribute("aria-checked", "false");
+  });
+});
+
+describe("SettingsPage confirmations", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    useAppStore.getState().reset();
+  });
+
+  it("persists turning off the void-settlement confirmation for the signed-in user", () => {
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    const toggle = screen.getByRole("switch", { name: "Confirmar antes de desfazer um pagamento" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(readConfirmationPreferences("user-a").confirmVoidSettlement).toBe(false);
+    expect(readConfirmationPreferences("user-b").confirmVoidSettlement).toBe(true);
   });
 });
 

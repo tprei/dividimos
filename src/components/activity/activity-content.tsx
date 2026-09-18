@@ -11,6 +11,7 @@ import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
+import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { newestActivityAt } from "@/lib/activity-badge";
 import { describeEvent } from "@/lib/ledger/event-copy";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -85,6 +86,7 @@ interface ActivityRowProps {
 function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const [isUndoing, setIsUndoing] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [preferences, updatePreferences] = useConfirmationPreferences(meId ?? "");
 
   const nameOf = useMemo(
     () => makeNameOf(event.groupId, groups, meId),
@@ -160,7 +162,8 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setConfirmOpen(true);
+                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                else void handleConfirmUndo();
               }}
               disabled={isUndoing}
               data-testid="activity-undo-settlement"
@@ -191,6 +194,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
       onConfirm={() => {
         void handleConfirmUndo();
       }}
+      onSkipFutureConfirmations={() => updatePreferences({ confirmVoidSettlement: false })}
     />
   ) : null;
 

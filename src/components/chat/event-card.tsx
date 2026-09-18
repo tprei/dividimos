@@ -11,6 +11,7 @@ import { voidSettlement } from "@/lib/sync/mutations";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { cn } from "@/lib/utils";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
+import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import type { GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
 
 const EXPENSE_KINDS: Record<string, true> = {
@@ -75,6 +76,7 @@ interface EventCardProps {
 export function EventCard({ event, groupId, meId, settlement, latestStatus, nameOf }: EventCardProps) {
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [preferences, updatePreferences] = useConfirmationPreferences(meId);
   const actorName = event.actor?.name ?? (event.actorId ? nameOf(event.actorId) : "");
   const copy = describeEvent(event, {
     actorName,
@@ -199,7 +201,10 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
               size="sm"
               variant="outline"
               className="min-h-11 flex-1 gap-1.5 text-xs"
-              onClick={() => setConfirmOpen(true)}
+              onClick={() => {
+                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                else void handleVoid();
+              }}
               disabled={busy}
               data-testid="event-undo-settlement"
             >
@@ -220,6 +225,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
           onConfirm={() => {
             void handleVoid();
           }}
+          onSkipFutureConfirmations={() => updatePreferences({ confirmVoidSettlement: false })}
         />
       )}
     </div>
