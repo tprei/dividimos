@@ -1,8 +1,18 @@
 import { mkdirSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { devices, expect, test } from "@playwright/test";
 import { loginInContext } from "../e2e/fixtures";
 import { BOT_GROUP_NAME, ensureTroupe, type Troupe } from "./bots";
 import { note } from "./diary";
+
+// The walk builds its own context, which inherits the Pixel 7 viewport from
+// the config but not recordVideo: video is wired up by Playwright's own
+// context fixture, so a hand-built context records nothing unless asked.
+// Without this the encode step in the workflow finds no webm and the board
+// loses its moving part.
+const phone = devices["Pixel 7"].viewport;
+if (!phone) {
+  throw new Error("ambient: the Pixel 7 profile has no viewport to record at");
+}
 
 let troupe: Troupe;
 
@@ -17,7 +27,9 @@ test.beforeAll(async () => {
  * recording of this walk are what the Telegram board shows.
  */
 test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
-  const ctx = await browser.newContext();
+  const ctx = await browser.newContext({
+    recordVideo: { dir: "test-results/ambient-video", size: phone },
+  });
   const page = await ctx.newPage();
   mkdirSync("ambient-shots", { recursive: true });
 
