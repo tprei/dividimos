@@ -6,7 +6,7 @@
 // half hour. A separate alert is sent only when the state flips. The pin is
 // the only persistence: the next run finds the board through getChat.
 
-const BOARD_MARK = "Dividimos · produção";
+const BOARD_MARK = "Dividimos · production";
 const TIME_ZONE = "America/Sao_Paulo";
 
 /**
@@ -29,7 +29,7 @@ function escapeHtml(text) {
 
 /** @param {Date} now */
 function formatCheckedAt(now) {
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat("en-GB", {
     timeZone: TIME_ZONE,
     day: "2-digit",
     month: "2-digit",
@@ -45,7 +45,7 @@ function formatCheckedAt(now) {
 function failureLines(report) {
   const shown = report.failures.slice(0, 5).map((failure) => `• <code>${escapeHtml(failure.name)}</code>`);
   const rest = report.failures.length - shown.length;
-  if (rest > 0) shown.push(`• e mais ${rest}`);
+  if (rest > 0) shown.push(`• and ${rest} more`);
   return shown;
 }
 
@@ -57,14 +57,14 @@ function failureLines(report) {
 export function boardText(report, now) {
   const green = report.status === "green";
   const lines = [
-    `${green ? "🟢" : "🔴"} <b>${BOARD_MARK} ${green ? "saudável" : "com falha"}</b>`,
+    `${green ? "🟢" : "🔴"} <b>${BOARD_MARK} ${green ? "healthy" : "failing"}</b>`,
     "",
     ...(green
-      ? ["✅ Probes e trupe ok", "✅ Web smoke ok"]
-      : [`❌ ${report.failures.length} falha${report.failures.length === 1 ? "" : "s"}`, ...failureLines(report)]),
+      ? ["✅ Probes and troupe ok", "✅ Web smoke ok"]
+      : [`❌ ${report.failures.length} failure${report.failures.length === 1 ? "" : "s"}`, ...failureLines(report)]),
     "",
-    `🕒 Última checagem <b>${formatCheckedAt(now)}</b> (BRT)`,
-    `🔁 A cada 30 min · <a href="${report.runUrl}">ver execução</a>`,
+    `🕒 Last check <b>${formatCheckedAt(now)}</b> (BRT)`,
+    `🔁 Every 30 min · <a href="${report.runUrl}">view run</a>`,
   ];
   return lines.join("\n");
 }
@@ -76,14 +76,14 @@ export function boardText(report, now) {
 export function alertText(report) {
   if (report.transition === "went_red") {
     return [
-      "🚨 <b>Produção começou a falhar</b>",
+      "🚨 <b>Production started failing</b>",
       "",
       ...failureLines(report),
       "",
-      `<a href="${report.runUrl}">ver execução</a>`,
+      `<a href="${report.runUrl}">view run</a>`,
     ].join("\n");
   }
-  return ["🎉 <b>Produção recuperou</b>", "", `<a href="${report.runUrl}">ver execução</a>`].join("\n");
+  return ["🎉 <b>Production recovered</b>", "", `<a href="${report.runUrl}">view run</a>`].join("\n");
 }
 
 /**

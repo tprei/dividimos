@@ -47,7 +47,7 @@ test("a green run after a green run edits the pinned board and sends nothing els
   );
   assert.equal(tg.calls[1].body.message_id, 7);
   assert.equal(tg.calls[1].body.parse_mode, "HTML");
-  assert.match(tg.calls[1].body.text, /🟢 <b>Dividimos · produção saudável<\/b>/);
+  assert.match(tg.calls[1].body.text, /🟢 <b>Dividimos · production healthy<\/b>/);
   assert.match(tg.calls[1].body.text, /10:03/);
 });
 
@@ -75,10 +75,10 @@ test("going red sends a loud alert and turns the board red", async () => {
     tg.calls.map((c) => c.method),
     ["sendMessage", "getChat", "editMessageText"],
   );
-  assert.match(tg.calls[0].body.text, /🚨 <b>Produção começou a falhar<\/b>/);
+  assert.match(tg.calls[0].body.text, /🚨 <b>Production started failing<\/b>/);
   assert.match(tg.calls[0].body.text, /<code>probes &gt; bootstrap<\/code>/);
   assert.equal(tg.calls[0].body.disable_notification, undefined);
-  assert.match(tg.calls[2].body.text, /🔴 <b>Dividimos · produção com falha<\/b>/);
+  assert.match(tg.calls[2].body.text, /🔴 <b>Dividimos · production failing<\/b>/);
 });
 
 test("staying red only refreshes the board", async () => {
