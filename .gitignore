@@ -54,6 +54,8 @@ next-env.d.ts
 .cache/
 session-log.json
 ambient-results.json
+ambient-diary.txt
+ambient-shots/
 
 # local dotfiles / tooling
 .bash_profile
