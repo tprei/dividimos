@@ -61,7 +61,12 @@ test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
     const message = `passei aqui pelo celular ${new Date().toISOString().slice(11, 19)} #${stamp.slice(-6)}`;
     await input.fill(message);
     await page.getByRole("button", { name: "Enviar mensagem" }).click();
-    await expect(page.getByText(message)).toBeVisible({ timeout: 20000 });
+    // Assert on the bubble, not on any text node: the composer stays disabled
+    // with the typed text while the send is in flight, so getByText matches
+    // the textarea value too and strict mode refuses the pair.
+    await expect(page.getByRole("paragraph").filter({ hasText: message })).toBeVisible({
+      timeout: 20000,
+    });
     await page.screenshot({ path: "ambient-shots/4-chat.png" });
 
     note(`Ana opened the group on a phone and sent "${message}" in the chat`);
