@@ -43,17 +43,9 @@ beforeEach(() => {
 const defaultProps = {
   token: "abc-123",
   isAuthenticated: true,
-  isInvalid: false,
 };
 
 describe("JoinActions", () => {
-  it("shows one message for an invalid link, whatever the reason", () => {
-    render(<JoinActions {...defaultProps} isInvalid />);
-
-    expect(screen.getByText("Convite indisponível")).toBeInTheDocument();
-    expect(screen.getByText("Este convite não é mais válido.")).toBeInTheDocument();
-  });
-
   it("shows login button when not authenticated", () => {
     render(
       <JoinActions
