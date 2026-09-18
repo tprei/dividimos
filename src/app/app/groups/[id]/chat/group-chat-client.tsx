@@ -113,14 +113,9 @@ export function GroupChatClient({ groupId }: GroupChatClientProps) {
           allowOverpay: result.allowOverpay,
         });
         paymentKey.current = crypto.randomUUID();
-        setPaymentStatus("confirmed");
-        toast.success(
-          "Pagamento registrado! O comprovante já está na conversa e os saldos foram atualizados.",
-        );
-        window.setTimeout(() => {
-          setPaymentOpen(false);
-          setPaymentStatus("idle");
-        }, 1200);
+        setPaymentOpen(false);
+        setPaymentStatus("idle");
+        toast.success("Pagamento registrado. O comprovante já está na conversa.");
       } catch (error) {
         setPaymentStatus("error");
         setPaymentError(ledgerErrorMessage(error));

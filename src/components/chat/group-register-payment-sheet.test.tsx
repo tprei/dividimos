@@ -57,12 +57,6 @@ describe("GroupRegisterPaymentSheet", () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it("renders Registrado! and success styling when status is confirmed", () => {
-    renderSheet("confirmed");
-
-    const confirmBtn = screen.getByTestId("group-payment-confirm");
-    expect(confirmBtn).toHaveTextContent("Registrado!");
-  });
 
   it("consumes back navigation without dismissing during confirming status", () => {
     const onDismiss = vi.fn();
@@ -192,7 +186,9 @@ describe("GroupRegisterPaymentSheet", () => {
     const input = screen.getByTestId("group-payment-amount") as HTMLInputElement;
 
     fireEvent.click(screen.getByTestId("group-payment-allow-overpay"));
-    expect(screen.getByText("Sem limite de dívida.")).toBeInTheDocument();
+    expect(screen.getByTestId("group-payment-overpay-note")).toHaveTextContent(
+      "Sem limite: o que passar da dívida vira crédito. Limitar à dívida",
+    );
 
     fireEvent.change(input, { target: { value: "60,00" } });
     expect(input).not.toHaveAttribute("aria-invalid");

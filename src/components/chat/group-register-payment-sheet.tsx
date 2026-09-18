@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Banknote, Check, Loader2, X } from "lucide-react";
+import { Banknote, Loader2, X } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
   usePendingOperation,
 } from "@/components/chat/pending-operation";
 
-export type GroupPaymentStatus = "idle" | "confirming" | "confirmed" | "error";
+export type GroupPaymentStatus = "idle" | "confirming" | "error";
 
 export interface GroupPaymentCounterparty {
   id: string;
@@ -89,13 +89,12 @@ export function GroupRegisterPaymentSheet({
   }
 
   const isConfirming = status === "confirming";
-  const isConfirmed = status === "confirmed";
-  const isDisabled = isConfirming || isConfirmed || amountCents <= 0 || !counterparty;
+  const isDisabled = isConfirming || amountCents <= 0 || !counterparty;
 
   const handleConfirm = useCallback(() => {
-    if (!counterparty || amountCents <= 0 || isConfirming || isConfirmed) return;
+    if (!counterparty || amountCents <= 0 || isConfirming) return;
     onConfirm({ counterpartyId: counterparty.id, payerIsSelf, amountCents, allowOverpay });
-  }, [amountCents, counterparty, isConfirmed, isConfirming, onConfirm, payerIsSelf, allowOverpay]);
+  }, [amountCents, counterparty, isConfirming, onConfirm, payerIsSelf, allowOverpay]);
 
   return (
     <motion.div
@@ -210,25 +209,24 @@ export function GroupRegisterPaymentSheet({
             type="button"
             onClick={() => setAllowOverpay(true)}
             disabled={isConfirming}
-            className="mt-2 text-xs font-semibold text-primary underline-offset-2 hover:underline"
+            className="mt-2 text-xs font-semibold text-primary-text underline-offset-2 hover:underline"
             data-testid="group-payment-allow-overpay"
           >
             {capCents === 0 ? "Registrar pagamento mesmo assim" : "Registrar outro valor"}
           </button>
         ) : (
-          <div className="mt-2 rounded-xl border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-            <p className="font-semibold">Sem limite de dívida.</p>
-            <p>O que passar da dívida vira crédito pra quem recebeu.</p>
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="group-payment-overpay-note">
+            Sem limite: o que passar da dívida vira crédito.{" "}
             <button
               type="button"
               onClick={() => setAllowOverpay(false)}
               disabled={isConfirming}
-              className="mt-1 font-semibold text-primary underline-offset-2 hover:underline"
+              className="font-semibold text-primary-text underline-offset-2 hover:underline"
               data-testid="group-payment-limit-to-debt"
             >
               Limitar à dívida
             </button>
-          </div>
+          </p>
         )}
       </div>
 
@@ -289,7 +287,7 @@ export function GroupRegisterPaymentSheet({
       )}
       <PendingOperationNotice
         show={showPending && status === "confirming"}
-        body="A conexão está demorando. Se o pagamento tiver sido registrado, ele aparece aqui na conversa — sair agora não duplica nada."
+        body="A conexão está demorando. Se o pagamento tiver sido registrado, ele aparece aqui na conversa. Sair agora não duplica nada."
         onLeave={onLeavePending}
         testId="group-payment-pending"
       />
@@ -297,7 +295,6 @@ export function GroupRegisterPaymentSheet({
       <Button
         className={cn(
           "min-h-11 w-full rounded-lg transition-colors",
-          isConfirmed && "bg-success text-success-foreground hover:bg-success/90",
           isConfirming && "bg-primary/70 text-primary-foreground opacity-100 disabled:opacity-100",
         )}
         onClick={handleConfirm}
@@ -308,11 +305,6 @@ export function GroupRegisterPaymentSheet({
           <>
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             Registrando…
-          </>
-        ) : isConfirmed ? (
-          <>
-            <Check className="mr-1.5 h-3.5 w-3.5" />
-            Registrado!
           </>
         ) : (
           "Registrar"

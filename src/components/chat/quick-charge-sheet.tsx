@@ -235,7 +235,7 @@ export function QuickChargeSheet({
 
       <PendingOperationNotice
         show={showPending && status === "confirming"}
-        body="A conexão está demorando. Se a cobrança tiver sido registrada, ela aparece aqui na conversa — sair agora não duplica nada."
+        body="A conexão está demorando. Se a cobrança tiver sido registrada, ela aparece aqui na conversa. Sair agora não duplica nada."
         onLeave={onLeavePending}
         testId="quick-charge-pending"
       />
