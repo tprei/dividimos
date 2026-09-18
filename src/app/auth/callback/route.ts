@@ -21,5 +21,8 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}/auth?error=callback_failed`);
+  const failUrl = new URL("/auth", origin);
+  failUrl.searchParams.set("error", "callback_failed");
+  if (next !== "/") failUrl.searchParams.set("next", next);
+  return NextResponse.redirect(failUrl.toString());
 }

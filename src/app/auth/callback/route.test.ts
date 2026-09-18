@@ -38,7 +38,19 @@ describe("OAuth callback", () => {
     );
 
     expect(response.headers.get("location")).toBe(
-      "https://dividimos.test/auth?error=callback_failed",
+      "https://dividimos.test/auth?error=callback_failed&next=%2Fapp",
+    );
+  });
+
+  it("preserves an invitation destination on failure", async () => {
+    mocks.exchangeCodeForSession.mockResolvedValue({ error: new Error("exchange failed") });
+
+    const response = await GET(
+      new Request("https://dividimos.test/auth/callback?code=oauth-code&next=%2Fjoin%2Ftoken123"),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://dividimos.test/auth?error=callback_failed&next=%2Fjoin%2Ftoken123",
     );
   });
 
@@ -49,7 +61,7 @@ describe("OAuth callback", () => {
 
     expect(mocks.exchangeCodeForSession).not.toHaveBeenCalled();
     expect(response.headers.get("location")).toBe(
-      "https://dividimos.test/auth?error=callback_failed",
+      "https://dividimos.test/auth?error=callback_failed&next=%2Fapp",
     );
   });
 });
