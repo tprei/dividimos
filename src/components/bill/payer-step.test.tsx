@@ -115,7 +115,7 @@ describe("PayerStep percentage mode", () => {
 
     expect(
       screen.getByText(
-        "Convidados não podem pagar a conta — selecione uma pessoa com conta no Dividimos.",
+        "Convidados não podem pagar a conta. Escolhe alguém com conta no Dividimos.",
       ),
     ).toBeInTheDocument();
   });
