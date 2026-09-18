@@ -4,12 +4,19 @@
 // only by the real workflow in CI.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { collectFailures, main, redactFailures, resolveTransition } from "./report.mjs";
+import {
+  collectDiary,
+  collectFailures,
+  collectScreenshots,
+  main,
+  redactFailures,
+  resolveTransition,
+} from "./report.mjs";
 
 // collectFailures reads ambient-results.json from process.cwd(), so every
 // test runs inside a throwaway directory that is restored afterwards.
@@ -34,6 +41,55 @@ test("collectFailures reports a missing results file once", async () => {
     const failures = await collectFailures({ VITEST_OUTCOME: "failure" });
     assert.deepEqual(failures, [
       { name: "vitest", message: "no results file" },
+    ]);
+  } finally {
+    temp.dispose();
+  }
+});
+
+test("collectDiary reads, scrubs, truncates, and caps the fact lines", async () => {
+  const temp = inTempDir();
+  try {
+    assert.deepEqual(collectDiary({}), []);
+
+    const secret = "https://secret.example.supabase.co";
+    const long = "x".repeat(200);
+    writeFileSync(
+      join(process.cwd(), "ambient-diary.txt"),
+      [
+        `Ana paid R$ 87,40 for "Churrasco de quinta", split 3 ways`,
+        "",
+        `Bruno fetched ${secret} and it worked`,
+        long,
+        ...Array.from({ length: 10 }, (_, i) => `fact ${i}`),
+      ].join("\n"),
+    );
+    const diary = collectDiary({ AMBIENT_SUPABASE_URL: secret });
+    assert.equal(diary.length, 8);
+    assert.match(diary[0], /Ana paid R\$ 87,40/);
+    assert.equal(diary[1], `Bruno fetched *** and it worked`);
+    assert.equal(diary[2].length, 120);
+    assert.equal(diary[7], "fact 4");
+  } finally {
+    temp.dispose();
+  }
+});
+
+test("collectScreenshots finds run shots and failure shots with the right flags", async () => {
+  const temp = inTempDir();
+  try {
+    assert.deepEqual(await collectScreenshots(), []);
+
+    mkdirSync(join(process.cwd(), "ambient-shots"));
+    writeFileSync(join(process.cwd(), "ambient-shots", "2-expenses.png"), "png");
+    writeFileSync(join(process.cwd(), "ambient-shots", "1-group.png"), "png");
+    mkdirSync(join(process.cwd(), "test-results", "web-spec-chromium"), { recursive: true });
+    writeFileSync(join(process.cwd(), "test-results", "web-spec-chromium", "test-failed-1.png"), "png");
+
+    assert.deepEqual(await collectScreenshots(), [
+      { path: join(process.cwd(), "ambient-shots", "1-group.png"), failure: false },
+      { path: join(process.cwd(), "ambient-shots", "2-expenses.png"), failure: false },
+      { path: join(process.cwd(), "test-results", "web-spec-chromium", "test-failed-1.png"), failure: true },
     ]);
   } finally {
     temp.dispose();

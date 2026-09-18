@@ -1,19 +1,22 @@
 // Ambient run reporter. Adding a sink: create scripts/ambient/sinks/<name>.mjs
 // exporting isConfigured(env) and notify(report, ctx), then append it to SINKS.
 // Sinks only deliver; the exit code is the run's own status (red exits 1).
-
-import { readFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import * as githubIssue from "./sinks/github-issue.mjs";
 import * as telegram from "./sinks/telegram.mjs";
 
 /** @typedef {{ name: string, message: string }} AmbientFailure */
+/** @typedef {{ path: string, failure: boolean }} AmbientScreenshot */
 /** @typedef {{
  *   status: "green" | "red",
  *   transition: "green" | "went_red" | "still_red" | "recovered",
  *   failures: AmbientFailure[],
+ *   diary: string[],
+ *   screenshots: AmbientScreenshot[],
  *   runUrl: string,
  * }} AmbientReport */
 /** @typedef {{ env: NodeJS.ProcessEnv, openIssue: { number: number } | null, fetch?: typeof fetch, now?: Date }} SinkContext */
@@ -24,20 +27,28 @@ const SINKS = [githubIssue, telegram];
 // client id). Every non-empty AMBIENT_* value is scrubbed from failure
 // messages once here, so neither sink can publish one.
 /**
+ * Replaces every non-empty AMBIENT_* env value with *** so no sink can
+ * publish configuration.
+ * @param {string} text
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string}
+ */
+export function scrub(text, env) {
+  const secrets = Object.entries(env)
+    .filter(([name, value]) => name.startsWith("AMBIENT_") && value)
+    .map(([, value]) => value);
+  return secrets.reduce((message, secret) => message.replaceAll(secret, "***"), text);
+}
+
+/**
  * @param {AmbientFailure[]} failures
  * @param {NodeJS.ProcessEnv} env
  * @returns {AmbientFailure[]}
  */
 export function redactFailures(failures, env) {
-  const secrets = Object.entries(env)
-    .filter(([name, value]) => name.startsWith("AMBIENT_") && value)
-    .map(([, value]) => value);
   return failures.map((failure) => ({
     ...failure,
-    message: secrets.reduce(
-      (message, secret) => message.replaceAll(secret, "***"),
-      failure.message,
-    ),
+    message: scrub(failure.message, env),
   }));
 }
 
@@ -161,6 +172,61 @@ export function resolveTransition(status, openIssue) {
   return openIssue ? "recovered" : "green";
 }
 
+const DIARY_LINE_LIMIT = 8;
+const DIARY_LINE_LENGTH = 120;
+
+/**
+ * Reads the facts the tests noted as they ran. Missing or unreadable file
+ * means no diary, never an error: green runs without facts are fine.
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string[]}
+ */
+export function collectDiary(env) {
+  let raw;
+  try {
+    raw = readFileSync("ambient-diary.txt", "utf8");
+  } catch {
+    return [];
+  }
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => scrub(line.slice(0, DIARY_LINE_LENGTH), env))
+    .slice(0, DIARY_LINE_LIMIT);
+}
+
+/**
+ * Run screenshots come from ambient-shots (green ones, by name order),
+ * failure screenshots from Playwright's test-results tree (recursive).
+ * @returns {AmbientScreenshot[]}
+ */
+export async function collectScreenshots() {
+  const shots = [];
+  for (const [dir, failure] of [
+    ["ambient-shots", false],
+    ["test-results", true],
+  ]) {
+    const files = await listPngs(dir);
+    shots.push(...files.map((path) => ({ path, failure })));
+  }
+  return shots;
+}
+
+async function listPngs(dir) {
+  const root = resolve(dir);
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true, recursive: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
+    .map((entry) => join(entry.parentPath ?? dir, entry.name))
+    .sort();
+}
+
 /**
  * Collects failures, delivers them through every configured sink, and
  * returns the exit code. Isolation rules: a failing issue lookup falls back
@@ -189,6 +255,8 @@ export async function main(env = process.env) {
     status,
     transition,
     failures,
+    diary: collectDiary(env),
+    screenshots: await collectScreenshots(),
     runUrl: `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`,
   };
 
@@ -207,6 +275,8 @@ export async function main(env = process.env) {
       status,
       transition,
       failures: failures.length,
+      diary: report.diary.length,
+      screenshots: report.screenshots.length,
     }),
   );
 

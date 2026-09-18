@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { formatBRL } from "../src/lib/currency";
 import type { ValidationResult } from "../src/lib/expense-money";
 import {
   decodeBootstrap,
@@ -13,6 +14,7 @@ import {
   pruneOldExpenses,
   type Troupe,
 } from "./bots";
+import { note } from "./diary";
 
 let troupe: Troupe;
 
@@ -39,6 +41,11 @@ function formatExpenseTitle(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `Rodada das ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function firstName(botId: string): string {
+  const bot = troupe.bots.find((b) => b.id === botId);
+  return (bot?.name ?? "A bot").replace(/ \(bot\)$/, "");
 }
 
 function must<T>(result: ValidationResult<T, WireIssue>): T {
@@ -86,6 +93,7 @@ describe("bot troupe", () => {
       expect(member.status).toBe("accepted");
       expect(member.user.isBot).toBe(true);
     }
+    note(`All ${groupSnapshot.members.length} bots showed up in bootstrap, badges on`);
   });
 
   it("creates one to three expenses", async () => {
@@ -98,12 +106,16 @@ describe("bot troupe", () => {
       const chosenOthers = shuffledOthers.slice(0, subsetCount);
       const ids = [creator.id, ...chosenOthers.map((b) => b.id)];
       const totalCents = 1000 + rnd(49_001);
+      const title = formatExpenseTitle();
       const expense = await troupe.seed.createExpense(troupe.groupId, creator.id, ids, {
-        title: formatExpenseTitle(),
+        title,
         totalCents,
       });
       expect(expense.versionNo).toBe(1);
       expect(expense.status).toBe("active");
+      note(
+        `${firstName(creator.id)} paid ${formatBRL(totalCents)} for "${title}", split ${ids.length} ways`,
+      );
     }
   });
 
@@ -155,6 +167,7 @@ describe("bot troupe", () => {
       p_payload: current.payload,
     });
     expect(error?.message).toBe("stale_version");
+    note(`${firstName(target.creator_id)} tried to edit "${current.title}" with a stale version, rejected`);
   });
 
   it("round-trips chat messages", async () => {
@@ -175,12 +188,16 @@ describe("bot troupe", () => {
     expect(msg2).toBeDefined();
     expect(msg1?.sender.isBot).toBe(true);
     expect(msg2?.sender.isBot).toBe(true);
+    note(
+      `${firstName(troupe.bots[1].id)} and ${firstName(troupe.bots[2].id)} chatted, ${firstName(troupe.bots[3].id)} read both`,
+    );
   });
 
   it("conserves balances and derives consistent transfers", async () => {
     const snap = await snapshotFor(troupe.bots[0].id);
     const sum = snap.balances.reduce((acc, row) => acc + row.netCents, 0);
     expect(sum).toBe(0);
+    note(`Balances sum to zero across ${snap.balances.length} participants`);
 
     const transfers = transfersFromBalances(snap.balances);
     for (const transfer of transfers) {
@@ -237,10 +254,13 @@ describe("bot troupe", () => {
     expect(netOf(after.balances, transfer.toId)).toBe(
       netOf(snap.balances, transfer.toId) - transfer.amountCents,
     );
+    note(
+      `${firstName(transfer.fromId)} settled ${formatBRL(transfer.amountCents)} with ${firstName(transfer.toId)}`,
+    );
   });
 
   it("keeps the ledger bounded", async () => {
-    await pruneOldExpenses(troupe);
+    const deleted = await pruneOldExpenses(troupe);
 
     const { count, error: countError } = await troupe.admin
       .from("expenses")
@@ -252,5 +272,6 @@ describe("bot troupe", () => {
     }
 
     expect(count ?? 0).toBeLessThanOrEqual(MAX_ACTIVE_BOT_EXPENSES);
+    note(`Pruned ${deleted} old expense${deleted === 1 ? "" : "s"}, ${count ?? 0} active`);
   });
 });
