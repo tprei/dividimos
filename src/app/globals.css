@@ -27,6 +27,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -35,12 +36,14 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-success-text: var(--success-text);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-income: var(--income);
@@ -69,6 +72,7 @@
 
   --primary: oklch(0.78 0.16 75);
   --primary-foreground: oklch(0.18 0.04 75);
+  --primary-text: oklch(0.56 0.16 55);
 
   --secondary: oklch(0.85 0.13 80);
   --secondary-foreground: oklch(0.25 0.05 75);
@@ -80,15 +84,23 @@
   --accent-foreground: oklch(0.25 0.08 195);
 
   --destructive: oklch(0.56 0.24 350);
+  --destructive-text: oklch(0.50 0.22 350);
 
   --success: oklch(0.70 0.19 155);
-  --success-foreground: oklch(0.99 0 0);
+  --success-foreground: oklch(0.18 0.04 155);
+  --success-text: oklch(0.52 0.15 155);
 
   --warning: oklch(0.75 0.15 75);
   --warning-foreground: oklch(0.25 0.05 75);
 
   --income: oklch(0.70 0.19 155);
-  --income-foreground: oklch(0.99 0 0);
+  --income-foreground: oklch(0.18 0.04 155);
+
+  /* Gradient end stops: darker, hue-rotated companions of --primary / --income / --warning.
+     Theme-independent on purpose so hero surfaces look the same in light and dark. */
+  --gradient-primary-end: oklch(0.68 0.17 65);
+  --gradient-income-end: oklch(0.62 0.17 145);
+  --gradient-warm-end: oklch(0.65 0.2 45);
 
   --overdue: oklch(0.56 0.24 350);
   --overdue-foreground: oklch(0.99 0 0);
@@ -129,6 +141,7 @@
 
   --primary: oklch(0.80 0.16 75);
   --primary-foreground: oklch(0.18 0.04 75);
+  --primary-text: oklch(0.85 0.16 75);
 
   --secondary: oklch(0.30 0.03 80);
   --secondary-foreground: oklch(0.90 0.005 195);
@@ -140,9 +153,11 @@
   --accent-foreground: oklch(0.80 0.12 195);
 
   --destructive: oklch(0.62 0.24 350);
+  --destructive-text: oklch(0.66 0.22 350);
 
   --success: oklch(0.72 0.19 155);
   --success-foreground: oklch(0.18 0.04 155);
+  --success-text: var(--success);
 
   --warning: oklch(0.78 0.15 75);
   --warning-foreground: oklch(0.88 0.09 75);
@@ -202,34 +217,27 @@
   }
   .glass {
     backdrop-filter: blur(20px) saturate(180%);
-    background-color: oklch(1 0 0 / 72%);
-  }
-  .dark .glass {
-    background-color: oklch(0.26 0.04 250 / 72%);
+    background-color: color-mix(in oklab, var(--surface) 72%, transparent);
   }
   .glass-card {
     backdrop-filter: blur(20px) saturate(180%);
-    background-color: oklch(1 0 0 / 65%);
-    border: 1px solid oklch(1 0 0 / 20%);
-  }
-  .dark .glass-card {
-    background-color: oklch(0.26 0.04 250 / 65%);
-    border: 1px solid oklch(1 0 0 / 8%);
+    background-color: color-mix(in oklab, var(--surface) 65%, transparent);
+    border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   }
   .gradient-primary {
-    background: linear-gradient(135deg, oklch(0.78 0.16 75), oklch(0.68 0.17 65));
+    background: linear-gradient(135deg, var(--primary), var(--gradient-primary-end));
   }
   .gradient-income {
-    background: linear-gradient(135deg, oklch(0.70 0.19 155), oklch(0.62 0.17 145));
+    background: linear-gradient(135deg, var(--income), var(--gradient-income-end));
   }
   .gradient-warm {
-    background: linear-gradient(135deg, oklch(0.75 0.15 75), oklch(0.65 0.20 45));
+    background: linear-gradient(135deg, var(--warning), var(--gradient-warm-end));
   }
   .gradient-mesh {
     background:
-      radial-gradient(at 20% 20%, oklch(0.78 0.16 75 / 15%) 0px, transparent 50%),
-      radial-gradient(at 80% 80%, oklch(0.70 0.19 155 / 10%) 0px, transparent 50%),
-      radial-gradient(at 50% 50%, oklch(0.75 0.15 75 / 8%) 0px, transparent 50%);
+      radial-gradient(at 20% 20%, color-mix(in oklab, var(--primary) 15%, transparent) 0px, transparent 50%),
+      radial-gradient(at 80% 80%, color-mix(in oklab, var(--income) 10%, transparent) 0px, transparent 50%),
+      radial-gradient(at 50% 50%, color-mix(in oklab, var(--warning) 8%, transparent) 0px, transparent 50%);
   }
   .logo-split-left {
     transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
