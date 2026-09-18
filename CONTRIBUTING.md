@@ -116,6 +116,8 @@ Avoid dependencies that introduce hidden services, unnecessary global state, or 
 - `group_balances` is a projection, never a write target: every ledger RPC recomputes it in-transaction via `recompute_group_balances`. Never write it from client code or ad-hoc SQL.
 - Keep validation and domain decisions in RPC functions or `src/lib`, not in route handlers.
 - Migrations are the database source of truth: add a new timestamped file under `supabase/migrations/`, write complete schema and function definitions there, and replay the committed history with `supabase db reset --local`. Never edit, rename, or delete a migration that has landed on `main` or was applied to a shared database. The retired `supabase/schemas/` declarations and `supabase/schema.sql` snapshot are not development inputs. Use `gen_random_uuid()`, not `uuid_generate_v4()`.
+- Applying migrations to production is a human-only, three-step flow: `npm run db:assert-ref`, then `supabase db push --linked --dry-run` and read the plan, then the same command without `--dry-run`. CI never pushes migrations.
+- Agents never run the commands listed under "Destructive Operations" in `AGENTS.md`.
 - Return clear errors without leaking internals.
 - Do not add background workers, Redis, queues, or search services until the product need is real.
 

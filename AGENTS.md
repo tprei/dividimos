@@ -119,6 +119,23 @@ The remote Supabase instance has meaningful network latency (~1-5s per round tri
 
 **Consolidate refreshes at the sync boundary.** When several parts of a screen need fresh data, trigger one `refreshGroup` and let the store notify subscribers — do not scatter `useEffect` fetches across components.
 
+## Destructive Operations
+
+Production is Supabase project `sfclcrjeckixhpjfmrox` (dividimos, sa-east-1), Vercel project `dividimos` (team `tpreis-projects`), GCP project `pixwise-491111` (OAuth clients), Firebase project `dividimos-7b394` (FCM). None of these has a deletion lock on the free tier. Agents never run anything in this list; a human runs it, by hand, after reading the command back:
+
+- `supabase projects delete`, `supabase db reset --linked`, `supabase db push` (any target), `supabase migration repair`, `supabase link` to a ref other than `sfclcrjeckixhpjfmrox`, any `DELETE`/`PATCH` against `https://api.supabase.com/v1/projects/*`, revoking the legacy HS256 JWT signing key, disabling the Google provider.
+- `vercel env rm`, `vercel project rm`, `vercel domains rm`, `vercel alias rm`.
+- `gh secret delete`, `gh variable delete`, deleting workflows.
+- Deleting or editing OAuth clients in `pixwise-491111`, deleting the Firebase Android app, rotating the Android keystore.
+- Any `pg_dump`/`psql` against production.
+
+Rules:
+
+- `npm run db:assert-ref` is a precondition for the linked push/diff/dry-run path a human runs: it fails unless `supabase/.temp/project-ref` is `sfclcrjeckixhpjfmrox`. A passing check never authorizes `supabase db reset --linked`, `supabase migration repair`, or `supabase link` to another ref — those stay forbidden outright.
+- Do not store a Supabase personal access token on disk (`~/.supabase/access-token`) beyond the session that needs it. Revoke it at `https://supabase.com/dashboard/account/tokens` when done.
+- Migrations reach production only via a human running `npm run db:assert-ref && supabase db push --linked --dry-run`, reading the plan, then the same command without `--dry-run`. CI never pushes migrations.
+- Production configuration (names, ids, no secret values) is listed in `README.md` under "Production configuration".
+
 ## Tests
 
 Write tests when they reduce real risk.

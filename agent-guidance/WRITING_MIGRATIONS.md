@@ -68,6 +68,8 @@ Operations that cannot run inside a single transaction (external calls, push dis
 
 The ordered files in `supabase/migrations/` are the database source of truth. Create a new timestamped migration with `supabase migration new <name>`, write complete definitions, and run `supabase db reset --local` to replay the full history. The CI migration workflow verifies fresh replay, the trusted reset manifest, generated types, integration behavior, and database security invariants. The retired `supabase/schemas/` declarations and `supabase/schema.sql` snapshot are not inputs.
 
+`supabase db push --linked` is a human-only step. CI verifies migrations but never applies them to production. See "Destructive Operations" in `AGENTS.md` for the full list of commands agents do not run.
+
 These rules govern newly authored SQL. Do not rename, reformat, or repair frozen predecessor files to satisfy them; existing defects belong to their named forward-fix PRs.
 
 ## Recovery vocabulary
