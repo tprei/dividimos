@@ -184,6 +184,24 @@ describe("ItemDivisionEditor", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("keeps typed decimals intact and blocks submit on invalid text", () => {
+    renderEditor();
+    fireEvent.click(screen.getByLabelText("Incluir Ana (@ana) em Picanha"));
+    fireEvent.click(screen.getByLabelText("Incluir Bruno (@bruno) em Picanha"));
+    fireEvent.click(screen.getByRole("radio", { name: "Percentual" }));
+
+    const anaInput = screen.getByLabelText("Percentual de Ana (@ana) em Picanha") as HTMLInputElement;
+    fireEvent.change(anaInput, { target: { value: "12,5" } });
+    expect(anaInput.value).toBe("12,5");
+    expect(screen.getByText("Faltam 37,50% para fechar 100%.")).toBeInTheDocument();
+
+    fireEvent.change(anaInput, { target: { value: "150" } });
+    expect(anaInput.value).toBe("150");
+    expect(
+      screen.getByText("Informe percentuais de 0 a 100 com até duas casas decimais."),
+    ).toBeInTheDocument();
+  });
+
   it("keeps percent slider drags and typed input on the same state", () => {
     const { onSave } = renderEditor();
     fireEvent.click(screen.getByLabelText("Incluir Ana (@ana) em Picanha"));

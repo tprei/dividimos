@@ -188,14 +188,8 @@ export function recomputeDivisionShares(value: ItemDivisionValue, cents: number)
 
 export function divisionInvalidInputText(mode: ItemDivisionMode): string {
   return mode === "percent"
-    ? "Informe percentuais inteiros de 0 a 100."
+    ? "Informe percentuais de 0 a 100 com até duas casas decimais."
     : "Informe valores em reais com até duas casas decimais.";
-}
-
-export function clampPercentDigits(digits: string): string {
-  if (digits === "") return "";
-  const value = Number(digits);
-  return value > 100 ? "100" : String(value);
 }
 
 export function divisionStatusText(division: DivisionComputation, mode: ItemDivisionMode): string {
