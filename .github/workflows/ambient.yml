@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: ambient-prod
@@ -67,3 +68,20 @@ jobs:
         if: ${{ !cancelled() }}
         timeout-minutes: 4
         run: npm run test:ambient:web
+
+      - name: Ensure synthetic-prod label
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh label create synthetic-prod --description "Ambient production synthetic" --color B60205 --force
+
+      - name: Report
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VITEST_OUTCOME: ${{ steps.vitest.outcome }}
+          WEB_OUTCOME: ${{ steps.web.outcome }}
+          ALERT_TELEGRAM_BOT_TOKEN: ${{ secrets.ALERT_TELEGRAM_BOT_TOKEN }}
+          ALERT_TELEGRAM_CHAT_ID: ${{ secrets.ALERT_TELEGRAM_CHAT_ID }}
+        run: node scripts/ambient/report.mjs
