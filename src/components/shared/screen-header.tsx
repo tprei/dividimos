@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useScreenHeaderActions } from "./screen-header-actions";
 
 export interface ScreenHeaderProps {
   title: string;
@@ -16,6 +17,7 @@ export interface ScreenHeaderProps {
 
 export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, action }: ScreenHeaderProps) {
   const router = useRouter();
+  const shellActions = useScreenHeaderActions();
   return (
     <header className="flex items-center gap-2 px-4 pt-5 pb-3">
       {back && (
@@ -38,7 +40,12 @@ export function ScreenHeader({ title, eyebrow, back = false, onBack, leading, ac
         )}
         <h1 className="truncate text-2xl leading-tight font-bold tracking-tight">{title}</h1>
       </div>
-      {action}
+      {(action || shellActions) && (
+        <div className="-mr-2 flex items-center gap-1.5">
+          {action}
+          {shellActions}
+        </div>
+      )}
     </header>
   );
 }

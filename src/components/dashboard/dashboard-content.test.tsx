@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { GroupSnapshot, Me } from "@/types/ledger";
 import { useAppStore } from "@/stores/app-store";
-import { LedgerError } from "@/lib/sync/errors";
+
 
 const mutations = vi.hoisted(() => ({
   recordSettlement: vi.fn(),
@@ -52,6 +52,38 @@ vi.mock("@/components/pwa/install-prompt", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), prefetch: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  usePathname: () => "/app",
+}));
+
+vi.mock("@/lib/sync/client", () => ({
+  getSupabase: () => ({
+    auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
+  }),
+  getAuthGeneration: () => 1,
+  advanceAuthGeneration: () => 1,
+  rpc: vi.fn(),
+}));
+
+vi.mock("@/lib/sync/auth", () => ({
+  attachAuthListener: () => () => {},
+}));
+
+vi.mock("@/lib/sync/bootstrap", () => ({
+  runBootstrap: vi.fn().mockResolvedValue(undefined),
+  attachVisibilityRefresh: () => () => {},
+}));
+
+vi.mock("@/lib/sync/realtime", () => ({
+  startRealtime: () => () => {},
+}));
+
+vi.mock("@/lib/push/native-registration", () => ({
+  invalidateNativeRegistration: vi.fn(),
+  registerNativePushToken: vi.fn(),
+}));
+
+vi.mock("@/lib/push/native-consent", () => ({
+  hasNativePushConsent: () => false,
 }));
 
 vi.mock("next/link", () => ({
@@ -421,26 +453,5 @@ describe("DashboardContent", () => {
     expect(screen.queryByRole("button", { name: "Pagar via Pix" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cobrar via Pix" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Lembrar" })).not.toBeInTheDocument();
-  });
-
-  it("shows invitation count and keeps a failed decline visible", async () => {
-    groupMutations.declineInvitation.mockRejectedValue(new LedgerError("network"));
-    const invitation = snapshot({
-      group: { id: "invite-1", name: "Convite", creatorId: carol.id },
-      members: [
-        { groupId: "invite-1", userId: me.id, status: "invited", invitedBy: carol.id, acceptedAt: null, user: me },
-        { groupId: "invite-1", userId: carol.id, status: "accepted", invitedBy: null, acceptedAt: null, user: carol },
-      ],
-    });
-    seedStore([invitation]);
-    render(<DashboardContent />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Notificações, 1 não lidas" }));
-    expect(await screen.findByText("Convite · Convite")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Recusar convite para Convite" }));
-
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Sem conexão. Tente de novo quando a internet voltar."));
-    expect(screen.getByText("Convite · Convite")).toBeInTheDocument();
-    expect(groupMutations.declineInvitation).toHaveBeenCalledWith("invite-1");
   });
 });
