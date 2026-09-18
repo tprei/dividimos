@@ -16,7 +16,7 @@ import * as telegram from "./sinks/telegram.mjs";
  *   failures: AmbientFailure[],
  *   runUrl: string,
  * }} AmbientReport */
-/** @typedef {{ env: NodeJS.ProcessEnv, openIssue: { number: number } | null }} SinkContext */
+/** @typedef {{ env: NodeJS.ProcessEnv, openIssue: { number: number } | null, fetch?: typeof fetch, now?: Date }} SinkContext */
 
 const SINKS = [githubIssue, telegram];
 
