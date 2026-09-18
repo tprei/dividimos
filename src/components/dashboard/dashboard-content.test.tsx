@@ -141,7 +141,9 @@ describe("DashboardContent", () => {
     expect(screen.queryByText("Tudo em dia")).not.toBeInTheDocument();
     expect(screen.queryByText("A pagar")).not.toBeInTheDocument();
     expect(screen.queryByText("A receber")).not.toBeInTheDocument();
-    expect(screen.queryByText("Escanear nota")).not.toBeInTheDocument();
+    // Quick actions stay reachable on first use (home-quick-charge synthetic contract).
+    expect(screen.getByText("Escanear nota")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeInTheDocument();
     expect(document.querySelector("[data-tour='debt-lists']")?.contains(screen.getByText("Comece por aqui"))).toBe(true);
   });
 

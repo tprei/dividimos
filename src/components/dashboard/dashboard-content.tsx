@@ -239,8 +239,7 @@ export function DashboardContent() {
             </div>
           )}
         </div>
-        {homeMode !== "first-use" && (
-          <div className="flex shrink-0 flex-col gap-2" data-tour="quick-actions">
+        <div className="flex shrink-0 flex-col gap-2" data-tour="quick-actions">
             <Link
               href="/app/bill/new?scan=true"
               className={cn(
@@ -275,7 +274,6 @@ export function DashboardContent() {
               Cobrar rápido
             </Button>
           </div>
-        )}
       </div>
 
       <div className="space-y-6 px-4 pt-7" data-tour="debt-lists">
