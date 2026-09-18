@@ -651,6 +651,41 @@ test("epochExtensionFailures accepts an append-only PR stacked on the new epoch"
   }
 });
 
+test("epochExtensionFailures treats a base that grew past the manifest as post-reset", async () => {
+  const repo = initRepo();
+  try {
+    const base = repo.commit({ [M_A]: "select 1;\n" }, "pre-reset base");
+    repo.run(["rm", "--quiet", M_A]);
+    const epoch = repo.commit({ [M_C]: "select 3;\n" }, "new epoch");
+    const trusted = repo.commit({
+      [RESET_MANIFEST]: `${JSON.stringify({
+        old: { [M_A]: { blob: repo.blobOf(base, M_A), mode: "100644" } },
+        new: { [M_C]: { blob: repo.blobOf(epoch, M_C), mode: "100644" } },
+      })}\n`,
+    }, "trusted");
+    // main merged one migration after the reset; a later PR stacks on that.
+    const grown = repo.commit(
+      { "supabase/migrations/20260914000000_fourth_change.sql": "select 4;\n" },
+      "main after the reset",
+    );
+    const extension = repo.commit(
+      { "supabase/migrations/20260915000000_fifth_change.sql": "select 5;\n" },
+      "extends grown main",
+    );
+    assert.deepEqual(
+      await epochExtensionFailures({
+        baseRef: grown,
+        headRef: extension,
+        trustedMainRef: trusted,
+        cwd: repo.dir,
+      }),
+      [],
+    );
+  } finally {
+    repo.dispose();
+  }
+});
+
 test("verifyMigrations refuses epoch mode without a trusted-main manifest", async () => {
   const repo = initRepo();
   try {
