@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import type { ReactElement } from "react";
 import { useBillStore } from "@/stores/bill-store";
 import { userAlice, userBob } from "@/test/fixtures";
 import { LedgerError } from "@/lib/sync/errors";
@@ -50,7 +49,7 @@ function setupValidSingleExpense() {
 
 describe("useWizardSubmit", () => {
   const router = { push: vi.fn() };
-  const onStaleReload = vi.fn().mockResolvedValue(undefined);
+  const onStaleVersion = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -73,7 +72,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: null,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -116,7 +115,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: "exp-edit-1",
         expectedVersionNo: 2,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -157,7 +156,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: expenseId,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -174,7 +173,7 @@ describe("useWizardSubmit", () => {
   });
 
 
-  it("stale_version surfaces the reload toast and wires reload action", async () => {
+  it("stale_version calls onStaleVersion and does not toast", async () => {
     setupValidSingleExpense();
     mockEditExpense.mockRejectedValueOnce(new LedgerError("stale_version"));
 
@@ -183,7 +182,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: "exp-edit-1",
         expectedVersionNo: 2,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -193,25 +192,9 @@ describe("useWizardSubmit", () => {
     });
 
     expect(ok).toBe(false);
-    expect(mockToast.custom).toHaveBeenCalledOnce();
+    expect(onStaleVersion).toHaveBeenCalledOnce();
+    expect(mockToast.custom).not.toHaveBeenCalled();
     expect(mockToast.error).not.toHaveBeenCalled();
-    expect(onStaleReload).not.toHaveBeenCalled();
-
-    // The toast renders a node with the prompt and a "Recarregar" button.
-    const renderToast = mockToast.custom.mock.calls[0][0];
-    const node = renderToast({ id: "toast-1" }) as ReactElement<{
-      children: [ReactElement<{ children: string }>, ReactElement<{ onClick: () => void }>];
-    }>;
-    expect(node.props.children[0].props.children).toBe(
-      "Alguém editou essa conta enquanto você mexia. Recarregar?",
-    );
-
-    // Clicking the toast button triggers reload and dismisses the toast.
-    await act(async () => {
-      node.props.children[1].props.onClick();
-    });
-    expect(mockToast.dismiss).toHaveBeenCalledWith("toast-1");
-    expect(onStaleReload).toHaveBeenCalledOnce();
   });
 
   it("validation failure toasts and does not call the RPC", async () => {
@@ -229,7 +212,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: null,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -253,7 +236,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: null,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -283,7 +266,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: null,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -318,7 +301,7 @@ describe("useWizardSubmit", () => {
         router,
         editExpenseId: null,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -343,7 +326,7 @@ describe("useWizardSubmit", () => {
         router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
         editExpenseId: null,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 
@@ -377,7 +360,7 @@ describe("useWizardSubmit", () => {
         router: router as unknown as Parameters<typeof useWizardSubmit>[0]["router"],
         editExpenseId: null,
         expectedVersionNo: null,
-        onStaleReload,
+        onStaleVersion,
       }),
     );
 

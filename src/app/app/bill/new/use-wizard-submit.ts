@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { buildExpensePayload } from "@/lib/ledger/payload";
 import { createExpense, createExpenseWithGroup, editExpense } from "@/lib/sync/mutations";
@@ -46,8 +46,7 @@ export interface WizardSubmitInput {
   router: { push: (url: string) => void };
   editExpenseId: string | null;
   expectedVersionNo: number | null;
-  /** Re-fetches the detail and re-hydrates the wizard after a stale_version. */
-  onStaleReload: () => Promise<void>;
+  onStaleVersion: () => void;
 }
 
 export interface GroupPlanInput {
@@ -91,7 +90,7 @@ export function useWizardSubmit({
   router,
   editExpenseId,
   expectedVersionNo,
-  onStaleReload,
+  onStaleVersion,
 }: WizardSubmitInput) {
   const [submitting, setSubmitting] = useState(false);
 
@@ -168,44 +167,17 @@ export function useWizardSubmit({
         return true;
       } catch (error) {
         if (error instanceof LedgerError && error.code === "stale_version") {
-          toast.custom(
-            (t) =>
-              createElement(
-                "div",
-                {
-                  className:
-                    "flex items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm shadow-lg",
-                },
-                createElement(
-                  "span",
-                  { className: "flex-1" },
-                  "Alguém editou essa conta enquanto você mexia. Recarregar?",
-                ),
-                createElement(
-                  "button",
-                  {
-                    className:
-                      "rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground",
-                    onClick: () => {
-                      toast.dismiss(t.id);
-                      void onStaleReload();
-                    },
-                  },
-                  "Recarregar",
-                ),
-              ),
-            { duration: 20000 },
-          );
-        } else {
-          toast.error(ledgerErrorMessage(error));
+          onStaleVersion();
+          return false;
         }
+        toast.error(ledgerErrorMessage(error));
         return false;
       } finally {
         inFlight.current = false;
         setSubmitting(false);
       }
     },
-    [router, editExpenseId, expectedVersionNo, onStaleReload],
+    [router, editExpenseId, expectedVersionNo, onStaleVersion],
   );
 
   return { submitting, submit };
