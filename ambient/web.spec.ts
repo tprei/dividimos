@@ -34,9 +34,11 @@ test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
     await page.screenshot({ path: "ambient-shots/2-balances.png" });
 
     await page.getByRole("tab", { name: "Contas" }).click();
+    // Base UI marks the selected tab with aria-selected and a valueless
+    // data-active; there is no data-state="active" to wait for.
     await expect(page.getByRole("tab", { name: "Contas" })).toHaveAttribute(
-      "data-state",
-      "active",
+      "aria-selected",
+      "true",
     );
     await page.screenshot({ path: "ambient-shots/3-expenses.png" });
 
