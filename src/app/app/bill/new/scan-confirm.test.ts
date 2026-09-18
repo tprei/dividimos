@@ -3,7 +3,8 @@ import { userAlice } from "@/test/fixtures";
 import { useBillStore } from "@/stores/bill-store";
 import type { ItemDivisionValue } from "@/lib/item-division";
 import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
-
+import { buildScanDraftCandidate } from "./scan-replacement";
+import { commitScanReplacement } from "./scan-commit";
 
 function simulateScanConfirm(
   result: ReceiptOcrResult,
@@ -11,35 +12,24 @@ function simulateScanConfirm(
   divisions: Record<number, ItemDivisionValue> = {},
   occurredOn = "2026-09-10",
 ) {
-  const store = useBillStore.getState();
-  store.setCurrentUser(userAlice);
-  store.createExpense(
-    result.merchant || "Nota escaneada",
-    "itemized",
-    result.merchant || undefined,
-  );
-  store.setReceiptAccessKey(receiptAccessKey);
-  store.updateExpense({
-    serviceFeePercent: result.serviceFeeBasisPoints / 100,
-    serviceFeeBasisPoints: result.serviceFeeBasisPoints,
-    fixedFees: result.fixedFeesCents,
+  const candidate = buildScanDraftCandidate({
+    result,
+    occurredOn,
+    groupId: null,
+    participants: [userAlice],
+    guests: [],
+    creatorId: userAlice.id,
+    nowIso: "2026-09-10T12:00:00.000Z",
   });
-
-  for (const item of result.items) {
-    store.addItem({
-      description: item.description,
-      quantity: item.quantity,
-      unitPriceCents: item.unitPriceCents,
-      totalPriceCents: item.totalCents,
-    });
+  commitScanReplacement(candidate);
+  if (receiptAccessKey) {
+    useBillStore.getState().setReceiptAccessKey(receiptAccessKey);
   }
-
   const addedItems = useBillStore.getState().items;
   for (const [indexText, division] of Object.entries(divisions)) {
     const item = addedItems[Number(indexText)];
-    if (item) store.setItemDivision(item.id, division);
+    if (item) useBillStore.getState().setItemDivision(item.id, division);
   }
-  store.setOccurredOn(occurredOn);
 }
 
 const sampleResult: ReceiptOcrResult = {
@@ -88,6 +78,7 @@ describe("scan confirm → bill store integration", () => {
     const { expense } = useBillStore.getState();
     expect(expense!.serviceFeePercent).toBe(10);
   });
+
   it("keeps the scanned receipt key with the draft", () => {
     const receiptAccessKey = "12345678901234567890123456789012345678901234";
     simulateScanConfirm(sampleResult, receiptAccessKey);
@@ -122,7 +113,7 @@ describe("scan confirm → bill store integration", () => {
     });
     const { expense } = useBillStore.getState();
     expect(expense!.title).toBe("Nota escaneada");
-    expect(expense!.merchantName).toBeUndefined();
+    expect(expense!.merchantName).toBeNull();
   });
 
   it("handles zero service fee", () => {
@@ -161,6 +152,7 @@ describe("scan confirm → bill store integration", () => {
     const store = useBillStore.getState();
     expect(store.getGrandTotal()).toBe(7590);
   });
+
   it("applies divisions to items in scan order and preserves the date", () => {
     const divisions: Record<number, ItemDivisionValue> = {
       0: {

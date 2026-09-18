@@ -59,6 +59,28 @@ vi.mock("@/hooks/use-push-notifications", () => ({
   usePushNotifications: () => mockPushState,
 }));
 
+vi.mock("@/components/ui/select-field", () => ({
+  SelectField: ({
+    label,
+    value,
+    options,
+    onChange,
+  }: {
+    label?: string;
+    value: string;
+    options: { value: string; label: string }[];
+    onChange: (value: string) => void;
+  }) => (
+    <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  ),
+}));
+
 vi.mock("@/components/ui/switch", () => ({
   Switch: ({
     checked,
@@ -159,6 +181,21 @@ describe("SettingsPage confirmations", () => {
     expect(toggle).toHaveAttribute("aria-checked", "false");
     expect(readConfirmationPreferences("user-a").confirmVoidSettlement).toBe(false);
     expect(readConfirmationPreferences("user-b").confirmVoidSettlement).toBe(true);
+  });
+
+  it("persists the remembered scan-import answer and lets the user go back to asking", () => {
+    useAppStore.setState({ hydrated: true, me: makeMe("user-a") });
+    render(<SettingsPage />);
+
+    const select = screen.getByRole("combobox", { name: "Nota escaneada com rascunho aberto" });
+    expect(select).toHaveValue("ask");
+
+    fireEvent.change(select, { target: { value: "replace" } });
+    expect(select).toHaveValue("replace");
+    expect(readConfirmationPreferences("user-a").scanDraftChoice).toBe("replace");
+
+    fireEvent.change(select, { target: { value: "ask" } });
+    expect(readConfirmationPreferences("user-a").scanDraftChoice).toBe("ask");
   });
 });
 

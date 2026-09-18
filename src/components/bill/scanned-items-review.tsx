@@ -177,7 +177,7 @@ export function ScannedItemsReview({
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
       <ScreenHeader back onBack={onCancel} eyebrow="Leitura" title="Recibo" />
-      <div className="px-4">
+      <div>
         <div className="overflow-hidden rounded-2xl border bg-card">
           <div className="px-4 pb-4 pt-6 text-center">
             <Input
@@ -235,7 +235,7 @@ export function ScannedItemsReview({
             />
           ))}
           <div className="border-t border-dashed" />
-          <div className="px-4 py-2">
+          <div className="py-2 pl-4 pr-[2.375rem]">
             <div className="flex items-baseline justify-between gap-3 py-2">
               <span className="text-sm leading-5">Subtotal</span>
               <Money cents={subtotalCents} className="text-sm" />
@@ -289,7 +289,7 @@ export function ScannedItemsReview({
           </div>
         </div>
       </div>
-      <footer className="sticky bottom-0 border-t bg-background/95 px-4 py-3 backdrop-blur safe-bottom">
+      <footer className="sticky bottom-0 border-t bg-background/95 py-3 backdrop-blur safe-bottom">
         {participants.length < 2 && (
           <p className="mb-2 text-center text-xs leading-4 text-muted-foreground">
             Adicione pelo menos uma pessoa além de você.

@@ -19,11 +19,13 @@ import { pushFailureMessage } from "@/lib/push/failures";
 import { useMe } from "@/hooks/use-me";
 import { useSignOut } from "@/hooks/use-sign-out";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
+import { isScanDraftChoice } from "@/lib/confirmation-preferences";
 import { useAppStore } from "@/stores/app-store";
 import { updateProfile } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { SelectField } from "@/components/ui/select-field";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/shared/skeleton";
 import type { NotificationCategory } from "@/types";
@@ -67,6 +69,12 @@ const CATEGORIES: CategoryConfig[] = [
     description: "Mensagens diretas",
     icon: MessageSquare,
   },
+];
+
+const SCAN_DRAFT_CHOICE_OPTIONS = [
+  { value: "ask", label: "Perguntar" },
+  { value: "replace", label: "Substituir o rascunho" },
+  { value: "keep", label: "Manter o rascunho" },
 ];
 
 export default function SettingsPage() {
@@ -224,6 +232,23 @@ export default function SettingsPage() {
               checked={confirmations.confirmVoidSettlement}
               onCheckedChange={(checked) => updateConfirmations({ confirmVoidSettlement: checked })}
               aria-label="Confirmar antes de desfazer um pagamento"
+            />
+          </div>
+          <div className="space-y-2 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Nota escaneada com rascunho aberto</p>
+              <p className="text-xs text-muted-foreground">
+                O que fazer quando você escaneia uma nota e já tem uma conta em rascunho
+              </p>
+            </div>
+            <SelectField
+              label="Nota escaneada com rascunho aberto"
+              hideLabel
+              value={confirmations.scanDraftChoice}
+              options={SCAN_DRAFT_CHOICE_OPTIONS}
+              onChange={(value) => {
+                if (isScanDraftChoice(value)) updateConfirmations({ scanDraftChoice: value });
+              }}
             />
           </div>
         </div>
