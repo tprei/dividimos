@@ -10,6 +10,8 @@ import { ActivityCardSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
+import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
+import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { newestActivityAt } from "@/lib/activity-badge";
 import { describeEvent } from "@/lib/ledger/event-copy";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -83,6 +85,8 @@ interface ActivityRowProps {
 
 function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const [isUndoing, setIsUndoing] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [preferences, updatePreferences] = useConfirmationPreferences(meId ?? "");
 
   const nameOf = useMemo(
     () => makeNameOf(event.groupId, groups, meId),
@@ -99,14 +103,15 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
   const groupLabel = getGroupName(event.groupId, groups, meId);
   const relativeTime = formatRelativeDate(event.createdAt);
 
+  const fromUserId =
+    typeof event.payload?.fromUserId === "string" ? event.payload.fromUserId : null;
+  const toUserId =
+    typeof event.payload?.toUserId === "string" ? event.payload.toUserId : null;
+  const amountCents =
+    typeof event.payload?.amountCents === "number" ? event.payload.amountCents : 0;
+
   const canUndo = useMemo(() => {
     if (!event.settlementId || event.kind !== "settlement_recorded") return false;
-
-    const fromUserId =
-      typeof event.payload?.fromUserId === "string" ? event.payload.fromUserId : null;
-    const toUserId =
-      typeof event.payload?.toUserId === "string" ? event.payload.toUserId : null;
-
     if (meId !== fromUserId && meId !== toUserId) return false;
 
     return (
@@ -114,16 +119,15 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
         (s) => s.id === event.settlementId,
       ) ?? false
     );
-  }, [event, groups, meId]);
+  }, [event.groupId, event.kind, event.settlementId, fromUserId, groups, meId, toUserId]);
 
-  const handleUndo = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleConfirmUndo = async () => {
     if (isUndoing || !event.settlementId) return;
     setIsUndoing(true);
     try {
       await voidSettlement(event.groupId, event.settlementId);
       toast.success("Pagamento desfeito");
+      setConfirmOpen(false);
     } catch (err) {
       toast.error(ledgerErrorMessage(err));
     } finally {
@@ -155,8 +159,14 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
               variant="ghost"
               size="sm"
               className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
-              onClick={handleUndo}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (preferences.confirmVoidSettlement) setConfirmOpen(true);
+                else void handleConfirmUndo();
+              }}
               disabled={isUndoing}
+              data-testid="activity-undo-settlement"
             >
               {isUndoing ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -173,21 +183,42 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
     </div>
   );
 
+  const dialog = canUndo ? (
+    <VoidSettlementDialog
+      open={confirmOpen && canUndo}
+      amountCents={amountCents}
+      payerName={fromUserId ? nameOf(fromUserId) : "Alguém"}
+      recipientName={toUserId ? nameOf(toUserId) : "Alguém"}
+      busy={isUndoing}
+      onCancel={() => setConfirmOpen(false)}
+      onConfirm={() => {
+        void handleConfirmUndo();
+      }}
+      onSkipFutureConfirmations={() => updatePreferences({ confirmVoidSettlement: false })}
+    />
+  ) : null;
+
   if (event.expenseId) {
     return (
-      <Link
-        href={`/app/bill/${event.expenseId}`}
-        className="block rounded-xl border bg-card p-3 transition-colors hover:bg-accent/40"
-      >
-        {cardContent}
-      </Link>
+      <>
+        <Link
+          href={`/app/bill/${event.expenseId}`}
+          className="block rounded-xl border bg-card p-3 transition-colors hover:bg-accent/40"
+        >
+          {cardContent}
+        </Link>
+        {dialog}
+      </>
     );
   }
 
   return (
-    <div className="rounded-xl border bg-card p-3">
-      {cardContent}
-    </div>
+    <>
+      <div className="rounded-xl border bg-card p-3">
+        {cardContent}
+      </div>
+      {dialog}
+    </>
   );
 }
 

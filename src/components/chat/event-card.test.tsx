@@ -1,12 +1,22 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EventCard } from "./event-card";
+import {
+  readConfirmationPreferences,
+  updateConfirmationPreferences,
+} from "@/lib/confirmation-preferences";
 import type { GroupEvent, Settlement } from "@/types/ledger";
 
 const mutations = vi.hoisted(() => ({
   voidSettlement: vi.fn().mockResolvedValue({ eventId: 2 }),
 }));
 vi.mock("@/lib/sync/mutations", () => mutations);
+
+const toastMocks = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock("react-hot-toast", () => ({ default: toastMocks }));
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -59,6 +69,7 @@ const nameOf = (id: string) => (id === meId ? "Você" : "Bob Silva");
 describe("EventCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
 
@@ -82,9 +93,145 @@ describe("EventCard", () => {
     expect(screen.queryByTestId("event-reject-settlement")).toBeNull();
 
     fireEvent.click(screen.getByTestId("event-undo-settlement"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
     await waitFor(() => {
       expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
     });
+    expect(toastMocks.success).toHaveBeenCalledWith("Pagamento desfeito");
+  });
+
+  it("voids without the dialog once the viewer opted out of confirmations", async () => {
+    updateConfirmationPreferences(meId, { confirmVoidSettlement: false });
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
+    });
+  });
+
+  it("remembers the do-not-ask choice made inside the dialog", async () => {
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Não perguntar de novo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+
+    await waitFor(() => {
+      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
+    });
+    expect(readConfirmationPreferences(meId).confirmVoidSettlement).toBe(false);
+  });
+
+  it("opens confirmation dialog when Desfazer is clicked without invoking voidSettlement", async () => {
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+
+    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+    const dialog = within(screen.getByRole("dialog"));
+    expect(dialog.getByText("Bob Silva")).toBeInTheDocument();
+    expect(dialog.getByText("Você")).toBeInTheDocument();
+    expect(
+      screen.getByText(/O registro fica marcado como Desfeito e os saldos são recalculados na hora\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/O Pix em si não é estornado\. Combina a devolução direto com a outra pessoa\./),
+    ).toBeInTheDocument();
+    expect(mutations.voidSettlement).not.toHaveBeenCalled();
+  });
+
+  it("closes dialog without calling voidSettlement when Cancelar is clicked", async () => {
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+    expect(screen.getByText(/Desfazer este registro\?/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/Desfazer este registro\?/)).not.toBeInTheDocument();
+    });
+    expect(mutations.voidSettlement).not.toHaveBeenCalled();
+  });
+
+  it("calls voidSettlement when Desfazer registro is confirmed and handles error gracefully", async () => {
+    mutations.voidSettlement.mockRejectedValueOnce(new Error("Falha na rede"));
+    const settlement = makeSettlement({ toUserId: meId, fromUserId: otherId });
+    const event = makeEvent({ kind: "settlement_recorded", settlementId: settlement.id });
+
+    render(
+      <EventCard
+        event={event}
+        groupId="g1"
+        meId={meId}
+        settlement={settlement}
+        latestStatus={null}
+        nameOf={nameOf}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("event-undo-settlement"));
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer registro" }));
+
+    await waitFor(() => {
+      expect(mutations.voidSettlement).toHaveBeenCalledWith("g1", "set-1");
+    });
+    await waitFor(() => {
+      expect(toastMocks.error).toHaveBeenCalled();
+    });
+    expect(screen.getByRole("button", { name: "Desfazer registro" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancelar" })).not.toBeDisabled();
   });
 
   it("offers Desfazer to the payer as well", () => {

@@ -18,6 +18,7 @@ import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { pushFailureMessage } from "@/lib/push/failures";
 import { useMe } from "@/hooks/use-me";
 import { useSignOut } from "@/hooks/use-sign-out";
+import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { useAppStore } from "@/stores/app-store";
 import { updateProfile } from "@/lib/sync/mutations-group";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
@@ -81,6 +82,7 @@ export default function SettingsPage() {
     retry: pushRetry,
   } = usePushNotifications();
   const { pending: signOutPending, error: signOutError, signOut } = useSignOut();
+  const [confirmations, updateConfirmations] = useConfirmationPreferences(me?.id ?? "");
 
   const handleSignOut = async () => {
     const result = await signOut();
@@ -200,6 +202,32 @@ export default function SettingsPage() {
           <NotificationPreferencesSection key={me.id} />
         </div>
       )}
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15, duration: 0.4 }}
+        className="mt-8"
+      >
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Confirmações
+        </h2>
+        <div className="divide-y rounded-2xl border bg-card">
+          <div className="flex min-h-14 items-center justify-between gap-3 px-4 py-2">
+            <div>
+              <p className="text-sm font-medium">Confirmar antes de desfazer um pagamento</p>
+              <p className="text-xs text-muted-foreground">
+                Mostra um aviso antes de marcar um registro como desfeito
+              </p>
+            </div>
+            <Switch
+              checked={confirmations.confirmVoidSettlement}
+              onCheckedChange={(checked) => updateConfirmations({ confirmVoidSettlement: checked })}
+              aria-label="Confirmar antes de desfazer um pagamento"
+            />
+          </div>
+        </div>
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
