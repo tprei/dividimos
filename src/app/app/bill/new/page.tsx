@@ -23,6 +23,7 @@ import { useBillStore } from "@/stores/bill-store";
 import { expenseReadKey, IDLE_READ, useAppStore } from "@/stores/app-store";
 import { useShallow } from "zustand/react/shallow";
 import { useMe } from "@/hooks/use-me";
+import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { useClientOnly, useMounted } from "@/hooks/use-client-only";
 import { meToLegacyUser } from "@/hooks/use-auth";
 import toast from "react-hot-toast";
@@ -98,6 +99,7 @@ function NewBillPageContent() {
   const [pendingCandidate, setPendingCandidate] = useState<ScanDraftCandidate | null>(null);
   const [preConfirmSnapshot, setPreConfirmSnapshot] = useState<PreConfirmSnapshot | null>(null);
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
+  const [confirmations, updateConfirmations] = useConfirmationPreferences(me?.id ?? "");
 
   const selectedGroupId = store.expense ? (store.expense.groupId || null) : pendingGroupId;
 
@@ -263,6 +265,24 @@ function NewBillPageContent() {
     setStep("info");
   }, [me, pendingGroupId]);
 
+  const applyScanReplacement = useCallback(
+    (candidate: ScanDraftCandidate) => {
+      commitScanReplacement(candidate);
+      setBillType("itemized");
+      setStep("items");
+      setReviewingScan(false);
+      setScanDraftContext(null);
+    },
+    [setScanDraftContext],
+  );
+
+  const discardScannedReceipt = useCallback(() => {
+    toast.success("Rascunho mantido. A nota escaneada foi descartada.");
+    setReviewClearSignal((s) => s + 1);
+    setReviewingScan(false);
+    setScanDraftContext(null);
+  }, [setScanDraftContext]);
+
   const handleReviewSubmit = useCallback((result: ReceiptOcrResult, occurredOn: string) => {
     if (!me) return;
 
@@ -278,11 +298,17 @@ function NewBillPageContent() {
     });
 
     if (!hasMeaningfulDraft(liveStore, me.id)) {
-      commitScanReplacement(candidate);
-      setBillType("itemized");
-      setStep("items");
-      setReviewingScan(false);
-      setScanDraftContext(null);
+      applyScanReplacement(candidate);
+      return;
+    }
+
+    if (confirmations.scanDraftChoice === "replace") {
+      applyScanReplacement(candidate);
+      toast.success("Rascunho substituído pela nota escaneada.");
+      return;
+    }
+    if (confirmations.scanDraftChoice === "keep") {
+      discardScannedReceipt();
       return;
     }
 
@@ -296,30 +322,29 @@ function NewBillPageContent() {
     setPendingCandidate(candidate);
     setPreConfirmSnapshot(snapshot);
     setReplaceDialogOpen(true);
-  }, [me, scanDraftContext, scanGroup, setScanDraftContext]);
+  }, [
+    applyScanReplacement,
+    confirmations.scanDraftChoice,
+    discardScannedReceipt,
+    me,
+    scanDraftContext,
+    scanGroup,
+  ]);
 
   const handleKeepDraft = useCallback(() => {
-    toast.success("Rascunho mantido. A nota escaneada foi descartada.");
     setReplaceDialogOpen(false);
     setPendingCandidate(null);
     setPreConfirmSnapshot(null);
-    setReviewClearSignal((s) => s + 1);
-    setReviewingScan(false);
-    setScanDraftContext(null);
-  }, [setScanDraftContext]);
+    discardScannedReceipt();
+  }, [discardScannedReceipt]);
 
   const handleReplaceDraft = useCallback(() => {
     if (!pendingCandidate) return;
-
-    commitScanReplacement(pendingCandidate);
     setReplaceDialogOpen(false);
     setPendingCandidate(null);
     setPreConfirmSnapshot(null);
-    setBillType("itemized");
-    setStep("items");
-    setReviewingScan(false);
-    setScanDraftContext(null);
-  }, [pendingCandidate, setScanDraftContext]);
+    applyScanReplacement(pendingCandidate);
+  }, [applyScanReplacement, pendingCandidate]);
 
   const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
     if (!me) return;
@@ -530,6 +555,7 @@ function NewBillPageContent() {
         totalCents={preConfirmSnapshot?.totalCents ?? 0}
         onReplace={handleReplaceDraft}
         onKeep={handleKeepDraft}
+        onRemember={(choice) => updateConfirmations({ scanDraftChoice: choice })}
       />
     </div>
   );

@@ -105,4 +105,79 @@ describe("ReplaceDraftDialog", () => {
     expect(onReplace).toHaveBeenCalledOnce();
     expect(onKeep).not.toHaveBeenCalled();
   });
+
+  it("offers to remember the answer only when a remember handler is given", () => {
+    const { rerender } = render(
+      <ReplaceDraftDialog
+        open={true}
+        draftTitle="Conta Antiga"
+        itemCount={2}
+        totalCents={3000}
+        onReplace={vi.fn()}
+        onKeep={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("checkbox", { name: "Lembrar minha escolha" })).not.toBeInTheDocument();
+
+    rerender(
+      <ReplaceDraftDialog
+        open={true}
+        draftTitle="Conta Antiga"
+        itemCount={2}
+        totalCents={3000}
+        onReplace={vi.fn()}
+        onKeep={vi.fn()}
+        onRemember={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Lembrar minha escolha" })).not.toBeChecked();
+  });
+
+  it("remembers the answer before applying it when the box is checked", async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    const onReplace = vi.fn(() => calls.push("replace"));
+    const onRemember = vi.fn((choice: "replace" | "keep") => calls.push(`remember:${choice}`));
+
+    render(
+      <ReplaceDraftDialog
+        open={true}
+        draftTitle="Conta Antiga"
+        itemCount={2}
+        totalCents={3000}
+        onReplace={onReplace}
+        onKeep={vi.fn()}
+        onRemember={onRemember}
+      />,
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: "Lembrar minha escolha" }));
+    expect(screen.getByText("Dá pra mudar depois em Configurações.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Substituir rascunho" }));
+
+    expect(calls).toEqual(["remember:replace", "replace"]);
+  });
+
+  it("does not remember anything when the box stays unchecked", async () => {
+    const user = userEvent.setup();
+    const onKeep = vi.fn();
+    const onRemember = vi.fn();
+
+    render(
+      <ReplaceDraftDialog
+        open={true}
+        draftTitle="Conta Antiga"
+        itemCount={2}
+        totalCents={3000}
+        onReplace={vi.fn()}
+        onKeep={onKeep}
+        onRemember={onRemember}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Manter rascunho" }));
+
+    expect(onKeep).toHaveBeenCalledOnce();
+    expect(onRemember).not.toHaveBeenCalled();
+  });
 });

@@ -14,6 +14,10 @@ const DEFAULT_CONFIRMATION_PREFERENCES: ConfirmationPreferences = {
 
 const VALID_SCAN_DRAFT_CHOICES: Set<ScanDraftChoice> = new Set(["ask", "replace", "keep"]);
 
+export function isScanDraftChoice(value: string): value is ScanDraftChoice {
+  return VALID_SCAN_DRAFT_CHOICES.has(value as ScanDraftChoice);
+}
+
 function getStorageKey(userId: string): string {
   return `dividimos-prefs:${getSupabaseStorageNamespace()}:${userId}`;
 }
@@ -43,9 +47,8 @@ export function readConfirmationPreferences(userId: string): ConfirmationPrefere
         : DEFAULT_CONFIRMATION_PREFERENCES.confirmVoidSettlement;
 
     const scanDraftChoice =
-      typeof record.scanDraftChoice === "string" &&
-      VALID_SCAN_DRAFT_CHOICES.has(record.scanDraftChoice as ScanDraftChoice)
-        ? (record.scanDraftChoice as ScanDraftChoice)
+      typeof record.scanDraftChoice === "string" && isScanDraftChoice(record.scanDraftChoice)
+        ? record.scanDraftChoice
         : DEFAULT_CONFIRMATION_PREFERENCES.scanDraftChoice;
 
     return {
