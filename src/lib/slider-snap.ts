@@ -35,10 +35,3 @@ export function getSnapPoints(
 export function getSnapRadius(snapStep: number, sliderStep: number): number {
   return Math.max(sliderStep, Math.floor(snapStep * 0.25));
 }
-
-/** Slider granularity scales with range so drag feels smooth at any scale. */
-export function getSliderStep(rangeCents: number): number {
-  if (rangeCents < 1_000) return 1;
-  if (rangeCents < 100_000) return 10;
-  return 100;
-}

@@ -48,6 +48,7 @@ import QRCode from "qrcode";
 import { haptics } from "@/hooks/use-haptics";
 import { generatePixCopiaECola } from "@/lib/pix";
 import { PixQrModal } from "./pix-qr-modal";
+import { formatBRL } from "@/lib/currency";
 
 const defaultPropsWithPixKey = {
   open: true,
@@ -351,6 +352,58 @@ describe("PixQrModal", () => {
 
     const ticks = document.querySelectorAll(".bg-muted-foreground\\/30");
     expect(ticks.length).toBeGreaterThan(0);
+  });
+  it("handles exact 1-centavo slider values and keyboard navigation without snapback", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} amountCents={12154} />);
+
+    const slider = screen.getByRole("slider", { name: /Valor do pagamento/i }) as HTMLInputElement;
+    expect(slider).toHaveAttribute("step", "1");
+    expect(slider.value).toBe("12154");
+    expect(slider).toHaveAttribute("aria-valuetext", formatBRL(12154));
+
+    // ArrowLeft from max moves to 12153 without snapping
+    fireEvent.keyDown(slider, { key: "ArrowLeft" });
+    expect(slider.value).toBe("12153");
+    expect(slider).toHaveAttribute("aria-valuetext", formatBRL(12153));
+    expect(screen.getByRole("button", { name: `Editar valor, ${formatBRL(12153)}` })).toBeInTheDocument();
+
+    // End returns to 12154
+    fireEvent.keyDown(slider, { key: "End" });
+    expect(slider.value).toBe("12154");
+    expect(slider).toHaveAttribute("aria-valuetext", formatBRL(12154));
+    expect(screen.getByRole("button", { name: `Editar valor, ${formatBRL(12154)}` })).toBeInTheDocument();
+
+    // Home jumps to sliderMin (100)
+    fireEvent.keyDown(slider, { key: "Home" });
+    expect(slider.value).toBe("100");
+    expect(slider).toHaveAttribute("aria-valuetext", formatBRL(100));
+
+    // Page keys move a tenth of the range: (12154 - 100) / 10 = 1205
+    fireEvent.keyDown(slider, { key: "PageUp" });
+    expect(slider.value).toBe("1305");
+    expect(slider).toHaveAttribute("aria-valuetext", formatBRL(1305));
+
+    fireEvent.keyDown(slider, { key: "PageDown" });
+    expect(slider.value).toBe("100");
+    expect(slider).toHaveAttribute("aria-valuetext", formatBRL(100));
+  });
+
+  it("renders the Metade pill as a plain button without a midpoint snap marker", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} amountCents={12154} />);
+
+    expect(screen.getByRole("button", { name: `Metade: ${formatBRL(6077)}` })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `Tudo: ${formatBRL(12154)}` })).toBeInTheDocument();
+
+    // Metade sets the value directly; it is not a snap point the slider can land on.
+    const expectedLeft = `${((6077 - 100) / (12154 - 100)) * 100}%`;
+    const ticks = Array.from(document.querySelectorAll<HTMLElement>(".bg-muted-foreground\\/30"));
+    expect(ticks.find((tick) => tick.style.left === expectedLeft)).toBeUndefined();
+  });
+
+  it("hides the Metade pill for totals under R$ 2,00", () => {
+    render(<PixQrModal {...defaultPropsWithPixKey} amountCents={150} />);
+
+    expect(screen.queryByRole("button", { name: /Metade/ })).not.toBeInTheDocument();
   });
 
   it("triggers haptics.success on copy", async () => {

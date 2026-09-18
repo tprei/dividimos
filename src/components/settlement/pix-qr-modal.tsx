@@ -30,7 +30,6 @@ import { haptics } from "@/hooks/use-haptics";
 import { AnimatedCheckmark } from "@/components/shared/animated-checkmark";
 import { ConfettiBurst } from "@/components/shared/confetti-burst";
 import {
-  getSliderStep,
   getSnapPoints,
   getSnapRadius,
   getSnapStep,
@@ -99,10 +98,12 @@ export function PixQrModal({
 
   const sliderMin = amountCents < 100 ? 1 : 100;
   const range = amountCents - sliderMin;
-  const sliderStep = getSliderStep(range);
+  // Page keys move a tenth of the range (at least one centavo), not a fixed amount.
+  const pageStep = Math.max(1, Math.round(range / 10));
   const snapStep = getSnapStep(range);
-  const snapPoints = getSnapPoints(sliderMin, amountCents);
-  const snapRadius = getSnapRadius(snapStep, sliderStep);
+  const snapRadius = getSnapRadius(snapStep, 1);
+  const snapPoints = getSnapPoints(sliderMin, amountCents, []);
+  const halfAvailable = amountCents >= 200 && halfCents > sliderMin && halfCents < amountCents;
 
   const commitAmount = useCallback(() => {
     setEditingAmount(false);
@@ -137,6 +138,26 @@ export function PixQrModal({
     },
     [snapPoints, snapRadius],
   );
+
+  const handleSliderKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const current = paymentCents;
+    let next: number | null = null;
+    switch (e.key) {
+      case "ArrowLeft": case "ArrowDown": next = current - 1; break;
+      case "ArrowRight": case "ArrowUp": next = current + 1; break;
+      case "Home": next = sliderMin; break;
+      case "End": next = amountCents; break;
+      case "PageDown": next = current - pageStep; break;
+      case "PageUp": next = current + pageStep; break;
+    }
+    if (next === null) return;
+    e.preventDefault();
+    const clamped = Math.min(amountCents, Math.max(sliderMin, next));
+    if (clamped === current) return;
+    setPaymentCents(clamped);
+    // A held arrow key repeats dozens of times per second; buzz once per burst.
+    if (!e.repeat) haptics.selectionChanged();
+  };
 
   useEffect(() => {
     if (open && !isSettling) {
@@ -443,12 +464,14 @@ export function PixQrModal({
                       type="range"
                       min={sliderMin}
                       max={amountCents}
-                      step={sliderStep}
+                      step={1}
                       value={paymentCents}
                       onChange={handleSliderChange}
+                      onKeyDown={handleSliderKeyDown}
                       disabled={isSettling}
                       className="mt-3 w-full"
                       aria-label="Valor do pagamento"
+                      aria-valuetext={formatBRL(paymentCents)}
                     />
                     {snapPoints.length > 0 && amountCents > sliderMin && (
                       <div className="relative mx-[11px] h-2">
@@ -478,7 +501,7 @@ export function PixQrModal({
                       >
                         Tudo: {formatBRL(amountCents)}
                       </button>
-                      {halfCents !== amountCents && (
+                      {halfAvailable && (
                         <button
                           type="button"
                           onClick={() => setPaymentCents(halfCents)}

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { PayerStep } from "./payer-step";
+import { formatBRL } from "@/lib/currency";
 import type { UserProfile } from "@/types";
 
 function profile(id: string, name: string): UserProfile {
@@ -232,5 +233,25 @@ describe("PayerStep mode-switch seeding", () => {
 
     expect(onSetPayerFull).not.toHaveBeenCalled();
     expect(screen.queryByText("Quem pagou tudo?")).not.toBeInTheDocument();
+  });
+  it("announces payer sliders with names, aria-valuetext and exact step 1", async () => {
+    const user = userEvent.setup();
+    renderFixedMode(
+      [
+        { userId: "a", amountCents: 5000 },
+        { userId: "b", amountCents: 5000 },
+      ],
+      10_000,
+    );
+
+    const anaMoneySlider = screen.getByRole("slider", { name: "Valor pago por Ana" });
+    expect(anaMoneySlider).toHaveAttribute("step", "1");
+    expect(anaMoneySlider).toHaveAttribute("max", "10000");
+    expect(anaMoneySlider).toHaveAttribute("aria-valuetext", formatBRL(5000));
+
+    await user.click(screen.getByRole("button", { name: "Porcentagem" }));
+    const anaPercentSlider = screen.getByRole("slider", { name: "Percentual pago por Ana" });
+    expect(anaPercentSlider).toHaveAttribute("step", "1");
+    expect(anaPercentSlider).toHaveAttribute("aria-valuetext", "50%");
   });
 });
