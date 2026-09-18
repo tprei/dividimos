@@ -33,7 +33,7 @@ export function hasMeaningfulDraft(
     return false;
   }
 
-  if (state.occurredOn !== null || state.receiptAccessKey !== null) {
+  if (state.receiptAccessKey !== null) {
     return true;
   }
 

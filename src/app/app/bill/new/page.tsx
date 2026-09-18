@@ -16,6 +16,16 @@ import type { ReceiptOcrResult } from "@/lib/receipt-ocr";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
 import { isContactPickerSupported, pickContacts } from "@/lib/contacts";
 import { hasMeaningfulDraft } from "@/lib/bill-draft";
+import { DraftResumeBanner } from "@/components/bill/wizard/draft-resume-banner";
+import {
+  DiscardDraftDialog,
+  type DiscardDraftMode,
+} from "@/components/bill/wizard/discard-draft-dialog";
+import {
+  clearDraftIntent,
+  readDraftIntent,
+  writeDraftIntent,
+} from "@/lib/draft-intent";
 import { refreshExpense } from "@/lib/sync/refresh";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { LedgerError, ledgerErrorMessage } from "@/lib/sync/errors";
@@ -73,9 +83,15 @@ function NewBillPageContent() {
   const store = useBillStore(
     useShallow((s) => ({
       expense: s.expense,
+      totalAmountInput: s.totalAmountInput,
       participants: s.participants,
       guests: s.guests,
+      items: s.items,
+      payers: s.payers,
+      splits: s.splits,
+      billSplits: s.billSplits,
       occurredOn: s.occurredOn,
+      receiptAccessKey: s.receiptAccessKey,
     })),
   );
 
@@ -100,6 +116,15 @@ function NewBillPageContent() {
   const [preConfirmSnapshot, setPreConfirmSnapshot] = useState<PreConfirmSnapshot | null>(null);
   const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
   const [confirmations, updateConfirmations] = useConfirmationPreferences(me?.id ?? "");
+  const [resumedEditExpenseId, setResumedEditExpenseId] = useState<string | null>(null);
+  const [dismissedThisMount, setDismissedThisMount] = useState(false);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [discardDialogMode, setDiscardDialogMode] = useState<DiscardDraftMode>("type-switch");
+  const [pendingType, setPendingType] = useState<ExpenseType | null>(null);
+  const [pendingVoice, setPendingVoice] = useState<{
+    result: VoiceExpenseResult;
+    resolvedParticipants: ResolvedParticipant[];
+  } | null>(null);
 
   const selectedGroupId = store.expense ? (store.expense.groupId || null) : pendingGroupId;
 
@@ -253,17 +278,43 @@ function NewBillPageContent() {
       : `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
   }, [store.participants, store.guests]);
 
-  const handleTypeSelect = useCallback((type: ExpenseType) => {
-    setBillType(type);
-    if (me) {
-      ensureDraftOwnedBy(me.id);
-      const billStore = useBillStore.getState();
-      billStore.setCurrentUser(meToLegacyUser(me));
-      selectDraftForType(billStore, type, pendingGroupId);
-      setPendingGroupId(null);
-    }
-    setStep("info");
-  }, [me, pendingGroupId]);
+  const applyTypeSelect = useCallback(
+    (type: ExpenseType) => {
+      setBillType(type);
+      if (me) {
+        ensureDraftOwnedBy(me.id);
+        const billStore = useBillStore.getState();
+        billStore.setCurrentUser(meToLegacyUser(me));
+        selectDraftForType(billStore, type, pendingGroupId);
+        // Read the key from the store AFTER the transition: selectDraftForType can rotate it.
+        writeDraftIntent({ kind: "create", draftKey: useBillStore.getState().draftKey });
+        setPendingGroupId(null);
+      }
+      setStep("info");
+    },
+    [me, pendingGroupId],
+  );
+
+  const handleTypeSelect = useCallback(
+    (type: ExpenseType) => {
+      const liveStore = useBillStore.getState();
+      const currentType = liveStore.expense?.expenseType;
+      if (
+        me &&
+        liveStore.expense &&
+        currentType !== type &&
+        hasMeaningfulDraft(liveStore, me.id)
+      ) {
+        setPendingType(type);
+        setDiscardDialogMode("type-switch");
+        setDiscardDialogOpen(true);
+        return;
+      }
+
+      applyTypeSelect(type);
+    },
+    [me, applyTypeSelect],
+  );
 
   const applyScanReplacement = useCallback(
     (candidate: ScanDraftCandidate) => {
@@ -346,33 +397,123 @@ function NewBillPageContent() {
     applyScanReplacement(pendingCandidate);
   }, [applyScanReplacement, pendingCandidate]);
 
-  const handleVoiceConfirm = useCallback((result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
-    if (!me) return;
-    const billStore = useBillStore.getState();
-    billStore.setCurrentUser(meToLegacyUser(me));
-    billStore.hydrateFromVoice(result, selectedGroupId ?? undefined);
+  const applyVoiceConfirm = useCallback(
+    (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
+      if (!me) return;
+      const billStore = useBillStore.getState();
+      billStore.setCurrentUser(meToLegacyUser(me));
+      billStore.hydrateFromVoice(result, selectedGroupId ?? undefined);
 
-    for (const rp of resolvedParticipants) {
-      if (rp.type === "member") {
-        billStore.addParticipant({
-          id: rp.userId,
-          email: "",
-          handle: rp.handle,
-          name: rp.name,
-          pixKeyType: "email",
-          pixKeyHint: "",
-          avatarUrl: rp.avatarUrl,
-          onboarded: true,
-          createdAt: "",
-        });
+      for (const rp of resolvedParticipants) {
+        if (rp.type === "member") {
+          billStore.addParticipant({
+            id: rp.userId,
+            email: "",
+            handle: rp.handle,
+            name: rp.name,
+            pixKeyType: "email",
+            pixKeyHint: "",
+            avatarUrl: rp.avatarUrl,
+            onboarded: true,
+            createdAt: "",
+          });
+        } else {
+          billStore.addGuest(rp.name);
+        }
+      }
+
+      writeDraftIntent({ kind: "create", draftKey: useBillStore.getState().draftKey });
+      setBillType(result.expenseType);
+      setStep(result.expenseType === "itemized" ? "split" : "info");
+    },
+    [me, selectedGroupId],
+  );
+
+  const handleVoiceConfirm = useCallback(
+    (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
+      if (!me) return;
+      const liveStore = useBillStore.getState();
+      if (hasMeaningfulDraft(liveStore, me.id)) {
+        setPendingVoice({ result, resolvedParticipants });
+        setDiscardDialogMode("voice");
+        setDiscardDialogOpen(true);
+        return;
+      }
+      applyVoiceConfirm(result, resolvedParticipants);
+    },
+    [me, applyVoiceConfirm],
+  );
+
+  const handleResumeDraft = useCallback(() => {
+    const liveStore = useBillStore.getState();
+    const draft = liveStore.expense;
+    if (!draft) return;
+
+    setBillType(draft.expenseType);
+    if (draft.expenseType === "single_amount") {
+      setStep("info");
+    } else {
+      if (liveStore.payers.length > 0) {
+        setStep("payer");
+      } else if (liveStore.items.length > 0) {
+        setStep("items");
       } else {
-        billStore.addGuest(rp.name);
+        setStep("split");
       }
     }
 
-    setBillType(result.expenseType);
-    setStep(result.expenseType === "itemized" ? "split" : "info");
-  }, [me, selectedGroupId]);
+    const intent = readDraftIntent();
+    if (intent?.kind === "edit" && intent.expenseId === draft.id) {
+      setIsEditing(true);
+      setResumedEditExpenseId(intent.expenseId);
+    }
+  }, []);
+
+  const draftSummary = useMemo(() => {
+    const isItemized = store.expense?.expenseType === "itemized";
+    const named = store.expense?.title || null;
+    return {
+      // A draft that never got a name shows its contents, not the default placeholder.
+      title: named,
+      fallbackTitle: isItemized ? "Nova conta" : "Conta sem título",
+      itemCount: store.items.length,
+      totalCents: isItemized
+        ? useBillStore.getState().getGrandTotal()
+        : store.totalAmountInput,
+      isItemized,
+    };
+  }, [store.expense?.expenseType, store.expense?.title, store.items.length, store.totalAmountInput]);
+
+  const handleBannerDiscardRequest = useCallback(() => {
+    setDiscardDialogMode("banner-discard");
+    setDiscardDialogOpen(true);
+  }, []);
+
+  const handleDiscardConfirm = useCallback(() => {
+    if (discardDialogMode === "type-switch") {
+      clearDraftIntent();
+      if (pendingType) {
+        applyTypeSelect(pendingType);
+        setPendingType(null);
+      }
+    } else if (discardDialogMode === "voice") {
+      if (pendingVoice) {
+        applyVoiceConfirm(pendingVoice.result, pendingVoice.resolvedParticipants);
+        setPendingVoice(null);
+      }
+    } else if (discardDialogMode === "banner-discard") {
+      useBillStore.getState().reset();
+      clearDraftIntent();
+      setDismissedThisMount(true);
+    }
+    setDiscardDialogOpen(false);
+  }, [discardDialogMode, pendingType, pendingVoice, applyTypeSelect, applyVoiceConfirm]);
+
+  const handleDiscardKeep = useCallback(() => {
+    setPendingType(null);
+    setPendingVoice(null);
+    setDiscardDialogOpen(false);
+  }, []);
 
   const onStaleReload = useCallback(async () => {
     const editId = modes.editExpenseId;
@@ -392,7 +533,7 @@ function NewBillPageContent() {
 
   const { submitting, submit } = useWizardSubmit({
     router,
-    editExpenseId: modes.editExpenseId,
+    editExpenseId: modes.editExpenseId ?? resumedEditExpenseId,
     expectedVersionNo: editDetail?.expense.currentVersionNo ?? null,
     onStaleReload,
   });
@@ -412,8 +553,9 @@ function NewBillPageContent() {
       router.push(`/app/conversations/${modes.dm.userId}`);
       return;
     }
-    if (isEditing && modes.editExpenseId) {
-      router.push(`/app/bill/${modes.editExpenseId}`);
+    const activeEditId = modes.editExpenseId ?? resumedEditExpenseId;
+    if (isEditing && activeEditId) {
+      router.push(`/app/bill/${activeEditId}`);
       return;
     }
     setStep("type");
@@ -505,6 +647,18 @@ function NewBillPageContent() {
         </div>
       )}
 
+      {isTypeStep && mounted && me && store.expense && hasMeaningfulDraft(store, me.id) && !dismissedThisMount && !reviewingScan && (
+        <div className="mt-4">
+          <DraftResumeBanner
+            title={draftSummary.title}
+            itemCount={draftSummary.itemCount}
+            totalCents={draftSummary.totalCents}
+            onContinue={handleResumeDraft}
+            onDiscardRequest={handleBannerDiscardRequest}
+          />
+        </div>
+      )}
+
       <div className={reviewingScan ? "min-h-[400px]" : "mt-6 min-h-[400px]"}>
         <TypeStep
           accountId={me?.id ?? null}
@@ -556,6 +710,16 @@ function NewBillPageContent() {
         onReplace={handleReplaceDraft}
         onKeep={handleKeepDraft}
         onRemember={(choice) => updateConfirmations({ scanDraftChoice: choice })}
+      />
+      <DiscardDraftDialog
+        open={discardDialogOpen}
+        draftTitle={draftSummary.title ?? draftSummary.fallbackTitle}
+        itemCount={draftSummary.itemCount}
+        totalCents={draftSummary.totalCents}
+        mode={discardDialogMode}
+        isItemized={store.expense?.expenseType === "itemized"}
+        onDiscard={handleDiscardConfirm}
+        onKeep={handleDiscardKeep}
       />
     </div>
   );

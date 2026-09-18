@@ -19,6 +19,9 @@ import { loadMoreExpenses } from "@/lib/sync/refresh";
 import { useAppStore } from "@/stores/app-store";
 import { useBillStore } from "@/stores/bill-store";
 import type { VoiceExpenseResult } from "@/lib/voice-expense-parser";
+import { hasMeaningfulDraft } from "@/lib/bill-draft";
+import { DiscardDraftDialog } from "@/components/bill/wizard/discard-draft-dialog";
+import { writeDraftIntent } from "@/lib/draft-intent";
 
 interface GroupExpensesSectionProps {
   groupId: string;
@@ -32,6 +35,17 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
   const [voiceResult, setVoiceResult] = useState<VoiceExpenseResult | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [pendingVoice, setPendingVoice] = useState<{
+    result: VoiceExpenseResult;
+    resolvedParticipants: ResolvedParticipant[];
+  } | null>(null);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
+  const [draftSnapshot, setDraftSnapshot] = useState<{
+    title: string;
+    itemCount: number;
+    totalCents: number;
+    isItemized: boolean;
+  } | null>(null);
 
   const list = useAppStore((s) => s.expenseLists[groupId]);
   const expensesMap = useAppStore((s) => s.expenses);
@@ -91,7 +105,7 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
     setVoiceError(message);
   }, []);
 
-  const handleVoiceConfirm = useCallback(
+  const commitVoiceExpense = useCallback(
     (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
       if (!user) return;
       billStore.setCurrentUser(user);
@@ -115,12 +129,52 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
         }
       }
 
+      writeDraftIntent({ kind: "create", draftKey: useBillStore.getState().draftKey });
       setVoiceResult(null);
       setShowVoiceInput(false);
       router.push(`/app/bill/new?groupId=${groupId}&step=payer`);
     },
     [user, billStore, groupId, router],
   );
+
+  const handleVoiceConfirm = useCallback(
+    (result: VoiceExpenseResult, resolvedParticipants: ResolvedParticipant[]) => {
+      if (!user) return;
+      const liveStore = useBillStore.getState();
+      if (hasMeaningfulDraft(liveStore, user.id)) {
+        setDraftSnapshot({
+          title:
+            liveStore.expense?.title ||
+            (liveStore.expense?.expenseType === "itemized" ? "Nova conta" : "Conta sem título"),
+          itemCount: liveStore.items.length,
+          totalCents:
+            liveStore.expense?.expenseType === "itemized"
+              ? liveStore.getGrandTotal()
+              : liveStore.totalAmountInput,
+          isItemized: liveStore.expense?.expenseType === "itemized",
+        });
+        setPendingVoice({ result, resolvedParticipants });
+        setDiscardDialogOpen(true);
+        return;
+      }
+      commitVoiceExpense(result, resolvedParticipants);
+    },
+    [user, commitVoiceExpense],
+  );
+
+  const handleDiscardVoiceConfirm = useCallback(() => {
+    if (!pendingVoice) return;
+    commitVoiceExpense(pendingVoice.result, pendingVoice.resolvedParticipants);
+    setPendingVoice(null);
+    setDiscardDialogOpen(false);
+    setDraftSnapshot(null);
+  }, [pendingVoice, commitVoiceExpense]);
+
+  const handleDiscardVoiceKeep = useCallback(() => {
+    setPendingVoice(null);
+    setDiscardDialogOpen(false);
+    setDraftSnapshot(null);
+  }, []);
 
   const handleVoiceCancel = useCallback(() => {
     setVoiceResult(null);
@@ -155,6 +209,17 @@ export function GroupExpensesSection({ groupId, members }: GroupExpensesSectionP
             onCancel={handleVoiceCancel}
           />
         )}
+
+        <DiscardDraftDialog
+          open={discardDialogOpen}
+          draftTitle={draftSnapshot?.title ?? "Nova conta"}
+          itemCount={draftSnapshot?.itemCount ?? 0}
+          totalCents={draftSnapshot?.totalCents ?? 0}
+          mode="voice"
+          isItemized={draftSnapshot?.isItemized}
+          onDiscard={handleDiscardVoiceConfirm}
+          onKeep={handleDiscardVoiceKeep}
+        />
 
         {showVoiceInput && (
           <div className="space-y-2">

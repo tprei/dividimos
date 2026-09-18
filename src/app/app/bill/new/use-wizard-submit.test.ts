@@ -5,6 +5,7 @@ import { useBillStore } from "@/stores/bill-store";
 import { userAlice, userBob } from "@/test/fixtures";
 import { LedgerError } from "@/lib/sync/errors";
 import { planGroup, useWizardSubmit } from "./use-wizard-submit";
+import { readDraftIntent, writeDraftIntent } from "@/lib/draft-intent";
 
 const { mockCreateExpense, mockCreateExpenseWithGroup, mockEditExpense } = vi.hoisted(() => ({
   mockCreateExpense: vi.fn(),
@@ -53,6 +54,7 @@ describe("useWizardSubmit", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     useBillStore.getState().reset();
   });
 
@@ -132,6 +134,45 @@ describe("useWizardSubmit", () => {
     expect(call[0].header.occurredOn).toBe("2026-09-06");
     expect(router.push).toHaveBeenCalledWith("/app/bill/exp-edit-1");
   });
+
+  it("uses expectedVersionNo from draft intent when editing and expectedVersionNo prop is null, and clears intent on success", async () => {
+    setupValidSingleExpense();
+    const expenseId = useBillStore.getState().expense!.id;
+    writeDraftIntent({
+      kind: "edit",
+      expenseId,
+      expectedVersionNo: 5,
+      draftKey: useBillStore.getState().draftKey,
+    });
+
+    mockEditExpense.mockResolvedValueOnce({
+      groupId: "group-1",
+      ledgerVersion: 6,
+      eventId: 44,
+      expenseId,
+    });
+
+    const { result } = renderHook(() =>
+      useWizardSubmit({
+        router,
+        editExpenseId: expenseId,
+        expectedVersionNo: null,
+        onStaleReload,
+      }),
+    );
+
+    let ok = false;
+    await act(async () => {
+      ok = await result.current.submit(async () => ({ kind: "existing", groupId: "group-1" }));
+    });
+
+    expect(ok).toBe(true);
+    expect(mockEditExpense).toHaveBeenCalledOnce();
+    const [call] = mockEditExpense.mock.calls;
+    expect(call[0].expectedVersionNo).toBe(5);
+    expect(readDraftIntent()).toBeNull();
+  });
+
 
   it("stale_version surfaces the reload toast and wires reload action", async () => {
     setupValidSingleExpense();
