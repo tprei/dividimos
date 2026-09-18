@@ -98,14 +98,14 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-2 right-2"
+                className="absolute top-2 right-2 min-h-11 min-w-11"
                 size="icon-sm"
               />
             }
           >
             <XIcon
             />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">Fechar diálogo</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
@@ -142,8 +142,8 @@ function DialogFooter({
     >
       {children}
       {showCloseButton && (
-        <DialogPrimitive.Close render={<Button variant="outline" />}>
-          Close
+        <DialogPrimitive.Close render={<Button variant="outline" className="min-h-11" />}>
+          Fechar
         </DialogPrimitive.Close>
       )}
     </div>

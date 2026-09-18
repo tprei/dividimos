@@ -70,7 +70,7 @@ export function BillTypeSelector({
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {opt.subtitle}
               </p>
-              <p className="mt-1.5 text-xs text-muted-foreground/70">
+              <p className="mt-1.5 text-xs text-muted-foreground">
                 {opt.examples}
               </p>
             </div>
@@ -97,7 +97,7 @@ export function BillTypeSelector({
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Foto do cupom
               </p>
-              <p className="mt-1.5 text-xs text-muted-foreground/70">
+              <p className="mt-1.5 text-xs text-muted-foreground">
                 Restaurante, bar, mercado, padaria
               </p>
             </div>
@@ -124,7 +124,7 @@ export function BillTypeSelector({
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Diga o que gastou e com quem
               </p>
-              <p className="mt-1.5 text-xs text-muted-foreground/70">
+              <p className="mt-1.5 text-xs text-muted-foreground">
                 &ldquo;Uber com João 25 reais&rdquo;
               </p>
             </div>
