@@ -395,10 +395,10 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithFetch} />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Mostrar QR code" })).toBeInTheDocument();
     });
     fireEvent.click(
-      screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ }),
+      screen.getByRole("button", { name: "Mostrar QR code" }),
     );
     await waitFor(() => {
       expect(QRCode.toCanvas).toHaveBeenCalledWith(
@@ -495,13 +495,17 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} />);
 
     const disclosure = screen.getByRole("button", {
-      name: /Mostrar QR code para pagar com outro celular/,
+      name: "Mostrar QR code",
     });
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
     expect(disclosure).toHaveAttribute("aria-controls", "pix-qr-region");
     expect(QRCode.toCanvas).not.toHaveBeenCalled();
-    expect(screen.getByText("1. Pague no app do seu banco")).toBeInTheDocument();
-    expect(screen.getByText(/Registrar não transfere dinheiro/)).toBeInTheDocument();
+    expect(screen.queryByText("1. Pague no app do seu banco")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("paints the QR on disclosure expand without issuing a fetch", async () => {
@@ -515,7 +519,7 @@ describe("PixQrModal", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ }),
+        screen.getByRole("button", { name: "Mostrar QR code" }),
       ).toBeInTheDocument();
     });
     expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -524,7 +528,7 @@ describe("PixQrModal", () => {
     vi.mocked(QRCode.toCanvas).mockClear();
 
     fireEvent.click(
-      screen.getByRole("button", { name: /Mostrar QR code para pagar com outro celular/ }),
+      screen.getByRole("button", { name: "Mostrar QR code" }),
     );
 
     await waitFor(() => {
@@ -547,7 +551,7 @@ describe("PixQrModal", () => {
       screen.queryByText("2. Registre aqui no Dividimos"),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText("Registrar não transfere dinheiro — apenas confirma que ele te pagou por fora."),
+      screen.getByText("Registrar não move dinheiro, só marca que ele te pagou por fora."),
     ).toBeInTheDocument();
   });
 
@@ -555,12 +559,14 @@ describe("PixQrModal", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} />);
 
     expect(
-      screen.getByText("2. Registre aqui no Dividimos"),
-    ).toBeInTheDocument();
+      screen.queryByText("2. Registre aqui no Dividimos"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(/Lê o QR code/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Sem QR code/)).not.toBeInTheDocument();
     expect(
-      screen.getByText("Registrar não transfere dinheiro — apenas confirma que você pagou por fora."),
+      screen.getByText(
+        "Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.",
+      ),
     ).toBeInTheDocument();
   });
 });

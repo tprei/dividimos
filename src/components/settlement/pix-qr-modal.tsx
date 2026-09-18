@@ -439,22 +439,24 @@ export function PixQrModal({
                 </div>
 
                 {copiaECola && mode === "pay" && (
-                <div className="mt-6 text-left">
-                  <p className="text-sm font-bold text-foreground">1. Pague no app do seu banco</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Copia o código Pix e conclui o pagamento no app do teu banco.
-                  </p>
-                  <button
-                    type="button"
-                    aria-expanded={showPayQr}
-                    aria-controls="pix-qr-region"
-                    onClick={() => setShowPayQr((v) => !v)}
-                    className="mt-2 inline-flex min-h-11 items-center rounded-lg text-sm font-medium text-primary-text underline underline-offset-2"
-                  >
-                    {showPayQr ? "Ocultar QR code" : "Mostrar QR code para pagar com outro celular"}
-                  </button>
-                </div>
-              )}
+                  <div className="mt-5 text-left">
+                    <p className="text-sm text-muted-foreground">
+                      Copia o código, paga no app do seu banco e volta aqui pra confirmar. Registrar não move dinheiro, só marca que você pagou.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 min-h-11 gap-2 rounded-full px-4"
+                      aria-expanded={showPayQr}
+                      aria-controls="pix-qr-region"
+                      onClick={() => setShowPayQr((v) => !v)}
+                    >
+                      <QrCode className="h-4 w-4" />
+                      {showPayQr ? "Ocultar QR code" : "Mostrar QR code"}
+                    </Button>
+                  </div>
+                )}
               <div id="pix-qr-region">
                 {(showPayQr || mode === "collect") && copiaECola ? (
                   <motion.div
@@ -497,16 +499,11 @@ export function PixQrModal({
                 </div>
               )}
 
-              <div className="mt-6 text-left">
-                {copiaECola && mode === "pay" && (
-                  <p className="text-sm font-bold text-foreground">2. Registre aqui no Dividimos</p>
+                {mode === "collect" && (
+                  <p className="mt-5 text-sm text-muted-foreground">
+                    Registrar não move dinheiro, só marca que ele te pagou por fora.
+                  </p>
                 )}
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {mode === "collect"
-                    ? "Registrar não transfere dinheiro — apenas confirma que ele te pagou por fora."
-                    : "Registrar não transfere dinheiro — apenas confirma que você pagou por fora."}
-                </p>
-              </div>
               </div>
 
               <div className="shrink-0 border-t border-border/40 p-6 pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] shadow-[0_-10px_16px_-12px_rgb(0_0_0/0.18)]">
