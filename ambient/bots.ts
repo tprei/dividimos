@@ -278,6 +278,20 @@ interface MemberStatusRow {
  * to be minted and adopted before any RPC can run as him. Without that,
  * authenticateAs has nothing cached and throws.
  */
+async function acceptAsOwner(
+  troupe: Troupe,
+  groupId: string,
+  ownerId: string,
+): Promise<void> {
+  const ownerClient = await troupe.seed.authenticateAs(ownerId);
+  const { error } = await ownerClient.rpc("accept_invitation", {
+    p_group_id: groupId,
+  });
+  if (error) {
+    throw new Error(`ambient: owner accept_invitation failed: ${error.message}`);
+  }
+}
+
 async function findOwner(troupe: Troupe): Promise<SeededUser | null> {
   if (OWNER_HANDLE.length === 0) return null;
   const { data, error } = await troupe.admin
@@ -361,18 +375,20 @@ export async function syncOwnerMembership(
 
   const settled = await isSettled(troupe, groupId);
 
+  // Inviting and accepting are two calls, so a run that dies between them
+  // leaves the invitation hanging. Accepting is driven by the row's status
+  // rather than by having just created it, which also repairs a stuck invite.
   if (memberRow === null) {
     // An empty group has nothing to show yet, and a settled one is already
     // over: joining either would only add noise.
     if (settled) return "skipped";
     await troupe.seed.inviteMember(troupe.bots[0].id, groupId, ownerId);
-    const ownerClient = await troupe.seed.authenticateAs(ownerId);
-    const { error: acceptError } = await ownerClient.rpc("accept_invitation", {
-      p_group_id: groupId,
-    });
-    if (acceptError) {
-      throw new Error(`ambient: owner accept_invitation failed: ${acceptError.message}`);
-    }
+    await acceptAsOwner(troupe, groupId, ownerId);
+    return "joined";
+  }
+
+  if (memberRow.status === "invited") {
+    await acceptAsOwner(troupe, groupId, ownerId);
     return "joined";
   }
 
