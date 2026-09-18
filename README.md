@@ -316,6 +316,14 @@ supabase db push --linked              # apply
 
 `supabase db push` applies migrations that are not recorded in the target project's migration history. It does not replace an existing database with the reset sequence. For an intentional migration-epoch replacement, use a new or restored isolated Supabase project, replay the complete migration directory there, verify the catalog and integration suite, then switch the deployment to that project. Never run both the retired and replacement initial sequences against the same database. Agents never run these commands.
 
+### Ambient synthetic
+
+Scheduled synthetic validation against the production deployment (`.github/workflows/ambient.yml`).
+
+- GitHub Actions repository secrets: `AMBIENT_SUPABASE_URL`, `AMBIENT_SUPABASE_ANON_KEY`, `AMBIENT_SUPABASE_SERVICE_ROLE_KEY`, `AMBIENT_SUPABASE_JWT_SECRET`.
+- GitHub Actions repository variables: `AMBIENT_BASE_URL`, `AMBIENT_GOOGLE_CLIENT_ID`.
+- The legacy HS256 JWT secret stays enabled because minted sessions depend on it.
+
 ## CI
 CI runs on every pull request and on push to `main` across several workflows in `.github/workflows/`:
 
