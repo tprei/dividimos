@@ -56,6 +56,7 @@ session-log.json
 ambient-results.json
 ambient-diary.txt
 ambient-shots/
+ambient-video.mp4
 
 # local dotfiles / tooling
 .bash_profile

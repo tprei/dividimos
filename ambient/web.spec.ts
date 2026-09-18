@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { expect, test } from "@playwright/test";
 import { loginInContext } from "../e2e/fixtures";
 import { BOT_GROUP_NAME, ensureTroupe, type Troupe } from "./bots";
 import { note } from "./diary";
@@ -10,30 +10,54 @@ test.beforeAll(async () => {
   troupe = await ensureTroupe();
 });
 
-test("bot_ana sees the troupe group and a bot badge", async ({ browser }) => {
+/**
+ * One phone-sized journey through what the bots just did: the group the
+ * troupe shares, the balances their settlement moved, the expenses they
+ * created this run, and a message Ana types herself. The screenshots and the
+ * recording of this walk are what the Telegram board shows.
+ */
+test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
+  mkdirSync("ambient-shots", { recursive: true });
+
   try {
     await loginInContext(ctx, page, troupe.bots[0]);
+
     await page.goto("/app/groups");
     const groupLink = page.getByRole("link", { name: new RegExp(BOT_GROUP_NAME) });
     await expect(groupLink).toBeVisible({ timeout: 20000 });
+    await page.screenshot({ path: "ambient-shots/1-groups.png" });
+
     await groupLink.click();
+    await expect(page.getByRole("tab", { name: "Saldos" })).toBeVisible({ timeout: 20000 });
+    await page.screenshot({ path: "ambient-shots/2-balances.png" });
+
+    await page.getByRole("tab", { name: "Contas" }).click();
+    await expect(page.getByRole("tab", { name: "Contas" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    await page.screenshot({ path: "ambient-shots/3-expenses.png" });
+
     await page.getByRole("tab", { name: "Membros" }).click();
     await expect(page.getByRole("img", { name: "Bot verificado" }).first()).toBeVisible({
       timeout: 20000,
     });
-    mkdirSync("ambient-shots", { recursive: true });
-    await page.screenshot({ path: "ambient-shots/1-group.png" });
 
-    await page.getByRole("tab", { name: "Contas" }).click();
-    await expect(page.getByRole("tab", { name: "Contas" })).toBeVisible();
-    await page.screenshot({ path: "ambient-shots/2-expenses.png" });
+    // The one action a person takes in this walk: Ana types into the group
+    // chat and sends it. The recording shows the keystrokes and the bubble.
+    const groupUrl = new URL(page.url());
+    await page.goto(`${groupUrl.pathname}/chat`);
+    const input = page.getByPlaceholder("Mensagem...");
+    await expect(input).toBeVisible({ timeout: 20000 });
+    const message = `passei aqui pelo celular ${new Date().toISOString().slice(11, 16)}`;
+    await input.fill(message);
+    await page.getByRole("button", { name: "Enviar mensagem" }).click();
+    await expect(page.getByText(message)).toBeVisible({ timeout: 20000 });
+    await page.screenshot({ path: "ambient-shots/4-chat.png" });
 
-    await page.goto("/u/bot_ana");
-    await expect(page.getByText("Bot verificado")).toBeVisible({ timeout: 20000 });
-    await page.screenshot({ path: "ambient-shots/3-profile.png" });
-    note("bot_ana browsed the group members, the expense list, and her own profile");
+    note(`Ana opened the group on a phone and sent "${message}" in the chat`);
   } finally {
     await ctx.close();
   }
