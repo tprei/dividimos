@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -115,74 +116,78 @@ export function PixKeyDialog({ open, onOpenChange, me, onSaved }: PixKeyDialogPr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <DialogTitle className="text-lg font-bold">Chave Pix</DialogTitle>
-        <DialogDescription>Usada para receber pagamentos.</DialogDescription>
-        <div className="grid gap-4">
-          <div className="grid gap-2">
-            <span id="pix-type-label" className="text-sm font-medium">
-              Tipo
-            </span>
-            <div
-              role="radiogroup"
-              aria-labelledby="pix-type-label"
-              className="flex flex-wrap gap-1.5"
-            >
-              {PIX_TYPE_OPTIONS.map((option) => {
-                const selected = option.value === pixType;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => {
-                      setPixType(option.value);
-                      setPixInput("");
-                      setPixError("");
-                    }}
-                    className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
-                      selected
-                        ? "border-primary/40 bg-primary/15 text-primary"
-                        : "border-border bg-card text-foreground"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
+      <DialogContent>
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-lg font-bold">Chave Pix</DialogTitle>
+          <DialogDescription>Usada para receber pagamentos.</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <span id="pix-type-label" className="text-sm font-medium">
+                Tipo
+              </span>
+              <div
+                role="radiogroup"
+                aria-labelledby="pix-type-label"
+                className="flex flex-wrap gap-1.5"
+              >
+                {PIX_TYPE_OPTIONS.map((option) => {
+                  const selected = option.value === pixType;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        setPixType(option.value);
+                        setPixInput("");
+                        setPixError("");
+                      }}
+                      className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                        selected
+                          ? "border-primary/40 bg-primary/15 text-primary"
+                          : "border-border bg-card text-foreground"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="pix-key">Chave</Label>
+              <Input
+                id="pix-key"
+                className="h-11 rounded-xl bg-card"
+                type={pixType === "email" ? "email" : "text"}
+                inputMode={pixType === "phone" || pixType === "cpf" ? "numeric" : "text"}
+                placeholder={PIX_KEY_PLACEHOLDERS[pixType]}
+                value={pixInput}
+                aria-invalid={pixError !== ""}
+                aria-describedby={pixError !== "" ? "pix-key-error" : undefined}
+                onChange={(event) => {
+                  setPixInput(constrainInput(pixType, event.target.value));
+                  setPixError("");
+                }}
+              />
+              {pixError && (
+                <p id="pix-key-error" role="alert" className="text-xs text-destructive">
+                  {pixError}
+                </p>
+              )}
+            </div>
+            <Button
+              type="button"
+              className="min-h-11 w-full"
+              onClick={handleSave}
+              disabled={!pixInput || isSaving}
+            >
+              {isSaving ? "Salvando..." : "Salvar"}
+            </Button>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="pix-key">Chave</Label>
-            <Input
-              id="pix-key"
-              className="h-11 rounded-xl bg-card"
-              type={pixType === "email" ? "email" : "text"}
-              inputMode={pixType === "phone" || pixType === "cpf" ? "numeric" : "text"}
-              placeholder={PIX_KEY_PLACEHOLDERS[pixType]}
-              value={pixInput}
-              aria-invalid={pixError !== ""}
-              aria-describedby={pixError !== "" ? "pix-key-error" : undefined}
-              onChange={(event) => {
-                setPixInput(constrainInput(pixType, event.target.value));
-                setPixError("");
-              }}
-            />
-            {pixError && (
-              <p id="pix-key-error" role="alert" className="text-xs text-destructive">
-                {pixError}
-              </p>
-            )}
-          </div>
-          <Button
-            type="button"
-            className="min-h-11 w-full"
-            onClick={handleSave}
-            disabled={!pixInput || isSaving}
-          >
-            {isSaving ? "Salvando..." : "Salvar"}
-          </Button>
         </div>
       </DialogContent>
     </Dialog>

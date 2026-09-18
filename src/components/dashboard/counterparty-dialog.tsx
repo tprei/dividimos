@@ -94,66 +94,68 @@ export function CounterpartyDialog({
         }}
         modal
       >
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl bg-card p-5">
+        <DialogContent className="rounded-3xl bg-card p-5">
           <DialogTitle className="pr-8 text-lg font-bold">{row.counterpartyName}</DialogTitle>
           <DialogDescription>
             {group} · {direction} {formatBRL(row.amountCents)}
           </DialogDescription>
-          {row.counterpartyKind === "guest" ? (
-            <div className="flex flex-col items-center">
-              <GuestBadge />
-              {guestExpense && (
-                <div className="mt-5 w-full">
-                  <Button
-                    variant="outline"
-                    className="h-11 w-full"
-                    type="button"
-                    disabled={inviting}
-                    onClick={() => void handleInvite()}
-                  >
-                    <UserPlus className="size-4" aria-hidden="true" />
-                    Convidar
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center">
-              <Money cents={row.amountCents} className="text-3xl" />
-              {isUserCounterparty && (
-                <div className="mt-5 w-full space-y-2">
-                  {row.direction === "owes" ? (
-                    <Button className="h-11 w-full" type="button" onClick={() => onPay(row)}>
-                      <QrCode className="size-4" aria-hidden="true" />
-                      Pagar via Pix
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {row.counterpartyKind === "guest" ? (
+              <div className="flex flex-col items-center">
+                <GuestBadge />
+                {guestExpense && (
+                  <div className="mt-5 w-full">
+                    <Button
+                      variant="outline"
+                      className="h-11 w-full"
+                      type="button"
+                      disabled={inviting}
+                      onClick={() => void handleInvite()}
+                    >
+                      <UserPlus className="size-4" aria-hidden="true" />
+                      Convidar
                     </Button>
-                  ) : (
-                    <>
-                      <Button className="h-11 w-full" type="button" onClick={() => onCollect(row)}>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <Money cents={row.amountCents} className="text-3xl" />
+                {isUserCounterparty && (
+                  <div className="mt-5 w-full space-y-2">
+                    {row.direction === "owes" ? (
+                      <Button className="h-11 w-full" type="button" onClick={() => onPay(row)}>
                         <QrCode className="size-4" aria-hidden="true" />
-                        Cobrar via Pix
+                        Pagar via Pix
                       </Button>
-                      <Button
-                        variant="outline"
-                        className="h-11 w-full"
-                        type="button"
-                        onClick={() => onNudge(row)}
-                      >
-                        <Bell className="size-4" aria-hidden="true" />
-                        Lembrar
-                      </Button>
-                    </>
-                  )}
-                  <Link
-                    href={`/app/conversations/${row.counterpartyId}`}
-                    className={buttonVariants({ variant: "outline", className: "h-11 w-full" })}
-                  >
-                    Abrir conversa
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
+                    ) : (
+                      <>
+                        <Button className="h-11 w-full" type="button" onClick={() => onCollect(row)}>
+                          <QrCode className="size-4" aria-hidden="true" />
+                          Cobrar via Pix
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="h-11 w-full"
+                          type="button"
+                          onClick={() => onNudge(row)}
+                        >
+                          <Bell className="size-4" aria-hidden="true" />
+                          Lembrar
+                        </Button>
+                      </>
+                    )}
+                    <Link
+                      href={`/app/conversations/${row.counterpartyId}`}
+                      className={buttonVariants({ variant: "outline", className: "h-11 w-full" })}
+                    >
+                      Abrir conversa
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
       {inviteTarget && (

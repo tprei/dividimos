@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useClientOnly } from "@/hooks/use-client-only";
@@ -136,129 +137,133 @@ export function GuestInviteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <DialogTitle className="text-lg font-bold">
-          Convidar {guest.displayName}
-        </DialogTitle>
-        <DialogDescription>
-          Parte de {formatBRL(shareCents)} em {expenseTitle}
-        </DialogDescription>
-        <div className="grid gap-2">
-          {claimUrl && (
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {claimUrl}
-            </p>
-          )}
-          {claimUrl && expiresAt && (
-            <p className="text-xs text-muted-foreground">
-              Expira em {new Date(expiresAt).toLocaleDateString("pt-BR")}
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            {canShare && (
+      <DialogContent>
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-lg font-bold">
+            Convidar {guest.displayName}
+          </DialogTitle>
+          <DialogDescription>
+            Parte de {formatBRL(shareCents)} em {expenseTitle}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid gap-2">
+            {claimUrl && (
+              <p className="break-all font-mono text-xs text-muted-foreground">
+                {claimUrl}
+              </p>
+            )}
+            {claimUrl && expiresAt && (
+              <p className="text-xs text-muted-foreground">
+                Expira em {new Date(expiresAt).toLocaleDateString("pt-BR")}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              {canShare && (
+                <Button
+                  type="button"
+                  className="h-11 w-full"
+                  disabled={!claimUrl}
+                  onClick={() => void handleShare()}
+                >
+                  <Share2 className="size-4" />
+                  Compartilhar
+                </Button>
+              )}
               <Button
                 type="button"
-                className="h-11 w-full"
-                disabled={!claimUrl}
-                onClick={() => void handleShare()}
+                variant="outline"
+                className={cn("h-11 w-full", !canShare && "col-span-2")}
+                disabled={!whatsappUrl}
+                render={<a href={whatsappUrl ?? undefined} target="_blank" rel="noopener noreferrer" aria-label="Enviar pelo WhatsApp" />}
               >
-                <Share2 className="size-4" />
-                Compartilhar
+                <MessageCircle className="size-4" />
+                WhatsApp
               </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              className={cn("h-11 w-full", !canShare && "col-span-2")}
-              disabled={!whatsappUrl}
-              render={<a href={whatsappUrl ?? undefined} target="_blank" rel="noopener noreferrer" aria-label="Enviar pelo WhatsApp" />}
-            >
-              <MessageCircle className="size-4" />
-              WhatsApp
-            </Button>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-11 w-full"
-            disabled={!claimUrl}
-            onClick={() => void handleCopy()}
-          >
-            <Copy className="size-4" />
-            Copiar link
-          </Button>
-          {!claimUrl && (
+            </div>
             <Button
               type="button"
               variant="outline"
               className="h-11 w-full"
-              disabled={working}
-              onClick={() => void issue()}
+              disabled={!claimUrl}
+              onClick={() => void handleCopy()}
             >
-              <RefreshCw className="size-4" />
-              {working ? "Gerando link..." : "Gerar link"}
+              <Copy className="size-4" />
+              Copiar link
             </Button>
-          )}
-          {!claimUrl && guest.claimLinkGeneration > 0 && (
-            <p role="status" className="text-xs text-muted-foreground">
-              O link atual só está salvo no aparelho onde foi gerado. Gere outro para
-              compartilhar daqui.
-            </p>
-          )}
-          {claimUrl && canReplace && !confirming && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full text-muted-foreground"
-              onClick={() => setConfirming(true)}
-            >
-              <RefreshCw className="size-4" />
-              Substituir link
-            </Button>
-          )}
-          {claimUrl && canReplace && confirming && (
-            <div className="grid gap-2 rounded-xl border bg-muted/40 p-3">
-              <p className="text-xs text-muted-foreground">
-                Invalidar link atual?
+            {!claimUrl && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 w-full"
+                disabled={working}
+                onClick={() => void issue()}
+              >
+                <RefreshCw className="size-4" />
+                {working ? "Gerando link..." : "Gerar link"}
+              </Button>
+            )}
+            {!claimUrl && guest.claimLinkGeneration > 0 && (
+              <p role="status" className="text-xs text-muted-foreground">
+                O link atual só está salvo no aparelho onde foi gerado. Gere outro para
+                compartilhar daqui.
               </p>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  disabled={working}
-                  onClick={() => setConfirming(false)}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  className="flex-1"
-                  disabled={working}
-                  onClick={() => void issue()}
-                >
-                  Substituir
-                </Button>
+            )}
+            {claimUrl && canReplace && !confirming && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full text-muted-foreground"
+                onClick={() => setConfirming(true)}
+              >
+                <RefreshCw className="size-4" />
+                Substituir link
+              </Button>
+            )}
+            {claimUrl && canReplace && confirming && (
+              <div className="grid gap-2 rounded-xl border bg-muted/40 p-3">
+                <p className="text-xs text-muted-foreground">
+                  Invalidar link atual?
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    disabled={working}
+                    onClick={() => setConfirming(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="flex-1"
+                    disabled={working}
+                    onClick={() => void issue()}
+                  >
+                    Substituir
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-          {claimUrl && canReplace && !confirming && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full text-muted-foreground"
-              disabled={working}
-              onClick={() => void revoke()}
-            >
-              <Trash2 className="size-4" />
-              Revogar link
-            </Button>
-          )}
+            )}
+            {claimUrl && canReplace && !confirming && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full text-muted-foreground"
+                disabled={working}
+                onClick={() => void revoke()}
+              >
+                <Trash2 className="size-4" />
+                Revogar link
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
