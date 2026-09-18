@@ -16,6 +16,7 @@ const me: Me = {
   handle: userAlice.handle,
   name: userAlice.name,
   avatarUrl: userAlice.avatarUrl ?? null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,

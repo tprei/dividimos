@@ -125,7 +125,7 @@ describe("lookupProfile", () => {
   it("returns the decoded profile through the service-role client", async () => {
     server.setUser({ id: "user-alice" });
     admin.onRpc("lookup_user_by_handle", {
-      data: { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null },
+      data: { id: "user-bob", handle: "bob", name: "Bob Santos", avatarUrl: null, isBot: false },
     });
 
     await expect(lookupProfile("bob")).resolves.toEqual({
@@ -133,6 +133,7 @@ describe("lookupProfile", () => {
       handle: "bob",
       name: "Bob Santos",
       avatarUrl: null,
+      isBot: false,
     });
   });
 

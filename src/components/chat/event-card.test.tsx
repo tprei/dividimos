@@ -48,7 +48,7 @@ function makeEvent(overrides: Partial<GroupEvent> = {}): GroupEvent {
     subjectUserId: null,
     payload: { amountCents: 5000, toUserId: meId, fromUserId: otherId },
     createdAt: "2026-01-01T10:00:00Z",
-    actor: { id: otherId, handle: "bob", name: "Bob Silva", avatarUrl: null },
+    actor: { id: otherId, handle: "bob", name: "Bob Silva", avatarUrl: null, isBot: false },
     expenseTitle: null,
     ...overrides,
   };

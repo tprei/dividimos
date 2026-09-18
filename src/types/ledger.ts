@@ -30,6 +30,7 @@ export interface UserProfile {
   handle: string;
   name: string;
   avatarUrl: string | null;
+  isBot: boolean;
 }
 
 export interface Me extends UserProfile {

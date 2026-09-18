@@ -141,7 +141,7 @@ export function ParticipantsStep({
               className="flex items-center gap-3 rounded-xl border bg-card p-3"
             >
               <input type="checkbox" checked disabled className="h-4 w-4 accent-primary" />
-              <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="sm" />
+              <UserAvatar name={me.name} avatarUrl={me.avatarUrl} size="sm" isBot={me.isBot} />
               <div className="flex-1">
                 <p className="text-sm font-medium">{me.name}</p>
                 <p className="text-xs text-muted-foreground">@{me.handle}</p>
@@ -161,7 +161,7 @@ export function ParticipantsStep({
                   className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-muted/30"
                 >
                   <input type="checkbox" checked={isChecked} readOnly className="h-4 w-4 accent-primary pointer-events-none" />
-                  <UserAvatar name={m.user.name} avatarUrl={m.user.avatarUrl} size="sm" />
+                  <UserAvatar name={m.user.name} avatarUrl={m.user.avatarUrl} size="sm" isBot={m.user.isBot} />
                   <div className="flex-1">
                     <p className="text-sm font-medium">{m.user.name}</p>
                     <p className="text-xs text-muted-foreground">@{m.user.handle}</p>

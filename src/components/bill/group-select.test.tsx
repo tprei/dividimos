@@ -12,6 +12,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -19,7 +20,7 @@ const me: Me = {
   notificationPreferences: {},
 };
 
-const carol: UserProfile = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null };
+const carol: UserProfile = { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
 
 type SnapshotOverrides = Partial<Omit<GroupSnapshot, "group">> & {
   group?: Partial<GroupSnapshot["group"]>;

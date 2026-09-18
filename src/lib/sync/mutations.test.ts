@@ -72,6 +72,7 @@ const ME: Me = {
   handle: "me_user",
   name: "Eu Mesmo",
   avatarUrl: null,
+  isBot: false,
   email: "me@example.com",
   pixKeyType: "email",
   pixKeyHint: "me@example.com",
@@ -84,6 +85,7 @@ const USER_2: UserProfile = {
   handle: "amigo",
   name: "Amigo",
   avatarUrl: null,
+  isBot: false,
 };
 
 function makeGroupSnapshot(groupId = "group-1"): GroupSnapshot {
@@ -1145,7 +1147,7 @@ describe("mutations", () => {
                 status: "invited" as const,
                 invitedBy: USER_2.id,
                 acceptedAt: null,
-                user: { id: ME.id, handle: ME.handle, name: ME.name, avatarUrl: null },
+                user: { id: ME.id, handle: ME.handle, name: ME.name, avatarUrl: null, isBot: false },
               },
             ],
           },

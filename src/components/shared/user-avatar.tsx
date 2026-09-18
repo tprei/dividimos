@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface UserAvatarProps {
@@ -10,6 +11,7 @@ interface UserAvatarProps {
   size?: "xs" | "sm" | "md" | "lg";
   className?: string;
   priority?: boolean;
+  isBot?: boolean;
 }
 
 const sizeClasses = {
@@ -26,6 +28,13 @@ const sizePx = {
   lg: 56,
 };
 
+// Suppressed for size="xs": at 24px, a 10px badge leaves an unreadable ~6px glyph.
+const badgeClasses: Record<"sm" | "md" | "lg", string> = {
+  sm: "size-3",
+  md: "size-3.5",
+  lg: "size-4.5",
+};
+
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) {
@@ -34,13 +43,13 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function UserAvatar({ name, avatarUrl, size = "md", className, priority }: UserAvatarProps) {
+export function UserAvatar({ name, avatarUrl, size = "md", className, priority, isBot }: UserAvatarProps) {
   const [imgError, setImgError] = useState(false);
   const sizeClass = sizeClasses[size];
   const px = sizePx[size];
 
-  if (avatarUrl && !imgError) {
-    return (
+  const avatar =
+    avatarUrl && !imgError ? (
       <div className={cn("relative overflow-hidden rounded-full", sizeClass, className)}>
         <Image
           src={avatarUrl}
@@ -52,18 +61,31 @@ export function UserAvatar({ name, avatarUrl, size = "md", className, priority }
           onError={() => setImgError(true)}
         />
       </div>
+    ) : (
+      <div
+        className={cn(
+          "flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary",
+          sizeClass,
+          className,
+        )}
+      >
+        {getInitials(name)}
+      </div>
     );
-  }
+
+  if (!isBot || size === "xs") return avatar;
 
   return (
-    <div
-      className={cn(
-        "flex items-center justify-center rounded-full bg-primary/15 font-bold text-primary",
-        sizeClass,
-        className,
-      )}
-    >
-      {getInitials(name)}
-    </div>
+    <span className="relative flex shrink-0">
+      {avatar}
+      <Bot
+        role="img"
+        aria-label="Bot verificado"
+        className={cn(
+          "absolute -right-0.5 -bottom-0.5 rounded-full bg-primary p-0.5 text-primary-foreground",
+          badgeClasses[size],
+        )}
+      />
+    </span>
   );
 }

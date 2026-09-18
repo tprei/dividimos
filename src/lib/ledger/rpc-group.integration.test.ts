@@ -23,6 +23,7 @@ interface UserProfile {
   handle: string;
   name: string;
   avatarUrl: string | null;
+  isBot: boolean;
 }
 
 interface MeProfile extends UserProfile {

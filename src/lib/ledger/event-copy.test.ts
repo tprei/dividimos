@@ -18,6 +18,7 @@ function makeEvent(overrides: Partial<GroupEvent>): GroupEvent {
       handle: "alice",
       name: "Alice",
       avatarUrl: null,
+      isBot: false,
     },
     expenseTitle: null,
     ...overrides,

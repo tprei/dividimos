@@ -39,6 +39,7 @@ function me(id: string): Me {
     handle: `user_${id}`,
     name: "Alguém",
     avatarUrl: null,
+    isBot: false,
     email: `${id}@example.com`,
     pixKeyType: null,
     pixKeyHint: null,

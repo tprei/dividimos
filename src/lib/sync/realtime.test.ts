@@ -26,6 +26,7 @@ const meUser: Me = {
   handle: "user1",
   name: "User One",
   avatarUrl: null,
+  isBot: false,
   email: "user1@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -73,6 +74,7 @@ const incomingMessage: ChatMessage = {
     handle: "user2",
     name: "User Two",
     avatarUrl: null,
+    isBot: false,
   },
 };
 

@@ -90,6 +90,7 @@ export function ExpenseParticipantList({
                 name={name}
                 avatarUrl={participant.user?.avatarUrl}
                 size="md"
+                isBot={participant.user?.isBot}
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

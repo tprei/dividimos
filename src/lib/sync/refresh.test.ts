@@ -16,6 +16,7 @@ const ME: Me = {
   handle: "me_user",
   name: "Eu Mesmo",
   avatarUrl: null,
+  isBot: false,
   email: "me@example.com",
   pixKeyType: "email",
   pixKeyHint: "me@example.com",

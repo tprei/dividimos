@@ -8,6 +8,7 @@ const sender: UserProfile = {
   handle: "alice",
   name: "Alice Silva",
   avatarUrl: null,
+  isBot: false,
 };
 
 function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {

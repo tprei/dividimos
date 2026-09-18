@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { UserCircle } from "lucide-react";
+import { Bot, UserCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { lookupProfile } from "@/lib/profile-lookup";
 import { AppError } from "@/lib/errors";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button-variants";
 import { SendMessageButton, SplitBillButton } from "./profile-actions";
 import type { UserProfile } from "@/types/ledger";
@@ -117,11 +118,18 @@ export default async function PublicProfilePage({
               avatarUrl={profile.avatarUrl ?? null}
               size="lg"
               className="h-24 w-24 text-2xl"
+              isBot={profile.isBot}
             />
           </div>
 
           <h1 className="mt-4 text-2xl font-bold">{profile.name || `@${profile.handle}`}</h1>
           <p className="text-muted-foreground">@{profile.handle}</p>
+          {profile.isBot && (
+            <Badge variant="secondary" className="mt-2">
+              <Bot />
+              Bot verificado
+            </Badge>
+          )}
         </div>
 
         <div className="rounded-2xl border bg-card p-4 text-center">

@@ -28,6 +28,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice",
   avatarUrl: null,
+  isBot: false,
   pixKeyType: "email",
   pixKeyHint: "",
   onboarded: true,
@@ -78,7 +79,7 @@ function makeSnapshot(
       status: m.status,
       invitedBy: null,
       acceptedAt: null,
-      user: { id: m.userId, handle: m.handle, name: m.name, avatarUrl: null },
+      user: { id: m.userId, handle: m.handle, name: m.name, avatarUrl: null, isBot: false },
     })),
     balances: [],
     guests: [],
@@ -223,7 +224,7 @@ describe("ParticipantsStep", () => {
 
     // Carol is not a participant yet -> the chip adds her profile.
     await user.click(screen.getByRole("button", { name: /Carol/ }));
-    expect(onAddParticipant).toHaveBeenCalledWith({ id: "user-3", handle: "carol", name: "Carol", avatarUrl: null });
+    expect(onAddParticipant).toHaveBeenCalledWith({ id: "user-3", handle: "carol", name: "Carol", avatarUrl: null, isBot: false });
   });
 
   it("deselects the group when the X on the selected group is pressed", async () => {

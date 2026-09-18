@@ -70,4 +70,19 @@ describe("UserAvatar", () => {
     const img = screen.getByRole("img");
     expect(img).not.toHaveAttribute("data-priority");
   });
+
+  it("renders the verified bot glyph when isBot is set", () => {
+    render(<UserAvatar name="Ana (bot)" isBot />);
+    expect(screen.getByRole("img", { name: "Bot verificado" })).toBeInTheDocument();
+  });
+
+  it("suppresses the verified bot glyph for size xs", () => {
+    render(<UserAvatar name="Ana (bot)" size="xs" isBot />);
+    expect(screen.queryByRole("img", { name: "Bot verificado" })).toBeNull();
+  });
+
+  it("does not render the verified bot glyph by default", () => {
+    render(<UserAvatar name="Ana" />);
+    expect(screen.queryByRole("img", { name: "Bot verificado" })).toBeNull();
+  });
 });

@@ -86,6 +86,7 @@ describe("ScanInvitePage router", () => {
       handle: "fulano",
       name: "Fulano Silva",
       avatarUrl: null,
+      isBot: false,
     });
     mocks.getOrCreateDm.mockResolvedValueOnce({ groupId: "g-99", created: true });
     render(<ScanInvitePage />);

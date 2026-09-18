@@ -42,6 +42,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -54,6 +55,7 @@ const carol = {
   handle: "carol",
   name: "Carol Souza",
   avatarUrl: null,
+  isBot: false,
 };
 
 function makeSnapshot(overrides: Partial<GroupSnapshot> = {}): GroupSnapshot {

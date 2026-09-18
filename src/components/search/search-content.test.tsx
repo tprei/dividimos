@@ -15,6 +15,7 @@ const me: Me = {
   handle: "eu",
   name: "Eu Mesmo",
   avatarUrl: null,
+  isBot: false,
   email: "me@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -45,6 +46,7 @@ function makeGroup(id: string, name: string, members: Array<{ id: string; name: 
         name: m.name,
         handle: m.handle,
         avatarUrl: null,
+        isBot: false,
       },
     })),
     balances: [],
@@ -161,6 +163,7 @@ describe("SearchContent", () => {
       name: "Daniel Santos",
       handle: "danielsantos",
       avatarUrl: null,
+      isBot: false,
     });
 
     render(<SearchContent />);

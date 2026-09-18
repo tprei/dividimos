@@ -10,6 +10,7 @@ function createMockMe(overrides: Partial<Me> = {}): Me {
     handle: "alice",
     name: "Alice Test",
     avatarUrl: "https://example.com/avatar.png",
+    isBot: false,
     email: "alice@example.com",
     pixKeyType: "cpf",
     pixKeyHint: "***.456.789-**",

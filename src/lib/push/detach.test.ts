@@ -16,6 +16,7 @@ function setAccount(id: string): void {
       handle: id,
       name: "Alguém",
       avatarUrl: null,
+      isBot: false,
       email: `${id}@example.com`,
       pixKeyType: null,
       pixKeyHint: null,

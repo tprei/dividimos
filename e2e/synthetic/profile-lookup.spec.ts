@@ -17,13 +17,20 @@ test.describe("Profile lookup", () => {
     const response = await page.request.get("/api/users/lookup?handle=alice_lookup");
     expect(response.status()).toBe(200);
     const body = (await response.json()) as {
-      profile: { id: string; handle: string; name: string; avatarUrl: string | null };
+      profile: {
+        id: string;
+        handle: string;
+        name: string;
+        avatarUrl: string | null;
+        isBot: boolean;
+      };
     };
     expect(body.profile).toEqual({
       id: alice.id,
       handle: "alice_lookup",
       name: "Alice Lookup",
       avatarUrl: null,
+      isBot: false,
     });
   });
 

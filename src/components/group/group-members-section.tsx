@@ -140,6 +140,7 @@ export function GroupMembersSection({ snapshot, meId, onDepart }: GroupMembersSe
               name={member.user.name}
               avatarUrl={member.user.avatarUrl}
               size="sm"
+              isBot={member.user.isBot}
             />
             <div className="flex-1">
               <div className="flex items-center gap-2">

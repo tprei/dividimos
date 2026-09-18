@@ -21,6 +21,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -28,8 +29,8 @@ const me: Me = {
   notificationPreferences: {},
 };
 
-const bob = { id: "user-bob", handle: "bob", name: "Bob Silva", avatarUrl: null };
-const carol = { id: "user-carol", handle: "carol", name: "Carol Souza", avatarUrl: null };
+const bob = { id: "user-bob", handle: "bob", name: "Bob Silva", avatarUrl: null, isBot: false };
+const carol = { id: "user-carol", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false };
 
 function seedStoreWithContacts() {
   const group: GroupSnapshot = {
@@ -106,6 +107,7 @@ describe("NewConversationButton", () => {
       handle: "daniel",
       name: "Daniel Santos",
       avatarUrl: null,
+      isBot: false,
     });
 
     render(<NewConversationButton />);

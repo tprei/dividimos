@@ -21,6 +21,7 @@ interface UserProfile {
   handle: string;
   name: string;
   avatarUrl: string | null;
+  isBot: boolean;
 }
 
 interface MeProfile extends UserProfile {
@@ -210,6 +211,7 @@ const ME_KEYS = [
   "handle",
   "name",
   "avatarUrl",
+  "isBot",
   "email",
   "pixKeyType",
   "pixKeyHint",
@@ -1164,7 +1166,7 @@ describe.skipIf(!isIntegrationTestReady)(
           "acceptedAt", "groupId", "invitedBy", "status", "user", "userId"
         ].sort());
         expect(Object.keys(m.user).sort()).toEqual([
-          "avatarUrl", "handle", "id", "name"
+          "avatarUrl", "handle", "id", "isBot", "name"
         ].sort());
       }
       const invitedRow = snap.members.find((m) => m.userId === invited.id);
@@ -1216,7 +1218,7 @@ describe.skipIf(!isIntegrationTestReady)(
           "acceptedAt", "groupId", "invitedBy", "status", "user", "userId"
         ].sort());
         expect(Object.keys(m.user).sort()).toEqual([
-          "avatarUrl", "handle", "id", "name"
+          "avatarUrl", "handle", "id", "isBot", "name"
         ].sort());
       }
     });

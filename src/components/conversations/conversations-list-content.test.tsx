@@ -41,6 +41,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -53,6 +54,7 @@ const carol: UserProfile = {
   handle: "carol",
   name: "Carol Souza",
   avatarUrl: null,
+  isBot: false,
 };
 
 const bob: UserProfile = {
@@ -60,6 +62,7 @@ const bob: UserProfile = {
   handle: "bob",
   name: "Bob Silva",
   avatarUrl: null,
+  isBot: false,
 };
 
 function makeDmSnapshot(

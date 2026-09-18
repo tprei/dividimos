@@ -12,6 +12,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -24,6 +25,7 @@ const counterparty: UserProfile = {
   handle: "bob",
   name: "Bob Silva",
   avatarUrl: null,
+  isBot: false,
 };
 
 function draft(overrides: Partial<ChatExpenseResult> = {}): ChatExpenseResult {

@@ -20,6 +20,7 @@ const me: Me = {
   handle: "anacosta",
   email: "ana@test.com",
   avatarUrl: null,
+  isBot: false,
   pixKeyType: "email",
   pixKeyHint: "a**@test.com",
   onboarded: true,

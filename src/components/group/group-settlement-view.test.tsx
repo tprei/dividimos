@@ -43,6 +43,7 @@ const me: Me = {
   handle: "tiago",
   name: "Tiago Silva",
   avatarUrl: null,
+  isBot: false,
   email: "tiago@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -65,7 +66,7 @@ function member(
     status,
     invitedBy: null,
     acceptedAt: null,
-    user: { id: userId, handle, name, avatarUrl: null },
+    user: { id: userId, handle, name, avatarUrl: null, isBot: false },
   };
 }
 

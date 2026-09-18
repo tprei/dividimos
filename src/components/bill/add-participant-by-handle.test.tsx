@@ -17,6 +17,7 @@ function profile(handle: string): UserProfile {
     handle,
     name: handle[0].toUpperCase() + handle.slice(1),
     avatarUrl: null,
+    isBot: false,
   };
 }
 

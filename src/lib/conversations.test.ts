@@ -7,6 +7,7 @@ const me: UserProfile = {
   handle: "alice",
   name: "Alice Souza",
   avatarUrl: null,
+  isBot: false,
 };
 
 const carol: UserProfile = {
@@ -14,6 +15,7 @@ const carol: UserProfile = {
   handle: "carol",
   name: "Carol Souza",
   avatarUrl: null,
+  isBot: false,
 };
 
 const dan: UserProfile = {
@@ -21,6 +23,15 @@ const dan: UserProfile = {
   handle: "dan",
   name: "Dan Lima",
   avatarUrl: null,
+  isBot: false,
+};
+
+const botUser: UserProfile = {
+  id: "user-bot",
+  handle: "dividimos-bot",
+  name: "Dividimos Bot",
+  avatarUrl: null,
+  isBot: true,
 };
 
 function member(groupId: string, user: UserProfile) {
@@ -144,6 +155,18 @@ describe("conversationRow", () => {
     });
 
     expect(conversationRow(snapshot, me.id)).toBeNull();
+  });
+
+  it("sets avatarIsBot from the DM counterparty or false for groups", () => {
+    const groupSnapshot = makeSnapshot("group");
+    const dmSnapshot = makeSnapshot("dm");
+    const botDmSnapshot = makeSnapshot("dm", {
+      members: [member("dm-1", me), member("dm-1", botUser)],
+    });
+
+    expect(conversationRow(groupSnapshot, me.id)?.avatarIsBot).toBe(false);
+    expect(conversationRow(dmSnapshot, me.id)?.avatarIsBot).toBe(false);
+    expect(conversationRow(botDmSnapshot, me.id)?.avatarIsBot).toBe(true);
   });
 });
 

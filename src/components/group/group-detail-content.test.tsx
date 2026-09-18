@@ -68,6 +68,7 @@ const me: Me = {
   handle: "alice",
   name: "Alice",
   avatarUrl: null,
+  isBot: false,
   email: "alice@example.com",
   pixKeyType: null,
   pixKeyHint: null,
@@ -96,7 +97,7 @@ function snapshot(): GroupSnapshot {
         status: "accepted",
         invitedBy: null,
         acceptedAt: null,
-        user: { id: "user-1", handle: "alice", name: "Alice", avatarUrl: null },
+        user: { id: "user-1", handle: "alice", name: "Alice", avatarUrl: null, isBot: false },
       },
       {
         groupId,
@@ -104,7 +105,7 @@ function snapshot(): GroupSnapshot {
         status: "accepted",
         invitedBy: null,
         acceptedAt: null,
-        user: { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null },
+        user: { id: "user-2", handle: "carol", name: "Carol Souza", avatarUrl: null, isBot: false },
       },
       {
         groupId,
@@ -112,7 +113,7 @@ function snapshot(): GroupSnapshot {
         status: "invited",
         invitedBy: "user-1",
         acceptedAt: null,
-        user: { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null },
+        user: { id: "user-3", handle: "dave", name: "Dave Lima", avatarUrl: null, isBot: false },
       },
     ],
     balances: [

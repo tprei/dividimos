@@ -127,14 +127,17 @@ export function arrayOf<T>(
   return ok(result);
 }
 
+// The client ships before the migration emits isBot, and older server
+// responses lack the key. We tolerate missing isBot during the deploy window.
 const USER_PROFILE_KEYS = ["id", "handle", "name", "avatarUrl"] as const;
+const USER_PROFILE_OPTIONAL_KEYS = ["isBot"] as const;
 
 export function decodeUserProfile(
   raw: unknown,
   path: Path = [],
 ): ValidationResult<UserProfile, WireIssue> {
   if (!isRecord(raw)) return fail(path);
-  const k = exactKeys(raw, USER_PROFILE_KEYS, path);
+  const k = exactKeys(raw, USER_PROFILE_KEYS, path, USER_PROFILE_OPTIONAL_KEYS);
   if (!k.ok) return k;
   const i = id(raw.id, [...path, "id"]);
   if (!i.ok) return i;
@@ -144,7 +147,13 @@ export function decodeUserProfile(
   if (!n.ok) return n;
   const a = nullableStr(raw.avatarUrl, [...path, "avatarUrl"]);
   if (!a.ok) return a;
-  return ok({ id: i.value, handle: h.value, name: n.value, avatarUrl: a.value });
+  let isBot = false;
+  if ("isBot" in raw) {
+    const b = bool(raw.isBot, [...path, "isBot"]);
+    if (!b.ok) return b;
+    isBot = b.value;
+  }
+  return ok({ id: i.value, handle: h.value, name: n.value, avatarUrl: a.value, isBot });
 }
 
 export function decodeUserProfileOrNull(

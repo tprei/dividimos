@@ -137,6 +137,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
         name={actorName}
         avatarUrl={event.actor?.avatarUrl}
         size="sm"
+        isBot={event.actor?.isBot}
       />
       <div className="min-w-0 flex-1">
         <p className="text-sm leading-snug">{sentence}</p>

@@ -226,6 +226,7 @@ export function SearchContent() {
                       name={person.name}
                       avatarUrl={person.avatarUrl}
                       size="sm"
+                      isBot={person.isBot}
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate text-foreground">
