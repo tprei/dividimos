@@ -151,4 +151,29 @@ describe("completeOnboarding", () => {
       p_pix_key_type: "email",
     });
   });
+
+  it("completes onboarding via update_profile when intent is skip", async () => {
+    const formData = form();
+    formData.set("intent", "skip");
+
+    await expect(completeOnboarding("user-a", "/app/groups", formData)).rejects.toThrow(
+      "REDIRECT:/app/groups",
+    );
+
+    expect(mocks.encryptPixKey).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledWith("update_profile", {
+      p_handle: "ana_costa",
+      p_name: "Ana Costa",
+    });
+  });
+
+  it("surfaces handle_taken on the skip path with the existing message", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "handle_taken" } });
+    const formData = form();
+    formData.set("intent", "skip");
+
+    await expect(completeOnboarding("user-a", "/app", formData)).resolves.toEqual({
+      error: "Handle já em uso. Escolha outro.",
+    });
+  });
 });

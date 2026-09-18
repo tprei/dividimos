@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
 import { selectHomeMode, selectRecentBills } from "@/components/dashboard/home-selectors";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
@@ -63,6 +64,7 @@ export function DashboardContent() {
     mode: "pay" | "collect";
   } | null>(null);
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
+  const [missingKeyOpen, setMissingKeyOpen] = useState(false);
 
   const owes = rows.filter((row) => row.direction === "owes");
   const owed = rows.filter((row) => row.direction === "owed");
@@ -159,6 +161,10 @@ export function DashboardContent() {
 
   const openQuickCharge = () => {
     setSelectedDebt(null);
+    if (!me.pixKeyHint) {
+      setMissingKeyOpen(true);
+      return;
+    }
     setQuickChargeOpen(true);
   };
 
@@ -257,8 +263,6 @@ export function DashboardContent() {
               size="sm"
               className="min-h-11 justify-start px-3 text-xs border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10"
               onClick={openQuickCharge}
-              disabled={!me.pixKeyHint}
-              title={me.pixKeyHint ? undefined : "Cadastre uma chave Pix no perfil"}
             >
               <Zap className="size-4 shrink-0" aria-hidden="true" />
               Cobrar rápido
@@ -402,6 +406,37 @@ export function DashboardContent() {
           onClose={() => setQuickChargeOpen(false)}
         />
       )}
+
+      <Dialog open={missingKeyOpen} onOpenChange={setMissingKeyOpen}>
+        <DialogContent className="rounded-xl bg-card p-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary-text">
+            <QrCode className="size-6" />
+          </div>
+          <div className="space-y-1">
+            <DialogTitle className="text-base font-bold">
+              Pra receber, você precisa de uma chave Pix.
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Leva um minuto, e só quem recebe precisa dela.
+            </DialogDescription>
+          </div>
+          <div className="space-y-2">
+            <Link
+              href="/app/profile"
+              className="flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+            >
+              Cadastrar agora
+            </Link>
+            <Button
+              variant="ghost"
+              className="min-h-11 w-full rounded-lg"
+              onClick={() => setMissingKeyOpen(false)}
+            >
+              Agora não
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {pixTarget && (
         <PixQrModal

@@ -419,7 +419,7 @@ describe("DashboardContent", () => {
     expect(toastError).toHaveBeenCalled();
   });
 
-  it("disables quick charge without a Pix key", () => {
+  it("opens the missing-key dialog from Cobrar rápido without a Pix key", () => {
     seedStore([
       snapshot({
         balances: [
@@ -430,10 +430,14 @@ describe("DashboardContent", () => {
     ]);
     render(<DashboardContent />);
 
-    expect(screen.getByRole("button", { name: "Cobrar rápido" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: /Carol Souza, te deve/ }));
-    expect(screen.getByRole("button", { name: "Cobrar via Pix" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Lembrar" })).toBeInTheDocument();
+    const charge = screen.getByRole("button", { name: "Cobrar rápido" });
+    expect(charge).toBeEnabled();
+    fireEvent.click(charge);
+
+    expect(screen.getByText("Pra receber, você precisa de uma chave Pix.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Cadastrar agora" })).toHaveAttribute("href", "/app/profile");
+    fireEvent.click(screen.getByRole("button", { name: "Agora não" }));
+    expect(screen.queryByText("Pra receber, você precisa de uma chave Pix.")).not.toBeInTheDocument();
   });
 
   it("keeps guest rows free of Pix and nudge actions", () => {

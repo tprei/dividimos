@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Clipboard, Shield } from "lucide-react";
+import { ArrowRight, Clipboard, Mail, Shield } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState, useTransition } from "react";
 import { Logo } from "@/components/shared/logo";
@@ -99,9 +99,6 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
     setPixError("");
   };
 
-  const pixKeyDisplay =
-    pixKeyType === "email" && !customPixInput ? userEmail : customPixInput;
-
   const handleCPFInput = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 11);
     setCustomPixInput(formatCPF(digits));
@@ -139,7 +136,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
       case "phone": return "(11) 99999-9999";
       case "cpf": return "000.000.000-00";
       case "random": return "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-      default: return "seu@email.com";
+      default: return userEmail || "seu@email.com";
     }
   };
 
@@ -160,7 +157,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
   };
 
   const handleSubmit = () => {
-    const pixKeyValue = toPixKeyValue(pixKeyType, pixKeyDisplay);
+    const pixKeyValue = toPixKeyValue(pixKeyType, customPixInput);
     const formData = new FormData();
     formData.set("handle", handle);
     formData.set("pixKey", pixKeyValue);
@@ -180,12 +177,27 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
     });
   };
 
-  const inferredKeyLabel =
-    userEmail && pixKeyType === "email"
-      ? "Identificamos seu e-mail como chave Pix"
-      : null;
+  const handleSkip = () => {
+    const formData = new FormData();
+    formData.set("intent", "skip");
+    formData.set("handle", handle);
+    formData.set("name", name.trim());
 
-  const showInferredBanner = inferredKeyLabel && pixKeyType === "email";
+    startTransition(async () => {
+      const result = await action(formData);
+      if (result?.error) {
+        if (result.error.includes("Handle") || result.error.includes("Nome")) {
+          setStep("profile");
+          setHandleError(result.error);
+        } else {
+          setPixError(result.error);
+        }
+      }
+    });
+  };
+
+  const showEmailSuggestion =
+    Boolean(userEmail) && pixKeyType === "email" && customPixInput !== userEmail;
 
   const steps: OnboardStep[] = ["profile", "pix"];
   const currentIndex = steps.indexOf(step);
@@ -219,10 +231,11 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
 
                 <div className="mt-8 space-y-4">
                   <div>
-                    <label className="mb-2 block text-sm font-medium">
+                    <label htmlFor="onboard-name" className="mb-2 block text-sm font-medium">
                       Nome
                     </label>
                     <Input
+                      id="onboard-name"
                       placeholder="Seu nome completo"
                       value={name}
                       onChange={(e) => handleNameChange(e.target.value)}
@@ -232,7 +245,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-medium">
+                    <label htmlFor="onboard-handle" className="mb-2 block text-sm font-medium">
                       Handle
                     </label>
                     <div className="flex items-center">
@@ -240,6 +253,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                         @
                       </div>
                       <Input
+                        id="onboard-handle"
                         className="rounded-l-none"
                         placeholder="seu_handle"
                         value={handle}
@@ -295,15 +309,21 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                 <p className="mt-2 text-muted-foreground">
                   Coloca sua chave Pix pra receber dos amigos.
                 </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Pode cadastrar agora ou depois, no seu perfil.
+                </p>
 
-                {showInferredBanner && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mt-4 rounded-xl bg-primary/10 px-4 py-3 text-sm text-primary"
-                  >
-                    {inferredKeyLabel}
-                  </motion.div>
+                {showEmailSuggestion && userEmail && (
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={() => handleEmailInput(userEmail)}
+                      className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 text-sm font-medium text-primary-text transition-colors hover:bg-primary/20"
+                    >
+                      <Mail className="size-4" />
+                      Usar meu e-mail
+                    </button>
+                  </div>
                 )}
 
                 <div className="mt-6 flex flex-wrap gap-2">
@@ -327,7 +347,7 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     <Input
                       type={pixKeyType === "email" ? "email" : "text"}
                       placeholder={getInputPlaceholder()}
-                      value={pixKeyDisplay}
+                      value={customPixInput}
                       onChange={(e) => getInputHandler()(e.target.value)}
                       autoCapitalize="none"
                       autoCorrect="off"
@@ -380,12 +400,20 @@ function OnboardPageContent({ me, action }: OnboardingFormProps) {
                     className="flex-1 gap-2"
                     size="lg"
                     onClick={handleSubmit}
-                    disabled={!pixKeyDisplay || isPending}
+                    disabled={!customPixInput || isPending}
                   >
                     {isPending ? "Salvando..." : "Começar a usar"}
                     {!isPending && <ArrowRight className="h-4 w-4" />}
                   </Button>
                 </div>
+                <Button
+                  variant="ghost"
+                  onClick={handleSkip}
+                  disabled={isPending}
+                  className="mt-4 min-h-11 w-full rounded-lg text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Pular por agora
+                </Button>
               </motion.div>
             )}
           </AnimatePresence>

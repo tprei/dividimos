@@ -26,6 +26,57 @@ async function advanceToPixStep(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Chave Pix" });
 }
 
+describe("OnboardForm Pix skip", () => {
+  beforeEach(() => {
+    action.mockClear();
+  });
+
+  it("renders contract copy and Pular por agora on the Pix step", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} />);
+
+    await advanceToPixStep(user);
+
+    expect(
+      screen.getByText("Pode cadastrar agora ou depois, no seu perfil."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pular por agora" })).toBeInTheDocument();
+  });
+
+  it("offers the e-mail only as an explicit chip and never pre-fills the key", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} />);
+
+    await advanceToPixStep(user);
+
+    const input = screen.getByPlaceholderText("ana@example.com");
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Começar a usar/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /Usar meu e-mail/i }));
+    expect(input).toHaveValue("ana@example.com");
+    expect(screen.queryByRole("button", { name: /Usar meu e-mail/i })).not.toBeInTheDocument();
+
+    await user.clear(input);
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("button", { name: /Começar a usar/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Usar meu e-mail/i })).toBeInTheDocument();
+  });
+
+  it("submits skip intent without a Pix key", async () => {
+    const user = userEvent.setup();
+    render(<OnboardForm me={me} action={action} />);
+
+    await advanceToPixStep(user);
+    await user.click(screen.getByRole("button", { name: "Pular por agora" }));
+
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    const formData = action.mock.calls[0][0] as FormData;
+    expect(formData.get("intent")).toBe("skip");
+    expect(formData.get("handle")).toBe("ana_costa");
+  });
+});
+
 describe("OnboardForm phone Pix key", () => {
   beforeEach(() => {
     action.mockClear();
