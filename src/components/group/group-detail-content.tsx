@@ -130,10 +130,10 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
           onBack={() => router.push("/app/groups")}
         />
         <div className="my-auto">
-        <div className="mt-5 rounded-2xl gradient-primary p-5 text-primary-foreground shadow-lg shadow-primary/20">
-          <p className="text-sm text-primary-foreground/75">Convite para o grupo</p>
+        <div className="mt-5 rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
+          <p className="text-sm text-gradient-foreground/80">Convite para o grupo</p>
           <p className="mt-2 text-2xl font-bold">{snapshot.group.name}</p>
-          <div className="mt-3 flex gap-4 text-sm text-primary-foreground/75">
+          <div className="mt-3 flex gap-4 text-sm text-gradient-foreground/80">
             <span className="flex items-center gap-1">
               <Users className="size-3.5" />
               Convite de {inviterName}
