@@ -9,12 +9,21 @@ vi.mock("qrcode", () => ({
   },
 }));
 
+const toastError = vi.fn();
+const toastSuccess = vi.fn();
 vi.mock("@/hooks/use-haptics", () => ({
   haptics: {
     success: vi.fn(),
     error: vi.fn(),
     selection: vi.fn(),
     light: vi.fn(),
+  },
+}));
+
+vi.mock("react-hot-toast", () => ({
+  default: {
+    error: (message: string) => toastError(message),
+    success: (message: string) => toastSuccess(message),
   },
 }));
 
@@ -45,6 +54,8 @@ import {
   confirmVendorCharge,
   recordVendorCharge,
 } from "@/lib/sync/mutations-group";
+
+import { haptics } from "@/hooks/use-haptics";
 
 describe("QuickChargeModal", () => {
   beforeEach(() => {
@@ -320,5 +331,62 @@ describe("QuickChargeModal", () => {
       expect(confirmVendorCharge).toHaveBeenCalledTimes(2),
     );
     expect(await screen.findByText("Pagamento recebido!")).toBeInTheDocument();
+  });
+
+  it("falls back to a selectable code and keeps copy enabled when the clipboard rejects", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("Clipboard blocked"));
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+
+    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+
+    const copyButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /Copiar código Pix/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        "Não foi possível copiar. Use o código abaixo para copiar manualmente.",
+      );
+    });
+    expect(haptics.error).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("00020126580014br.gov.bcb.pix")).toBeInTheDocument();
+    expect(copyButton).toBeEnabled();
+  });
+
+  it("copies the code with success haptic when the clipboard resolves", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    global.fetch = vi.fn().mockResolvedValue({
+      json: async () => ({ copiaECola: "00020126580014br.gov.bcb.pix" }),
+    });
+
+    render(<QuickChargeModal open={true} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar R$20" }));
+    fireEvent.click(screen.getByText("Gerar QR Code"));
+
+    const copyButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /Copiar código Pix/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(toastSuccess).toHaveBeenCalledWith("Código Pix copiado!");
+    });
+    expect(haptics.success).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Copiado!")).toBeInTheDocument();
   });
 });

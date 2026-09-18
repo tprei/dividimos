@@ -22,11 +22,18 @@ vi.mock("@/hooks/use-haptics", () => ({
 }));
 
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
 vi.mock("react-hot-toast", () => ({
   default: {
     error: (message: string) => toastError(message),
-    success: vi.fn(),
+    success: (message: string) => toastSuccess(message),
   },
+}));
+
+vi.mock("next/link", () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
 }));
 
 vi.mock("@/components/shared/animated-checkmark", () => ({
@@ -82,32 +89,174 @@ describe("PixQrModal", () => {
     expect(screen.getByRole("button", { name: /Já paguei/i })).toBeEnabled();
   });
 
-  it("reports a missing pix key when the route resolves without a payload", async () => {
+  it("shows the recipient missing-key card with an out-of-band register CTA", async () => {
+    const onMarkPaid = vi.fn().mockResolvedValue(undefined);
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 404,
       json: () => Promise.resolve({ error: "Destinatario sem chave Pix configurada" }),
     });
 
-    render(<PixQrModal {...defaultPropsWithFetch} />);
+    render(<PixQrModal {...defaultPropsWithFetch} onMarkPaid={onMarkPaid} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Não temos a chave Pix de Bob/)).toBeInTheDocument();
+      expect(screen.getByText("Chave Pix não cadastrada")).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /Copiar código Pix/i })).toBeDisabled();
+    expect(
+      screen.getByText("Bob ainda não cadastrou uma chave Pix no Dividimos."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Copiar código Pix/i }),
+    ).toBeDisabled();
+
+    const registerButton = screen.getByRole("button", {
+      name: /Registrar pagamento feito por fora/i,
+    });
+    expect(registerButton).toBeEnabled();
+    fireEvent.click(registerButton);
+    await waitFor(() => {
+      expect(onMarkPaid).toHaveBeenCalledWith(10000, expect.any(String));
+    });
   });
 
-  it("distinguishes a transport failure from a missing pix key", async () => {
+  it("shows the generation error card with retry on a transport failure", async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
 
     render(<PixQrModal {...defaultPropsWithFetch} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Não deu pra gerar o QR agora/)).toBeInTheDocument();
+      expect(
+        screen.getByText("Não foi possível gerar o QR code"),
+      ).toBeInTheDocument();
     });
-    expect(screen.queryByText(/Não temos a chave Pix/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Copiar código Pix/i })).toBeDisabled();
+    expect(
+      screen.getByText("Sem conexão? Confere a internet e tenta de novo."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Tentar de novo/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Chave Pix não cadastrada/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Copiar código Pix/i }),
+    ).toBeDisabled();
+  });
 
+  it("retries the generation immediately with the same amount after a failure", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ error: "Erro ao processar a chave Pix" }),
+      })
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ copiaECola: "fetched-br-code" }),
+      });
+    global.fetch = mockFetch;
+
+    render(<PixQrModal {...defaultPropsWithFetch} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Não foi possível gerar o QR code"),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Tentar de novo/i }));
+
+    // Pay mode keeps the canvas behind the disclosure, so readiness shows up
+    // as an enabled copy button carrying the fresh code.
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Copiar código Pix/i }),
+      ).toBeEnabled();
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mostrar QR code" }),
+    );
+    await waitFor(() => {
+      expect(QRCode.toCanvas).toHaveBeenCalledWith(
+        expect.anything(),
+        "fetched-br-code",
+        expect.anything(),
+      );
+    }, { timeout: 3000 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const retryInit = mockFetch.mock.calls[1][1] as RequestInit;
+    expect(JSON.parse(retryInit.body as string)).toEqual({
+      recipientUserId: "user-123",
+      amountCents: 10000,
+      groupId: "group-456",
+    });
+  });
+
+  it("shows the owner missing-key card with a profile link", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({ error: "Voce nao tem chave Pix configurada" }),
+    });
+
+    render(<PixQrModal {...defaultPropsWithFetch} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cadastre sua chave Pix")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText("Cadastre sua chave Pix no seu perfil pra receber pagamentos."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Configurar chave Pix no perfil/i }),
+    ).toHaveAttribute("href", "/app/profile");
+  });
+
+  it("reveals the selectable code when the clipboard rejects and recovers on retry", async () => {
+    const writeText = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Clipboard blocked"))
+      .mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ copiaECola: "br-code-for-10000" }),
+    });
+
+    render(<PixQrModal {...defaultPropsWithFetch} />);
+
+    const copyButton = await waitFor(() => {
+      const button = screen.getByRole("button", { name: /Copiar código Pix/i });
+      expect(button).toBeEnabled();
+      return button;
+    });
+
+    await act(async () => {
+      copyButton.click();
+    });
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith(
+        "Não foi possível copiar. Use o código abaixo para copiar manualmente.",
+      );
+    });
+    expect(haptics.error).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("br-code-for-10000")).toBeInTheDocument();
+    expect(copyButton).toBeEnabled();
+
+    await act(async () => {
+      copyButton.click();
+    });
+
+    await waitFor(() => {
+      expect(toastSuccess).toHaveBeenCalledWith("Código Pix copiado!");
+    });
+    expect(haptics.success).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Copiado!")).toBeInTheDocument();
+    expect(screen.queryByText("br-code-for-10000")).not.toBeInTheDocument();
   });
 
   it("records the full payment when Já paguei is pressed", async () => {
@@ -379,10 +528,12 @@ describe("PixQrModal", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Copiar código Pix/i })).toBeEnabled();
     });
-    expect(screen.queryByText(/Não temos a chave Pix/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Não foi possível gerar o QR code/),
+    ).not.toBeInTheDocument();
   });
 
-  it("repaints the QR when the amount returns to an already-fetched value", async () => {
+  it("refetches and repaints the QR when the amount changes", async () => {
     global.fetch = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
       const { amountCents } = JSON.parse(init.body as string) as { amountCents: number };
       return Promise.resolve({
@@ -396,6 +547,9 @@ describe("PixQrModal", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Mostrar QR code" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /Copiar código Pix/i }),
+      ).toBeEnabled();
     });
     fireEvent.click(
       screen.getByRole("button", { name: "Mostrar QR code" }),
@@ -406,7 +560,7 @@ describe("PixQrModal", () => {
         "br-code-10000",
         expect.anything(),
       );
-    });
+    }, { timeout: 3000 });
 
     fireEvent.click(screen.getByRole("button", { name: /Metade/i }));
     await waitFor(() => {
@@ -415,7 +569,7 @@ describe("PixQrModal", () => {
         "br-code-5000",
         expect.anything(),
       );
-    });
+    }, { timeout: 4000 });
 
     vi.mocked(QRCode.toCanvas).mockClear();
     fireEvent.click(screen.getByRole("button", { name: /Tudo/i }));
@@ -426,7 +580,7 @@ describe("PixQrModal", () => {
         "br-code-10000",
         expect.anything(),
       );
-    });
+    }, { timeout: 4000 });
   });
   it("renders a visible close button while idle and dismissible", () => {
     render(<PixQrModal {...defaultPropsWithPixKey} />);

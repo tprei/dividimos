@@ -1,7 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Loader2, Pencil, QrCode, Shield } from "lucide-react";
+import {
+  Check,
+  Copy,
+  KeyRound,
+  Loader2,
+  Pencil,
+  QrCode,
+  RefreshCw,
+  Shield,
+  WifiOff,
+} from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import QRCode from "qrcode";
@@ -32,11 +43,16 @@ type PixQrModalSource =
 
 type TimerId = number | NodeJS.Timeout;
 
-interface FetchedPayload {
-  amountCents: number;
-  recipientUserId: string;
-  payload: string;
-}
+type PixPayloadState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; code: string }
+  | { status: "missing-key-recipient" }
+  | { status: "missing-key-owner" }
+  | {
+      status: "error";
+      reason: "session" | "denied" | "rate-limited" | "invalid" | "unavailable";
+    };
 
 interface PixQrModalBaseProps {
   open: boolean;
@@ -64,6 +80,7 @@ export function PixQrModal({
 }: PixQrModalProps) {
   const timerRef = useRef<TimerId | undefined>(undefined);
   const autoCloseRef = useRef<TimerId | undefined>(undefined);
+  const abortRef = useRef<AbortController | undefined>(undefined);
   const lastSnapRef = useRef<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
@@ -71,10 +88,10 @@ export function PixQrModal({
   const [settledAmountCents, setSettledAmountCents] = useState(0);
   const [paymentCents, setPaymentCents] = useState(amountCents);
   const [editingAmount, setEditingAmount] = useState(false);
-  const [fetched, setFetched] = useState<FetchedPayload | null>(null);
-  const [payloadError, setPayloadError] = useState(false);
-  const [payloadLoading, setPayloadLoading] = useState(false);
+  const [payload, setPayload] = useState<PixPayloadState>({ status: "idle" });
   const [showPayQr, setShowPayQr] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
 
   const isFullPayment = paymentCents >= amountCents;
   const isValidAmount = paymentCents > 0 && paymentCents <= amountCents;
@@ -124,9 +141,10 @@ export function PixQrModal({
   useEffect(() => {
     if (open && !isSettling) {
       setPaymentCents(amountCents);
-      setShowPayQr(false);
       setShowSuccess(false);
       setSettledAmountCents(0);
+      setCopied(false);
+      setCopyFailed(false);
     }
   }, [amountCents, isSettling, open]);
 
@@ -139,15 +157,25 @@ export function PixQrModal({
 
   const qrAmountCents = isValidAmount ? paymentCents : amountCents;
 
-  useEffect(() => {
-    if (!open || pixKey || !recipientUserId || !groupId) return;
-    if (qrAmountCents <= 0) return;
 
-    let controller: AbortController | undefined;
+  const generatePayload = useCallback(() => {
+    if (!recipientUserId || !groupId || qrAmountCents <= 0) return;
 
-    setPayloadLoading(true);
-    timerRef.current = setTimeout(async () => {
-      controller = new AbortController();
+    clearTimeout(timerRef.current);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setRetrying(true);
+    setCopyFailed(false);
+    setPayload({ status: "loading" });
+
+    const settle = (next: PixPayloadState) => {
+      if (controller.signal.aborted) return;
+      setRetrying(false);
+      setPayload(next);
+    };
+
+    void (async () => {
       try {
         const res = await fetch("/api/pix/generate", {
           method: "POST",
@@ -159,26 +187,56 @@ export function PixQrModal({
           }),
           signal: controller.signal,
         });
-        const data = (await res.json()) as { copiaECola?: string };
-        if (data.copiaECola) {
-          setFetched({ amountCents: qrAmountCents, recipientUserId, payload: data.copiaECola });
-          setPayloadError(false);
+        const data = (await res.json().catch(() => null)) as {
+          copiaECola?: string;
+          error?: string;
+        } | null;
+        if (res.status === 200 && data?.copiaECola) {
+          settle({ status: "ready", code: data.copiaECola });
+        } else if (res.status === 400) {
+          settle({ status: "error", reason: "invalid" });
+        } else if (res.status === 404) {
+          // The route (frozen for this stack) reports the 404 reason as prose,
+          // so match it accent/case-insensitively in one place.
+          const ownerMissing = /voce nao tem/i.test(
+            (data?.error ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+          );
+          settle(
+            ownerMissing
+              ? { status: "missing-key-owner" }
+              : { status: "missing-key-recipient" },
+          );
+        } else if (res.status === 401) {
+          settle({ status: "error", reason: "session" });
+        } else if (res.status === 403) {
+          settle({ status: "error", reason: "denied" });
+        } else if (res.status === 429) {
+          settle({ status: "error", reason: "rate-limited" });
         } else {
-          setPayloadError(res.status >= 500);
+          settle({ status: "error", reason: "unavailable" });
         }
       } catch {
-        if (controller.signal.aborted) return;
-        setPayloadError(true);
-      } finally {
-        if (!controller.signal.aborted) setPayloadLoading(false);
+        if (!controller.signal.aborted) {
+          settle({ status: "error", reason: "unavailable" });
+        }
       }
+    })();
+  }, [recipientUserId, groupId, qrAmountCents]);
+
+  useEffect(() => {
+    if (!open || pixKey || !recipientUserId || !groupId) return;
+    if (qrAmountCents <= 0) return;
+
+    setPayload({ status: "loading" });
+    timerRef.current = setTimeout(() => {
+      generatePayload();
     }, 500);
 
     return () => {
       clearTimeout(timerRef.current);
-      controller?.abort();
+      abortRef.current?.abort();
     };
-  }, [open, pixKey, recipientUserId, groupId, qrAmountCents]);
+  }, [open, pixKey, recipientUserId, groupId, qrAmountCents, generatePayload]);
 
   const copiaECola = pixKey
     ? generatePixCopiaECola({
@@ -187,10 +245,8 @@ export function PixQrModal({
         merchantCity: "SAO PAULO",
         amountCents: qrAmountCents,
       })
-    : fetched &&
-        fetched.amountCents === qrAmountCents &&
-        fetched.recipientUserId === recipientUserId
-      ? fetched.payload
+    : payload.status === "ready"
+      ? payload.code
       : "";
 
   const paintQr = useCallback(
@@ -206,11 +262,21 @@ export function PixQrModal({
   );
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(copiaECola);
-    haptics.success();
-    setCopied(true);
-    toast.success("Código Pix copiado!");
-    setTimeout(() => setCopied(false), 2000);
+    if (!copiaECola) return;
+    try {
+      await navigator.clipboard.writeText(copiaECola);
+      haptics.success();
+      setCopied(true);
+      setCopyFailed(false);
+      toast.success("Código Pix copiado!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error(
+        "Não foi possível copiar. Use o código abaixo para copiar manualmente.",
+      );
+      haptics.error();
+      setCopyFailed(true);
+    }
   };
   const handleSuccessClose = () => {
     if (autoCloseRef.current) {
@@ -322,7 +388,6 @@ export function PixQrModal({
               key="form"
               initial={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex min-h-0 flex-1 flex-col"
             >
               <div className="flex-1 overflow-y-auto min-h-0 px-6 pt-4 pb-3 overscroll-contain scroll-pt-6" data-testid="pix-qr-body">
                 <div className="text-center">
@@ -472,28 +537,81 @@ export function PixQrModal({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.15 }}
-                    className="mt-6 flex justify-center rounded-2xl border bg-white p-5 shadow-sm"
+                    className="mt-6 flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-2xl border bg-white p-5 text-center shadow-sm"
                   >
-                    {payloadLoading ? (
+                    {payload.status === "idle" || payload.status === "loading" ? (
                       <div className="flex h-[240px] w-[240px] items-center justify-center">
                         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                       </div>
-                    ) : (
-                      <div className="flex h-[240px] w-[240px] flex-col items-center justify-center gap-3 text-center">
-                        <QrCode className="h-12 w-12 text-muted-foreground/30" />
-                        <p className="text-sm text-muted-foreground">
-                          {payloadError
-                            ? "Não deu pra gerar o QR agora. Tenta de novo."
-                            : `Não temos a chave Pix de ${recipientName.split(" ")[0]}.`}
-                        </p>
-                      </div>
+                    ) : payload.status === "missing-key-recipient" ? (
+                      <>
+                        <KeyRound className="h-8 w-8 text-muted-foreground/50" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            Chave Pix não cadastrada
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {recipientName.split(" ")[0]} ainda não cadastrou uma chave Pix no Dividimos.
+                          </p>
+                        </div>
+                      </>
+                    ) : payload.status === "missing-key-owner" ? (
+                      <>
+                        <KeyRound className="h-8 w-8 text-muted-foreground/50" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            Cadastre sua chave Pix
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Cadastre sua chave Pix no seu perfil pra receber pagamentos.
+                          </p>
+                        </div>
+                        <Link href="/app/profile">
+                          <Button variant="outline" size="lg" className="gap-2 rounded-lg">
+                            Configurar chave Pix no perfil
+                          </Button>
+                        </Link>
+                      </>
+                    ) : payload.status === "error" ? (
+                      <>
+                        <WifiOff className="h-8 w-8 text-muted-foreground/50" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            Não foi possível gerar o QR code
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {payload.reason === "rate-limited"
+                              ? "Muitas tentativas. Espera alguns segundos."
+                              : payload.reason === "session"
+                                ? "Sua sessão expirou. Entra de novo pra continuar."
+                                : payload.reason === "denied" || payload.reason === "invalid"
+                                  ? "Não deu pra gerar esse código agora."
+                                  : "Sem conexão? Confere a internet e tenta de novo."}
+                          </p>
+                        </div>
+                        {(payload.reason === "rate-limited" ||
+                          payload.reason === "unavailable") && (
+                          <Button
+                            variant="outline"
+                            size="lg"
+                            className="gap-2 rounded-lg"
+                            onClick={generatePayload}
+                            disabled={retrying}
+                          >
+                            <RefreshCw
+                              className={`h-4 w-4${retrying ? " animate-spin" : ""}`}
+                            />
+                            Tentar de novo
+                          </Button>
                     )}
+                  </>
+                ) : null}
                   </motion.div>
                 ) : null}
               </div>
 
               {!copiaECola && (
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
                   <Shield className="h-3 w-3" />
                   <span>Sem QR code? Combine o valor por fora e registra aqui embaixo.</span>
                 </div>
@@ -533,6 +651,11 @@ export function PixQrModal({
                       </>
                     )}
                   </Button>
+                  {copyFailed && copiaECola && (
+                    <p className="break-all rounded-lg border border-border bg-muted/60 p-2.5 font-mono text-xs select-all">
+                      {copiaECola}
+                    </p>
+                  )}
                   <Button
                     onClick={handlePayment}
                     className="w-full gap-2 min-h-11"
@@ -548,8 +671,14 @@ export function PixQrModal({
                       <>
                         <Check className="h-4 w-4" />
                         {mode === "collect"
-                          ? isFullPayment ? "Já recebi" : `Recebi ${formatBRL(paymentCents)}`
-                          : isFullPayment ? "Já paguei" : `Paguei ${formatBRL(paymentCents)}`}
+                          ? isFullPayment
+                            ? "Já recebi"
+                            : `Recebi ${formatBRL(paymentCents)}`
+                          : payload.status === "missing-key-recipient"
+                            ? "Registrar pagamento feito por fora"
+                            : isFullPayment
+                              ? "Já paguei"
+                              : `Paguei ${formatBRL(paymentCents)}`}
                       </>
                     )}
                   </Button>
