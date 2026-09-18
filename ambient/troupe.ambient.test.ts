@@ -9,8 +9,10 @@ import {
 import { transfersFromBalances } from "../src/lib/ledger/transfers";
 import type { BalanceRow, GroupSnapshot, WireIssue } from "../src/types/ledger";
 import {
+  BOT_SPECS,
   ensureTroupe,
   MAX_ACTIVE_BOT_EXPENSES,
+  OWNER_HANDLE,
   pruneOldExpenses,
   type Troupe,
 } from "./bots";
@@ -87,12 +89,19 @@ describe("bot troupe", () => {
       throw new Error(`Group ${troupe.groupId} not found in bootstrap`);
     }
 
-    expect(groupSnapshot.members).toHaveLength(5);
+    // The owner joins a group that still owes something (syncOwnerMembership),
+    // so the roster is the five bots plus at most one human. Counting every
+    // member would break the moment he is invited.
+    const botMembers = groupSnapshot.members.filter((member) => member.user.isBot);
+    expect(botMembers).toHaveLength(BOT_SPECS.length);
     for (const member of groupSnapshot.members) {
       expect(member.status).toBe("accepted");
-      expect(member.user.isBot).toBe(true);
     }
-    note(`All ${groupSnapshot.members.length} bots showed up in bootstrap, badges on`);
+    const humans = groupSnapshot.members.length - botMembers.length;
+    expect(humans).toBeLessThanOrEqual(1);
+    note(
+      `All ${botMembers.length} bots showed up in bootstrap, badges on${humans === 1 ? `, with @${OWNER_HANDLE} watching` : ""}`,
+    );
   });
 
   it("creates one to three expenses", async () => {
