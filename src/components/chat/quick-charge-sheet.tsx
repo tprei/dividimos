@@ -8,7 +8,12 @@ import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import { useBackHandler } from "@/hooks/use-back-handler";
+import {
+  PendingOperationNotice,
+  usePendingOperation,
+} from "@/components/chat/pending-operation";
 import type { ChatExpenseResult } from "@/lib/chat-expense-parser";
 
 export type QuickChargeStatus = "idle" | "confirming" | "confirmed" | "error";
@@ -20,6 +25,7 @@ export interface QuickChargeSheetProps {
   onConfirm: (result: ChatExpenseResult) => void;
   onEdit: (result: ChatExpenseResult) => void;
   onDismiss: () => void;
+  onLeavePending: () => void;
   status?: QuickChargeStatus;
   errorMessage?: string;
 }
@@ -68,14 +74,17 @@ export function QuickChargeSheet({
   onConfirm,
   onEdit,
   onDismiss,
+  onLeavePending,
   status = "idle",
   errorMessage,
 }: QuickChargeSheetProps) {
-  useBackHandler(true, onDismiss);
   const [amountCents, setAmountCents] = useState(0);
   const [description, setDescription] = useState("");
   const [descriptionEdited, setDescriptionEdited] = useState(false);
   const [payerIsSelf, setPayerIsSelf] = useState(true);
+
+  const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
+  useBackHandler(true, guardedDismiss);
 
   const autoDescription = useMemo(
     () => buildDescription(amountCents, counterpartyName, payerIsSelf),
@@ -124,6 +133,7 @@ export function QuickChargeSheet({
       exit={{ opacity: 0, y: 8, scale: 0.97 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       className="rounded-2xl border bg-card p-4"
+      aria-busy={status === "confirming"}
       data-testid="quick-charge-sheet"
     >
       <div className="mb-3 flex items-center justify-between">
@@ -137,8 +147,9 @@ export function QuickChargeSheet({
         </div>
         <button
           type="button"
-          onClick={onDismiss}
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={guardedDismiss}
+          disabled={status === "confirming"}
+          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           aria-label="Fechar"
           data-testid="quick-charge-dismiss"
         >
@@ -222,6 +233,13 @@ export function QuickChargeSheet({
         </div>
       )}
 
+      <PendingOperationNotice
+        show={showPending && status === "confirming"}
+        body="A conexão está demorando. Se a cobrança tiver sido registrada, ela aparece aqui na conversa. Sair agora não duplica nada."
+        onLeave={onLeavePending}
+        testId="quick-charge-pending"
+      />
+
       <div className="flex gap-2">
         <Button
           variant="outline"
@@ -236,17 +254,27 @@ export function QuickChargeSheet({
         </Button>
         <Button
           size="sm"
-          className="flex-1"
+          className={cn(
+            "flex-1 rounded-lg transition-colors",
+            isConfirmed && "bg-success text-success-foreground hover:bg-success/90",
+          )}
           onClick={handleConfirm}
           disabled={isDisabled}
           data-testid="quick-charge-confirm"
         >
           {isConfirming ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            <>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              Enviando…
+            </>
+          ) : isConfirmed ? (
+            <>
+              <Check className="mr-1.5 h-3.5 w-3.5" />
+              {payerIsSelf ? "Cobrado!" : "Registrado!"}
+            </>
           ) : (
-            <Check className="mr-1.5 h-3.5 w-3.5" />
+            payerIsSelf ? "Cobrar" : "Registrar"
           )}
-          {isConfirming ? "Enviando…" : payerIsSelf ? "Cobrar" : "Registrar"}
         </Button>
       </div>
     </motion.div>

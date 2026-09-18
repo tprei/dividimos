@@ -9,6 +9,7 @@ interface AmountQuickAddCentsProps {
   valueCents: number;
   onChangeCents: (cents: number) => void;
   maxCents?: number;
+  disabled?: boolean;
   currentValue?: never;
   onChange?: never;
 }
@@ -17,6 +18,7 @@ interface AmountQuickAddStringProps {
   increments?: number[];
   currentValue: string;
   onChange: (newValue: string) => void;
+  disabled?: boolean;
   valueCents?: never;
   onChangeCents?: never;
 }
@@ -50,6 +52,7 @@ function formatCentsToBrazilian(cents: number): string {
 export function AmountQuickAdd(props: AmountQuickAddProps) {
   const { increments = [1, 5, 10, 50, 100] } = props;
   const isCentsMode = "valueCents" in props && props.valueCents != null;
+  const disabled = props.disabled ?? false;
 
   const centsHistoryRef = useRef<number[]>([]);
   const stringHistoryRef = useRef<string[]>([]);
@@ -100,6 +103,7 @@ export function AmountQuickAdd(props: AmountQuickAddProps) {
           size="sm"
           className="h-7 px-2 text-xs tabular-nums"
           onClick={() => handleAdd(inc)}
+          disabled={disabled}
           aria-label={`Adicionar R$${inc}`}
         >
           +R${inc}
@@ -112,6 +116,7 @@ export function AmountQuickAdd(props: AmountQuickAddProps) {
           size="sm"
           className="h-7 px-1.5 text-xs text-muted-foreground"
           onClick={handleUndo}
+          disabled={disabled}
           aria-label="Desfazer"
         >
           <Undo2 className="h-3.5 w-3.5" />

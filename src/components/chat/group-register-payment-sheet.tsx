@@ -2,15 +2,20 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Banknote, Check, Loader2, X } from "lucide-react";
+import { Banknote, Loader2, X } from "lucide-react";
 import { AmountQuickAdd } from "@/components/bill/amount-quick-add";
 import { PersonLabel } from "@/components/shared/person-label";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { formatBRL } from "@/lib/currency";
+import { cn } from "@/lib/utils";
 import { useBackHandler } from "@/hooks/use-back-handler";
+import {
+  PendingOperationNotice,
+  usePendingOperation,
+} from "@/components/chat/pending-operation";
 
-export type GroupPaymentStatus = "idle" | "confirming" | "confirmed" | "error";
+export type GroupPaymentStatus = "idle" | "confirming" | "error";
 
 export interface GroupPaymentCounterparty {
   id: string;
@@ -33,6 +38,7 @@ interface GroupRegisterPaymentSheetProps {
   initialPayerIsSelf?: boolean;
   onConfirm: (result: GroupPaymentResult) => void;
   onDismiss: () => void;
+  onLeavePending: () => void;
   status?: GroupPaymentStatus;
   errorMessage?: string;
 }
@@ -43,10 +49,10 @@ export function GroupRegisterPaymentSheet({
   initialPayerIsSelf = true,
   onConfirm,
   onDismiss,
+  onLeavePending,
   status = "idle",
   errorMessage,
 }: GroupRegisterPaymentSheetProps) {
-  useBackHandler(true, onDismiss);
   const [amountCents, setAmountCents] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(
     counterparties[0]?.id ?? null,
@@ -62,6 +68,9 @@ export function GroupRegisterPaymentSheet({
   );
 
   const [allowOverpay, setAllowOverpay] = useState(false);
+
+  const { showPending, guardedDismiss } = usePendingOperation(status, onDismiss);
+  useBackHandler(true, guardedDismiss);
 
   const capCents = counterparty
     ? payerIsSelf
@@ -80,13 +89,12 @@ export function GroupRegisterPaymentSheet({
   }
 
   const isConfirming = status === "confirming";
-  const isConfirmed = status === "confirmed";
-  const isDisabled = isConfirming || isConfirmed || amountCents <= 0 || !counterparty;
+  const isDisabled = isConfirming || amountCents <= 0 || !counterparty;
 
   const handleConfirm = useCallback(() => {
-    if (!counterparty || amountCents <= 0 || isConfirming || isConfirmed) return;
+    if (!counterparty || amountCents <= 0 || isConfirming) return;
     onConfirm({ counterpartyId: counterparty.id, payerIsSelf, amountCents, allowOverpay });
-  }, [amountCents, counterparty, isConfirmed, isConfirming, onConfirm, payerIsSelf, allowOverpay]);
+  }, [amountCents, counterparty, isConfirming, onConfirm, payerIsSelf, allowOverpay]);
 
   return (
     <motion.div
@@ -94,7 +102,8 @@ export function GroupRegisterPaymentSheet({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, y: 8, scale: 0.97 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className="rounded-2xl border bg-card p-4"
+      className="max-h-[60dvh] overflow-y-auto overscroll-contain rounded-2xl border bg-card p-4"
+      aria-busy={status === "confirming"}
       data-testid="group-payment-sheet"
     >
       <div className="mb-3 flex items-center justify-between">
@@ -108,8 +117,9 @@ export function GroupRegisterPaymentSheet({
         </div>
         <button
           type="button"
-          onClick={onDismiss}
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          onClick={guardedDismiss}
+          disabled={status === "confirming"}
+          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
           aria-label="Fechar"
           data-testid="group-payment-dismiss"
         >
@@ -117,6 +127,12 @@ export function GroupRegisterPaymentSheet({
         </button>
       </div>
 
+      <div
+        className={cn(
+          "transition-opacity",
+          isConfirming && "pointer-events-none opacity-60",
+        )}
+      >
       <div className="mb-3">
         <div className="mb-1.5 text-xs text-muted-foreground">Com quem?</div>
         <div className="flex flex-wrap gap-2">
@@ -125,6 +141,7 @@ export function GroupRegisterPaymentSheet({
               key={member.id}
               type="button"
               onClick={() => setSelectedId(member.id)}
+              disabled={isConfirming}
               className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                 counterparty?.id === member.id
                   ? "border-primary bg-primary/10 text-primary"
@@ -152,6 +169,7 @@ export function GroupRegisterPaymentSheet({
             valueCents={amountCents}
             onChangeCents={setAmountCents}
             maxCents={capped ? capCents : undefined}
+            disabled={isConfirming}
             className="w-32 text-3xl font-bold"
             autoFocus
             aria-label="Valor do pagamento"
@@ -174,6 +192,7 @@ export function GroupRegisterPaymentSheet({
               size="sm"
               className="h-8 rounded-full px-3"
               onClick={() => setAmountCents(capCents)}
+              disabled={isConfirming}
               data-testid="group-payment-settle-all"
             >
               Quitar tudo
@@ -189,24 +208,25 @@ export function GroupRegisterPaymentSheet({
           <button
             type="button"
             onClick={() => setAllowOverpay(true)}
-            className="mt-2 text-xs font-semibold text-primary underline-offset-2 hover:underline"
+            disabled={isConfirming}
+            className="mt-2 text-xs font-semibold text-primary-text underline-offset-2 hover:underline"
             data-testid="group-payment-allow-overpay"
           >
             {capCents === 0 ? "Registrar pagamento mesmo assim" : "Registrar outro valor"}
           </button>
         ) : (
-          <div className="mt-2 rounded-xl border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-            <p className="font-semibold">Sem limite de dívida.</p>
-            <p>O que passar da dívida vira crédito pra quem recebeu.</p>
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="group-payment-overpay-note">
+            Sem limite: o que passar da dívida vira crédito.{" "}
             <button
               type="button"
               onClick={() => setAllowOverpay(false)}
-              className="mt-1 font-semibold text-primary underline-offset-2 hover:underline"
+              disabled={isConfirming}
+              className="font-semibold text-primary-text underline-offset-2 hover:underline"
               data-testid="group-payment-limit-to-debt"
             >
               Limitar à dívida
             </button>
-          </div>
+          </p>
         )}
       </div>
 
@@ -216,6 +236,7 @@ export function GroupRegisterPaymentSheet({
             valueCents={amountCents}
             onChangeCents={setAmountCents}
             maxCents={capped ? capCents : undefined}
+            disabled={isConfirming}
           />
         </div>
       )}
@@ -226,6 +247,7 @@ export function GroupRegisterPaymentSheet({
           <button
             type="button"
             onClick={() => setPayerIsSelf(true)}
+            disabled={isConfirming}
             className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
               payerIsSelf
                 ? "border-primary bg-primary/10 text-primary"
@@ -239,6 +261,7 @@ export function GroupRegisterPaymentSheet({
             <button
               type="button"
               onClick={() => setPayerIsSelf(false)}
+              disabled={isConfirming}
               className={`flex-1 rounded-lg border px-3 py-2 text-left transition-colors ${
                 !payerIsSelf
                   ? "border-primary bg-primary/10 text-primary"
@@ -252,6 +275,8 @@ export function GroupRegisterPaymentSheet({
         </div>
       </div>
 
+      </div>
+
       {status === "error" && errorMessage && (
         <div
           className="mb-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
@@ -260,20 +285,30 @@ export function GroupRegisterPaymentSheet({
           {errorMessage}
         </div>
       )}
+      <PendingOperationNotice
+        show={showPending && status === "confirming"}
+        body="A conexão está demorando. Se o pagamento tiver sido registrado, ele aparece aqui na conversa. Sair agora não duplica nada."
+        onLeave={onLeavePending}
+        testId="group-payment-pending"
+      />
 
       <Button
-        size="sm"
-        className="w-full"
+        className={cn(
+          "min-h-11 w-full rounded-lg transition-colors",
+          isConfirming && "bg-primary/70 text-primary-foreground opacity-100 disabled:opacity-100",
+        )}
         onClick={handleConfirm}
         disabled={isDisabled}
         data-testid="group-payment-confirm"
       >
         {isConfirming ? (
-          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          <>
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            Registrando…
+          </>
         ) : (
-          <Check className="mr-1.5 h-3.5 w-3.5" />
+          "Registrar"
         )}
-        {isConfirming ? "Registrando…" : "Registrar"}
       </Button>
     </motion.div>
   );

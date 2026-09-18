@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { GroupRegisterPaymentSheet } from "./group-register-payment-sheet";
+import {
+  runBackHandlers,
+  __resetBackHandlerStackForTests,
+} from "@/lib/capacitor/back-handler";
+import {
+  GroupRegisterPaymentSheet,
+  type GroupPaymentStatus,
+} from "./group-register-payment-sheet";
 
 const MEMBERS = [
   { id: "user-bob", name: "Bob Santos", handle: "bob", owedByMeCents: 5000, owedToMeCents: 2500 },
@@ -9,8 +16,10 @@ const MEMBERS = [
 ];
 
 function renderSheet(
-  status?: "confirming",
+  status?: GroupPaymentStatus,
   counterparties = MEMBERS,
+  onDismiss = vi.fn(),
+  onLeavePending = vi.fn(),
 ) {
   const onConfirm = vi.fn();
   render(
@@ -18,11 +27,12 @@ function renderSheet(
       currentUserHandle="alice"
       counterparties={counterparties}
       onConfirm={onConfirm}
-      onDismiss={vi.fn()}
+      onDismiss={onDismiss}
+      onLeavePending={onLeavePending}
       status={status}
     />,
   );
-  return { onConfirm, user: userEvent.setup() };
+  return { onConfirm, onDismiss, onLeavePending, user: userEvent.setup() };
 }
 
 function setAmountText(value: string) {
@@ -32,6 +42,63 @@ function setAmountText(value: string) {
 }
 
 describe("GroupRegisterPaymentSheet", () => {
+  beforeEach(() => {
+    __resetBackHandlerStackForTests();
+  });
+
+  it("does not call onDismiss when X button is clicked while confirming", () => {
+    const onDismiss = vi.fn();
+    renderSheet("confirming", undefined, onDismiss);
+
+    const closeBtn = screen.getByTestId("group-payment-dismiss");
+    expect(closeBtn).toBeDisabled();
+    fireEvent.click(closeBtn);
+
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+
+  it("consumes back navigation without dismissing during confirming status", () => {
+    const onDismiss = vi.fn();
+    renderSheet("confirming", undefined, onDismiss);
+
+    runBackHandlers();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("sets aria-busy on the sheet wrapper while confirming", () => {
+    renderSheet("confirming");
+    expect(screen.getByTestId("group-payment-sheet")).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("shows pending state after 15s and its exit honours onLeavePending, not onDismiss", () => {
+    vi.useFakeTimers();
+    try {
+      const onDismiss = vi.fn();
+      const onLeavePending = vi.fn();
+      renderSheet("confirming", undefined, onDismiss, onLeavePending);
+
+      expect(screen.queryByTestId("group-payment-pending")).not.toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(15000);
+      });
+
+      expect(screen.getByTestId("group-payment-pending")).toBeInTheDocument();
+      expect(screen.getByText("Pendente")).toBeInTheDocument();
+      expect(screen.getByText("Ainda aguardando confirmação")).toBeInTheDocument();
+      expect(
+        screen.getByText(/Se o pagamento tiver sido registrado/),
+      ).toBeInTheDocument();
+
+      const exitBtn = screen.getByRole("button", { name: "Sair por enquanto" });
+      fireEvent.click(exitBtn);
+      expect(onLeavePending).toHaveBeenCalledTimes(1);
+      expect(onDismiss).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("reports the chosen member, direction, and amount in cents", async () => {
     const { onConfirm, user } = renderSheet();
 
@@ -119,7 +186,9 @@ describe("GroupRegisterPaymentSheet", () => {
     const input = screen.getByTestId("group-payment-amount") as HTMLInputElement;
 
     fireEvent.click(screen.getByTestId("group-payment-allow-overpay"));
-    expect(screen.getByText("Sem limite de dívida.")).toBeInTheDocument();
+    expect(screen.getByTestId("group-payment-overpay-note")).toHaveTextContent(
+      "Sem limite: o que passar da dívida vira crédito. Limitar à dívida",
+    );
 
     fireEvent.change(input, { target: { value: "60,00" } });
     expect(input).not.toHaveAttribute("aria-invalid");
