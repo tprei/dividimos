@@ -263,25 +263,55 @@ export async function ensureTroupe(): Promise<Troupe> {
   return troupe;
 }
 
-interface UserIdRow {
+interface OwnerRow {
   id: string;
+  handle: string;
+  name: string;
 }
 
 interface MemberStatusRow {
   status: string;
 }
 
-async function findOwnerId(admin: SupabaseClient): Promise<string | null> {
+/**
+ * The owner is a real account this helper never created, so its session has
+ * to be minted and adopted before any RPC can run as him. Without that,
+ * authenticateAs has nothing cached and throws.
+ */
+async function findOwner(troupe: Troupe): Promise<SeededUser | null> {
   if (OWNER_HANDLE.length === 0) return null;
-  const { data, error } = await admin
+  const { data, error } = await troupe.admin
     .from("users")
-    .select("id")
+    .select("id,handle,name")
     .eq("handle", OWNER_HANDLE)
-    .maybeSingle<UserIdRow>();
+    .maybeSingle<OwnerRow>();
   if (error) {
     throw new Error(`ambient: lookup owner @${OWNER_HANDLE} failed: ${error.message}`);
   }
-  return data?.id ?? null;
+  if (!data) return null;
+
+  const { data: authUser, error: authError } = await troupe.admin.auth.admin.getUserById(data.id);
+  if (authError) {
+    throw new Error(`ambient: read owner auth record failed: ${authError.message}`);
+  }
+  const email = authUser?.user?.email;
+  if (!email) return null;
+
+  const owner: SeededUser = {
+    id: data.id,
+    email,
+    handle: data.handle,
+    name: data.name,
+    // Only the session matters here; the troupe never reads the owner's Pix.
+    pixKeyType: "email",
+    pixKeyHint: "",
+    onboarded: true,
+    isBot: false,
+    accessToken: await troupe.seed.mintAccessToken(data.id, email),
+    refreshToken: "noop",
+  };
+  troupe.seed.registerSession(owner);
+  return owner;
 }
 
 /**
@@ -315,8 +345,9 @@ export async function syncOwnerMembership(
   troupe: Troupe,
   groupId: string,
 ): Promise<"joined" | "removed" | "watching" | "absent" | "skipped"> {
-  const ownerId = await findOwnerId(troupe.admin);
-  if (ownerId === null) return "absent";
+  const owner = await findOwner(troupe);
+  if (owner === null) return "absent";
+  const ownerId = owner.id;
 
   const { data: memberRow, error: memberError } = await troupe.admin
     .from("group_members")
