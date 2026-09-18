@@ -26,7 +26,7 @@ jobs:
       - run: npm test
 
       - name: Migration history checker tests
-        run: node --test scripts/check-migration-history.test.mjs scripts/verify-migrations.test.mjs scripts/check-migration-safety.test.mjs scripts/ambient/report.test.mjs
+        run: node --test scripts/check-migration-history.test.mjs scripts/verify-migrations.test.mjs scripts/check-migration-safety.test.mjs scripts/ambient/report.test.mjs scripts/ambient/sinks/telegram.test.mjs
 
   typecheck:
     runs-on: ubuntu-latest
