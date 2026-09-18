@@ -7,3 +7,9 @@ import { join } from "node:path";
 export function note(fact: string): void {
   appendFileSync(join(process.cwd(), "ambient-diary.txt"), `${fact}\n`, "utf8");
 }
+
+// Bots are seeded as "Ana (bot)"; the diary reads better with just "Ana".
+export function firstName(bots: readonly { id: string; name: string }[], id: string): string {
+  const bot = bots.find((candidate) => candidate.id === id);
+  return (bot?.name ?? "A bot").replace(/ \(bot\)$/, "");
+}

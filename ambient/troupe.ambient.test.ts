@@ -14,7 +14,7 @@ import {
   pruneOldExpenses,
   type Troupe,
 } from "./bots";
-import { note } from "./diary";
+import { firstName, note } from "./diary";
 
 let troupe: Troupe;
 
@@ -43,9 +43,8 @@ function formatExpenseTitle(): string {
   return `Rodada das ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
-function firstName(botId: string): string {
-  const bot = troupe.bots.find((b) => b.id === botId);
-  return (bot?.name ?? "A bot").replace(/ \(bot\)$/, "");
+function bot(botId: string): string {
+  return firstName(troupe.bots, botId);
 }
 
 function must<T>(result: ValidationResult<T, WireIssue>): T {
@@ -114,7 +113,7 @@ describe("bot troupe", () => {
       expect(expense.versionNo).toBe(1);
       expect(expense.status).toBe("active");
       note(
-        `${firstName(creator.id)} paid ${formatBRL(totalCents)} for "${title}", split ${ids.length} ways`,
+        `${bot(creator.id)} paid ${formatBRL(totalCents)} for "${title}", split ${ids.length} ways`,
       );
     }
   });
@@ -167,7 +166,7 @@ describe("bot troupe", () => {
       p_payload: current.payload,
     });
     expect(error?.message).toBe("stale_version");
-    note(`${firstName(target.creator_id)} tried to edit "${current.title}" with a stale version, rejected`);
+    note(`${bot(target.creator_id)} tried to edit "${current.title}" with a stale version, rejected`);
   });
 
   it("round-trips chat messages", async () => {
@@ -189,7 +188,7 @@ describe("bot troupe", () => {
     expect(msg1?.sender.isBot).toBe(true);
     expect(msg2?.sender.isBot).toBe(true);
     note(
-      `${firstName(troupe.bots[1].id)} and ${firstName(troupe.bots[2].id)} chatted, ${firstName(troupe.bots[3].id)} read both`,
+      `${bot(troupe.bots[1].id)} and ${bot(troupe.bots[2].id)} chatted, ${bot(troupe.bots[3].id)} read both`,
     );
   });
 
@@ -255,7 +254,7 @@ describe("bot troupe", () => {
       netOf(snap.balances, transfer.toId) - transfer.amountCents,
     );
     note(
-      `${firstName(transfer.fromId)} settled ${formatBRL(transfer.amountCents)} with ${firstName(transfer.toId)}`,
+      `${bot(transfer.fromId)} settled ${formatBRL(transfer.amountCents)} with ${bot(transfer.toId)}`,
     );
   });
 
