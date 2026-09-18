@@ -263,25 +263,69 @@ export async function ensureTroupe(): Promise<Troupe> {
   return troupe;
 }
 
-interface UserIdRow {
+interface OwnerRow {
   id: string;
+  handle: string;
+  name: string;
 }
 
 interface MemberStatusRow {
   status: string;
 }
 
-async function findOwnerId(admin: SupabaseClient): Promise<string | null> {
+/**
+ * The owner is a real account this helper never created, so its session has
+ * to be minted and adopted before any RPC can run as him. Without that,
+ * authenticateAs has nothing cached and throws.
+ */
+async function acceptAsOwner(
+  troupe: Troupe,
+  groupId: string,
+  ownerId: string,
+): Promise<void> {
+  const ownerClient = await troupe.seed.authenticateAs(ownerId);
+  const { error } = await ownerClient.rpc("accept_invitation", {
+    p_group_id: groupId,
+  });
+  if (error) {
+    throw new Error(`ambient: owner accept_invitation failed: ${error.message}`);
+  }
+}
+
+async function findOwner(troupe: Troupe): Promise<SeededUser | null> {
   if (OWNER_HANDLE.length === 0) return null;
-  const { data, error } = await admin
+  const { data, error } = await troupe.admin
     .from("users")
-    .select("id")
+    .select("id,handle,name")
     .eq("handle", OWNER_HANDLE)
-    .maybeSingle<UserIdRow>();
+    .maybeSingle<OwnerRow>();
   if (error) {
     throw new Error(`ambient: lookup owner @${OWNER_HANDLE} failed: ${error.message}`);
   }
-  return data?.id ?? null;
+  if (!data) return null;
+
+  const { data: authUser, error: authError } = await troupe.admin.auth.admin.getUserById(data.id);
+  if (authError) {
+    throw new Error(`ambient: read owner auth record failed: ${authError.message}`);
+  }
+  const email = authUser?.user?.email;
+  if (!email) return null;
+
+  const owner: SeededUser = {
+    id: data.id,
+    email,
+    handle: data.handle,
+    name: data.name,
+    // Only the session matters here; the troupe never reads the owner's Pix.
+    pixKeyType: "email",
+    pixKeyHint: "",
+    onboarded: true,
+    isBot: false,
+    accessToken: await troupe.seed.mintAccessToken(data.id, email),
+    refreshToken: "noop",
+  };
+  troupe.seed.registerSession(owner);
+  return owner;
 }
 
 /**
@@ -315,8 +359,9 @@ export async function syncOwnerMembership(
   troupe: Troupe,
   groupId: string,
 ): Promise<"joined" | "removed" | "watching" | "absent" | "skipped"> {
-  const ownerId = await findOwnerId(troupe.admin);
-  if (ownerId === null) return "absent";
+  const owner = await findOwner(troupe);
+  if (owner === null) return "absent";
+  const ownerId = owner.id;
 
   const { data: memberRow, error: memberError } = await troupe.admin
     .from("group_members")
@@ -330,18 +375,20 @@ export async function syncOwnerMembership(
 
   const settled = await isSettled(troupe, groupId);
 
+  // Inviting and accepting are two calls, so a run that dies between them
+  // leaves the invitation hanging. Accepting is driven by the row's status
+  // rather than by having just created it, which also repairs a stuck invite.
   if (memberRow === null) {
     // An empty group has nothing to show yet, and a settled one is already
     // over: joining either would only add noise.
     if (settled) return "skipped";
     await troupe.seed.inviteMember(troupe.bots[0].id, groupId, ownerId);
-    const ownerClient = await troupe.seed.authenticateAs(ownerId);
-    const { error: acceptError } = await ownerClient.rpc("accept_invitation", {
-      p_group_id: groupId,
-    });
-    if (acceptError) {
-      throw new Error(`ambient: owner accept_invitation failed: ${acceptError.message}`);
-    }
+    await acceptAsOwner(troupe, groupId, ownerId);
+    return "joined";
+  }
+
+  if (memberRow.status === "invited") {
+    await acceptAsOwner(troupe, groupId, ownerId);
     return "joined";
   }
 
