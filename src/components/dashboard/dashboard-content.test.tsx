@@ -201,6 +201,44 @@ describe("DashboardContent", () => {
     expect(screen.getByRole("heading", { name: "A receber" })).toBeInTheDocument();
   });
 
+  it("renders up to 3 recent bills with Ver todas link when bills exist", () => {
+    seedStore([
+      snapshot({
+        group: { id: "g1", name: "Praia" },
+        balances: [
+          { kind: "user", participantId: me.id, netCents: -5000 },
+          { kind: "user", participantId: carol.id, netCents: 5000 },
+        ],
+      }),
+    ]);
+    useAppStore.setState({
+      expenses: {
+        "e1": { id: "e1", groupId: "g1", creatorId: me.id, status: "active", occurredOn: "2026-09-10", createdAt: "2026-09-10T00:00:00Z", versionNo: 1, title: "Churrasco", merchantName: null, expenseType: "single_amount", totalCents: 23690, myShareCents: 7897, myPaidCents: 23690, participantCount: 3 },
+        "e2": { id: "e2", groupId: "g1", creatorId: me.id, status: "deleted", occurredOn: "2026-09-11", createdAt: "2026-09-11T00:00:00Z", versionNo: 1, title: "Cancelado", merchantName: null, expenseType: "single_amount", totalCents: 4850, myShareCents: 2425, myPaidCents: 0, participantCount: 2 },
+        "e3": { id: "e3", groupId: "g1", creatorId: me.id, status: "active", occurredOn: "2026-09-12", createdAt: "2026-09-12T00:00:00Z", versionNo: 1, title: "Uber", merchantName: null, expenseType: "single_amount", totalCents: 4850, myShareCents: 2425, myPaidCents: 0, participantCount: 2 },
+        "e4": { id: "e4", groupId: "g1", creatorId: me.id, status: "active", occurredOn: "2026-09-13", createdAt: "2026-09-13T00:00:00Z", versionNo: 1, title: "Padaria", merchantName: null, expenseType: "single_amount", totalCents: 2000, myShareCents: 1000, myPaidCents: 2000, participantCount: 2 },
+        "e5": { id: "e5", groupId: "g1", creatorId: me.id, status: "active", occurredOn: "2026-09-14", createdAt: "2026-09-14T00:00:00Z", versionNo: 1, title: "Cinema", merchantName: null, expenseType: "single_amount", totalCents: 6000, myShareCents: 3000, myPaidCents: 6000, participantCount: 2 },
+      },
+      myExpenses: { ids: ["e1", "e2", "e3", "e4", "e5"], cursor: null, complete: true, total: 5 },
+    });
+    render(<DashboardContent />);
+
+    expect(screen.getByText("Contas recentes")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver todas" })).toHaveAttribute("href", "/app/bills");
+    expect(screen.getByText("Churrasco")).toBeInTheDocument();
+    expect(screen.getByText("Uber")).toBeInTheDocument();
+    expect(screen.getByText("Padaria")).toBeInTheDocument();
+    expect(screen.queryByText("Cancelado")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cinema")).not.toBeInTheDocument();
+  });
+
+  it("does not render Contas recentes section when myExpenses is empty", () => {
+    useAppStore.setState({ hydrated: true, me, groups: {}, groupOrder: [] });
+    render(<DashboardContent />);
+
+    expect(screen.queryByText("Contas recentes")).not.toBeInTheDocument();
+  });
+
   it("keeps the skeleton visible before hydration", () => {
     useAppStore.setState({ hydrated: false, me });
     render(<DashboardContent />);

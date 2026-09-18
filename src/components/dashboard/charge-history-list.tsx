@@ -56,7 +56,11 @@ function ChargeHistorySkeleton() {
   );
 }
 
-export function ChargeHistoryList() {
+export interface ChargeHistoryListProps {
+  embedded?: boolean;
+}
+
+export function ChargeHistoryList({ embedded = false }: ChargeHistoryListProps = {}) {
   const charges = useAppStore((state) => state.vendorCharges);
   const summary = useAppStore((state) => state.chargeSummary);
   const read = useAppStore((state) => state.reads[CHARGES_READ_KEY] ?? IDLE_READ);
@@ -92,16 +96,18 @@ export function ChargeHistoryList() {
   const isInitialLoad =
     charges.length === 0 && (read.status === "idle" || read.status === "loading");
   return (
-    <div className="mx-auto max-w-lg px-4 py-6">
-      <div className="flex items-center gap-3">
-        <Link
-          href="/app"
-          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="text-xl font-bold">Cobranças recebidas</h1>
-      </div>
+    <div className={embedded ? "mt-5" : "mx-auto max-w-lg px-4 py-6"}>
+      {!embedded && (
+        <div className="flex items-center gap-3">
+          <Link
+            href="/app"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <h1 className="text-xl font-bold">Cobranças recebidas</h1>
+        </div>
+      )}
 
       {!isInitialLoad && total > 0 && (
         <motion.div

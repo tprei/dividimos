@@ -124,6 +124,14 @@ beforeEach(() => {
   updateProfileMock.mockResolvedValue(userA);
 });
 
+describe("ProfilePage history entry", () => {
+  it("renders Minhas contas link leading to /app/bills", () => {
+    render(<ProfilePage />);
+
+    expect(screen.getByRole("link", { name: /Minhas contas/ })).toHaveAttribute("href", "/app/bills");
+  });
+});
+
 describe("ProfilePage QR share button", () => {
   it("opens ProfileShareModal when QR button is clicked", async () => {
     const user = userEvent.setup();

@@ -75,6 +75,15 @@ describe("ChargeHistoryList", () => {
     expect(screen.getByText(/1 recebida de 2 cobranças/i)).toBeInTheDocument();
   });
 
+  it("omits header and back link when embedded is true", () => {
+    useAppStore.setState({ reads: { [CHARGES_READ_KEY]: { status: "ready" } } });
+    render(<ChargeHistoryList embedded />);
+
+    expect(screen.queryByText("Cobranças recebidas")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "" })).not.toBeInTheDocument();
+    expect(screen.getByText("Nenhuma cobrança ainda")).toBeInTheDocument();
+  });
+
   it("reports the server's counts rather than the loaded page", () => {
     const charge: VendorCharge = {
       id: "vc-3",

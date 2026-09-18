@@ -1,12 +1,13 @@
 "use client";
 
-import { Bell, Plus, QrCode, ScanLine, Search, Zap } from "lucide-react";
+import { Bell, ChevronRight, Plus, QrCode, Receipt, ScanLine, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { CounterpartyDialog } from "@/components/dashboard/counterparty-dialog";
 import { DebtRowButton } from "@/components/dashboard/debt-row";
+import { selectHomeMode, selectRecentBills } from "@/components/dashboard/home-selectors";
 import { NotificationsSheet } from "@/components/dashboard/notifications-sheet";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { Logo } from "@/components/shared/logo";
@@ -28,7 +29,6 @@ import { retryNudgeDispatch, sendNudge } from "@/lib/sync/mutations-group";
 import { useMe } from "@/hooks/use-me";
 import { selectPendingInvitations } from "@/stores/app-selectors";
 import { useAppStore } from "@/stores/app-store";
-import { selectHomeMode } from "@/components/dashboard/home-selectors";
 
 const PixQrModal = dynamic(
   () =>
@@ -48,10 +48,17 @@ const QuickChargeModal = dynamic(
 
 export function DashboardContent() {
   const me = useMe();
+  const expenses = useAppStore((state) => state.expenses);
+  const groups = useAppStore((state) => state.groups);
+  const myExpenses = useAppStore((state) => state.myExpenses);
   const hydrated = useAppStore((state) => state.hydrated);
   const rows = useAppStore(selectDebtRows);
   const homeMode = useAppStore(selectHomeMode);
   const invitations = useAppStore(selectPendingInvitations);
+  const recentBills = useMemo(
+    () => selectRecentBills({ expenses, groups, me, myExpenses }, 3),
+    [expenses, groups, me, myExpenses],
+  );
   const [selectedDebt, setSelectedDebt] = useState<DebtRow | null>(null);
   const [pixTarget, setPixTarget] = useState<{
     debt: DebtRow;
@@ -59,6 +66,12 @@ export function DashboardContent() {
   } | null>(null);
   const [quickChargeOpen, setQuickChargeOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const owes = rows.filter((row) => row.direction === "owes");
+  const owed = rows.filter((row) => row.direction === "owed");
+  const owesTotal = owes.reduce((sum, row) => sum + row.amountCents, 0);
+  const owedTotal = owed.reduce((sum, row) => sum + row.amountCents, 0);
+  const net = owedTotal - owesTotal;
 
   if (!hydrated || !me) {
     return (
@@ -68,11 +81,6 @@ export function DashboardContent() {
     );
   }
 
-  const owes = rows.filter((row) => row.direction === "owes");
-  const owed = rows.filter((row) => row.direction === "owed");
-  const owesTotal = owes.reduce((sum, row) => sum + row.amountCents, 0);
-  const owedTotal = owed.reduce((sum, row) => sum + row.amountCents, 0);
-  const net = owedTotal - owesTotal;
 
   const handleMarkPaid = async (amountCents: number, operationId: string) => {
     if (!me || !pixTarget) throw new LedgerError("unauthenticated");
@@ -350,6 +358,47 @@ export function DashboardContent() {
           </>
         )}
       </div>
+
+      {recentBills.length > 0 && (
+        <section className="px-4 pt-7">
+          <SectionHeading
+            title="Contas recentes"
+            trailing={
+              <Link
+                href="/app/bills"
+                className="-my-2 -mr-1 inline-flex min-h-9 items-center rounded-md px-1 py-2 text-xs font-semibold text-primary hover:underline"
+              >
+                Ver todas
+              </Link>
+            }
+          />
+          <div className="divide-y divide-border overflow-hidden rounded-2xl border bg-card">
+            {recentBills.map((bill) => (
+              <Link
+                key={bill.id}
+                href={`/app/bill/${bill.id}`}
+                className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-muted/50"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                    <Receipt className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{bill.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[bill.occurredOn, bill.groupName].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Money cents={bill.totalCents} className="text-sm font-medium" />
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <NotificationsSheet
         open={notificationsOpen}
