@@ -33,11 +33,15 @@ describe("journey planning", () => {
     expect(seedForRun({})).toBeGreaterThan(0);
   });
 
-  it("derives one stable uuid per group and step", () => {
+  it("derives one stable uuid per group, episode and step", () => {
     const group = "3f1d1a54-0000-4000-8000-000000000001";
-    expect(journeyUuid(group, "a3")).toBe(journeyUuid(group, "a3"));
-    expect(journeyUuid(group, "a3")).not.toBe(journeyUuid(group, "a4"));
-    expect(journeyUuid(group, "a3")).toMatch(
+    expect(journeyUuid(group, 7, "a3")).toBe(journeyUuid(group, 7, "a3"));
+    expect(journeyUuid(group, 7, "a3")).not.toBe(journeyUuid(group, 7, "a4"));
+    // Without the seed a later episode replays the previous one's client ids,
+    // and create_expense answers with the expense that episode already
+    // settled instead of writing anything.
+    expect(journeyUuid(group, 7, "a3")).not.toBe(journeyUuid(group, 8, "a3"));
+    expect(journeyUuid(group, 7, "a3")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
   });

@@ -47,9 +47,20 @@ export interface Journey {
   history: LedgerFact[];
 }
 
-/** Stable uuid per group and plan key, so a retried write is recognised. */
-export function journeyUuid(groupId: string, key: string): string {
-  const hex = createHash("sha256").update(`journey:${groupId}:${key}`).digest("hex");
+/**
+ * Stable uuid per group, episode and plan key, so a retried write inside one
+ * episode is recognised as the same write.
+ *
+ * The seed has to be in here. create_expense and record_settlement are
+ * idempotent on the client id, the journey pool reuses four groups, and the
+ * action keys repeat every episode, so a key built from the group alone makes
+ * every later episode a no-op that returns the settled expense of an earlier
+ * one and leaves the group with no balances at all.
+ */
+export function journeyUuid(groupId: string, seed: number, key: string): string {
+  const hex = createHash("sha256")
+    .update(`journey:${groupId}:${seed}:${key}`)
+    .digest("hex");
   const variant = ((parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16);
   return [
     hex.slice(0, 8),
@@ -231,7 +242,11 @@ export async function clearOutstanding(troupe: Troupe, journey: Journey): Promis
     }
     const client = await troupe.seed.authenticateAs(payer.id);
     const { error } = await client.rpc("record_settlement", {
-      p_operation_id: journeyUuid(journey.groupId, `recover-${round}-${transfer.amountCents}`),
+      p_operation_id: journeyUuid(
+        journey.groupId,
+        journey.plan.seed,
+        `recover-${round}-${transfer.amountCents}`,
+      ),
       p_group_id: journey.groupId,
       p_from_user_id: transfer.fromId,
       p_to_user_id: transfer.toId,
@@ -287,7 +302,7 @@ export async function runJourney(
     groupId: journey.groupId,
     memberIds,
     clientFor: (member) => troupe.seed.authenticateAs(memberIds[member]),
-    uuidFor: (key) => journeyUuid(journey.groupId, key),
+    uuidFor: (key) => journeyUuid(journey.groupId, journey.plan.seed, key),
     occurredOn: new Date().toISOString().slice(0, 10),
   });
 

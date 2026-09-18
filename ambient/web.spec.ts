@@ -14,6 +14,13 @@ if (!phone) {
   throw new Error("ambient: the Pixel 7 profile has no viewport to record at");
 }
 
+// The recording is meant to be watched, and the walk on its own flips
+// through four screens in about eight seconds, which reads as a
+// fast-forward. A beat on each screen after its screenshot gives the board's
+// video something a person can actually follow, at the cost of a few seconds
+// of a step that has minutes of headroom.
+const DWELL_MS = 1400;
+
 let troupe: Troupe;
 
 test.beforeAll(async () => {
@@ -40,10 +47,12 @@ test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
     const groupLink = page.getByRole("link", { name: new RegExp(BOT_GROUP_NAME) });
     await expect(groupLink).toBeVisible({ timeout: 20000 });
     await page.screenshot({ path: "ambient-shots/1-groups.png" });
+    await page.waitForTimeout(DWELL_MS);
 
     await groupLink.click();
     await expect(page.getByRole("tab", { name: "Saldos" })).toBeVisible({ timeout: 20000 });
     await page.screenshot({ path: "ambient-shots/2-balances.png" });
+    await page.waitForTimeout(DWELL_MS);
 
     await page.getByRole("tab", { name: "Contas" }).click();
     // Base UI marks the selected tab with aria-selected and a valueless
@@ -53,11 +62,13 @@ test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
       "true",
     );
     await page.screenshot({ path: "ambient-shots/3-expenses.png" });
+    await page.waitForTimeout(DWELL_MS);
 
     await page.getByRole("tab", { name: "Membros" }).click();
     await expect(page.getByRole("img", { name: "Bot verificado" }).first()).toBeVisible({
       timeout: 20000,
     });
+    await page.waitForTimeout(DWELL_MS);
 
     // The one action a person takes in this walk: Ana types into the group
     // chat and sends it. The recording shows the keystrokes and the bubble.
@@ -71,7 +82,9 @@ test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
     // local runs apart too.
     const stamp = process.env.GITHUB_RUN_ID ?? String(Date.now());
     const message = `passei aqui pelo celular ${new Date().toISOString().slice(11, 19)} #${stamp.slice(-6)}`;
-    await input.fill(message);
+    // Typed rather than injected: fill() sets the value in one frame, so the
+    // recording showed the message appearing from nowhere.
+    await input.pressSequentially(message, { delay: 45 });
     await page.getByRole("button", { name: "Enviar mensagem" }).click();
     // Assert on the bubble, not on any text node: the composer stays disabled
     // with the typed text while the send is in flight, so getByText matches
@@ -80,6 +93,7 @@ test("bot_ana walks the group the troupe just changed", async ({ browser }) => {
       timeout: 20000,
     });
     await page.screenshot({ path: "ambient-shots/4-chat.png" });
+    await page.waitForTimeout(DWELL_MS);
 
     note(`Ana opened the group on a phone and sent "${message}" in the chat`);
   } finally {
