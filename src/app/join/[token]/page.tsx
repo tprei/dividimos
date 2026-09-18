@@ -43,13 +43,13 @@ export default async function JoinPage({
         <h1 className="font-semibold">Entrar no grupo</h1>
       </div>
 
-      <div className="mt-6 rounded-2xl gradient-primary p-5 text-primary-foreground shadow-lg shadow-primary/20">
-        <p className="text-sm text-primary-foreground/75">Convite para o grupo</p>
+      <div className="mt-6 rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
+        <p className="text-sm text-gradient-foreground/80">Convite para o grupo</p>
         <p className="mt-2 text-3xl font-bold">
           {isInvalid ? "Convite indisponível" : preview.groupName}
         </p>
         {!isInvalid && (
-          <div className="mt-3 flex gap-4 text-sm text-primary-foreground/75">
+          <div className="mt-3 flex gap-4 text-sm text-gradient-foreground/80">
             <span className="flex items-center gap-1">
               <Users className="h-3.5 w-3.5" />
               Convite de {preview.creatorName ?? "Alguém"}

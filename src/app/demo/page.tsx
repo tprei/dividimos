@@ -272,10 +272,10 @@ export default function DemoPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <div className="rounded-2xl gradient-primary p-5 text-primary-foreground shadow-lg shadow-primary/20">
-            <p className="text-sm text-primary-foreground/75">Total da conta</p>
+          <div className="rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
+            <p className="text-sm text-gradient-foreground/80">Total da conta</p>
             <p className="mt-1 text-3xl font-bold tabular-nums">{formatBRL(grandTotal)}</p>
-            <div className="mt-2 flex gap-4 text-sm text-primary-foreground/75">
+            <div className="mt-2 flex gap-4 text-sm text-gradient-foreground/80">
               <span className="flex items-center gap-1">
                 <Receipt className="h-3.5 w-3.5" />
                 {items.length} itens
@@ -284,7 +284,7 @@ export default function DemoPage() {
                 <Users className="h-3.5 w-3.5" />
                 {DEMO_USERS.length} pessoas
               </span>
-              <span className="flex items-center gap-1 text-primary-foreground/80 text-xs italic">
+              <span className="flex items-center gap-1 text-gradient-foreground/80 text-xs italic">
                 Fogo de Chao - Jardins
               </span>
             </div>
@@ -546,10 +546,10 @@ export default function DemoPage() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3, duration: 0.4 }}
-          className="rounded-3xl gradient-primary p-8 text-primary-foreground text-center shadow-xl shadow-primary/20"
+          className="rounded-3xl gradient-primary p-8 text-gradient-foreground text-center shadow-xl shadow-primary/20"
         >
           <h2 className="text-xl font-bold">Bora rachar com a galera?</h2>
-          <p className="mt-2 text-sm text-primary-foreground/80">
+          <p className="mt-2 text-sm text-gradient-foreground/80">
             Entra aí e comece a rachar as contas sem drama.
           </p>
           <Link href="/auth">

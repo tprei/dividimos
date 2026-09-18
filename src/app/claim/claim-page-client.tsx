@@ -228,15 +228,15 @@ export function ClaimPageClient() {
         </div>
       ) : (
         <>
-          <div className="rounded-2xl gradient-primary p-5 text-primary-foreground shadow-lg shadow-primary/20">
-            <div className="flex items-center gap-2 text-primary-foreground/75">
+          <div className="rounded-2xl gradient-primary p-5 text-gradient-foreground shadow-lg shadow-primary/20">
+            <div className="flex items-center gap-2 text-gradient-foreground/80">
               <Receipt className="h-4 w-4" />
               <p className="text-sm">{preview.expenseTitle}</p>
             </div>
             <p className="mt-2 text-3xl font-bold tabular-nums">
               {formatBRL(preview.shareCents)}
             </p>
-            <p className="mt-1 text-sm text-primary-foreground/75">Sua parte na conta</p>
+            <p className="mt-1 text-sm text-gradient-foreground/80">Sua parte na conta</p>
           </div>
 
           <div className="mt-5 rounded-2xl border bg-card p-5">
