@@ -348,6 +348,9 @@ describe("AppShell haptics", () => {
       me: mockMe,
       bootstrapStatus: "ready",
       lastBootstrappedAccountId: mockMe.id,
+      // The store is a module singleton: without resetting the activity read,
+      // an earlier test's failed load makes refresh fetch activity here too.
+      activity: { items: [], oldestId: null, complete: false, read: { status: "idle" } },
     });
   });
 
@@ -370,6 +373,7 @@ describe("AppShell haptics", () => {
   });
 
   it("triggers impact and success haptics on pull-to-refresh", async () => {
+    mockPathname.mockReturnValue("/app");
     render(<AppShell><div>content</div></AppShell>);
 
     const main = document.querySelector("main")!;
@@ -442,6 +446,7 @@ describe("AppShell haptics", () => {
   });
 
   it("withholds success feedback when the refresh failed", async () => {
+    mockPathname.mockReturnValue("/app");
     render(<AppShell><div>content</div></AppShell>);
     // Queue the failure after mount so the mount bootstrap does not consume it.
     mockRunBootstrap.mockRejectedValueOnce(new Error("offline"));
@@ -464,7 +469,50 @@ describe("AppShell haptics", () => {
     expect(haptics.success).not.toHaveBeenCalled();
   });
 
+  it("never refreshes from a pull on an ineligible route", async () => {
+    mockPathname.mockReturnValue("/app/settings");
+    render(<AppShell><div>content</div></AppShell>);
+    mockRunBootstrap.mockClear();
+
+    const main = document.querySelector("main")!;
+
+    act(() => {
+      fireEvent.touchStart(main, { touches: [{ clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientY: 250 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    expect(haptics.impact).not.toHaveBeenCalled();
+    expect(mockRunBootstrap).not.toHaveBeenCalled();
+  });
+
+  it("abandons a pull that turns horizontal", async () => {
+    mockPathname.mockReturnValue("/app");
+    render(<AppShell><div>content</div></AppShell>);
+    mockRunBootstrap.mockClear();
+
+    const main = document.querySelector("main")!;
+
+    act(() => {
+      fireEvent.touchStart(main, { touches: [{ clientX: 10, clientY: 0 }] });
+    });
+    act(() => {
+      fireEvent.touchMove(main, { touches: [{ clientX: 300, clientY: 250 }] });
+    });
+    await act(async () => {
+      fireEvent.touchEnd(main);
+    });
+
+    expect(haptics.impact).not.toHaveBeenCalled();
+    expect(mockRunBootstrap).not.toHaveBeenCalled();
+  });
+
   it("does not trigger haptics when pull distance is below threshold", () => {
+    mockPathname.mockReturnValue("/app");
     render(<AppShell><div>content</div></AppShell>);
 
     const main = document.querySelector("main")!;
