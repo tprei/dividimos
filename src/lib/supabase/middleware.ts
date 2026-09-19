@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   "/api/dev/login",
   "/claim",
   "/join",
+  "/room",
   "/.well-known",
   "/u",
   "/manutencao",
