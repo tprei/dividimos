@@ -219,27 +219,48 @@ describe.skipIf(!isIntegrationTestReady)(
           config: { private: true },
         })
       );
-      const message = nextBroadcast(channel, "assignment");
-      const startedAt = performance.now();
-      const updated = await rpc<RoomView>(
-        hostClient,
-        "set_assignment_room_claim",
-        {
-          p_room_id: setup.roomId,
-          p_member_token: null,
-          p_item_id: setup.created.room.items[0].id,
-          p_participant_id: setup.created.room.selfParticipantId,
-          p_expected_item_revision: setup.created.room.items[0].revision,
-          p_ticks: 120_000,
+      let item = setup.created.room.items[0];
+      let ticks = 120_000;
+      const claimedRevisions: number[] = [];
+      // A freshly authorized Realtime socket can drop its first message, so the
+      // claim repeats until one invalidation lands; every claim bumps the room
+      // revision, and the payload must match one of them.
+      for (let attempt = 1; ; attempt += 1) {
+        const message = nextBroadcast(channel, "assignment", 4_000);
+        const startedAt = performance.now();
+        const updated = await rpc<RoomView>(
+          hostClient,
+          "set_assignment_room_claim",
+          {
+            p_room_id: setup.roomId,
+            p_member_token: null,
+            p_item_id: item.id,
+            p_participant_id: setup.created.room.selfParticipantId,
+            p_expected_item_revision: item.revision,
+            p_ticks: ticks,
+          }
+        );
+        claimedRevisions.push(updated.room.revision);
+        const received = await message.catch(() => null);
+        if (received) {
+          expect(Object.keys(received.payload).sort()).toEqual([
+            "id",
+            "revision",
+          ]);
+          expect(claimedRevisions).toContain(received.payload.revision);
+          console.info(
+            "room realtime invalidation latency ms",
+            received.receivedAt - startedAt,
+            { attempt }
+          );
+          break;
         }
-      );
-      const received = await message;
-
-      expectRevisionPayload(received.payload, updated.room.revision);
-      console.info(
-        "room realtime invalidation latency ms",
-        received.receivedAt - startedAt
-      );
+        if (attempt === 3) throw new Error("missing assignment broadcast");
+        item = updated.room.items.find(
+          (candidate) => candidate.id === item.id
+        )!;
+        ticks = ticks === 120_000 ? 60_000 : 120_000;
+      }
       await channel.unsubscribe();
     }, 180_000);
 

@@ -183,7 +183,9 @@ describe.skipIf(!isIntegrationTestReady)("assignment room storage RPCs", () => {
       },
       groupTarget: { kind: "new", name: "Viagem" },
     });
-    expect(view.room.topic).toMatch(/^assignment-room:[A-Za-z0-9_-]{43}$/);
+    expect(view.room.topic).toMatch(
+      new RegExp(`^assignment:${args.p_room_id}:[A-Za-z0-9_-]{43}$`)
+    );
     expect(view.room.items).toHaveLength(1);
     expect(view.room.items[0]).toMatchObject({
       ordinal: 0,
