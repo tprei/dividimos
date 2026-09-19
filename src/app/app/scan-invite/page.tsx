@@ -11,6 +11,7 @@ import { useStartBillWithUser } from "@/components/profile/use-start-bill-with-u
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
 import { parseClaimQrCode } from "@/lib/claim-qr";
+import { parseAssignmentRoomQrCode } from "@/lib/assignment-room-qr";
 import { parseGroupInviteQrCode, parseProfileQrCode } from "@/lib/invite-qr";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { joinViaLink, lookupUserByHandle } from "@/lib/sync/mutations-group";
@@ -26,6 +27,13 @@ export default function ScanInvitePage() {
 
   const handleDecode = useCallback(
     (data: string) => {
+      const room = parseAssignmentRoomQrCode(data);
+      if (room) {
+        setPaused(true);
+        router.push(room.url);
+        return;
+      }
+
       const claim = parseClaimQrCode(data);
       if (claim) {
         setPaused(true);
@@ -61,9 +69,7 @@ export default function ScanInvitePage() {
           }
           setScannedProfile(user);
         })();
-        return;
       }
-
     },
     [router],
   );

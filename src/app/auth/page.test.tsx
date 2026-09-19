@@ -4,9 +4,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 const mockReplace = vi.fn();
 const mockRefresh = vi.fn();
 const searchParams = new URLSearchParams();
+const mockPush = vi.fn();
+const decodeHolder = vi.hoisted(() => ({ payload: "" }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace, push: vi.fn(), refresh: mockRefresh }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush, refresh: mockRefresh }),
   useSearchParams: () => searchParams,
 }));
 
@@ -22,7 +24,9 @@ vi.mock("@/lib/capacitor/auth", () => ({
 }));
 
 vi.mock("@/components/bill/qr-scanner-view", () => ({
-  QrScannerView: () => null,
+  QrScannerView: ({ onDecode }: { onDecode: (data: string) => void }) => (
+    <button type="button" aria-label="decodificar" onClick={() => onDecode(decodeHolder.payload)} />
+  ),
 }));
 
 import AuthPage from "./page";
@@ -32,6 +36,7 @@ describe("native sign-in destination", () => {
     vi.clearAllMocks();
     mockIsNativePlatform.mockReturnValue(true);
     mockNativeGoogleSignIn.mockResolvedValue(true);
+    decodeHolder.payload = "";
     searchParams.set("next", "/join/abc123");
   });
 
@@ -65,6 +70,27 @@ describe("native sign-in destination", () => {
   });
 });
 
+
+describe("auth invitation scanner", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchParams.delete("error");
+    searchParams.delete("next");
+    decodeHolder.payload = "";
+  });
+
+  it("opens a room invitation without putting its fragment into OAuth state", async () => {
+    const roomId = "00000000-0000-4000-8000-000000000001";
+    const token = `armj1_${"A".repeat(43)}`;
+    decodeHolder.payload = `https://www.dividimos.ai/room/${roomId}#${token}`;
+    render(<AuthPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ler um convite" }));
+    fireEvent.click(screen.getByRole("button", { name: "decodificar" }));
+
+    expect(mockPush).toHaveBeenCalledWith(`/room/${roomId}#${token}`);
+  });
+});
 describe("callback failure alert", () => {
   beforeEach(() => {
     vi.clearAllMocks();
