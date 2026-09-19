@@ -149,17 +149,21 @@ export const useAssignmentRoomStore = create<AssignmentRoomState>((set, get) => 
   },
 
   endItemMutation(roomId, itemId) {
-    set((state) => ({
-      rooms: {
-        ...state.rooms,
-        [roomId]: {
-          ...entryFor(state.rooms, roomId),
-          pendingItemIds: entryFor(state.rooms, roomId).pendingItemIds.filter(
-            (pendingId) => pendingId !== itemId
-          ),
+    set((state) => {
+      const entry = state.rooms[roomId];
+      if (!entry) return state;
+      return {
+        rooms: {
+          ...state.rooms,
+          [roomId]: {
+            ...entry,
+            pendingItemIds: entry.pendingItemIds.filter(
+              (pendingId) => pendingId !== itemId
+            ),
+          },
         },
-      },
-    }));
+      };
+    });
   },
 
   remove(roomId) {
