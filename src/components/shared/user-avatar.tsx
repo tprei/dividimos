@@ -36,11 +36,22 @@ const badgeClasses: Record<"sm" | "md" | "lg", string> = {
 };
 
 function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
+  // A parenthesised aside is not part of a person's name, so "Ana (bot)"
+  // initials as "AN" rather than "A(", and punctuation never reaches the
+  // circle.
+  const parts = name
+    .replace(/\([^)]*\)/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter((part) => part.length > 0);
   if (parts.length >= 2) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
-  return name.slice(0, 2).toUpperCase();
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return "?";
 }
 
 export function UserAvatar({ name, avatarUrl, size = "md", className, priority, isBot }: UserAvatarProps) {

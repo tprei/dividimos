@@ -56,25 +56,26 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
     // exactly as the chat shortcut does.
     const totalCents = 2000 + Math.floor(Math.random() * 8000);
     const title = `Pizza da madrugada ${new Date().toISOString().slice(11, 16)}`;
+    // The participants are named in the query instead of accepting the
+    // wizard's default, which is every member of the group. The owner watches
+    // this group and should not wake up owing the bots for a pizza.
     await page.goto(
       `/app/bill/new?groupId=${troupe.groupId}` +
-        `&title=${encodeURIComponent(title)}&amount=${totalCents}`,
+        `&title=${encodeURIComponent(title)}&amount=${totalCents}` +
+        `&participantIds=${troupe.bots[0].id},${troupe.bots[1].id}` +
+        `&payerId=${troupe.bots[0].id}`,
     );
-    await page.getByRole("button", { name: /Participantes/ }).click();
-    await expect(page.getByText(troupe.bots[1].name).first()).toBeVisible({ timeout: 20000 });
-    await page.getByRole("button", { name: "Concluir" }).click();
-    await page.getByRole("button", { name: "Continuar" }).click();
+    const create = page.getByRole("button", { name: "Criar conta" });
+    await expect(create).toBeVisible({ timeout: 20000 });
+    // Photographed with the payer already chosen: the wizard shows its own
+    // "Selecione quem pagou." error until then, and a board that shows an
+    // error on a healthy run is worse than no board.
     await page.screenshot({ path: "ambient-shots/2-nova-conta.png" });
     await page.waitForTimeout(DWELL_MS);
-
-    // Several buttons carry her name on this step, and any of them is the
-    // payer chip we want.
-    await page.getByRole("button", { name: /Ana/ }).first().click();
-    const create = page.getByRole("button", { name: "Criar conta" });
     await expect(create).toBeEnabled({ timeout: 20000 });
     await create.click();
     await expect(page).toHaveURL(/\/app\/bill\/[0-9a-f-]{8,}/i, { timeout: 30000 });
-    note(`Ana criou "${title}" de ${formatBRL(totalCents)} pelo app, dividindo com a turma`);
+    note(`Ana criou "${title}" de ${formatBRL(totalCents)} pelo app, dividindo com ${firstName(troupe.bots, troupe.bots[1].id)}`);
     await page.waitForTimeout(DWELL_MS);
 
     // Then money actually moves: Bruno's share comes back to Ana, recorded

@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SeedHelper, type SeededUser } from "../e2e/seed-helper";
+import { decodeGroupSnapshot } from "../src/lib/ledger/decode";
+import { transfersFromBalances } from "../src/lib/ledger/transfers";
 import { note } from "./diary";
 import { type AmbientEnv, readAmbientEnv } from "./env";
 
@@ -346,6 +348,53 @@ async function isSettled(troupe: Troupe, groupId: string): Promise<boolean> {
 }
 
 /**
+ * Settles whatever the owner owes or is owed in this group.
+ *
+ * He is a member so that he can watch, not so that he can carry a debt, and
+ * an earlier version of the filmed walk accepted the wizard's default of
+ * every member and put him on a pizza. His side is cleared here: he pays his
+ * own debts, since only the debtor may record a settlement, and a bot pays
+ * the ones owed to him.
+ */
+async function clearOwnerBalance(
+  troupe: Troupe,
+  groupId: string,
+  owner: SeededUser,
+): Promise<number> {
+  let cleared = 0;
+  for (let round = 0; round < BOT_SPECS.length * 2; round++) {
+    const client = await troupe.seed.authenticateAs(owner.id);
+    const { data, error } = await client.rpc("get_group", { p_group_id: groupId });
+    if (error) {
+      throw new Error(`ambient: owner get_group failed: ${error.message}`);
+    }
+    const decoded = decodeGroupSnapshot(data);
+    if (!decoded.ok) {
+      throw new Error(`ambient: owner snapshot rejected at ${decoded.issue.path.join(".")}`);
+    }
+    const transfer = transfersFromBalances(decoded.value.balances).find(
+      (candidate) => candidate.fromId === owner.id || candidate.toId === owner.id,
+    );
+    if (!transfer) break;
+
+    const payerId = transfer.fromId;
+    const payerClient = await troupe.seed.authenticateAs(payerId);
+    const { error: settleError } = await payerClient.rpc("record_settlement", {
+      p_operation_id: crypto.randomUUID(),
+      p_group_id: groupId,
+      p_from_user_id: transfer.fromId,
+      p_to_user_id: transfer.toId,
+      p_amount_cents: transfer.amountCents,
+    });
+    if (settleError) {
+      throw new Error(`ambient: clearing the owner's balance failed: ${settleError.message}`);
+    }
+    cleared += 1;
+  }
+  return cleared;
+}
+
+/**
  * Keeps the owner in a bot group exactly while it has money in flight: joins
  * him when there is something to watch, removes him once the group is square
  * so it leaves his list. Returns what happened, for the run diary.
@@ -392,7 +441,13 @@ export async function syncOwnerMembership(
     return "joined";
   }
 
-  if (!settled) return "watching";
+  if (!settled) {
+    const cleared = await clearOwnerBalance(troupe, groupId, owner);
+    if (cleared > 0) {
+      note(`Cleared ${cleared} balance${cleared === 1 ? "" : "s"} @${OWNER_HANDLE} should never have had`);
+    }
+    return "watching";
+  }
 
   const creatorClient = await troupe.seed.authenticateAs(troupe.bots[0].id);
   const { error: removeError } = await creatorClient.rpc("remove_member", {
