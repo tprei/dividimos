@@ -127,6 +127,7 @@ describe("RoomBoard", () => {
         claimError={{ itemId: "beer", message: "Outra pessoa ficou com a última unidade." }}
       />,
     );
+    expect(screen.queryByText("Nenhum outro item disponível agora.")).not.toBeInTheDocument();
 
     expect(screen.getByRole("status")).toHaveTextContent("Reconectando");
     const beer = screen.getByRole("heading", { name: "Cerveja" }).closest("article");

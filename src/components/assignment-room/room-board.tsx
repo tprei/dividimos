@@ -193,9 +193,8 @@ export function RoomBoard({
               </div>
               {itemRows.every(
                 (row) =>
-                  row.availableTicks === 0 ||
                   row.ownClaimedTicks > 0 ||
-                  claimError?.itemId === row.item.id,
+                  (row.availableTicks === 0 && claimError?.itemId !== row.item.id),
               ) && (
                 <p className="order-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
                   Nenhum outro item disponível agora.
