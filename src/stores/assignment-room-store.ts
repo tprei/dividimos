@@ -31,6 +31,7 @@ interface AssignmentRoomState {
   setConnected(roomId: string, connected: boolean): void;
   beginItemMutation(roomId: string, itemId: string): boolean;
   endItemMutation(roomId: string, itemId: string): void;
+  invalidate(roomId: string): void;
   remove(roomId: string): void;
   reset(): void;
 }
@@ -164,6 +165,15 @@ export const useAssignmentRoomStore = create<AssignmentRoomState>((set, get) => 
         },
       };
     });
+  },
+
+  invalidate(roomId) {
+    set((state) => ({
+      generations: {
+        ...state.generations,
+        [roomId]: (state.generations[roomId] ?? 0) + 1,
+      },
+    }));
   },
 
   remove(roomId) {
