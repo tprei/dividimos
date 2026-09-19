@@ -40,6 +40,11 @@
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
     },
+    "public.assignment_room_bill_breakdown(p_expense_id uuid)": {
+      "anon": false,
+      "authenticated": false,
+      "note": "Internal restricted projection of the current linked expense version for room members."
+    },
     "public.assignment_room_expense_payload(p_room_id uuid, p_group_id uuid, p_payers jsonb)": {
       "anon": false,
       "authenticated": false,
@@ -234,6 +239,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.get_expense_context(p_expense_id uuid)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated single-round-trip expense detail plus linked assignment-room metadata."
     },
     "public.get_group(p_group_id uuid)": {
       "anon": false,

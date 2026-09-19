@@ -1080,6 +1080,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      assignment_room_bill_breakdown: {
+        Args: {
+          p_expense_id: string
+        }
+        Returns: Json
+      }
       assignment_room_expense_payload: {
         Args: {
           p_room_id: string
@@ -1353,6 +1359,12 @@ export type Database = {
         Returns: Json
       }
       get_expense: {
+        Args: {
+          p_expense_id: string
+        }
+        Returns: Json
+      }
+      get_expense_context: {
         Args: {
           p_expense_id: string
         }
