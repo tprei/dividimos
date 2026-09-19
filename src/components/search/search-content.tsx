@@ -132,7 +132,7 @@ export function SearchContent() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar grupos, contas, pessoas..."
           autoFocus
-          className="w-full rounded-2xl border bg-muted/40 py-3 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+          className="w-full rounded-2xl border bg-muted/40 py-3 pl-10 pr-10 text-base text-foreground placeholder:text-muted-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all md:text-sm"
         />
         {query && (
           <button
