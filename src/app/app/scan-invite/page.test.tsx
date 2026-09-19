@@ -42,6 +42,8 @@ import { LedgerError } from "@/lib/sync/errors";
 
 const PROD = "https://www.dividimos.ai";
 const TOKEN = "a".repeat(32);
+const ROOM_ID = "00000000-0000-4000-8000-000000000001";
+const ROOM_TOKEN = `armj1_${"A".repeat(43)}`;
 
 async function decode(payload: string) {
   decodeHolder.payload = payload;
@@ -67,6 +69,15 @@ describe("ScanInvitePage router", () => {
     await waitFor(() => {
       expect(mocks.push).toHaveBeenCalledWith("/app/groups/g-42");
     });
+  });
+
+  it("opens an assignment room without attempting a group join", async () => {
+    render(<ScanInvitePage />);
+
+    await decode(`${PROD}/room/${ROOM_ID}#${ROOM_TOKEN}`);
+
+    expect(mocks.push).toHaveBeenCalledWith(`/room/${ROOM_ID}#${ROOM_TOKEN}`);
+    expect(mocks.joinViaLink).not.toHaveBeenCalled();
   });
 
   it("shows the invalid-invite hint and resumes scanning when the link is dead", async () => {

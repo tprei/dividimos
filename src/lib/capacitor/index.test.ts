@@ -26,6 +26,8 @@ import { initCapacitor } from "./index";
 
 const INVITE = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6";
 const CLAIM = "gst1_" + "a".repeat(43);
+const ROOM_ID = "00000000-0000-4000-8000-000000000001";
+const ROOM_TOKEN = `armj1_${"A".repeat(43)}`;
 
 describe("cold-start deep links", () => {
   beforeEach(() => {
@@ -59,6 +61,19 @@ describe("cold-start deep links", () => {
 
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith(`/claim#${CLAIM}`);
+  });
+
+  it("navigates a cold room fragment exactly once", async () => {
+    mockGetLaunchUrl.mockResolvedValue({
+      url: `https://www.dividimos.ai/room/${ROOM_ID}#${ROOM_TOKEN}`,
+    });
+    const replace = vi.fn();
+
+    await initCapacitor(replace);
+    await initCapacitor(replace);
+
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(`/room/${ROOM_ID}#${ROOM_TOKEN}`);
   });
 
   it("navigates a cold custom-scheme launch to the route that exists", async () => {
