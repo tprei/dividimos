@@ -1147,6 +1147,13 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: number
       }
+      close_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_expected_revision: number
+        }
+        Returns: Json
+      }
       complete_onboarding: {
         Args: {
           p_handle: string
@@ -1636,6 +1643,17 @@ export type Database = {
         Args: {
           p_group_id: string
           p_user_id: string
+        }
+        Returns: Json
+      }
+      set_assignment_room_claim: {
+        Args: {
+          p_room_id: string
+          p_member_token: string
+          p_item_id: string
+          p_participant_id: string
+          p_expected_item_revision: number
+          p_ticks: number
         }
         Returns: Json
       }

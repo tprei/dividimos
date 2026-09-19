@@ -105,6 +105,11 @@
       "authenticated": false,
       "note": "Internal rate-limit machinery; server-side callers only."
     },
+    "public.close_assignment_room(p_room_id uuid, p_expected_revision bigint)": {
+      "anon": false,
+      "authenticated": true,
+      "note": "Authenticated host-only RPC; closes a fully claimed room at the expected room revision."
+    },
     "public.complete_onboarding(p_handle text, p_name text, p_pix_key_encrypted text, p_pix_key_hint text, p_pix_key_type pix_key_type)": {
       "anon": false,
       "authenticated": true,
@@ -434,6 +439,11 @@
       "anon": false,
       "authenticated": true,
       "note": "Authenticated RPC; membership and authorization are checked inside the function."
+    },
+    "public.set_assignment_room_claim(p_room_id uuid, p_member_token text, p_item_id uuid, p_participant_id uuid, p_expected_item_revision bigint, p_ticks bigint)": {
+      "anon": true,
+      "authenticated": true,
+      "note": "Capability RPC; active members claim only their own items while the host may correct any active participant."
     },
     "public.set_updated_at()": {
       "anon": false,
