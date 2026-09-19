@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { explainFailure } from "./explain.mjs";
 import {
   collectDiary,
   collectFailures,
@@ -291,4 +292,25 @@ test("main returns the exit code from the run status alone", async () => {
   } finally {
     temp.dispose();
   }
+});
+
+test("explainFailure turns the shapes these tools produce into a sentence", () => {
+  const cases = [
+    ["strict mode violation: resolved to 2 elements", /two things on the page matched/],
+    ["expect(locator).toBeVisible() failed\nLocator: x", /never showed what the walk waited for/],
+    ["journey seed 1 diverged after create a0", /stopped matching the model/],
+    ["SeedHelper.authenticateAs: no cached session for userId=1", /could not sign in/],
+    ["vitest: no results file", /never wrote their results/],
+    ["fetch failed", /production did not answer/],
+  ];
+  for (const [message, expected] of cases) {
+    assert.match(explainFailure({ name: "n", message }), expected);
+  }
+  // Anything unrecognised keeps the first line, which is where the useful
+  // part lives, with the Error: noise removed.
+  assert.equal(
+    explainFailure({ name: "n", message: "Error: the roof fell in\n  at somewhere" }),
+    "the roof fell in",
+  );
+  assert.match(explainFailure({ name: "n", message: "" }), /no message came/);
 });

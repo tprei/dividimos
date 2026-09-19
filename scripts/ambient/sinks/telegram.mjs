@@ -3,6 +3,8 @@
 
 import { readFileSync } from "node:fs";
 
+import { explainFailure } from "../explain.mjs";
+
 // Two messages, two jobs. One pinned board shows the latest check and is
 // edited in place every run, so a chat gets no new bubble per half hour.
 // Flips also send their own alert, with screenshots when a browser was
@@ -133,12 +135,49 @@ export function boardText(report, now, boardIds = [], layout = "") {
  * @param {AmbientReport} report
  * @returns {string}
  */
+// An alert is read on a phone, by someone who was doing something else. It
+// leads with what broke in plain words and keeps one line of the original
+// message underneath, because the exact text is what a search needs.
+const ALERT_DETAIL_LIMIT = 3;
+const EXCERPT_CHARS = 160;
+
+/** @param {AmbientFailure} failure */
+function excerptOf(failure) {
+  const firstLine = (failure.message ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) return null;
+  const trimmed =
+    firstLine.length > EXCERPT_CHARS ? `${firstLine.slice(0, EXCERPT_CHARS - 1)}…` : firstLine;
+  return trimmed;
+}
+
+/**
+ * @param {AmbientReport} report
+ * @returns {string[]}
+ */
+function failureDetails(report) {
+  const lines = [];
+  for (const failure of report.failures.slice(0, ALERT_DETAIL_LIMIT)) {
+    lines.push(`• <b>${escapeHtml(failure.name)}</b>`);
+    lines.push(`  ${escapeHtml(explainFailure(failure))}`);
+    const excerpt = excerptOf(failure);
+    if (excerpt && excerpt !== explainFailure(failure)) {
+      lines.push(`  <code>${escapeHtml(excerpt)}</code>`);
+    }
+  }
+  const rest = report.failures.length - Math.min(report.failures.length, ALERT_DETAIL_LIMIT);
+  if (rest > 0) lines.push(`• and ${rest} more`);
+  return lines;
+}
+
 export function alertText(report) {
   if (report.transition === "went_red") {
     return [
       "🚨 <b>Production started failing</b>",
       "",
-      ...failureLines(report),
+      ...failureDetails(report),
       "",
       runLink(report.runUrl, []),
     ].join("\n");
