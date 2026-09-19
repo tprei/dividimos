@@ -138,12 +138,6 @@ export function decodeGroupOverview(
   return overview.ok ? ok({ ...snapshot.value, overview: overview.value }) : overview;
 }
 
-export function decodeGroupOverview(
-  raw: unknown,
-  path: Path = [],
-): ValidationResult<GroupSnapshot, WireIssue> {
-  return decodeOverviewWrapper(raw, path);
-}
 
 export function decodeBootstrapOverview(
   raw: unknown,
