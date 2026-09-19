@@ -93,6 +93,24 @@ describe("group avatar route", () => {
     expect(mocks.remove).not.toHaveBeenCalled();
   });
 
+  it("resets to initials and removes a replaced photo after success", async () => {
+    const reset = await PATCH(request("PATCH", JSON.stringify({ kind: "initials" })), params);
+    expect(reset.status).toBe(200);
+    expect(mocks.adminRpc).toHaveBeenCalledWith(
+      "set_group_avatar",
+      expect.objectContaining({ p_emoji: null, p_photo_id: null }),
+    );
+
+    mocks.adminRpc.mockClear();
+    mocks.adminRpc.mockResolvedValue({
+      data: { groupId: "group", ledgerVersion: 3, previousPhotoId: "old-photo" },
+      error: null,
+    });
+    const replaced = await PATCH(request("PATCH", JSON.stringify({ kind: "emoji", emoji: "🍕" })), params);
+    expect(replaced.status).toBe(200);
+    expect(mocks.remove).toHaveBeenCalledWith(["11111111-1111-1111-1111-111111111111/old-photo.jpg"]);
+  });
+
   it("serves only the current opaque photo id", async () => {
     mocks.callerRpc.mockResolvedValue({ data: { kind: "photo", photoId: "photo-id" }, error: null });
     expect((await GET(request("GET", undefined, "http://localhost/api/groups/group/avatar?photoId=other"), params)).status).toBe(404);
