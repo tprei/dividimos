@@ -65,7 +65,15 @@ test("bot_ana spends and settles through the app", async ({ browser }) => {
         `&participantIds=${troupe.bots[0].id},${troupe.bots[1].id}` +
         `&payerId=${troupe.bots[0].id}`,
     );
+    // The draft prefills the form but the wizard still opens on its first
+    // step, so the review step is one Continuar away. Whether that button is
+    // there at all depends on the draft, hence waiting for either.
     const create = page.getByRole("button", { name: "Criar conta" });
+    const next = page.getByRole("button", { name: "Continuar" });
+    await expect(create.or(next).first()).toBeVisible({ timeout: 20000 });
+    if (await next.isVisible()) {
+      await next.click();
+    }
     await expect(create).toBeVisible({ timeout: 20000 });
     // Photographed with the payer already chosen: the wizard shows its own
     // "Selecione quem pagou." error until then, and a board that shows an
