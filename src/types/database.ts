@@ -1080,6 +1080,14 @@ export type Database = {
         }
         Returns: undefined
       }
+      assignment_room_expense_payload: {
+        Args: {
+          p_room_id: string
+          p_group_id: string
+          p_payers: Json
+        }
+        Returns: Json
+      }
       assignment_room_view: {
         Args: {
           p_room_id: string
@@ -1308,6 +1316,14 @@ export type Database = {
           p_expense_id: string
           p_from: number
           p_to: number
+        }
+        Returns: Json
+      }
+      finalize_assignment_room: {
+        Args: {
+          p_room_id: string
+          p_expected_revision: number
+          p_payload: Json
         }
         Returns: Json
       }
