@@ -478,7 +478,7 @@ describe("ActivityContent", () => {
     await waitFor(() => {
       expect(refreshSettlement).toHaveBeenCalledWith("sett-789");
     });
-    expect(screen.getByTestId("settlement-detail-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("settlement-detail-popover")).toBeInTheDocument();
   });
 
   it("renders empty state when items is empty", () => {

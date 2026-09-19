@@ -1,17 +1,11 @@
 "use client";
 
-import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
+import { ArrowRight, Loader2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect } from "react";
+import { AnchoredPopover } from "@/components/shared/anchored-popover";
 import { Money } from "@/components/shared/money";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { refreshSettlement } from "@/lib/sync/refresh";
 import { cn } from "@/lib/utils";
 import { settlementReadKey, useAppStore } from "@/stores/app-store";
@@ -38,7 +32,7 @@ function formatDate(iso: string): string {
   });
 }
 
-export function SettlementDetailSheet({
+export function SettlementDetailPopover({
   settlementId,
   groupId,
   open,
@@ -86,16 +80,29 @@ export function SettlementDetailSheet({
   const failed = readError !== null && !denied;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-t-3xl pb-6 safe-bottom"
-        data-testid="settlement-detail-sheet"
-      >
-        <SheetHeader>
-          <SheetTitle>Pagamento</SheetTitle>
-          <SheetDescription>Registro deste pagamento no grupo.</SheetDescription>
-        </SheetHeader>
+    <AnchoredPopover
+      open={open}
+      onOpenChange={onOpenChange}
+      ariaLabel="Detalhes do pagamento"
+      className="right-0 top-full mt-2 w-[min(22rem,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl p-4"
+    >
+      <div data-testid="settlement-detail-popover">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Pagamento</h2>
+            <p className="text-xs text-muted-foreground">Registro deste pagamento no grupo.</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0 rounded-full"
+            aria-label="Fechar pagamento"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
 
         {settlement && payer && recipient && cfg ? (
           <div className="space-y-3">
@@ -207,7 +214,7 @@ export function SettlementDetailSheet({
             Carregando pagamento…
           </div>
         )}
-      </SheetContent>
-    </Sheet>
+      </div>
+    </AnchoredPopover>
   );
 }

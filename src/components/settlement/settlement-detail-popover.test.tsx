@@ -1,15 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { SettlementDetailSheet } from "./settlement-detail-sheet";
+import { SettlementDetailPopover } from "./settlement-detail-popover";
 import { refreshSettlement } from "@/lib/sync/refresh";
 import { settlementReadKey, useAppStore, type ResourceReadState } from "@/stores/app-store";
 import type { GroupSnapshot, Settlement } from "@/types/ledger";
+
 vi.mock("@/lib/sync/refresh", () => ({
   refreshSettlement: vi.fn().mockResolvedValue(undefined),
 }));
+
 const viewerId = "user-c";
 const payerId = "user-bob";
 const recipientId = "user-alice";
+
 function settlement(overrides: Partial<Settlement> = {}): Settlement {
   return {
     id: "set-1",
@@ -27,6 +30,7 @@ function settlement(overrides: Partial<Settlement> = {}): Settlement {
     ...overrides,
   };
 }
+
 function groupSnapshot(): GroupSnapshot {
   const users = [
     [payerId, "bob", "Bob Silva"],
@@ -42,7 +46,7 @@ function groupSnapshot(): GroupSnapshot {
       dmUserA: null,
       dmUserB: null,
       ledgerVersion: 7,
-      createdAt: "2026-01-01T00:00:00.000Z",
+      createdAt: "2026-01-01T00:00:00Z",
     },
     members: users.map(([id, handle, name]) => ({
       groupId: "g1",
@@ -64,6 +68,7 @@ function groupSnapshot(): GroupSnapshot {
     pairwiseEdges: [],
   };
 }
+
 function seedStore(options: { settlement?: Settlement | null; read?: ResourceReadState } = {}) {
   const id = options.settlement?.id ?? "set-1";
   useAppStore.setState({
@@ -73,24 +78,27 @@ function seedStore(options: { settlement?: Settlement | null; read?: ResourceRea
     reads: options.read === undefined ? {} : { [settlementReadKey(id)]: options.read },
   });
 }
-function renderSheet() {
+
+function renderPopover(onOpenChange: (open: boolean) => void = () => {}) {
   return render(
-    <SettlementDetailSheet
+    <SettlementDetailPopover
       settlementId="set-1"
       groupId="g1"
       open
-      onOpenChange={() => {}}
+      onOpenChange={onOpenChange}
     />,
   );
 }
-describe("SettlementDetailSheet", () => {
+
+describe("SettlementDetailPopover", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAppStore.getState().reset();
   });
+
   it("shows payer, recipient, amount and status to a third member", () => {
     seedStore({ settlement: settlement() });
-    renderSheet();
+    renderPopover();
 
     expect(screen.getByTestId("settlement-detail-payer")).toHaveTextContent("Bob Silva");
     expect(screen.getByTestId("settlement-detail-recipient")).toHaveTextContent("Alice Souza");
@@ -98,33 +106,46 @@ describe("SettlementDetailSheet", () => {
     expect(screen.getByTestId("settlement-detail-status")).toHaveTextContent("Confirmado");
     expect(screen.queryByRole("button", { name: /Desfazer/i })).not.toBeInTheDocument();
   });
+
+  it("closes from the anchored panel without a backdrop", () => {
+    seedStore({ settlement: settlement() });
+    const onOpenChange = vi.fn();
+    renderPopover(onOpenChange);
+
+    expect(screen.getByRole("dialog", { name: "Detalhes do pagamento" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Fechar pagamento" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("keeps cached detail visible and retries a failed refresh", () => {
     seedStore({ settlement: settlement(), read: { status: "error", code: "network" } });
-    renderSheet();
+    renderPopover();
 
     expect(screen.getByTestId("settlement-detail-stale")).toBeInTheDocument();
     expect(screen.getByTestId("settlement-detail-amount")).toHaveTextContent("R$ 30,00");
     fireEvent.click(screen.getByTestId("settlement-detail-retry"));
     expect(refreshSettlement).toHaveBeenCalledTimes(1);
   });
+
   it("shows a retry instead of inventing a payment after the first failure", () => {
     seedStore({ settlement: null, read: { status: "error", code: "network" } });
-    renderSheet();
+    renderPopover();
 
     expect(screen.getByTestId("settlement-detail-error")).toBeInTheDocument();
     expect(screen.queryByTestId("settlement-detail-amount")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("settlement-detail-retry"));
     expect(refreshSettlement).toHaveBeenCalledTimes(1);
   });
+
   it("distinguishes a missing payment from a lost group membership", () => {
     seedStore({ settlement: null, read: { status: "error", code: "settlement_not_found" } });
-    renderSheet();
+    renderPopover();
     expect(screen.getByTestId("settlement-detail-unavailable")).toHaveTextContent(
       "Pagamento não encontrado",
     );
 
     seedStore({ settlement: null, read: { status: "error", code: "not_a_member" } });
-    renderSheet();
+    renderPopover();
     expect(screen.getAllByTestId("settlement-detail-unavailable").at(-1)).toHaveTextContent(
       "Pagamento indisponível",
     );

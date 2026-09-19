@@ -10,7 +10,7 @@ import { ActivityCardSkeleton } from "@/components/shared/skeleton";
 import { SyncErrorState } from "@/components/shared/sync-error-state";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Button } from "@/components/ui/button";
-import { SettlementDetailSheet } from "@/components/settlement/settlement-detail-sheet";
+import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import { newestActivityAt } from "@/lib/activity-badge";
@@ -204,7 +204,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
 
   const sheet =
     event.settlementId !== null ? (
-      <SettlementDetailSheet
+      <SettlementDetailPopover
         settlementId={event.settlementId}
         groupId={event.groupId}
         open={detailOpen}
@@ -229,7 +229,7 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
 
   if (event.expenseId) {
     return (
-      <>
+      <div className="relative">
         <Link
           href={`/app/bill/${event.expenseId}`}
           className="block rounded-xl border bg-card p-3 transition-colors hover:bg-accent/40"
@@ -238,18 +238,18 @@ function ActivityRow({ event, groups, meId }: ActivityRowProps) {
         </Link>
         {dialog}
         {sheet}
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="relative">
       <div className="rounded-xl border bg-card p-3">
         {cardContent}
       </div>
       {dialog}
       {sheet}
-    </>
+    </div>
   );
 }
 

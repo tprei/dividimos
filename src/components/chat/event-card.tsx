@@ -10,7 +10,7 @@ import { describeEvent } from "@/lib/ledger/event-copy";
 import { voidSettlement } from "@/lib/sync/mutations";
 import { ledgerErrorMessage } from "@/lib/sync/errors";
 import { cn } from "@/lib/utils";
-import { SettlementDetailSheet } from "@/components/settlement/settlement-detail-sheet";
+import { SettlementDetailPopover } from "@/components/settlement/settlement-detail-popover";
 import { VoidSettlementDialog } from "@/components/settlement/void-settlement-dialog";
 import { useConfirmationPreferences } from "@/hooks/use-confirmation-preferences";
 import type { GroupEvent, Settlement, SettlementStatus } from "@/types/ledger";
@@ -172,7 +172,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
   };
 
   return (
-    <div className="w-full">
+    <div className="relative w-full">
       <p className="mb-1 text-center text-[11px] text-muted-foreground">{copy}</p>
       <div className="rounded-2xl border bg-card p-3" data-testid="event-settlement-card">
         <div className="flex items-center gap-3">
@@ -242,7 +242,7 @@ export function EventCard({ event, groupId, meId, settlement, latestStatus, name
         />
       )}
       {settlementId !== null && (
-        <SettlementDetailSheet
+        <SettlementDetailPopover
           settlementId={settlementId}
           groupId={groupId}
           open={detailOpen}

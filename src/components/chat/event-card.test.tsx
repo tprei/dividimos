@@ -341,7 +341,7 @@ describe("EventCard", () => {
     await waitFor(() => {
       expect(refreshSettlement).toHaveBeenCalledWith("set-1");
     });
-    expect(screen.getByTestId("settlement-detail-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("settlement-detail-popover")).toBeInTheDocument();
     expect(screen.getByTestId("event-settlement-card")).toHaveTextContent("R$ 50,00");
     expect(screen.getByTestId("settlement-detail-loading")).toBeInTheDocument();
   });
