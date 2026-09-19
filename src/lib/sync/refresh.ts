@@ -3,10 +3,10 @@ import {
   decodeExpenseDetail,
   decodeExpensePage,
   decodeGroupEvents,
-  decodeGroupSnapshot,
   decodeChargePage,
 } from "@/lib/ledger/decode";
 import { decodeSettlementDetail } from "@/lib/ledger/decode-settlement-detail";
+import { decodeGroupOverview } from "@/lib/ledger/decode-group-overview";
 import {
   CHARGES_READ_KEY,
   conversationReadKey,
@@ -164,7 +164,7 @@ async function executeRefreshGroup(groupId: string): Promise<void> {
   const snapshot = await trackedRead(
     key,
     attempt,
-    () => rpc("get_group", { p_group_id: groupId }, decodeGroupSnapshot),
+    () => rpc("get_group_overview", { p_group_id: groupId }, decodeGroupOverview),
     (value) => useAppStore.getState().applyGroup(value),
   );
 
