@@ -333,7 +333,7 @@ async function readRoom(
         )
       : await rpc(
           "get_assignment_room",
-          { p_room_id: roomId, p_member_token: memberToken ?? "" },
+          { p_room_id: roomId, p_member_token: memberToken as string },
           decodeAssignmentRoomView
         );
     publish(view, attempt, authGeneration);
