@@ -2,8 +2,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isIntegrationTestReady, untrackTestGroup } from "@/test/integration-setup";
 import {
+  acceptInvitation,
   authenticateAs,
   createExpense,
+  createGroup,
   createGroupWithMembers,
   createTestUsers,
   equalSplitPayload,
@@ -808,6 +810,170 @@ describe.skipIf(!isIntegrationTestReady)(
           p_to_user_id: creditor.id,
           p_amount_cents: 1000,
           p_allow_overpay: true,
+        }),
+      ).resolves.toBe("not_a_member");
+    });
+  },
+);
+
+describe.skipIf(!isIntegrationTestReady)(
+  "settlement RPCs — membership-authorized detail reads",
+  () => {
+    // The creditor funds a 6000 expense split equally with the debtor, who
+    // then pays 1000 back. The third member is accepted but is no party to
+    // the payment; the pending user was invited and never accepted; the
+    // outsider never joined. Detail reads follow membership alone, not
+    // payer or recipient identity.
+    let creditor: TestUser;
+    let debtor: TestUser;
+    let thirdMember: TestUser;
+    let pending: TestUser;
+    let outsider: TestUser;
+    let clientCreditor: SupabaseClient;
+    let clientDebtor: SupabaseClient;
+    let clientThirdMember: SupabaseClient;
+    let clientPending: SupabaseClient;
+    let clientOutsider: SupabaseClient;
+    let groupId: string;
+    let paymentId: string;
+
+    beforeAll(async () => {
+      [creditor, debtor, thirdMember, pending, outsider] = await createTestUsers(5);
+      clientCreditor = authenticateAs(creditor);
+      clientDebtor = authenticateAs(debtor);
+      clientThirdMember = authenticateAs(thirdMember);
+      clientPending = authenticateAs(pending);
+      clientOutsider = authenticateAs(outsider);
+      // Inviting through group creation leaves this user unaccepted.
+      groupId = (
+        await createGroup(creditor, "Detalhes", [
+          debtor.id,
+          thirdMember.id,
+          pending.id,
+        ])
+      ).groupId;
+      await acceptInvitation(debtor, groupId);
+      await acceptInvitation(thirdMember, groupId);
+      await createExpense(creditor, {
+        groupId,
+        title: "Jantar",
+        totalCents: 6000,
+        payload: equalSplitPayload([creditor.id, debtor.id], 6000),
+      });
+      const ack = await rpcOk<SettlementAck>(clientDebtor, "record_settlement", {
+        p_operation_id: crypto.randomUUID(),
+        p_group_id: groupId,
+        p_from_user_id: debtor.id,
+        p_to_user_id: creditor.id,
+        p_amount_cents: 1000,
+      });
+      paymentId = ack.settlementId;
+    });
+
+    async function recentConfirmedIds(): Promise<string[]> {
+      const snapshot = await rpcOk<{ settlements: Settlement[] }>(
+        clientThirdMember,
+        "get_group",
+        { p_group_id: groupId },
+      );
+      return snapshot.settlements.map((settlement) => settlement.id);
+    }
+
+    it("returns the confirmed settlement to an accepted member who is not a party", async () => {
+      const wrapper = await rpcOk<{ settlement: Settlement }>(
+        clientThirdMember,
+        "get_settlement",
+        { p_settlement_id: paymentId },
+      );
+      expect(Object.keys(wrapper).sort()).toEqual(["settlement"]);
+      expect(Object.keys(wrapper.settlement).sort()).toEqual(SETTLEMENT_KEYS);
+      expect(wrapper.settlement).toMatchObject({
+        id: paymentId,
+        groupId,
+        fromUserId: debtor.id,
+        toUserId: creditor.id,
+        amountCents: 1000,
+        status: "confirmed",
+        createdBy: debtor.id,
+        voidedAt: null,
+        voidedBy: null,
+      });
+      expect(wrapper.settlement.confirmedAt).toEqual(expect.any(String));
+    });
+
+    it("still returns a settlement once it falls out of the recent confirmed bound", async () => {
+      // Fifty newer one-cent payments push the fixture's first payment past
+      // the snapshot's fifty-most-recent confirmed list; the detail read
+      // still reaches the full history. Overpay is the fixture lever to
+      // keep recording payments after the pair crosses zero.
+      for (let i = 0; i < 50; i += 1) {
+        await rpcOk<SettlementAck>(clientDebtor, "record_settlement", {
+          p_operation_id: crypto.randomUUID(),
+          p_group_id: groupId,
+          p_from_user_id: debtor.id,
+          p_to_user_id: creditor.id,
+          p_amount_cents: 1,
+          p_allow_overpay: true,
+        });
+      }
+      const recentIds = await recentConfirmedIds();
+      expect(recentIds).toHaveLength(50);
+      expect(recentIds).not.toContain(paymentId);
+      const wrapper = await rpcOk<{ settlement: Settlement }>(
+        clientThirdMember,
+        "get_settlement",
+        { p_settlement_id: paymentId },
+      );
+      expect(wrapper.settlement).toMatchObject({
+        id: paymentId,
+        status: "confirmed",
+      });
+    });
+
+    it("returns the voided settlement with its authoritative status", async () => {
+      await rpcOk<SettlementAck>(clientDebtor, "void_settlement", {
+        p_settlement_id: paymentId,
+      });
+      // Voided rows leave the confirmed list entirely but stay readable.
+      expect(await recentConfirmedIds()).not.toContain(paymentId);
+      const wrapper = await rpcOk<{ settlement: Settlement }>(
+        clientThirdMember,
+        "get_settlement",
+        { p_settlement_id: paymentId },
+      );
+      expect(Object.keys(wrapper).sort()).toEqual(["settlement"]);
+      expect(wrapper.settlement).toMatchObject({
+        id: paymentId,
+        groupId,
+        fromUserId: debtor.id,
+        toUserId: creditor.id,
+        amountCents: 1000,
+        status: "voided",
+        voidedBy: debtor.id,
+      });
+      expect(wrapper.settlement.voidedAt).toEqual(expect.any(String));
+    });
+
+    it("raises settlement_not_found for a missing id", async () => {
+      await expect(
+        rpcErrorCode(clientThirdMember, "get_settlement", {
+          p_settlement_id: crypto.randomUUID(),
+        }),
+      ).resolves.toBe("settlement_not_found");
+    });
+
+    it("denies a pending invitee with not_a_member", async () => {
+      await expect(
+        rpcErrorCode(clientPending, "get_settlement", {
+          p_settlement_id: paymentId,
+        }),
+      ).resolves.toBe("not_a_member");
+    });
+
+    it("denies an outside user with not_a_member", async () => {
+      await expect(
+        rpcErrorCode(clientOutsider, "get_settlement", {
+          p_settlement_id: paymentId,
         }),
       ).resolves.toBe("not_a_member");
     });
