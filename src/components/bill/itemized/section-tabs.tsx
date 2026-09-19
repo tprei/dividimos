@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import type { ItemizedSectionKey } from "@/components/bill/itemized-bill-form";
 
 const SECTION_TABS: { key: ItemizedSectionKey; label: string }[] = [
@@ -18,17 +19,37 @@ export interface SectionTabsProps {
 
 export function SectionTabs({ section, onChange }: SectionTabsProps) {
   const activeRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [moreToRight, setMoreToRight] = useState(false);
+
+  const syncOverflow = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    setMoreToRight(list.scrollWidth - list.clientWidth - list.scrollLeft > 1);
+  }, []);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest", inline: "center" });
-  }, [section]);
+    syncOverflow();
+  }, [section, syncOverflow]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const observer = new ResizeObserver(syncOverflow);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [syncOverflow]);
 
   return (
-    <div
-      role="tablist"
-      aria-label="Seções da conta"
-      className="sticky top-0 z-10 mt-3 flex overflow-x-auto border-b bg-background px-2"
-    >
+    <div className="relative">
+      <div
+        ref={listRef}
+        role="tablist"
+        aria-label="Seções da conta"
+        onScroll={syncOverflow}
+        className="sticky top-0 z-10 mt-3 flex overflow-x-auto border-b bg-background px-2 pr-7"
+      >
       {SECTION_TABS.map((tab) => {
         const active = section === tab.key;
         return (
@@ -45,6 +66,15 @@ export function SectionTabs({ section, onChange }: SectionTabsProps) {
           </button>
         );
       })}
+      </div>
+      {moreToRight && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-background pl-3 pr-1 text-muted-foreground"
+        >
+          <ChevronRight className="size-4" />
+        </span>
+      )}
     </div>
   );
 }
