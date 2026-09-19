@@ -58,7 +58,7 @@ describe("GroupAvatarEditor", () => {
     const user = userEvent.setup();
     render(<GroupAvatarEditor groupId={groupId} open onOpenChange={vi.fn()} />);
 
-    await user.click(screen.getByRole("radio", { name: "🏠" }));
+    await user.click(screen.getByRole("radio", { name: "Casa" }));
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(mocks.updateGroupAvatar).toHaveBeenCalledWith(groupId, { kind: "emoji", emoji: "🏠" });
@@ -69,11 +69,11 @@ describe("GroupAvatarEditor", () => {
     const user = userEvent.setup();
     render(<GroupAvatarEditor groupId={groupId} open onOpenChange={vi.fn()} />);
 
-    await user.click(screen.getByRole("radio", { name: "🐱" }));
+    await user.click(screen.getByRole("radio", { name: "Gato" }));
     await user.click(screen.getByRole("button", { name: "Salvar" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "🐱" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "Gato" })).toHaveAttribute("aria-checked", "true");
     expect(mocks.toastError).toHaveBeenCalled();
   });
 

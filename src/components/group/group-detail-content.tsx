@@ -125,12 +125,21 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
     (m) => m.userId === (myMember?.invitedBy ?? snapshot.group.creatorId),
   );
   const inviterName = inviter?.user.name ?? "Alguém";
+  const groupAvatar = (
+    <GroupAvatar
+      name={snapshot.group.name}
+      avatar={snapshot.overview?.avatar}
+      groupId={groupId}
+      size="sm"
+    />
+  );
 
   if (isPending) {
     return (
       <div className="mx-auto flex min-h-[calc(100dvh-9rem)] max-w-lg flex-col px-4 py-6">
         <ScreenHeader
           back
+          leading={groupAvatar}
           title={snapshot.group.name}
           onBack={() => router.push("/app/groups")}
         />
@@ -218,14 +227,6 @@ export function GroupDetailContent({ groupId }: { groupId: string }) {
   const isAcceptedMember = accepted.some((m) => m.userId === meId);
   const canInvite = meId !== null && (isCreator || isAcceptedMember);
   const canEditAvatar = isAcceptedMember && snapshot.group.kind === "group";
-  const groupAvatar = (
-    <GroupAvatar
-      name={snapshot.group.name}
-      avatar={snapshot.overview?.avatar}
-      groupId={groupId}
-      size="sm"
-    />
-  );
   return (
     <div className="mx-auto max-w-lg px-4 py-6">
       <ScreenHeader

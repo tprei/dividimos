@@ -19,7 +19,16 @@ import { updateGroupAvatar, type GroupAvatarUpdate } from "@/lib/sync/group-avat
 import { useAppStore } from "@/stores/app-store";
 import type { GroupAvatar as GroupAvatarData } from "@/types/ledger";
 
-const AVATAR_EMOJI = ["🏠", "🍻", "🍕", "🏖️", "✈️", "⚽", "🎉", "🐱"] as const;
+const AVATAR_EMOJI = [
+  { emoji: "🏠", label: "Casa" },
+  { emoji: "🍻", label: "Brinde" },
+  { emoji: "🍕", label: "Pizza" },
+  { emoji: "🏖️", label: "Praia" },
+  { emoji: "✈️", label: "Viagem" },
+  { emoji: "⚽", label: "Futebol" },
+  { emoji: "🎉", label: "Festa" },
+  { emoji: "🐱", label: "Gato" },
+] as const;
 
 type Selection =
   | { kind: "initials" }
@@ -149,7 +158,7 @@ export function GroupAvatarEditor({
           <div>
             <p className="mb-2 text-sm font-medium">Emoji</p>
             <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Emoji do grupo">
-              {AVATAR_EMOJI.map((emoji) => {
+              {AVATAR_EMOJI.map(({ emoji, label }) => {
                 const selected = selection.kind === "emoji" && selection.emoji === emoji;
                 return (
                   <button
@@ -157,7 +166,7 @@ export function GroupAvatarEditor({
                     type="button"
                     role="radio"
                     aria-checked={selected}
-                    aria-label={emoji}
+                    aria-label={label}
                     className={`flex min-h-12 items-center justify-center rounded-xl border text-2xl ${selected ? "border-primary bg-primary/10" : "border-border"}`}
                     onClick={() => {
                       setSelection({ kind: "emoji", emoji });
